@@ -1,14 +1,22 @@
 // main.go - Jonnify Edge Server
-// Serves .gar.gz files from Fly.io volume
+// Serves static distribution files (litestream, flyer)
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+)
+
+var (
+	version  = "0.1.0"
+	distrDir = "/app/distr"
 )
 
 func main() {
@@ -17,9 +25,9 @@ func main() {
 		port = "8080"
 	}
 
-	dataDir := os.Getenv("DATA_DIR")
-	if dataDir == "" {
-		dataDir = "/data"
+	// Allow override for local dev
+	if dir := os.Getenv("DISTR_DIR"); dir != "" {
+		distrDir = dir
 	}
 
 	app := fiber.New(fiber.Config{
@@ -35,42 +43,72 @@ func main() {
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
+		return c.JSON(fiber.Map{"status": "ok", "version": version})
 	})
 
-	// Serve .gar.gz files from volume
-	app.Static("/files", dataDir, fiber.Static{
-		Browse:   false,
-		Download: true,
-	})
-
-	// List available files
+	// List available distributions
 	app.Get("/", func(c *fiber.Ctx) error {
-		entries, err := os.ReadDir(dataDir)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{
-				"error": "failed to read data directory",
-			})
-		}
-
 		files := make([]fiber.Map, 0)
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				info, _ := entry.Info()
-				files = append(files, fiber.Map{
-					"name": entry.Name(),
-					"size": info.Size(),
-					"url":  "/files/" + entry.Name(),
-				})
+
+		// Walk distr directory
+		err := filepath.Walk(distrDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil // Skip errors
 			}
+			if info.IsDir() {
+				return nil
+			}
+
+			relPath, _ := filepath.Rel(distrDir, path)
+			files = append(files, fiber.Map{
+				"name":     relPath,
+				"size":     info.Size(),
+				"modified": info.ModTime(),
+				"url":      "/distr/" + relPath,
+			})
+			return nil
+		})
+		if err != nil {
+			log.Printf("Error listing files: %v", err)
 		}
 
 		return c.JSON(fiber.Map{
-			"files": files,
-			"count": len(files),
+			"version": version,
+			"files":   files,
+			"count":   len(files),
 		})
 	})
 
-	log.Printf("Starting jonnify on port %s, serving from %s", port, dataDir)
+	// Serve distribution files with proper headers
+	app.Get("/distr/*", func(c *fiber.Ctx) error {
+		filePath := c.Params("*")
+		if filePath == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "file path required"})
+		}
+
+		fullPath := filepath.Join(distrDir, filePath)
+
+		// Security: ensure path is within distrDir
+		cleanPath := filepath.Clean(fullPath)
+		if len(cleanPath) < len(distrDir) || cleanPath[:len(distrDir)] != distrDir {
+			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+		}
+
+		// Check file exists
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "file not found: " + filePath})
+		}
+
+		// Set headers
+		c.Set("Content-Type", "application/gzip")
+		c.Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+		c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(filePath)))
+		c.Set("Cache-Control", "public, max-age=31536000, immutable") // 1 year cache
+
+		return c.SendFile(fullPath)
+	})
+
+	log.Printf("Starting jonnify v%s on port %s, distr: %s", version, port, distrDir)
 	log.Fatal(app.Listen(":" + port))
 }
