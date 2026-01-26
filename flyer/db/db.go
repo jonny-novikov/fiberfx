@@ -105,7 +105,7 @@ func (db *DB) GetPackage(id string) (*Package, error) {
 	pkg := &Package{}
 	var createdAt string
 	err := db.conn.QueryRow(`
-		SELECT id, name, version, tigris_key, size_bytes, checksum, metadata, created_at
+		SELECT id, name, version, tigris_key, size_bytes, checksum, COALESCE(metadata, ''), created_at
 		FROM packages WHERE id = ?
 	`, id).Scan(&pkg.ID, &pkg.Name, &pkg.Version, &pkg.TigrisKey, &pkg.SizeBytes, &pkg.Checksum, &pkg.Metadata, &createdAt)
 	if err != nil {
@@ -121,7 +121,7 @@ func (db *DB) ListPackages(limit int) ([]*Package, error) {
 		limit = 50
 	}
 	rows, err := db.conn.Query(`
-		SELECT id, name, version, tigris_key, size_bytes, checksum, metadata, created_at
+		SELECT id, name, version, tigris_key, size_bytes, checksum, COALESCE(metadata, ''), created_at
 		FROM packages ORDER BY created_at DESC LIMIT ?
 	`, limit)
 	if err != nil {
@@ -172,7 +172,7 @@ func (db *DB) GetRelease(id string) (*Release, error) {
 	rel := &Release{}
 	var createdAt, stagedAt, activatedAt sql.NullString
 	err := db.conn.QueryRow(`
-		SELECT id, package_id, tag, status, notes, created_at, staged_at, activated_at
+		SELECT id, package_id, tag, status, COALESCE(notes, ''), created_at, staged_at, activated_at
 		FROM releases WHERE id = ?
 	`, id).Scan(&rel.ID, &rel.PackageID, &rel.Tag, &rel.Status, &rel.Notes, &createdAt, &stagedAt, &activatedAt)
 	if err != nil {
@@ -195,7 +195,7 @@ func (db *DB) GetReleaseByTag(tag string) (*Release, error) {
 	rel := &Release{}
 	var createdAt, stagedAt, activatedAt sql.NullString
 	err := db.conn.QueryRow(`
-		SELECT id, package_id, tag, status, notes, created_at, staged_at, activated_at
+		SELECT id, package_id, tag, status, COALESCE(notes, ''), created_at, staged_at, activated_at
 		FROM releases WHERE tag = ?
 	`, tag).Scan(&rel.ID, &rel.PackageID, &rel.Tag, &rel.Status, &rel.Notes, &createdAt, &stagedAt, &activatedAt)
 	if err != nil {
@@ -232,7 +232,7 @@ func (db *DB) ActivateRelease(id string) error {
 // GetPendingReleases returns releases ready for deployment
 func (db *DB) GetPendingReleases() ([]*Release, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, package_id, tag, status, notes, created_at, staged_at, activated_at
+		SELECT id, package_id, tag, status, COALESCE(notes, ''), created_at, staged_at, activated_at
 		FROM releases WHERE status = 'staged' ORDER BY staged_at DESC
 	`)
 	if err != nil {
@@ -303,7 +303,7 @@ func (db *DB) GetActiveDeployment() (*Deployment, error) {
 	dep := &Deployment{}
 	var startedAt, endedAt sql.NullString
 	err := db.conn.QueryRow(`
-		SELECT id, release_id, status, machine_id, trigger, started_at, ended_at, error, rollback_to, metadata
+		SELECT id, release_id, status, machine_id, trigger, started_at, ended_at, COALESCE(error, ''), COALESCE(rollback_to, ''), COALESCE(metadata, '')
 		FROM deployments WHERE status IN ('pending', 'downloading', 'running')
 		ORDER BY started_at DESC LIMIT 1
 	`).Scan(&dep.ID, &dep.ReleaseID, &dep.Status, &dep.MachineID, &dep.Trigger, &startedAt, &endedAt, &dep.Error, &dep.RollbackTo, &dep.Metadata)
@@ -348,7 +348,7 @@ func (db *DB) GetActiveVersion(component string) (*ActiveVersion, error) {
 	av := &ActiveVersion{}
 	var activatedAt string
 	err := db.conn.QueryRow(`
-		SELECT component, release_id, activated_at, activated_by
+		SELECT component, release_id, activated_at, COALESCE(activated_by, '')
 		FROM active_versions WHERE component = ?
 	`, component).Scan(&av.Component, &av.ReleaseID, &activatedAt, &av.ActivatedBy)
 	if err != nil {
