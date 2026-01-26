@@ -37,10 +37,12 @@ import (
 )
 
 var (
-	cfg        *config.Config
-	configDir  string
-	dbPath     string
-	version    = "0.1.0"
+	cfg       *config.Config
+	configDir string
+	dbPath    string
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
 )
 
 func main() {
@@ -48,7 +50,7 @@ func main() {
 		Use:     "flyer",
 		Short:   "FWHD Deployment Management Tool",
 		Long:    "Pure Go CLI for managing Fastify Worker Hot Deployment operations.",
-		Version: version,
+		Version: fmt.Sprintf("%s (commit=%s built=%s)", version, commit, buildDate),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// Load configuration
 			var err error
@@ -856,7 +858,9 @@ func syncCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Sync packages from Tigris S3 before Echo starts",
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			// NOTE: Use PreRunE (not PersistentPreRunE) to avoid overriding root
+			// command's PersistentPreRunE which initializes cfg.
 			// Apply config defaults if flags not set
 			if packagesDir == "" {
 				packagesDir = cfg.Packages.Dir

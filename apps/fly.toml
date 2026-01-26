@@ -1,0 +1,129 @@
+# =============================================================================
+# Fly.io Configuration - FiberFx Gateway
+# =============================================================================
+#
+# Multi-process gateway: Go server + s3explorer
+#
+# Architecture:
+#   - Go binary serves login page, handles JWT auth
+#   - Proxies authenticated requests to s3explorer
+#   - s3explorer runs as child process on internal port 3008
+#
+# SECURITY:
+#   - Public HTTPS access with login page
+#   - JWT stored in HTTP-only cookie
+#
+# DEPLOYMENT:
+#   cd fiberfx/apps
+#   fly apps create fiberfx-gateway
+#   fly secrets set DATABASE_URL="postgres://..." JWT_SECRET="..." MASTER_PASSWORD="..."
+#   fly deploy -c fly.gateway.toml
+#
+# NOTE: No volume needed for stateless fly app
+#
+# =============================================================================
+
+app = "fiberfx-gateway"
+primary_region = "sjc"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+# -----------------------------------------------------------------------------
+# Build Configuration
+# -----------------------------------------------------------------------------
+[build]
+  dockerfile = "Dockerfile"
+
+# -----------------------------------------------------------------------------
+# Deploy Configuration
+# -----------------------------------------------------------------------------
+[deploy]
+  strategy = "rolling"  # Zero-downtime deploy - stateless app
+
+# -----------------------------------------------------------------------------
+# Environment Variables
+# -----------------------------------------------------------------------------
+[env]
+  # Go Server
+  PORT = "8080"
+  WEB_DIR = "/app/web"
+  COOKIE_SECURE = "true"
+  DEBUG = "false"
+  HOST_NAME = "fiberfx-gateway.fly.dev"
+
+  # s3explorer
+  S3_EXPLORER_PORT = "3008"
+  S3_EXPLORER_WORK_DIR = "/app/studio"
+  S3_EXPLORER_CMD = "node server.js"
+
+  # General
+  TZ = "UTC"
+  NODE_ENV = "production"
+
+# -----------------------------------------------------------------------------
+# Secrets (set via `fly secrets set`)
+# -----------------------------------------------------------------------------
+# DATABASE_URL - PostgreSQL connection string to database
+# JWT_SECRET - HMAC key for signing JWT tokens
+# MASTER_PASSWORD - Password for admin login (shared)
+#
+# SETUP COMMAND:
+#   fly secrets set \
+#     DATABASE_URL="postgres://fireheadz_studio:9El4M7mB5Bkxqv5@codemoji-database.internal:5432/codemoji_game" \
+#     JWT_SECRET="$(openssl rand -base64 32)" \
+#     MASTER_PASSWORD="your-secure-password"
+#
+# NOTE: codemoji-database.internal is Fly.io internal network DNS
+# For local development with proxy: fly proxy 54321:5432 -a codemoji-database
+
+# -----------------------------------------------------------------------------
+# Compute Resources
+# -----------------------------------------------------------------------------
+# Moderate resources - runs both Go and Node.js processes
+[compute]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
+# -----------------------------------------------------------------------------
+# HTTP Service (Public HTTPS)
+# -----------------------------------------------------------------------------
+[[services]]
+  protocol = "tcp"
+  internal_port = 8080
+  auto_stop_machines = true   # Stop when idle (cost optimization)
+  auto_start_machines = true  # Start on request
+  min_machines_running = 0    # Can scale to zero
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 200
+    soft_limit = 100
+
+  # HTTPS with TLS
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+    [services.ports.tls_options]
+      alpn = ["h2", "http/1.1"]
+
+  # HTTP → HTTPS redirect
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  # TCP health check (fast)
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+
+  # HTTP health check
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "60s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
