@@ -43,9 +43,15 @@ type S3Config struct {
 }
 
 type LitestreamConfig struct {
-	ConfigPath    string `json:"config_path"`
-	ReplicaURL    string `json:"replica_url"`
-	RetentionDays int    `json:"retention_days"`
+	ConfigPath             string `json:"config_path"`
+	ReplicaURL             string `json:"replica_url"`
+	RetentionDays          int    `json:"retention_days"`
+	S3Path                 string `json:"s3_path"`
+	SyncInterval           string `json:"sync_interval"`
+	SnapshotInterval       string `json:"snapshot_interval"`
+	Retention              string `json:"retention"`
+	RetentionCheckInterval string `json:"retention_check_interval"`
+	ValidationInterval     string `json:"validation_interval"`
 }
 
 type PackagesConfig struct {
@@ -72,8 +78,14 @@ func Default() *Config {
 			Region:    "auto",
 		},
 		Litestream: LitestreamConfig{
-			ConfigPath:    "/app/litestream.yml",
-			RetentionDays: 7,
+			ConfigPath:             "/app/litestream.yml",
+			RetentionDays:          7,
+			S3Path:                 "db/packages",
+			SyncInterval:           "10s",
+			SnapshotInterval:       "1h",
+			Retention:              "72h",
+			RetentionCheckInterval: "1h",
+			ValidationInterval:     "1h",
 		},
 		Packages: PackagesConfig{
 			Dir:        "/app/packages",
@@ -215,6 +227,18 @@ func (c *Config) parseDirective(block, line string) error {
 			if v, err := strconv.Atoi(value); err == nil {
 				c.Litestream.RetentionDays = v
 			}
+		case "s3_path":
+			c.Litestream.S3Path = value
+		case "sync_interval":
+			c.Litestream.SyncInterval = value
+		case "snapshot_interval":
+			c.Litestream.SnapshotInterval = value
+		case "retention":
+			c.Litestream.Retention = value
+		case "retention_check_interval":
+			c.Litestream.RetentionCheckInterval = value
+		case "validation_interval":
+			c.Litestream.ValidationInterval = value
 		}
 
 	case "packages":

@@ -33,6 +33,7 @@ import (
 	"github.com/fiberfx/flyer/branded"
 	"github.com/fiberfx/flyer/config"
 	"github.com/fiberfx/flyer/db"
+	"github.com/fiberfx/flyer/litestream"
 	"github.com/fiberfx/flyer/s3"
 )
 
@@ -127,8 +128,14 @@ func configCmd() *cobra.Command {
 			fmt.Println("}")
 			fmt.Println()
 			fmt.Println("litestream {")
-			fmt.Printf("    config_path    %s;\n", cfg.Litestream.ConfigPath)
-			fmt.Printf("    retention_days %d;\n", cfg.Litestream.RetentionDays)
+			fmt.Printf("    config_path              %s;\n", cfg.Litestream.ConfigPath)
+			fmt.Printf("    retention_days           %d;\n", cfg.Litestream.RetentionDays)
+			fmt.Printf("    s3_path                  %s;\n", cfg.Litestream.S3Path)
+			fmt.Printf("    sync_interval            %s;\n", cfg.Litestream.SyncInterval)
+			fmt.Printf("    snapshot_interval        %s;\n", cfg.Litestream.SnapshotInterval)
+			fmt.Printf("    retention                %s;\n", cfg.Litestream.Retention)
+			fmt.Printf("    retention_check_interval %s;\n", cfg.Litestream.RetentionCheckInterval)
+			fmt.Printf("    validation_interval      %s;\n", cfg.Litestream.ValidationInterval)
 			fmt.Println("}")
 			fmt.Println()
 			fmt.Println("packages {")
@@ -171,8 +178,14 @@ s3 {
 }
 
 litestream {
-    config_path    /app/litestream.yml;
-    retention_days 7;
+    config_path              /app/litestream.yml;
+    retention_days           7;
+    s3_path                  db/packages;
+    sync_interval            10s;
+    snapshot_interval        1h;
+    retention                72h;
+    retention_check_interval 1h;
+    validation_interval      1h;
 }
 
 packages {
@@ -721,7 +734,83 @@ If the database already exists and --if-not-exists is set, this is a no-op.`,
 	}
 	replicateCmd.Flags().StringVar(&configPath, "config", "", "Path to litestream.yml config (default from flyer.conf)")
 
-	cmd.AddCommand(restoreCmd, statusCmd, replicateCmd)
+	// stream generate - Generate litestream.yml from flyer config
+	var genOutput string
+	var genDatabases []string
+	generateCmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Generate litestream.yml configuration dynamically",
+		Long: `Generate a litestream.yml configuration file from flyer.conf settings.
+
+Applies Phase 5 learnings:
+  - L-14: Litestream config is static YAML — generate before starting daemon
+  - L-15: Uses ${VAR} env references (not resolved values) for credential safety
+  - L-16: Supports multiple databases for batch config generation
+
+Examples:
+  flyer stream generate                                # Generate from flyer.conf
+  flyer stream generate --output /tmp/litestream.yml   # Custom output path
+  flyer stream generate --databases /app/data/packages.db,/app/data/analytics.db`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Build output path
+			outputPath := genOutput
+			if outputPath == "" {
+				outputPath = cfg.Litestream.ConfigPath
+			}
+
+			// Build database entries
+			var databases []litestream.DatabaseEntry
+			if len(genDatabases) > 0 {
+				// Explicit databases from flag
+				for _, dbPath := range genDatabases {
+					databases = append(databases, litestream.DatabaseEntry{
+						Path: dbPath,
+					})
+				}
+			} else {
+				// Default: packages.db from config
+				databases = []litestream.DatabaseEntry{
+					{
+						Path:   cfg.Database.Path,
+						S3Path: cfg.Litestream.S3Path,
+					},
+				}
+			}
+
+			// Build generation config from flyer.conf
+			genCfg := &litestream.GenerateConfig{
+				Endpoint:               cfg.S3.Endpoint,
+				Bucket:                 cfg.S3.Bucket,
+				Region:                 cfg.S3.Region,
+				SyncInterval:           cfg.Litestream.SyncInterval,
+				SnapshotInterval:       cfg.Litestream.SnapshotInterval,
+				Retention:              cfg.Litestream.Retention,
+				RetentionCheckInterval: cfg.Litestream.RetentionCheckInterval,
+				ValidationInterval:     cfg.Litestream.ValidationInterval,
+				Databases:              databases,
+			}
+
+			// Generate and write
+			if err := litestream.GenerateToFile(genCfg, outputPath); err != nil {
+				return fmt.Errorf("generate litestream config: %w", err)
+			}
+
+			fmt.Printf("Generated litestream.yml:\n")
+			fmt.Printf("  Output: %s\n", outputPath)
+			fmt.Printf("  Databases: %d\n", len(databases))
+			for _, db := range databases {
+				fmt.Printf("    - %s → s3://%s/%s\n", db.Path, cfg.S3.Bucket, db.S3Path)
+			}
+			fmt.Printf("  Sync: %s  Snapshot: %s  Retention: %s\n",
+				genCfg.SyncInterval, genCfg.SnapshotInterval, genCfg.Retention)
+
+			return nil
+		},
+	}
+	generateCmd.Flags().StringVar(&genOutput, "output", "", "Output path (default from flyer.conf litestream.config_path)")
+	generateCmd.Flags().StringSliceVar(&genDatabases, "databases", nil, "Database paths to replicate (comma-separated, default: packages.db)")
+
+	cmd.AddCommand(restoreCmd, statusCmd, replicateCmd, generateCmd)
 	return cmd
 }
 
