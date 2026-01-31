@@ -26,13 +26,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 
 	"github.com/fiberfx/flyer/branded"
 	"github.com/fiberfx/flyer/config"
 	"github.com/fiberfx/flyer/db"
+	"github.com/fiberfx/flyer/internal/pgdb"
 	"github.com/fiberfx/flyer/litestream"
 	"github.com/fiberfx/flyer/s3"
 )
@@ -93,6 +96,7 @@ func main() {
 	rootCmd.AddCommand(streamCmd())
 	rootCmd.AddCommand(syncCmd())
 	rootCmd.AddCommand(configCmd())
+	rootCmd.AddCommand(pgCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -147,6 +151,18 @@ func configCmd() *cobra.Command {
 			fmt.Printf("    component %s;\n", cfg.Sync.Component)
 			fmt.Printf("    timeout   %d;\n", cfg.Sync.Timeout)
 			fmt.Println("}")
+			fmt.Println()
+			fmt.Println("postgres {")
+			fmt.Printf("    host       %s;\n", cfg.Postgres.Host)
+			fmt.Printf("    port       %d;\n", cfg.Postgres.Port)
+			fmt.Printf("    database   %s;\n", cfg.Postgres.Database)
+			fmt.Printf("    user       %s;\n", cfg.Postgres.User)
+			fmt.Printf("    password   ****;\n") // Don't print password
+			fmt.Printf("    export_dir %s;\n", cfg.Postgres.ExportDir)
+			if cfg.Postgres.SQLDir != "" {
+				fmt.Printf("    sql_dir    %s;\n", cfg.Postgres.SQLDir)
+			}
+			fmt.Println("}")
 			return nil
 		},
 	}
@@ -197,6 +213,15 @@ sync {
     component backend;
     timeout   60;
 }
+
+postgres {
+    host       localhost;
+    port       25432;
+    database   codemoji_game;
+    user       fireheadz_studio;
+    password   env:PG_PASS;
+    export_dir /tmp/codemoji-migration;
+}
 `
 			if err := os.WriteFile(defaultPath, []byte(defaultContent), 0644); err != nil {
 				return fmt.Errorf("write default config: %w", err)
@@ -214,6 +239,14 @@ sync {
 
 # s3 {
 #     bucket my-bucket;
+# }
+
+# postgres {
+#     host localhost;
+#     port 5432;
+#     database mydb;
+#     user myuser;
+#     password env:MY_PG_PASS;
 # }
 `
 			if err := os.WriteFile(confPath, []byte(confContent), 0644); err != nil {
@@ -1178,4 +1211,412 @@ func updateSymlink(packagesDir, tag string) error {
 	}
 
 	return nil
+}
+
+// =============================================================================
+// PG COMMANDS - PostgreSQL operations for data migration
+// =============================================================================
+
+var (
+	pgEnvFile string
+	pgVerbose bool
+)
+
+func pgCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "pg",
+		Short: "PostgreSQL operations for data migration",
+		Long: `PostgreSQL commands for Codemoji data migration:
+  - functions: Check and create branded ID functions
+  - clear: Truncate migration tables
+  - data: Export/import data (fetch, upload, dry-run)`,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// NOTE: Run root's config loading first (cfg is set by rootCmd.PersistentPreRunE)
+			// This is necessary because child PersistentPreRunE overrides parent's in Cobra
+			if cfg == nil {
+				var err error
+				if configDir != "" {
+					cfg, err = config.LoadFromDir(configDir)
+				} else {
+					for _, dir := range []string{"/app", "/etc/flyer", "."} {
+						cfg, err = config.LoadFromDir(dir)
+						if err == nil {
+							break
+						}
+					}
+					if cfg == nil {
+						cfg = config.Default()
+					}
+				}
+				if err != nil && cfg == nil {
+					return fmt.Errorf("load config: %w", err)
+				}
+			}
+
+			// Load .env file if specified (for additional env vars)
+			if pgEnvFile != "" {
+				if err := godotenv.Load(pgEnvFile); err != nil {
+					return fmt.Errorf("load env file: %w", err)
+				}
+			} else {
+				// Try default locations
+				for _, f := range []string{".env.staging", ".env"} {
+					if _, err := os.Stat(f); err == nil {
+						godotenv.Load(f)
+						break
+					}
+				}
+			}
+			return nil
+		},
+	}
+
+	cmd.PersistentFlags().StringVar(&pgEnvFile, "env", "", "Load environment from file (default: .env.staging)")
+	cmd.PersistentFlags().BoolVar(&pgVerbose, "verbose", false, "Verbose output")
+
+	cmd.AddCommand(pgFunctionsCmd())
+	cmd.AddCommand(pgClearCmd())
+	cmd.AddCommand(pgDataCmd())
+
+	return cmd
+}
+
+// getPgConfig returns PostgreSQL config, preferring flyer.conf over env-only
+func getPgConfig() *pgdb.Config {
+	if cfg != nil && cfg.Postgres.Host != "" {
+		// Use flyer.conf config (env vars already resolved)
+		return pgdb.LoadFromConfig(
+			cfg.Postgres.Host,
+			cfg.Postgres.Port,
+			cfg.Postgres.Database,
+			cfg.Postgres.User,
+			cfg.Postgres.Password,
+			cfg.Postgres.ExportDir,
+			cfg.Postgres.SQLDir,
+		)
+	}
+	// Fall back to env-only (for backward compatibility)
+	return pgdb.LoadFromEnv()
+}
+
+// pgFunctionsCmd handles branded ID function operations
+func pgFunctionsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "functions",
+		Short: "Check and create branded ID functions",
+	}
+
+	// functions check
+	checkCmd := &cobra.Command{
+		Use:   "check",
+		Short: "Verify branded ID functions exist and work",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pgCfg := getPgConfig()
+			fmt.Printf("Checking branded ID functions on %s...\n", pgCfg.String())
+
+			pool, err := pgdb.QuickConnect(pgCfg)
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer pool.Close()
+
+			ctx := context.Background()
+			results, err := pgdb.CheckFunctions(ctx, pool)
+			if err != nil {
+				return fmt.Errorf("check functions: %w", err)
+			}
+
+			allOK := true
+			for _, r := range results {
+				if r.Exists {
+					fmt.Printf("  OK  %s\n", r.Name)
+				} else {
+					fmt.Printf("  FAIL  %s: %v\n", r.Name, r.Error)
+					allOK = false
+				}
+			}
+
+			if allOK {
+				fmt.Printf("All %d functions verified.\n", len(results))
+			} else {
+				fmt.Println("\nSome functions are missing. Run: flyer pg functions create")
+				return fmt.Errorf("function check failed")
+			}
+
+			return nil
+		},
+	}
+
+	// functions create
+	var sqlDir string
+	createCmd := &cobra.Command{
+		Use:   "create",
+		Short: "Install branded ID functions from phoenix/sql/functions.sql",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pgCfg := getPgConfig()
+			if sqlDir == "" {
+				sqlDir = pgCfg.SQLDir
+			}
+			if sqlDir == "" {
+				sqlDir = pgdb.FindSQLDir()
+			}
+
+			fmt.Printf("Installing branded ID functions from %s/functions.sql...\n", sqlDir)
+
+			pool, err := pgdb.QuickConnect(pgCfg)
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer pool.Close()
+
+			ctx := context.Background()
+			if err := pgdb.CreateFunctions(ctx, pool, sqlDir); err != nil {
+				return err
+			}
+
+			fmt.Println("  OK  4 functions created (encode_base62, decode_base62, extract_snowflake_ts, format_branded_id)")
+			fmt.Println("  OK  update_updated_at trigger function created")
+
+			return nil
+		},
+	}
+	createCmd.Flags().StringVar(&sqlDir, "sql-dir", "", "Path to phoenix/sql directory")
+
+	cmd.AddCommand(checkCmd, createCmd)
+	return cmd
+}
+
+// pgClearCmd handles table truncation
+func pgClearCmd() *cobra.Command {
+	var confirm bool
+
+	cmd := &cobra.Command{
+		Use:   "clear",
+		Short: "Truncate migration tables (players, emoji_sets, etc.)",
+		Long: `Truncate 5 migration tables in FK-safe order:
+  1. game_rooms
+  2. shop_packages
+  3. player_resources
+  4. players
+  5. emoji_sets
+
+Requires --confirm flag for safety.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pgCfg := getPgConfig()
+
+			if !confirm {
+				fmt.Printf("Would truncate the following tables on %s:\n", pgCfg.String())
+				for i, table := range pgdb.MigrationTables {
+					fmt.Printf("  %d. %s\n", i+1, table)
+				}
+				fmt.Println("\nTo execute, add --confirm flag")
+				return nil
+			}
+
+			fmt.Printf("Clearing migration tables on %s...\n", pgCfg.String())
+
+			pool, err := pgdb.QuickConnect(pgCfg)
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer pool.Close()
+
+			ctx := context.Background()
+
+			if err := pgdb.TruncateTables(ctx, pool); err != nil {
+				return err
+			}
+
+			for _, table := range pgdb.MigrationTables {
+				fmt.Printf("  TRUNCATED  %s\n", table)
+			}
+
+			// Verify with row counts
+			fmt.Println("\nAll 5 tables cleared. Verification:")
+			counts, err := pgdb.GetRowCounts(ctx, pool)
+			if err != nil {
+				return fmt.Errorf("get counts: %w", err)
+			}
+
+			for _, c := range counts {
+				fmt.Printf("  %-20s %d rows\n", c.Table+":", c.Count)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&confirm, "confirm", false, "Confirm table truncation")
+
+	return cmd
+}
+
+// pgDataCmd handles data export/import operations
+func pgDataCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "data",
+		Short: "Data operations (fetch, upload, dry-run)",
+	}
+
+	// data fetch
+	var outputDir string
+	var tables string
+	fetchCmd := &cobra.Command{
+		Use:   "fetch",
+		Short: "Export tables to CSV files",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pgCfg := getPgConfig()
+			if outputDir == "" {
+				outputDir = pgCfg.ExportDir
+			}
+
+			fmt.Printf("Exporting from %s to %s/...\n", pgCfg.String(), outputDir)
+
+			pool, err := pgdb.QuickConnect(pgCfg)
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer pool.Close()
+
+			ctx := context.Background()
+
+			// Parse tables filter
+			var tableList []string
+			if tables != "" {
+				tableList = strings.Split(tables, ",")
+			}
+
+			results, err := pgdb.ExportAllTables(ctx, pool, outputDir, tableList)
+			if err != nil {
+				return err
+			}
+
+			var totalRows int64
+			var successCount int
+			for _, r := range results {
+				if r.Error != nil {
+					fmt.Printf("  FAIL  %s: %v\n", r.Table, r.Error)
+				} else {
+					fmt.Printf("  OK  %-25s (%d rows, %dKB)\n",
+						r.Table+".csv", r.Rows, r.Size/1024)
+					totalRows += r.Rows
+					successCount++
+				}
+			}
+
+			fmt.Printf("\nExport complete: %d files, %d total rows\n", successCount, totalRows)
+			return nil
+		},
+	}
+	fetchCmd.Flags().StringVar(&outputDir, "output-dir", "", "Output directory for CSV files")
+	fetchCmd.Flags().StringVar(&tables, "tables", "", "Comma-separated list of tables to export")
+
+	// data upload
+	var skipClean bool
+	var confirmUpload bool
+	var sqlDir string
+	uploadCmd := &cobra.Command{
+		Use:   "upload",
+		Short: "Execute SQL scripts against target database",
+		Long: `Execute SQL scripts from phoenix/sql/initial_data/ in order:
+  1. 00-preflight.sql
+  2. 01-clean.sql (skip with --skip-clean)
+  3. 02-import-emoji-sets.sql
+  4. 03-import-players.sql
+  5. 04-transform-player-resources.sql
+  6. 05-import-shop-packages.sql
+  7. 06-import-game-rooms.sql
+  8. 07-verify.sql
+
+Requires --confirm flag for safety.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pgCfg := getPgConfig()
+			if sqlDir == "" {
+				sqlDir = pgCfg.SQLDir
+			}
+
+			if !confirmUpload {
+				fmt.Printf("Would execute the following scripts on %s:\n", pgCfg.String())
+				for _, script := range pgdb.ImportScripts {
+					if skipClean && script == "01-clean.sql" {
+						fmt.Printf("  [skip] %s\n", script)
+					} else {
+						fmt.Printf("  [run]  %s\n", script)
+					}
+				}
+				fmt.Println("\nTo execute, add --confirm flag")
+				return nil
+			}
+
+			fmt.Printf("Executing against %s...\n\n", pgCfg.String())
+
+			opts := pgdb.ImportOptions{
+				SkipClean: skipClean,
+				DryRun:    false,
+				SQLDir:    sqlDir,
+			}
+
+			results, err := pgdb.ExecuteAllScripts(pgCfg, opts)
+			for _, r := range results {
+				if r.Success {
+					fmt.Printf("  [ok]  %s\n", r.Script)
+				} else {
+					fmt.Printf("  [FAIL]  %s: %v\n", r.Script, r.Error)
+				}
+			}
+
+			if err != nil {
+				return fmt.Errorf("upload failed: %w", err)
+			}
+
+			fmt.Println("\nUpload completed successfully")
+			return nil
+		},
+	}
+	uploadCmd.Flags().BoolVar(&skipClean, "skip-clean", false, "Skip 01-clean.sql script")
+	uploadCmd.Flags().BoolVar(&confirmUpload, "confirm", false, "Confirm script execution")
+	uploadCmd.Flags().StringVar(&sqlDir, "sql-dir", "", "Path to initial_data directory")
+
+	// data dry-run
+	dryRunCmd := &cobra.Command{
+		Use:   "dry-run",
+		Short: "Execute SQL scripts wrapped in BEGIN/ROLLBACK",
+		Long:  "Same as upload, but wraps all scripts in a transaction that is rolled back.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pgCfg := getPgConfig()
+			if sqlDir == "" {
+				sqlDir = pgCfg.SQLDir
+			}
+
+			fmt.Println("DRY RUN — All changes will be rolled back")
+			fmt.Printf("Executing against %s...\n\n", pgCfg.String())
+
+			opts := pgdb.ImportOptions{
+				SkipClean: skipClean,
+				DryRun:    true,
+				SQLDir:    sqlDir,
+			}
+
+			results, err := pgdb.ExecuteAllScripts(pgCfg, opts)
+			for _, r := range results {
+				if r.Success {
+					fmt.Printf("  [ok]  %s\n", r.Script)
+				} else {
+					fmt.Printf("  [FAIL]  %s: %v\n", r.Script, r.Error)
+				}
+			}
+
+			if err != nil {
+				return fmt.Errorf("dry-run failed: %w", err)
+			}
+
+			fmt.Println("\nROLLBACK — No changes committed (dry run)")
+			return nil
+		},
+	}
+	dryRunCmd.Flags().BoolVar(&skipClean, "skip-clean", false, "Skip 01-clean.sql script")
+	dryRunCmd.Flags().StringVar(&sqlDir, "sql-dir", "", "Path to initial_data directory")
+
+	cmd.AddCommand(fetchCmd, uploadCmd, dryRunCmd)
+	return cmd
 }

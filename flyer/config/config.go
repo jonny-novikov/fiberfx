@@ -14,7 +14,7 @@ import (
 
 // Config holds all flyer configuration
 type Config struct {
-	// Database settings
+	// Database settings (SQLite for FWHD)
 	Database DatabaseConfig `json:"database"`
 
 	// S3/Tigris settings
@@ -28,6 +28,9 @@ type Config struct {
 
 	// Sync settings
 	Sync SyncConfig `json:"sync"`
+
+	// PostgreSQL settings (for pg commands)
+	Postgres PostgresConfig `json:"postgres"`
 }
 
 type DatabaseConfig struct {
@@ -64,6 +67,17 @@ type SyncConfig struct {
 	Timeout   int    `json:"timeout"`
 }
 
+// PostgresConfig holds PostgreSQL connection settings for pg commands
+type PostgresConfig struct {
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	Database  string `json:"database"`
+	User      string `json:"user"`
+	Password  string `json:"password"`   // Can use env: prefix
+	ExportDir string `json:"export_dir"` // CSV export directory
+	SQLDir    string `json:"sql_dir"`    // phoenix/sql directory
+}
+
 // Default returns configuration with default values
 func Default() *Config {
 	return &Config{
@@ -94,6 +108,15 @@ func Default() *Config {
 		Sync: SyncConfig{
 			Component: "backend",
 			Timeout:   60,
+		},
+		Postgres: PostgresConfig{
+			Host:      "localhost",
+			Port:      25432,
+			Database:  "codemoji_game",
+			User:      "fireheadz_studio",
+			Password:  "env:PG_PASS",
+			ExportDir: "/tmp/codemoji-migration",
+			SQLDir:    "",
 		},
 	}
 }
@@ -259,6 +282,26 @@ func (c *Config) parseDirective(block, line string) error {
 			}
 		}
 
+	case "postgres":
+		switch key {
+		case "host":
+			c.Postgres.Host = value
+		case "port":
+			if v, err := strconv.Atoi(value); err == nil {
+				c.Postgres.Port = v
+			}
+		case "database":
+			c.Postgres.Database = value
+		case "user":
+			c.Postgres.User = value
+		case "password":
+			c.Postgres.Password = value
+		case "export_dir":
+			c.Postgres.ExportDir = value
+		case "sql_dir":
+			c.Postgres.SQLDir = value
+		}
+
 	default:
 		// Top-level directives (shortcuts)
 		switch key {
@@ -280,6 +323,13 @@ func (c *Config) resolveEnvVars() {
 	c.Database.Path = resolveEnv(c.Database.Path)
 	c.Packages.Dir = resolveEnv(c.Packages.Dir)
 	c.Litestream.ConfigPath = resolveEnv(c.Litestream.ConfigPath)
+	// PostgreSQL config
+	c.Postgres.Host = resolveEnv(c.Postgres.Host)
+	c.Postgres.Database = resolveEnv(c.Postgres.Database)
+	c.Postgres.User = resolveEnv(c.Postgres.User)
+	c.Postgres.Password = resolveEnv(c.Postgres.Password)
+	c.Postgres.ExportDir = resolveEnv(c.Postgres.ExportDir)
+	c.Postgres.SQLDir = resolveEnv(c.Postgres.SQLDir)
 }
 
 func resolveEnv(value string) string {
