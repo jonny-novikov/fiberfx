@@ -20,6 +20,7 @@ const (
 	NamespaceLen = 3  // Namespace prefix length
 	EncodedLen   = 11 // Base62 encoded snowflake length
 	IDLen        = 14 // Total branded ID length
+	BrandedLen   = 14 // Alias for IDLen (API compatibility)
 
 	// Snowflake epoch: 2024-01-01 00:00:00 UTC
 	Epoch int64 = 1704067200000
@@ -90,6 +91,18 @@ func MustParse(s string) ID {
 		panic(err)
 	}
 	return id
+}
+
+// ParseWithNamespace parses a branded ID and validates it matches the expected namespace.
+func ParseWithNamespace(s string, expected Namespace) (ID, error) {
+	id, err := Parse(s)
+	if err != nil {
+		return ID{}, err
+	}
+	if id.namespace != expected {
+		return ID{}, fmt.Errorf("expected namespace %s, got %s", expected, id.namespace)
+	}
+	return id, nil
 }
 
 // String returns the full branded ID string.

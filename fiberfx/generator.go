@@ -62,6 +62,11 @@ func Generate(ns Namespace) ID {
 	return defaultGen.New(ns)
 }
 
+// DefaultGenerator returns the global default generator.
+func DefaultGenerator() *Generator {
+	return defaultGen
+}
+
 // SetDefaultWorkerID configures the default generator's worker ID.
 // Should be called at startup before generating IDs.
 func SetDefaultWorkerID(workerID int64) {
