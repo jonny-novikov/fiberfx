@@ -104,4 +104,25 @@ var (
 	NS_EVENT   = MustRegister("EVT", "Event entity")
 	NS_MESSAGE = MustRegister("MSG", "Message entity")
 	NS_FILE    = MustRegister("FIL", "File entity")
+
+	// Planning & Roadmap (MCP domain)
+	NS_EPIC      = MustRegister("EPC", "Epic entity")
+	NS_FEATURE   = MustRegister("FTR", "Feature entity")
+	NS_USERSTORY = MustRegister("USS", "User story entity")
+	NS_PLAN      = MustRegister("PLN", "Plan entity")
+
+	// Knowledge Base
+	NS_KB = MustRegister("KBI", "Knowledge Base Index")
 )
+
+// IsValidNamespace checks if a namespace is registered.
+// Alias for IsRegistered for API compatibility.
+func IsValidNamespace(ns Namespace) bool {
+	return IsRegistered(ns)
+}
+
+// AllNamespaces returns all registered namespaces.
+// Alias for Registered for API compatibility.
+func AllNamespaces() []Namespace {
+	return Registered()
+}
