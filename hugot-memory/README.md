@@ -4,7 +4,7 @@ Memory graph + stale-reference toolchain for the fireheadz `memory/` corpus.
 
 Walks a directory of markdown notes, parses YAML frontmatter, builds a typed
 cross-reference graph (7 edge kinds), and detects stale references via 7
-context-aware rules with sentence-level deletion-context whitelisting.
+context-aware rules with paragraph-level deletion-context whitelisting.
 
 Phase 1 MVP. Phase 2 (semantic-similarity enrichment via apps/hugot-server)
 is deferred.
@@ -76,7 +76,7 @@ internal/walker/       # filepath.WalkDir + .md filter
 internal/frontmatter/  # YAML frontmatter parser
 internal/linkx/        # 7-edge regex extractor + codeblock masker
 internal/graph/        # node/edge model + JSON/dot serializers
-internal/stale/        # 7 rules + sentence-level whitelist
+internal/stale/        # 7 rules + paragraph-level whitelist
 internal/config/       # YAML loader + baked defaults
 internal/render/       # output formatters (pretty / ndjson)
 internal/hugot/        # Phase 2 placeholder (HTTP client for hugot-server)
