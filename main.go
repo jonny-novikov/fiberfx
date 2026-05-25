@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	version  = "0.1.0"
-	distrDir = "/app/distr"
+	version   = "0.1.0"
+	distrDir  = "/app/distr"
+	indexHTML = "/app/index.html"
 )
 
 func main() {
@@ -28,6 +29,9 @@ func main() {
 	// Allow override for local dev
 	if dir := os.Getenv("DISTR_DIR"); dir != "" {
 		distrDir = dir
+	}
+	if path := os.Getenv("INDEX_HTML"); path != "" {
+		indexHTML = path
 	}
 
 	app := fiber.New(fiber.Config{
@@ -46,8 +50,13 @@ func main() {
 		return c.JSON(fiber.Map{"status": "ok", "version": version})
 	})
 
-	// List available distributions
+	// Serve index.html at root
 	app.Get("/", func(c *fiber.Ctx) error {
+		return c.SendFile(indexHTML)
+	})
+
+	// List available distributions
+	app.Get("/files", func(c *fiber.Ctx) error {
 		files := make([]fiber.Map, 0)
 
 		// Walk distr directory
@@ -109,6 +118,6 @@ func main() {
 		return c.SendFile(fullPath)
 	})
 
-	log.Printf("Starting jonnify v%s on port %s, distr: %s", version, port, distrDir)
+	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s", version, port, distrDir, indexHTML)
 	log.Fatal(app.Listen(":" + port))
 }

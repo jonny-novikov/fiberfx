@@ -70,6 +70,9 @@ WORKDIR /app
 # Copy jonnify server binary
 COPY --from=builder /build/jonnify /app/jonnify
 
+# Copy static index.html served at "/"
+COPY index.html /app/index.html
+
 # Create distribution directory structure
 RUN mkdir -p /app/distr/litestream /app/distr/flyer
 
