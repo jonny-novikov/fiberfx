@@ -73,6 +73,9 @@ COPY --from=builder /build/jonnify /app/jonnify
 # Copy static index.html served at "/"
 COPY index.html /app/index.html
 
+# Copy EGE course materials served under /ege/*
+COPY ege/ /app/ege/
+
 # Create distribution directory structure
 RUN mkdir -p /app/distr/litestream /app/distr/flyer
 

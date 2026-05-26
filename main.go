@@ -18,6 +18,7 @@ var (
 	version   = "0.1.0"
 	distrDir  = "/app/distr"
 	indexHTML = "/app/index.html"
+	egeDir    = "/app/ege"
 )
 
 func main() {
@@ -32,6 +33,9 @@ func main() {
 	}
 	if path := os.Getenv("INDEX_HTML"); path != "" {
 		indexHTML = path
+	}
+	if dir := os.Getenv("EGE_DIR"); dir != "" {
+		egeDir = dir
 	}
 
 	app := fiber.New(fiber.Config{
@@ -86,6 +90,33 @@ func main() {
 			"files":   files,
 			"count":   len(files),
 		})
+	})
+
+	// Serve EGE materials at clean route URLs (no .html extension).
+	//   /ege               → ege/index.html
+	//   /ege/stereometria  → ege/index.html (canonical course alias)
+	//   /ege/<name>        → ege/<name>.html
+	serveEge := func(c *fiber.Ctx, name string) error {
+		if name == "" || name == "stereometria" {
+			name = "index"
+		}
+		fullPath := filepath.Join(egeDir, name+".html")
+		cleanPath := filepath.Clean(fullPath)
+		if len(cleanPath) < len(egeDir) || cleanPath[:len(egeDir)] != egeDir {
+			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+		}
+		if _, err := os.Stat(cleanPath); err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "ege page not found: " + name})
+		}
+		// SendFile auto-sets Last-Modified + handles If-Modified-Since (304).
+		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
+		return c.SendFile(cleanPath)
+	}
+	app.Get("/ege", func(c *fiber.Ctx) error {
+		return serveEge(c, "")
+	})
+	app.Get("/ege/:name", func(c *fiber.Ctx) error {
+		return serveEge(c, c.Params("name"))
 	})
 
 	// Serve distribution files with proper headers
