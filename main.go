@@ -98,10 +98,9 @@ func main() {
 
 	// Serve EGE materials at clean route URLs (no .html extension).
 	//   /ege               → ege/index.html
-	//   /ege/stereometria  → ege/index.html (canonical course alias)
-	//   /ege/<name>        → ege/<name>.html
+	//   /ege/<name>        → ege/<name>.html  (e.g. /ege/stereometria → ege/stereometria.html)
 	serveEge := func(c *fiber.Ctx, name string) error {
-		if name == "" || name == "stereometria" {
+		if name == "" {
 			name = "index"
 		}
 		fullPath := filepath.Join(egeDir, name+".html")
