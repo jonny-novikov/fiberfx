@@ -76,6 +76,9 @@ COPY index.html /app/index.html
 # Copy EGE course materials served under /ege/*
 COPY ege/ /app/ege/
 
+# Copy EDU course materials served under /edu/*
+COPY edu/ /app/edu/
+
 # Create distribution directory structure
 RUN mkdir -p /app/distr/litestream /app/distr/flyer
 
