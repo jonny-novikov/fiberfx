@@ -19,6 +19,7 @@ DISTR_DIR  ?= $(REPO_DIR)/data
 INDEX_HTML ?= $(REPO_DIR)/index.html
 EGE_DIR    ?= $(REPO_DIR)/ege
 EDU_DIR    ?= $(REPO_DIR)/edu
+SCHOOL_DIR ?= $(REPO_DIR)/school
 
 export GOWORK := off
 
