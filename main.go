@@ -111,6 +111,10 @@ func main() {
 
 	// Serve index.html at root
 	app.Get("/", func(c *fiber.Ctx) error {
+		// Match the explicit caching policy of every other content route so
+		// browsers revalidate after 5 min instead of falling back to heuristic
+		// (Last-Modified-based) caching, which can serve a stale landing page.
+		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
 		return c.SendFile(indexHTML)
 	})
 

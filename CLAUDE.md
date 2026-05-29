@@ -33,7 +33,7 @@ Steps 5–6 return their errors via `fiber.NewError`, which the **central `Error
 | `/school`, `/school/:name` | `school/<name>.html` | `school/index.html` |
 | `/future`, `/future/:name` | `future/<name>.html` | `future/index.html` |
 | `/` | `index.html` — lightweight, mobile-friendly landing **hub**: hero + a grid of series cards (school, school/geometria, future, edu, ege, +planned `/elixir`) linking into each series. Pure HTML/CSS, **no WebGL**; links to `/map` in four places. | — |
-| `/map`, `/map/:name` | `map/<name>.html` — the **three.js WebGL orbital 3D node-graph** of all series/topics (the heavy interactive map, moved here from `/`); loads vendored three.js from `/vendor/three/`. `MAP_DIR` env-overridable, default `/app/map`. | `map/index.html` |
+| `/map`, `/map/:name` | `map/<name>.html` — the **three.js WebGL orbital 3D node-graph** of all **five** series — school, наглядная геометрия (`/school/geometria`), future, edu, ege — and their topics (the heavy interactive map, moved here from `/`); loads vendored three.js from `/vendor/three/`. `MAP_DIR` env-overridable, default `/app/map`. The node dataset is inlined in `map/index.html` and mirrored by `apps/e2e/fixtures/nodes.json` (guarded by the `dataset-sync` e2e test). | `map/index.html` |
 | `/game` | `game.html` — standalone emoji memory game (`GAME_HTML` env-overridable); not linked from the landing | — |
 | `/vendor/*` | self-hosted front-end modules (three.js) from the `assets/` dir (`VENDOR_DIR` env-overridable, default `/app/assets`); path-traversal-guarded; `.js` served as `text/javascript` | — |
 | `/files`, `/health`, `/distr/*` | JSON distr listing, health JSON, tarball downloads | — |
@@ -66,7 +66,7 @@ Interactivity patterns, with the canonical file to copy from:
 - **Slider-driven financial calculators + bespoke SVG charts** (EDU finances): `<input type=number>` paired with `<input type=range>` kept in sync, recomputing real formulas (compound interest, annuity, Rule-of-72) with `Intl.NumberFormat('ru-RU')`. Charts are generated as SVG strings, not a library. See `edu/finances-m2.html`, `edu/finances-m3.html`.
 - **Self-grading quiz** with `localStorage` persistence: a `questions` array of inline JS objects drives render/grade/restart. Only example: `edu/finances-test.html`.
 
-Content map: `edu/` = «Финансовая математика» (6-module finance course, `finances-m1..m6` + sub-sections + test); `ege/` = ЕГЭ profile-math prep (stereometry tasks 13–14, financial task 16); `school/` = «Сто лет школьной математики» (essay series on Russian math education); `future/` = the actively-developed AI-education series (LLMs, transformers, formal logic, functional programming — all recent commits are `future: ...`). Its pages internally link to `/future/<name>` clean routes.
+Content map: `edu/` = «Финансовая математика» (6-module finance course, `finances-m1..m6` + sub-sections + test); `ege/` = ЕГЭ profile-math prep (stereometry tasks 13–14, financial task 16); `school/` = «Сто лет школьной математики» (essay series on Russian math education) **plus the «Курс наглядной геометрии» course** (`geometria` hub + ~10 M-numbered chapters + profession deep-dives, all served at `school/<slug>`), which the `/map` graph surfaces as its own 5th series; `future/` = the actively-developed AI-education series (LLMs, transformers, formal logic, functional programming — all recent commits are `future: ...`). Its pages internally link to `/future/<name>` clean routes.
 
 ## Build / run locally
 

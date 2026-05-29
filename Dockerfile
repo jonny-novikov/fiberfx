@@ -70,8 +70,9 @@ WORKDIR /app
 # Copy jonnify server binary
 COPY --from=builder /build/jonnify /app/jonnify
 
-# Copy static index.html served at "/"
-COPY map/index.html /app/index.html
+# Copy the lightweight landing-hub index.html served at "/"
+# (the heavy three.js 3D map lives at /map via "COPY map/" below)
+COPY index.html /app/index.html
 
 # Copy standalone emoji memory game served at "/game"
 COPY game.html /app/game.html
