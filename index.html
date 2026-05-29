@@ -4,10 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Карта знаний · jonnify · Интерактивный граф курсов</title>
-<meta name="description" content="Интерактивная карта-граф четырёх образовательных серий: школьная математика в центре, образование будущего вокруг, финансовая математика ветвью, ЕГЭ — основанием роста. Растущее дерево знаний с навигацией по темам.">
+<meta name="description" content="Интерактивная карта четырёх образовательных серий: школьная математика, образование будущего, финансовая математика и ЕГЭ. Выбор серии открывает её темы как трёхмерное созвездие с навигацией по разделам.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400;1,700&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
+<!-- Warm the three.js modules so the first series entry mounts without a cold
+     CDN round-trip. These are hints only; the lazy import remains the source of
+     truth and degrades to hub navigation if the CDN is unreachable. -->
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/controls/OrbitControls.js" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/renderers/CSS2DRenderer.js" crossorigin>
 <style>
 :root{
   --ink:#0a0e1a; --ink-2:#0e1322; --surface:#131826; --surface-2:#1a2138; --surface-3:#232c47;
@@ -81,52 +89,106 @@ body::after{
 .nav-links a[data-series="edu"]:hover{border-color:var(--sage)}
 .nav-links a[data-series="ege"]:hover{border-color:var(--burgundy-2)}
 
-/* ---- Map stage ---- */
+/* ---- Stage: holds the two exclusive views ---- */
 #stage{position:fixed;inset:0;z-index:5}
-#map{width:100%;height:100vh;display:block;touch-action:none;cursor:grab}
-#map.is-panning{cursor:grabbing}
+#root-view,#scene-view{position:absolute;inset:0}
+#root-view[hidden],#scene-view[hidden]{display:none}
 
-/* ---- Edges ---- */
-.edge{fill:none;stroke-width:2;opacity:.42;pathLength:1;stroke-dasharray:1;stroke-dashoffset:1;animation:draw .55s cubic-bezier(.22,.61,.36,1) forwards}
-@keyframes draw{to{stroke-dashoffset:0}}
-.growth-edge{fill:none;stroke:var(--cream-soft);stroke-width:1.5;stroke-dasharray:5 6;opacity:0;transition:opacity .35s}
-#growth.is-revealed .growth-edge{opacity:.34}
+/* ---- ROOT view: hero + module grid ---- */
+#root-view{overflow-y:auto;display:flex;flex-direction:column;justify-content:center}
+.root-inner{width:100%;max-width:1040px;margin:0 auto;padding:104px 28px 96px}
+.root-eyebrow{font-family:var(--sans);font-size:12px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
+.root-title{font-family:var(--serif);font-size:clamp(30px,5vw,46px);font-weight:600;color:var(--cream);line-height:1.08;margin-top:10px}
+.root-lede{font-family:var(--body);font-size:16px;color:var(--cream-soft);max-width:62ch;margin-top:14px}
 
-/* ---- Nodes ---- */
-.node{cursor:pointer;-webkit-tap-highlight-color:transparent}
-.node .art{transform-box:fill-box;transform-origin:center}
-.node .dot{fill:var(--c);fill-opacity:.14;stroke:var(--c);stroke-width:2;transition:fill-opacity .2s}
-.node .halo{fill:var(--c);opacity:0;transition:opacity .2s}
-.node .lbl{
-  fill:var(--cream);font-family:var(--sans);font-weight:600;
-  text-anchor:middle;dominant-baseline:middle;pointer-events:none;
-  paint-order:stroke;stroke:rgba(10,14,26,.82);stroke-width:3.5px;stroke-linejoin:round;
+/* Module grid + cards (shared design component, recolored per series). */
+.modgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:28px}
+@media(max-width:980px){.modgrid{grid-template-columns:1fr 1fr}}
+@media(max-width:620px){.modgrid{grid-template-columns:1fr}}
+.modcard{position:relative;display:flex;flex-direction:column;gap:9px;padding:22px 24px;background:linear-gradient(180deg,var(--surface),var(--ink-2));border:1px solid var(--line);border-top:3px solid var(--line);border-radius:var(--rad-lg);text-decoration:none;transition:all .25s}
+.modcard:hover{border-top-color:var(--gold);transform:translateY(-3px);box-shadow:var(--shadow-mid)}
+.modcard .mnum{font-family:var(--mono);font-size:.72rem;color:var(--gold);letter-spacing:.08em}
+.modcard h4{margin:0;font-family:var(--serif);font-size:1.2rem;color:var(--cream);font-weight:600;line-height:1.2}
+.modcard p{margin:0;font-size:.92rem;color:var(--cream-soft);flex:1}
+.modcard .prof{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--blue-bright)}
+.modcard .go{font-family:var(--sans);font-size:.7rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin-top:2px}
+
+/* Per-series top-border accent + matching hover lift. */
+.modcard[data-series="school"]{border-top-color:var(--gold)}
+.modcard[data-series="future"]{border-top-color:var(--blue)}
+.modcard[data-series="edu"]{border-top-color:var(--sage)}
+.modcard[data-series="ege"]{border-top-color:var(--burgundy)}
+.modcard[data-series="school"]:hover{border-top-color:var(--gold-bright)}
+.modcard[data-series="future"]:hover{border-top-color:var(--blue-bright)}
+.modcard[data-series="edu"]:hover{border-top-color:var(--sage-bright)}
+.modcard[data-series="ege"]:hover{border-top-color:var(--burgundy-2)}
+.modcard[data-series="school"] .mnum,.modcard[data-series="school"] .go{color:var(--gold)}
+.modcard[data-series="future"] .mnum,.modcard[data-series="future"] .go{color:var(--blue-bright)}
+.modcard[data-series="edu"] .mnum,.modcard[data-series="edu"] .go{color:var(--sage-bright)}
+.modcard[data-series="ege"] .mnum,.modcard[data-series="ege"] .go{color:var(--burgundy-2)}
+.modcard:focus-visible{outline:none;border-top-color:var(--gold-bright);box-shadow:var(--shadow-mid),0 0 0 2px var(--gold-deep)}
+
+/* A thin shimmer travels the top accent to keep the grid alive. */
+.modcard::before{
+  content:"";position:absolute;top:-3px;left:0;right:0;height:3px;border-radius:var(--rad-lg) var(--rad-lg) 0 0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);
+  background-size:220% 100%;opacity:.5;pointer-events:none;
+  animation:shimmer 5.2s linear infinite;
 }
-.node--hub .lbl{font-size:17px;fill:var(--cream)}
-.node--chapter .lbl{font-size:14px}
-.node--subsection .lbl{font-size:12.5px;fill:var(--cream-soft)}
-.node--deepdive .lbl{font-size:12px;fill:var(--cream-soft)}
-.node--planned .lbl{font-size:13px;fill:var(--muted)}
-.node:hover .halo,.node:focus-visible .halo{opacity:.22}
-.node:focus-visible{outline:none}
-.node:focus-visible .dot{stroke-width:3.5;fill-opacity:.26}
-.node:hover .dot{fill-opacity:.24}
-.node .art{transition:transform .2s cubic-bezier(.22,.61,.36,1)}
-.node:hover .art,.node:focus-visible .art{transform:scale(1.06)}
-.node--planned{cursor:not-allowed}
-.node--planned .dot{stroke-dasharray:4 4;fill-opacity:.05;opacity:.6}
-.node--planned .art{transition:none}
-.node--planned:hover .art{transform:none}
-.roman{fill:var(--c);font-family:var(--mono);font-size:9px;font-weight:600;text-anchor:middle;dominant-baseline:middle;opacity:.9;pointer-events:none}
+.modcard[data-series="future"]::before{animation-delay:.4s}
+.modcard[data-series="edu"]::before{animation-delay:.8s}
+.modcard[data-series="ege"]::before{animation-delay:1.2s}
+@keyframes shimmer{0%{background-position:120% 0}100%{background-position:-120% 0}}
 
-/* entrance: new nodes sprout from their slot */
-.node.is-new .art{animation:sprout .45s cubic-bezier(.34,1.56,.64,1)}
-@keyframes sprout{from{opacity:0;transform:scale(.2)}to{opacity:1;transform:scale(1)}}
+/* Staggered entrance of the four cards. */
+.modcard{opacity:0;transform:translateY(14px)}
+body.js-ready .modcard{animation:cardin .5s cubic-bezier(.22,.61,.36,1) forwards}
+body.js-ready .modcard:nth-child(1){animation-delay:.05s}
+body.js-ready .modcard:nth-child(2){animation-delay:.14s}
+body.js-ready .modcard:nth-child(3){animation-delay:.23s}
+body.js-ready .modcard:nth-child(4){animation-delay:.32s}
+@keyframes cardin{to{opacity:1;transform:translateY(0)}}
 
-/* hub breathing pulse — animates an existing circle (no DOM churn) */
-.pulse{fill:none;stroke:var(--c);stroke-width:1.5;transform-box:fill-box;transform-origin:center;animation:breathe 3.6s ease-in-out infinite}
-@keyframes breathe{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.42);opacity:0}}
-.node[aria-expanded="true"] .pulse{display:none}
+/* Expand animation on the activated card before the scene fades in. */
+.modcard.is-expanding{animation:none;opacity:1;transform:translateY(-4px) scale(1.04);box-shadow:var(--shadow-high);z-index:2}
+
+/* ---- SCENE view: WebGL canvas + CSS2D label layer + back control ---- */
+#scene-view{background:radial-gradient(900px 700px at 50% 42%, rgba(20,27,46,.55), transparent 70%)}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#scene-view.is-grabbing #gl{cursor:grabbing}
+#labels{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+#labels>*{pointer-events:auto}
+.scene-fade{opacity:0;transition:opacity .4s ease}
+#scene-view.is-shown .scene-fade{opacity:1}
+
+/* CSS2D node labels rendered by three.js (kept crisp, selectable, clickable). */
+.node-label{
+  font-family:var(--sans);font-weight:600;font-size:13px;line-height:1.2;
+  color:var(--cream);text-decoration:none;white-space:nowrap;cursor:pointer;
+  padding:4px 10px;border-radius:999px;
+  background:rgba(10,14,26,.74);border:1px solid var(--c,var(--line));
+  box-shadow:0 6px 18px -10px rgba(0,0,0,.8);
+  -webkit-tap-highlight-color:transparent;transition:background .18s,border-color .18s,transform .18s;
+  transform:translateZ(0);
+}
+.node-label:hover,.node-label:focus-visible{background:rgba(26,33,56,.92);outline:none;transform:scale(1.05)}
+.node-label.is-hub{font-size:14px;border-width:2px}
+.node-label.is-planned{cursor:not-allowed;opacity:.62;color:var(--muted);border-style:dashed}
+.node-label .roman{font-family:var(--mono);font-size:10px;color:var(--c,var(--muted));margin-right:6px;opacity:.85}
+.node-label.is-active{box-shadow:0 0 0 2px var(--c,var(--gold)),0 6px 18px -10px rgba(0,0,0,.8)}
+
+#btn-back{
+  position:absolute;top:78px;left:22px;z-index:8;
+  font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--cream-soft);
+  background:rgba(14,19,34,.82);border:1px solid var(--line);border-radius:999px;
+  padding:8px 16px;cursor:pointer;transition:border-color .2s,color .2s;
+}
+#btn-back:hover,#btn-back:focus-visible{color:var(--cream);border-color:var(--gold-deep);outline:none}
+#scene-trail{
+  position:absolute;top:80px;left:140px;right:22px;z-index:7;pointer-events:none;
+  font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.02em;
+}
+#scene-trail b{color:var(--cream-soft);font-weight:600}
 
 /* ---- Legend ---- */
 #legend{
@@ -146,15 +208,6 @@ body::after{
 .legend-item .nm{color:var(--cream-soft)}
 .legend-hint{font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.01em;border-top:1px solid var(--line-soft);padding-top:8px}
 .legend-hint kbd{font-family:var(--mono);font-size:10.5px;background:rgba(35,44,71,.8);border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--cream-soft)}
-
-/* ---- Controls ---- */
-#controls{position:fixed;right:22px;bottom:18px;z-index:18;display:flex;gap:8px}
-.ctl{
-  font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--cream-soft);
-  background:rgba(14,19,34,.82);border:1px solid var(--line);border-radius:999px;
-  padding:8px 14px;cursor:pointer;transition:border-color .2s,color .2s;
-}
-.ctl:hover,.ctl:focus-visible{color:var(--cream);border-color:var(--gold-deep);outline:none}
 
 /* ---- Footer ---- */
 #footer{
@@ -190,26 +243,29 @@ body.js-ready #sitemap-fallback[hidden]{display:none}
   .brand-name{font-size:18px}
   .nav-links a{padding:5px 9px;font-size:12px}
   #legend{max-width:78vw}
+  #scene-trail{display:none}
 }
 
 /* ---- Reduced motion ---- */
 @media (prefers-reduced-motion: reduce){
-  .node.is-new .art{animation:none}
-  .edge{animation:none;stroke-dashoffset:0}
-  .pulse{animation:none;opacity:0}
-  .node .art{transition:none}
+  .modcard,body.js-ready .modcard{animation:none;opacity:1;transform:none}
+  .modcard::before{animation:none}
+  .modcard.is-expanding{transform:none}
+  .scene-fade{transition:none}
   *{scroll-behavior:auto}
 }
 
 /* ---- Automation (navigator.webdriver): freeze all motion so e2e clicks see a
-   stable bounding box and the main thread stays idle. Real visitors are
-   unaffected — they never carry this class. ---- */
-body.is-automated .pulse{animation:none;display:none}
-body.is-automated .node .art{transition:none;animation:none}
-body.is-automated .node:hover .art,body.is-automated .node:focus-visible .art{transform:none}
-body.is-automated .node.is-new .art{animation:none}
-body.is-automated .edge{animation:none;stroke-dashoffset:0}
-body.is-automated .growth-edge{transition:none}
+   stable bounding box and projected CSS2D label positions do not drift between
+   frames. The render loop still runs, but applies zero auto-motion (the JS
+   skips auto-rotate and node bob). Real visitors never carry this class. ---- */
+body.is-automated .modcard,body.is-automated.js-ready .modcard{animation:none;opacity:1;transform:none}
+body.is-automated .modcard::before{animation:none;opacity:.4}
+body.is-automated .modcard.is-expanding{transform:none}
+body.is-automated .modcard:hover{transform:none}
+body.is-automated .node-label{transition:none}
+body.is-automated .node-label:hover,body.is-automated .node-label:focus-visible{transform:none}
+body.is-automated .scene-fade{transition:none;opacity:1}
 /* Drop GPU-heavy always-on effects under automation: full-screen blend + blur
    are costly in software-rendered headless and slow page load / axe analysis. */
 body.is-automated::after{display:none}
@@ -232,16 +288,25 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
 </header>
 
 <main id="stage">
-  <svg id="map" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1400"
-       preserveAspectRatio="xMidYMid meet" role="group"
-       aria-label="Интерактивная карта знаний — растущее дерево из четырёх серий">
-    <title id="mapTitle">Интерактивная карта знаний</title>
-    <g id="viewport" transform="translate(0 0) scale(1)">
-      <g id="edges"></g>
-      <g id="growth"></g>
-      <g id="nodes"></g>
-    </g>
-  </svg>
+  <!-- ROOT view: choose one of the four series. Each card is a real anchor to
+       its hub URL, so it works with JavaScript disabled. -->
+  <section id="root-view" aria-label="Выбор серии курсов">
+    <div class="root-inner">
+      <p class="root-eyebrow">jonnify · четыре серии</p>
+      <h1 class="root-title">Карта знаний</h1>
+      <p class="root-lede">Четыре образовательные серии. Школьная математика растёт в образование будущего, финансовая математика — её прикладная ветвь, ЕГЭ — основание. Выбор серии раскрывает её темы как трёхмерное созвездие.</p>
+      <div class="modgrid" id="modgrid"></div>
+    </div>
+  </section>
+
+  <!-- SCENE view: a three.js WebGL constellation for one series. Hidden until a
+       card is activated; the canvas and CSS2D label layer are built lazily. -->
+  <section id="scene-view" aria-label="Трёхмерная карта серии" hidden>
+    <canvas id="gl"></canvas>
+    <div id="labels" class="scene-fade" aria-live="polite"></div>
+    <button id="btn-back" type="button">← К сериям</button>
+    <div id="scene-trail" class="scene-fade" aria-hidden="true"></div>
+  </section>
 </main>
 
 <aside id="legend" aria-label="Условные обозначения">
@@ -251,13 +316,8 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
     <span class="legend-item s-edu"><span class="sw" aria-hidden="true"></span><span class="nm">Финансы</span></span>
     <span class="legend-item s-ege"><span class="sw" aria-hidden="true"></span><span class="nm">ЕГЭ</span></span>
   </div>
-  <div class="legend-hint">Нажмите узел, чтобы раскрыть ветвь · <kbd>Enter</kbd> раскрыть · <kbd>Esc</kbd> свернуть · колесо — масштаб</div>
+  <div class="legend-hint">Выберите серию, чтобы открыть её карту в 3D · перетаскивание — поворот · колесо — масштаб · <kbd>Esc</kbd> назад</div>
 </aside>
-
-<div id="controls">
-  <button class="ctl" id="btn-collapse" type="button">Свернуть всё</button>
-  <button class="ctl" id="btn-reset" type="button">Сброс вида</button>
-</div>
 
 <footer id="footer">
   <span class="foot-mark">✦</span> Карта знаний jonnify · школьная математика растёт в образование будущего, финансы — её прикладная ветвь, ЕГЭ — основание
@@ -369,7 +429,7 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
   </section>
 </nav>
 
-<script>
+<script type="module">
 "use strict";
 (function(){
   /* ============================================================ *
@@ -476,357 +536,499 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
   const HUBS = NODES.filter(n => n.parent === null);
   const HUB_IDS = HUBS.map(n => n.id);
   const SERIES_COLOR = { school:"#d4a85a", future:"#5a87c4", edu:"#7ba387", ege:"#c4504c" };
-
-  /* Hub anchor positions (logical viewBox units): the growing-tree metaphor.
-     y grows downward, so EGE roots sit at large y (bottom), FUTURE canopy at small y (top). */
-  const ANCHOR = {
-    ege:    [500, 1280],   // roots / foundation, bottom-center
-    school: [500, 720],    // central trunk
-    edu:    [780, 900],    // applied-math branch, off the trunk to the right
-    future: [500, 230]     // canopy across the top
+  const SERIES_TITLE = { school:"Школа", future:"Будущее", edu:"Финансы", ege:"ЕГЭ" };
+  const SERIES_DESC = {
+    school:"Сто лет школьной математики: двенадцать глав о том, как менялось преподавание — от Киселёва до образования будущего.",
+    future:"Образование будущего: алгебра, логика и вероятность как языки машины, машинное обучение, LLM и инструменты ИИ.",
+    edu:"Финансовая математика: сложный процент, кредиты и аннуитет, активы и налоги, личная финансовая стратегия.",
+    ege:"ЕГЭ, профильная математика: стереометрия и разборы заданий 13, 14 и 16 с пошаговыми решениями."
   };
-  const HUB_SPREAD = { ege:-90, school:-90, edu:-32, future:-90 };
 
-  /* ---- State ---- */
-  const expanded = new Set();
-  let prevVisible = new Set();
-  let layout = {};          // id -> [x,y]
-  let visible = new Set();
+  /* Every real node url; the edu hub resolves to "/edu". Excludes the planned node. */
+  function allRealUrls(){
+    const out = [];
+    for (const n of NODES){ if (!n.planned && typeof n.url === "string") out.push(n.url); }
+    return out;
+  }
+
+  /* ---- Helpers (carried over verbatim) ---- */
+  function esc(s){ return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c])); }
+  function truncate(s, max){ return s.length > max ? s.slice(0, max - 1).replace(/\s+$/, "") + "…" : s; }
 
   const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
   const reduceMotion = () => reduceMQ.matches;
   // Under browser automation, freeze per-frame motion: a continuously moving
-  // node never satisfies a tool's "element is stable" gate, and infinite
-  // compositing saturates the main thread. The loop still runs (motionRunning
-  // stays meaningful) but applies zero displacement.
+  // CSS2D label never satisfies a tool's "element is stable" gate, so projected
+  // screen positions are held fixed. The render loop still runs; it applies zero
+  // auto-rotate and zero node bob so the camera and labels stay put.
   const AUTOMATION = (typeof navigator !== "undefined" && navigator.webdriver === true);
 
   /* ---- DOM refs ---- */
-  const svg = document.getElementById("map");
-  const viewport = document.getElementById("viewport");
-  const edgesG = document.getElementById("edges");
-  const growthG = document.getElementById("growth");
-  const nodesG = document.getElementById("nodes");
+  const rootView  = document.getElementById("root-view");
+  const sceneView = document.getElementById("scene-view");
+  const modgrid   = document.getElementById("modgrid");
+  const glCanvas  = document.getElementById("gl");
+  const labelsEl  = document.getElementById("labels");
+  const trailEl   = document.getElementById("scene-trail");
+  const btnBack   = document.getElementById("btn-back");
 
-  /* ---- Helpers ---- */
-  function esc(s){ return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c])); }
-  function hash(str){ let h = 2166136261; for (let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0); }
-  function depthOf(id){ let d = 0, n = byId.get(id); while (n && n.parent){ d++; n = byId.get(n.parent); } return d; }
-
-  /* ---- Layout ---- */
-  function computeVisible(){
-    const s = new Set();
-    for (const n of NODES){
-      if (n.parent === null) s.add(n.id);
-      else if (s.has(n.parent) && expanded.has(n.parent)) s.add(n.id);
-    }
-    return s;
-  }
-
-  function computeLayout(vis){
-    const pos = {};
-    for (const h of HUBS) pos[h.id] = ANCHOR[h.id].slice();
-    const queue = HUB_IDS.slice();
-    while (queue.length){
-      const pid = queue.shift();
-      if (!expanded.has(pid)) continue;
-      const kids = childrenOf(pid).filter(k => vis.has(k.id));
-      if (!kids.length) continue;
-      const [px, py] = pos[pid];
-      const depth = depthOf(pid);
-      const baseR = depth === 0 ? 196 : (depth === 1 ? 150 : 118);
-      let centerAng;
-      if (pid in HUB_SPREAD) centerAng = HUB_SPREAD[pid];
-      else {
-        const gp = byId.get(pid).parent;
-        centerAng = (gp && pos[gp]) ? Math.atan2(py - pos[gp][1], px - pos[gp][0]) * 180 / Math.PI : -90;
-      }
-      const n = kids.length;
-      // Dense clusters (e.g. the 16-child geometry sub-tree) need a wider arc
-      // AND extra concentric rings so full-width labels separate both
-      // angularly and radially instead of colliding on a single ring.
-      const dense = n > 10;
-      let span = Math.min(26 * Math.max(n - 1, 1), 210);
-      if (pid === "future") span = Math.min(Math.max(26 * (n - 1), 150), 300);
-      if (n > 8) span = Math.min(22 * (n - 1), 270);
-      const rings = dense ? 3 : 2;
-      const ringStep = dense ? 60 : 48;
-      const ringBaseR = baseR + (dense ? 20 : 0);
-      kids.forEach((k, i) => {
-        const ang = n === 1 ? centerAng : (centerAng - span / 2 + span * i / (n - 1));
-        const r = ringBaseR + (i % rings) * ringStep;
-        const a = ang * Math.PI / 180;
-        pos[k.id] = [px + r * Math.cos(a), py + r * Math.sin(a)];
-        queue.push(k.id);
+  /* ============================================================ *
+   * ROOT view — the module grid of four series cards.
+   * ============================================================ */
+  function buildRoot(){
+    let html = "";
+    HUBS.forEach((h, i) => {
+      const color = SERIES_COLOR[h.series];
+      const title = esc(SERIES_TITLE[h.series] || h.label);
+      const desc  = esc(SERIES_DESC[h.series] || h.label);
+      const num   = String(i + 1).padStart(2, "0");
+      html +=
+        '<a class="modcard" data-series="' + esc(h.series) + '" href="' + esc(h.url) + '"' +
+        ' style="--c:' + color + '" aria-label="' + esc(SERIES_TITLE[h.series] || h.label) + ' — открыть карту серии в 3D">' +
+          '<span class="mnum">' + num + ' · ' + esc(h.series.toUpperCase()) + '</span>' +
+          '<h4>' + title + '</h4>' +
+          '<p>' + desc + '</p>' +
+          '<span class="go">Открыть карту в 3D →</span>' +
+        '</a>';
+    });
+    modgrid.innerHTML = html;
+    modgrid.querySelectorAll(".modcard").forEach(card => {
+      card.addEventListener("click", e => {
+        // Real anchor: navigate natively if JS-driven scene cannot run. Otherwise
+        // expand the card, then transition into the 3D scene for the series.
+        e.preventDefault();
+        const series = card.getAttribute("data-series");
+        expandThenEnter(series, card);
       });
-    }
-    return pos;
+    });
   }
 
-  /* ---- Markup ---- */
-  function radiusFor(type){ return type === "hub" ? 34 : type === "chapter" ? 22 : type === "subsection" ? 15 : type === "planned" ? 19 : 13; }
+  /* ============================================================ *
+   * View switching + the synchronous test hook.
+   * ============================================================ */
+  let currentView = "root";       // 'root' | 'scene'
+  let activeSeries = null;
+  let three = null;               // loaded three.js module bundle once ready
 
-  function truncate(s, max){ return s.length > max ? s.slice(0, max - 1).replace(/\s+$/, "") + "…" : s; }
-
-  function nodeMarkup(n, x, y, isNew){
-    const color = SERIES_COLOR[n.series];
-    const r = radiusFor(n.type);
-    const label = esc(n.label);
-    // Visible text is truncated so wide labels in dense clusters stop colliding;
-    // the full label stays available via the <title> tooltip and the aria-label.
-    const shownMax = n.type === "hub" ? 30 : n.type === "chapter" ? 22 : 16;
-    const shown = esc(truncate(n.label, shownMax));
-    const cls = "node node--" + n.type + " series-" + n.series + (isNew ? " is-new" : "");
-    const common = 'data-id="' + esc(n.id) + '" class="' + cls + '" transform="translate(' + x.toFixed(2) + ' ' + y.toFixed(2) + ')" style="--c:' + color + '"';
-    const roman = n.roman ? '<text class="roman" y="' + (-r - 6) + '">' + esc(n.roman) + '</text>' : "";
-    const pulse = (n.type === "hub") ? '<circle class="pulse" r="' + r + '"/>' : "";
-    const art =
-      '<g class="art">' +
-        '<title>' + label + '</title>' +
-        '<circle class="halo" r="' + (r + 9) + '"/>' +
-        '<circle class="dot" r="' + r + '"/>' +
-        pulse + roman +
-        '<text class="lbl" y="' + (r + 15) + '">' + shown + '</text>' +
-      '</g>';
-    if (n.planned){
-      return '<g ' + common + ' role="button" tabindex="0" aria-disabled="true" data-planned="true" aria-label="' + label + ' — раздел готовится">' + art + '</g>';
-    }
-    if (hasChildren(n.id)){
-      return '<g ' + common + ' role="button" tabindex="0" aria-expanded="' + (expanded.has(n.id) ? "true" : "false") + '" aria-label="' + label + ' — раскрыть ветвь">' + art + '</g>';
-    }
-    return '<a ' + common + ' href="' + esc(n.url) + '" tabindex="0" aria-label="' + label + '">' + art + '</a>';
-  }
-
-  function edgePath(p, c){
-    const [x1, y1] = p, [x2, y2] = c;
-    const my = (y1 + y2) / 2 - 34;
-    return "M " + x1.toFixed(1) + " " + y1.toFixed(1) +
-           " C " + x1.toFixed(1) + " " + my.toFixed(1) + ", " +
-           x2.toFixed(1) + " " + my.toFixed(1) + ", " +
-           x2.toFixed(1) + " " + y2.toFixed(1);
-  }
-
-  /* ---- Render ---- */
-  function render(){
-    visible = computeVisible();
-    layout = computeLayout(visible);
-
-    let edgesHtml = "";
-    for (const n of NODES){
-      if (!visible.has(n.id) || !n.parent) continue;
-      if (!visible.has(n.parent)) continue;
-      edgesHtml += '<path class="edge" stroke="' + SERIES_COLOR[n.series] + '" d="' + edgePath(layout[n.parent], layout[n.id]) + '"/>';
-    }
-    let growthHtml = "";
-    for (const g of GROWTH){
-      if (visible.has(g.from) && visible.has(g.to)){
-        growthHtml += '<path class="growth-edge" d="' + edgePath(layout[g.from], layout[g.to]) + '"/>';
-      }
-    }
-    let nodesHtml = "";
-    for (const n of NODES){
-      if (!visible.has(n.id)) continue;
-      const isNew = !prevVisible.has(n.id);
-      const [x, y] = layout[n.id];
-      nodesHtml += nodeMarkup(n, x, y, isNew);
-    }
-
-    edgesG.innerHTML = edgesHtml;
-    growthG.innerHTML = growthHtml;
-    nodesG.innerHTML = nodesHtml;
-
-    prevVisible = new Set(visible);
-    cacheDrift();
-    if (!reduceMotion() && !motionRunning) startMotion();
-  }
-
-  /* ---- Organic drift (single rAF loop, transform-only) ---- */
-  let driftNodes = [];
-  const phaseById = new Map();
-  function cacheDrift(){
-    driftNodes = [];
-    const els = nodesG.children;
-    for (let i = 0; i < els.length; i++){
-      const el = els[i];
-      const id = el.getAttribute("data-id");
-      const pos = layout[id];
-      if (!pos) continue;
-      if (!phaseById.has(id)) phaseById.set(id, (hash(id) % 1000) / 1000 * Math.PI * 2);
-      const isHub = byId.get(id).type === "hub";
-      const h = hash(id);
-      driftNodes.push({
-        el, bx: pos[0], by: pos[1], phi: phaseById.get(id),
-        ax: isHub ? 1.5 : 3.0, ay: isHub ? 1.6 : 3.3,
-        wx: 0.28 + (h % 5) * 0.045, wy: 0.40 + (h % 7) * 0.035
-      });
+  function setView(v){
+    currentView = v;
+    if (v === "scene"){
+      rootView.hidden = true;
+      sceneView.hidden = false;
+    } else {
+      sceneView.hidden = true;
+      rootView.hidden = false;
     }
   }
 
+  function expandThenEnter(seriesId, card){
+    if (!HUB_IDS.includes(seriesId)) return;
+    const go = () => { enterSeries(seriesId); };
+    if (reduceMotion() || AUTOMATION || !card){ go(); return; }
+    // Tasteful expand: the activated card grows and elevates, then the scene
+    // takes over. Fall back to a timer so a missing animation event still drills.
+    card.classList.add("is-expanding");
+    let done = false;
+    const finish = () => { if (done) return; done = true; card.classList.remove("is-expanding"); go(); };
+    card.addEventListener("transitionend", finish, { once: true });
+    setTimeout(finish, 360);
+  }
+
+  /* enterSeries: ROOT -> SCENE for a hub id. Lazily imports three.js on first
+     use; on import failure, navigate to the hub URL so the link still resolves. */
+  async function enterSeries(seriesId){
+    if (!HUB_IDS.includes(seriesId)) return;
+    activeSeries = seriesId;
+    setView("scene");
+    try {
+      if (!three) three = await loadThree();
+    } catch (err){
+      // CDN or network failure: degrade to plain navigation to the hub page.
+      window.location.href = "/" + seriesId;
+      return;
+    }
+    sceneView.classList.add("is-shown");
+    buildScene(seriesId);
+    startLoop();
+  }
+
+  function back(){
+    activeSeries = null;
+    setView("root");
+    sceneView.classList.remove("is-shown");
+    if (scene){ disposeScene(); }
+    stopLoop();
+  }
+
+  const hook = {
+    motionRunning: false,
+    view(){ return currentView; },
+    enterSeries(seriesId){ enterSeries(seriesId); },
+    back(){ back(); },
+    collapseAll(){ back(); resetCamera(); },
+    sceneNodeIds(){ return sceneNodes.map(o => o.id); },
+    activate(id){ activateNode(id); },
+    allRealUrls(){ return allRealUrls(); }
+  };
+  window.__mindmap = hook;
+
+  /* ============================================================ *
+   * THREE.JS scene (built lazily; all three-dependent state below).
+   * ============================================================ */
+  // Memoized so a boot-time warm-up and the first enterSeries() share one
+  // in-flight import instead of fetching the modules twice. A rejected attempt
+  // is not cached, so a later entry can retry after a transient CDN failure.
+  let threePromise = null;
+  function loadThree(){
+    if (!threePromise){
+      threePromise = (async () => {
+        const THREE = await import("three");
+        const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
+        const { CSS2DRenderer, CSS2DObject } = await import("three/addons/renderers/CSS2DRenderer.js");
+        return { THREE, OrbitControls, CSS2DRenderer, CSS2DObject };
+      })().catch(err => { threePromise = null; throw err; });
+    }
+    return threePromise;
+  }
+
+  let renderer = null, css2d = null, scene = null, camera = null, controls = null;
+  let rootGroup = null;                  // the rotating constellation group
+  let sceneNodes = [];                   // [{id, node, mesh, labelObj, el, bob}]
   let rafId = null;
-  let motionRunning = false;
-  let inView = true;
+  let viewStack = [];                    // drill path: hub id, then sub-hub ids
 
-  function frame(now){
-    if (AUTOMATION){ rafId = requestAnimationFrame(frame); return; }
-    const t = now / 1000;
-    for (let i = 0; i < driftNodes.length; i++){
-      const d = driftNodes[i];
-      const dx = d.ax * Math.sin(t * d.wx + d.phi);
-      const dy = d.ay * Math.sin(t * d.wy + 1.7 * d.phi + 1.3);
-      d.el.setAttribute("transform", "translate(" + (d.bx + dx).toFixed(2) + " " + (d.by + dy).toFixed(2) + ")");
-    }
-    rafId = requestAnimationFrame(frame);
-  }
-  function startMotion(){
-    if (motionRunning || reduceMotion() || document.visibilityState === "hidden" || !inView) return;
-    motionRunning = true;
-    hook.motionRunning = true;
-    rafId = requestAnimationFrame(frame);
-  }
-  function stopMotion(){
-    motionRunning = false;
-    hook.motionRunning = false;
-    if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
-    for (let i = 0; i < driftNodes.length; i++){
-      const d = driftNodes[i];
-      d.el.setAttribute("transform", "translate(" + d.bx.toFixed(2) + " " + d.by.toFixed(2) + ")");
-    }
+  function ensureRenderer(){
+    const { THREE, OrbitControls, CSS2DRenderer } = three;
+    if (renderer) return;
+    renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+    css2d = new CSS2DRenderer({ element: labelsEl });
+
+    camera = new THREE.PerspectiveCamera(52, 1, 0.1, 4000);
+    camera.position.set(0, 30, 360);
+
+    controls = new OrbitControls(camera, glCanvas);
+    controls.enableDamping = !AUTOMATION;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = false;
+    controls.minDistance = 120;
+    controls.maxDistance = 900;
+    controls.rotateSpeed = 0.8;
+    controls.zoomSpeed = 0.9;
+    // Repaint on orbit/zoom whenever the loop is not rendering every frame:
+    // either no loop runs (reduced motion) or the loop is scheduled but skips
+    // its per-frame render (automation). Real animated visitors already paint
+    // each frame, so an extra render here would be redundant for them.
+    controls.addEventListener("change", () => { if (!hook.motionRunning || AUTOMATION) renderOnce(); });
+
+    glCanvas.addEventListener("pointerdown", () => sceneView.classList.add("is-grabbing"));
+    window.addEventListener("pointerup", () => sceneView.classList.remove("is-grabbing"));
+
+    resize();
+    window.addEventListener("resize", resize);
   }
 
-  /* ---- Expand / collapse ---- */
-  function collapseSubtree(id){
-    expanded.delete(id);
-    for (const k of childrenOf(id)) collapseSubtree(k.id);
+  function resize(){
+    if (!renderer) return;
+    const w = sceneView.clientWidth || window.innerWidth;
+    const h = sceneView.clientHeight || window.innerHeight;
+    renderer.setSize(w, h, false);
+    css2d.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    if (!hook.motionRunning) renderOnce();
   }
-  function toggle(id){
-    if (expanded.has(id)) collapseSubtree(id);
-    else if (hasChildren(id)) expanded.add(id);
-    render();
+
+  // Build (or rebuild) the constellation around a given center id: the center
+  // node sits at the origin, its children orbit on a ring/sphere shell, with a
+  // thin edge from center to each child. Series color drives every material.
+  function buildScene(centerId){
+    const { THREE, CSS2DObject } = three;
+    ensureRenderer();
+    if (scene) disposeScene(false);
+
+    scene = new THREE.Scene();
+    rootGroup = new THREE.Group();
+    scene.add(rootGroup);
+    sceneNodes = [];
+
+    const center = byId.get(centerId);
+    const series = center.series;
+    const color = new THREE.Color(SERIES_COLOR[series]);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const key = new THREE.PointLight(0xffffff, 1.1, 0, 0); key.position.set(180, 240, 320); scene.add(key);
+
+    // Track the drill path for the breadcrumb trail + back behaviour.
+    const stackTop = viewStack[viewStack.length - 1];
+    if (stackTop !== centerId) viewStack.push(centerId);
+
+    addNode(center, new THREE.Vector3(0, 0, 0), true);
+
+    const kids = childrenOf(centerId);
+    const n = kids.length;
+    // Distribute children over a spherical shell using a deterministic spiral so
+    // the layout is identical every build (stable under automation).
+    const R = n > 14 ? 170 : n > 8 ? 140 : 110;
+    kids.forEach((k, i) => {
+      const t = n === 1 ? 0.5 : i / (n - 1);
+      const y = 1 - t * 2;                     // -1 .. 1
+      const radius = Math.sqrt(Math.max(0, 1 - y * y));
+      const golden = Math.PI * (3 - Math.sqrt(5));
+      const theta = golden * i;
+      const pos = new THREE.Vector3(
+        Math.cos(theta) * radius * R,
+        y * R * 0.78,
+        Math.sin(theta) * radius * R
+      );
+      addNode(k, pos, false);
+      // Edge from center to child.
+      const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), pos]);
+      const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.32 });
+      rootGroup.add(new THREE.Line(geo, mat));
+    });
+
+    updateTrail();
+    framePositions();
   }
-  function focusNode(id){
-    const el = nodesG.querySelector('[data-id="' + id.replace(/"/g, '\\"') + '"]');
-    if (el && el.focus) try { el.focus(); } catch(e){}
+
+  function addNode(node, pos, isCenter){
+    const { THREE, CSS2DObject } = three;
+    const color = new THREE.Color(SERIES_COLOR[node.series]);
+    const r = node.type === "hub" ? 18 : node.type === "chapter" ? 11 : node.type === "planned" ? 9 : 8;
+    const geom = new THREE.SphereGeometry(r, 24, 24);
+    const mat = new THREE.MeshStandardMaterial({
+      color, emissive: color, emissiveIntensity: node.planned ? 0.12 : 0.42,
+      roughness: 0.45, metalness: 0.1, transparent: !!node.planned, opacity: node.planned ? 0.45 : 1
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.copy(pos);
+    mesh.userData.id = node.id;
+    rootGroup.add(mesh);
+
+    // CSS2D HTML label: crisp, accessible, and independently clickable by tests.
+    const el = buildLabelEl(node);
+    const labelObj = new CSS2DObject(el);
+    labelObj.position.set(0, r + 10, 0);
+    mesh.add(labelObj);
+
+    sceneNodes.push({
+      id: node.id, node, mesh, labelObj, el, isCenter,
+      base: pos.clone(),
+      bob: (hashStr(node.id) % 1000) / 1000 * Math.PI * 2
+    });
+  }
+
+  // Label markup per the DOM contract: expandable -> role=button + aria-expanded;
+  // leaf -> <a href>; planned -> non-anchor aria-disabled + data-planned.
+  function buildLabelEl(node){
+    const color = SERIES_COLOR[node.series];
+    const shown = esc(truncate(node.label, node.type === "hub" ? 30 : 24));
+    const roman = node.roman ? '<span class="roman">' + esc(node.roman) + '</span>' : "";
+    const cls = "node-label" + (node.type === "hub" ? " is-hub" : "") + (node.planned ? " is-planned" : "");
+    let el;
+    if (node.planned){
+      el = document.createElement("span");
+      el.className = cls;
+      el.setAttribute("data-id", node.id);
+      el.setAttribute("aria-disabled", "true");
+      el.setAttribute("data-planned", "true");
+      el.setAttribute("title", node.label + " — раздел готовится");
+    } else if (hasChildren(node.id)){
+      el = document.createElement("span");
+      el.className = cls;
+      el.setAttribute("data-id", node.id);
+      el.setAttribute("role", "button");
+      el.setAttribute("tabindex", "0");
+      el.setAttribute("aria-expanded", "false");
+      el.setAttribute("aria-label", node.label + " — раскрыть ветвь");
+    } else {
+      el = document.createElement("a");
+      el.className = cls;
+      el.setAttribute("data-id", node.id);
+      el.setAttribute("href", node.url);
+      el.setAttribute("aria-label", node.label);
+    }
+    el.style.setProperty("--c", color);
+    el.innerHTML = roman + shown;
+
+    // Activation: pointer + keyboard both route through activateNode.
+    el.addEventListener("click", e => {
+      if (node.planned){ e.preventDefault(); return; }
+      if (hasChildren(node.id)){ e.preventDefault(); activateNode(node.id); }
+      // leaf anchor: let native navigation proceed.
+    });
+    if (hasChildren(node.id) && !node.planned){
+      el.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " "){ e.preventDefault(); activateNode(node.id); }
+      });
+    }
     return el;
   }
 
-  /* ---- Pan / zoom ---- */
-  let scale = 1, panX = 0, panY = 0;
-  function applyView(){ viewport.setAttribute("transform", "translate(" + panX.toFixed(2) + " " + panY.toFixed(2) + ") scale(" + scale.toFixed(4) + ")"); }
-  applyView();
-
-  let pointerDown = false, moved = false, sx = 0, sy = 0, startX = 0, startY = 0;
-  function unitPerPx(){ const r = svg.getBoundingClientRect(); return r.width ? 1000 / r.width : 1; }
-
-  svg.addEventListener("pointerdown", e => {
-    pointerDown = true; moved = false;
-    sx = e.clientX; sy = e.clientY; startX = panX; startY = panY;
-  });
-  svg.addEventListener("pointermove", e => {
-    if (!pointerDown) return;
-    const dx = e.clientX - sx, dy = e.clientY - sy;
-    if (!moved && (Math.abs(dx) + Math.abs(dy) > 6)){ moved = true; svg.classList.add("is-panning"); }
-    if (moved){
-      const k = unitPerPx();
-      panX = startX + dx * k;
-      panY = startY + dy * k;
-      applyView();
+  // Programmatic node activation: expandable -> drill (rebuild around it);
+  // leaf -> navigate to its url; planned -> no-op.
+  function activateNode(id){
+    const node = byId.get(id);
+    if (!node || currentView !== "scene") return;
+    if (node.planned) return;
+    if (hasChildren(id)){
+      const entry = sceneNodes.find(o => o.id === id);
+      if (entry) entry.el.setAttribute("aria-expanded", "true");
+      buildScene(id);
+      startLoop();
+    } else if (node.url){
+      window.location.href = node.url;
     }
-  });
-  function endPointer(){ pointerDown = false; svg.classList.remove("is-panning"); }
-  window.addEventListener("pointerup", endPointer);
-  window.addEventListener("pointercancel", endPointer);
-
-  svg.addEventListener("wheel", e => {
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.1 : 0.9;
-    scale = Math.min(3, Math.max(0.4, scale * factor));
-    applyView();
-  }, { passive: false });
-
-  /* ---- Activation (click + keyboard) ---- */
-  svg.addEventListener("click", e => {
-    if (moved){ e.preventDefault(); e.stopPropagation(); return; }
-    const el = e.target.closest("[data-id]");
-    if (!el) return;
-    const id = el.getAttribute("data-id");
-    const n = byId.get(id);
-    if (!n) return;
-    if (n.planned){ e.preventDefault(); return; }
-    if (hasChildren(id)){ e.preventDefault(); toggle(id); }
-    // else: leaf <a> navigates natively
-  });
-
-  svg.addEventListener("keydown", e => {
-    const el = e.target.closest("[data-id]");
-    if (!el) return;
-    const id = el.getAttribute("data-id");
-    const n = byId.get(id);
-    if (!n) return;
-    if (e.key === "Enter" || e.key === " "){
-      if (n.planned){ e.preventDefault(); return; }
-      if (hasChildren(id)){ e.preventDefault(); toggle(id); focusNode(id); }
-      else { e.preventDefault(); window.location.href = n.url; }
-    } else if (e.key === "Escape"){
-      if (hasChildren(id) && expanded.has(id)){ e.preventDefault(); toggle(id); focusNode(id); }
-    }
-  });
-
-  /* ---- Growth-edge reveal on focus/hover ---- */
-  function maybeRevealGrowth(target){
-    const el = target && target.closest ? target.closest("[data-id]") : null;
-    const id = el ? el.getAttribute("data-id") : null;
-    const touches = id && GROWTH.some(g => g.from === id || g.to === id);
-    growthG.classList.toggle("is-revealed", !!touches);
   }
-  svg.addEventListener("mouseover", e => maybeRevealGrowth(e.target));
-  svg.addEventListener("mouseout", () => growthG.classList.remove("is-revealed"));
-  svg.addEventListener("focusin", e => maybeRevealGrowth(e.target));
 
-  /* ---- Topbar nav: focus + expand the series instead of leaving ---- */
+  function updateTrail(){
+    const parts = viewStack.map((id, i) => {
+      const n = byId.get(id);
+      const label = esc(truncate(n.label, 28));
+      return i === viewStack.length - 1 ? "<b>" + label + "</b>" : label;
+    });
+    trailEl.innerHTML = parts.join(" › ");
+  }
+
+  // Point the camera at the current shell so the whole constellation is in frame.
+  function framePositions(){
+    if (!camera || !controls) return;
+    controls.target.set(0, 0, 0);
+    const maxR = sceneNodes.reduce((m, o) => Math.max(m, o.base.length()), 1);
+    const dist = Math.max(220, maxR * 2.4);
+    camera.position.set(0, maxR * 0.45, dist);
+    controls.update();
+    if (!hook.motionRunning) renderOnce();
+  }
+
+  function resetCamera(){ viewStack = []; }
+
+  function disposeScene(clearStack){
+    if (clearStack !== false) viewStack = [];
+    if (!scene) return;
+    scene.traverse(obj => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material){ Array.isArray(obj.material) ? obj.material.forEach(m => m.dispose()) : obj.material.dispose(); }
+    });
+    // CSS2D label DOM is owned by the CSS2DObjects; clear the layer.
+    labelsEl.innerHTML = "";
+    scene = null; rootGroup = null; sceneNodes = [];
+  }
+
+  /* ---- Render loop ---- */
+  function renderOnce(){ if (renderer && scene) { renderer.render(scene, camera); css2d.render(scene, camera); } }
+
+  function frame(now){
+    // Continuous subtle motion for real visitors; under automation or reduced
+    // motion, apply ZERO displacement so projected label positions stay stable.
+    const animate = !AUTOMATION && !reduceMotion();
+    if (animate && rootGroup){
+      rootGroup.rotation.y += 0.0016;
+      const t = now / 1000;
+      for (let i = 0; i < sceneNodes.length; i++){
+        const o = sceneNodes[i];
+        if (o.isCenter) continue;
+        const dy = Math.sin(t * 0.9 + o.bob) * 2.2;
+        o.mesh.position.set(o.base.x, o.base.y + dy, o.base.z);
+      }
+    }
+    if (controls && controls.enableDamping) controls.update();
+    // Under automation the scene is static (zero motion, damping off), so the
+    // per-frame WebGL + CSS2D render is pure waste that throttles the headless
+    // compositor. The loop stays scheduled (motionRunning is true), but no GPU
+    // work runs per frame; an explicit renderOnce() already paints on
+    // enter/resize/interaction. This keeps the main thread idle and rAF fast.
+    if (!AUTOMATION) renderOnce();
+    rafId = requestAnimationFrame(frame);
+  }
+
+  function startLoop(){
+    if (rafId != null) return;
+    // Reduced motion always wins: do not run an idle loop, render only on
+    // interaction, and keep motionRunning false — even under automation.
+    if (reduceMotion()){
+      hook.motionRunning = false;
+      renderOnce();
+      return;
+    }
+    // Real visitors and automation both keep the loop scheduled; automation just
+    // applies zero motion (and skips per-frame render) inside frame().
+    // motionRunning reflects an active loop.
+    rafId = requestAnimationFrame(frame);
+    hook.motionRunning = true;
+  }
+
+  function stopLoop(){
+    if (rafId != null){ cancelAnimationFrame(rafId); rafId = null; }
+    hook.motionRunning = false;
+  }
+
+  function hashStr(str){ let h = 2166136261; for (let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0); }
+
+  /* ---- Canvas raycast picking: clicking the mesh under the pointer runs the
+     same activate logic as the CSS2D label (both routes converge). ---- */
+  glCanvas.addEventListener("click", e => {
+    if (!three || !scene) return;
+    const { THREE } = three;
+    const rect = glCanvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, camera);
+    const meshes = sceneNodes.map(o => o.mesh);
+    const hits = ray.intersectObjects(meshes, false);
+    if (hits.length){
+      const id = hits[0].object.userData.id;
+      if (id) activateNode(id);
+    }
+  });
+
+  /* ---- Back control + keyboard ---- */
+  btnBack.addEventListener("click", () => back());
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && currentView === "scene"){ e.preventDefault(); back(); }
+  });
+
+  /* ---- Topbar nav: open the series scene instead of leaving ---- */
   document.querySelectorAll(".nav-links a[data-focus]").forEach(a => {
     a.addEventListener("click", e => {
       const id = a.getAttribute("data-focus");
-      if (byId.has(id)){
+      if (HUB_IDS.includes(id)){
         e.preventDefault();
-        if (!expanded.has(id)) toggle(id);
-        focusNode(id);
+        if (currentView === "scene"){ back(); }
+        enterSeries(id);
       }
     });
   });
 
-  /* ---- Controls ---- */
-  document.getElementById("btn-collapse").addEventListener("click", () => { hook.collapseAll(); });
-  document.getElementById("btn-reset").addEventListener("click", () => { scale = 1; panX = 0; panY = 0; applyView(); });
-
-  /* ---- Visibility + viewport gating ---- */
+  /* ---- Visibility gating: pause the loop when the tab is hidden ---- */
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") stopMotion();
-    else startMotion();
+    if (document.visibilityState === "hidden") stopLoop();
+    else if (currentView === "scene" && scene) startLoop();
   });
-  try {
-    const io = new IntersectionObserver(entries => {
-      for (const en of entries){ inView = en.isIntersecting; if (inView) startMotion(); else stopMotion(); }
-    }, { threshold: 0.01 });
-    io.observe(svg);
-  } catch (e){ inView = true; }
-  reduceMQ.addEventListener && reduceMQ.addEventListener("change", () => { if (reduceMotion()) stopMotion(); else startMotion(); });
-
-  /* ---- Public test hook (read-only contract) ---- */
-  const hook = {
-    motionRunning: false,
-    expand(id){ if (byId.has(id) && hasChildren(id) && !expanded.has(id)){ expanded.add(id); render(); } },
-    collapseAll(){ expanded.clear(); render(); },
-    visibleNodeIds(){ return Array.from(visible); }
-  };
-  window.__mindmap = hook;
+  reduceMQ.addEventListener && reduceMQ.addEventListener("change", () => {
+    if (currentView === "scene" && scene){
+      stopLoop();
+      startLoop();
+    }
+  });
 
   /* ---- Boot ---- */
   document.body.classList.add("js-ready");
   if (AUTOMATION) document.body.classList.add("is-automated");
   const fallback = document.getElementById("sitemap-fallback");
   if (fallback) fallback.hidden = true;
-  render();
-  startMotion();
+  buildRoot();
+  setView("root");
+  // Warm the three.js import in the background (non-blocking): the synchronous
+  // hook is already installed above, so this only shortens the first scene
+  // mount. A failure here is swallowed; enterSeries() retries and, on a real
+  // failure, falls back to hub navigation.
+  loadThree().catch(() => {});
 })();
 </script>
 </body>
