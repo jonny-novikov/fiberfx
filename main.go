@@ -22,6 +22,7 @@ var (
 	eduDir    = "/app/edu"
 	schoolDir = "/app/school"
 	futureDir = "/app/future"
+	gameHTML  = "/app/game.html"
 )
 
 func main() {
@@ -49,6 +50,9 @@ func main() {
 	if dir := os.Getenv("FUTURE_DIR"); dir != "" {
 		futureDir = dir
 	}
+	if path := os.Getenv("GAME_HTML"); path != "" {
+		gameHTML = path
+	}
 
 	app := fiber.New(fiber.Config{
 		AppName:               "jonnify",
@@ -69,6 +73,15 @@ func main() {
 	// Serve index.html at root
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendFile(indexHTML)
+	})
+
+	// Serve the standalone emoji memory game at /game
+	app.Get("/game", func(c *fiber.Ctx) error {
+		if _, err := os.Stat(gameHTML); err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "game not found"})
+		}
+		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
+		return c.SendFile(gameHTML)
 	})
 
 	// List available distributions
@@ -236,6 +249,6 @@ func main() {
 		return c.SendFile(fullPath)
 	})
 
-	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir)
+	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, game: %s", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, gameHTML)
 	log.Fatal(app.Listen(":" + port))
 }

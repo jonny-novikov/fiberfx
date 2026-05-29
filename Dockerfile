@@ -73,6 +73,9 @@ COPY --from=builder /build/jonnify /app/jonnify
 # Copy static index.html served at "/"
 COPY index.html /app/index.html
 
+# Copy standalone emoji memory game served at "/game"
+COPY game.html /app/game.html
+
 # Copy EGE course materials served under /ege/*
 COPY ege/ /app/ege/
 

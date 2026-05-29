@@ -30,7 +30,9 @@ Request flow for `/edu`, `/school`, `/ege`, `/future` (the four are implemented 
 | `/edu`, `/edu/:name` | `edu/<name>.html` | **`edu/finances.html`** (default name is `finances`, NOT `index`) |
 | `/school`, `/school/:name` | `school/<name>.html` | `school/index.html` |
 | `/future`, `/future/:name` | `future/<name>.html` | `future/index.html` |
-| `/`, `/files`, `/health`, `/distr/*` | root landing, JSON distr listing, health JSON, tarball downloads | — |
+| `/` | `index.html` — interactive SVG "growing-tree" mindmap of all four series (the site landing) | — |
+| `/game` | `game.html` — standalone emoji memory game (`GAME_HTML` env-overridable); not linked from the mindmap | — |
+| `/files`, `/health`, `/distr/*` | JSON distr listing, health JSON, tarball downloads | — |
 
 Section directories are env-overridable (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, `FUTURE_DIR`, also `INDEX_HTML`, `DISTR_DIR`); they default to the container paths `/app/ege`, `/app/edu`, `/app/school`, `/app/future`. `PORT` defaults to `8080`. The server ends in `log.Fatal(app.Listen(...))` — there is no in-code graceful shutdown; Fly sends `SIGTERM` (the binary is PID 1).
 
@@ -99,7 +101,7 @@ There is no CI/CD (no `.github/workflows`). The `README.md` claims auto-deploy o
 
 The `Dockerfile` is multi-stage (`golang:1.25-alpine` builder → `alpine:3.19` runtime) and bakes the served content into the image at the paths `main.go` defaults to:
 - builds the static binary: `CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o jonnify .` (copies only `main.go` + `go.mod`/`go.sum`, so it's independent of the workspace);
-- `COPY index.html /app/index.html`, `COPY ege/ /app/ege/`, `COPY edu/ /app/edu/`, `COPY school/ /app/school/`, `COPY future/ /app/future/` — **whole-directory copies**, so any new `.html` in these dirs ships on the next deploy with no Dockerfile edit;
+- `COPY index.html /app/index.html`, `COPY game.html /app/game.html`, `COPY ege/ /app/ege/`, `COPY edu/ /app/edu/`, `COPY school/ /app/school/`, `COPY future/ /app/future/` — **whole-directory copies** for the section dirs, so any new `.html` in them ships on the next deploy with no Dockerfile edit;
 - also cross-compiles the unrelated `flyer` CLI into download tarballs under `/app/distr/` (served via `/distr/*`); not relevant to the website but explains the second build stage.
 
 Because the runtime image is what serves the site, **content changes are only live after `fly deploy`** (or a local run pointed at the repo dirs) — there is no hot reload.
@@ -109,5 +111,5 @@ Because the runtime image is what serves the site, **content changes are only li
 - `main.go` — the whole server (routing, the four `serve*` closures, guards, `/health`).
 - `fly.toml`, `Dockerfile` — deployment + what ships into the image.
 - `Makefile` — local dev driver (note the `GOWORK=off` and port 8765 quirks above); its `start`/`run` recipes export all four section dirs.
-- `edu/`, `ege/`, `school/`, `future/` — the served content.
+- `edu/`, `ege/`, `school/`, `future/` — the served content. `index.html` — the interactive growing-tree mindmap landing (root `/`). `game.html` — standalone emoji game served at `/game`. `apps/e2e/` — Playwright+TS end-to-end suite for the mindmap (out of scope of the no-build static server; run via `npm test`).
 - Pattern anchors: `ege/stereometria.html` (canvas 3D), `ege/zadanie-13-atlas.html` (step controls), `edu/finances-m2.html` (calculators/SVG charts), `edu/finances-test.html` (quiz), any `school/*.html` (level toggle + scroll-reveal).

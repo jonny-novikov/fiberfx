@@ -23,6 +23,7 @@ EGE_DIR    ?= $(REPO_DIR)/ege
 EDU_DIR    ?= $(REPO_DIR)/edu
 SCHOOL_DIR ?= $(REPO_DIR)/school
 FUTURE_DIR ?= $(REPO_DIR)/future
+GAME_HTML  ?= $(REPO_DIR)/game.html
 
 export GOWORK := off
 
@@ -44,6 +45,7 @@ help:
 	@echo "  /edu, /edu/*         → $(EDU_DIR)/*.html"
 	@echo "  /school, /school/*   → $(SCHOOL_DIR)/*.html"
 	@echo "  /future, /future/*   → $(FUTURE_DIR)/*.html"
+	@echo "  /game                → $(GAME_HTML)"
 
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
@@ -66,6 +68,7 @@ start: build
 	 EDU_DIR=$(EDU_DIR) \
 	 SCHOOL_DIR=$(SCHOOL_DIR) \
 	 FUTURE_DIR=$(FUTURE_DIR) \
+	 GAME_HTML=$(GAME_HTML) \
 	 nohup $(BINARY) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE)
 	@sleep 1
 	@if kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
@@ -107,6 +110,7 @@ run: build
 	 EDU_DIR=$(EDU_DIR) \
 	 SCHOOL_DIR=$(SCHOOL_DIR) \
 	 FUTURE_DIR=$(FUTURE_DIR) \
+	 GAME_HTML=$(GAME_HTML) \
 	 $(BINARY)
 
 status:
