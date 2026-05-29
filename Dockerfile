@@ -88,6 +88,9 @@ COPY school/ /app/school/
 # Copy FUTURE course materials served under /future/*
 COPY future/ /app/future/
 
+# Copy the 3D orbital knowledge map (three.js WebGL node-graph) served under /map
+COPY map/ /app/map/
+
 # Copy styled HTML error pages (<status>.html) served by the central error
 # handler — e.g. 404.html for unmatched routes, 500.html for panics.
 COPY error/ /app/error/

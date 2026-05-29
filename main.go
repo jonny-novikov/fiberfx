@@ -24,6 +24,7 @@ var (
 	eduDir    = "/app/edu"
 	schoolDir = "/app/school"
 	futureDir = "/app/future"
+	mapDir    = "/app/map"
 	gameHTML  = "/app/game.html"
 	// On-disk dir for files served at the /vendor/* URL. Named "assets" (NOT
 	// "vendor") because a vendor/ dir at the Go module root is reserved by the
@@ -62,6 +63,9 @@ func main() {
 	}
 	if dir := os.Getenv("FUTURE_DIR"); dir != "" {
 		futureDir = dir
+	}
+	if dir := os.Getenv("MAP_DIR"); dir != "" {
+		mapDir = dir
 	}
 	if path := os.Getenv("GAME_HTML"); path != "" {
 		gameHTML = path
@@ -278,6 +282,30 @@ func main() {
 		return serveFuture(c, c.Params("name"))
 	})
 
+	// Serve the 3D orbital knowledge map at clean route URLs (no .html extension).
+	//   /map          → map/index.html  (the three.js WebGL node-graph; linked from /)
+	//   /map/<name>   → map/<name>.html
+	serveMap := func(c *fiber.Ctx, name string) error {
+		if name == "" {
+			name = "index"
+		}
+		cleanPath, ok := resolveUnder(mapDir, name+".html")
+		if !ok {
+			return fiber.NewError(fiber.StatusForbidden, "access denied")
+		}
+		if _, err := os.Stat(cleanPath); err != nil {
+			return fiber.NewError(fiber.StatusNotFound, "map page not found: "+name)
+		}
+		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
+		return c.SendFile(cleanPath)
+	}
+	app.Get("/map", func(c *fiber.Ctx) error {
+		return serveMap(c, "")
+	})
+	app.Get("/map/:name", func(c *fiber.Ctx) error {
+		return serveMap(c, c.Params("name"))
+	})
+
 	// Serve distribution files with proper headers
 	app.Get("/distr/*", func(c *fiber.Ctx) error {
 		filePath := c.Params("*")
@@ -305,7 +333,7 @@ func main() {
 		return c.SendFile(cleanPath)
 	})
 
-	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, game: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, gameHTML, errorDir, len(errorPages))
+	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, game: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, gameHTML, errorDir, len(errorPages))
 	log.Fatal(app.Listen(":" + port))
 }
 
