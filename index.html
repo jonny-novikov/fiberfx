@@ -94,16 +94,23 @@ body::after{
 #root-view,#scene-view{position:absolute;inset:0}
 #root-view[hidden],#scene-view[hidden]{display:none}
 
+/* Visually-hidden, screen-reader-only (for the scene status live region). */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
 /* ---- ROOT view: hero + module grid ---- */
-#root-view{overflow-y:auto;display:flex;flex-direction:column;justify-content:center}
+/* `safe center` keeps the grid vertically centered when it fits, but falls back
+   to top-alignment when content is taller than the viewport (mobile), so the
+   first card never bleeds up underneath the fixed topbar. */
+#root-view{overflow-y:auto;display:flex;flex-direction:column;justify-content:safe center}
 .root-inner{width:100%;max-width:1040px;margin:0 auto;padding:104px 28px 96px}
 .root-eyebrow{font-family:var(--sans);font-size:12px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
 .root-title{font-family:var(--serif);font-size:clamp(30px,5vw,46px);font-weight:600;color:var(--cream);line-height:1.08;margin-top:10px}
 .root-lede{font-family:var(--body);font-size:16px;color:var(--cream-soft);max-width:62ch;margin-top:14px}
 
 /* Module grid + cards (shared design component, recolored per series). */
-.modgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:28px}
-@media(max-width:980px){.modgrid{grid-template-columns:1fr 1fr}}
+/* Four equal series cards => a symmetric 2x2 (a 3-up track would orphan the
+   fourth card in a half-empty row). Collapses to one column on narrow screens. */
+.modgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:28px}
 @media(max-width:620px){.modgrid{grid-template-columns:1fr}}
 .modcard{position:relative;display:flex;flex-direction:column;gap:9px;padding:22px 24px;background:linear-gradient(180deg,var(--surface),var(--ink-2));border:1px solid var(--line);border-top:3px solid var(--line);border-radius:var(--rad-lg);text-decoration:none;transition:all .25s}
 .modcard:hover{border-top-color:var(--gold);transform:translateY(-3px);box-shadow:var(--shadow-mid)}
@@ -241,9 +248,19 @@ body.js-ready #sitemap-fallback[hidden]{display:none}
 
 @media (max-width:560px){
   .brand-name{font-size:18px}
-  .nav-links a{padding:5px 9px;font-size:12px}
-  #legend{max-width:78vw}
+  /* Larger touch targets (>=44px) for the small chrome on phones. */
+  .nav-links a{padding:9px 12px;font-size:12px;min-height:44px;display:inline-flex;align-items:center}
+  #btn-back{padding:12px 16px;min-height:44px}
+  /* Let long Russian labels wrap and cap their width so wide pills do not span
+     or overflow a 390px viewport (pairs with the aspect-aware camera framing). */
+  .node-label{padding-top:8px;padding-bottom:8px;white-space:normal;max-width:42vw;text-align:center}
+  #legend{max-width:78vw;bottom:32px}   /* lift clear of the fixed footer */
   #scene-trail{display:none}
+}
+/* Coarse pointers (touch) get the same generous hit areas regardless of width. */
+@media (pointer:coarse){
+  .node-label{padding-top:8px;padding-bottom:8px}
+  #btn-back{min-height:44px}
 }
 
 /* ---- Reduced motion ---- */
@@ -302,10 +319,16 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
   <!-- SCENE view: a three.js WebGL constellation for one series. Hidden until a
        card is activated; the canvas and CSS2D label layer are built lazily. -->
   <section id="scene-view" aria-label="Трёхмерная карта серии" hidden>
-    <canvas id="gl"></canvas>
-    <div id="labels" class="scene-fade" aria-live="polite"></div>
+    <!-- The WebGL canvas is decorative pixel output; the accessible representation
+         is the CSS2D label layer (#labels) and the #sitemap-fallback link index. -->
+    <canvas id="gl" aria-hidden="true"></canvas>
+    <!-- #labels holds the interactive CSS2D node labels; it is NOT a live region
+         (it is rebuilt wholesale on every drill). Concise announcements go to
+         #sr-status instead. -->
+    <div id="labels" class="scene-fade"></div>
     <button id="btn-back" type="button">← К сериям</button>
     <div id="scene-trail" class="scene-fade" aria-hidden="true"></div>
+    <div id="sr-status" class="sr-only" role="status" aria-live="polite"></div>
   </section>
 </main>
 
@@ -560,6 +583,10 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
   // screen positions are held fixed. The render loop still runs; it applies zero
   // auto-rotate and zero node bob so the camera and labels stay put.
   const AUTOMATION = (typeof navigator !== "undefined" && navigator.webdriver === true);
+  // Touch devices: cap the scene render to ~30fps to cut steady-state GPU/battery
+  // cost (a slow auto-rotate does not need 60fps). Desktop renders every frame.
+  const COARSE = (typeof window.matchMedia === "function") && window.matchMedia("(pointer:coarse)").matches;
+  const RENDER_MIN_MS = COARSE ? 33 : 0;
 
   /* ---- DOM refs ---- */
   const rootView  = document.getElementById("root-view");
@@ -569,6 +596,11 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
   const labelsEl  = document.getElementById("labels");
   const trailEl   = document.getElementById("scene-trail");
   const btnBack   = document.getElementById("btn-back");
+  const srStatus  = document.getElementById("sr-status");
+  /* Emit one concise message to the dedicated status live region (used on
+     enter/drill/back); keeps screen readers informed without re-announcing the
+     whole label set the way an aria-live on #labels would. */
+  function announce(msg){ if (srStatus) srStatus.textContent = msg; }
 
   /* ============================================================ *
    * ROOT view — the module grid of four series cards.
@@ -648,14 +680,35 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
     sceneView.classList.add("is-shown");
     buildScene(seriesId);
     startLoop();
+    focusSceneCenter(seriesId);   // move keyboard focus into the new scene
   }
 
   function back(){
+    const prev = activeSeries;
     activeSeries = null;
     setView("root");
     sceneView.classList.remove("is-shown");
     if (scene){ disposeScene(); }
     stopLoop();
+    // Keyboard continuity: return focus to the card that opened the series.
+    const card = prev && modgrid.querySelector('.modcard[data-series="' + prev + '"]');
+    if (card){ try { card.focus({ preventScroll: true }); } catch (e) {} }
+  }
+
+  /* Move focus to the rebuilt center node label and announce the change, so a
+     keyboard/screen-reader user is not dropped on <body> after a scene rebuild.
+     The center is expandable, so mark it aria-expanded="true" (its children show). */
+  function focusSceneCenter(centerId){
+    const c = sceneNodes.find(o => o.isCenter) || sceneNodes[0];
+    if (c && c.el){
+      if (c.el.getAttribute("role") === "button") c.el.setAttribute("aria-expanded", "true");
+      try { c.el.focus({ preventScroll: true }); } catch (e) {}
+    }
+    const node = byId.get(centerId);
+    if (node){
+      const kids = childrenOf(centerId).length;
+      announce("Открыто: " + node.label + (kids ? (", тем: " + kids) : ""));
+    }
   }
 
   const hook = {
@@ -727,6 +780,7 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
     window.addEventListener("resize", resize);
   }
 
+  let _reframeT = null;
   function resize(){
     if (!renderer) return;
     const w = sceneView.clientWidth || window.innerWidth;
@@ -735,6 +789,10 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
     css2d.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    // Re-fit the cloud for the new aspect (orientation change, mobile browser
+    // chrome show/hide). Debounced so a continuous drag-resize does not thrash.
+    if (_reframeT) clearTimeout(_reframeT);
+    _reframeT = setTimeout(() => { if (scene) framePositions(); }, 120);
     if (!hook.motionRunning) renderOnce();
   }
 
@@ -872,10 +930,12 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
     if (!node || currentView !== "scene") return;
     if (node.planned) return;
     if (hasChildren(id)){
-      const entry = sceneNodes.find(o => o.id === id);
-      if (entry) entry.el.setAttribute("aria-expanded", "true");
+      // Rebuild around the drilled node, then set aria-expanded + move focus onto
+      // the NEW center label. (Setting it on the source label here would be lost:
+      // buildScene -> disposeScene destroys that very element.)
       buildScene(id);
       startLoop();
+      focusSceneCenter(id);
     } else if (node.url){
       window.location.href = node.url;
     }
@@ -891,11 +951,20 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
   }
 
   // Point the camera at the current shell so the whole constellation is in frame.
+  // Aspect-AWARE: derive the distance from BOTH the vertical and the (aspect-
+  // dependent) horizontal field of view and take whichever needs more room, so a
+  // tall-narrow portrait/mobile viewport zooms out instead of clipping nodes off
+  // the left/right edges. A label-width margin leaves slack for the CSS2D pills.
   function framePositions(){
     if (!camera || !controls) return;
     controls.target.set(0, 0, 0);
     const maxR = sceneNodes.reduce((m, o) => Math.max(m, o.base.length()), 1);
-    const dist = Math.max(220, maxR * 2.4);
+    const margin = 1.3;
+    const halfV = (camera.fov * Math.PI / 180) / 2;
+    const halfH = Math.atan(Math.tan(halfV) * (camera.aspect || 1));
+    const distV = (maxR * margin) / Math.tan(halfV);
+    const distH = (maxR * margin) / Math.tan(halfH);
+    const dist = Math.max(220, distV, distH);
     camera.position.set(0, maxR * 0.45, dist);
     controls.update();
     if (!hook.motionRunning) renderOnce();
@@ -918,12 +987,19 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
   /* ---- Render loop ---- */
   function renderOnce(){ if (renderer && scene) { renderer.render(scene, camera); css2d.render(scene, camera); } }
 
+  let lastRenderTs = 0;
   function frame(now){
-    // Continuous subtle motion for real visitors; under automation or reduced
-    // motion, apply ZERO displacement so projected label positions stay stable.
+    // Render at most once per RENDER_MIN_MS (touch) / every frame (desktop), and
+    // never under automation (the scene is static there — a per-frame WebGL +
+    // CSS2D render would just throttle the headless compositor; renderOnce()
+    // already paints on enter/resize/interaction). The loop stays scheduled so
+    // motionRunning stays true.
+    const shouldRender = !AUTOMATION && (!RENDER_MIN_MS || now - lastRenderTs >= RENDER_MIN_MS);
     const animate = !AUTOMATION && !reduceMotion();
-    if (animate && rootGroup){
-      rootGroup.rotation.y += 0.0016;
+    if (animate && rootGroup && shouldRender){
+      // Time-based so angular speed is constant regardless of the fps cap.
+      const dt = lastRenderTs ? Math.min((now - lastRenderTs) / 1000, 0.05) : 0.016;
+      rootGroup.rotation.y += 0.096 * dt;
       const t = now / 1000;
       for (let i = 0; i < sceneNodes.length; i++){
         const o = sceneNodes[i];
@@ -933,12 +1009,7 @@ body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit
       }
     }
     if (controls && controls.enableDamping) controls.update();
-    // Under automation the scene is static (zero motion, damping off), so the
-    // per-frame WebGL + CSS2D render is pure waste that throttles the headless
-    // compositor. The loop stays scheduled (motionRunning is true), but no GPU
-    // work runs per frame; an explicit renderOnce() already paints on
-    // enter/resize/interaction. This keeps the main thread idle and rAF fast.
-    if (!AUTOMATION) renderOnce();
+    if (shouldRender){ renderOnce(); lastRenderTs = now; }
     rafId = requestAnimationFrame(frame);
   }
 
