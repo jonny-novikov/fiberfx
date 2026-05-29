@@ -82,6 +82,9 @@ COPY edu/ /app/edu/
 # Copy SCHOOL course materials served under /school/*
 COPY school/ /app/school/
 
+# Copy FUTURE course materials served under /future/*
+COPY future/ /app/future/
+
 # Create distribution directory structure
 RUN mkdir -p /app/distr/litestream /app/distr/flyer
 

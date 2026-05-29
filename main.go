@@ -21,6 +21,7 @@ var (
 	egeDir    = "/app/ege"
 	eduDir    = "/app/edu"
 	schoolDir = "/app/school"
+	futureDir = "/app/future"
 )
 
 func main() {
@@ -44,6 +45,9 @@ func main() {
 	}
 	if dir := os.Getenv("SCHOOL_DIR"); dir != "" {
 		schoolDir = dir
+	}
+	if dir := os.Getenv("FUTURE_DIR"); dir != "" {
+		futureDir = dir
 	}
 
 	app := fiber.New(fiber.Config{
@@ -177,6 +181,31 @@ func main() {
 		return serveSchool(c, c.Params("name"))
 	})
 
+	// Serve FUTURE materials at clean route URLs (no .html extension).
+	//   /future          → future/index.html
+	//   /future/<name>   → future/<name>.html  (e.g. /future/claude-code)
+	serveFuture := func(c *fiber.Ctx, name string) error {
+		if name == "" {
+			name = "index"
+		}
+		fullPath := filepath.Join(futureDir, name+".html")
+		cleanPath := filepath.Clean(fullPath)
+		if len(cleanPath) < len(futureDir) || cleanPath[:len(futureDir)] != futureDir {
+			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+		}
+		if _, err := os.Stat(cleanPath); err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "future page not found: " + name})
+		}
+		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
+		return c.SendFile(cleanPath)
+	}
+	app.Get("/future", func(c *fiber.Ctx) error {
+		return serveFuture(c, "")
+	})
+	app.Get("/future/:name", func(c *fiber.Ctx) error {
+		return serveFuture(c, c.Params("name"))
+	})
+
 	// Serve distribution files with proper headers
 	app.Get("/distr/*", func(c *fiber.Ctx) error {
 		filePath := c.Params("*")
@@ -207,6 +236,6 @@ func main() {
 		return c.SendFile(fullPath)
 	})
 
-	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir)
+	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir)
 	log.Fatal(app.Listen(":" + port))
 }

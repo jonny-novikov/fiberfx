@@ -1,9 +1,11 @@
 # Makefile — jonnify static server (local dev)
 #
-# Serves:
-#   /        → index.html
-#   /ege/*   → ege/*.html  (clean URLs, no .html extension)
-#   /edu/*   → edu/*.html  (clean URLs, no .html extension)
+# Serves (all clean URLs, no .html extension):
+#   /          → index.html
+#   /ege/*     → ege/*.html
+#   /edu/*     → edu/*.html
+#   /school/*  → school/*.html
+#   /future/*  → future/*.html
 #
 # GOWORK=off is required because go.work references uninitialized submodules
 # (atlas, imgkit, pgroll, tbls) that would otherwise break `go build`.
@@ -20,6 +22,7 @@ INDEX_HTML ?= $(REPO_DIR)/index.html
 EGE_DIR    ?= $(REPO_DIR)/ege
 EDU_DIR    ?= $(REPO_DIR)/edu
 SCHOOL_DIR ?= $(REPO_DIR)/school
+FUTURE_DIR ?= $(REPO_DIR)/future
 
 export GOWORK := off
 
@@ -36,9 +39,11 @@ help:
 	@echo "  make clean      Remove binary, PID file, and log file"
 	@echo ""
 	@echo "Server listens on http://localhost:$(PORT)"
-	@echo "  /              → $(INDEX_HTML)"
-	@echo "  /ege, /ege/*   → $(EGE_DIR)/*.html"
-	@echo "  /edu, /edu/*   → $(EDU_DIR)/*.html"
+	@echo "  /                    → $(INDEX_HTML)"
+	@echo "  /ege, /ege/*         → $(EGE_DIR)/*.html"
+	@echo "  /edu, /edu/*         → $(EDU_DIR)/*.html"
+	@echo "  /school, /school/*   → $(SCHOOL_DIR)/*.html"
+	@echo "  /future, /future/*   → $(FUTURE_DIR)/*.html"
 
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
@@ -59,6 +64,8 @@ start: build
 	 INDEX_HTML=$(INDEX_HTML) \
 	 EGE_DIR=$(EGE_DIR) \
 	 EDU_DIR=$(EDU_DIR) \
+	 SCHOOL_DIR=$(SCHOOL_DIR) \
+	 FUTURE_DIR=$(FUTURE_DIR) \
 	 nohup $(BINARY) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE)
 	@sleep 1
 	@if kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
@@ -98,6 +105,8 @@ run: build
 	 INDEX_HTML=$(INDEX_HTML) \
 	 EGE_DIR=$(EGE_DIR) \
 	 EDU_DIR=$(EDU_DIR) \
+	 SCHOOL_DIR=$(SCHOOL_DIR) \
+	 FUTURE_DIR=$(FUTURE_DIR) \
 	 $(BINARY)
 
 status:
