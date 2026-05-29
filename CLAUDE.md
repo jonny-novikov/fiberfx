@@ -32,13 +32,14 @@ Steps 5–6 return their errors via `fiber.NewError`, which the **central `Error
 | `/edu`, `/edu/:name` | `edu/<name>.html` | **`edu/finances.html`** (default name is `finances`, NOT `index`) |
 | `/school`, `/school/:name` | `school/<name>.html` | `school/index.html` |
 | `/future`, `/future/:name` | `future/<name>.html` | `future/index.html` |
-| `/` | `index.html` — interactive landing: a modgrid of four expanding modcards (one per series) that opens a three.js WebGL 3D node-graph scene per series | — |
+| `/` | `index.html` — lightweight, mobile-friendly landing **hub**: hero + a grid of series cards (school, school/geometria, future, edu, ege, +planned `/elixir`) linking into each series. Pure HTML/CSS, **no WebGL**; links to `/map` in four places. | — |
+| `/map`, `/map/:name` | `map/<name>.html` — the **three.js WebGL orbital 3D node-graph** of all series/topics (the heavy interactive map, moved here from `/`); loads vendored three.js from `/vendor/three/`. `MAP_DIR` env-overridable, default `/app/map`. | `map/index.html` |
 | `/game` | `game.html` — standalone emoji memory game (`GAME_HTML` env-overridable); not linked from the landing | — |
 | `/vendor/*` | self-hosted front-end modules (three.js) from the `assets/` dir (`VENDOR_DIR` env-overridable, default `/app/assets`); path-traversal-guarded; `.js` served as `text/javascript` | — |
 | `/files`, `/health`, `/distr/*` | JSON distr listing, health JSON, tarball downloads | — |
 | _(any error)_ | central Fiber `ErrorHandler` renders `error/<status>.html` (`ERROR_DIR`, default `/app/error`) for browsers, JSON for API clients; covers unmatched-route 404s, handler 403/404s, and panics (500) | — |
 
-Section directories are env-overridable (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, `FUTURE_DIR`, also `INDEX_HTML`, `DISTR_DIR`, `GAME_HTML`, `VENDOR_DIR`, `ERROR_DIR`); they default to the container paths `/app/ege`, `/app/edu`, `/app/school`, `/app/future` (and `/app/error` for the error pages). `PORT` defaults to `8080`. The server ends in `log.Fatal(app.Listen(...))` — there is no in-code graceful shutdown; Fly sends `SIGTERM` (the binary is PID 1).
+Section directories are env-overridable (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, `FUTURE_DIR`, also `INDEX_HTML`, `DISTR_DIR`, `GAME_HTML`, `VENDOR_DIR`, `MAP_DIR`, `ERROR_DIR`); they default to the container paths `/app/ege`, `/app/edu`, `/app/school`, `/app/future` (plus `/app/map` for the 3D map and `/app/error` for the error pages). `PORT` defaults to `8080`. The server ends in `log.Fatal(app.Listen(...))` — there is no in-code graceful shutdown; Fly sends `SIGTERM` (the binary is PID 1).
 
 ### Error pages (`error/<status>.html`)
 
@@ -52,12 +53,12 @@ Section directories are env-overridable (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, `FU
 
 The content is ~58 hand-authored, dependency-light HTML pages. There is **no build step, no bundler, no npm, no CSS framework/preprocessor** — pages are served byte-for-byte. Treat each `.html` file as a self-contained unit.
 
-The "no libraries / 100% vanilla" rule below applies to the ~58 content pages. **It is partially superseded for `index.html` (the root landing) only:** `index.html` uses **three.js 0.169.0** (`three.module.js` + the `examples/jsm` addons `OrbitControls` and `CSS2DRenderer`) to render the per-series WebGL 3D node-graph, wired via an **import map**. three.js is **vendored and self-hosted** under `assets/three/` and served same-origin at `/vendor/three/*` (lazy-imported on the first series dive). It is NOT loaded from a CDN — self-hosting removes the runtime third-party single-point-of-failure (a CDN outage cannot break the 3D map). The dir is named `assets/`, NOT `vendor/`, because a `vendor/` directory at the Go module root is reserved by the toolchain. The three.js exception is scoped to `index.html`; every other page remains 100% vanilla with no libraries.
+The "no libraries / 100% vanilla" rule below applies to the ~58 content pages **and to the lightweight root `index.html`** (the `/` landing hub is pure HTML/CSS — no libraries). **It is partially superseded for `map/index.html` (served at `/map`) only:** that page uses **three.js 0.169.0** (`three.module.js` + the `examples/jsm` addons `OrbitControls` and `CSS2DRenderer`) to render the WebGL orbital 3D node-graph, wired via an **import map**. three.js is **vendored and self-hosted** under `assets/three/` and served same-origin at `/vendor/three/*` (lazy-imported on the first series dive). It is NOT loaded from a CDN — self-hosting removes the runtime third-party single-point-of-failure (a CDN outage cannot break the 3D map). The dir is named `assets/`, NOT `vendor/`, because a `vendor/` directory at the Go module root is reserved by the toolchain. The three.js exception is scoped to `map/index.html`; every other page (including the root landing) remains 100% vanilla with no libraries.
 
 Shared conventions across all pages:
 - **Design system via CSS custom properties.** Every page opens its inline `<style>` with the same `:root` token palette (dark navy `--ink`, cream text, gold/blue/burgundy/sage accents, serif/sans/mono font stacks, radius/shadow tokens). Match these tokens when editing or adding pages.
 - **Math** is rendered client-side by **KaTeX 0.16.9 loaded from jsDelivr CDN** with `auto-render` and `$...$` / `$$...$$` delimiters. Google Fonts are also CDN-loaded. No vendored assets.
-- **JS is 100% vanilla**, inline at the bottom of each file. No React/Vue/htmx/Alpine; no Chart.js/D3. The sole library exception is three.js, used only by `index.html` (see the note above); the content pages use no libraries.
+- **JS is 100% vanilla**, inline at the bottom of each file. No React/Vue/htmx/Alpine; no Chart.js/D3. The sole library exception is three.js, used only by `map/index.html` (the `/map` orbital map; see the note above); the root landing and the content pages use no libraries.
 
 Interactivity patterns, with the canonical file to copy from:
 - **Basic/Advanced level toggle + scroll-reveal** (most common; school/future essays): buttons set `document.body.dataset.level`; CSS shows/hides by level; an `IntersectionObserver` reveals sections. Pattern lives in e.g. `school/*.html`.
@@ -86,7 +87,7 @@ Run directly (foreground, no Makefile), exercising all four sections:
 
 ```bash
 GOWORK=off PORT=8765 INDEX_HTML=./index.html \
-  EGE_DIR=./ege EDU_DIR=./edu SCHOOL_DIR=./school FUTURE_DIR=./future DISTR_DIR=./data ERROR_DIR=./error \
+  EGE_DIR=./ege EDU_DIR=./edu SCHOOL_DIR=./school FUTURE_DIR=./future DISTR_DIR=./data MAP_DIR=./map ERROR_DIR=./error \
   go run .
 # then: curl localhost:8765/health ; open /edu /school /ege /ege/stereometria /future
 ```
@@ -111,7 +112,7 @@ There is no CI/CD (no `.github/workflows`). The `README.md` claims auto-deploy o
 
 The `Dockerfile` is multi-stage (`golang:1.25-alpine` builder → `alpine:3.19` runtime) and bakes the served content into the image at the paths `main.go` defaults to:
 - builds the static binary: `CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o jonnify .` (copies only `main.go` + `go.mod`/`go.sum`, so it's independent of the workspace);
-- `COPY index.html /app/index.html`, `COPY game.html /app/game.html`, `COPY ege/ /app/ege/`, `COPY edu/ /app/edu/`, `COPY school/ /app/school/`, `COPY future/ /app/future/`, `COPY error/ /app/error/` (styled HTML error pages), `COPY assets/ /app/assets/` (vendored three.js) — **whole-directory copies** for the section dirs, so any new `.html` in them ships on the next deploy with no Dockerfile edit;
+- `COPY index.html /app/index.html`, `COPY game.html /app/game.html`, `COPY ege/ /app/ege/`, `COPY edu/ /app/edu/`, `COPY school/ /app/school/`, `COPY future/ /app/future/`, `COPY map/ /app/map/` (the 3D orbital map), `COPY error/ /app/error/` (styled HTML error pages), `COPY assets/ /app/assets/` (vendored three.js) — **whole-directory copies** for the section dirs, so any new `.html` in them ships on the next deploy with no Dockerfile edit;
 - also cross-compiles the unrelated `flyer` CLI into download tarballs under `/app/distr/` (served via `/distr/*`); not relevant to the website but explains the second build stage.
 
 Because the runtime image is what serves the site, **content changes are only live after `fly deploy`** (or a local run pointed at the repo dirs) — there is no hot reload.
@@ -121,5 +122,5 @@ Because the runtime image is what serves the site, **content changes are only li
 - `main.go` — the whole server (routing, the four `serve*` closures, the `resolveUnder` traversal guard, the central `ErrorHandler` + `renderError`/`loadErrorPages`, `/health`).
 - `fly.toml`, `Dockerfile` — deployment + what ships into the image.
 - `Makefile` — local dev driver (note the `GOWORK=off` and port 8765 quirks above); its `start`/`run` recipes export all four section dirs.
-- `edu/`, `ege/`, `school/`, `future/` — the served content. `index.html` — the interactive landing (root `/`): a modgrid of four expanding modcards that open a per-series three.js WebGL 3D node-graph scene (three.js 0.169.0 vendored under `assets/three/`, served same-origin at `/vendor/*`). `game.html` — standalone emoji game served at `/game`. `error/` — styled HTML error pages (`403/404/500/502/503.html`) rendered by the central `ErrorHandler`. `apps/e2e/` — Playwright+TS end-to-end suite that tests the landing page (the modcard root and the WebGL scene); headless Chromium provides WebGL 2.0. Out of scope of the no-build static server; run via `npm test`.
+- `edu/`, `ege/`, `school/`, `future/` — the served content. `index.html` — the lightweight, mobile-friendly landing **hub** (root `/`): hero + series-card grid, pure HTML/CSS, links to `/map`. `map/index.html` — the heavy **three.js WebGL orbital 3D node-graph** served at `/map` (three.js 0.169.0 vendored under `assets/three/`, served same-origin at `/vendor/*`; carries the `window.__mindmap` test hook). `game.html` — standalone emoji game served at `/game`. `error/` — styled HTML error pages (`403/404/500/502/503.html`) rendered by the central `ErrorHandler`. `apps/e2e/` — Playwright+TS end-to-end suite that tests the `/map` 3D scene (modcard root + WebGL nodes); headless Chromium provides WebGL 2.0. Out of scope of the no-build static server; run via `npm test`.
 - Pattern anchors: `ege/stereometria.html` (canvas 3D), `ege/zadanie-13-atlas.html` (step controls), `edu/finances-m2.html` (calculators/SVG charts), `edu/finances-test.html` (quiz), any `school/*.html` (level toggle + scroll-reveal).
