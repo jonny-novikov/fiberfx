@@ -71,7 +71,7 @@ WORKDIR /app
 COPY --from=builder /build/jonnify /app/jonnify
 
 # Copy static index.html served at "/"
-COPY index.html /app/index.html
+COPY map/index.html /app/index.html
 
 # Copy standalone emoji memory game served at "/game"
 COPY game.html /app/game.html
@@ -87,6 +87,15 @@ COPY school/ /app/school/
 
 # Copy FUTURE course materials served under /future/*
 COPY future/ /app/future/
+
+# Copy styled HTML error pages (<status>.html) served by the central error
+# handler — e.g. 404.html for unmatched routes, 500.html for panics.
+COPY error/ /app/error/
+
+# Copy vendored front-end modules (three.js) served under /vendor/* — self-hosted
+# so the 3D landing page has no runtime CDN dependency. The source dir is named
+# "assets" (not "vendor", which Go reserves at the module root).
+COPY assets/ /app/assets/
 
 # Create distribution directory structure
 RUN mkdir -p /app/distr/litestream /app/distr/flyer

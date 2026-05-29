@@ -24,6 +24,8 @@ EDU_DIR    ?= $(REPO_DIR)/edu
 SCHOOL_DIR ?= $(REPO_DIR)/school
 FUTURE_DIR ?= $(REPO_DIR)/future
 GAME_HTML  ?= $(REPO_DIR)/game.html
+VENDOR_DIR ?= $(REPO_DIR)/assets
+ERROR_DIR  ?= $(REPO_DIR)/error
 
 export GOWORK := off
 
@@ -46,6 +48,7 @@ help:
 	@echo "  /school, /school/*   → $(SCHOOL_DIR)/*.html"
 	@echo "  /future, /future/*   → $(FUTURE_DIR)/*.html"
 	@echo "  /game                → $(GAME_HTML)"
+	@echo "  (errors)             → $(ERROR_DIR)/<status>.html (404, 500, …)"
 
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
@@ -69,6 +72,8 @@ start: build
 	 SCHOOL_DIR=$(SCHOOL_DIR) \
 	 FUTURE_DIR=$(FUTURE_DIR) \
 	 GAME_HTML=$(GAME_HTML) \
+	 VENDOR_DIR=$(VENDOR_DIR) \
+	 ERROR_DIR=$(ERROR_DIR) \
 	 nohup $(BINARY) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE)
 	@sleep 1
 	@if kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
@@ -111,6 +116,8 @@ run: build
 	 SCHOOL_DIR=$(SCHOOL_DIR) \
 	 FUTURE_DIR=$(FUTURE_DIR) \
 	 GAME_HTML=$(GAME_HTML) \
+	 VENDOR_DIR=$(VENDOR_DIR) \
+	 ERROR_DIR=$(ERROR_DIR) \
 	 $(BINARY)
 
 status:

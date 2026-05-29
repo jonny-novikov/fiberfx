@@ -3,11 +3,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -23,7 +25,18 @@ var (
 	schoolDir = "/app/school"
 	futureDir = "/app/future"
 	gameHTML  = "/app/game.html"
+	// On-disk dir for files served at the /vendor/* URL. Named "assets" (NOT
+	// "vendor") because a vendor/ dir at the Go module root is reserved by the
+	// toolchain (it forces vendor-mode builds).
+	vendorDir = "/app/assets"
+	// Dir of styled HTML error pages named <status>.html (404.html, 500.html, …).
+	errorDir = "/app/error"
 )
+
+// errorPages caches the custom HTML error pages by HTTP status code, loaded
+// once at startup. A code absent from the map falls back to a JSON error. It is
+// only written before app.Listen and only read thereafter, so no locking.
+var errorPages = map[int][]byte{}
 
 func main() {
 	port := os.Getenv("PORT")
@@ -53,10 +66,32 @@ func main() {
 	if path := os.Getenv("GAME_HTML"); path != "" {
 		gameHTML = path
 	}
+	if dir := os.Getenv("VENDOR_DIR"); dir != "" {
+		vendorDir = dir
+	}
+	if dir := os.Getenv("ERROR_DIR"); dir != "" {
+		errorDir = dir
+	}
+
+	// Load styled error pages into memory once (env overrides are already applied).
+	errorPages = loadErrorPages(errorDir)
 
 	app := fiber.New(fiber.Config{
 		AppName:               "jonnify",
 		DisableStartupMessage: false,
+		// Central error handler: unmatched routes (Fiber's auto-404), panics caught
+		// by the recover middleware, and every fiber.NewError returned by a handler
+		// all funnel here, so error responses are rendered in exactly one place.
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			code := fiber.StatusInternalServerError
+			msg := err.Error()
+			var fe *fiber.Error
+			if errors.As(err, &fe) {
+				code = fe.Code
+				msg = fe.Message
+			}
+			return renderError(c, code, msg)
+		},
 	})
 
 	// Middleware
@@ -78,10 +113,38 @@ func main() {
 	// Serve the standalone emoji memory game at /game
 	app.Get("/game", func(c *fiber.Ctx) error {
 		if _, err := os.Stat(gameHTML); err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "game not found"})
+			return fiber.NewError(fiber.StatusNotFound, "game not found")
 		}
 		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
 		return c.SendFile(gameHTML)
+	})
+
+	// Serve vendored front-end modules (three.js) at /vendor/* — self-hosted so
+	// the 3D landing has no runtime CDN dependency. ES modules MUST be served with
+	// a JavaScript MIME type or the browser refuses to execute them.
+	app.Get("/vendor/*", func(c *fiber.Ctx) error {
+		filePath := c.Params("*")
+		if filePath == "" {
+			return fiber.NewError(fiber.StatusBadRequest, "file path required")
+		}
+		cleanPath, ok := resolveUnder(vendorDir, filePath)
+		if !ok {
+			return fiber.NewError(fiber.StatusForbidden, "access denied")
+		}
+		if _, err := os.Stat(cleanPath); err != nil {
+			return fiber.NewError(fiber.StatusNotFound, "vendor file not found: "+filePath)
+		}
+		switch filepath.Ext(cleanPath) {
+		case ".js", ".mjs":
+			c.Set("Content-Type", "text/javascript; charset=utf-8")
+		case ".map", ".json":
+			c.Set("Content-Type", "application/json; charset=utf-8")
+		case ".css":
+			c.Set("Content-Type", "text/css; charset=utf-8")
+		}
+		// Versioned, immutable vendored assets: cache hard.
+		c.Set("Cache-Control", "public, max-age=31536000, immutable")
+		return c.SendFile(cleanPath)
 	})
 
 	// List available distributions
@@ -124,13 +187,12 @@ func main() {
 		if name == "" {
 			name = "index"
 		}
-		fullPath := filepath.Join(egeDir, name+".html")
-		cleanPath := filepath.Clean(fullPath)
-		if len(cleanPath) < len(egeDir) || cleanPath[:len(egeDir)] != egeDir {
-			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+		cleanPath, ok := resolveUnder(egeDir, name+".html")
+		if !ok {
+			return fiber.NewError(fiber.StatusForbidden, "access denied")
 		}
 		if _, err := os.Stat(cleanPath); err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "ege page not found: " + name})
+			return fiber.NewError(fiber.StatusNotFound, "ege page not found: "+name)
 		}
 		// SendFile auto-sets Last-Modified + handles If-Modified-Since (304).
 		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
@@ -151,13 +213,12 @@ func main() {
 		if name == "" {
 			name = "finances"
 		}
-		fullPath := filepath.Join(eduDir, name+".html")
-		cleanPath := filepath.Clean(fullPath)
-		if len(cleanPath) < len(eduDir) || cleanPath[:len(eduDir)] != eduDir {
-			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+		cleanPath, ok := resolveUnder(eduDir, name+".html")
+		if !ok {
+			return fiber.NewError(fiber.StatusForbidden, "access denied")
 		}
 		if _, err := os.Stat(cleanPath); err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "edu page not found: " + name})
+			return fiber.NewError(fiber.StatusNotFound, "edu page not found: "+name)
 		}
 		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
 		return c.SendFile(cleanPath)
@@ -176,13 +237,12 @@ func main() {
 		if name == "" {
 			name = "index"
 		}
-		fullPath := filepath.Join(schoolDir, name+".html")
-		cleanPath := filepath.Clean(fullPath)
-		if len(cleanPath) < len(schoolDir) || cleanPath[:len(schoolDir)] != schoolDir {
-			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+		cleanPath, ok := resolveUnder(schoolDir, name+".html")
+		if !ok {
+			return fiber.NewError(fiber.StatusForbidden, "access denied")
 		}
 		if _, err := os.Stat(cleanPath); err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "school page not found: " + name})
+			return fiber.NewError(fiber.StatusNotFound, "school page not found: "+name)
 		}
 		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
 		return c.SendFile(cleanPath)
@@ -201,13 +261,12 @@ func main() {
 		if name == "" {
 			name = "index"
 		}
-		fullPath := filepath.Join(futureDir, name+".html")
-		cleanPath := filepath.Clean(fullPath)
-		if len(cleanPath) < len(futureDir) || cleanPath[:len(futureDir)] != futureDir {
-			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+		cleanPath, ok := resolveUnder(futureDir, name+".html")
+		if !ok {
+			return fiber.NewError(fiber.StatusForbidden, "access denied")
 		}
 		if _, err := os.Stat(cleanPath); err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "future page not found: " + name})
+			return fiber.NewError(fiber.StatusNotFound, "future page not found: "+name)
 		}
 		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
 		return c.SendFile(cleanPath)
@@ -223,21 +282,18 @@ func main() {
 	app.Get("/distr/*", func(c *fiber.Ctx) error {
 		filePath := c.Params("*")
 		if filePath == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "file path required"})
+			return fiber.NewError(fiber.StatusBadRequest, "file path required")
 		}
 
-		fullPath := filepath.Join(distrDir, filePath)
-
-		// Security: ensure path is within distrDir
-		cleanPath := filepath.Clean(fullPath)
-		if len(cleanPath) < len(distrDir) || cleanPath[:len(distrDir)] != distrDir {
-			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+		cleanPath, ok := resolveUnder(distrDir, filePath)
+		if !ok {
+			return fiber.NewError(fiber.StatusForbidden, "access denied")
 		}
 
 		// Check file exists
-		info, err := os.Stat(fullPath)
+		info, err := os.Stat(cleanPath)
 		if err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "file not found: " + filePath})
+			return fiber.NewError(fiber.StatusNotFound, "file not found: "+filePath)
 		}
 
 		// Set headers
@@ -246,9 +302,58 @@ func main() {
 		c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(filePath)))
 		c.Set("Cache-Control", "public, max-age=31536000, immutable") // 1 year cache
 
-		return c.SendFile(fullPath)
+		return c.SendFile(cleanPath)
 	})
 
-	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, game: %s", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, gameHTML)
+	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, game: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, gameHTML, errorDir, len(errorPages))
 	log.Fatal(app.Listen(":" + port))
+}
+
+// loadErrorPages reads every <status>.html in dir (e.g. 404.html, 503.html) into
+// memory, keyed by status code. Only filenames that parse to an HTTP error code
+// (400–599) are loaded, so dropping a new NNN.html into the dir is enough to add
+// a page — no code change needed. Missing/unreadable files are skipped silently;
+// the renderer falls back to JSON for any code without a page.
+func loadErrorPages(dir string) map[int][]byte {
+	pages := make(map[int][]byte)
+	matches, _ := filepath.Glob(filepath.Join(dir, "*.html"))
+	for _, p := range matches {
+		code, err := strconv.Atoi(strings.TrimSuffix(filepath.Base(p), ".html"))
+		if err != nil || code < 400 || code > 599 {
+			continue
+		}
+		if body, readErr := os.ReadFile(p); readErr == nil {
+			pages[code] = body
+		}
+	}
+	return pages
+}
+
+// renderError writes an error response for the given status code. Browsers (which
+// send Accept: text/html) get the styled HTML page when one exists; API clients,
+// curl, and health probes get a JSON body. SendFile is deliberately NOT used —
+// it would reset the status to 200 — so the cached bytes are written with Send,
+// preserving the real error status.
+func renderError(c *fiber.Ctx, code int, msg string) error {
+	if body, ok := errorPages[code]; ok &&
+		c.Accepts(fiber.MIMEApplicationJSON, fiber.MIMETextHTML) == fiber.MIMETextHTML {
+		c.Set(fiber.HeaderCacheControl, "no-store")
+		return c.Status(code).Type("html", "utf-8").Send(body)
+	}
+	return c.Status(code).JSON(fiber.Map{"error": msg})
+}
+
+// resolveUnder joins name onto dir and returns the cleaned path, with ok=false
+// when the result escapes dir (the path-traversal guard). Unlike a raw string
+// prefix test it (a) cleans dir too, so it works with relative dirs such as
+// "./ege" where filepath.Join+Clean drop the leading "./", and (b) requires a
+// path separator right after dir, so a sibling like "/app/egevil" cannot pass as
+// being under "/app/ege".
+func resolveUnder(dir, name string) (string, bool) {
+	cleanDir := filepath.Clean(dir)
+	cleanPath := filepath.Clean(filepath.Join(cleanDir, name))
+	if cleanPath != cleanDir && !strings.HasPrefix(cleanPath, cleanDir+string(os.PathSeparator)) {
+		return "", false
+	}
+	return cleanPath, true
 }
