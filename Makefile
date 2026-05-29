@@ -27,6 +27,7 @@ MAP_DIR    ?= $(REPO_DIR)/map
 GAME_HTML  ?= $(REPO_DIR)/game.html
 VENDOR_DIR ?= $(REPO_DIR)/assets
 ERROR_DIR  ?= $(REPO_DIR)/error
+ELIXIR_DIR ?= $(REPO_DIR)/elixir
 
 export GOWORK := off
 
@@ -49,6 +50,7 @@ help:
 	@echo "  /school, /school/*   → $(SCHOOL_DIR)/*.html"
 	@echo "  /future, /future/*   → $(FUTURE_DIR)/*.html"
 	@echo "  /map, /map/*         → $(MAP_DIR)/*.html (3D orbital map)"
+	@echo "  /elixir, /elixir/**  → $(ELIXIR_DIR)/ (folder tree → index.html / <name>.html)"
 	@echo "  /game                → $(GAME_HTML)"
 	@echo "  (errors)             → $(ERROR_DIR)/<status>.html (404, 500, …)"
 
@@ -74,6 +76,7 @@ start: build
 	 SCHOOL_DIR=$(SCHOOL_DIR) \
 	 FUTURE_DIR=$(FUTURE_DIR) \
 	 MAP_DIR=$(MAP_DIR) \
+	 ELIXIR_DIR=$(ELIXIR_DIR) \
 	 GAME_HTML=$(GAME_HTML) \
 	 VENDOR_DIR=$(VENDOR_DIR) \
 	 ERROR_DIR=$(ERROR_DIR) \
@@ -119,6 +122,7 @@ run: build
 	 SCHOOL_DIR=$(SCHOOL_DIR) \
 	 FUTURE_DIR=$(FUTURE_DIR) \
 	 MAP_DIR=$(MAP_DIR) \
+	 ELIXIR_DIR=$(ELIXIR_DIR) \
 	 GAME_HTML=$(GAME_HTML) \
 	 VENDOR_DIR=$(VENDOR_DIR) \
 	 ERROR_DIR=$(ERROR_DIR) \

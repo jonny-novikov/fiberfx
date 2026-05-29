@@ -25,6 +25,10 @@ var (
 	schoolDir = "/app/school"
 	futureDir = "/app/future"
 	mapDir    = "/app/map"
+	// Elixir course content. FOLDER-routed (see serveElixir), unlike the flat
+	// <name>.html sections above: a clean URL maps to a path under this dir and
+	// resolves to <path>/index.html (directories) or <path>.html (leaf URLs).
+	elixirDir = "/app/elixir"
 	gameHTML  = "/app/game.html"
 	// On-disk dir for files served at the /vendor/* URL. Named "assets" (NOT
 	// "vendor") because a vendor/ dir at the Go module root is reserved by the
@@ -66,6 +70,9 @@ func main() {
 	}
 	if dir := os.Getenv("MAP_DIR"); dir != "" {
 		mapDir = dir
+	}
+	if dir := os.Getenv("ELIXIR_DIR"); dir != "" {
+		elixirDir = dir
 	}
 	if path := os.Getenv("GAME_HTML"); path != "" {
 		gameHTML = path
@@ -310,6 +317,50 @@ func main() {
 		return serveMap(c, c.Params("name"))
 	})
 
+	// Serve the Elixir course as a folder tree. This section is FOLDER-routed
+	// (multi-segment) — unlike the flat <name>.html sections above — so it uses a
+	// wildcard route and a try_files-style cascade on the path under elixirDir:
+	//   /elixir                         → elixir/index.html                    (dir → its index.html)
+	//   /elixir/algebra                 → elixir/algebra/index.html            (dir → its index.html)
+	//   /elixir/algebra/f1-01-functions → elixir/algebra/f1-01-functions.html  (clean leaf URL → .html)
+	//   /elixir/algebra/diagram.svg     → elixir/algebra/diagram.svg           (exact co-located file)
+	// resolveUnder guards every join, so ".." in any segment is rejected (403) —
+	// the same path-traversal guard the /distr/* and /vendor/* wildcards use.
+	serveElixir := func(c *fiber.Ctx, sub string) error {
+		cleanPath, ok := resolveUnder(elixirDir, strings.Trim(sub, "/"))
+		if !ok {
+			return fiber.NewError(fiber.StatusForbidden, "access denied")
+		}
+		info, err := os.Stat(cleanPath)
+		switch {
+		case err == nil && info.IsDir():
+			// Directory → serve its index.html (pretty-URL folder landing).
+			cleanPath = filepath.Join(cleanPath, "index.html")
+			if st, e := os.Stat(cleanPath); e != nil || st.IsDir() {
+				return fiber.NewError(fiber.StatusNotFound, "elixir page not found: "+sub)
+			}
+		case err != nil:
+			// No exact match → try the clean-URL form (<path>.html). Appending a
+			// fixed suffix to an already-guarded path keeps it under elixirDir.
+			html := cleanPath + ".html"
+			if st, e := os.Stat(html); e != nil || st.IsDir() {
+				return fiber.NewError(fiber.StatusNotFound, "elixir page not found: "+sub)
+			}
+			cleanPath = html
+		}
+		// The remaining case (err == nil && !IsDir) is an exact file — e.g. an
+		// explicit .html or a co-located .svg/.png — served as-is by SendFile,
+		// which sets the Content-Type from the extension.
+		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
+		return c.SendFile(cleanPath)
+	}
+	app.Get("/elixir", func(c *fiber.Ctx) error {
+		return serveElixir(c, "")
+	})
+	app.Get("/elixir/*", func(c *fiber.Ctx) error {
+		return serveElixir(c, c.Params("*"))
+	})
+
 	// Serve distribution files with proper headers
 	app.Get("/distr/*", func(c *fiber.Ctx) error {
 		filePath := c.Params("*")
@@ -337,7 +388,7 @@ func main() {
 		return c.SendFile(cleanPath)
 	})
 
-	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, game: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, gameHTML, errorDir, len(errorPages))
+	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, elixir: %s, game: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, elixirDir, gameHTML, errorDir, len(errorPages))
 	log.Fatal(app.Listen(":" + port))
 }
 

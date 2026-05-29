@@ -89,6 +89,9 @@ COPY school/ /app/school/
 # Copy FUTURE course materials served under /future/*
 COPY future/ /app/future/
 
+# Copy the Elixir course (folder tree with subfolders) served under /elixir/*
+COPY elixir/ /app/elixir/
+
 # Copy the 3D orbital knowledge map (three.js WebGL node-graph) served under /map
 COPY map/ /app/map/
 
