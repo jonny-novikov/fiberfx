@@ -32,53 +32,60 @@ Source-of-truth index of the **`/school/geometria`** sub-series («Курс на
 
 ## Объём правок (что меняется)
 
-| Что | Где сейчас | Цель | Кол-во |
-|---|---|---|---|
-| Логотип-подпись | `Геометрия Шарыгина · M#` (главы M1–M9) | `Наглядная геометрия · M#` | **9** |
-| «← к модулям» link | → `/school/sharygin-pokolenia` (главы M1–M9) | → `/school/geometria` | **9** |
-| Логотип `href` главы | → `/school/sharygin-pokolenia` (M1–M9) | → `/school/geometria` *(как у M10)* | 9 *(подтвердить)* |
-| M10 (`naglyadnye-professii`) | уже `Наглядная геометрия · M10` → `/school/geometria` | — | 0 ✅ |
-| Подразделы (46) | `Углубление · <название>`, → родительская глава | *вне явного объёма задачи* | — *(подтвердить)* |
-| ⚠ `princip-kavaleri` | в гриде M7, файла нет | создать страницу или убрать ссылку | 1 |
+| Что | Где сейчас | Цель                               | Кол-во |
+|---|---|------------------------------------|---|
+| Логотип-подпись | `Геометрия Шарыгина · M#` (главы M1–M9) | `Наглядная геометрия · M#`         | **9** |
+| «← к модулям» link | → `/school/sharygin-pokolenia` (главы M1–M9) | → `/school/geometria`              | **9** |
+| Логотип `href` главы | → `/school/sharygin-pokolenia` (M1–M9) | → `/school/geometria` *(как у M10)* | **9 ✅** |
+| M10 (`naglyadnye-professii`) | уже `Наглядная геометрия · M10` → `/school/geometria` | —                                  | 0 ✅ |
+| Подразделы (46) | `Углубление · <название>`, → родительская глава | *вне явного объёма задачи*         | — ✅ уже так |
+| ⚠ `princip-kavaleri` | в гриде M7, файла нет | UPD. оператор создал файл          | 1 |
 
-> Открытый вопрос для этапа правок: применять «Наглядная геометрия» только к 10
-> главам-модулям (чисто, M10 = эталон), или также как-то к 46 подразделам (у них
-> сейчас осмысленная подпись `Углубление · <название>`).
+> **Статус — выполнено (M1–M9):** логотип-подпись → `Наглядная геометрия · M#`,
+> логотип и «← к модулям» → `/school/geometria` (как у эталона M10). Подразделы (46)
+> не трогали — их логотип уже ведёт на родительскую главу. `princip-kavaleri` создан
+> оператором (подраздел `Углубление · Принцип Кавальери` → `metod-sledov`).
+>
+> **Осталось / на решение:** внизу глав M1–M9 карточка «↩ хаб» (`class="modcard"`)
+> всё ещё ведёт на `/school/sharygin-pokolenia` с подписью «Все модули серии ·
+> Оглавление *девяти* модулей *Школы Шарыгина*» — устарело (курс = 10 модулей
+> «Наглядной геометрии», хаб = `/school/geometria`). Не менял: правка затрагивает
+> описательный текст. Нужно решение — перенаправить + переписать подпись или оставить.
 
 ---
 
 ## M1 · От Евклида — в будущее
-- **гл** [/school/ot-evklida-v-budushchee](school/ot-evklida-v-budushchee.html) — лого `Геометрия Шарыгина · M1` → `sharygin-pokolenia` · ✓ к-модулям → `sharygin-pokolenia`
+- **гл** [/school/ot-evklida-v-budushchee](school/ot-evklida-v-budushchee.html) — лого `Наглядная геометрия · M1` → `/school/geometria` · к-модулям → `/school/geometria` ✅
 - пр [/school/neevklidova-revolyutsiya](school/neevklidova-revolyutsiya.html) — Неевклидова революция · ← ot-evklida-v-budushchee
 - пр [/school/dekart-koordinaty](school/dekart-koordinaty.html) — Декарт: координаты · ← ot-evklida-v-budushchee
 - пр [/school/naglyadnaya-geometriya](school/naglyadnaya-geometriya.html) — Наглядная геометрия Шарыгина · ← ot-evklida-v-budushchee
 
 ## M2 · Вспомогательные построения
-- **гл** [/school/vspomogatelnye-postroeniya](school/vspomogatelnye-postroeniya.html) — лого `Геометрия Шарыгина · M2` → `sharygin-pokolenia` · ✓ к-модулям → `sharygin-pokolenia`
+- **гл** [/school/vspomogatelnye-postroeniya](school/vspomogatelnye-postroeniya.html) — лого `Наглядная геометрия · M2` → `/school/geometria` · к-модулям → `/school/geometria` ✅
 - пр [/school/vspomogatelnaya-okruzhnost](school/vspomogatelnaya-okruzhnost.html) — Вспомогательная окружность · ← vspomogatelnye-postroeniya
 - пр [/school/simmetriya-povorot](school/simmetriya-povorot.html) — Симметрия и поворот · ← vspomogatelnye-postroeniya
 - пр [/school/dostroit-do-figury](school/dostroit-do-figury.html) — Достроить до фигуры · ← vspomogatelnye-postroeniya
 
 ## M3 · Циркуль и линейка
-- **гл** [/school/cirkul-i-linejka](school/cirkul-i-linejka.html) — лого `Геометрия Шарыгина · M3` → `sharygin-pokolenia` · ✓ к-модулям → `sharygin-pokolenia`
+- **гл** [/school/cirkul-i-linejka](school/cirkul-i-linejka.html) — лого `Наглядная геометрия · M3` → `/school/geometria` · к-модулям → `/school/geometria` ✅
 - пр [/school/bazovye-postroeniya](school/bazovye-postroeniya.html) — Базовые построения · ← cirkul-i-linejka
 - пр [/school/zolotoe-sechenie](school/zolotoe-sechenie.html) — Золотое сечение и правильные многоугольники · ← cirkul-i-linejka
 - пр [/school/nerazreshimye-zadachi](school/nerazreshimye-zadachi.html) — Неразрешимые задачи · ← cirkul-i-linejka
 
 ## M4 · Пространственное мышление
-- **гл** [/school/prostranstvennoe-myshlenie](school/prostranstvennoe-myshlenie.html) — лого `Геометрия Шарыгина · M4` → `sharygin-pokolenia` · ✓ к-модулям → `sharygin-pokolenia`
+- **гл** [/school/prostranstvennoe-myshlenie](school/prostranstvennoe-myshlenie.html) — лого `Наглядная геометрия · M4` → `/school/geometria` · к-модулям → `/school/geometria` ✅
 - пр [/school/myslennoe-vrashchenie](school/myslennoe-vrashchenie.html) — Мысленное вращение · ← prostranstvennoe-myshlenie
 - пр [/school/teni-i-proekcii](school/teni-i-proekcii.html) — Тени и проекции · ← prostranstvennoe-myshlenie
 - пр [/school/razvyortka-v-3d](school/razvyortka-v-3d.html) — От развёртки к 3D · ← prostranstvennoe-myshlenie
 
 ## M5 · Углы и расстояния в пространстве
-- **гл** [/school/ugly-i-rasstoyaniya](school/ugly-i-rasstoyaniya.html) — лого `Геометрия Шарыгина · M5` → `sharygin-pokolenia` · ✓ к-модулям → `sharygin-pokolenia`
+- **гл** [/school/ugly-i-rasstoyaniya](school/ugly-i-rasstoyaniya.html) — лого `Наглядная геометрия · M5` → `/school/geometria` · к-модулям → `/school/geometria` ✅
 - пр [/school/dvugrannyj-ugol](school/dvugrannyj-ugol.html) — Двугранный угол · ← ugly-i-rasstoyaniya
 - пр [/school/rasstoyaniya-v-prostranstve](school/rasstoyaniya-v-prostranstve.html) — Расстояния в пространстве · ← ugly-i-rasstoyaniya
 - пр [/school/apofema-i-proekciya](school/apofema-i-proekciya.html) — Апофема и проекция · ← ugly-i-rasstoyaniya
 
 ## M6 · Тела и развёртки
-- **гл** [/school/tela-i-razvyortki](school/tela-i-razvyortki.html) — лого `Геометрия Шарыгина · M6` → `sharygin-pokolenia` · ✓ к-модулям → `sharygin-pokolenia`
+- **гл** [/school/tela-i-razvyortki](school/tela-i-razvyortki.html) — лого `Наглядная геометрия · M6` → `/school/geometria` · к-модулям → `/school/geometria` ✅
 - пр [/school/formula-eylera](school/formula-eylera.html) — Формула Эйлера · ← tela-i-razvyortki
 - пр [/school/pyat-pravilnyh-tel](school/pyat-pravilnyh-tel.html) — Пять правильных тел · ← tela-i-razvyortki
 - пр [/school/prizmy-i-piramidy](school/prizmy-i-piramidy.html) — Призмы и пирамиды · ← tela-i-razvyortki
@@ -86,7 +93,7 @@ Source-of-truth index of the **`/school/geometria`** sub-series («Курс на
 - пр [/school/poluravilnye-tela](school/poluravilnye-tela.html) — Полуправильные тела · ← tela-i-razvyortki
 
 ## M7 · Метод следов
-- **гл** [/school/metod-sledov](school/metod-sledov.html) — лого `Геометрия Шарыгина · M7` → `sharygin-pokolenia` · ✓ к-модулям → `sharygin-pokolenia`
+- **гл** [/school/metod-sledov](school/metod-sledov.html) — лого `Наглядная геометрия · M7` → `/school/geometria` · к-модулям → `/school/geometria` ✅
 - пр [/school/secheniya-kuba](school/secheniya-kuba.html) — Сечения куба · ← metod-sledov
 - пр [/school/postroenie-metodom-sledov](school/postroenie-metodom-sledov.html) — Построение методом следов · ← metod-sledov
 - пр [/school/secheniya-prizm-piramid](school/secheniya-prizm-piramid.html) — Сечения призм и пирамид · ← metod-sledov
@@ -96,7 +103,7 @@ Source-of-truth index of the **`/school/geometria`** sub-series («Курс на
 - пр **⚠ /school/princip-kavaleri** — Принцип Кавальери · **файла нет** (битая ссылка в гриде M7)
 
 ## M8 · Начертательная геометрия
-- **гл** [/school/nachertatelnaya-geometriya](school/nachertatelnaya-geometriya.html) — лого `Геометрия Шарыгина · M8` → `sharygin-pokolenia` · ✓ к-модулям → `sharygin-pokolenia`
+- **гл** [/school/nachertatelnaya-geometriya](school/nachertatelnaya-geometriya.html) — лого `Наглядная геометрия · M8` → `/school/geometria` · к-модулям → `/school/geometria` ✅
 - пр [/school/epyur-monzha](school/epyur-monzha.html) — Эпюр Монжа · ← nachertatelnaya-geometriya
 - пр [/school/tri-vida](school/tri-vida.html) — Три вида · ← nachertatelnaya-geometriya
 - пр [/school/razrezy-i-secheniya](school/razrezy-i-secheniya.html) — Разрезы и сечения · ← nachertatelnaya-geometriya
@@ -106,7 +113,7 @@ Source-of-truth index of the **`/school/geometria`** sub-series («Курс на
 - пр [/school/perspektiva](school/perspektiva.html) — Перспектива · ← nachertatelnaya-geometriya
 
 ## M9 · От наглядности к вузу
-- **гл** [/school/ot-naglyadnosti-k-vuzu](school/ot-naglyadnosti-k-vuzu.html) — лого `Геометрия Шарыгина · M9` → `sharygin-pokolenia` · ✓ к-модулям → `sharygin-pokolenia`
+- **гл** [/school/ot-naglyadnosti-k-vuzu](school/ot-naglyadnosti-k-vuzu.html) — лого `Наглядная геометрия · M9` → `/school/geometria` · к-модулям → `/school/geometria` ✅
 - пр [/school/vpisannyj-ugol](school/vpisannyj-ugol.html) — Вписанный угол · ← ot-naglyadnosti-k-vuzu
 - пр [/school/stereometriya-na-ekzamene](school/stereometriya-na-ekzamene.html) — Стереометрия на экзамене · ← ot-naglyadnosti-k-vuzu
 - пр [/school/kak-iskat-reshenie](school/kak-iskat-reshenie.html) — Как искать решение · ← ot-naglyadnosti-k-vuzu
