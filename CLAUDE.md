@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Scope of this file
 
-This repo is a Go workspace (`go.work`) holding several unrelated modules. **This file documents only the `jonnify` web server** — the interactive educational website served at `/edu`, `/school`, `/ege` — and how it is deployed to Fly.io via `fly.toml`. Other modules (`flyer`, `apps/gateway`, `apps/s3xplorer`, `datadog`, `hugot-memory`) are out of scope here.
+This repo is a Go workspace (`go.work`) holding several unrelated modules. **This file documents only the `jonnify` web server** — the interactive educational website served at `/edu`, `/school`, `/ege`, `/future` — and how it is deployed to Fly.io via `fly.toml`. Other modules (`flyer`, `apps/gateway`, `apps/s3xplorer`, `datadog`, `hugot-memory`) are out of scope here.
 
 The `jonnify` server is the **root module**: `main.go` + `go.mod` (`github.com/jonny-novikov/jonnify`, Go 1.25) + `Dockerfile` + `fly.toml`. It is a single-file Fiber v2 (`github.com/gofiber/fiber/v2`) app with no test suite and no other server packages.
 
@@ -12,7 +12,7 @@ The `jonnify` server is the **root module**: `main.go` + `go.mod` (`github.com/j
 
 The entire server is `main.go`. There is **no templating, no rendering, no data layer, no database, no `embed.FS`, no `app.Static` mount**. Each page is a complete, pre-authored `.html` file on disk; the server maps a clean URL to a file and streams it with `c.SendFile(...)`.
 
-Request flow for `/edu`, `/school`, `/ege` (the three are implemented identically via per-section closures `serveEdu`/`serveSchool`/`serveEge`):
+Request flow for `/edu`, `/school`, `/ege`, `/future` (the four are implemented identically via per-section closures `serveEdu`/`serveSchool`/`serveEge`/`serveFuture`):
 
 1. Fiber matches the bare route (`GET /edu`) or the named route (`GET /edu/:name`).
 2. The handler reads `c.Params("name")`; the bare route passes `""`.
@@ -29,13 +29,14 @@ Request flow for `/edu`, `/school`, `/ege` (the three are implemented identicall
 | `/ege`, `/ege/:name` | `ege/<name>.html` | `ege/index.html` |
 | `/edu`, `/edu/:name` | `edu/<name>.html` | **`edu/finances.html`** (default name is `finances`, NOT `index`) |
 | `/school`, `/school/:name` | `school/<name>.html` | `school/index.html` |
+| `/future`, `/future/:name` | `future/<name>.html` | `future/index.html` |
 | `/`, `/files`, `/health`, `/distr/*` | root landing, JSON distr listing, health JSON, tarball downloads | — |
 
-Section directories are env-overridable (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, also `INDEX_HTML`, `DISTR_DIR`); they default to the container paths `/app/ege`, `/app/edu`, `/app/school`. `PORT` defaults to `8080`. The server ends in `log.Fatal(app.Listen(...))` — there is no in-code graceful shutdown; Fly sends `SIGTERM` (the binary is PID 1).
+Section directories are env-overridable (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, `FUTURE_DIR`, also `INDEX_HTML`, `DISTR_DIR`); they default to the container paths `/app/ege`, `/app/edu`, `/app/school`, `/app/future`. `PORT` defaults to `8080`. The server ends in `log.Fatal(app.Listen(...))` — there is no in-code graceful shutdown; Fly sends `SIGTERM` (the binary is PID 1).
 
 **To add a new page:** drop `school/foo.html` (etc.) into the section dir. The `:name` route already serves any `<name>.html` — no `main.go` change is needed. On deploy it ships automatically because the `Dockerfile` copies whole section dirs (see below).
 
-**To add a new top-level section** (e.g. `/future`): you must do BOTH (a) add a `serveX` closure + two `app.Get` registrations in `main.go`, and (b) add a `COPY future/ /app/future/` line to the `Dockerfile`. See the `future/` caveat.
+**To add a new top-level section** (e.g. a hypothetical `/blog`): you must do BOTH (a) add a `serveX` closure + two `app.Get` registrations in `main.go` (copy any existing `serve*` block — they are identical except for the dir var and the default-name special case), and (b) add a `COPY blog/ /app/blog/` line to the `Dockerfile`. For local dev also thread a `BLOG_DIR` var into the `Makefile`'s `start`/`run` recipes. The four existing sections (`/ege`, `/edu`, `/school`, `/future`) were all added this way.
 
 ## Content authoring model (what makes the site "interactive")
 
@@ -52,11 +53,7 @@ Interactivity patterns, with the canonical file to copy from:
 - **Slider-driven financial calculators + bespoke SVG charts** (EDU finances): `<input type=number>` paired with `<input type=range>` kept in sync, recomputing real formulas (compound interest, annuity, Rule-of-72) with `Intl.NumberFormat('ru-RU')`. Charts are generated as SVG strings, not a library. See `edu/finances-m2.html`, `edu/finances-m3.html`.
 - **Self-grading quiz** with `localStorage` persistence: a `questions` array of inline JS objects drives render/grade/restart. Only example: `edu/finances-test.html`.
 
-Content map: `edu/` = «Финансовая математика» (6-module finance course, `finances-m1..m6` + sub-sections + test); `ege/` = ЕГЭ profile-math prep (stereometry tasks 13–14, financial task 16); `school/` = «Сто лет школьной математики» (12-chapter essay series on Russian math education).
-
-### Caveat: `future/` exists but is NOT served
-
-The `future/` directory (the actively-developed AI-education series — all recent commits are `future: ...`) is **not routed in `main.go` and not copied by the `Dockerfile`**. Its pages internally link to `/future/...`, so those URLs currently 404 in production. Wiring it up requires both a route block in `main.go` and a `COPY future/ /app/future/` in the `Dockerfile` (see "add a new top-level section" above).
+Content map: `edu/` = «Финансовая математика» (6-module finance course, `finances-m1..m6` + sub-sections + test); `ege/` = ЕГЭ profile-math prep (stereometry tasks 13–14, financial task 16); `school/` = «Сто лет школьной математики» (essay series on Russian math education); `future/` = the actively-developed AI-education series (LLMs, transformers, formal logic, functional programming — all recent commits are `future: ...`). Its pages internally link to `/future/<name>` clean routes.
 
 ## Build / run locally
 
@@ -71,17 +68,15 @@ make restart    # stop + rebuild + start (fresh binary)
 make status     # show running / not running
 ```
 
-Two `Makefile` gotchas to be aware of:
-- **`make run`/`make start` do NOT export `SCHOOL_DIR`**, so `/school/*` falls back to the `/app/school` default and 404s locally. To test `/school`, run directly with `SCHOOL_DIR` set.
-- The Makefile default port is **8765**, not 8080.
+The `Makefile`'s `start`/`run` recipes export all four section dirs (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, `FUTURE_DIR`) plus `INDEX_HTML`/`DISTR_DIR`, all pointed at the in-repo dirs — so every route works locally with no extra setup. One gotcha: the Makefile default port is **8765**, not 8080.
 
-Run directly (foreground, no Makefile), exercising all three sections:
+Run directly (foreground, no Makefile), exercising all four sections:
 
 ```bash
 GOWORK=off PORT=8765 INDEX_HTML=./index.html \
-  EGE_DIR=./ege EDU_DIR=./edu SCHOOL_DIR=./school DISTR_DIR=./data \
+  EGE_DIR=./ege EDU_DIR=./edu SCHOOL_DIR=./school FUTURE_DIR=./future DISTR_DIR=./data \
   go run .
-# then: curl localhost:8765/health ; open /edu /school /ege /ege/stereometria
+# then: curl localhost:8765/health ; open /edu /school /ege /ege/stereometria /future
 ```
 
 There are **no tests, lint config, or format hooks** for this module. Manual: `gofmt -w main.go`, `go vet .`.
@@ -104,15 +99,15 @@ There is no CI/CD (no `.github/workflows`). The `README.md` claims auto-deploy o
 
 The `Dockerfile` is multi-stage (`golang:1.25-alpine` builder → `alpine:3.19` runtime) and bakes the served content into the image at the paths `main.go` defaults to:
 - builds the static binary: `CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o jonnify .` (copies only `main.go` + `go.mod`/`go.sum`, so it's independent of the workspace);
-- `COPY index.html /app/index.html`, `COPY ege/ /app/ege/`, `COPY edu/ /app/edu/`, `COPY school/ /app/school/` — **whole-directory copies**, so any new `.html` in these dirs ships on the next deploy with no Dockerfile edit;
+- `COPY index.html /app/index.html`, `COPY ege/ /app/ege/`, `COPY edu/ /app/edu/`, `COPY school/ /app/school/`, `COPY future/ /app/future/` — **whole-directory copies**, so any new `.html` in these dirs ships on the next deploy with no Dockerfile edit;
 - also cross-compiles the unrelated `flyer` CLI into download tarballs under `/app/distr/` (served via `/distr/*`); not relevant to the website but explains the second build stage.
 
 Because the runtime image is what serves the site, **content changes are only live after `fly deploy`** (or a local run pointed at the repo dirs) — there is no hot reload.
 
 ## Key files
 
-- `main.go` — the whole server (routing, the three `serve*` closures, guards, `/health`).
+- `main.go` — the whole server (routing, the four `serve*` closures, guards, `/health`).
 - `fly.toml`, `Dockerfile` — deployment + what ships into the image.
-- `Makefile` — local dev driver (note the `GOWORK=off`, port 8765, and missing `SCHOOL_DIR` quirks above).
-- `edu/`, `ege/`, `school/` — the served content. `future/` — authored but not yet served.
+- `Makefile` — local dev driver (note the `GOWORK=off` and port 8765 quirks above); its `start`/`run` recipes export all four section dirs.
+- `edu/`, `ege/`, `school/`, `future/` — the served content.
 - Pattern anchors: `ege/stereometria.html` (canvas 3D), `ege/zadanie-13-atlas.html` (step controls), `edu/finances-m2.html` (calculators/SVG charts), `edu/finances-test.html` (quiz), any `school/*.html` (level toggle + scroll-reveal).
