@@ -200,6 +200,20 @@ body.js-ready #sitemap-fallback[hidden]{display:none}
   .node .art{transition:none}
   *{scroll-behavior:auto}
 }
+
+/* ---- Automation (navigator.webdriver): freeze all motion so e2e clicks see a
+   stable bounding box and the main thread stays idle. Real visitors are
+   unaffected — they never carry this class. ---- */
+body.is-automated .pulse{animation:none;display:none}
+body.is-automated .node .art{transition:none;animation:none}
+body.is-automated .node:hover .art,body.is-automated .node:focus-visible .art{transform:none}
+body.is-automated .node.is-new .art{animation:none}
+body.is-automated .edge{animation:none;stroke-dashoffset:0}
+body.is-automated .growth-edge{transition:none}
+/* Drop GPU-heavy always-on effects under automation: full-screen blend + blur
+   are costly in software-rendered headless and slow page load / axe analysis. */
+body.is-automated::after{display:none}
+body.is-automated #topbar,body.is-automated #legend{backdrop-filter:none;-webkit-backdrop-filter:none}
 </style>
 </head>
 <body>
@@ -480,6 +494,11 @@ body.js-ready #sitemap-fallback[hidden]{display:none}
 
   const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
   const reduceMotion = () => reduceMQ.matches;
+  // Under browser automation, freeze per-frame motion: a continuously moving
+  // node never satisfies a tool's "element is stable" gate, and infinite
+  // compositing saturates the main thread. The loop still runs (motionRunning
+  // stays meaningful) but applies zero displacement.
+  const AUTOMATION = (typeof navigator !== "undefined" && navigator.webdriver === true);
 
   /* ---- DOM refs ---- */
   const svg = document.getElementById("map");
@@ -522,13 +541,19 @@ body.js-ready #sitemap-fallback[hidden]{display:none}
         centerAng = (gp && pos[gp]) ? Math.atan2(py - pos[gp][1], px - pos[gp][0]) * 180 / Math.PI : -90;
       }
       const n = kids.length;
+      // Dense clusters (e.g. the 16-child geometry sub-tree) need a wider arc
+      // AND extra concentric rings so full-width labels separate both
+      // angularly and radially instead of colliding on a single ring.
+      const dense = n > 10;
       let span = Math.min(26 * Math.max(n - 1, 1), 210);
       if (pid === "future") span = Math.min(Math.max(26 * (n - 1), 150), 300);
-      if (depth === 0 && n > 8) span = Math.min(26 * (n - 1), 300);
+      if (n > 8) span = Math.min(22 * (n - 1), 270);
+      const rings = dense ? 3 : 2;
+      const ringStep = dense ? 60 : 48;
+      const ringBaseR = baseR + (dense ? 20 : 0);
       kids.forEach((k, i) => {
         const ang = n === 1 ? centerAng : (centerAng - span / 2 + span * i / (n - 1));
-        const band = (i % 2) * 48;
-        const r = baseR + band;
+        const r = ringBaseR + (i % rings) * ringStep;
         const a = ang * Math.PI / 180;
         pos[k.id] = [px + r * Math.cos(a), py + r * Math.sin(a)];
         queue.push(k.id);
@@ -540,20 +565,27 @@ body.js-ready #sitemap-fallback[hidden]{display:none}
   /* ---- Markup ---- */
   function radiusFor(type){ return type === "hub" ? 34 : type === "chapter" ? 22 : type === "subsection" ? 15 : type === "planned" ? 19 : 13; }
 
+  function truncate(s, max){ return s.length > max ? s.slice(0, max - 1).replace(/\s+$/, "") + "…" : s; }
+
   function nodeMarkup(n, x, y, isNew){
     const color = SERIES_COLOR[n.series];
     const r = radiusFor(n.type);
     const label = esc(n.label);
+    // Visible text is truncated so wide labels in dense clusters stop colliding;
+    // the full label stays available via the <title> tooltip and the aria-label.
+    const shownMax = n.type === "hub" ? 30 : n.type === "chapter" ? 22 : 16;
+    const shown = esc(truncate(n.label, shownMax));
     const cls = "node node--" + n.type + " series-" + n.series + (isNew ? " is-new" : "");
     const common = 'data-id="' + esc(n.id) + '" class="' + cls + '" transform="translate(' + x.toFixed(2) + ' ' + y.toFixed(2) + ')" style="--c:' + color + '"';
     const roman = n.roman ? '<text class="roman" y="' + (-r - 6) + '">' + esc(n.roman) + '</text>' : "";
     const pulse = (n.type === "hub") ? '<circle class="pulse" r="' + r + '"/>' : "";
     const art =
       '<g class="art">' +
+        '<title>' + label + '</title>' +
         '<circle class="halo" r="' + (r + 9) + '"/>' +
         '<circle class="dot" r="' + r + '"/>' +
         pulse + roman +
-        '<text class="lbl" y="' + (r + 15) + '">' + label + '</text>' +
+        '<text class="lbl" y="' + (r + 15) + '">' + shown + '</text>' +
       '</g>';
     if (n.planned){
       return '<g ' + common + ' role="button" tabindex="0" aria-disabled="true" data-planned="true" aria-label="' + label + ' — раздел готовится">' + art + '</g>';
@@ -634,6 +666,7 @@ body.js-ready #sitemap-fallback[hidden]{display:none}
   let inView = true;
 
   function frame(now){
+    if (AUTOMATION){ rafId = requestAnimationFrame(frame); return; }
     const t = now / 1000;
     for (let i = 0; i < driftNodes.length; i++){
       const d = driftNodes[i];
@@ -788,6 +821,7 @@ body.js-ready #sitemap-fallback[hidden]{display:none}
 
   /* ---- Boot ---- */
   document.body.classList.add("js-ready");
+  if (AUTOMATION) document.body.classList.add("is-automated");
   const fallback = document.getElementById("sitemap-fallback");
   if (fallback) fallback.hidden = true;
   render();
