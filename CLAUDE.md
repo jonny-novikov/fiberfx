@@ -30,8 +30,8 @@ Request flow for `/edu`, `/school`, `/ege`, `/future` (the four are implemented 
 | `/edu`, `/edu/:name` | `edu/<name>.html` | **`edu/finances.html`** (default name is `finances`, NOT `index`) |
 | `/school`, `/school/:name` | `school/<name>.html` | `school/index.html` |
 | `/future`, `/future/:name` | `future/<name>.html` | `future/index.html` |
-| `/` | `index.html` — interactive SVG "growing-tree" mindmap of all four series (the site landing) | — |
-| `/game` | `game.html` — standalone emoji memory game (`GAME_HTML` env-overridable); not linked from the mindmap | — |
+| `/` | `index.html` — interactive landing: a modgrid of four expanding modcards (one per series) that opens a three.js WebGL 3D node-graph scene per series | — |
+| `/game` | `game.html` — standalone emoji memory game (`GAME_HTML` env-overridable); not linked from the landing | — |
 | `/files`, `/health`, `/distr/*` | JSON distr listing, health JSON, tarball downloads | — |
 
 Section directories are env-overridable (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, `FUTURE_DIR`, also `INDEX_HTML`, `DISTR_DIR`); they default to the container paths `/app/ege`, `/app/edu`, `/app/school`, `/app/future`. `PORT` defaults to `8080`. The server ends in `log.Fatal(app.Listen(...))` — there is no in-code graceful shutdown; Fly sends `SIGTERM` (the binary is PID 1).
@@ -44,10 +44,12 @@ Section directories are env-overridable (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, `FU
 
 The content is ~58 hand-authored, dependency-light HTML pages. There is **no build step, no bundler, no npm, no CSS framework/preprocessor** — pages are served byte-for-byte. Treat each `.html` file as a self-contained unit.
 
+The "no libraries / 100% vanilla" rule below applies to the ~58 content pages. **It is partially superseded for `index.html` (the root landing) only:** `index.html` loads **three.js 0.169.0** via a CDN **import map** (`build/three.module.js` plus the `examples/jsm` addons `OrbitControls` and `CSS2DRenderer`) to render the per-series WebGL 3D node-graph. This is consistent with how KaTeX and Google Fonts are already CDN-loaded — an external dependency pulled at runtime, not vendored and not built. The three.js exception is scoped to `index.html`; every other page remains 100% vanilla with no libraries.
+
 Shared conventions across all pages:
 - **Design system via CSS custom properties.** Every page opens its inline `<style>` with the same `:root` token palette (dark navy `--ink`, cream text, gold/blue/burgundy/sage accents, serif/sans/mono font stacks, radius/shadow tokens). Match these tokens when editing or adding pages.
 - **Math** is rendered client-side by **KaTeX 0.16.9 loaded from jsDelivr CDN** with `auto-render` and `$...$` / `$$...$$` delimiters. Google Fonts are also CDN-loaded. No vendored assets.
-- **JS is 100% vanilla**, inline at the bottom of each file. No React/Vue/htmx/Alpine; no Chart.js/D3/three.js.
+- **JS is 100% vanilla**, inline at the bottom of each file. No React/Vue/htmx/Alpine; no Chart.js/D3. The sole library exception is three.js, used only by `index.html` (see the note above); the content pages use no libraries.
 
 Interactivity patterns, with the canonical file to copy from:
 - **Basic/Advanced level toggle + scroll-reveal** (most common; school/future essays): buttons set `document.body.dataset.level`; CSS shows/hides by level; an `IntersectionObserver` reveals sections. Pattern lives in e.g. `school/*.html`.
@@ -111,5 +113,5 @@ Because the runtime image is what serves the site, **content changes are only li
 - `main.go` — the whole server (routing, the four `serve*` closures, guards, `/health`).
 - `fly.toml`, `Dockerfile` — deployment + what ships into the image.
 - `Makefile` — local dev driver (note the `GOWORK=off` and port 8765 quirks above); its `start`/`run` recipes export all four section dirs.
-- `edu/`, `ege/`, `school/`, `future/` — the served content. `index.html` — the interactive growing-tree mindmap landing (root `/`). `game.html` — standalone emoji game served at `/game`. `apps/e2e/` — Playwright+TS end-to-end suite for the mindmap (out of scope of the no-build static server; run via `npm test`).
+- `edu/`, `ege/`, `school/`, `future/` — the served content. `index.html` — the interactive landing (root `/`): a modgrid of four expanding modcards that open a per-series three.js WebGL 3D node-graph scene (loads three.js 0.169.0 via CDN import map). `game.html` — standalone emoji game served at `/game`. `apps/e2e/` — Playwright+TS end-to-end suite that tests the landing page (the modcard root and the WebGL scene); headless Chromium provides WebGL 2.0. Out of scope of the no-build static server; run via `npm test`.
 - Pattern anchors: `ege/stereometria.html` (canvas 3D), `ege/zadanie-13-atlas.html` (step controls), `edu/finances-m2.html` (calculators/SVG charts), `edu/finances-test.html` (quiz), any `school/*.html` (level toggle + scroll-reveal).
