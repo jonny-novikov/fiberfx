@@ -110,30 +110,33 @@ func main() {
 		}
 	}
 
-	// Folder-routed elixir: recurse. A dir with index.html -> the directory URL;
-	// any other <name>.html -> the clean leaf URL.
-	elixirRoot := filepath.Join(*root, "elixir")
-	_ = filepath.WalkDir(elixirRoot, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".html") {
-			return nil
-		}
-		rel, relErr := filepath.Rel(elixirRoot, p)
-		if relErr != nil {
-			return nil
-		}
-		rel = filepath.ToSlash(rel)
-		if d.Name() == "index.html" {
-			sub := strings.Trim(strings.TrimSuffix(rel, "index.html"), "/")
-			loc, prio := "/elixir", "0.8"
-			if sub != "" {
-				loc, prio = "/elixir/"+sub, "0.7"
+	// Folder-routed sections (elixir, health): recurse — the on-disk tree mirrors
+	// the URL tree. A dir with index.html -> the directory URL; any other
+	// <name>.html -> the clean leaf URL.
+	for _, sec := range []string{"elixir", "health"} {
+		secRoot := filepath.Join(*root, sec)
+		_ = filepath.WalkDir(secRoot, func(p string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".html") {
+				return nil
 			}
-			add(p, loc, "monthly", prio)
-		} else {
-			add(p, "/elixir/"+strings.TrimSuffix(rel, ".html"), "monthly", "0.6")
-		}
-		return nil
-	})
+			rel, relErr := filepath.Rel(secRoot, p)
+			if relErr != nil {
+				return nil
+			}
+			rel = filepath.ToSlash(rel)
+			if d.Name() == "index.html" {
+				sub := strings.Trim(strings.TrimSuffix(rel, "index.html"), "/")
+				loc, prio := "/"+sec, "0.8"
+				if sub != "" {
+					loc, prio = "/"+sec+"/"+sub, "0.7"
+				}
+				add(p, loc, "monthly", prio)
+			} else {
+				add(p, "/"+sec+"/"+strings.TrimSuffix(rel, ".html"), "monthly", "0.6")
+			}
+			return nil
+		})
+	}
 
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Loc < entries[j].Loc })
 
