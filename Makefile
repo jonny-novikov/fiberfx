@@ -25,6 +25,7 @@ SCHOOL_DIR ?= $(REPO_DIR)/school
 FUTURE_DIR ?= $(REPO_DIR)/future
 MAP_DIR    ?= $(REPO_DIR)/map
 GAME_HTML  ?= $(REPO_DIR)/game.html
+HEALTH_HTML ?= $(REPO_DIR)/health.html
 VENDOR_DIR ?= $(REPO_DIR)/assets
 ERROR_DIR  ?= $(REPO_DIR)/error
 ELIXIR_DIR ?= $(REPO_DIR)/elixir
@@ -56,6 +57,8 @@ help:
 	@echo "  /map, /map/*         → $(MAP_DIR)/*.html (3D orbital map)"
 	@echo "  /elixir, /elixir/**  → $(ELIXIR_DIR)/ (folder tree → index.html / <name>.html)"
 	@echo "  /game                → $(GAME_HTML)"
+	@echo "  /healthz             → JSON liveness probe (Fly health check)"
+	@echo "  /health              → $(HEALTH_HTML) (human status page)"
 	@echo "  /sitemap.xml         → $(SITEMAP_XML)"
 	@echo "  /robots.txt          → $(ROBOTS_TXT)"
 	@echo "  (errors)             → $(ERROR_DIR)/<status>.html (404, 500, …)"
@@ -91,6 +94,7 @@ start: build
 	 SITEMAP_XML=$(SITEMAP_XML) \
 	 ROBOTS_TXT=$(ROBOTS_TXT) \
 	 GAME_HTML=$(GAME_HTML) \
+	 HEALTH_HTML=$(HEALTH_HTML) \
 	 VENDOR_DIR=$(VENDOR_DIR) \
 	 ERROR_DIR=$(ERROR_DIR) \
 	 nohup $(BINARY) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE)
@@ -139,6 +143,7 @@ run: build
 	 SITEMAP_XML=$(SITEMAP_XML) \
 	 ROBOTS_TXT=$(ROBOTS_TXT) \
 	 GAME_HTML=$(GAME_HTML) \
+	 HEALTH_HTML=$(HEALTH_HTML) \
 	 VENDOR_DIR=$(VENDOR_DIR) \
 	 ERROR_DIR=$(ERROR_DIR) \
 	 $(BINARY)

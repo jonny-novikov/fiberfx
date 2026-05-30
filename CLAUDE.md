@@ -38,14 +38,14 @@ Steps 5–6 return their errors via `fiber.NewError`, which the **central `Error
 | `/game` | `game.html` — standalone emoji memory game (`GAME_HTML` env-overridable); not linked from the landing | — |
 | `/sitemap.xml`, `/robots.txt` | SEO files **pre-generated** by `cmd/sitemap` (`make sitemap`) and baked into the image; served verbatim with explicit `Content-Type` (`application/xml` / `text/plain`). `SITEMAP_XML`/`ROBOTS_TXT` env-overridable, default `/app/sitemap.xml`, `/app/robots.txt`. The generator reproduces the clean-URL scheme (default page → bare `/<section>`, so e.g. `/edu/finances` is omitted in favour of `/edu`; elixir folder-routed). Re-run `make sitemap` after adding pages. | — |
 | `/vendor/*` | self-hosted front-end modules (three.js) from the `assets/` dir (`VENDOR_DIR` env-overridable, default `/app/assets`); path-traversal-guarded; `.js` served as `text/javascript` | — |
-| `/files`, `/health`, `/distr/*` | JSON distr listing, health JSON, tarball downloads | — |
+| `/files`, `/healthz`, `/health`, `/distr/*` | JSON distr listing; **`/healthz`** = machine liveness JSON `{"status":"ok",…}` (Fly's `[[http_service.checks]]` polls this — keep it 200 JSON); **`/health`** = human-facing HTML status page (`health.html`, `HEALTH_HTML` env-overridable, `noindex`, not in sitemap); tarball downloads | — |
 | _(any error)_ | central Fiber `ErrorHandler` renders `error/<status>.html` (`ERROR_DIR`, default `/app/error`) for browsers, JSON for API clients; covers unmatched-route 404s, handler 403/404s, and panics (500) | — |
 
-Section directories are env-overridable (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, `FUTURE_DIR`, `ELIXIR_DIR`, also `INDEX_HTML`, `DISTR_DIR`, `GAME_HTML`, `VENDOR_DIR`, `MAP_DIR`, `ERROR_DIR`, `SITEMAP_XML`, `ROBOTS_TXT`); they default to the container paths `/app/ege`, `/app/edu`, `/app/school`, `/app/future` (plus `/app/elixir` for the folder-routed Elixir course, `/app/map` for the 3D map, `/app/error` for the error pages, and `/app/sitemap.xml` + `/app/robots.txt` for SEO). `PORT` defaults to `8080`. The server ends in `log.Fatal(app.Listen(...))` — there is no in-code graceful shutdown; Fly sends `SIGTERM` (the binary is PID 1).
+Section directories are env-overridable (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, `FUTURE_DIR`, `ELIXIR_DIR`, also `INDEX_HTML`, `DISTR_DIR`, `GAME_HTML`, `HEALTH_HTML`, `VENDOR_DIR`, `MAP_DIR`, `ERROR_DIR`, `SITEMAP_XML`, `ROBOTS_TXT`); they default to the container paths `/app/ege`, `/app/edu`, `/app/school`, `/app/future` (plus `/app/elixir` for the folder-routed Elixir course, `/app/map` for the 3D map, `/app/error` for the error pages, `/app/health.html` for the HTML status page, and `/app/sitemap.xml` + `/app/robots.txt` for SEO). `PORT` defaults to `8080`. The server ends in `log.Fatal(app.Listen(...))` — there is no in-code graceful shutdown; Fly sends `SIGTERM` (the binary is PID 1).
 
 ### Error pages (`error/<status>.html`)
 
-`fiber.New` is configured with a central **`ErrorHandler`**, and every failure funnels through it: unmatched routes (Fiber's auto-404), panics caught by the `recover` middleware (500), and the `fiber.NewError(code, msg)` values returned by the section / `/vendor` / `/distr` handlers (403/404). It **content-negotiates** via `c.Accepts`: browsers (`Accept: text/html`) get the styled `error/<status>.html`; `curl`, API clients, and the `/health` probe get `{"error": "..."}` JSON. Pages are read into memory once at startup (keyed by the status code parsed from the filename, restricted to `400`–`599`), then written with `c.Status(code).Send(...)` — deliberately **not** `c.SendFile`, which resets the status to `200`. To add a page, just drop `error/NNN.html` in (e.g. `429.html`) — no `main.go` change, same as adding a content page. Shipped today: `403`, `404`, `500`, `502`, `503`. **Caveat:** `502`/`503` are produced by Fly's *edge proxy* when the machine is down/unreachable — a running app cannot serve its own "I'm down" page, and `fly.toml` exposes no setting to override Fly's proxy error pages; those two ship for completeness/parity only.
+`fiber.New` is configured with a central **`ErrorHandler`**, and every failure funnels through it: unmatched routes (Fiber's auto-404), panics caught by the `recover` middleware (500), and the `fiber.NewError(code, msg)` values returned by the section / `/vendor` / `/distr` handlers (403/404). It **content-negotiates** via `c.Accepts`: browsers (`Accept: text/html`) get the styled `error/<status>.html`; `curl`, API clients, and the `/healthz` probe get `{"error": "..."}` JSON. Pages are read into memory once at startup (keyed by the status code parsed from the filename, restricted to `400`–`599`), then written with `c.Status(code).Send(...)` — deliberately **not** `c.SendFile`, which resets the status to `200`. To add a page, just drop `error/NNN.html` in (e.g. `429.html`) — no `main.go` change, same as adding a content page. Shipped today: `403`, `404`, `500`, `502`, `503`. **Caveat:** `502`/`503` are produced by Fly's *edge proxy* when the machine is down/unreachable — a running app cannot serve its own "I'm down" page, and `fly.toml` exposes no setting to override Fly's proxy error pages; those two ship for completeness/parity only.
 
 **To add a new page:** drop `school/foo.html` (etc.) into the section dir. The `:name` route already serves any `<name>.html` — no `main.go` change is needed. On deploy it ships automatically because the `Dockerfile` copies whole section dirs (see below).
 
@@ -91,7 +91,7 @@ Run directly (foreground, no Makefile), exercising all four sections:
 GOWORK=off PORT=8765 INDEX_HTML=./index.html \
   EGE_DIR=./ege EDU_DIR=./edu SCHOOL_DIR=./school FUTURE_DIR=./future DISTR_DIR=./data MAP_DIR=./map ERROR_DIR=./error \
   go run .
-# then: curl localhost:8765/health ; open /edu /school /ege /ege/stereometria /future
+# then: curl localhost:8765/healthz ; open /health /edu /school /ege /ege/stereometria /future
 ```
 
 There are **no tests, lint config, or format hooks** for this module. Manual: `gofmt -w main.go`, `go vet .`.
@@ -109,7 +109,7 @@ There is no CI/CD (no `.github/workflows`). The `README.md` claims auto-deploy o
 `fly.toml` essentials (app `jonnify`, region `fra`):
 - `[build] dockerfile = "Dockerfile"` (Docker build, not buildpacks).
 - `[http_service]` `internal_port = 8080` (matches `PORT` env + `EXPOSE 8080`), `force_https = true`, `auto_stop_machines`/`auto_start_machines` with `min_machines_running = 1` (one warm machine, never fully cold), request concurrency soft/hard 200/250.
-- `[[http_service.checks]]` `GET /health` every 30s — **the `/health` route must keep returning 200 JSON or deploys/machines are marked unhealthy.**
+- `[[http_service.checks]]` `GET /healthz` every 30s — **the `/healthz` route must keep returning 200 JSON or deploys/machines are marked unhealthy.** (The `/health` path serves a human HTML status page, not the probe.)
 - `kill_signal = "SIGTERM"`, `kill_timeout = 10`; VM `shared` CPU, 256 MB. No volumes/mounts — the app is stateless, all content baked into the image.
 
 The `Dockerfile` is multi-stage (`golang:1.25-alpine` builder → `alpine:3.19` runtime) and bakes the served content into the image at the paths `main.go` defaults to:
@@ -121,7 +121,7 @@ Because the runtime image is what serves the site, **content changes are only li
 
 ## Key files
 
-- `main.go` — the whole server (routing, the four `serve*` closures, the `resolveUnder` traversal guard, the central `ErrorHandler` + `renderError`/`loadErrorPages`, `/health`, `/sitemap.xml` + `/robots.txt`).
+- `main.go` — the whole server (routing, the four `serve*` closures, the `resolveUnder` traversal guard, the central `ErrorHandler` + `renderError`/`loadErrorPages`, `/healthz` (JSON probe) + `/health` (HTML status page), `/sitemap.xml` + `/robots.txt`).
 - `cmd/sitemap/main.go` — **build-time** sitemap.xml + robots.txt generator (run via `make sitemap`); walks the content dirs and reproduces the clean-URL scheme. NOT part of the server binary. `sitemap.xml` / `robots.txt` — its generated output, committed at repo root and `COPY`'d into the image.
 - `fly.toml`, `Dockerfile` — deployment + what ships into the image.
 - `Makefile` — local dev driver (note the `GOWORK=off` and port 8765 quirks above); its `start`/`run` recipes export all four section dirs.
