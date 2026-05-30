@@ -18,7 +18,7 @@ test.describe("E1 links: real urls resolve, planned never navigates", () => {
   test("allRealUrls covers exactly the dataset's real nodes", async ({ page }) => {
     await gotoMap(page);
     const urls = await allRealUrls(page);
-    // The hook computes "/"+id for each real node, matching the loader.
+    // The hook returns node.url for each real node, matching the loader.
     expect([...urls].sort()).toEqual([...realUrls].sort());
     expect(urls.length).toBe(realNodes.length);
   });
@@ -56,7 +56,7 @@ test.describe("E1 links: real urls resolve, planned never navigates", () => {
   test("no-JS sitemap fallback links every real node", async ({ browser }) => {
     const context = await browser.newContext({ javaScriptEnabled: false });
     const page = await context.newPage();
-    await page.goto("/");
+    await page.goto("/map");
 
     const fallback = page.locator("#sitemap-fallback");
     await expect(fallback).toBeVisible();

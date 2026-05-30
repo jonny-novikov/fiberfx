@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repo is a Go workspace (`go.work`) holding several unrelated modules. **This file documents only the `jonnify` web server** — the interactive educational website served at `/edu`, `/school`, `/ege`, `/future` — and how it is deployed to Fly.io via `fly.toml`. Other modules (`flyer`, `apps/gateway`, `apps/s3xplorer`, `datadog`, `hugot-memory`) are out of scope here.
 
-The `jonnify` server is the **root module**: `main.go` + `go.mod` (`github.com/jonny-novikov/jonnify`, Go 1.25) + `Dockerfile` + `fly.toml`. It is a single-file Fiber v2 (`github.com/gofiber/fiber/v2`) app with no test suite and no other server packages.
+The `jonnify` server is the **root module**: `main.go` + `go.mod` (`github.com/jonny-novikov/jonnify`, Go 1.25) + `Dockerfile` + `fly.toml`. It is a single-file Fiber v2 (`github.com/gofiber/fiber/v2`) app with no test suite and no other *server* packages. (The one extra package, `cmd/sitemap`, is a build-time generator — see "SEO" below — **not** compiled into the server binary; the `Dockerfile` builds only the root package.)
 
 ## Architecture: it's a static file server, not a renderer
 
@@ -36,11 +36,12 @@ Steps 5–6 return their errors via `fiber.NewError`, which the **central `Error
 | `/` | `index.html` — lightweight, mobile-friendly landing **hub**: hero + a grid of series cards (school, school/geometria, future, edu, ege, + a `/elixir` card still marked «скоро»/coming-soon — the route is live but the card is not yet linked) linking into each series. Pure HTML/CSS, **no WebGL**; links to `/map` in four places. | — |
 | `/map`, `/map/:name` | `map/<name>.html` — the **three.js WebGL orbital 3D node-graph** of all **five** series — school, наглядная геометрия (`/school/geometria`), future, edu, ege — and their topics (the heavy interactive map, moved here from `/`); loads vendored three.js from `/vendor/three/`. `MAP_DIR` env-overridable, default `/app/map`. The node dataset is inlined in `map/index.html` and mirrored by `apps/e2e/fixtures/nodes.json` (guarded by the `dataset-sync` e2e test). | `map/index.html` |
 | `/game` | `game.html` — standalone emoji memory game (`GAME_HTML` env-overridable); not linked from the landing | — |
+| `/sitemap.xml`, `/robots.txt` | SEO files **pre-generated** by `cmd/sitemap` (`make sitemap`) and baked into the image; served verbatim with explicit `Content-Type` (`application/xml` / `text/plain`). `SITEMAP_XML`/`ROBOTS_TXT` env-overridable, default `/app/sitemap.xml`, `/app/robots.txt`. The generator reproduces the clean-URL scheme (default page → bare `/<section>`, so e.g. `/edu/finances` is omitted in favour of `/edu`; elixir folder-routed). Re-run `make sitemap` after adding pages. | — |
 | `/vendor/*` | self-hosted front-end modules (three.js) from the `assets/` dir (`VENDOR_DIR` env-overridable, default `/app/assets`); path-traversal-guarded; `.js` served as `text/javascript` | — |
 | `/files`, `/health`, `/distr/*` | JSON distr listing, health JSON, tarball downloads | — |
 | _(any error)_ | central Fiber `ErrorHandler` renders `error/<status>.html` (`ERROR_DIR`, default `/app/error`) for browsers, JSON for API clients; covers unmatched-route 404s, handler 403/404s, and panics (500) | — |
 
-Section directories are env-overridable (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, `FUTURE_DIR`, `ELIXIR_DIR`, also `INDEX_HTML`, `DISTR_DIR`, `GAME_HTML`, `VENDOR_DIR`, `MAP_DIR`, `ERROR_DIR`); they default to the container paths `/app/ege`, `/app/edu`, `/app/school`, `/app/future` (plus `/app/elixir` for the folder-routed Elixir course, `/app/map` for the 3D map, and `/app/error` for the error pages). `PORT` defaults to `8080`. The server ends in `log.Fatal(app.Listen(...))` — there is no in-code graceful shutdown; Fly sends `SIGTERM` (the binary is PID 1).
+Section directories are env-overridable (`EGE_DIR`, `EDU_DIR`, `SCHOOL_DIR`, `FUTURE_DIR`, `ELIXIR_DIR`, also `INDEX_HTML`, `DISTR_DIR`, `GAME_HTML`, `VENDOR_DIR`, `MAP_DIR`, `ERROR_DIR`, `SITEMAP_XML`, `ROBOTS_TXT`); they default to the container paths `/app/ege`, `/app/edu`, `/app/school`, `/app/future` (plus `/app/elixir` for the folder-routed Elixir course, `/app/map` for the 3D map, `/app/error` for the error pages, and `/app/sitemap.xml` + `/app/robots.txt` for SEO). `PORT` defaults to `8080`. The server ends in `log.Fatal(app.Listen(...))` — there is no in-code graceful shutdown; Fly sends `SIGTERM` (the binary is PID 1).
 
 ### Error pages (`error/<status>.html`)
 
@@ -113,14 +114,15 @@ There is no CI/CD (no `.github/workflows`). The `README.md` claims auto-deploy o
 
 The `Dockerfile` is multi-stage (`golang:1.25-alpine` builder → `alpine:3.19` runtime) and bakes the served content into the image at the paths `main.go` defaults to:
 - builds the static binary: `CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o jonnify .` (copies only `main.go` + `go.mod`/`go.sum`, so it's independent of the workspace);
-- `COPY index.html /app/index.html`, `COPY game.html /app/game.html`, `COPY ege/ /app/ege/`, `COPY edu/ /app/edu/`, `COPY school/ /app/school/`, `COPY future/ /app/future/`, `COPY map/ /app/map/` (the 3D orbital map), `COPY error/ /app/error/` (styled HTML error pages), `COPY assets/ /app/assets/` (vendored three.js) — **whole-directory copies** for the section dirs, so any new `.html` in them ships on the next deploy with no Dockerfile edit;
+- `COPY index.html /app/index.html`, `COPY game.html /app/game.html`, `COPY sitemap.xml`/`robots.txt` (SEO, pre-generated), `COPY ege/ /app/ege/`, `COPY edu/ /app/edu/`, `COPY school/ /app/school/`, `COPY future/ /app/future/`, `COPY map/ /app/map/` (the 3D orbital map), `COPY elixir/ /app/elixir/` (folder-routed Elixir course), `COPY error/ /app/error/` (styled HTML error pages), `COPY assets/ /app/assets/` (vendored three.js) — **whole-directory copies** for the section dirs, so any new `.html` in them ships on the next deploy with no Dockerfile edit (but **re-run `make sitemap`** so new pages enter `sitemap.xml`, which is a single generated file, not a dir);
 - also cross-compiles the unrelated `flyer` CLI into download tarballs under `/app/distr/` (served via `/distr/*`); not relevant to the website but explains the second build stage.
 
 Because the runtime image is what serves the site, **content changes are only live after `fly deploy`** (or a local run pointed at the repo dirs) — there is no hot reload.
 
 ## Key files
 
-- `main.go` — the whole server (routing, the four `serve*` closures, the `resolveUnder` traversal guard, the central `ErrorHandler` + `renderError`/`loadErrorPages`, `/health`).
+- `main.go` — the whole server (routing, the four `serve*` closures, the `resolveUnder` traversal guard, the central `ErrorHandler` + `renderError`/`loadErrorPages`, `/health`, `/sitemap.xml` + `/robots.txt`).
+- `cmd/sitemap/main.go` — **build-time** sitemap.xml + robots.txt generator (run via `make sitemap`); walks the content dirs and reproduces the clean-URL scheme. NOT part of the server binary. `sitemap.xml` / `robots.txt` — its generated output, committed at repo root and `COPY`'d into the image.
 - `fly.toml`, `Dockerfile` — deployment + what ships into the image.
 - `Makefile` — local dev driver (note the `GOWORK=off` and port 8765 quirks above); its `start`/`run` recipes export all four section dirs.
 - `edu/`, `ege/`, `school/`, `future/` — the served content. `index.html` — the lightweight, mobile-friendly landing **hub** (root `/`): hero + series-card grid, pure HTML/CSS, links to `/map`. `map/index.html` — the heavy **three.js WebGL orbital 3D node-graph** served at `/map` (three.js 0.169.0 vendored under `assets/three/`, served same-origin at `/vendor/*`; carries the `window.__mindmap` test hook). `game.html` — standalone emoji game served at `/game`. `error/` — styled HTML error pages (`403/404/500/502/503.html`) rendered by the central `ErrorHandler`. `apps/e2e/` — Playwright+TS end-to-end suite that tests the `/map` 3D scene (modcard root + WebGL nodes); headless Chromium provides WebGL 2.0. Out of scope of the no-build static server; run via `npm test`.

@@ -6,12 +6,14 @@ import {
   hubIds,
   seriesIds,
   seriesColor,
+  nodeById,
 } from "../fixtures/mindmap";
 
 /**
- * E2 — Root view: the landing root presents a .modgrid of exactly four .modcard
- * anchors, one per series in dataset hub order [school, future, edu, ege]. Each
- * card is a real focusable <a href="/<series>"> carrying data-series and a
+ * E2 — Root view: the map's root presents a .modgrid of exactly five .modcard
+ * anchors, one per series in dataset hub order [school, geometria, future, edu,
+ * ege]. Each card is a real focusable <a> (href = the hub's url) carrying
+ * data-series and a
  * per-series top-border accent color. The chrome (topbar, footer, legend) and
  * body background image are present. Activating a card transitions ROOT ->
  * SCENE. Screenshots at desktop and mobile sizes are captured for reference.
@@ -26,14 +28,14 @@ function rgbChannels(color: string): [number, number, number] | null {
   return [parts[0], parts[1], parts[2]];
 }
 
-test.describe("E2 root: modgrid of four series cards and chrome", () => {
-  test("root view holds a modgrid of exactly four modcards", async ({ page }) => {
+test.describe("E2 root: modgrid of five series cards and chrome", () => {
+  test("root view holds a modgrid of exactly five modcards", async ({ page }) => {
     await gotoMap(page);
 
     await expect(page.locator("#root-view")).toBeVisible();
     const grid = page.locator("#root-view .modgrid");
     await expect(grid).toBeVisible();
-    await expect(grid.locator(".modcard")).toHaveCount(4);
+    await expect(grid.locator(".modcard")).toHaveCount(5);
   });
 
   test("the four scene/root containers exist and exactly root is active", async ({
@@ -54,7 +56,7 @@ test.describe("E2 root: modgrid of four series cards and chrome", () => {
   }) => {
     await gotoMap(page);
 
-    // Cards appear in dataset hub order [school, future, edu, ege].
+    // Cards appear in dataset hub order [school, geometria, future, edu, ege].
     const order = await page.locator("#root-view .modcard").evaluateAll((els) =>
       els.map((el) => el.getAttribute("data-series")),
     );
@@ -63,9 +65,11 @@ test.describe("E2 root: modgrid of four series cards and chrome", () => {
     for (const series of seriesIds) {
       const card = modcard(page, series);
       await expect(card).toBeVisible();
-      // A real anchor so the card works with JS off.
+      // A real anchor so the card works with JS off. href is the hub's url
+      // ("/school" etc.; the geometria hub overrides to "/school/geometria").
       expect(await card.evaluate((el) => el.tagName.toLowerCase())).toBe("a");
-      await expect(card).toHaveAttribute("href", `/${series}`);
+      const expectedHref = nodeById(series)?.url ?? `/${series}`;
+      await expect(card).toHaveAttribute("href", expectedHref);
       await expect(card).toHaveAttribute("data-series", series);
       // Required card content per the contract.
       await expect(card.locator(".mnum")).toBeVisible();

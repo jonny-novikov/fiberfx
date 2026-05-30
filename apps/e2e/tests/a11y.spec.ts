@@ -118,7 +118,7 @@ test.describe("E4 a11y: keyboard, axe, reduced motion, no-JS", () => {
   }) => {
     const context = await browser.newContext({ javaScriptEnabled: false });
     const page = await context.newPage();
-    await page.goto("/");
+    await page.goto("/map");
 
     const fallback = page.locator("#sitemap-fallback");
     await expect(fallback).toBeVisible();

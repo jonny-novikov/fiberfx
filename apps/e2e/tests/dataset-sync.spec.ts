@@ -6,23 +6,23 @@ import { allNodes, growth } from "../fixtures/mindmap";
 /**
  * Guard against silent drift between the two copies of the dataset:
  *  - apps/e2e/fixtures/nodes.json — the declared single source of truth, and
- *  - the NODES / GROWTH literals inlined into index.html (the served page,
- *    which cannot fetch the JSON at runtime).
+ *  - the NODES / GROWTH literals inlined into map/index.html (the served 3D map
+ *    page, which cannot fetch the JSON at runtime).
  *
  * The mindmap hook silently no-ops unknown ids, so a node present in nodes.json
  * but missing from the inlined copy would otherwise pass every other spec. This
- * test parses the literals straight out of index.html and deep-compares them.
+ * test parses the literals straight out of map/index.html and deep-compares them.
  */
 
-const INDEX_HTML = fileURLToPath(
-  new URL("../../../index.html", import.meta.url),
+const MAP_HTML = fileURLToPath(
+  new URL("../../../map/index.html", import.meta.url),
 );
 
 /** Extracts a `const <name> = [ ... ];` array literal and evaluates it. */
 function extractArray(source: string, name: string): unknown[] {
   const marker = `const ${name} = [`;
   const start = source.indexOf(marker);
-  if (start === -1) throw new Error(`could not find "${marker}" in index.html`);
+  if (start === -1) throw new Error(`could not find "${marker}" in map/index.html`);
   const open = source.indexOf("[", start);
   const end = source.indexOf("];", open);
   if (end === -1) throw new Error(`could not find end of ${name} literal`);
@@ -46,8 +46,8 @@ function canon(value: unknown): string {
   });
 }
 
-test.describe("dataset sync: index.html mirrors nodes.json", () => {
-  const html = readFileSync(INDEX_HTML, "utf8");
+test.describe("dataset sync: map/index.html mirrors nodes.json", () => {
+  const html = readFileSync(MAP_HTML, "utf8");
 
   test("inlined NODES equals the nodes.json fixture", () => {
     const inlined = extractArray(html, "NODES") as Array<{ id: string }>;

@@ -78,6 +78,7 @@ export const seriesIds: string[] = hubIds;
 /** Per-series accent color, mirroring the page's SERIES_COLOR tokens. */
 export const seriesColor: Record<string, string> = {
   school: "#d4a85a",
+  geometria: "#9d7cc9",
   future: "#5a87c4",
   edu: "#7ba387",
   ege: "#c4504c",
@@ -113,10 +114,11 @@ export function nodeById(id: string): MindmapNode | undefined {
 
 /**
  * Every real url, computed the same way the page's allRealUrls() hook does:
- * "/" + id for each real node (the edu hub therefore yields "/edu"). The
- * planned node is excluded. Used to cross-check the live hook output.
+ * node.url for each real node (the edu hub yields "/edu"; the geometria hub
+ * yields "/school/geometria" since its files live under school/). The planned
+ * node is excluded. Used to cross-check the live hook output.
  */
-export const realUrls: string[] = realNodes.map((node) => "/" + node.id);
+export const realUrls: string[] = realNodes.map((node) => node.url ?? "/" + node.id);
 
 /* ------------------------------------------------------------------ *
  * Window hook typing (v2 contract)
@@ -154,16 +156,18 @@ declare global {
  * ------------------------------------------------------------------ */
 
 /**
- * Navigates to the landing root and waits until the v2 test hook is installed.
- * The hook is defined synchronously at module start (before three.js loads), so
- * resolving it confirms JS has booted and the modgrid root is live — it does
- * not wait for any WebGL scene, which only mounts on the first enterSeries().
+ * Navigates to the 3D map page (/map) and waits until the v2 test hook is
+ * installed. The hook is defined synchronously at module start (before three.js
+ * loads), so resolving it confirms JS has booted and the modgrid root is live —
+ * it does not wait for any WebGL scene, which only mounts on the first
+ * enterSeries(). Note: "/" is now the lightweight landing hub with no __mindmap
+ * hook; the orbital map (and the whole v2 contract) lives at /map.
  */
 export async function gotoMap(page: Page): Promise<void> {
   // Wait for DOM ready, not the full "load" event: the synchronous __mindmap
   // hook is what matters, and "load" would also block on the ~1.3MB three.js
   // modulepreload (only needed once a series is entered), which is slow under load.
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto("/map", { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => {
     const hook = (window as unknown as { __mindmap?: MindmapHook }).__mindmap;
     return Boolean(hook) && typeof hook.view === "function";

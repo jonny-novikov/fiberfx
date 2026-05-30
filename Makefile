@@ -28,10 +28,13 @@ GAME_HTML  ?= $(REPO_DIR)/game.html
 VENDOR_DIR ?= $(REPO_DIR)/assets
 ERROR_DIR  ?= $(REPO_DIR)/error
 ELIXIR_DIR ?= $(REPO_DIR)/elixir
+SITEMAP_XML ?= $(REPO_DIR)/sitemap.xml
+ROBOTS_TXT  ?= $(REPO_DIR)/robots.txt
+SITE_BASE   ?= https://jonnify.fly.dev
 
 export GOWORK := off
 
-.PHONY: help build start stop restart run status clean
+.PHONY: help build sitemap start stop restart run status clean
 
 help:
 	@echo "jonnify static server — targets:"
@@ -42,6 +45,7 @@ help:
 	@echo "  make run        Run in foreground (logs to terminal)"
 	@echo "  make status     Show whether server is running"
 	@echo "  make clean      Remove binary, PID file, and log file"
+	@echo "  make sitemap    Regenerate sitemap.xml + robots.txt (cmd/sitemap)"
 	@echo ""
 	@echo "Server listens on http://localhost:$(PORT)"
 	@echo "  /                    → $(INDEX_HTML)"
@@ -52,6 +56,8 @@ help:
 	@echo "  /map, /map/*         → $(MAP_DIR)/*.html (3D orbital map)"
 	@echo "  /elixir, /elixir/**  → $(ELIXIR_DIR)/ (folder tree → index.html / <name>.html)"
 	@echo "  /game                → $(GAME_HTML)"
+	@echo "  /sitemap.xml         → $(SITEMAP_XML)"
+	@echo "  /robots.txt          → $(ROBOTS_TXT)"
 	@echo "  (errors)             → $(ERROR_DIR)/<status>.html (404, 500, …)"
 
 $(BIN_DIR):
@@ -61,6 +67,11 @@ build: | $(BIN_DIR)
 	@echo "→ Building $(BINARY)"
 	@cd $(REPO_DIR) && go build -o $(BINARY) .
 	@echo "✓ Built $(BINARY)"
+
+sitemap:
+	@echo "→ Generating sitemap.xml + robots.txt (base $(SITE_BASE))"
+	@cd $(REPO_DIR) && go run ./cmd/sitemap -base $(SITE_BASE) -root $(REPO_DIR) -out $(SITEMAP_XML) -robots $(ROBOTS_TXT)
+	@echo "✓ Wrote $(SITEMAP_XML) and $(ROBOTS_TXT)"
 
 start: build
 	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
@@ -77,6 +88,8 @@ start: build
 	 FUTURE_DIR=$(FUTURE_DIR) \
 	 MAP_DIR=$(MAP_DIR) \
 	 ELIXIR_DIR=$(ELIXIR_DIR) \
+	 SITEMAP_XML=$(SITEMAP_XML) \
+	 ROBOTS_TXT=$(ROBOTS_TXT) \
 	 GAME_HTML=$(GAME_HTML) \
 	 VENDOR_DIR=$(VENDOR_DIR) \
 	 ERROR_DIR=$(ERROR_DIR) \
@@ -123,6 +136,8 @@ run: build
 	 FUTURE_DIR=$(FUTURE_DIR) \
 	 MAP_DIR=$(MAP_DIR) \
 	 ELIXIR_DIR=$(ELIXIR_DIR) \
+	 SITEMAP_XML=$(SITEMAP_XML) \
+	 ROBOTS_TXT=$(ROBOTS_TXT) \
 	 GAME_HTML=$(GAME_HTML) \
 	 VENDOR_DIR=$(VENDOR_DIR) \
 	 ERROR_DIR=$(ERROR_DIR) \

@@ -13,6 +13,12 @@ test.describe("E1 smoke: server endpoints respond", () => {
     expect(response.headers()["content-type"] ?? "").toContain("text/html");
   });
 
+  test("GET /map returns 200 text/html", async ({ request }) => {
+    const response = await request.get("/map");
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-type"] ?? "").toContain("text/html");
+  });
+
   test("GET /game returns 200", async ({ request }) => {
     const response = await request.get("/game");
     expect(response.status()).toBe(200);
