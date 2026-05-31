@@ -3,12 +3,16 @@
 build_chapter_landing.py — генератор лендингов глав курса «Логика и принятие решений».
 Лендинг: hero → 3 intro-карточки → сетка из 6 тайлов-модулей (последний — капстоун)
 → цепочка глав → футер. Тема главы, крупный десктоп-шрифт.
-Выход: {OUT_BASE}/{слаг}/index.html   Запуск: python3 build_chapter_landing.py
+Выход: <repo>/logic/{слаг}/index.html (по умолчанию; переопределяется OUT_BASE)
 Тайлы ведут на модули (пути готовы, страницы строятся позже); ссылка «Квиз главы» уже работает.
 """
 import os
 
-OUT_BASE = os.environ.get('OUT_BASE', '/mnt/user-data/outputs/logic')
+# Default output target is the repo's served logic/ tree, resolved relative to this
+# script (docs/logic/toolkit/ → repo root → logic/) so it works on the local
+# filesystem out of the box. OUT_BASE env still overrides it (e.g. a sandbox path).
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+OUT_BASE = os.environ.get('OUT_BASE', os.path.join(_REPO_ROOT, 'logic'))
 COURSE_NAME = 'Логика и принятие решений'
 COURSE_BASE = '/logic'
 

@@ -99,6 +99,9 @@ COPY future/ /app/future/
 # Copy the Elixir course (folder tree with subfolders) served under /elixir/*
 COPY elixir/ /app/elixir/
 
+# Copy the Logic course (folder tree → /logic/<chapter>/<module>) served under /logic/*
+COPY logic/ /app/logic/
+
 # Copy the 3D orbital knowledge map (three.js WebGL node-graph) served under /map
 COPY map/ /app/map/
 

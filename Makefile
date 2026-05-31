@@ -29,6 +29,7 @@ HEALTH_DIR ?= $(REPO_DIR)/health
 VENDOR_DIR ?= $(REPO_DIR)/assets
 ERROR_DIR  ?= $(REPO_DIR)/error
 ELIXIR_DIR ?= $(REPO_DIR)/elixir
+LOGIC_DIR  ?= $(REPO_DIR)/logic
 SITEMAP_XML ?= $(REPO_DIR)/sitemap.xml
 ROBOTS_TXT  ?= $(REPO_DIR)/robots.txt
 SITE_BASE   ?= https://jonnify.fly.dev
@@ -59,6 +60,7 @@ help:
 	@echo "  /game                → $(GAME_HTML)"
 	@echo "  /healthz             → JSON liveness probe (Fly health check)"
 	@echo "  /health, /health/**  → $(HEALTH_DIR)/ (folder tree → index.html / <module>.html)"
+	@echo "  /logic, /logic/**    → $(LOGIC_DIR)/ (folder tree → index.html / <module>.html)"
 	@echo "  /sitemap.xml         → $(SITEMAP_XML)"
 	@echo "  /robots.txt          → $(ROBOTS_TXT)"
 	@echo "  (errors)             → $(ERROR_DIR)/<status>.html (404, 500, …)"
@@ -95,6 +97,7 @@ start: build
 	 ROBOTS_TXT=$(ROBOTS_TXT) \
 	 GAME_HTML=$(GAME_HTML) \
 	 HEALTH_DIR=$(HEALTH_DIR) \
+	 LOGIC_DIR=$(LOGIC_DIR) \
 	 VENDOR_DIR=$(VENDOR_DIR) \
 	 ERROR_DIR=$(ERROR_DIR) \
 	 nohup $(BINARY) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE)
@@ -144,6 +147,7 @@ run: build
 	 ROBOTS_TXT=$(ROBOTS_TXT) \
 	 GAME_HTML=$(GAME_HTML) \
 	 HEALTH_DIR=$(HEALTH_DIR) \
+	 LOGIC_DIR=$(LOGIC_DIR) \
 	 VENDOR_DIR=$(VENDOR_DIR) \
 	 ERROR_DIR=$(ERROR_DIR) \
 	 $(BINARY)

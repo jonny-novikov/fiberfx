@@ -34,7 +34,11 @@ var (
 	// tree mirrors the filesystem. The machine liveness probe is the separate
 	// /healthz route, NOT this. HEALTH_DIR env-overridable.
 	healthDir = "/app/health"
-	gameHTML  = "/app/game.html"
+	// Logic course content («Логика и принятие решений») — FOLDER-routed like
+	// elixir and health (chapters are dirs, modules are files inside them), so the
+	// URL tree mirrors the filesystem. LOGIC_DIR env-overridable.
+	logicDir = "/app/logic"
+	gameHTML = "/app/game.html"
 	// On-disk dir for files served at the /vendor/* URL. Named "assets" (NOT
 	// "vendor") because a vendor/ dir at the Go module root is reserved by the
 	// toolchain (it forces vendor-mode builds).
@@ -88,6 +92,9 @@ func main() {
 	}
 	if dir := os.Getenv("HEALTH_DIR"); dir != "" {
 		healthDir = dir
+	}
+	if dir := os.Getenv("LOGIC_DIR"); dir != "" {
+		logicDir = dir
 	}
 	if dir := os.Getenv("VENDOR_DIR"); dir != "" {
 		vendorDir = dir
@@ -358,19 +365,23 @@ func main() {
 		return serveMap(c, c.Params("name"))
 	})
 
-	// Folder-routed sections: /elixir and /health both map a clean URL to a path
-	// under their section dir via serveDirTree's try_files cascade (a directory →
-	// its index.html, an exact file as-is, else <path>.html). This is what lets the
+	// Folder-routed sections: /elixir, /health and /logic each map a clean URL to a
+	// path under their section dir via serveDirTree's try_files cascade (a directory
+	// → its index.html, an exact file as-is, else <path>.html). This is what lets the
 	// URL tree MIRROR the filesystem — chapters are directories, modules are files:
 	//   /elixir/algebra                 → elixir/algebra/index.html            (chapter dir)
 	//   /elixir/algebra/f1-01-functions → elixir/algebra/f1-01-functions.html  (module file)
 	//   /health/son                     → health/son/index.html                (chapter dir)
 	//   /health/son/pamyat              → health/son/pamyat.html               (module file)
+	//   /logic/bayes                    → logic/bayes/index.html               (chapter dir)
+	//   /logic/bayes/kviz               → logic/bayes/kviz.html                (module file)
 	// resolveUnder guards every join (".." → 403), as with /distr/* and /vendor/*.
 	app.Get("/elixir", func(c *fiber.Ctx) error { return serveDirTree(c, elixirDir, "", "elixir") })
 	app.Get("/elixir/*", func(c *fiber.Ctx) error { return serveDirTree(c, elixirDir, c.Params("*"), "elixir") })
 	app.Get("/health", func(c *fiber.Ctx) error { return serveDirTree(c, healthDir, "", "health") })
 	app.Get("/health/*", func(c *fiber.Ctx) error { return serveDirTree(c, healthDir, c.Params("*"), "health") })
+	app.Get("/logic", func(c *fiber.Ctx) error { return serveDirTree(c, logicDir, "", "logic") })
+	app.Get("/logic/*", func(c *fiber.Ctx) error { return serveDirTree(c, logicDir, c.Params("*"), "logic") })
 
 	// Serve distribution files with proper headers
 	app.Get("/distr/*", func(c *fiber.Ctx) error {
@@ -399,7 +410,7 @@ func main() {
 		return c.SendFile(cleanPath)
 	})
 
-	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, elixir: %s, game: %s, health: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, elixirDir, gameHTML, healthDir, errorDir, len(errorPages))
+	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, elixir: %s, game: %s, health: %s, logic: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, elixirDir, gameHTML, healthDir, logicDir, errorDir, len(errorPages))
 	log.Fatal(app.Listen(":" + port))
 }
 
