@@ -295,6 +295,9 @@ SUBPAGES = {
 # live directly under a chapter route, e.g. /elixir/language/history. They become
 # linkable once the chapter itself is linkable.
 CHAPTER_EXTRAS = {
+    "F0": [
+        dict(slug="csharp", title="Elixir for C# developers", one="An onramp from C# to Elixir."),
+    ],
     "F3": [
         dict(slug="history",        title="A short history of Elixir",   one="Where the language came from."),
         dict(slug="timeline",       title="The Elixir release timeline", one="Versions and milestones."),

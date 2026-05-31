@@ -187,6 +187,9 @@ var Subpages = map[string][]Subpage{
 // directly under a chapter route, e.g. /elixir/language/history. They become
 // linkable once the chapter itself is linkable.
 var ChapterExtras = map[string][]Subpage{
+	"F0": {
+		{"csharp", "Elixir for C# developers", "An onramp from C# to Elixir."},
+	},
 	"F3": {
 		{"history", "A short history of Elixir", "Where the language came from."},
 		{"timeline", "The Elixir release timeline", "Versions and milestones."},
