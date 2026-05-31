@@ -50,7 +50,7 @@ The attached guide was unpacked, verified safe, and stood up as a working toolki
 
 Scope is six numbered chapters of nine modules each (54), plus the optional two-part F0 history chapter.
 **32 modules are built in the manifest; 24 are planned.** Of the 87 registered page fragments, the whole of F3
-(9 modules) plus the F4 landing and F4.01, F4.02, and F4.03 are authorable source in this working tree and were
+(9 modules) plus the F4 landing and F4.01, F4.02, F4.03, and F4.04 are authorable source in this working tree and were
 validated A+ here. The earlier chapters (F0–F2 and F3.01–F3.03) are authored in the full repository and most are
 deployed; their source is not part of this working tree.
 
@@ -153,13 +153,27 @@ the manifest).
 
 ### F4 · Algorithms & Data Structures — `/elixir/algorithms` — accent sage — **chapter live**
 
-The chapter is open: the landing is built and `/elixir/algorithms` is linkable. F4.01, F4.02, and F4.03 are
-built (each a hub plus three dives; F4.02 and F4.03 carry an advanced section per dive); F4.04–F4.09 are
+The chapter is open: the landing is built and `/elixir/algorithms` is linkable. F4.01, F4.02, F4.03, and F4.04 are
+built (each a hub plus three dives; F4.02, F4.03, and F4.04 carry an advanced section per dive); F4.05–F4.09 are
 planned, and each carries a
 three-dive roadmap in the manifest so the navigation
 shows the whole path. F4.05–F4.07 (HAMT → CHAMP → **branded CHAMP**) are the chapter spine, where the branded
 Snowflake / trie convention used across the course gets its own modules; F4.09 is the "watch a branded CHAMP
 map grow" lab.
+
+F4.04 (maps, sets & hashing) is grounded in the course's own Phoenix LiveView data layer, on request: the worked
+example is the site's **page registry** — a map from route string to a `%Page{}` struct keyed by a branded
+Snowflake id (namespace `PGE`, e.g. `PGE0NbWMtkolM0`, minted with real timestamps and decodable by the same
+footer decoder). The hub frames lookup / membership / hashing over that registry; the lookup dive shows
+`Map.get`/`fetch`/`put` and ties to `socket.assigns` and `assign/3`; the sets dive runs `MapSet.member?` as the
+course's own links gate, with `intersection`/`difference` over the built-versus-F4 route sets (and a two-set
+SVG); the hashing dive walks key → `:erlang.phash2` → bucket → collision, and its advanced section sketches the
+32-way HAMT (a second SVG) as a direct bridge into F4.05. Each dive carries one teaching section plus one advanced
+section, matching F4.02/F4.03. The first dive slug is `lookup` (not `maps`) to avoid a `/maps/maps` route; the
+hub pager goes back to F4.03 and the last dive (hashing) forward to `/elixir/algorithms`; the hub note and the
+hashing note name **F4.05 — Hash Array Mapped Tries (HAMT)** as the next module, currently unlinked ("in
+production"). The F4.03 hub note, an inline F4.03 reference, the F4.03 cost note, and the F4 landing card were all
+relinked to `/elixir/algorithms/maps`.
 
 | Page | Route | Local | Deployed | A+ | Validator |
 | --- | --- | --- | --- | --- | --- |
@@ -176,7 +190,11 @@ map grow" lab.
 | ↳ F4.03.1 Merge & quicksort | `/elixir/algorithms/sorting/sorts` | built | planned | **yes** | **yes** |
 | ↳ F4.03.2 Linear & binary search | `/elixir/algorithms/sorting/search` | built | planned | **yes** | **yes** |
 | ↳ F4.03.3 Stability & sort cost | `/elixir/algorithms/sorting/cost` | built | planned | **yes** | **yes** |
-| F4.04–F4.08 (+ 3 dives each) | `…/maps … /dynamic-programming` | planned | planned | — | — |
+| **F4.04 Maps, sets & hashing (hub)** | `/elixir/algorithms/maps` | built | planned | **yes** | **yes** |
+| ↳ F4.04.1 Maps & key lookup | `/elixir/algorithms/maps/lookup` | built | planned | **yes** | **yes** |
+| ↳ F4.04.2 MapSet & membership | `/elixir/algorithms/maps/sets` | built | planned | **yes** | **yes** |
+| ↳ F4.04.3 Hashing & collisions | `/elixir/algorithms/maps/hashing` | built | planned | **yes** | **yes** |
+| F4.05–F4.08 (+ 3 dives each) | `…/hamt … /dynamic-programming` | planned | planned | — | — |
 | F4.09 Watch a branded CHAMP map grow (lab) | `/elixir/algorithms/champ-lab` | planned | planned | — | — |
 
 The F4 landing is a hand-authored fragment (`content/f4-00-landing.html`) with an SVG roadmap of the nine
@@ -249,6 +267,17 @@ build --page f3-3-pipe    ->  modules-pipe.html          · Apollo A+ · 9/9 gat
 F3.03 was already wired in the manifest (built + SUBPAGES + 4 PAGES); only the 4 fragments were missing → authored
 node --check (page JS)    ->  OK for all four F3.03 pages
 suite.elixir.js ONLY=F3.03  ->  39 PASS desktop + 8 PASS mobile · 0 FAIL · images embedded: 0
+
+build --page f4-4         ->  maps.html                  · Apollo A+ · 9/9 gates PASS
+build --page f4-4-lookup  ->  maps-lookup.html           · Apollo A+ · 9/9 gates PASS
+build --page f4-4-sets    ->  maps-sets.html             · Apollo A+ · 9/9 gates PASS
+build --page f4-4-hashing ->  maps-hashing.html          · Apollo A+ · 9/9 gates PASS  (2 SVGs)
+F4.04 was NOT pre-wired: promoted planned→built, added SUBPAGES (lookup, sets, hashing) + 4 PAGES; first dive slug lookup
+rebuild f4-3, f4-3-cost, f4-landing  ->  A+ (F4.03 hub note + inline + cost note + landing F4.04 card relinked → /elixir/algorithms/maps)
+mint PGE ids  ->  PGE0NbWMtkolM0 (maps), PGE0NbLeJJpTmr (sorting), PGE0NXh7MFjxT6 (modules) — all decode to real timestamps
+node --check (page JS)    ->  OK for all four F4.04 pages
+routes                    ->  92 allowed (was 88); F4.05 /algorithms/hamt correctly absent
+suite.elixir.js ONLY=F4.04  ->  45 PASS desktop + 8 PASS mobile · 0 FAIL · images embedded: 0
 ```
 
 F4.03's pages are validated by deterministic select-and-read sequences over the sorted seven-element array: the
@@ -264,51 +293,54 @@ Apollo gates that passed, per page: `containers`, `svg`, `no-future`, `voice`, `
 
 ## Resume point and next actions
 
-**The F4 chapter is open; F4.01, F4.02, and F4.03 are complete.** The chapter is `live`, the landing
+**The F4 chapter is open; F4.01, F4.02, F4.03, and F4.04 are complete.** The chapter is `live`, the landing
 (`/elixir/algorithms`) is built, and **F4.01 (Lists, recursion & complexity)**, **F4.02 (Trees & traversals)**,
-and **F4.03 (Sorting & searching)** each ship as a hub plus three dives. F4.02 and F4.03 carry a dedicated
-advanced section on every page, all A+ and green in the validator (F4.03: 44 desktop + 8 mobile = 52 PASS).
-F4.02's hub and bfs notes and the landing's F4.03 card were relinked to `/elixir/algorithms/sorting`; F4.03's
-last-subpage (cost) pager goes forward to the chapter overview `/elixir/algorithms`, and both the F4.03 hub note
-and the cost note name **F4.04 — Maps, sets & hashing** as the next module, currently unlinked ("in production").
-The chapter accent is sage (primary `solid-select` + diagram highlights); `.ex`/`code.inl` stay the global
-Elixir purple. **Resume at F4.04 — Maps, sets & hashing** (`slug` "maps", route `/elixir/algorithms/maps`); the
-three dives already named in the manifest roadmap are `maps`, `sets`, and `hashing` — a likely first dive is
-`maps`. The bridge in is F4.03's closing line: hashing trades ordering away to make lookup O(1) on average,
-which is the door into the HAMT/CHAMP/branded-CHAMP spine (F4.05–F4.07).
+**F4.03 (Sorting & searching)**, and **F4.04 (Maps, sets & hashing)** each ship as a hub plus three dives. F4.02,
+F4.03, and F4.04 carry a dedicated advanced section on every page, all A+ and green in the validator (F4.04: 45
+desktop + 8 mobile = 53 PASS). F4.04 is grounded in the course's own Phoenix LiveView data layer — the page
+registry map keyed by branded `PGE` Snowflake ids, the built/F4 route sets behind the links gate, and `phash2`
+hashing into a 32-way HAMT. The F4.03 hub note, an inline F4.03 reference, the F4.03 cost note, and the F4 landing
+card were all relinked to `/elixir/algorithms/maps`; F4.04's last-subpage (hashing) pager goes forward to the
+chapter overview `/elixir/algorithms`, and both the F4.04 hub note and the hashing note name **F4.05 — Hash Array
+Mapped Tries (HAMT)** as the next module, currently unlinked ("in production"). The chapter accent is sage
+(primary `solid-select` + diagram highlights); `.ex`/`code.inl` stay the global Elixir purple.
 
-Immediate steps for F4.04, in order:
+**Resume at F4.05 — Hash Array Mapped Tries (HAMT)** (`slug` "hamt", route `/elixir/algorithms/hamt`), currently
+`planned` with a three-dive roadmap in the manifest. The bridge in is F4.04's hashing dive and its HAMT sketch:
+a map branches up to 32 ways on chunks of the key's hash, so depth is about `log32 n`. F4.05–F4.07 (HAMT → CHAMP
+→ **branded CHAMP**) are the chapter spine where the branded-Snowflake / trie convention gets its own modules.
 
-1. Author the F4.04 hub + three dive subpages into `content/` (suggested fragments `f4-04-maps.html`,
-   `f4-04-1-maps.html`, `f4-04-2-sets.html`, `f4-04-3-hashing.html`), following the page anatomy in `SKILL.md`,
-   with an advanced section per page to match F4.02/F4.03. The bridge back is F4.03: sorting buys O(log n) search
-   by ordering; a hash buys O(1)-average lookup with no ordering at all. Keep prefixes off `st` and unique per
-   page (the hub `so`/`sr`/`se`/`co` codes are taken by F4.03).
-2. Promote F4.04 to `built`; the `dives` roadmap is already in the manifest — add `SUBPAGES["F4.04"]` (maps,
-   sets, hashing) and register PAGES with unique output filenames (e.g. `maps.html`, `maps-sets.html`,
-   `maps-hashing.html`).
-3. Relink F4.03's forward pointers: the F4.03 hub note and the cost note both name **F4.04 — Maps, sets &
-   hashing (in production)** without a link — wrap them in `<a href="/elixir/algorithms/maps">` and drop "(in
-   production)". The F4.03 hub pager back stays `/elixir/algorithms/trees`; the cost (last subpage) pager forward
-   stays `/elixir/algorithms`. On the F4 landing, change the F4.04 card from `<div class="mod is-quiet">` to a
-   linkable `<a class="mod" href="/elixir/algorithms/maps">` and swap its pill `planned` → `built`.
-4. Verify routes, run the voice sweep (incl. JS strings and comments — watch for a stray dismissive adverb in
-   visible prose), build, grade for A+, `node --check` the JS, and add a tagged validator block run with
-   `ONLY="F4.04"`.
+Immediate steps for F4.05, in order:
+
+1. Author the F4.05 hub + three dive subpages into `content/` (e.g. `f4-05-hamt.html` + three dives), following
+   the page anatomy in `SKILL.md`, with an advanced section per page to match F4.02/F4.03/F4.04. The bridge back
+   is F4.04: hashing sends a key to a slot; a HAMT makes that a shallow 32-way tree with structural sharing. Keep
+   prefixes off `st` and unique per page.
+2. Promote F4.05 to `built`; the `dives` roadmap is already in the manifest — add `SUBPAGES["F4.05"]` and register
+   PAGES with unique output filenames. Confirm the route is `/elixir/algorithms/hamt` (chapter route + slug).
+3. Relink F4.04's forward pointers: the F4.04 hub note and the hashing note both name **F4.05 — Hash Array Mapped
+   Tries (HAMT)** without a link — wrap them in `<a href="/elixir/algorithms/hamt">` and drop "(in production)".
+   The F4.04 hub pager back stays `/elixir/algorithms/sorting`; the hashing (last subpage) pager forward stays
+   `/elixir/algorithms`. On the F4 landing, change the F4.05 card from `<div class="mod is-quiet">` to a linkable
+   `<a class="mod" href="/elixir/algorithms/hamt">` and swap its pill `planned` → `built`.
+4. Verify routes, run the voice sweep (incl. JS strings AND static code comments — a dismissive adverb inside a
+   `<pre class="code">` comment is visible text and fails the voice gate, because static code is NOT stripped the
+   way `<script>` is; this caught the F4.04 hashing dive on first build), build, grade for A+, `node --check` the
+   JS, and add a tagged validator block run with `ONLY="F4.05"`.
 5. Regenerate `functional-programming-in-elixir.md` and `elixir-references.md`, update this tracker, then
    deliver.
 
 **Deferred wiring (not authoring):** lighting up F3.05–F3.09 on the F3 chapter landing needs
 `content/f3-00-landing.html`, which is not in this bundle. The deploy gap above is the same kind of step — the
 live site still trails the local manifest (now including the whole of F3 and the F4 landing + F4.01 + F4.02 +
-F4.03). Both are sync/deploy steps to run against the full repository.
+F4.03 + F4.04). Both are sync/deploy steps to run against the full repository.
 
 ## Known follow-ups
 
 - The outline generator's hand-written "At a glance" summary prose lags the manifest (it predates the
   F2.09, F3.01–F3.09, and F4 promotions); its per-chapter tables, derived from the manifest, are correct and now
-  show F3 fully built, the F4 chapter open with F4.01, F4.02, and F4.03 as built hubs (three nested dives each),
-  and F4.04–F4.08 with their three-dive roadmaps. Refresh the summary prose in `_gen_course_md.py` when convenient.
+  show F3 fully built, the F4 chapter open with F4.01, F4.02, F4.03, and F4.04 as built hubs (three nested dives
+  each), and F4.05–F4.08 with their three-dive roadmaps. Refresh the summary prose in `_gen_course_md.py` when convenient.
 - Wiring references into the builder as a `references` manifest field with a `render_references()` footer
   (rather than a separate document) remains an open enhancement noted in the playbook.
 

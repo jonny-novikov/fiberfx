@@ -221,7 +221,7 @@ MODULES = {
         dict(n="F4.01", title="Lists, recursion & complexity", one="Cons cells; big-O on the BEAM.", slug="lists", status="built", lab=False),
         dict(n="F4.02", title="Trees & traversals", one="Binary and n-ary trees; DFS/BFS, functionally.", slug="trees", status="built", lab=False),
         dict(n="F4.03", title="Sorting & searching", one="Merge/quick sort and binary search, immutably.", slug="sorting", status="built", lab=False),
-        dict(n="F4.04", title="Maps, sets & hashing", one="Hash maps, collisions, the cost model.", slug="maps", status="planned", lab=False),
+        dict(n="F4.04", title="Maps, sets & hashing", one="Hash maps, collisions, the cost model.", slug="maps", status="built", lab=False),
         dict(n="F4.05", title="Hash Array Mapped Tries (HAMT)", one="Persistent maps via prefix trees.", slug="hamt", status="planned", lab=False),
         dict(n="F4.06", title="CHAMP maps", one="Compressed Hash-Array Mapped Prefix-trees; layout & iteration.", slug="champ", status="planned", lab=False),
         dict(n="F4.07", title="Branded Champ maps", one="Namespaced keys as cross-system pivots, e.g. TSK0KHTOWnGLuC.", slug="branded-champ", status="planned", lab=False),
@@ -333,6 +333,11 @@ SUBPAGES = {
         dict(slug='bfs', title='Breadth-first & balance', one='Breadth-first traversal walks the tree level by level with a FIFO queue.'),
         dict(slug='dfs', title='Depth-first: pre, in, post-order', one='Depth-first traversal makes the same two recursive calls and differs only in when it visits the '),
         dict(slug='shape', title='Binary trees & recursive shape', one='A node is {value, left, right} or nil, so every tree function handles nil as the base case and a'),
+    ],
+    "F4.04": [
+        dict(slug='lookup', title='Maps & key lookup', one='A map associates keys with values and looks one up in effectively constant time.'),
+        dict(slug='hashing', title='Hashing & collisions', one='Maps and sets reach O(1) by hashing: phash2 turns a key into an integer, which picks a slot, and'),
+        dict(slug='sets', title='MapSet & membership', one='A MapSet stores unique elements and answers membership in O(1).'),
     ],
 }
 

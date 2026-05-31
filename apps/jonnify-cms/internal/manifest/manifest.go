@@ -116,7 +116,7 @@ var Modules = map[string][]Module{
 		{N: "F4.01", Title: "Lists, recursion & complexity", One: "Cons cells; big-O on the BEAM.", Slug: "lists", Status: "built"},
 		{N: "F4.02", Title: "Trees & traversals", One: "Binary/n-ary trees; DFS/BFS functionally.", Slug: "trees", Status: "built"},
 		{N: "F4.03", Title: "Sorting & searching", One: "Merge/quick sort, binary search, immutably.", Slug: "sorting", Status: "built"},
-		{N: "F4.04", Title: "Maps, sets & hashing", One: "Hash maps, collisions, the cost model.", Slug: "maps", Status: "planned"},
+		{N: "F4.04", Title: "Maps, sets & hashing", One: "Hash maps, collisions, the cost model.", Slug: "maps", Status: "built"},
 		{N: "F4.05", Title: "Hash Array Mapped Tries (HAMT)", One: "Persistent maps via prefix trees.", Slug: "hamt", Status: "planned"},
 		{N: "F4.06", Title: "CHAMP maps", One: "Compressed HAMT trees; layout & iteration.", Slug: "champ", Status: "planned"},
 		{N: "F4.07", Title: "Branded Champ maps", One: "Namespaced keys as cross-system pivots.", Slug: "branded-champ", Status: "planned"},
@@ -225,6 +225,11 @@ var Subpages = map[string][]Subpage{
 		{"bfs", "Breadth-first & balance", "Breadth-first traversal walks the tree level by level with a FIFO queue."},
 		{"dfs", "Depth-first: pre, in, post-order", "Depth-first traversal makes the same two recursive calls and differs only in when it visits the "},
 		{"shape", "Binary trees & recursive shape", "A node is {value, left, right} or nil, so every tree function handles nil as the base case and a"},
+	},
+	"F4.04": {
+		{"lookup", "Maps & key lookup", "A map associates keys with values and looks one up in effectively constant time."},
+		{"hashing", "Hashing & collisions", "Maps and sets reach O(1) by hashing: phash2 turns a key into an integer, which picks a slot, and"},
+		{"sets", "MapSet & membership", "A MapSet stores unique elements and answers membership in O(1)."},
 	},
 }
 
