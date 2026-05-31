@@ -1,119 +1,262 @@
-# Functional Programming in Elixir — Course Brief
+# Functional Programming in Elixir
 
-A bridge from the algebra you already know to real-time apps on the BEAM. Six
-chapters (**F1–F6**), **9 modules each = 54 modules** (eight lessons + a practical, richly-visual lab). English. Interactive,
-runnable code throughout. Part of the jonnify knowledge map.
+A course that teaches functional programming twice: first as mathematics, then as Elixir. It runs from the λ-calculus and the BEAM's history, through the algebra of functions, into idiomatic Elixir, data structures, engineering practice, and the Phoenix web framework. Six chapters of nine modules each — fifty-four modules — plus an optional two-part history chapter. Every lesson carries an interactive, build-it-yourself component, and every module of mathematics is paired with its Elixir counterpart — the recurring *bridge* from an idea to its code.
 
-- **Landing:** `elixir.html` → `/elixir`
-- **F1 chapter landing:** `elixir-algebra.html` → `/elixir/algebra`
-- **Design system:** jonnify dark-editorial; Elixir-purple (`--elixir`) accent.
-- **Authoring rules:** see `authoring-skills.md` (Technical Writer + Visualization Master).
-- **Build:** `build_page.py` (extract-head once, then build; treat any FAIL as a stop).
-- **Route convention:** `/elixir/<chapter-slug>/<module-slug>` (e.g. `/elixir/algebra/functions`).
-- **Module id convention:** `F<chapter>.<NN>` (e.g. `F1.01`). The `.09` of every chapter is its **practical, richly-visual lab** — a hands-on capstone with a name specific to that chapter.
+> This document is the syllabus and navigation map. Each chapter below lists its modules with a short abstract and its route; the Mermaid graphs show how the pages link and the order they are read in.
 
-The arc: **Algebra → Functional Programming → the Elixir language → Algorithms &
-Data Structures → Pragmatic engineering → Phoenix.** Each chapter reuses the last.
+## At a glance
+
+| | |
+|---|---|
+| **Chapters** | 7 — an optional History prologue (F0) and six core chapters (F1–F6) |
+| **Modules** | 54 numbered modules (F1–F6), plus 2 History essays |
+| **Deep-dive subpages** | 16, across the five F2 hub modules |
+| **Live now** | F0, F1, and F2 |
+| **Built** | all of F1 (9), F2.01–F2.08 (8), the 16 F2 subpages, and both History essays |
+| **Design** | the *jonnify* dark-editorial system; each page has interactive SVG + vanilla-JS components |
+| **Quality bar** | every page ships at Apollo **A+** across nine gates |
+
+**Legend** &mdash; ● built &middot; ○ planned &middot; ⬡ hub (an overview page with deep-dive subpages) &middot; ▣ lab (an interactive capstone) &middot; ↳ a subpage of the module above it.
+
+## Course map
+
+The spine of the course. Solid edges branch from the root to each chapter; the dashed edge is the intended reading order.
+
+```mermaid
+graph LR
+  ROOT(["/elixir"])
+  F0["F0 · History"]
+  F1["F1 · Algebra"]
+  F2["F2 · Functional"]
+  F3["F3 · Language"]
+  F4["F4 · Algorithms"]
+  F5["F5 · Pragmatic"]
+  F6["F6 · Phoenix"]
+  ROOT --> F0
+  ROOT --> F1
+  ROOT --> F2
+  ROOT --> F3
+  ROOT --> F4
+  ROOT --> F5
+  ROOT --> F6
+  F0 -.-> F1 -.-> F2 -.-> F3 -.-> F4 -.-> F5 -.-> F6
+  classDef live fill:#16241a,stroke:#7ba387,color:#ece4d0;
+  classDef plan fill:#161d38,stroke:#2a3252,color:#a39c89;
+  classDef root fill:#1a1530,stroke:#b39ddb,color:#ece4d0;
+  class ROOT root;
+  class F0,F1,F2 live;
+  class F3,F4,F5,F6 plan;
+```
+
+Each chapter lives at a route under `/elixir`, every module at `‹chapter›/‹module›`, and every deep-dive subpage at `‹chapter›/‹module›/‹subpage›`. Within a chapter the modules read in order, F.01 through F.09, the last being an interactive lab.
+
+## F0 &middot; History &mdash; `/elixir/course`
+
+An optional prologue in two essays. Where functional languages came from, and where the BEAM and OTP came from — the history that explains why Elixir looks and behaves the way it does.
+
+| Module | Abstract | Route | Status |
+|---|---|---|---|
+| **F0.1 · The evolution of functional languages & runtimes** | Traces the lineage from the λ-calculus through LISP, ML, and Haskell to the immutable turn that shaped today's functional languages — the intellectual backdrop for everything that follows. | `/elixir/course/fp-evolution` | ● |
+| **F0.2 · The evolution of Erlang, the BEAM & OTP** | Follows Erlang from its telecom origins to the BEAM's soft-real-time scheduling and OTP's supervision model — the runtime Elixir is built on. | `/elixir/course/beam-evolution` | ● |
+
+## F1 &middot; Algebra &mdash; `/elixir/algebra`
+
+The mathematical foundation. Nine modules treat functions, composition, recursion, higher-order operators, and pattern matching as pure mathematics, ending in a plotting lab. Every idea introduced here is later carried across to Elixir in F2 — the recurring *bridge* between an idea and its code.
+
+| Module | Abstract | Route | Status |
+|---|---|---|---|
+| **F1.01 · What a function really is** | A function as a mapping with a domain and a range that returns exactly one output for each input, leading to treating functions as first-class values. | `/elixir/algebra/functions` | ● |
+| **F1.02 · The substitution model** | Evaluation as replacing equals for equals; the model that gives referential transparency and a precise meaning to purity. | `/elixir/algebra/substitution` | ● |
+| **F1.03 · Composition, f∘g** | Chaining mappings so the output of one feeds the next, and the associativity that lets a chain regroup freely — the algebra under the pipe. | `/elixir/algebra/composition` | ● |
+| **F1.04 · Immutability & binding** | A symbol names a fixed value rather than a mutable cell; the foundation of immutable data and equational reasoning. | `/elixir/algebra/immutability` | ● |
+| **F1.05 · Sets, sequences & mappings** | Applying one function across every element of a collection — the mathematical seed of lists, maps, and Enum.map. | `/elixir/algebra/collections` | ● |
+| **F1.06 · Recursion & induction** | A base case and a step, paired with the induction that proves it terminates; recursion takes the place of loops. | `/elixir/algebra/recursion` | ● |
+| **F1.07 · Higher-order operators (Σ, Π)** | Operators such as Σ and Π that take a function as input, generalising into map, filter, and reduce. | `/elixir/algebra/higher-order` | ● |
+| **F1.08 · Equations & pattern matching** | Identities and solving by structure — the mathematical root of pattern matching. | `/elixir/algebra/pattern-matching` | ● |
+| **F1.09 · Functions on the plane — a plotting lab** | An interactive lab to plot single functions and their compositions, watching f∘g take shape as a curve. | `/elixir/algebra/plotting-lab` | ● ▣ lab |
+
+### F1 navigation
+
+A single linear sequence ending in the plotting lab. The pager links each module to the next and back.
+
+```mermaid
+graph LR
+  A1["F1.01 · functions"] --> A2["F1.02 · substitution"] --> A3["F1.03 · composition"]
+  A3 --> A4["F1.04 · immutability"] --> A5["F1.05 · collections"] --> A6["F1.06 · recursion"]
+  A6 --> A7["F1.07 · higher-order"] --> A8["F1.08 · pattern-matching"] --> A9["F1.09 · plotting-lab ▣"]
+  classDef live fill:#241f12,stroke:#d4a85a,color:#ece4d0;
+  classDef lab fill:#1a1530,stroke:#b39ddb,color:#ece4d0;
+  class A1,A2,A3,A4,A5,A6,A7,A8 live;
+  class A9 lab;
+```
+
+## F2 &middot; Functional Programming &mdash; `/elixir/functional`
+
+The same foundations as working Elixir. Each module pairs a concept with its Elixir form — purity, persistent data, higher-order functions, recursion, folds, closures, algebraic data types, and composition — and the later modules expand into hubs, each with several deep-dive subpages. The chapter closes with the data-pipeline lab.
+
+| Module | Abstract | Route | Status |
+|---|---|---|---|
+| **F2.01 · Pure functions & side effects** | What purity buys — testability, reasoning, and safe concurrency — and how to keep side effects at the edges of a program. | `/elixir/functional/pure` | ● |
+| **F2.02 · Immutability & persistent data** | Persistent data structures and structural sharing, which make an immutable update cheap rather than a full copy. | `/elixir/functional/persistence` | ● |
+| **F2.03 · Higher-order functions** | Treating functions as ordinary values: passing them as arguments and returning them from other functions. | `/elixir/functional/higher-order` | ● |
+| **F2.04 · Recursion patterns & tail calls** | Recursion as the functional loop. A hub with three dives: the shape of a recursive definition, rewriting with an accumulator for tail-call optimisation, and the common patterns that turn out to be folds. | `/elixir/functional/recursion` | ● ⬡ hub |
+| ↳ F2.04 &middot; The shape of recursion | Base case, recursive case, and the growing call stack. | `/elixir/functional/recursion/shape` | ● |
+| ↳ F2.04 &middot; Tail calls & accumulators | Rewrite with an accumulator to run in constant stack space. | `/elixir/functional/recursion/tail-calls` | ● |
+| ↳ F2.04 &middot; Recursion patterns | sum, length, reverse, map, filter — and why they are folds. | `/elixir/functional/recursion/patterns` | ● |
+| **F2.05 · map / filter / reduce (folds)** | reduce as the universal fold from which map and filter follow. A hub with four dives: map, filter, reduce, and advanced folds such as scan and group_by. | `/elixir/functional/folds` | ● ⬡ hub |
+| ↳ F2.05 &middot; map | Transform every element; the structure is preserved. | `/elixir/functional/folds/map` | ● |
+| ↳ F2.05 &middot; filter | Keep the elements that pass a predicate. | `/elixir/functional/folds/filter` | ● |
+| ↳ F2.05 &middot; reduce | The general fold; an accumulator of any shape. | `/elixir/functional/folds/reduce` | ● |
+| ↳ F2.05 &middot; Advanced folds | scan, map_reduce, flat_map, group_by — folds with extra structure. | `/elixir/functional/folds/advanced` | ● |
+| **F2.06 · Closures & partial application** | Functions that capture their surrounding environment. A hub with three dives: what a closure captures and when, the & capture operator, and partial application and currying by hand. | `/elixir/functional/closures` | ● ⬡ hub |
+| ↳ F2.06 &middot; Capturing the environment | What a closure captures, and when — the value at definition time. | `/elixir/functional/closures/environment` | ● |
+| ↳ F2.06 &middot; The capture operator | The & shorthand: positional placeholders and function capture. | `/elixir/functional/closures/capture` | ● |
+| ↳ F2.06 &middot; Partial application & currying | Fixing arguments to specialize a function; currying by hand. | `/elixir/functional/closures/currying` | ● |
+| **F2.07 · Algebraic data types** | Building data from products (this and that) and sums (this or that). A hub with three dives: product types, sum types, and pattern matching on data. | `/elixir/functional/adt` | ● ⬡ hub |
+| ↳ F2.07 &middot; Product types | Tuples and structs — fields held together; inhabitants multiply. | `/elixir/functional/adt/product` | ● |
+| ↳ F2.07 &middot; Sum types | Tagged tuples and variants — one shape or another; inhabitants add. | `/elixir/functional/adt/sum` | ● |
+| ↳ F2.07 &middot; Pattern matching on data | Destructuring products and dispatching on sum variants. | `/elixir/functional/adt/matching` | ● |
+| **F2.08 · Composition & pipelines** | Joining functions into larger ones. A hub with three dives: function composition, the pipe operator, and building pipelines of map, filter, and reduce. | `/elixir/functional/composition` | ● ⬡ hub |
+| ↳ F2.08 &middot; Function composition | Combining functions so one's output feeds the next — f after g. | `/elixir/functional/composition/compose` | ● |
+| ↳ F2.08 &middot; The pipe operator | \|> threads a value left to right, as the first argument. | `/elixir/functional/composition/pipe` | ● |
+| ↳ F2.08 &middot; Building pipelines | map, filter, and reduce stages over a dataset, end to end. | `/elixir/functional/composition/pipeline` | ● |
+| **F2.09 · The data-pipeline lab** | The F2 capstone: compose a full pipeline over a real dataset and watch the value transform at each stage. | `/elixir/functional/pipeline-lab` | ○ ▣ lab |
+
+### F2 navigation
+
+The reading path threads through the subpages: a hub links forward to its first dive, the dives chain in order, and the last dive links on to the next module. Each hub also links directly to all of its dives via on-page cards. The pager is bidirectional, so a hub's back-link reaches the previous module's last dive.
+
+```mermaid
+graph TD
+  B1["F2.01 · pure"] --> B2["F2.02 · persistence"] --> B3["F2.03 · higher-order"] --> H4
+
+  H4["F2.04 · recursion ⬡"]
+  H4 --> C1["F2.04.1 · shape"] --> C2["F2.04.2 · tail-calls"] --> C3["F2.04.3 · patterns"] --> H5
+
+  H5["F2.05 · folds ⬡"]
+  H5 --> D1["F2.05.1 · map"] --> D2["F2.05.2 · filter"] --> D3["F2.05.3 · reduce"] --> D4["F2.05.4 · advanced"] --> H6
+
+  H6["F2.06 · closures ⬡"]
+  H6 --> E1["F2.06.1 · environment"] --> E2["F2.06.2 · capture"] --> E3["F2.06.3 · currying"] --> H7
+
+  H7["F2.07 · adt ⬡"]
+  H7 --> F1n["F2.07.1 · product"] --> F2n["F2.07.2 · sum"] --> F3n["F2.07.3 · matching"] --> H8
+
+  H8["F2.08 · composition ⬡"]
+  H8 --> G1["F2.08.1 · compose"] --> G2["F2.08.2 · pipe"] --> G3["F2.08.3 · pipeline"] --> B9
+
+  B9["F2.09 · pipeline-lab ▣"]
+
+  classDef live fill:#1a1530,stroke:#b39ddb,color:#ece4d0;
+  classDef hub fill:#16241a,stroke:#7ba387,color:#ece4d0;
+  classDef dive fill:#161d38,stroke:#3a4366,color:#d7cfb9;
+  classDef plan fill:#161d38,stroke:#2a3252,color:#a39c89;
+  class B1,B2,B3 live;
+  class H4,H5,H6,H7,H8 hub;
+  class C1,C2,C3,D1,D2,D3,D4,E1,E2,E3,F1n,F2n,F3n,G1,G2,G3 dive;
+  class B9 plan;
+```
+
+## The road ahead &mdash; F3 to F6
+
+The four remaining chapters are planned. Each follows the same shape as F1 and F2: nine modules read in order, the ninth an interactive lab. The hub-and-subpages treatment seen in F2 will extend into them where a topic earns the depth.
+
+```mermaid
+graph LR
+  P1["F·01"] --> P2["F·02"] --> P3["F·03"] --> P4["F·04"] --> P5["F·05"]
+  P5 --> P6["F·06"] --> P7["F·07"] --> P8["F·08"] --> P9["F·09 ▣ lab"]
+  classDef plan fill:#161d38,stroke:#2a3252,color:#a39c89;
+  classDef lab fill:#161d38,stroke:#4a5470,color:#cfc7b3;
+  class P1,P2,P3,P4,P5,P6,P7,P8 plan;
+  class P9 lab;
+```
+
+### F3 &middot; The Elixir Language &mdash; `/elixir/language`
+
+The Elixir language proper: values and IEx, the match operator, modules and the pipe, enumerables and streams, structs and protocols, processes and the actor model, and OTP — ending in a live process playground.
+
+| Module | Abstract | Route | Status |
+|---|---|---|---|
+| **F3.01 · Values, types & IEx** | The values Elixir programs are built from, and the IEx shell as the primary tool for exploring them. | `/elixir/language/values` | ○ |
+| **F3.02 · Pattern matching & the match operator** | The match operator: = binds by matching structure rather than assigning, the idea that runs through the whole language. | `/elixir/language/match` | ○ |
+| **F3.03 · Functions, modules & the pipe** | Defining functions inside modules and composing them with the pipe. | `/elixir/language/modules` | ○ |
+| **F3.04 · Enumerables & streams** | Traversing collections eagerly with Enum and lazily with Stream, and when each is appropriate. | `/elixir/language/enum-streams` | ○ |
+| **F3.05 · Structs, maps & keyword lists** | Shaping data with structs, maps, and keyword lists, and choosing between them. | `/elixir/language/structs` | ○ |
+| **F3.06 · Protocols & behaviours** | Polymorphism through protocols and contracts through behaviours. | `/elixir/language/protocols` | ○ |
+| **F3.07 · Processes & the actor model** | Lightweight isolated processes communicating by messages — spawn, send, and receive — the actor model on the BEAM. | `/elixir/language/processes` | ○ |
+| **F3.08 · OTP: GenServer & supervisors** | OTP's GenServer for stateful servers and supervisors for fault tolerance. | `/elixir/language/otp` | ○ |
+| **F3.09 · The process playground** | An interactive playground: spawn processes, send messages, and watch the mailbox and process tree live. | `/elixir/language/playground` | ○ ▣ lab |
+
+### F4 &middot; Algorithms & Data Structures &mdash; `/elixir/algorithms`
+
+Functional algorithmics. From lists, trees, sorting, and hashing up through the persistent-map family — HAMT, CHAMP, and the Branded Champ map whose namespaced keys serve as cross-system pivots — closing with an animated trie-growth lab.
+
+| Module | Abstract | Route | Status |
+|---|---|---|---|
+| **F4.01 · Lists, recursion & complexity** | Cons-cell lists, recursion over them, and big-O complexity as it actually behaves on the BEAM. | `/elixir/algorithms/lists` | ○ |
+| **F4.02 · Trees & traversals** | Binary and n-ary trees with depth-first and breadth-first traversals written functionally. | `/elixir/algorithms/trees` | ○ |
+| **F4.03 · Sorting & searching** | Merge sort, quicksort, and binary search expressed over immutable data. | `/elixir/algorithms/sorting` | ○ |
+| **F4.04 · Maps, sets & hashing** | Hash maps, collisions, and the cost model behind maps and sets. | `/elixir/algorithms/maps` | ○ |
+| **F4.05 · Hash Array Mapped Tries (HAMT)** | Hash Array Mapped Tries: persistent maps built on prefix trees. | `/elixir/algorithms/hamt` | ○ |
+| **F4.06 · CHAMP maps** | CHAMP — Compressed Hash-Array Mapped Prefix-trees — their node layout and iteration. | `/elixir/algorithms/champ` | ○ |
+| **F4.07 · Branded Champ maps** | Branded Champ maps: namespaced, base62-encoded keys used as cross-system pivots, e.g. TSK0KHTOWnGLuC. | `/elixir/algorithms/branded-champ` | ○ |
+| **F4.08 · Dynamic programming & advanced problems** | Dynamic programming and memoisation, with harder algorithmic challenges. | `/elixir/algorithms/dynamic-programming` | ○ |
+| **F4.09 · Watch a Branded Champ map grow** | An interactive lab that inserts keys and animates a CHAMP / branded trie as it grows. | `/elixir/algorithms/champ-lab` | ○ ▣ lab |
+
+### F5 &middot; Pragmatic Programming &mdash; `/elixir/pragmatic`
+
+The engineering craft: Mix, ExUnit and doctests, typespecs and Dialyzer, “let it crash”, Tasks and concurrency, telemetry, releases, and performance — ending in a self-healing supervision-tree lab.
+
+| Module | Abstract | Route | Status |
+|---|---|---|---|
+| **F5.01 · Project structure & Mix** | Project structure with Mix: applications, dependencies, and tasks. | `/elixir/pragmatic/mix` | ○ |
+| **F5.02 · Testing with ExUnit & doctests** | Fast, deterministic testing with ExUnit and doctests. | `/elixir/pragmatic/testing` | ○ |
+| **F5.03 · Documentation & typespecs** | Documentation with @doc and contracts with @spec, checked by Dialyzer. | `/elixir/pragmatic/typespecs` | ○ |
+| **F5.04 · Error handling & “let it crash”** | Error handling the BEAM way: tagged tuples versus exceptions, and “let it crash” under supervision. | `/elixir/pragmatic/let-it-crash` | ○ |
+| **F5.05 · Concurrency patterns & Tasks** | Concurrency patterns with Task, async/await, and back-pressure. | `/elixir/pragmatic/tasks` | ○ |
+| **F5.06 · Telemetry, logging & observability** | Telemetry, logging, and observability — seeing inside a running system. | `/elixir/pragmatic/telemetry` | ○ |
+| **F5.07 · Dependencies, releases & deployment** | Dependencies, mix release, and configuration for deployment. | `/elixir/pragmatic/releases` | ○ |
+| **F5.08 · Performance & profiling** | Benchmarking, the scheduler, and finding hot paths. | `/elixir/pragmatic/performance` | ○ |
+| **F5.09 · Let it crash — a supervision tree that heals** | An interactive lab: crash a worker and watch the supervisor restart it. | `/elixir/pragmatic/supervision-lab` | ○ ▣ lab |
+
+### F6 &middot; Phoenix Framework &mdash; `/elixir/phoenix`
+
+Building for the web with Phoenix: the request lifecycle, routing and plugs, Ecto, contexts, HEEx, LiveView, PubSub, and deployment — ending in a real-time live dashboard.
+
+| Module | Abstract | Route | Status |
+|---|---|---|---|
+| **F6.01 · Architecture & the request lifecycle** | Phoenix architecture and the request lifecycle: endpoint, router, controller, view. | `/elixir/phoenix/lifecycle` | ○ |
+| **F6.02 · Routing, controllers & plugs** | Routing, controllers, and the plug pipeline. | `/elixir/phoenix/routing` | ○ |
+| **F6.03 · Ecto: schemas, changesets & queries** | Ecto schemas, changesets, and queries — data, validation, and the repo. | `/elixir/phoenix/ecto` | ○ |
+| **F6.04 · Contexts & domain design** | Contexts and domain design: boundaries that scale. | `/elixir/phoenix/contexts` | ○ |
+| **F6.05 · Templates, components & HEEx** | Server-rendered markup with templates, components, and HEEx. | `/elixir/phoenix/heex` | ○ |
+| **F6.06 · Phoenix LiveView fundamentals** | Phoenix LiveView fundamentals — interactive UIs without hand-written JavaScript. | `/elixir/phoenix/liveview` | ○ |
+| **F6.07 · PubSub, channels & real-time** | PubSub, channels, and real-time updates over WebSockets. | `/elixir/phoenix/pubsub` | ○ |
+| **F6.08 · Auth, deployment & going live** | Sessions and authentication, releases, and going to production. | `/elixir/phoenix/deployment` | ○ |
+| **F6.09 · The live dashboard** | An interactive lab: real-time LiveView state over a socket, with multiple clients via PubSub. | `/elixir/phoenix/live-dashboard` | ○ ▣ lab |
+
+## The branded Snowflake build stamp
+
+Every page carries a build stamp in its footer: a fourteen-character branded id that decodes, on the page itself, to a millisecond timestamp. It is a three-character namespace followed by a base62 encoding of a 64-bit Snowflake, and the same id convention is used as a cross-system pivot key throughout the course — and is the subject of module F4.07.
+
+| Field | Value |
+|---|---|
+| Branded id | `TSK0KHTOWnGLuC` |
+| Namespace | `TSK` |
+| Snowflake | `274557032793636864` |
+| Timestamp | `2026-01-27 15:11:37 UTC` |
+
+The 64-bit layout is `timestamp(41) << 22 | node(10) << 12 | sequence(12)`, measured from a custom epoch of `2024-01-01 00:00:00 UTC` (1704067200000 ms). The base62 alphabet is `0-9 A-Z a-z`, left-padded to eleven characters, so namespace plus encoding is always fourteen.
+
+## How each page is built
+
+Every lesson is a static page in the *jonnify* dark-editorial design system — Cormorant Garamond and PT Serif for prose, Manrope for labels, JetBrains Mono for code, over an ink-and-cream palette with gold, blue, sage, burgundy, and an elixir-purple accent. Beyond the writing, each page is held to a fixed set of rules:
+
+- **Interactive components.** Every lesson carries at least one hand-built SVG-and-vanilla-JS component that computes the real result, shows a live readout and a one-sentence takeaway, works without JavaScript, and respects reduced-motion. No external libraries, no browser storage.
+- **The bridge.** Each mathematical idea is paired with its Elixir counterpart, so the algebra of F1 and the code of F2 read as two views of one thing.
+- **Apollo A+ gates.** A page ships only when it passes all nine checks: required containers, well-formed SVG, no future-dated claims, an editorial voice gate, no browser storage, reduced-motion support, graceful degradation without JavaScript, valid internal links, and a working pager.
+- **Hubs and subpages.** Deeper modules are an overview hub plus several deep-dive subpages, linked by the pager and by on-page cards, as the F2 graph above shows.
 
 ---
 
-## F1 — Algebra  `/elixir/algebra`
-*The functional mindset, straight from the math you know.* (landing built)
-
-| # | module | one-line | status |
-|---|--------|----------|--------|
-| F1.01 | What a function really is | mapping, domain/range, exactly-one-output → first-class functions | **built** |
-| F1.02 | The substitution model | equals for equals → referential transparency & purity | **built** |
-| F1.03 | Composition, f∘g | chaining mappings, associativity → the pipe `\|>` | planned |
-| F1.04 | Immutability & binding | a symbol names a fixed value → immutable data | planned |
-| F1.05 | Sets, sequences & mappings | applying f across a collection → lists, maps, `Enum.map` | planned |
-| F1.06 | Recursion & induction | base case + step; proof → recursion, no loops | planned |
-| F1.07 | Higher-order operators (Σ, Π) | operators over functions → `map`/`filter`/`reduce` | planned |
-| F1.08 | Equations & pattern matching | identities, solving by structure → pattern matching | planned |
-| **F1.09** | **Functions on the plane — a plotting lab** | practical: plot & compose functions, watch f∘g as curves; rich visualization | planned |
-
-## F2 — Functional Programming
-*Pure functions, immutability and higher-order functions in their own right.*
-
-| # | module | one-line |
-|---|--------|----------|
-| F2.01 | Pure functions & side effects | what purity buys you; isolating effects |
-| F2.02 | Immutability & persistent data | structural sharing, why copying is cheap |
-| F2.03 | Higher-order functions | functions as arguments and return values |
-| F2.04 | Recursion patterns & tail calls | accumulators, tail-call optimisation |
-| F2.05 | map / filter / reduce (folds) | reduce as the universal fold |
-| F2.06 | Closures & partial application | capturing environment; `&` and currying-by-hand |
-| F2.07 | Algebraic data types | sum/product types, tagged tuples, pattern matching |
-| F2.08 | Composition & pipelines | building programs by composing functions |
-| **F2.09** | **The data-pipeline lab** | practical: compose map/filter/reduce over a dataset; watch each stage |
-
-## F3 — The Elixir Language
-*Syntax, pipelines, pattern matching and structs on the BEAM.*
-
-| # | module | one-line |
-|---|--------|----------|
-| F3.01 | Values, types & IEx | the data you build with; the shell as a tool |
-| F3.02 | Pattern matching & the match operator | `=` is a match, not assignment |
-| F3.03 | Functions, modules & the pipe `\|>` | defining and composing in modules |
-| F3.04 | Enumerables & streams | eager vs lazy traversal |
-| F3.05 | Structs, maps & keyword lists | shaping data; when to use which |
-| F3.06 | Protocols & behaviours | polymorphism and contracts |
-| F3.07 | Processes & the actor model | spawn, send, receive; isolation |
-| F3.08 | OTP: GenServer & supervisors | stateful servers and fault tolerance |
-| **F3.09** | **The process playground** | practical: spawn processes, send messages, watch the mailbox live |
-
-## F4 — Algorithms & Data Structures in Elixir
-*Classical and advanced problems — with rich visualization.* (user-named)
-
-| # | module | one-line |
-|---|--------|----------|
-| F4.01 | Lists, recursion & complexity | cons cells, big-O on the BEAM |
-| F4.02 | Trees & traversals | binary/n-ary trees, DFS/BFS, functionally |
-| F4.03 | Sorting & searching | merge/quick sort, binary search, immutably |
-| F4.04 | Maps, sets & hashing | hash maps, collisions, the cost model |
-| F4.05 | Hash Array Mapped Tries (HAMT) | persistent maps via prefix trees |
-| F4.06 | **CHAMP maps** | Compressed Hash-Array Mapped Prefix-trees; layout & iteration |
-| F4.07 | **Branded Champ maps** | namespaced/branded keys as cross-system pivots (e.g. `TSK0KHTOWnGLuC`) |
-| F4.08 | Dynamic programming & advanced problems | memoisation and harder challenges |
-| **F4.09** | **Watch a Branded Champ map grow** | practical: insert keys, animate the CHAMP / Branded Champ trie building |
-
-> F4 is the visualization-heavy chapter: CHAMP node layout, branch compression,
-> and Branded Champ key routing are all shown interactively.
-
-## F5 — Pragmatic Programming with Elixir
-*Real-world engineering: structure, testing, tooling, shipping.* (user-named)
-
-| # | module | one-line |
-|---|--------|----------|
-| F5.01 | Project structure & Mix | apps, deps, tasks |
-| F5.02 | Testing with ExUnit & doctests | fast, deterministic tests |
-| F5.03 | Documentation & typespecs | `@doc`, `@spec`, Dialyzer |
-| F5.04 | Error handling & "let it crash" | tagged tuples vs exceptions; supervision |
-| F5.05 | Concurrency patterns & Tasks | `Task`, `async/await`, back-pressure |
-| F5.06 | Telemetry, logging & observability | seeing inside a running system |
-| F5.07 | Dependencies, releases & deployment | `mix release`, config, runtime |
-| F5.08 | Performance & profiling | benchmarks, the scheduler, hot paths |
-| **F5.09** | **Let it crash — a supervision tree that heals** | practical: crash a worker, watch the supervisor restart it |
-
-## F6 — Phoenix Framework
-*Web applications on Elixir — and the road into real-time LiveView.* (user-named)
-
-| # | module | one-line |
-|---|--------|----------|
-| F6.01 | Architecture & the request lifecycle | endpoint → router → controller → view |
-| F6.02 | Routing, controllers & plugs | the plug pipeline |
-| F6.03 | Ecto: schemas, changesets & queries | data, validation, the repo |
-| F6.04 | Contexts & domain design | boundaries that scale |
-| F6.05 | Templates, components & HEEx | server-rendered markup |
-| F6.06 | Phoenix LiveView fundamentals | interactive UIs without hand-written JS |
-| F6.07 | PubSub, channels & real-time | live updates over WebSockets |
-| F6.08 | Auth, deployment & going live | sessions, releases, production |
-| **F6.09** | **The live dashboard** | practical: real-time LiveView state over a socket, multi-client via PubSub |
-
----
-
-## Status
-- **F1.01 "What a function really is" — built** (`f1-01-functions.html` → `/elixir/algebra/functions`).
-- **F1.02 "The substitution model" — built** (`f1-02-substitution.html` → `/elixir/algebra/substitution`).
-- F1 landing + course landing live. Remaining 52 modules planned per the tables above (including the six `.09` practical labs).
-- F2/F3 titles are inferred to fit the arc; rename freely.
+*Generated from the course manifest. Routes, titles, and statuses are authoritative; abstracts summarise each module's scope.*
