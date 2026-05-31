@@ -32,6 +32,8 @@ RUNLOG="$REF_DIR/.watch/airuns"      # epoch timestamps of AI runs (throttle)
 LOG="$REF_DIR/watch.log"
 PIDFILE="$REF_DIR/.watch/pid"
 LOCK="$REF_DIR/.watch/lock"          # mkdir-based single-flight lock
+PROGRESS="$ROOT/docs/elixir/elixir-progress.md"   # second trigger: the operator's readiness tracker
+PROGRESS_STATE="$REF_DIR/.watch/progress_mtime"
 
 INTERVAL="${INTERVAL:-20}"
 REFS_AI="${REFS_AI:-0}"
@@ -55,6 +57,17 @@ sync_refs() {
   ( cd "$KB_DIR" && python3 _gen_refs_md.py ) >>"$LOG" 2>&1
   ( cd "$REF_DIR" && python3 fetch_refs.py ) >>"$LOG" 2>&1
   log "synced bibliography + offline mirror"
+}
+
+# stat_mtime FILE -> epoch seconds (portable across BSD/macOS and GNU).
+stat_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+
+# run_promote: the deterministic integration. Auto-declares any built-but-planned
+# modules and newly-arrived subpages in both manifests, rebuilds cms, and re-syncs
+# the contents-page cards. No AI — the filesystem is the source of truth.
+run_promote() {
+  log "promote: auto-declaring built-but-undeclared modules/subpages + rebuilding cms"
+  ( cd "$KB_DIR" && python3 promote.py --rebuild ) >>"$LOG" 2>&1
 }
 
 # run_with_timeout SECS cmd...   (portable; no GNU timeout)

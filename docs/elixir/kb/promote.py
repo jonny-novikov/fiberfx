@@ -79,11 +79,16 @@ def discover_subpages(route, slug):
 
 
 def merged_subpages(ch, m):
-    """Subpages as a projection of the filesystem: keep hand-written titles/one-liners
-    for already-declared subpages, append any new ones discovered on disk."""
+    """Subpages as a filesystem projection that does NOT churn order: keep the DECLARED
+    order and hand-written titles/one-liners, drop any whose file vanished, and append
+    newly-discovered subpages at the end."""
     fs = discover_subpages(ch["route"], m["slug"])
-    declared = {s["slug"]: (s["slug"], s["title"], s["one"]) for s in bp.SUBPAGES.get(m["n"], [])}
-    return [declared.get(slug, (slug, title, one)) for (slug, title, one) in fs]
+    on_disk = {slug for (slug, _, _) in fs}
+    declared = [(s["slug"], s["title"], s["one"]) for s in bp.SUBPAGES.get(m["n"], [])]
+    declared_slugs = {d[0] for d in declared}
+    result = [d for d in declared if d[0] in on_disk]
+    result += [(s, t, o) for (s, t, o) in fs if s not in declared_slugs]
+    return result
 
 
 def detect_drift():
