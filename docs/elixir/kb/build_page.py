@@ -209,7 +209,7 @@ MODULES = {
     "F3": [
         dict(n="F3.01", title="Values, types & IEx", one="The data you build with; the shell as a tool.", slug="values", status="built", lab=False),
         dict(n="F3.02", title="Pattern matching & the match operator", one="= is a match, not assignment.", slug="match", status="built", lab=False),
-        dict(n="F3.03", title="Functions, modules & the pipe", one="Defining and composing in modules.", slug="modules", status="planned", lab=False),
+        dict(n="F3.03", title="Functions, modules & the pipe", one="Defining and composing in modules.", slug="modules", status="built", lab=False),
         dict(n="F3.04", title="Enumerables & streams", one="Eager versus lazy traversal.", slug="enum-streams", status="built", lab=False),
         dict(n="F3.05", title="Structs, maps & keyword lists", one="Shaping data; when to use which.", slug="structs", status="built", lab=False),
         dict(n="F3.06", title="Protocols & behaviours", one="Polymorphism and contracts.", slug="protocols", status="built", lab=False),
@@ -323,6 +323,11 @@ SUBPAGES = {
         dict(slug='sorts', title='Merge & quicksort', one='The two workhorse comparison sorts are both divide-and-conquer.'),
         dict(slug='cost', title='Stability & sort cost', one='Sorts are ranked on average, worst case, space, and stability — whether equal keys keep their or'),
         dict(slug='search', title='Linear & binary search', one='Linear search checks elements one by one over any sequence — O(n).'),
+    ],
+    "F3.03": [
+        dict(slug='functions', title='Defining functions', one='Named functions with def and defp, multiple clauses that dispatch by pattern and guard, arity, a'),
+        dict(slug='organising', title='Organising with modules', one='defmodule, module attributes, alias and import, and documentation — how the Portal namespace is '),
+        dict(slug='pipe', title='The pipe operator', one='|> threads a value as the first argument to the next call, turning nested calls into a readable '),
     ],
 }
 

@@ -104,7 +104,7 @@ var Modules = map[string][]Module{
 	"F3": {
 		{N: "F3.01", Title: "Values, types & IEx", One: "The data you build with; the shell.", Slug: "values", Status: "built"},
 		{N: "F3.02", Title: "Pattern matching & the match operator", One: "= is a match, not assignment.", Slug: "match", Status: "built"},
-		{N: "F3.03", Title: "Functions, modules & the pipe", One: "Defining and composing in modules.", Slug: "modules", Status: "planned"},
+		{N: "F3.03", Title: "Functions, modules & the pipe", One: "Defining and composing in modules.", Slug: "modules", Status: "built"},
 		{N: "F3.04", Title: "Enumerables & streams", One: "Eager versus lazy traversal.", Slug: "enum-streams", Status: "built"},
 		{N: "F3.05", Title: "Structs, maps & keyword lists", One: "Shaping data; when to use which.", Slug: "structs", Status: "built"},
 		{N: "F3.06", Title: "Protocols & behaviours", One: "Polymorphism and contracts.", Slug: "protocols", Status: "built"},
@@ -215,6 +215,11 @@ var Subpages = map[string][]Subpage{
 		{"sorts", "Merge & quicksort", "The two workhorse comparison sorts are both divide-and-conquer."},
 		{"cost", "Stability & sort cost", "Sorts are ranked on average, worst case, space, and stability — whether equal keys keep their or"},
 		{"search", "Linear & binary search", "Linear search checks elements one by one over any sequence — O(n)."},
+	},
+	"F3.03": {
+		{"functions", "Defining functions", "Named functions with def and defp, multiple clauses that dispatch by pattern and guard, arity, a"},
+		{"organising", "Organising with modules", "defmodule, module attributes, alias and import, and documentation — how the Portal namespace is "},
+		{"pipe", "The pipe operator", "|> threads a value as the first argument to the next call, turning nested calls into a readable "},
 	},
 }
 

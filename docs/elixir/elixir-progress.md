@@ -49,9 +49,10 @@ The attached guide was unpacked, verified safe, and stood up as a working toolki
 ## Page readiness by chapter
 
 Scope is six numbered chapters of nine modules each (54), plus the optional two-part F0 history chapter.
-**24 modules are built in the manifest; 32 are planned.** Of the 57 registered page fragments, **2 ship in
-this bundle** as authorable source — both validated A+ this session. The remaining 55 are already authored
-in the full repository (and most are deployed); their source is not part of this bundle.
+**32 modules are built in the manifest; 24 are planned.** Of the 87 registered page fragments, the whole of F3
+(9 modules) plus the F4 landing and F4.01, F4.02, and F4.03 are authorable source in this working tree and were
+validated A+ here. The earlier chapters (F0–F2 and F3.01–F3.03) are authored in the full repository and most are
+deployed; their source is not part of this working tree.
 
 ### F0 · History — `/elixir/course` — accent blue
 
@@ -103,7 +104,10 @@ This is the active chapter and the focus of the gap below.
 |---|---|---|---|---|---|
 | F3.01 Values, types & IEx | `/elixir/language/values` | built | published | — | — |
 | F3.02 Pattern matching & the match operator | `/elixir/language/match` | built | published | — | — |
-| F3.03 Functions, modules & the pipe | `/elixir/language/modules` | built | **planned (deploy lags)** | — | — |
+| **F3.03 Functions, modules & the pipe (hub)** | `/elixir/language/modules` | built | **planned (deploy lags)** | **yes** | **yes** |
+| &nbsp;&nbsp;↳ F3.03.1 Defining functions | `/elixir/language/modules/functions` | built | planned | **yes** | **yes** |
+| &nbsp;&nbsp;↳ F3.03.2 Organising with modules | `/elixir/language/modules/organising` | built | planned | **yes** | **yes** |
+| &nbsp;&nbsp;↳ F3.03.3 The pipe operator | `/elixir/language/modules/pipe` | built | planned | **yes** | **yes** |
 | **F3.04 Enumerables & streams (hub)** | `/elixir/language/enum-streams` | built | **planned (deploy lags)** | **yes** | **yes** |
 | &nbsp;&nbsp;↳ F3.04 Enum, the eager workhorse | `/elixir/language/enum-streams/enum` | built | planned | **yes** | **yes** |
 | &nbsp;&nbsp;↳ F3.04 Comprehensions | `/elixir/language/enum-streams/comprehensions` | built | planned | — | — |
@@ -133,11 +137,71 @@ with no subpages \u2014 a comprehensive interactive playground rather than a hub
 intended shape for the chapter's capstone lab.
 F3 front-matter: `history`, `timeline`, `under-the-hood` (built in the manifest).
 
-### F4 · Algorithms & Data Structures — `/elixir/algorithms` — accent sage — chapter planned
+F3.03 (functions, modules & the pipe) was already `built` in the manifest with `SUBPAGES["F3.03"]` and four
+registered PAGES, but its four fragment files were absent from this working tree; they have now been authored
+here and validated A+ (the hub plus `functions`, `organising`, and `pipe`). Following the F3 convention, the
+dives carry two teaching sections each rather than the F4.02/F4.03-style advanced section. The running example
+is a learning `Portal`: a learner's scores piped through `Portal.average/1` and `Portal.grade/1` to the atom
+`:b`. The hub frames the function/module/pipe trio; the functions dive shows the same guarded `grade/1` as a
+named, anonymous, and captured function; the organising dive builds the `Portal` module with an attribute,
+`alias`, and `import` (plus `@moduledoc`/`@doc` and the one-module-per-file convention); the pipe dive contrasts
+nested calls with the pipeline and states the value-first rewrite rule, `x |> f(a, b) == f(x, a, b)`. The hub
+pager goes back to F3.02 (`/elixir/language/match`) and the last dive (pipe) forward to the chapter overview
+(`/elixir/language`); the hub note and the pipe note both link forward to the built F3.04. The F3 chapter
+landing fragment is not in this working tree, so no landing card relink was needed (F3.03 was already built in
+the manifest).
 
-All nine planned: lists, trees, sorting, maps, HAMT, CHAMP, branded-CHAMP, dynamic-programming, and the
-"watch a Branded Champ map grow" lab. F4.07 (`branded-champ`) is where the branded Snowflake / trie
-convention used across the course gets its own module.
+### F4 · Algorithms & Data Structures — `/elixir/algorithms` — accent sage — **chapter live**
+
+The chapter is open: the landing is built and `/elixir/algorithms` is linkable. F4.01, F4.02, and F4.03 are
+built (each a hub plus three dives; F4.02 and F4.03 carry an advanced section per dive); F4.04–F4.09 are
+planned, and each carries a
+three-dive roadmap in the manifest so the navigation
+shows the whole path. F4.05–F4.07 (HAMT → CHAMP → **branded CHAMP**) are the chapter spine, where the branded
+Snowflake / trie convention used across the course gets its own modules; F4.09 is the "watch a branded CHAMP
+map grow" lab.
+
+| Page | Route | Local | Deployed | A+ | Validator |
+| --- | --- | --- | --- | --- | --- |
+| **F4 landing** | `/elixir/algorithms` | built | **planned (deploy lags)** | **yes** | **yes** |
+| **F4.01 Lists, recursion & complexity (hub)** | `/elixir/algorithms/lists` | built | planned | **yes** | **yes** |
+| ↳ F4.01.1 Cons cells & the shape of a list | `/elixir/algorithms/lists/cons` | built | planned | **yes** | **yes** |
+| ↳ F4.01.2 Recursion over lists | `/elixir/algorithms/lists/recursion` | built | planned | **yes** | **yes** |
+| ↳ F4.01.3 Complexity & big-O on the BEAM | `/elixir/algorithms/lists/big-o` | built | planned | **yes** | **yes** |
+| **F4.02 Trees & traversals (hub)** | `/elixir/algorithms/trees` | built | planned | **yes** | **yes** |
+| ↳ F4.02.1 Binary trees & recursive shape | `/elixir/algorithms/trees/shape` | built | planned | **yes** | **yes** |
+| ↳ F4.02.2 Depth-first: pre, in, post-order | `/elixir/algorithms/trees/dfs` | built | planned | **yes** | **yes** |
+| ↳ F4.02.3 Breadth-first & balance | `/elixir/algorithms/trees/bfs` | built | planned | **yes** | **yes** |
+| **F4.03 Sorting & searching (hub)** | `/elixir/algorithms/sorting` | built | planned | **yes** | **yes** |
+| ↳ F4.03.1 Merge & quicksort | `/elixir/algorithms/sorting/sorts` | built | planned | **yes** | **yes** |
+| ↳ F4.03.2 Linear & binary search | `/elixir/algorithms/sorting/search` | built | planned | **yes** | **yes** |
+| ↳ F4.03.3 Stability & sort cost | `/elixir/algorithms/sorting/cost` | built | planned | **yes** | **yes** |
+| F4.04–F4.08 (+ 3 dives each) | `…/maps … /dynamic-programming` | planned | planned | — | — |
+| F4.09 Watch a branded CHAMP map grow (lab) | `/elixir/algorithms/champ-lab` | planned | planned | — | — |
+
+The F4 landing is a hand-authored fragment (`content/f4-00-landing.html`) with an SVG roadmap of the nine
+modules and a hand-written `.mods` directory (the `{{CONTENTS}}` placeholder renders *all* chapters, so a
+chapter-only directory is written by hand using the head's card classes). F4.01's, F4.02's, and F4.03's three
+dives each are real SUBPAGES; the per-module `dives` lists drive the display roadmap on the contents page and the landing.
+
+F4.02 carries a dedicated **advanced section per page**, as requested: the hub closes on balance and the road to
+tries (BST O(log n), degenerate chains, AVL/red-black, and a HAMT's branch-32 ⇒ log₃₂ n shallowness); the shape
+dive adds structural sharing on insert (a second static SVG of the rebuilt path vs shared subtrees); the dfs
+dive generalises the three orders into one parameterised fold and notes the explicit-stack iterative form; the
+bfs dive contrasts a balanced tree against a degenerate chain (a second static SVG) to make the O(log n)-vs-O(n)
+split concrete. The running structure throughout is one seven-node BST (`12 · 8 · 30 · 5 · 10 · 20 · 42`), so
+in-order is sorted by construction.
+
+F4.03 continues the same advanced-section-per-page treatment, and reuses F4.02's data directly: the array it
+sorts and searches is that BST's in-order output, `[5, 8, 10, 12, 20, 30, 42]`, and the search target is `20`
+(binary path 12 → 30 → 20, three comparisons; linear, five). The hub frames sorting and searching as one
+bargain — pay O(n log n) once, then every lookup is O(log n) — and previews the comparison floor; the sorts
+dive shows merge (split/merge over `[8, 3, 5, 1]`) and quicksort (pivot/partition) as one divide-and-conquer
+idea, with an advanced section on worst cases and `Enum.sort` being a stable merge sort; the search dive
+contrasts linear O(n) with binary O(log n), and its advanced section makes the BEAM-specific point that binary
+search needs O(1) random access, so a list forces O(n) and sorted data wants a tuple or a tree; the cost dive
+ranks merge / quick / insertion on average, worst, space, and stability, then proves the Ω(n log n) lower bound
+with a decision-tree SVG (n! leaves, height ≥ log₂(n!) ≈ n log n).
 
 ### F5 · Pragmatic Programming — `/elixir/pragmatic` — accent sage — chapter planned
 
@@ -154,71 +218,97 @@ and the live-dashboard lab. F6 is where the portal gains Phoenix LiveView.
 The local manifest is ahead of the deployed contents page in one place worth tracking:
 
 - **F3.03 (modules)**, **F3.04 (enum-streams)**, **F3.05 (structs)**, **F3.06 (protocols & behaviours)**,
-  **F3.07 (processes & the actor model)**, **F3.08 (OTP: GenServer & supervisors)**, and now **F3.09 (the
+  **F3.07 (processes & the actor model)**, **F3.08 (OTP: GenServer & supervisors)**, and **F3.09 (the
   process playground lab)** are `built` in `build_page.py` but the published contents page still shows them as
-  `planned` (non-linking cards). The live build stamp was minted earlier today, so the deploy predates these
-  promotions. With F3.09 done, **F3 is now 9/9 built locally** \u2014 the whole chapter.
-- Practical reading: F3.03 through F3.09 are authored and pass the gates, but are not yet linked from the
-  live site. Closing the gap is a deploy step, not an authoring step — except that this bundle only carries
-  the F3.04/F3.05/F3.06/F3.07/F3.08/F3.09 fragments authored here, so a local `build --all` of the rest of F3
-  needs the remaining fragments synced from the full repository first.
+  `planned` (non-linking cards). With F3.09 done, **F3 is 9/9 built locally** \u2014 the whole chapter.
+- **F4 is now open locally**: the chapter is `live`, the F4 landing (`/elixir/algorithms`), **F4.01**, and
+  **F4.02** (each a hub + three dives) are built, and the deployed site has not seen any of it yet. The live
+  build stamp predates all of these promotions.
+- Practical reading: F3.03 through F3.09 and the F4 landing + F4.01 + F4.02 are authored and pass the gates, but
+  are not yet linked from the live site. Closing the gap is a deploy step, not an authoring step — except that
+  this bundle only carries the fragments authored here (F3.04–F3.09 and F4.00/F4.01/F4.02), so a local
+  `build --all` of the rest needs the remaining fragments synced from the full repository first.
 
 ## Validation evidence (this session)
 
 ```text
 id decode TSK0KHTOWnGLuC  ->  snowflake 274557032793636864 · 2026-01-27 15:11:37 UTC   [exact match]
-build --page f3-9         ->  playground.html            · Apollo A+ · 9/9 gates PASS
-build --page f3-8, f3-8-sup  ->  otp.html, otp-supervisors.html  · A+ (relinked → F3.09)
-node --check (lab JS)     ->  OK (playground.html, ~6.8k chars: state, encoder, decoder)
-routes                    ->  75 allowed (was 74); F4 /algorithms correctly absent (named, not linked)
-suite.elixir.js ONLY=F3.09  ->  21 PASS desktop + 2 PASS mobile · 0 FAIL · images embedded: 0
+build --page f4-3         ->  sorting.html               · Apollo A+ · 9/9 gates PASS
+build --page f4-3-sorts   ->  sorting-sorts.html         · Apollo A+ · 9/9 gates PASS
+build --page f4-3-search  ->  sorting-search.html        · Apollo A+ · 9/9 gates PASS
+build --page f4-3-cost    ->  sorting-cost.html          · Apollo A+ · 9/9 gates PASS  (2 SVGs)
+rebuild f4-2, f4-2-bfs, f4-landing  ->  A+ (F4.02 hub + bfs notes + landing F4.03 card relinked → /elixir/algorithms/sorting)
+node --check (page JS)    ->  OK for all four F4.03 pages
+routes                    ->  88 allowed (was 84); F4.04 /algorithms/maps correctly absent
+suite.elixir.js ONLY=F4.03  ->  44 PASS desktop + 8 PASS mobile · 0 FAIL · images embedded: 0
+
+build --page f3-3         ->  modules.html               · Apollo A+ · 9/9 gates PASS
+build --page f3-3-fn      ->  modules-functions.html     · Apollo A+ · 9/9 gates PASS
+build --page f3-3-org     ->  modules-organising.html    · Apollo A+ · 9/9 gates PASS
+build --page f3-3-pipe    ->  modules-pipe.html          · Apollo A+ · 9/9 gates PASS
+F3.03 was already wired in the manifest (built + SUBPAGES + 4 PAGES); only the 4 fragments were missing → authored
+node --check (page JS)    ->  OK for all four F3.03 pages
+suite.elixir.js ONLY=F3.03  ->  39 PASS desktop + 8 PASS mobile · 0 FAIL · images embedded: 0
 ```
 
-The lab is validated by a deterministic drive sequence: queue two `:inc` casts (mailbox depth 2, state still
-0), process one (depth 1, state 1), drain the rest (depth 0, state 2), `:get` then drain (reply 2), crash under
-`:one_for_one` (Tally resets, restarts 1, status restarted, Notifier untouched), then `:one_for_all` crash
-(Notifier restarts to 1, Tally to 2).
+F4.03's pages are validated by deterministic select-and-read sequences over the sorted seven-element array: the
+hub cycles sort → search → cost (role text, the first box's sage stroke, and the result line moving from the
+sorted sequence to "found 20" to the "log n" cost); the sorts dive reads the merge step and the `[1, 3, 5, 8]`
+result with the split divider at full opacity, then the quicksort pivot step with the pivot bar gold; the search
+dive reads the O(n) / O(log n) badge and the "one by one" / "halves" step text with the first binary mid box
+turning blue; the cost dive reads the algorithm name and stability across merge (stable), quick (not stable),
+and insertion (stable) with the average-case badge.
 
 Apollo gates that passed, per page: `containers`, `svg`, `no-future`, `voice`, `storage`, `motion`,
 `degrade`, `links`, `pager`.
 
 ## Resume point and next actions
 
-**F3.09 (The process playground) is complete, and with it the whole of F3 — 9/9 modules built.** The capstone
-is a single-page interactive lab (no subpages): a live supervised tree of three GenServer workers (Tally,
-Notifier, Cache), each with a branded `PRC` Snowflake PID, that the reader drives — send `:inc`/`:get` casts
-and calls into a worker's mailbox, drain them through the receive loop to move state, read a synchronous reply,
-and crash workers to watch the supervisor restart them under a selectable strategy, with an event log tying it
-together. It is A+ on the nine gates and green in the headless validator (21 desktop + 2 mobile = 23 PASS),
-with F3.08 (the hub and the supervisors subpage) relinked forward. **Resume at the F4 chapter — Algorithms &
-Data Structures** (`slug` "algorithms", route `/elixir/algorithms`); its first module is **F4.01, Lists,
-recursion & complexity** (`slug` "lists", cons cells and big-O on the BEAM). The entire F4 chapter is currently
-`planned`. F3.09's note names F4 as in production without a link, and its pager returns to the chapter overview
-`/elixir/language`, as the last module of F3.
+**The F4 chapter is open; F4.01, F4.02, and F4.03 are complete.** The chapter is `live`, the landing
+(`/elixir/algorithms`) is built, and **F4.01 (Lists, recursion & complexity)**, **F4.02 (Trees & traversals)**,
+and **F4.03 (Sorting & searching)** each ship as a hub plus three dives. F4.02 and F4.03 carry a dedicated
+advanced section on every page, all A+ and green in the validator (F4.03: 44 desktop + 8 mobile = 52 PASS).
+F4.02's hub and bfs notes and the landing's F4.03 card were relinked to `/elixir/algorithms/sorting`; F4.03's
+last-subpage (cost) pager goes forward to the chapter overview `/elixir/algorithms`, and both the F4.03 hub note
+and the cost note name **F4.04 — Maps, sets & hashing** as the next module, currently unlinked ("in production").
+The chapter accent is sage (primary `solid-select` + diagram highlights); `.ex`/`code.inl` stay the global
+Elixir purple. **Resume at F4.04 — Maps, sets & hashing** (`slug` "maps", route `/elixir/algorithms/maps`); the
+three dives already named in the manifest roadmap are `maps`, `sets`, and `hashing` — a likely first dive is
+`maps`. The bridge in is F4.03's closing line: hashing trades ordering away to make lookup O(1) on average,
+which is the door into the HAMT/CHAMP/branded-CHAMP spine (F4.05–F4.07).
 
-Immediate steps for F4.01 (when starting the next chapter), in order:
+Immediate steps for F4.04, in order:
 
-1. Confirm the F4 chapter overview page exists/links (`/elixir/algorithms`); author F4.01 hub + subpages into
-   `content/`, following the page anatomy and interactive contract in `SKILL.md`. Pick the F4 chapter accent.
-2. Promote F4.01 to `built`; add `SUBPAGES["F4.01"]` and register pages with unique output filenames.
-3. Relink whatever currently points forward into F4 (F3.09's note names it without a link; the F4 landing, if
-   present, would also need wiring).
-4. Verify routes, run the voice sweep, build, grade for A+, `node --check` the JS, and add a tagged validator
-   block run with `ONLY="F4.01"`.
+1. Author the F4.04 hub + three dive subpages into `content/` (suggested fragments `f4-04-maps.html`,
+   `f4-04-1-maps.html`, `f4-04-2-sets.html`, `f4-04-3-hashing.html`), following the page anatomy in `SKILL.md`,
+   with an advanced section per page to match F4.02/F4.03. The bridge back is F4.03: sorting buys O(log n) search
+   by ordering; a hash buys O(1)-average lookup with no ordering at all. Keep prefixes off `st` and unique per
+   page (the hub `so`/`sr`/`se`/`co` codes are taken by F4.03).
+2. Promote F4.04 to `built`; the `dives` roadmap is already in the manifest — add `SUBPAGES["F4.04"]` (maps,
+   sets, hashing) and register PAGES with unique output filenames (e.g. `maps.html`, `maps-sets.html`,
+   `maps-hashing.html`).
+3. Relink F4.03's forward pointers: the F4.03 hub note and the cost note both name **F4.04 — Maps, sets &
+   hashing (in production)** without a link — wrap them in `<a href="/elixir/algorithms/maps">` and drop "(in
+   production)". The F4.03 hub pager back stays `/elixir/algorithms/trees`; the cost (last subpage) pager forward
+   stays `/elixir/algorithms`. On the F4 landing, change the F4.04 card from `<div class="mod is-quiet">` to a
+   linkable `<a class="mod" href="/elixir/algorithms/maps">` and swap its pill `planned` → `built`.
+4. Verify routes, run the voice sweep (incl. JS strings and comments — watch for a stray dismissive adverb in
+   visible prose), build, grade for A+, `node --check` the JS, and add a tagged validator block run with
+   `ONLY="F4.04"`.
 5. Regenerate `functional-programming-in-elixir.md` and `elixir-references.md`, update this tracker, then
    deliver.
 
-**Deferred wiring (not authoring):** lighting up F3.05–F3.09 on the F3 chapter landing (node colour, `MODS`
-object, directory link) needs `content/f3-00-landing.html`, which is not in this bundle. Same for the deploy
-gap above — the live site still trails the local manifest. Both are sync/deploy steps to run against the full
-repository.
+**Deferred wiring (not authoring):** lighting up F3.05–F3.09 on the F3 chapter landing needs
+`content/f3-00-landing.html`, which is not in this bundle. The deploy gap above is the same kind of step — the
+live site still trails the local manifest (now including the whole of F3 and the F4 landing + F4.01 + F4.02 +
+F4.03). Both are sync/deploy steps to run against the full repository.
 
 ## Known follow-ups
 
 - The outline generator's hand-written "At a glance" summary prose lags the manifest (it predates the
-  F2.09 and F3.01–F3.09 promotions); its per-chapter tables, derived from the manifest, are correct and now
-  show F3.05, F3.06, F3.07, and F3.08 as built hubs (each with three subpages) and F3.09 as a built single-page
-  lab. Refresh the summary prose in `_gen_course_md.py` when convenient.
+  F2.09, F3.01–F3.09, and F4 promotions); its per-chapter tables, derived from the manifest, are correct and now
+  show F3 fully built, the F4 chapter open with F4.01, F4.02, and F4.03 as built hubs (three nested dives each),
+  and F4.04–F4.08 with their three-dive roadmaps. Refresh the summary prose in `_gen_course_md.py` when convenient.
 - Wiring references into the builder as a `references` manifest field with a `render_references()` footer
   (rather than a separate document) remains an open enhancement noted in the playbook.
 
