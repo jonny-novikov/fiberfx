@@ -1,6 +1,6 @@
 # Elixir references — offline mirror
 
-Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-references.md). 104/113 pages mirrored into `files/`. Regenerate with `python3 fetch_refs.py`.
+Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-references.md). 111/113 pages mirrored into `files/`. Regenerate with `python3 fetch_refs.py`.
 
 ## Core references
 
@@ -14,21 +14,21 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 - The Lambda Calculus (Stanford Encyclopedia of Philosophy) — [offline](files/plato.stanford.edu_entries_lambda-calculus.html) · [source](https://plato.stanford.edu/entries/lambda-calculus/)
 - John McCarthy, “History of Lisp” — [offline](files/www-formal.stanford.edu_jmc_history_lisp_lisp.html.html) · [source](http://www-formal.stanford.edu/jmc/history/lisp/lisp.html)
 - Hudak, Hughes, Peyton Jones & Wadler, “A History of Haskell: Being Lazy with Class” (2007) — [offline](files/www.microsoft.com_en-us_research_publication_a-history-of-haskell-being-lazy-with-class.html) · [source](https://www.microsoft.com/en-us/research/publication/a-history-of-haskell-being-lazy-with-class/)
-- Abelson & Sussman, *Structure and Interpretation of Computer Programs* — _offline copy unavailable_ (403) · [source](https://mitpress.mit.edu/sicp/)
+- Abelson & Sussman, *Structure and Interpretation of Computer Programs* — [offline](files/mitpress.mit.edu_sicp.html) · [source](https://mitpress.mit.edu/sicp/)
 ## F0.2 &middot; The evolution of Erlang, the BEAM & OTP
 
 - Joe Armstrong, “Making reliable distributed systems in the presence of software errors” (PhD thesis, 2003) — [offline](files/erlang.org_download_armstrong_thesis_2003.pdf.pdf) · [source](http://erlang.org/download/armstrong_thesis_2003.pdf)
-- Armstrong, “A History of Erlang” (HOPL III, 2007) — _offline copy unavailable_ (403) · [source](https://dl.acm.org/doi/10.1145/1238844.1238850)
+- Armstrong, “A History of Erlang” (HOPL III, 2007) — [offline](files/dl.acm.org_doi_10.1145_1238844.1238850.html) · [source](https://dl.acm.org/doi/10.1145/1238844.1238850)
 - Erlang/OTP documentation — [offline](files/www.erlang.org_doc.html) · [source](https://www.erlang.org/doc)
 - Fred Hébert, *Learn You Some Erlang for Great Good!* — [offline](files/learnyousomeerlang.com.html) · [source](https://learnyousomeerlang.com/)
 ## F1.01 &middot; What a function really is
 
-- Function (mathematics) — Wikipedia — _offline copy unavailable_ (404) · [source](https://en.wikipedia.org/wiki/Function_(mathematics)
-- SICP §1.1, “The Elements of Programming” — _offline copy unavailable_ (403) · [source](https://mitpress.mit.edu/sicp/)
+- Function (mathematics) — Wikipedia — [offline](files/en.wikipedia.org_wiki_Function__mathematics.html) · [source](https://en.wikipedia.org/wiki/Function_(mathematics))
+- SICP §1.1, “The Elements of Programming” — [offline](files/mitpress.mit.edu_sicp.html) · [source](https://mitpress.mit.edu/sicp/)
 - Elixir — Anonymous functions — [offline](files/hexdocs.pm_elixir_anonymous-functions.html.html) · [source](https://hexdocs.pm/elixir/anonymous-functions.html)
 ## F1.02 &middot; The substitution model
 
-- SICP §1.1.5, “The Substitution Model for Procedure Application” — _offline copy unavailable_ (403) · [source](https://mitpress.mit.edu/sicp/)
+- SICP §1.1.5, “The Substitution Model for Procedure Application” — [offline](files/mitpress.mit.edu_sicp.html) · [source](https://mitpress.mit.edu/sicp/)
 - Referential transparency — Wikipedia — [offline](files/en.wikipedia.org_wiki_Referential_transparency.html) · [source](https://en.wikipedia.org/wiki/Referential_transparency)
 ## F1.03 &middot; Composition, f∘g
 
@@ -40,18 +40,18 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 - Elixir — Pattern matching — [offline](files/hexdocs.pm_elixir_pattern-matching.html.html) · [source](https://hexdocs.pm/elixir/pattern-matching.html)
 ## F1.05 &middot; Sets, sequences & mappings
 
-- Map (higher-order function) — Wikipedia — _offline copy unavailable_ (404) · [source](https://en.wikipedia.org/wiki/Map_(higher-order_function)
+- Map (higher-order function) — Wikipedia — [offline](files/en.wikipedia.org_wiki_Map__higher-order_function.html) · [source](https://en.wikipedia.org/wiki/Map_(higher-order_function))
 - Elixir — Enum — [offline](files/hexdocs.pm_elixir_Enum.html.html) · [source](https://hexdocs.pm/elixir/Enum.html)
 - Elixir — Keywords and maps — [offline](files/hexdocs.pm_elixir_keywords-and-maps.html.html) · [source](https://hexdocs.pm/elixir/keywords-and-maps.html)
 ## F1.06 &middot; Recursion & induction
 
 - Mathematical induction — Wikipedia — [offline](files/en.wikipedia.org_wiki_Mathematical_induction.html) · [source](https://en.wikipedia.org/wiki/Mathematical_induction)
-- SICP §1.2, “Procedures and the Processes They Generate” — _offline copy unavailable_ (403) · [source](https://mitpress.mit.edu/sicp/)
+- SICP §1.2, “Procedures and the Processes They Generate” — [offline](files/mitpress.mit.edu_sicp.html) · [source](https://mitpress.mit.edu/sicp/)
 - Elixir — Recursion — [offline](files/hexdocs.pm_elixir_recursion.html.html) · [source](https://hexdocs.pm/elixir/recursion.html)
 ## F1.07 &middot; Higher-order operators (Σ, Π)
 
-- SICP §1.3, “Formulating Abstractions with Higher-Order Procedures” — _offline copy unavailable_ (403) · [source](https://mitpress.mit.edu/sicp/)
-- Fold (higher-order function) — Wikipedia — _offline copy unavailable_ (404) · [source](https://en.wikipedia.org/wiki/Fold_(higher-order_function)
+- SICP §1.3, “Formulating Abstractions with Higher-Order Procedures” — [offline](files/mitpress.mit.edu_sicp.html) · [source](https://mitpress.mit.edu/sicp/)
+- Fold (higher-order function) — Wikipedia — [offline](files/en.wikipedia.org_wiki_Fold__higher-order_function.html) · [source](https://en.wikipedia.org/wiki/Fold_(higher-order_function))
 - Elixir — Enum.reduce/3 — [offline](files/hexdocs.pm_elixir_Enum.html.html#reduce/3) · [source](https://hexdocs.pm/elixir/Enum.html#reduce/3)
 ## F1.08 &middot; Equations & pattern matching
 
@@ -64,7 +64,7 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 ## F2.01 &middot; Pure functions & side effects
 
 - Pure function — Wikipedia — [offline](files/en.wikipedia.org_wiki_Pure_function.html) · [source](https://en.wikipedia.org/wiki/Pure_function)
-- Side effect (computer science) — Wikipedia — _offline copy unavailable_ (404) · [source](https://en.wikipedia.org/wiki/Side_effect_(computer_science)
+- Side effect (computer science) — Wikipedia — [offline](files/en.wikipedia.org_wiki_Side_effect__computer_science.html) · [source](https://en.wikipedia.org/wiki/Side_effect_(computer_science))
 ## F2.02 &middot; Immutability & persistent data
 
 - Persistent data structure — Wikipedia — [offline](files/en.wikipedia.org_wiki_Persistent_data_structure.html) · [source](https://en.wikipedia.org/wiki/Persistent_data_structure)
@@ -81,11 +81,11 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 ## F2.05 &middot; map / filter / reduce (folds)
 
 - Elixir — Enum — [offline](files/hexdocs.pm_elixir_Enum.html.html) · [source](https://hexdocs.pm/elixir/Enum.html)
-- Fold (higher-order function) — Wikipedia — _offline copy unavailable_ (404) · [source](https://en.wikipedia.org/wiki/Fold_(higher-order_function)
+- Fold (higher-order function) — Wikipedia — [offline](files/en.wikipedia.org_wiki_Fold__higher-order_function.html) · [source](https://en.wikipedia.org/wiki/Fold_(higher-order_function))
 - Graham Hutton, “A tutorial on the universality and expressiveness of fold” (1999) — [offline](files/www.cs.nott.ac.uk_pszgmh_fold.pdf.pdf) · [source](https://www.cs.nott.ac.uk/~pszgmh/fold.pdf)
 ## F2.06 &middot; Closures & partial application
 
-- Closure (computer programming) — Wikipedia — _offline copy unavailable_ (404) · [source](https://en.wikipedia.org/wiki/Closure_(computer_programming)
+- Closure (computer programming) — Wikipedia — [offline](files/en.wikipedia.org_wiki_Closure__computer_programming.html) · [source](https://en.wikipedia.org/wiki/Closure_(computer_programming))
 - Elixir — Function (the capture operator) — [offline](files/hexdocs.pm_elixir_Function.html.html) · [source](https://hexdocs.pm/elixir/Function.html)
 - Partial application — Wikipedia — [offline](files/en.wikipedia.org_wiki_Partial_application.html) · [source](https://en.wikipedia.org/wiki/Partial_application)
 ## F2.07 &middot; Algebraic data types
@@ -271,7 +271,7 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 - Bruce A. Tate & Sophie DeBenedetto, *Programming Phoenix LiveView* — [offline](files/pragprog.com_titles_liveview.html) · [source](https://pragprog.com/titles/liveview/)
 - Darin Wilson & Eric Meadows-Jönsson, *Programming Ecto* — [offline](files/pragprog.com_titles_wmecto.html) · [source](https://pragprog.com/titles/wmecto/)
 - Chris McCord, *Metaprogramming Elixir* — [offline](files/pragprog.com_titles_cmelixir.html) · [source](https://pragprog.com/titles/cmelixir/)
-- Abelson, Sussman & Sussman, *Structure and Interpretation of Computer Programs* (2nd ed.) — _offline copy unavailable_ (403) · [source](https://mitpress.mit.edu/sicp/)
+- Abelson, Sussman & Sussman, *Structure and Interpretation of Computer Programs* (2nd ed.) — [offline](files/mitpress.mit.edu_sicp.html) · [source](https://mitpress.mit.edu/sicp/)
 - Chris Okasaki, *Purely Functional Data Structures* — _offline copy unavailable_ (403) · [source](https://www.cambridge.org/9780521663502)
 - Cormen, Leiserson, Rivest & Stein, *Introduction to Algorithms* (4th ed.) — _offline copy unavailable_ (403) · [source](https://mitpress.mit.edu/9780262046305/)
 - Fred Hébert, *Learn You Some Erlang for Great Good!* — [offline](files/learnyousomeerlang.com.html) · [source](https://learnyousomeerlang.com/)

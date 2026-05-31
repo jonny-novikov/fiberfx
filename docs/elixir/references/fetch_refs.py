@@ -24,7 +24,10 @@ UA = "Mozilla/5.0 (jonnify offline-mirror; +https://jonnify.fly.dev)"
 
 os.makedirs(FILES, exist_ok=True)
 
-LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
+# Markdown link target may itself contain balanced parens (e.g. Wikipedia
+# disambiguation URLs like .../Function_(mathematics)); match those before the
+# link's own closing ')'.
+LINK = re.compile(r"\[([^\]]+)\]\((https?://(?:[^\s()]+|\([^\s()]*\))*)\)")
 H2 = re.compile(r"^##\s+(.*)$")
 H3 = re.compile(r"^###\s+(.*)$")
 
@@ -63,6 +66,34 @@ with open(SRC, encoding="utf-8") as f:
             pages.setdefault(dlurl, {"slug": slug(dlurl)})
 
 
+def _curl(url, outpath):
+    cmd = ["curl", "-sSL", "--compressed", "-A", UA,
+           "--max-time", "45", "--retry", "1", "--retry-delay", "1",
+           "-w", "%{http_code}\t%{content_type}\t%{size_download}\t%{url_effective}",
+           "-o", outpath, url]
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+    parts = (p.stdout or "").strip().split("\t")
+    code = parts[0] if parts else "000"
+    ctype = parts[1] if len(parts) > 1 else ""
+    size = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+    eff = parts[3] if len(parts) > 3 else url
+    return code, ctype, size, eff
+
+
+def _wayback(url):
+    """Closest Wayback Machine snapshot URL, or None — used when origin blocks us."""
+    api = "https://archive.org/wayback/available?url=" + url
+    try:
+        out = subprocess.run(["curl", "-sSL", "--max-time", "30", "-A", UA, api],
+                             capture_output=True, text=True, timeout=45).stdout
+        snap = json.loads(out).get("archived_snapshots", {}).get("closest", {})
+        if snap.get("available") and snap.get("url"):
+            return snap["url"]
+    except Exception:
+        pass
+    return None
+
+
 def fetch(dlurl):
     rec = pages[dlurl]
     base = rec["slug"]
@@ -72,26 +103,26 @@ def fetch(dlurl):
             existing = os.path.join(FILES, base + ext)
             if os.path.exists(existing) and os.path.getsize(existing) > 0:
                 rec.update(file=f"files/{base}{ext}", status="cached", http_code="(cached)",
-                           content_type="", bytes=os.path.getsize(existing), effective_url=dlurl)
+                           content_type="", bytes=os.path.getsize(existing), effective_url=dlurl, via="cache")
                 return
     tmp = os.path.join(FILES, base + ".part")
-    cmd = ["curl", "-sSL", "--compressed", "-A", UA,
-           "--max-time", "45", "--retry", "1", "--retry-delay", "1",
-           "-w", "%{http_code}\t%{content_type}\t%{size_download}\t%{url_effective}",
-           "-o", tmp, dlurl]
+    via = "direct"
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
-        parts = (p.stdout or "").strip().split("\t")
+        code, ctype, size, eff = _curl(dlurl, tmp)
     except Exception as e:
+        code, ctype, size, eff = "000", "", 0, dlurl
+        rec["error"] = str(e)[:200]
+    # Fallback to the Wayback Machine when the origin blocks (403) or 404s.
+    if not (code.startswith("2") and size > 0):
         if os.path.exists(tmp):
             os.remove(tmp)
-        rec.update(file=None, status="error", http_code=None, content_type="", bytes=0,
-                   effective_url=dlurl, error=str(e)[:200])
-        return
-    code = parts[0] if parts else "000"
-    ctype = parts[1] if len(parts) > 1 else ""
-    size = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
-    eff = parts[3] if len(parts) > 3 else dlurl
+        snap = _wayback(dlurl)
+        if snap:
+            try:
+                code, ctype, size, eff = _curl(snap, tmp)
+                via = "wayback"
+            except Exception:
+                pass
     is_pdf = "pdf" in ctype.lower() or dlurl.lower().split("?")[0].endswith(".pdf")
     ext = ".pdf" if is_pdf else (".html" if "html" in ctype.lower() else ".bin")
     ok = code.startswith("2") and size > 0
@@ -103,7 +134,7 @@ def fetch(dlurl):
         os.remove(tmp)
     rec.update(file=(f"files/{final}" if final else None),
                status=("ok" if ok else "failed"), http_code=code,
-               content_type=ctype, bytes=size, effective_url=eff)
+               content_type=ctype, bytes=size, effective_url=eff, via=(via if ok else "none"))
 
 
 order = list(pages.keys())
