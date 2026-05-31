@@ -9,11 +9,11 @@ Works against any URL scheme Playwright supports: `file://`, `http://`, `https:/
 
 ## Files
 
-| File               | Purpose |
-|--------------------|---------|
-| `validator.js`     | Reusable library: the `Validator` class + `norm` / `nospace` helpers. |
+| File | Purpose |
+|------|---------|
+| `validator.js` | Reusable library: the `Validator` class + `norm` / `nospace` helpers. |
 | `suite.example.js` | Example suite — copy and adapt the checks for your pages. |
-| `package.json`     | Dependency (`playwright`) + scripts. |
+| `package.json` | Dependency (`playwright`) + scripts. |
 
 ## Install (once)
 
@@ -116,3 +116,70 @@ async expectAttr(sel, attr, exp) {
 | `viewportWidth` | `1280` | viewport width (px) |
 | `viewportHeight` | `900` | viewport height (px) |
 | `settleMs` | `1300` | pause after navigation for async render / KaTeX |
+
+---
+
+## Visual regression (screenshot) testing
+
+`visual.js` adds real screenshot testing on top of the DOM checks. It captures
+PNG screenshots, compares them pixel-by-pixel to stored **baselines** with
+`pixelmatch`, and reports the diff as **text** (changed pixels, ratio,
+dimensions). Baseline / current / diff PNGs are written to disk for offline
+review — **no images are embedded**, so it consumes no image/preview budget.
+
+`VisualTester` extends `Validator`, so one object does DOM + computed-style +
+visual checks.
+
+```js
+const { VisualTester } = require('./visual');
+
+const v = new VisualTester({ baseUrl: process.env.BASE_URL, threshold: 0.001 });
+await v.start();
+await v.open('/page.html');
+await v.notBlank('page');                       // render sanity (not blank)
+await v.snapshot('page_full');                  // full-page vs baseline
+await v.snapshot('hero', { selector: '.hero' }); // element vs baseline
+v.report();
+await v.stop();
+```
+
+### How baselines work
+
+```
+__screenshots__/
+  baseline/   ← committed reference PNGs (created on first run)
+  current/    ← latest capture
+  diff/       ← highlighted pixel differences (for human review)
+```
+
+- **First run** writes baselines and passes (`baseline created`). Commit them.
+- **Later runs** compare current vs baseline; pass if changed-pixel ratio ≤ `threshold`.
+- **After an intentional UI change** refresh baselines:
+  `UPDATE_SNAPSHOTS=1 BASE_URL="..." node suite.visual.example.js`
+
+### Visual API
+
+| Method | Checks |
+|--------|--------|
+| `snapshot(name, opts?)` | capture + diff vs baseline; `opts.selector`, `opts.fullPage`, `opts.threshold` |
+| `notBlank(name, opts?)` | screenshot is not white/black/empty (render sanity); `opts.selector` |
+
+### Options (VisualTester)
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `snapshotDir` | `./__screenshots__` (env `SNAPSHOT_DIR`) | where baseline/current/diff live |
+| `threshold` | `0.001` | max changed-pixel ratio (0.1%) |
+| `pixelThreshold` | `0.1` | per-pixel colour sensitivity (pixelmatch, 0..1) |
+| `updateBaselines` | `false` (env `UPDATE_SNAPSHOTS=1`) | rewrite baselines instead of comparing |
+
+### Offline use
+
+After a one-time `npm install` (which also runs `playwright install chromium`),
+everything runs **offline**: pixelmatch and pngjs are pure-JS, and baselines are
+stored inside the project. Both the install and the chromium download need
+network **once**; subsequent runs do not.
+
+> **Font-rendering caveat.** Anti-aliasing and font rendering differ across
+> operating systems, so baselines are environment-specific. Generate baselines
+> on the same OS/CI image you validate on, or raise `threshold` accordingly.
