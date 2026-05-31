@@ -74,7 +74,7 @@ exec /app/bin/start
 
 ## Related Resources
 
-- **Main Flyer Docs:** [../README.md](../README.md)
+- **Main Flyer Docs:** [../README.md](../flyer/README.md)
 - **Plan:** PLN0KIoZj7TQXK (FWHD v3 Production Delivery)
 - **Epic:** EPC0KCJhe55sum (FWHD Technology)
 - **KB:** KBC0KFIvoAxl20 (FWHD v3: Proxied /api/v2)
