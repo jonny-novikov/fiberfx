@@ -220,7 +220,7 @@ MODULES = {
     "F4": [
         dict(n="F4.01", title="Lists, recursion & complexity", one="Cons cells; big-O on the BEAM.", slug="lists", status="built", lab=False),
         dict(n="F4.02", title="Trees & traversals", one="Binary and n-ary trees; DFS/BFS, functionally.", slug="trees", status="planned", lab=False),
-        dict(n="F4.03", title="Sorting & searching", one="Merge/quick sort and binary search, immutably.", slug="sorting", status="planned", lab=False),
+        dict(n="F4.03", title="Sorting & searching", one="Merge/quick sort and binary search, immutably.", slug="sorting", status="built", lab=False),
         dict(n="F4.04", title="Maps, sets & hashing", one="Hash maps, collisions, the cost model.", slug="maps", status="planned", lab=False),
         dict(n="F4.05", title="Hash Array Mapped Tries (HAMT)", one="Persistent maps via prefix trees.", slug="hamt", status="planned", lab=False),
         dict(n="F4.06", title="CHAMP maps", one="Compressed Hash-Array Mapped Prefix-trees; layout & iteration.", slug="champ", status="planned", lab=False),
@@ -318,6 +318,11 @@ SUBPAGES = {
         dict(slug='big-o', title='Complexity & big-O on the BEAM', one='Big-O for a list is concrete: count the cons cells an operation touches.'),
         dict(slug='cons', title='Cons cells & the shape of a list', one='A cons cell is a head and a tail pointer.'),
         dict(slug='recursion', title='Recursion over lists', one='You walk a list by recursion, not a loop: match [h | t], act on the head, recurse on the tail, a'),
+    ],
+    "F4.03": [
+        dict(slug='sorts', title='Merge & quicksort', one='The two workhorse comparison sorts are both divide-and-conquer.'),
+        dict(slug='cost', title='Stability & sort cost', one='Sorts are ranked on average, worst case, space, and stability — whether equal keys keep their or'),
+        dict(slug='search', title='Linear & binary search', one='Linear search checks elements one by one over any sequence — O(n).'),
     ],
 }
 

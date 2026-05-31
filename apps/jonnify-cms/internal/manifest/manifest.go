@@ -115,7 +115,7 @@ var Modules = map[string][]Module{
 	"F4": {
 		{N: "F4.01", Title: "Lists, recursion & complexity", One: "Cons cells; big-O on the BEAM.", Slug: "lists", Status: "built"},
 		{N: "F4.02", Title: "Trees & traversals", One: "Binary/n-ary trees; DFS/BFS functionally.", Slug: "trees", Status: "planned"},
-		{N: "F4.03", Title: "Sorting & searching", One: "Merge/quick sort, binary search, immutably.", Slug: "sorting", Status: "planned"},
+		{N: "F4.03", Title: "Sorting & searching", One: "Merge/quick sort, binary search, immutably.", Slug: "sorting", Status: "built"},
 		{N: "F4.04", Title: "Maps, sets & hashing", One: "Hash maps, collisions, the cost model.", Slug: "maps", Status: "planned"},
 		{N: "F4.05", Title: "Hash Array Mapped Tries (HAMT)", One: "Persistent maps via prefix trees.", Slug: "hamt", Status: "planned"},
 		{N: "F4.06", Title: "CHAMP maps", One: "Compressed HAMT trees; layout & iteration.", Slug: "champ", Status: "planned"},
@@ -210,6 +210,11 @@ var Subpages = map[string][]Subpage{
 		{"big-o", "Complexity & big-O on the BEAM", "Big-O for a list is concrete: count the cons cells an operation touches."},
 		{"cons", "Cons cells & the shape of a list", "A cons cell is a head and a tail pointer."},
 		{"recursion", "Recursion over lists", "You walk a list by recursion, not a loop: match [h | t], act on the head, recurse on the tail, a"},
+	},
+	"F4.03": {
+		{"sorts", "Merge & quicksort", "The two workhorse comparison sorts are both divide-and-conquer."},
+		{"cost", "Stability & sort cost", "Sorts are ranked on average, worst case, space, and stability — whether equal keys keep their or"},
+		{"search", "Linear & binary search", "Linear search checks elements one by one over any sequence — O(n)."},
 	},
 }
 
