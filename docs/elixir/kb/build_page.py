@@ -218,7 +218,7 @@ MODULES = {
         dict(n="F3.09", title="The process playground", one="Spawn processes, send messages, watch the mailbox live.", slug="playground", status="built", lab=True),
     ],
     "F4": [
-        dict(n="F4.01", title="Lists, recursion & complexity", one="Cons cells; big-O on the BEAM.", slug="lists", status="planned", lab=False),
+        dict(n="F4.01", title="Lists, recursion & complexity", one="Cons cells; big-O on the BEAM.", slug="lists", status="built", lab=False),
         dict(n="F4.02", title="Trees & traversals", one="Binary and n-ary trees; DFS/BFS, functionally.", slug="trees", status="planned", lab=False),
         dict(n="F4.03", title="Sorting & searching", one="Merge/quick sort and binary search, immutably.", slug="sorting", status="planned", lab=False),
         dict(n="F4.04", title="Maps, sets & hashing", one="Hash maps, collisions, the cost model.", slug="maps", status="planned", lab=False),
@@ -313,6 +313,11 @@ SUBPAGES = {
         dict(slug='call-cast', title='Synchronous call, asynchronous cast', one='GenServer.call sends a request and blocks for the reply, routing to handle_call;'),
         dict(slug='genserver', title='The GenServer behaviour', one='A GenServer abstracts the receive loop into a behaviour: init/1 sets the state, handle_call/3 an'),
         dict(slug='supervisors', title='Supervisors & restart strategies', one='A supervisor starts child processes and restarts them when they crash, by strategy — one_for_one'),
+    ],
+    "F4.01": [
+        dict(slug='big-o', title='Complexity & big-O on the BEAM', one='Big-O for a list is concrete: count the cons cells an operation touches.'),
+        dict(slug='cons', title='Cons cells & the shape of a list', one='A cons cell is a head and a tail pointer.'),
+        dict(slug='recursion', title='Recursion over lists', one='You walk a list by recursion, not a loop: match [h | t], act on the head, recurse on the tail, a'),
     ],
 }
 

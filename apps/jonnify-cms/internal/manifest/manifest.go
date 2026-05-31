@@ -113,7 +113,7 @@ var Modules = map[string][]Module{
 		{N: "F3.09", Title: "The process playground", One: "Spawn processes; watch the mailbox live.", Slug: "playground", Status: "built", Lab: true},
 	},
 	"F4": {
-		{N: "F4.01", Title: "Lists, recursion & complexity", One: "Cons cells; big-O on the BEAM.", Slug: "lists", Status: "planned"},
+		{N: "F4.01", Title: "Lists, recursion & complexity", One: "Cons cells; big-O on the BEAM.", Slug: "lists", Status: "built"},
 		{N: "F4.02", Title: "Trees & traversals", One: "Binary/n-ary trees; DFS/BFS functionally.", Slug: "trees", Status: "planned"},
 		{N: "F4.03", Title: "Sorting & searching", One: "Merge/quick sort, binary search, immutably.", Slug: "sorting", Status: "planned"},
 		{N: "F4.04", Title: "Maps, sets & hashing", One: "Hash maps, collisions, the cost model.", Slug: "maps", Status: "planned"},
@@ -205,6 +205,11 @@ var Subpages = map[string][]Subpage{
 		{"call-cast", "Synchronous call, asynchronous cast", "GenServer.call sends a request and blocks for the reply, routing to handle_call;"},
 		{"genserver", "The GenServer behaviour", "A GenServer abstracts the receive loop into a behaviour: init/1 sets the state, handle_call/3 an"},
 		{"supervisors", "Supervisors & restart strategies", "A supervisor starts child processes and restarts them when they crash, by strategy — one_for_one"},
+	},
+	"F4.01": {
+		{"big-o", "Complexity & big-O on the BEAM", "Big-O for a list is concrete: count the cons cells an operation touches."},
+		{"cons", "Cons cells & the shape of a list", "A cons cell is a head and a tail pointer."},
+		{"recursion", "Recursion over lists", "You walk a list by recursion, not a loop: match [h | t], act on the head, recurse on the tail, a"},
 	},
 }
 
