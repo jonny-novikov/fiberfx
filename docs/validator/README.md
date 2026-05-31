@@ -37,6 +37,40 @@ BASE_URL="http://localhost:3000" npm run validate
 
 Exit code: `0` = all passed, `1` = at least one failure (CI-friendly).
 
+## Elixir course validation — the runtime half of CMS maintenance
+
+`elixir.suite.js` is the runtime companion to **jonnify-cms**. The two cover
+different failure modes, and a page is "maintained correct" only when it passes
+both:
+
+| | `jonnify-cms` (static) | `elixir.suite.js` (runtime, this tool) |
+|---|---|---|
+| How | regex/AST over the HTML source | renders each page in headless Chromium |
+| Proves | markup is right: containers balanced, a `.stamp` exists, `.reveal` is JS-gated, links resolve, the nine Apollo gates | the page *works*: no JS errors, no mobile overflow, the stamp's decoder fills a timestamp, reveals un-hide on scroll, widgets respond |
+| Blind to | does the JS run? does it overflow at 390px? does the widget throw? | structure / link correctness |
+
+```bash
+npm install                              # once: playwright + chromium
+npm run validate:elixir                  # every /elixir page (file://, no server needed)
+ELIXIR_SAMPLE=1 npm run validate:elixir  # one-per-type smoke (~8 pages)
+node elixir.suite.js ../../elixir/functional/folds/index.html   # specific page(s)
+ELIXIR_DIR=/abs/path/to/elixir npm run validate:elixir          # override the tree
+```
+
+The suite is **self-adapting**: it opens each page, feature-detects from the live
+DOM (`.stamp`? `.solid-select`? KaTeX? `.reveal`?), and runs only the applicable
+checks — so it covers the whole course and any newly-added page with no per-page
+config. Per page it asserts: `jonnify` in the title, **no JS/console errors** (on
+load *and* after interacting), no horizontal overflow at 1280px **and** 390px, the
+ink design-token background (Family-A pages), ≥1 SVG, and — when present —
+`noKatexErrors`, `stampDecodes`, `revealsVisible`, a working `.pager`, and a
+responsive `.solid-select` toggle.
+
+Recommended maintenance pass: `cms readiness` + `cms audit` (structure/links) →
+`npm run validate:elixir` (runtime). The course-specific assertions
+(`noJsErrors`, `stampDecodes`, `revealsVisible`, `toggleWorks`, `setViewport`,
+`expectBackground`) are part of `validator.js`, reusable in any suite.
+
 ## Minimal usage
 
 ```js

@@ -85,11 +85,11 @@ function pageList() {
     // Conditional, content-aware checks.
     if (feat.katex) await v.noKatexErrors();
     if (feat.stamp) await v.stampDecodes();
-    if (feat.reveal) await v.revealsVisible();
     if (feat.pager) await v.expectCount('.pager a', '>=', 1);
     if (feat.toggle) await v.toggleWorks('.solid-select');
 
     await v.noJsErrors();                     // interactions did not break the page
+    if (feat.reveal) await v.revealsVisible(); // last — reloads the page under reduced-motion
 
     if (v.fail > before) failedPages.push(path.relative(ELIXIR, f));
   }
