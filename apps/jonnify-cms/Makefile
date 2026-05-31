@@ -5,7 +5,7 @@ BIN        := bin/cms
 ELIXIR_DIR ?= ../../elixir
 export GOWORK := off
 
-.PHONY: help build test vet install audit audit-fix readiness graph manifest clean
+.PHONY: help build test vet install audit audit-fix readiness graph manifest promote integrate clean
 
 help:
 	@echo "jonnify-cms targets:"
@@ -45,6 +45,15 @@ graph: build
 
 manifest: build
 	./$(BIN) manifest
+
+# Auto-declare any built-but-planned modules + newly-arrived subpages in both
+# manifests, rebuild cms, and re-sync the contents-page cards. The deterministic
+# half of "process new pages as they arrive" (no AI).
+promote:
+	cd ../../docs/elixir/kb && python3 promote.py --rebuild
+
+# Full integration sweep: promote drift, then audit links + report readiness.
+integrate: promote audit readiness
 
 clean:
 	rm -rf bin

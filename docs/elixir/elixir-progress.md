@@ -120,12 +120,15 @@ This is the active chapter and the focus of the gap below.
 | &nbsp;&nbsp;↳ F3.07 Spawning a process | `/elixir/language/processes/spawn` | built | planned | **yes** | **yes** |
 | &nbsp;&nbsp;↳ F3.07 Sending & receiving messages | `/elixir/language/processes/messages` | built | planned | **yes** | **yes** |
 | &nbsp;&nbsp;↳ F3.07 Holding state in a loop | `/elixir/language/processes/state` | built | planned | **yes** | **yes** |
-| F3.08 OTP: GenServer & supervisors | `/elixir/language/otp` | planned | planned | — | — |
+| **F3.08 OTP: GenServer & supervisors (hub)** | `/elixir/language/otp` | built | **planned (deploy lags)** | **yes** | **yes** |
+| &nbsp;&nbsp;↳ F3.08 The GenServer behaviour | `/elixir/language/otp/genserver` | built | planned | **yes** | **yes** |
+| &nbsp;&nbsp;↳ F3.08 Synchronous call, asynchronous cast | `/elixir/language/otp/call-cast` | built | planned | **yes** | **yes** |
+| &nbsp;&nbsp;↳ F3.08 Supervisors & restart strategies | `/elixir/language/otp/supervisors` | built | planned | **yes** | **yes** |
 | F3.09 The process playground (lab) | `/elixir/language/playground` | planned | planned | — | — |
 
 F3.02 and F3.03 also carry subpage hubs (3 each); F3.04 carries 3 (enum, comprehensions, streams);
 F3.05 carries 3 (define, defaults, matching); F3.06 carries 3 (define, defimpl, behaviours); F3.07 carries 3
-(spawn, messages, state).
+(spawn, messages, state); F3.08 carries 3 (genserver, call-cast, supervisors).
 F3 front-matter: `history`, `timeline`, `under-the-hood` (built in the manifest).
 
 ### F4 · Algorithms & Data Structures — `/elixir/algorithms` — accent sage — chapter planned
@@ -148,27 +151,27 @@ and the live-dashboard lab. F6 is where the portal gains Phoenix LiveView.
 
 The local manifest is ahead of the deployed contents page in one place worth tracking:
 
-- **F3.03 (modules)**, **F3.04 (enum-streams)**, **F3.05 (structs)**, **F3.06 (protocols & behaviours)**, and
-  now **F3.07 (processes & the actor model)** are `built` in `build_page.py` but the published contents page
-  still shows them as `planned` (non-linking cards). The live build stamp was minted earlier today, so the
-  deploy predates these promotions.
-- Practical reading: F3.03 through F3.07 are authored and pass the gates, but are not yet linked from the
+- **F3.03 (modules)**, **F3.04 (enum-streams)**, **F3.05 (structs)**, **F3.06 (protocols & behaviours)**,
+  **F3.07 (processes & the actor model)**, and now **F3.08 (OTP: GenServer & supervisors)** are `built` in
+  `build_page.py` but the published contents page still shows them as `planned` (non-linking cards). The live
+  build stamp was minted earlier today, so the deploy predates these promotions.
+- Practical reading: F3.03 through F3.08 are authored and pass the gates, but are not yet linked from the
   live site. Closing the gap is a deploy step, not an authoring step — except that this bundle only carries
-  the F3.04/F3.05/F3.06/F3.07 fragments authored here, so a local `build --all` of the rest of F3 needs the
-  remaining fragments synced from the full repository first.
+  the F3.04/F3.05/F3.06/F3.07/F3.08 fragments authored here, so a local `build --all` of the rest of F3 needs
+  the remaining fragments synced from the full repository first.
 
 ## Validation evidence (this session)
 
 ```text
 id decode TSK0KHTOWnGLuC  ->  snowflake 274557032793636864 · 2026-01-27 15:11:37 UTC   [exact match]
-build --page f3-7         ->  processes.html             · Apollo A+ · 9/9 gates PASS
-build --page f3-7-spw     ->  processes-spawn.html       · Apollo A+ · 9/9 gates PASS
-build --page f3-7-msg     ->  processes-messages.html    · Apollo A+ · 9/9 gates PASS
-build --page f3-7-loop    ->  processes-state.html       · Apollo A+ · 9/9 gates PASS
-build --page f3-6, f3-6-beh  ->  protocols.html, protocols-behaviours.html  · A+ (relinked → F3.07)
-node --check (page JS)    ->  OK for all F3.07 pages
-routes                    ->  70 allowed (was 66); F3.08 /otp correctly absent
-suite.elixir.js ONLY=F3.07  ->  54 PASS desktop + 8 PASS mobile · 0 FAIL · images embedded: 0
+build --page f3-8         ->  otp.html                   · Apollo A+ · 9/9 gates PASS
+build --page f3-8-gs      ->  otp-genserver.html         · Apollo A+ · 9/9 gates PASS
+build --page f3-8-cc      ->  otp-call-cast.html         · Apollo A+ · 9/9 gates PASS
+build --page f3-8-sup     ->  otp-supervisors.html       · Apollo A+ · 9/9 gates PASS
+build --page f3-7, f3-7-loop  ->  processes.html, processes-state.html  · A+ (relinked → F3.08)
+node --check (page JS)    ->  OK for all F3.08 pages
+routes                    ->  74 allowed (was 70); F3.09 subpages correctly absent
+suite.elixir.js ONLY=F3.08  ->  49 PASS desktop + 8 PASS mobile · 0 FAIL · images embedded: 0
 ```
 
 Apollo gates that passed, per page: `containers`, `svg`, `no-future`, `voice`, `storage`, `motion`,
@@ -176,36 +179,39 @@ Apollo gates that passed, per page: `containers`, `svg`, `no-future`, `voice`, `
 
 ## Resume point and next actions
 
-**F3.07 (Processes & the actor model) is complete** — hub plus three deep dives (spawn, messages, state), all
-A+ on the nine gates and green in the headless validator (54 desktop + 8 mobile = 62 PASS), with F3.06 (the
-hub and the behaviours subpage) relinked forward. The module ordered the actor in three moves → spawn and
-isolation → the mailbox and selective receive → the recursive state loop, which lands last and opens into OTP.
-**Resume at F3.08, OTP: GenServer & supervisors** (`slug` likely "otp", route `/elixir/language/otp`). The
-bridge is set at the end of F3.07.3: the hand-written `receive` loop becomes `handle_call/3` and
-`handle_cast/2`, and a supervisor restarts the process when it crashes. After OTP: the `playground` lab (F3.09).
+**F3.08 (OTP: GenServer & supervisors) is complete** — hub plus three deep dives (genserver, call-cast,
+supervisors), all A+ on the nine gates and green in the headless validator (49 desktop + 8 mobile = 57 PASS),
+with F3.07 (the hub and the state subpage) relinked forward. The module ordered an OTP system in three pieces →
+the GenServer behaviour and its callbacks → synchronous call versus asynchronous cast → supervisors and restart
+strategies, which lands last as the fault-tolerance capstone and opens into the playground. **Resume at F3.09,
+The process playground** (`slug` "playground", route `/elixir/language/playground`, `lab=True`). It is the F3
+capstone interactive lab, so its page anatomy and intent may differ from the teaching modules — expect a live
+sandbox to spawn processes, send messages, and watch the mailbox and supervision tree react, rather than the
+fixed select-and-read figures. F3.09 is also the **last module in F3**, so its forward pointer (hub note and
+last-subpage note) should aim at the next chapter, not another F3 module.
 
-Immediate steps for F3.08, in order:
+Immediate steps for F3.09, in order:
 
-1. Author the F3.08 hub + subpages into `content/`, following the page anatomy and the interactive contract
-   in `SKILL.md`. Accent stays `elixir` (purple) for the F3 chapter.
-2. Promote F3.08 to `built`; add `SUBPAGES["F3.08"]` and register pages with unique output filenames
-   (e.g. `otp.html`, `otp-genserver.html`, …).
-3. Relink F3.07.3's forward pager / `.note` to F3.08 (it currently returns to the chapter overview and names
-   F3.08 as in production without a link).
+1. Author the F3.09 lab into `content/`, following the page anatomy and interactive contract in `SKILL.md`,
+   adapting the figure pattern to a live playground. Accent stays `elixir` (purple) for the F3 chapter.
+2. Promote F3.09 to `built`; add `SUBPAGES["F3.09"]` if it carries subpages and register pages with unique
+   output filenames (e.g. `playground.html`, …).
+3. Relink F3.08.3's forward pager / `.note` to F3.09 (it currently returns to the chapter overview and names
+   F3.09 as in production without a link).
 4. Verify routes, run the voice sweep, build, grade for A+, `node --check` the JS, and add a tagged
-   validator block run with `ONLY="F3.08"`.
+   validator block run with `ONLY="F3.09"`.
 5. Regenerate `functional-programming-in-elixir.md` and `elixir-references.md`, update this tracker, then
    deliver.
 
-**Deferred wiring (not authoring):** lighting up F3.05, F3.06, and F3.07 on the F3 chapter landing (node
-colour, `MODS` object, directory link) needs `content/f3-00-landing.html`, which is not in this bundle. Same
-for the deploy gap above. Both are sync/deploy steps to run against the full repository.
+**Deferred wiring (not authoring):** lighting up F3.05, F3.06, F3.07, and F3.08 on the F3 chapter landing
+(node colour, `MODS` object, directory link) needs `content/f3-00-landing.html`, which is not in this bundle.
+Same for the deploy gap above. Both are sync/deploy steps to run against the full repository.
 
 ## Known follow-ups
 
 - The outline generator's hand-written "At a glance" summary prose lags the manifest (it predates the
-  F2.09 and F3.01–F3.07 promotions); its per-chapter tables, derived from the manifest, are correct and now
-  show F3.05, F3.06, and F3.07 as built hubs, each with three subpages. Refresh the summary prose in
+  F2.09 and F3.01–F3.08 promotions); its per-chapter tables, derived from the manifest, are correct and now
+  show F3.05, F3.06, F3.07, and F3.08 as built hubs, each with three subpages. Refresh the summary prose in
   `_gen_course_md.py` when convenient.
 - Wiring references into the builder as a `references` manifest field with a `render_references()` footer
   (rather than a separate document) remains an open enhancement noted in the playbook.

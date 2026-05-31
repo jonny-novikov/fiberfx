@@ -123,16 +123,28 @@ scan_once() {
   if ! mkdir "$LOCK" 2>/dev/null; then return 0; fi
   trap 'rmdir "$LOCK" 2>/dev/null' RETURN
   local cur; cur="$(list_pages)"
-  if [ ! -f "$STATE" ]; then printf '%s\n' "$cur" > "$STATE"; : > "$PROC"; printf '%s\n' "$cur" > "$PROC"; log "baselined $(printf '%s\n' "$cur" | grep -c . ) pages"; return 0; fi
+  if [ ! -f "$STATE" ]; then
+    printf '%s\n' "$cur" > "$STATE"; printf '%s\n' "$cur" > "$PROC"
+    stat_mtime "$PROGRESS" > "$PROGRESS_STATE" 2>/dev/null
+    log "baselined $(printf '%s\n' "$cur" | grep -c .) pages"; return 0
+  fi
   local newp; newp="$(LC_ALL=C comm -23 <(printf '%s\n' "$cur") "$STATE" 2>/dev/null)"
   printf '%s\n' "$cur" > "$STATE"
-  [ -z "$newp" ] && return 0
-  local did_sync=0
+  # Second trigger: the elixir-progress.md readiness tracker changed.
+  local pm_new pm_old prog_changed=0
+  pm_new="$(stat_mtime "$PROGRESS")"; pm_old="$(cat "$PROGRESS_STATE" 2>/dev/null)"
+  [ -n "$pm_new" ] && [ "$pm_new" != "$pm_old" ] && prog_changed=1
+  echo "$pm_new" > "$PROGRESS_STATE"
+  [ -z "$newp" ] && [ "$prog_changed" = 0 ] && return 0
+  [ "$prog_changed" = 1 ] && log "elixir-progress.md changed -> integrating"
+  # Deterministic integration first: auto-declare modules/subpages, sync, rebuild cms.
+  run_promote
+  # Then per-new-page references (the AI step).
   printf '%s\n' "$newp" | while IFS= read -r p; do
     [ -z "$p" ] && continue
     grep -Fxq "$p" "$PROC" 2>/dev/null && continue
     log "NEW PAGE: ${p#$ROOT/}"
-    if [ "$did_sync" = 0 ]; then sync_refs; did_sync=1; fi
+    sync_refs
     ai_update "$p"
     echo "$p" >> "$PROC"
   done
