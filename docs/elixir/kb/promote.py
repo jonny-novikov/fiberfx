@@ -92,11 +92,18 @@ def merged_subpages(ch, m):
 
 
 def detect_drift():
-    """Returns (module_promotions, subpage_updates).
+    """Returns (module_promotions, subpage_updates, chapter_promotions).
     module_promotions: planned modules whose page now exists -> flip to built.
-    subpage_updates: built hubs whose on-disk subpages differ from the manifest."""
-    promotions, sub_updates = [], []
+    subpage_updates:   built hubs whose on-disk subpages differ from the manifest.
+    chapter_promotions: planned chapters whose landing page now resolves AND that have
+        >=1 built/live module -> flip the chapter to "live". Without this, AllowedRoutes
+        keeps the chapter route forbidden (it only admits a chapter route when the chapter
+        status is linkable), so every subpage that links UP to its chapter dangles."""
+    promotions, sub_updates, chapter_promos = [], [], []
     for ch in bp.CHAPTERS:
+        if ch["status"] == "planned" and route_resolves(ch["route"]):
+            if any(m["status"] in ("built", "live") for m in bp.MODULES[ch["id"]]):
+                chapter_promos.append(ch)
         for m in bp.MODULES[ch["id"]]:
             route = f'{ch["route"]}/{m["slug"]}'
             if m["status"] == "planned":
@@ -107,7 +114,7 @@ def detect_drift():
                 declared = [(s["slug"], s["title"], s["one"]) for s in bp.SUBPAGES.get(m["n"], [])]
                 if merged and merged != declared:
                     sub_updates.append((ch, m, merged))
-    return promotions, sub_updates
+    return promotions, sub_updates, chapter_promos
 
 
 def insert_before_matching_close(text, open_marker, entry):
@@ -157,41 +164,58 @@ def upsert_subpages(py, go, mid, subs):
     return py, go
 
 
-def main():
-    promotions, sub_updates = detect_drift()
-    if not promotions and not sub_updates:
-        print("no drift: every built module + subpage is declared")
-        return 0
+def promote_chapter(py, go, ch):
+    """Flip a chapter status planned -> live in both manifests (whitespace-robust)."""
+    route = ch["route"]
+    py = re.sub(rf'(route="{re.escape(route)}",\s*\n\s*status=)"planned"',
+                r'\1"live"', py, count=1)
+    go = go.replace(f'"{route}", "planned"', f'"{route}", "live"', 1)
+    return py, go
 
+
+def main():
+    promotions, sub_updates, chapter_promos = detect_drift()
+    have_drift = bool(promotions or sub_updates or chapter_promos)
+
+    for ch in chapter_promos:
+        print(f"  chapter   {ch['id']} {ch['route']} planned -> live (landing resolves, >=1 module built)")
     for ch, m, subs in promotions:
         extra = f"  +{len(subs)} subpages: {', '.join(s[0] for s in subs)}" if subs else ""
         print(f"  promote   {m['n']} {ch['route']}/{m['slug']}{extra}")
     for ch, m, subs in sub_updates:
         print(f"  subpages  {m['n']} {ch['route']}/{m['slug']} -> {', '.join(s[0] for s in subs)}")
+    if not have_drift:
+        print("no drift: every built module + subpage is declared")
     if DRY:
         return 0
 
-    py = open(BUILD_PY, encoding="utf-8").read()
-    go = open(MANIFEST_GO, encoding="utf-8").read()
-    for ch, m, subs in promotions:
-        slug = m["slug"]
-        py = py.replace(f'slug="{slug}", status="planned"', f'slug="{slug}", status="built"')
-        go = go.replace(f'Slug: "{slug}", Status: "planned"', f'Slug: "{slug}", Status: "built"')
-        if subs:
+    if have_drift:
+        py = open(BUILD_PY, encoding="utf-8").read()
+        go = open(MANIFEST_GO, encoding="utf-8").read()
+        for ch in chapter_promos:
+            py, go = promote_chapter(py, go, ch)
+        for ch, m, subs in promotions:
+            slug = m["slug"]
+            py = py.replace(f'slug="{slug}", status="planned"', f'slug="{slug}", status="built"')
+            go = go.replace(f'Slug: "{slug}", Status: "planned"', f'Slug: "{slug}", Status: "built"')
+            if subs:
+                py, go = upsert_subpages(py, go, m["n"], subs)
+        for ch, m, subs in sub_updates:
             py, go = upsert_subpages(py, go, m["n"], subs)
-    for ch, m, subs in sub_updates:
-        py, go = upsert_subpages(py, go, m["n"], subs)
-    open(BUILD_PY, "w", encoding="utf-8").write(py)
-    open(MANIFEST_GO, "w", encoding="utf-8").write(go)
-    print(f"applied: {len(promotions)} promotion(s), {len(sub_updates)} subpage-sync(s)")
+        open(BUILD_PY, "w", encoding="utf-8").write(py)
+        open(MANIFEST_GO, "w", encoding="utf-8").write(go)
+        print(f"applied: {len(chapter_promos)} chapter(s), {len(promotions)} promotion(s), {len(sub_updates)} subpage-sync(s)")
 
-    subprocess.run([sys.executable, os.path.join(HERE, "sync_contents.py")], check=False)
-
+    # Reflect the on-disk manifest in the contents hub + the cms binary. This runs on
+    # --rebuild EVEN WITH no detected drift, so a manual manifest edit (e.g. a chapter
+    # status flipped by hand) is never left stale in the compiled binary.
+    if have_drift or REBUILD:
+        subprocess.run([sys.executable, os.path.join(HERE, "sync_contents.py")], check=False)
     if REBUILD:
         r = subprocess.run(["go", "build", "-o", "bin/cms", "."], cwd=CMS_DIR,
                            env={**os.environ, "GOWORK": "off"})
         print("cms rebuilt" if r.returncode == 0 else "cms rebuild FAILED")
-    else:
+    elif have_drift:
         print("next: rebuild cms  (cd apps/jonnify-cms && GOWORK=off go build -o bin/cms .)")
     return 0
 
