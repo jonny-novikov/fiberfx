@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """
 build_chapter_quiz.py — генератор страниц «Квиз главы» для курса
-«Логика и принятие решений». На страницу: 6 вопросов — по одному на каждый
+«Право повседневной жизни». На страницу: 6 вопросов — по одному на каждый
 модуль главы, тема главы, бейдж модуля, цепочечная навигация, прогресс в localStorage.
 Движок — тот же, что в курсе I (валидирован). Запуск:  python3 build_chapter_quiz.py
-Выход: /mnt/user-data/outputs/logic/{глава}/kviz.html  (по умолчанию OUT_BASE ниже)
+Выход: <repo>/law/{глава}/kviz.html  (по умолчанию; переопределяется OUT_BASE)
 """
 import json, os
 
-OUT_BASE = os.environ.get('OUT_BASE', '/mnt/user-data/outputs/logic')
+# Default output target is the repo's served law/ tree, resolved relative to this
+# script (docs/law/toolkit/ → repo root → law/) so it works on the local filesystem
+# out of the box. OUT_BASE env still overrides it (e.g. a sandbox path).
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+OUT_BASE = os.environ.get('OUT_BASE', os.path.join(_REPO_ROOT, 'law'))
 COURSE_NAME = 'Право повседневной жизни'
 COURSE_BASE = '/law'
 

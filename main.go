@@ -38,6 +38,10 @@ var (
 	// elixir and health (chapters are dirs, modules are files inside them), so the
 	// URL tree mirrors the filesystem. LOGIC_DIR env-overridable.
 	logicDir = "/app/logic"
+	// Law course content («Право повседневной жизни») — FOLDER-routed like the
+	// other courses (chapters are dirs, modules are files inside them), so the URL
+	// tree mirrors the filesystem. LAW_DIR env-overridable.
+	lawDir   = "/app/law"
 	gameHTML = "/app/game.html"
 	// On-disk dir for files served at the /vendor/* URL. Named "assets" (NOT
 	// "vendor") because a vendor/ dir at the Go module root is reserved by the
@@ -95,6 +99,9 @@ func main() {
 	}
 	if dir := os.Getenv("LOGIC_DIR"); dir != "" {
 		logicDir = dir
+	}
+	if dir := os.Getenv("LAW_DIR"); dir != "" {
+		lawDir = dir
 	}
 	if dir := os.Getenv("VENDOR_DIR"); dir != "" {
 		vendorDir = dir
@@ -375,6 +382,8 @@ func main() {
 	//   /health/son/pamyat              → health/son/pamyat.html               (module file)
 	//   /logic/bayes                    → logic/bayes/index.html               (chapter dir)
 	//   /logic/bayes/kviz               → logic/bayes/kviz.html                (module file)
+	//   /law/dogovor                    → law/dogovor/index.html               (chapter dir)
+	//   /law/dogovor/sila               → law/dogovor/sila.html                (module file)
 	// resolveUnder guards every join (".." → 403), as with /distr/* and /vendor/*.
 	app.Get("/elixir", func(c *fiber.Ctx) error { return serveDirTree(c, elixirDir, "", "elixir") })
 	app.Get("/elixir/*", func(c *fiber.Ctx) error { return serveDirTree(c, elixirDir, c.Params("*"), "elixir") })
@@ -382,6 +391,8 @@ func main() {
 	app.Get("/health/*", func(c *fiber.Ctx) error { return serveDirTree(c, healthDir, c.Params("*"), "health") })
 	app.Get("/logic", func(c *fiber.Ctx) error { return serveDirTree(c, logicDir, "", "logic") })
 	app.Get("/logic/*", func(c *fiber.Ctx) error { return serveDirTree(c, logicDir, c.Params("*"), "logic") })
+	app.Get("/law", func(c *fiber.Ctx) error { return serveDirTree(c, lawDir, "", "law") })
+	app.Get("/law/*", func(c *fiber.Ctx) error { return serveDirTree(c, lawDir, c.Params("*"), "law") })
 
 	// Serve distribution files with proper headers
 	app.Get("/distr/*", func(c *fiber.Ctx) error {
@@ -410,7 +421,7 @@ func main() {
 		return c.SendFile(cleanPath)
 	})
 
-	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, elixir: %s, game: %s, health: %s, logic: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, elixirDir, gameHTML, healthDir, logicDir, errorDir, len(errorPages))
+	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, elixir: %s, game: %s, health: %s, logic: %s, law: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, elixirDir, gameHTML, healthDir, logicDir, lawDir, errorDir, len(errorPages))
 	log.Fatal(app.Listen(":" + port))
 }
 

@@ -102,6 +102,9 @@ COPY elixir/ /app/elixir/
 # Copy the Logic course (folder tree → /logic/<chapter>/<module>) served under /logic/*
 COPY logic/ /app/logic/
 
+# Copy the Law course (folder tree → /law/<chapter>/<module>) served under /law/*
+COPY law/ /app/law/
+
 # Copy the 3D orbital knowledge map (three.js WebGL node-graph) served under /map
 COPY map/ /app/map/
 
