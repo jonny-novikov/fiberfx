@@ -106,7 +106,7 @@ var Modules = map[string][]Module{
 		{N: "F3.02", Title: "Pattern matching & the match operator", One: "= is a match, not assignment.", Slug: "match", Status: "built"},
 		{N: "F3.03", Title: "Functions, modules & the pipe", One: "Defining and composing in modules.", Slug: "modules", Status: "planned"},
 		{N: "F3.04", Title: "Enumerables & streams", One: "Eager versus lazy traversal.", Slug: "enum-streams", Status: "built"},
-		{N: "F3.05", Title: "Structs, maps & keyword lists", One: "Shaping data; when to use which.", Slug: "structs", Status: "planned"},
+		{N: "F3.05", Title: "Structs, maps & keyword lists", One: "Shaping data; when to use which.", Slug: "structs", Status: "built"},
 		{N: "F3.06", Title: "Protocols & behaviours", One: "Polymorphism and contracts.", Slug: "protocols", Status: "planned"},
 		{N: "F3.07", Title: "Processes & the actor model", One: "spawn, send, receive; isolation.", Slug: "processes", Status: "planned"},
 		{N: "F3.08", Title: "OTP: GenServer & supervisors", One: "Stateful servers and fault tolerance.", Slug: "otp", Status: "planned"},
@@ -185,6 +185,11 @@ var Subpages = map[string][]Subpage{
 		{"enum", "Enum, the eager workhorse", "The eager workhorse over any enumerable."},
 		{"streams", "Lazy streams", "Lazy, composable enumerables."},
 		{"comprehensions", "Comprehensions", "for-comprehensions: filter, map, and into."},
+	},
+	"F3.05": {
+		{"define", "Defining a struct", "defstruct, and how a struct is a tagged map."},
+		{"defaults", "Enforcing keys & defaults", "@enforce_keys and default field values."},
+		{"matching", "Matching on a struct's type", "Pattern matching on %Struct{} by its tag."},
 	},
 }
 

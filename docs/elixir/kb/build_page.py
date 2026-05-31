@@ -211,7 +211,7 @@ MODULES = {
         dict(n="F3.02", title="Pattern matching & the match operator", one="= is a match, not assignment.", slug="match", status="built", lab=False),
         dict(n="F3.03", title="Functions, modules & the pipe", one="Defining and composing in modules.", slug="modules", status="planned", lab=False),
         dict(n="F3.04", title="Enumerables & streams", one="Eager versus lazy traversal.", slug="enum-streams", status="built", lab=False),
-        dict(n="F3.05", title="Structs, maps & keyword lists", one="Shaping data; when to use which.", slug="structs", status="planned", lab=False),
+        dict(n="F3.05", title="Structs, maps & keyword lists", one="Shaping data; when to use which.", slug="structs", status="built", lab=False),
         dict(n="F3.06", title="Protocols & behaviours", one="Polymorphism and contracts.", slug="protocols", status="planned", lab=False),
         dict(n="F3.07", title="Processes & the actor model", one="spawn, send, receive; isolation.", slug="processes", status="planned", lab=False),
         dict(n="F3.08", title="OTP: GenServer & supervisors", one="Stateful servers and fault tolerance.", slug="otp", status="planned", lab=False),
@@ -293,6 +293,11 @@ SUBPAGES = {
         dict(slug="enum",           title="Enum, the eager workhorse", one="The eager workhorse over any enumerable."),
         dict(slug="streams",        title="Lazy streams",              one="Lazy, composable enumerables."),
         dict(slug="comprehensions", title="Comprehensions",            one="for-comprehensions: filter, map, and into."),
+    ],
+    "F3.05": [
+        dict(slug="define",   title="Defining a struct",         one="defstruct, and how a struct is a tagged map."),
+        dict(slug="defaults", title="Enforcing keys & defaults", one="@enforce_keys and default field values."),
+        dict(slug="matching", title="Matching on a struct's type", one="Pattern matching on %Struct{} by its tag."),
     ],
 }
 
