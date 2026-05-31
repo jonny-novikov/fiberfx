@@ -108,7 +108,7 @@ var Modules = map[string][]Module{
 		{N: "F3.04", Title: "Enumerables & streams", One: "Eager versus lazy traversal.", Slug: "enum-streams", Status: "built"},
 		{N: "F3.05", Title: "Structs, maps & keyword lists", One: "Shaping data; when to use which.", Slug: "structs", Status: "built"},
 		{N: "F3.06", Title: "Protocols & behaviours", One: "Polymorphism and contracts.", Slug: "protocols", Status: "built"},
-		{N: "F3.07", Title: "Processes & the actor model", One: "spawn, send, receive; isolation.", Slug: "processes", Status: "planned"},
+		{N: "F3.07", Title: "Processes & the actor model", One: "spawn, send, receive; isolation.", Slug: "processes", Status: "built"},
 		{N: "F3.08", Title: "OTP: GenServer & supervisors", One: "Stateful servers and fault tolerance.", Slug: "otp", Status: "planned"},
 		{N: "F3.09", Title: "The process playground", One: "Spawn processes; watch the mailbox live.", Slug: "playground", Status: "planned", Lab: true},
 	},
@@ -151,25 +151,25 @@ var Modules = map[string][]Module{
 // linkable once its parent module is linkable.
 var Subpages = map[string][]Subpage{
 	"F2.04": {
-		{"shape", "The shape of recursion", "Base case, recursive case, and the growing call stack."},
-		{"tail-calls", "Tail calls & accumulators", "Rewrite with an accumulator for constant stack space."},
 		{"patterns", "Recursion patterns", "sum, length, reverse, map, filter — and why they are folds."},
+		{"shape", "The shape of recursion", "Base case, recursive case, and the growing call stack."},
+		{"tail-calls", "Tail calls & accumulators", "Rewrite with an accumulator to run in constant stack space."},
 	},
 	"F2.05": {
-		{"map", "map", "Transform every element; the structure is preserved."},
+		{"advanced", "Advanced folds", "scan, map_reduce, flat_map, group_by — folds with extra structure."},
 		{"filter", "filter", "Keep the elements that pass a predicate."},
+		{"map", "map", "Transform every element; the structure is preserved."},
 		{"reduce", "reduce", "The general fold; an accumulator of any shape."},
-		{"advanced", "Advanced folds", "scan, map_reduce, flat_map, group_by."},
 	},
 	"F2.06": {
-		{"environment", "Capturing the environment", "What a closure captures, and when — the value at definition time."},
 		{"capture", "The capture operator", "The & shorthand: positional placeholders and function capture."},
 		{"currying", "Partial application & currying", "Fixing arguments to specialize a function; currying by hand."},
+		{"environment", "Capturing the environment", "What a closure captures, and when — the value at definition time."},
 	},
 	"F2.07": {
+		{"matching", "Pattern matching on data", "Destructuring products and dispatching on sum variants."},
 		{"product", "Product types", "Tuples and structs — fields held together; inhabitants multiply."},
 		{"sum", "Sum types", "Tagged tuples and variants — one shape or another; inhabitants add."},
-		{"matching", "Pattern matching on data", "Destructuring products and dispatching on sum variants."},
 	},
 	"F2.08": {
 		{"compose", "Function composition", "Combining functions so one's output feeds the next — f after g."},
@@ -177,24 +177,29 @@ var Subpages = map[string][]Subpage{
 		{"pipeline", "Building pipelines", "map, filter, and reduce stages over a dataset, end to end."},
 	},
 	"F3.02": {
-		{"operator", "The match operator", "= binds by matching structure rather than assigning."},
-		{"destructuring", "Destructuring data", "Pulling values out of tuples, lists, and maps by shape."},
 		{"branching", "Branching with case & guards", "case, with, and guard clauses that match on structure."},
+		{"destructuring", "Destructuring data", "Pulling values out of tuples, lists, and maps by shape."},
+		{"operator", "The match operator", "= binds by matching structure rather than assigning."},
 	},
 	"F3.04": {
+		{"comprehensions", "Comprehensions", "for-comprehensions: filter, map, and into."},
 		{"enum", "Enum, the eager workhorse", "The eager workhorse over any enumerable."},
 		{"streams", "Lazy streams", "Lazy, composable enumerables."},
-		{"comprehensions", "Comprehensions", "for-comprehensions: filter, map, and into."},
 	},
 	"F3.05": {
-		{"define", "Defining a struct", "defstruct, and how a struct is a tagged map."},
 		{"defaults", "Enforcing keys & defaults", "@enforce_keys and default field values."},
+		{"define", "Defining a struct", "defstruct, and how a struct is a tagged map."},
 		{"matching", "Matching on a struct's type", "Pattern matching on %Struct{} by its tag."},
 	},
 	"F3.06": {
-		{"define", "Defining a protocol", "defprotocol: a dispatch contract on a data type."},
-		{"defimpl", "Implementing for a struct", "defimpl: per-type implementations."},
-		{"behaviours", "Behaviours & callbacks", "@callback contracts and @behaviour."},
+		{"behaviours", "Behaviours & callbacks", "@callback declares a typed contract on a module;"},
+		{"defimpl", "Implementing for a struct", "defimpl Protocol, for: Struct gives the per-type bodies a call resolves to;"},
+		{"define", "Defining a protocol", "defprotocol declares a contract of function signatures;"},
+	},
+	"F3.07": {
+		{"messages", "Sending & receiving messages", "send/2 appends a term to a mailbox and returns;"},
+		{"spawn", "Spawning a process", "spawn/1 starts a function as a new process and returns a PID at once;"},
+		{"state", "Holding state in a loop", "A process holds state as the argument to a recursive receive loop, tail-calling itself with the "},
 	},
 }
 
