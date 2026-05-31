@@ -201,10 +201,10 @@ MODULES = {
         dict(n="F2.03", title="Higher-order functions", one="Functions as arguments and return values.", slug="higher-order", status="built", lab=False),
         dict(n="F2.04", title="Recursion patterns & tail calls", one="Accumulators and tail-call optimisation.", slug="recursion", status="built", lab=False),
         dict(n="F2.05", title="map / filter / reduce (folds)", one="reduce as the universal fold.", slug="folds", status="built", lab=False),
-        dict(n="F2.06", title="Closures & partial application", one="Capturing environment; & and currying by hand.", slug="closures", status="planned", lab=False),
-        dict(n="F2.07", title="Algebraic data types", one="Sum and product types; tagged tuples.", slug="adt", status="planned", lab=False),
-        dict(n="F2.08", title="Composition & pipelines", one="Building programs by composing functions.", slug="composition", status="planned", lab=False),
-        dict(n="F2.09", title="The data-pipeline lab", one="Compose map/filter/reduce over a dataset; watch each stage.", slug="pipeline-lab", status="planned", lab=True),
+        dict(n="F2.06", title="Closures & partial application", one="Capturing environment; & and currying by hand.", slug="closures", status="built", lab=False),
+        dict(n="F2.07", title="Algebraic data types", one="Sum and product types; tagged tuples.", slug="adt", status="built", lab=False),
+        dict(n="F2.08", title="Composition & pipelines", one="Building programs by composing functions.", slug="composition", status="built", lab=False),
+        dict(n="F2.09", title="The data-pipeline lab", one="Compose map/filter/reduce over a dataset; watch each stage.", slug="pipeline-lab", status="built", lab=True),
     ],
     "F3": [
         dict(n="F3.01", title="Values, types & IEx", one="The data you build with; the shell as a tool.", slug="values", status="planned", lab=False),
@@ -268,6 +268,21 @@ SUBPAGES = {
         dict(slug="filter",   title="filter",         one="Keep the elements that pass a predicate."),
         dict(slug="reduce",   title="reduce",         one="The general fold; an accumulator of any shape."),
         dict(slug="advanced", title="Advanced folds", one="scan, map_reduce, flat_map, group_by \u2014 folds with extra structure."),
+    ],
+    "F2.06": [
+        dict(slug="environment", title="Capturing the environment",    one="What a closure captures, and when \u2014 the value at definition time."),
+        dict(slug="capture",     title="The capture operator",         one="The & shorthand: positional placeholders and function capture."),
+        dict(slug="currying",    title="Partial application & currying", one="Fixing arguments to specialize a function; currying by hand."),
+    ],
+    "F2.07": [
+        dict(slug="product",  title="Product types",            one="Tuples and structs \u2014 fields held together; inhabitants multiply."),
+        dict(slug="sum",      title="Sum types",                one="Tagged tuples and variants \u2014 one shape or another; inhabitants add."),
+        dict(slug="matching", title="Pattern matching on data", one="Destructuring products and dispatching on sum variants."),
+    ],
+    "F2.08": [
+        dict(slug="compose",  title="Function composition", one="Combining functions so one's output feeds the next \u2014 f after g."),
+        dict(slug="pipe",     title="The pipe operator",    one="|> threads a value left to right, as the first argument."),
+        dict(slug="pipeline", title="Building pipelines",   one="map, filter, and reduce stages over a dataset, end to end."),
     ],
 }
 

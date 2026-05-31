@@ -96,10 +96,10 @@ var Modules = map[string][]Module{
 		{N: "F2.03", Title: "Higher-order functions", One: "Functions as arguments and return values.", Slug: "higher-order", Status: "built"},
 		{N: "F2.04", Title: "Recursion patterns & tail calls", One: "Accumulators and tail-call optimisation.", Slug: "recursion", Status: "built"},
 		{N: "F2.05", Title: "map / filter / reduce (folds)", One: "reduce as the universal fold.", Slug: "folds", Status: "built"},
-		{N: "F2.06", Title: "Closures & partial application", One: "Capturing environment; & and currying.", Slug: "closures", Status: "planned"},
-		{N: "F2.07", Title: "Algebraic data types", One: "Sum and product types; tagged tuples.", Slug: "adt", Status: "planned"},
-		{N: "F2.08", Title: "Composition & pipelines", One: "Building programs by composing functions.", Slug: "composition", Status: "planned"},
-		{N: "F2.09", Title: "The data-pipeline lab", One: "Compose map/filter/reduce over a dataset.", Slug: "pipeline-lab", Status: "planned", Lab: true},
+		{N: "F2.06", Title: "Closures & partial application", One: "Capturing environment; & and currying.", Slug: "closures", Status: "built"},
+		{N: "F2.07", Title: "Algebraic data types", One: "Sum and product types; tagged tuples.", Slug: "adt", Status: "built"},
+		{N: "F2.08", Title: "Composition & pipelines", One: "Building programs by composing functions.", Slug: "composition", Status: "built"},
+		{N: "F2.09", Title: "The data-pipeline lab", One: "Compose map/filter/reduce over a dataset.", Slug: "pipeline-lab", Status: "built", Lab: true},
 	},
 	"F3": {
 		{N: "F3.01", Title: "Values, types & IEx", One: "The data you build with; the shell.", Slug: "values", Status: "planned"},
@@ -160,6 +160,21 @@ var Subpages = map[string][]Subpage{
 		{"filter", "filter", "Keep the elements that pass a predicate."},
 		{"reduce", "reduce", "The general fold; an accumulator of any shape."},
 		{"advanced", "Advanced folds", "scan, map_reduce, flat_map, group_by."},
+	},
+	"F2.06": {
+		{"environment", "Capturing the environment", "What a closure captures, and when — the value at definition time."},
+		{"capture", "The capture operator", "The & shorthand: positional placeholders and function capture."},
+		{"currying", "Partial application & currying", "Fixing arguments to specialize a function; currying by hand."},
+	},
+	"F2.07": {
+		{"product", "Product types", "Tuples and structs — fields held together; inhabitants multiply."},
+		{"sum", "Sum types", "Tagged tuples and variants — one shape or another; inhabitants add."},
+		{"matching", "Pattern matching on data", "Destructuring products and dispatching on sum variants."},
+	},
+	"F2.08": {
+		{"compose", "Function composition", "Combining functions so one's output feeds the next — f after g."},
+		{"pipe", "The pipe operator", "|> threads a value left to right, as the first argument."},
+		{"pipeline", "Building pipelines", "map, filter, and reduce stages over a dataset, end to end."},
 	},
 }
 

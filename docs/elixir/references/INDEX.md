@@ -1,6 +1,6 @@
 # Elixir references — offline mirror
 
-Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-references.md). 111/113 pages mirrored into `files/`. Regenerate with `python3 fetch_refs.py`.
+Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-references.md). 112/113 pages mirrored into `files/`. Regenerate with `python3 fetch_refs.py`.
 
 ## Core references
 
@@ -156,7 +156,7 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 ## F4.03 &middot; Sorting & searching
 
 - Merge sort — Wikipedia — [offline](files/en.wikipedia.org_wiki_Merge_sort.html) · [source](https://en.wikipedia.org/wiki/Merge_sort)
-- *Introduction to Algorithms* (CLRS) — _offline copy unavailable_ (403) · [source](https://mitpress.mit.edu/9780262046305/)
+- *Introduction to Algorithms* (CLRS) — [offline](files/mitpress.mit.edu_9780262046305.html) · [source](https://mitpress.mit.edu/9780262046305/)
 ## F4.04 &middot; Maps, sets & hashing
 
 - Hash table — Wikipedia — [offline](files/en.wikipedia.org_wiki_Hash_table.html) · [source](https://en.wikipedia.org/wiki/Hash_table)
@@ -178,7 +178,7 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 ## F4.08 &middot; Dynamic programming & advanced problems
 
 - Dynamic programming — Wikipedia — [offline](files/en.wikipedia.org_wiki_Dynamic_programming.html) · [source](https://en.wikipedia.org/wiki/Dynamic_programming)
-- *Introduction to Algorithms* (CLRS) — _offline copy unavailable_ (403) · [source](https://mitpress.mit.edu/9780262046305/)
+- *Introduction to Algorithms* (CLRS) — [offline](files/mitpress.mit.edu_9780262046305.html) · [source](https://mitpress.mit.edu/9780262046305/)
 ## F4.09 &middot; Watch a Branded Champ map grow
 
 - Steindorfer & Vinju, CHAMP (OOPSLA 2015) — [offline](files/michael.steindorfer.name_publications_oopsla15.pdf) · [source](https://michael.steindorfer.name/publications/oopsla15.pdf)
@@ -273,5 +273,5 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 - Chris McCord, *Metaprogramming Elixir* — [offline](files/pragprog.com_titles_cmelixir.html) · [source](https://pragprog.com/titles/cmelixir/)
 - Abelson, Sussman & Sussman, *Structure and Interpretation of Computer Programs* (2nd ed.) — [offline](files/mitpress.mit.edu_sicp.html) · [source](https://mitpress.mit.edu/sicp/)
 - Chris Okasaki, *Purely Functional Data Structures* — _offline copy unavailable_ (403) · [source](https://www.cambridge.org/9780521663502)
-- Cormen, Leiserson, Rivest & Stein, *Introduction to Algorithms* (4th ed.) — _offline copy unavailable_ (403) · [source](https://mitpress.mit.edu/9780262046305/)
+- Cormen, Leiserson, Rivest & Stein, *Introduction to Algorithms* (4th ed.) — [offline](files/mitpress.mit.edu_9780262046305.html) · [source](https://mitpress.mit.edu/9780262046305/)
 - Fred Hébert, *Learn You Some Erlang for Great Good!* — [offline](files/learnyousomeerlang.com.html) · [source](https://learnyousomeerlang.com/)
