@@ -58,7 +58,7 @@ var Chapters = []Chapter{
 	{"F1", "Algebra", "algebra", "/elixir/algebra", "live", "The functional mindset, straight from the math you already know.", "Starts from the algebra you already know.", "gold"},
 	{"F2", "Functional Programming", "functional", "/elixir/functional", "live", "Pure functions, immutability, and higher-order functions on their own terms.", "Builds on F1 · Algebra.", "elixir"},
 	{"F3", "The Elixir Language", "language", "/elixir/language", "live", "Syntax, pipelines, pattern matching, and structs on the BEAM.", "Builds on F2 · Functional Programming.", "elixir"},
-	{"F4", "Algorithms & Data Structures", "algorithms", "/elixir/algorithms", "planned", "Classical and advanced problems, from lists to branded CHAMP tries.", "Builds on F3 · The Elixir Language.", "sage"},
+	{"F4", "Algorithms & Data Structures", "algorithms", "/elixir/algorithms", "live", "Classical and advanced problems, from lists to branded CHAMP tries.", "Builds on F3 · The Elixir Language.", "sage"},
 	{"F5", "Pragmatic Programming", "pragmatic", "/elixir/pragmatic", "planned", "Real-world engineering: structure, testing, telemetry, releases.", "Builds on F4 · Algorithms & Data Structures.", "sage"},
 	{"F6", "Phoenix Framework", "phoenix", "/elixir/phoenix", "planned", "Web applications on Elixir, and the road into real-time LiveView.", "Builds on F5 · Pragmatic Programming.", "blue"},
 }

@@ -130,7 +130,7 @@ CHAPTERS = [
          reuses="Builds on F2 · Functional Programming.",
          accent="elixir"),
     dict(id="F4", title="Algorithms & Data Structures", slug="algorithms", route="/elixir/algorithms",
-         status="planned",
+         status="live",
          one="Classical and advanced problems, from lists to branded CHAMP tries.",
          reuses="Builds on F3 · The Elixir Language.",
          accent="sage"),
