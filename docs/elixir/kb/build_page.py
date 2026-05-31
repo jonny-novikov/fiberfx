@@ -214,7 +214,7 @@ MODULES = {
         dict(n="F3.05", title="Structs, maps & keyword lists", one="Shaping data; when to use which.", slug="structs", status="built", lab=False),
         dict(n="F3.06", title="Protocols & behaviours", one="Polymorphism and contracts.", slug="protocols", status="built", lab=False),
         dict(n="F3.07", title="Processes & the actor model", one="spawn, send, receive; isolation.", slug="processes", status="built", lab=False),
-        dict(n="F3.08", title="OTP: GenServer & supervisors", one="Stateful servers and fault tolerance.", slug="otp", status="planned", lab=False),
+        dict(n="F3.08", title="OTP: GenServer & supervisors", one="Stateful servers and fault tolerance.", slug="otp", status="built", lab=False),
         dict(n="F3.09", title="The process playground", one="Spawn processes, send messages, watch the mailbox live.", slug="playground", status="planned", lab=True),
     ],
     "F4": [
@@ -308,6 +308,11 @@ SUBPAGES = {
         dict(slug='messages', title='Sending & receiving messages', one='send/2 appends a term to a mailbox and returns;'),
         dict(slug='spawn', title='Spawning a process', one='spawn/1 starts a function as a new process and returns a PID at once;'),
         dict(slug='state', title='Holding state in a loop', one='A process holds state as the argument to a recursive receive loop, tail-calling itself with the '),
+    ],
+    "F3.08": [
+        dict(slug='call-cast', title='Synchronous call, asynchronous cast', one='GenServer.call sends a request and blocks for the reply, routing to handle_call;'),
+        dict(slug='genserver', title='The GenServer behaviour', one='A GenServer abstracts the receive loop into a behaviour: init/1 sets the state, handle_call/3 an'),
+        dict(slug='supervisors', title='Supervisors & restart strategies', one='A supervisor starts child processes and restarts them when they crash, by strategy — one_for_one'),
     ],
 }
 

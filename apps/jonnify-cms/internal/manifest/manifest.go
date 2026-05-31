@@ -109,7 +109,7 @@ var Modules = map[string][]Module{
 		{N: "F3.05", Title: "Structs, maps & keyword lists", One: "Shaping data; when to use which.", Slug: "structs", Status: "built"},
 		{N: "F3.06", Title: "Protocols & behaviours", One: "Polymorphism and contracts.", Slug: "protocols", Status: "built"},
 		{N: "F3.07", Title: "Processes & the actor model", One: "spawn, send, receive; isolation.", Slug: "processes", Status: "built"},
-		{N: "F3.08", Title: "OTP: GenServer & supervisors", One: "Stateful servers and fault tolerance.", Slug: "otp", Status: "planned"},
+		{N: "F3.08", Title: "OTP: GenServer & supervisors", One: "Stateful servers and fault tolerance.", Slug: "otp", Status: "built"},
 		{N: "F3.09", Title: "The process playground", One: "Spawn processes; watch the mailbox live.", Slug: "playground", Status: "planned", Lab: true},
 	},
 	"F4": {
@@ -200,6 +200,11 @@ var Subpages = map[string][]Subpage{
 		{"messages", "Sending & receiving messages", "send/2 appends a term to a mailbox and returns;"},
 		{"spawn", "Spawning a process", "spawn/1 starts a function as a new process and returns a PID at once;"},
 		{"state", "Holding state in a loop", "A process holds state as the argument to a recursive receive loop, tail-calling itself with the "},
+	},
+	"F3.08": {
+		{"call-cast", "Synchronous call, asynchronous cast", "GenServer.call sends a request and blocks for the reply, routing to handle_call;"},
+		{"genserver", "The GenServer behaviour", "A GenServer abstracts the receive loop into a behaviour: init/1 sets the state, handle_call/3 an"},
+		{"supervisors", "Supervisors & restart strategies", "A supervisor starts child processes and restarts them when they crash, by strategy — one_for_one"},
 	},
 }
 
