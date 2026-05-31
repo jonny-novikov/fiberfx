@@ -223,7 +223,7 @@ MODULES = {
         dict(n="F4.03", title="Sorting & searching", one="Merge/quick sort and binary search, immutably.", slug="sorting", status="built", lab=False),
         dict(n="F4.04", title="Maps, sets & hashing", one="Hash maps, collisions, the cost model.", slug="maps", status="built", lab=False),
         dict(n="F4.05", title="Hash Array Mapped Tries (HAMT)", one="Persistent maps via prefix trees.", slug="hamt", status="planned", lab=False),
-        dict(n="F4.06", title="CHAMP maps", one="Compressed Hash-Array Mapped Prefix-trees; layout & iteration.", slug="champ", status="planned", lab=False),
+        dict(n="F4.06", title="CHAMP maps", one="Compressed Hash-Array Mapped Prefix-trees; layout & iteration.", slug="champ", status="built", lab=False),
         dict(n="F4.07", title="Branded Champ maps", one="Namespaced keys as cross-system pivots, e.g. TSK0KHTOWnGLuC.", slug="branded-champ", status="planned", lab=False),
         dict(n="F4.08", title="Dynamic programming & advanced problems", one="Memoisation and harder challenges.", slug="dynamic-programming", status="planned", lab=False),
         dict(n="F4.09", title="Watch a Branded Champ map grow", one="Insert keys; animate the CHAMP / branded trie building.", slug="champ-lab", status="planned", lab=True),
@@ -338,6 +338,11 @@ SUBPAGES = {
         dict(slug='lookup', title='Maps & key lookup', one='A map associates keys with values and looks one up in effectively constant time.'),
         dict(slug='hashing', title='Hashing & collisions', one='Maps and sets reach O(1) by hashing: phash2 turns a key into an integer, which picks a slot, and'),
         dict(slug='sets', title='MapSet & membership', one='A MapSet stores unique elements and answers membership in O(1).'),
+    ],
+    "F4.06": [
+        dict(slug='equality', title='Canonical equality', one='CHAMP maintains one canonical shape per set of entries, so two equal maps are structurally ident'),
+        dict(slug='iteration', title='Cache-friendly iteration', one='Because a CHAMP node keeps its entries contiguous and separate from sub-node pointers, iteration'),
+        dict(slug='layout', title='Compressed node layout', one='A CHAMP node carries a datamap and a nodemap — two bitmaps marking which of its 32 slots hold in'),
     ],
 }
 

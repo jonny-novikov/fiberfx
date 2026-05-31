@@ -118,7 +118,7 @@ var Modules = map[string][]Module{
 		{N: "F4.03", Title: "Sorting & searching", One: "Merge/quick sort, binary search, immutably.", Slug: "sorting", Status: "built"},
 		{N: "F4.04", Title: "Maps, sets & hashing", One: "Hash maps, collisions, the cost model.", Slug: "maps", Status: "built"},
 		{N: "F4.05", Title: "Hash Array Mapped Tries (HAMT)", One: "Persistent maps via prefix trees.", Slug: "hamt", Status: "planned"},
-		{N: "F4.06", Title: "CHAMP maps", One: "Compressed HAMT trees; layout & iteration.", Slug: "champ", Status: "planned"},
+		{N: "F4.06", Title: "CHAMP maps", One: "Compressed HAMT trees; layout & iteration.", Slug: "champ", Status: "built"},
 		{N: "F4.07", Title: "Branded Champ maps", One: "Namespaced keys as cross-system pivots.", Slug: "branded-champ", Status: "planned"},
 		{N: "F4.08", Title: "Dynamic programming & advanced problems", One: "Memoisation and harder challenges.", Slug: "dynamic-programming", Status: "planned"},
 		{N: "F4.09", Title: "Watch a Branded Champ map grow", One: "Insert keys; animate the trie building.", Slug: "champ-lab", Status: "planned", Lab: true},
@@ -230,6 +230,11 @@ var Subpages = map[string][]Subpage{
 		{"lookup", "Maps & key lookup", "A map associates keys with values and looks one up in effectively constant time."},
 		{"hashing", "Hashing & collisions", "Maps and sets reach O(1) by hashing: phash2 turns a key into an integer, which picks a slot, and"},
 		{"sets", "MapSet & membership", "A MapSet stores unique elements and answers membership in O(1)."},
+	},
+	"F4.06": {
+		{"equality", "Canonical equality", "CHAMP maintains one canonical shape per set of entries, so two equal maps are structurally ident"},
+		{"iteration", "Cache-friendly iteration", "Because a CHAMP node keeps its entries contiguous and separate from sub-node pointers, iteration"},
+		{"layout", "Compressed node layout", "A CHAMP node carries a datamap and a nodemap — two bitmaps marking which of its 32 slots hold in"},
 	},
 }
 
