@@ -43,8 +43,12 @@ mkdir -p "$REF_DIR/.watch"
 log() { echo "[$(date '+%F %T')] $*" >> "$LOG"; }
 
 list_pages() {
+  # SERVED pages only. Never the build INPUTS in docs/elixir/fragments/ (the content
+  # fragments build_page.py consumes) — those are not pages and must not be processed.
+  # WATCH_DIR is elixir/, so fragments are already out of scope; the /fragments/ filter
+  # is belt-and-braces in case a fragment ever lands under the served tree.
   find "$WATCH_DIR" -type f -name '*.html' 2>/dev/null \
-    | grep -v -e '/\.' -e '\.part$' | LC_ALL=C sort
+    | grep -v -e '/\.' -e '\.part$' -e '/fragments/' | LC_ALL=C sort
 }
 
 sync_refs() {
