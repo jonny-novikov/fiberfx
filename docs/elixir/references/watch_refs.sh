@@ -87,11 +87,19 @@ ai_update() {
 5. Validate: cd apps/jonnify-cms && GOWORK=off ./bin/cms check $page — it MUST end STATUS: PASS, grade A+. Fix until it passes.
 Keep prose impersonal: no first-person narration, no perceptual verbs with tool subjects, no hype/dismissive words."
 
+  # NOTE: --allowedTools must be SPACE-separated args (claude -p errors on a comma list).
   run_with_timeout "$AI_TIMEOUT" "$CLAUDE" -p "$prompt" \
     --permission-mode acceptEdits \
-    --allowedTools "Read,Edit,Write,Grep,Glob,WebSearch,WebFetch,Skill,Bash" \
-    --max-turns 60 >>"$LOG" 2>&1 \
-    && log "done: $rel" || log "AI update failed/timed out: $rel (left for retry; re-queue manually if needed)"
+    --allowedTools Read Edit Write Grep Glob WebSearch WebFetch Skill Bash \
+    --max-turns 60 >>"$LOG" 2>&1
+  # claude -p can print "Execution error" yet still exit 0, so trust the ARTIFACT, not the
+  # exit code: a successful run leaves a References block on the page.
+  if grep -q 'id="refsTitle"\|>References<' "$page" 2>/dev/null; then
+    log "done: $rel (References block present)"
+  else
+    echo "$page" >> "$QUEUE"
+    log "FAILED: $rel — no References block added; re-queued for retry"
+  fi
 }
 
 scan_once() {
