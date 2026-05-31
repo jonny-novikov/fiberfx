@@ -215,7 +215,7 @@ MODULES = {
         dict(n="F3.06", title="Protocols & behaviours", one="Polymorphism and contracts.", slug="protocols", status="built", lab=False),
         dict(n="F3.07", title="Processes & the actor model", one="spawn, send, receive; isolation.", slug="processes", status="built", lab=False),
         dict(n="F3.08", title="OTP: GenServer & supervisors", one="Stateful servers and fault tolerance.", slug="otp", status="built", lab=False),
-        dict(n="F3.09", title="The process playground", one="Spawn processes, send messages, watch the mailbox live.", slug="playground", status="planned", lab=True),
+        dict(n="F3.09", title="The process playground", one="Spawn processes, send messages, watch the mailbox live.", slug="playground", status="built", lab=True),
     ],
     "F4": [
         dict(n="F4.01", title="Lists, recursion & complexity", one="Cons cells; big-O on the BEAM.", slug="lists", status="planned", lab=False),

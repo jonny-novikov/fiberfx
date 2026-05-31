@@ -110,7 +110,7 @@ var Modules = map[string][]Module{
 		{N: "F3.06", Title: "Protocols & behaviours", One: "Polymorphism and contracts.", Slug: "protocols", Status: "built"},
 		{N: "F3.07", Title: "Processes & the actor model", One: "spawn, send, receive; isolation.", Slug: "processes", Status: "built"},
 		{N: "F3.08", Title: "OTP: GenServer & supervisors", One: "Stateful servers and fault tolerance.", Slug: "otp", Status: "built"},
-		{N: "F3.09", Title: "The process playground", One: "Spawn processes; watch the mailbox live.", Slug: "playground", Status: "planned", Lab: true},
+		{N: "F3.09", Title: "The process playground", One: "Spawn processes; watch the mailbox live.", Slug: "playground", Status: "built", Lab: true},
 	},
 	"F4": {
 		{N: "F4.01", Title: "Lists, recursion & complexity", One: "Cons cells; big-O on the BEAM.", Slug: "lists", Status: "planned"},
