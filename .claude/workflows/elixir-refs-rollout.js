@@ -17,11 +17,16 @@
 //   3. Scout the pages lacking a block, e.g.:
 //        for f in $(find elixir/<chapter> -name '*.html' | grep -v fragments); do
 //          grep -q 'id="refsTitle"' "$f" || echo "$f"; done
-//   4. Run:  Workflow({ name: 'elixir-refs-rollout', args: [{p:'elixir/.../x.html', m:'F3.05'}, ...] })
+//   4. Bake that worklist into PAGES (edit DEFAULT_PAGES below, or paste an inline script), then run
+//      by PATH:  Workflow({ scriptPath: '<abs path to this file>' })
+//      ⚠ name+args does NOT reliably inject `args` into a NAMED workflow in this harness — it
+//      silently falls back to DEFAULT_PAGES (observed: a 4-page arg list ran the 22 defaults).
+//      Always bake the worklist into the script; do not depend on args-by-name.
 //   5. After it lands: cms audit + batch cms check, then re-baseline + restart the watcher.
 //
-// args: an array of { p: <repo-relative page path>, m: <module id, e.g. "F3.05"> }.
-//       If omitted, falls back to the F3 set below (already rolled out — kept as a worked example).
+// PAGES: array of { p: <repo-relative page path>, m: <module id, e.g. "F4.01"> }. Edit DEFAULT_PAGES
+//        per chapter. The `args` override is kept for inline/scriptPath use but is UNRELIABLE via
+//        name-invocation (see the warning above).
 
 export const meta = {
   name: 'elixir-refs-rollout',
