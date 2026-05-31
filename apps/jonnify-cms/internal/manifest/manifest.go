@@ -105,7 +105,7 @@ var Modules = map[string][]Module{
 		{N: "F3.01", Title: "Values, types & IEx", One: "The data you build with; the shell.", Slug: "values", Status: "built"},
 		{N: "F3.02", Title: "Pattern matching & the match operator", One: "= is a match, not assignment.", Slug: "match", Status: "built"},
 		{N: "F3.03", Title: "Functions, modules & the pipe", One: "Defining and composing in modules.", Slug: "modules", Status: "planned"},
-		{N: "F3.04", Title: "Enumerables & streams", One: "Eager versus lazy traversal.", Slug: "enum-streams", Status: "planned"},
+		{N: "F3.04", Title: "Enumerables & streams", One: "Eager versus lazy traversal.", Slug: "enum-streams", Status: "built"},
 		{N: "F3.05", Title: "Structs, maps & keyword lists", One: "Shaping data; when to use which.", Slug: "structs", Status: "planned"},
 		{N: "F3.06", Title: "Protocols & behaviours", One: "Polymorphism and contracts.", Slug: "protocols", Status: "planned"},
 		{N: "F3.07", Title: "Processes & the actor model", One: "spawn, send, receive; isolation.", Slug: "processes", Status: "planned"},
@@ -180,6 +180,11 @@ var Subpages = map[string][]Subpage{
 		{"operator", "The match operator", "= binds by matching structure rather than assigning."},
 		{"destructuring", "Destructuring data", "Pulling values out of tuples, lists, and maps by shape."},
 		{"branching", "Branching with case & guards", "case, with, and guard clauses that match on structure."},
+	},
+	"F3.04": {
+		{"enum", "Enum, the eager workhorse", "The eager workhorse over any enumerable."},
+		{"streams", "Lazy streams", "Lazy, composable enumerables."},
+		{"comprehensions", "Comprehensions", "for-comprehensions: filter, map, and into."},
 	},
 }
 

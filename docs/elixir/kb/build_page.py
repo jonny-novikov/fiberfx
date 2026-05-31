@@ -210,7 +210,7 @@ MODULES = {
         dict(n="F3.01", title="Values, types & IEx", one="The data you build with; the shell as a tool.", slug="values", status="built", lab=False),
         dict(n="F3.02", title="Pattern matching & the match operator", one="= is a match, not assignment.", slug="match", status="built", lab=False),
         dict(n="F3.03", title="Functions, modules & the pipe", one="Defining and composing in modules.", slug="modules", status="planned", lab=False),
-        dict(n="F3.04", title="Enumerables & streams", one="Eager versus lazy traversal.", slug="enum-streams", status="planned", lab=False),
+        dict(n="F3.04", title="Enumerables & streams", one="Eager versus lazy traversal.", slug="enum-streams", status="built", lab=False),
         dict(n="F3.05", title="Structs, maps & keyword lists", one="Shaping data; when to use which.", slug="structs", status="planned", lab=False),
         dict(n="F3.06", title="Protocols & behaviours", one="Polymorphism and contracts.", slug="protocols", status="planned", lab=False),
         dict(n="F3.07", title="Processes & the actor model", one="spawn, send, receive; isolation.", slug="processes", status="planned", lab=False),
@@ -288,6 +288,11 @@ SUBPAGES = {
         dict(slug="operator",      title="The match operator",            one="= binds by matching structure rather than assigning."),
         dict(slug="destructuring", title="Destructuring data",            one="Pulling values out of tuples, lists, and maps by shape."),
         dict(slug="branching",     title="Branching with case & guards",  one="case, with, and guard clauses that match on structure."),
+    ],
+    "F3.04": [
+        dict(slug="enum",           title="Enum, the eager workhorse", one="The eager workhorse over any enumerable."),
+        dict(slug="streams",        title="Lazy streams",              one="Lazy, composable enumerables."),
+        dict(slug="comprehensions", title="Comprehensions",            one="for-comprehensions: filter, map, and into."),
     ],
 }
 
