@@ -43,6 +43,7 @@ def page_of(url):
 def slug(dlurl):
     u = re.sub(r"^https?://", "", dlurl)
     u = re.sub(r"[^A-Za-z0-9._-]+", "_", u).strip("._-")
+    u = re.sub(r"\.(html?|pdf)$", "", u, flags=re.I)  # real extension is appended after the fetch
     return u[:120] or "ref"
 
 

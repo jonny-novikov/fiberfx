@@ -16,7 +16,7 @@ A curated bibliography keyed to every module of the *Functional Programming in E
 Cited implicitly by most pages; link these once in a shared footer or the course landing rather than on every page.
 
 - [Elixir documentation (guides + module reference)](https://hexdocs.pm/elixir/) — the primary source for the language and standard library.
-- [Elixir — Getting Started guide](https://hexdocs.pm/elixir/introduction.html) — the introductory walkthrough; chapters are linked per module above.
+- [Elixir — Introduction (Getting Started)](https://hexdocs.pm/elixir/introduction.html) — the introductory walkthrough; chapters are linked per module above.
 - [The Elixir website — install & learning hub](https://elixir-lang.org/learning.html) — curated books, courses, and videos.
 - [Erlang/OTP documentation](https://www.erlang.org/doc) — the runtime Elixir compiles to.
 - [HexDocs](https://hexdocs.pm/) — documentation for every published package.
@@ -28,13 +28,13 @@ History and context. Primary accounts of where functional languages and the BEAM
 ### F0.1 &middot; The evolution of functional languages & runtimes
 
 - [The Lambda Calculus (Stanford Encyclopedia of Philosophy)](https://plato.stanford.edu/entries/lambda-calculus/) — the formal core every functional language descends from.
-- [John McCarthy, “History of Lisp”](http://www-formal.stanford.edu/jmc/history/lisp/lisp.html) — the origins of Lisp, by its creator.
+- [John McCarthy, “History of Lisp”](https://www-formal.stanford.edu/jmc/history/lisp/lisp.html) — the origins of Lisp, by its creator.
 - [Hudak, Hughes, Peyton Jones & Wadler, “A History of Haskell: Being Lazy with Class” (2007)](https://www.microsoft.com/en-us/research/publication/a-history-of-haskell-being-lazy-with-class/) — the ML/Haskell lineage and the immutable turn.
 - [Abelson & Sussman, *Structure and Interpretation of Computer Programs*](https://mitpress.mit.edu/sicp/) — the canonical functional-programming text.
 
 ### F0.2 &middot; The evolution of Erlang, the BEAM & OTP
 
-- [Joe Armstrong, “Making reliable distributed systems in the presence of software errors” (PhD thesis, 2003)](http://erlang.org/download/armstrong_thesis_2003.pdf) — the design rationale for Erlang and OTP.
+- [Joe Armstrong, “Making reliable distributed systems in the presence of software errors” (PhD thesis, 2003)](https://erlang.org/download/armstrong_thesis_2003.pdf) — the design rationale for Erlang and OTP.
 - [Armstrong, “A History of Erlang” (HOPL III, 2007)](https://dl.acm.org/doi/10.1145/1238844.1238850) — telecom roots through to open source.
 - [Erlang/OTP documentation](https://www.erlang.org/doc) — the BEAM, the runtime, and OTP.
 - [Fred Hébert, *Learn You Some Erlang for Great Good!*](https://learnyousomeerlang.com/) — free, accessible tour of the runtime.
@@ -90,7 +90,7 @@ The mathematical foundation. References pair each idea with its treatment in SIC
 ### F1.09 &middot; Functions on the plane — a plotting lab
 
 - [Function composition — Wikipedia](https://en.wikipedia.org/wiki/Function_composition) — f∘g seen as curves.
-- [Elixir — Getting Started](https://hexdocs.pm/elixir/introduction.html) — the basics the lab applies.
+- [Elixir — Introduction](https://hexdocs.pm/elixir/introduction.html) — the basics the lab applies.
 
 ## F2 &middot; Functional Programming
 
@@ -124,7 +124,7 @@ Functional programming as Elixir. The standard-library docs plus the papers and 
 
 - [Elixir — Enum](https://hexdocs.pm/elixir/Enum.html) — map, filter, reduce, and beyond.
 - [Fold (higher-order function) — Wikipedia](https://en.wikipedia.org/wiki/Fold_(higher-order_function)) — reduce as the universal fold.
-- [Graham Hutton, “A tutorial on the universality and expressiveness of fold” (1999)](https://www.cs.nott.ac.uk/~pszgmh/fold.pdf) — why everything is a fold.
+- [Graham Hutton, “A tutorial on the universality and expressiveness of fold” (1999)](https://people.cs.nott.ac.uk/pszgmh/fold.pdf) — why everything is a fold.
 
 ### F2.06 &middot; Closures & partial application
 
@@ -191,7 +191,7 @@ The language proper. Almost entirely the official guides and module references.
 
 - [Elixir — Processes](https://hexdocs.pm/elixir/processes.html) — spawn, send, receive.
 - [Actor model — Wikipedia](https://en.wikipedia.org/wiki/Actor_model) — the concurrency model.
-- [Armstrong thesis — concurrency-oriented programming](http://erlang.org/download/armstrong_thesis_2003.pdf) — isolation and message passing.
+- [Armstrong thesis — concurrency-oriented programming](https://erlang.org/download/armstrong_thesis_2003.pdf) — isolation and message passing.
 
 ### F3.08 &middot; OTP: GenServer & supervisors
 
@@ -236,12 +236,12 @@ Algorithms and data structures. The persistent-map family rests on primary paper
 
 ### F4.06 &middot; CHAMP maps
 
-- [Steindorfer & Vinju, “Optimizing Hash-Array Mapped Tries…” (OOPSLA 2015)](http://michael.steindorfer.name/publications/oopsla15.pdf) — the CHAMP paper (DOI 10.1145/2814270.2814312).
+- [Steindorfer & Vinju, “Optimizing Hash-Array Mapped Tries…” (OOPSLA 2015)](https://michael.steindorfer.name/publications/oopsla15.pdf) — the CHAMP paper (DOI 10.1145/2814270.2814312).
 - [The Morning Paper — CHAMP summary](https://blog.acolyer.org/2015/11/27/hamt/) — an accessible walkthrough.
 
 ### F4.07 &middot; Branded Champ maps
 
-- [Steindorfer & Vinju, CHAMP (OOPSLA 2015)](http://michael.steindorfer.name/publications/oopsla15.pdf) — the trie the branded map extends.
+- [Steindorfer & Vinju, CHAMP (OOPSLA 2015)](https://michael.steindorfer.name/publications/oopsla15.pdf) — the trie the branded map extends.
 - [Snowflake ID — Wikipedia](https://en.wikipedia.org/wiki/Snowflake_ID) — the 64-bit id layout.
 - [Twitter Snowflake (archived source, 2010)](https://github.com/twitter-archive/snowflake/tree/snowflake-2010) — the original generator.
 - [Discord — Snowflakes (developer reference)](https://discord.com/developers/docs/reference#snowflakes) — a practical bit-layout spec.
@@ -253,7 +253,7 @@ Algorithms and data structures. The persistent-map family rests on primary paper
 
 ### F4.09 &middot; Watch a Branded Champ map grow
 
-- [Steindorfer & Vinju, CHAMP (OOPSLA 2015)](http://michael.steindorfer.name/publications/oopsla15.pdf) — the structure being animated.
+- [Steindorfer & Vinju, CHAMP (OOPSLA 2015)](https://michael.steindorfer.name/publications/oopsla15.pdf) — the structure being animated.
 - [Snowflake ID — Wikipedia](https://en.wikipedia.org/wiki/Snowflake_ID) — the branded-key scheme.
 
 ## F5 &middot; Pragmatic Programming
@@ -278,7 +278,7 @@ Engineering practice. Tooling docs, the OTP guides, and the “let it crash” p
 
 ### F5.04 &middot; Error handling & “let it crash”
 
-- [Armstrong thesis — “let it crash” and supervision](http://erlang.org/download/armstrong_thesis_2003.pdf) — the philosophy, from the source.
+- [Armstrong thesis — “let it crash” and supervision](https://erlang.org/download/armstrong_thesis_2003.pdf) — the philosophy, from the source.
 - [Elixir — Mix & OTP: Supervision trees and applications](https://hexdocs.pm/elixir/supervisor-and-application.html) — rescue versus restart.
 - [Fred Hébert, *Stuff Goes Bad: Erlang in Anger* (free)](https://www.erlang-in-anger.com/) — failure in production systems.
 
@@ -308,7 +308,7 @@ Engineering practice. Tooling docs, the OTP guides, and the “let it crash” p
 
 - [Elixir — Supervisor](https://hexdocs.pm/elixir/Supervisor.html) — supervision strategies.
 - [Elixir — DynamicSupervisor](https://hexdocs.pm/elixir/DynamicSupervisor.html) — supervising at runtime.
-- [Armstrong thesis](http://erlang.org/download/armstrong_thesis_2003.pdf) — why a tree heals.
+- [Armstrong thesis](https://erlang.org/download/armstrong_thesis_2003.pdf) — why a tree heals.
 
 ## F6 &middot; Phoenix Framework
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate elixir-references.md: a curated, per-module bibliography keyed to the manifest."""
+import os
 import build_page as bp
 
 # Each entry: (title, url_or_None, note). Lists are paste-ready for a page "References" block.
@@ -7,12 +8,12 @@ REFS = {
  # ---------- F0 · History ----------
  "F0.1": [
    ("The Lambda Calculus (Stanford Encyclopedia of Philosophy)", "https://plato.stanford.edu/entries/lambda-calculus/", "the formal core every functional language descends from."),
-   ("John McCarthy, \u201cHistory of Lisp\u201d", "http://www-formal.stanford.edu/jmc/history/lisp/lisp.html", "the origins of Lisp, by its creator."),
+   ("John McCarthy, \u201cHistory of Lisp\u201d", "https://www-formal.stanford.edu/jmc/history/lisp/lisp.html", "the origins of Lisp, by its creator."),
    ("Hudak, Hughes, Peyton Jones & Wadler, \u201cA History of Haskell: Being Lazy with Class\u201d (2007)", "https://www.microsoft.com/en-us/research/publication/a-history-of-haskell-being-lazy-with-class/", "the ML/Haskell lineage and the immutable turn."),
    ("Abelson & Sussman, *Structure and Interpretation of Computer Programs*", "https://mitpress.mit.edu/sicp/", "the canonical functional-programming text."),
  ],
  "F0.2": [
-   ("Joe Armstrong, \u201cMaking reliable distributed systems in the presence of software errors\u201d (PhD thesis, 2003)", "http://erlang.org/download/armstrong_thesis_2003.pdf", "the design rationale for Erlang and OTP."),
+   ("Joe Armstrong, \u201cMaking reliable distributed systems in the presence of software errors\u201d (PhD thesis, 2003)", "https://erlang.org/download/armstrong_thesis_2003.pdf", "the design rationale for Erlang and OTP."),
    ("Armstrong, \u201cA History of Erlang\u201d (HOPL III, 2007)", "https://dl.acm.org/doi/10.1145/1238844.1238850", "telecom roots through to open source."),
    ("Erlang/OTP documentation", "https://www.erlang.org/doc", "the BEAM, the runtime, and OTP."),
    ("Fred H\u00e9bert, *Learn You Some Erlang for Great Good!*", "https://learnyousomeerlang.com/", "free, accessible tour of the runtime."),
@@ -56,7 +57,7 @@ REFS = {
  ],
  "F1.09": [
    ("Function composition \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Function_composition", "f\u2218g seen as curves."),
-   ("Elixir \u2014 Getting Started", "https://hexdocs.pm/elixir/introduction.html", "the basics the lab applies."),
+   ("Elixir \u2014 Introduction", "https://hexdocs.pm/elixir/introduction.html", "the basics the lab applies."),
  ],
  # ---------- F2 · Functional Programming ----------
  "F2.01": [
@@ -82,7 +83,7 @@ REFS = {
  "F2.05": [
    ("Elixir \u2014 Enum", "https://hexdocs.pm/elixir/Enum.html", "map, filter, reduce, and beyond."),
    ("Fold (higher-order function) \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Fold_(higher-order_function)", "reduce as the universal fold."),
-   ("Graham Hutton, \u201cA tutorial on the universality and expressiveness of fold\u201d (1999)", "https://www.cs.nott.ac.uk/~pszgmh/fold.pdf", "why everything is a fold."),
+   ("Graham Hutton, \u201cA tutorial on the universality and expressiveness of fold\u201d (1999)", "https://people.cs.nott.ac.uk/pszgmh/fold.pdf", "why everything is a fold."),
  ],
  "F2.06": [
    ("Closure (computer programming) \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Closure_(computer_programming)", "capturing the environment."),
@@ -135,7 +136,7 @@ REFS = {
  "F3.07": [
    ("Elixir \u2014 Processes", "https://hexdocs.pm/elixir/processes.html", "spawn, send, receive."),
    ("Actor model \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Actor_model", "the concurrency model."),
-   ("Armstrong thesis \u2014 concurrency-oriented programming", "http://erlang.org/download/armstrong_thesis_2003.pdf", "isolation and message passing."),
+   ("Armstrong thesis \u2014 concurrency-oriented programming", "https://erlang.org/download/armstrong_thesis_2003.pdf", "isolation and message passing."),
  ],
  "F3.08": [
    ("Elixir \u2014 GenServer", "https://hexdocs.pm/elixir/GenServer.html", "the stateful server behaviour."),
@@ -169,11 +170,11 @@ REFS = {
    ("Hash array mapped trie \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Hash_array_mapped_trie", "the structure in brief."),
  ],
  "F4.06": [
-   ("Steindorfer & Vinju, \u201cOptimizing Hash-Array Mapped Tries\u2026\u201d (OOPSLA 2015)", "http://michael.steindorfer.name/publications/oopsla15.pdf", "the CHAMP paper (DOI 10.1145/2814270.2814312)."),
+   ("Steindorfer & Vinju, \u201cOptimizing Hash-Array Mapped Tries\u2026\u201d (OOPSLA 2015)", "https://michael.steindorfer.name/publications/oopsla15.pdf", "the CHAMP paper (DOI 10.1145/2814270.2814312)."),
    ("The Morning Paper \u2014 CHAMP summary", "https://blog.acolyer.org/2015/11/27/hamt/", "an accessible walkthrough."),
  ],
  "F4.07": [
-   ("Steindorfer & Vinju, CHAMP (OOPSLA 2015)", "http://michael.steindorfer.name/publications/oopsla15.pdf", "the trie the branded map extends."),
+   ("Steindorfer & Vinju, CHAMP (OOPSLA 2015)", "https://michael.steindorfer.name/publications/oopsla15.pdf", "the trie the branded map extends."),
    ("Snowflake ID \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Snowflake_ID", "the 64-bit id layout."),
    ("Twitter Snowflake (archived source, 2010)", "https://github.com/twitter-archive/snowflake/tree/snowflake-2010", "the original generator."),
    ("Discord \u2014 Snowflakes (developer reference)", "https://discord.com/developers/docs/reference#snowflakes", "a practical bit-layout spec."),
@@ -183,7 +184,7 @@ REFS = {
    ("*Introduction to Algorithms* (CLRS)", "https://mitpress.mit.edu/9780262046305/", "the dynamic-programming chapter."),
  ],
  "F4.09": [
-   ("Steindorfer & Vinju, CHAMP (OOPSLA 2015)", "http://michael.steindorfer.name/publications/oopsla15.pdf", "the structure being animated."),
+   ("Steindorfer & Vinju, CHAMP (OOPSLA 2015)", "https://michael.steindorfer.name/publications/oopsla15.pdf", "the structure being animated."),
    ("Snowflake ID \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Snowflake_ID", "the branded-key scheme."),
  ],
  # ---------- F5 · Pragmatic Programming ----------
@@ -201,7 +202,7 @@ REFS = {
    ("Dialyxir", "https://hexdocs.pm/dialyxir/readme.html", "Dialyzer for Elixir."),
  ],
  "F5.04": [
-   ("Armstrong thesis \u2014 \u201clet it crash\u201d and supervision", "http://erlang.org/download/armstrong_thesis_2003.pdf", "the philosophy, from the source."),
+   ("Armstrong thesis \u2014 \u201clet it crash\u201d and supervision", "https://erlang.org/download/armstrong_thesis_2003.pdf", "the philosophy, from the source."),
    ("Elixir \u2014 Mix & OTP: Supervision trees and applications", "https://hexdocs.pm/elixir/supervisor-and-application.html", "rescue versus restart."),
    ("Fred H\u00e9bert, *Stuff Goes Bad: Erlang in Anger* (free)", "https://www.erlang-in-anger.com/", "failure in production systems."),
  ],
@@ -226,7 +227,7 @@ REFS = {
  "F5.09": [
    ("Elixir \u2014 Supervisor", "https://hexdocs.pm/elixir/Supervisor.html", "supervision strategies."),
    ("Elixir \u2014 DynamicSupervisor", "https://hexdocs.pm/elixir/DynamicSupervisor.html", "supervising at runtime."),
-   ("Armstrong thesis", "http://erlang.org/download/armstrong_thesis_2003.pdf", "why a tree heals."),
+   ("Armstrong thesis", "https://erlang.org/download/armstrong_thesis_2003.pdf", "why a tree heals."),
  ],
  # ---------- F6 · Phoenix Framework ----------
  "F6.01": [
@@ -272,7 +273,7 @@ REFS = {
 
 CORE = [
  ("Elixir documentation (guides + module reference)", "https://hexdocs.pm/elixir/", "the primary source for the language and standard library."),
- ("Elixir \u2014 Getting Started guide", "https://hexdocs.pm/elixir/introduction.html", "the introductory walkthrough; chapters are linked per module above."),
+ ("Elixir \u2014 Introduction (Getting Started)", "https://hexdocs.pm/elixir/introduction.html", "the introductory walkthrough; chapters are linked per module above."),
  ("The Elixir website \u2014 install & learning hub", "https://elixir-lang.org/learning.html", "curated books, courses, and videos."),
  ("Erlang/OTP documentation", "https://www.erlang.org/doc", "the runtime Elixir compiles to."),
  ("HexDocs", "https://hexdocs.pm/", "documentation for every published package."),
@@ -366,7 +367,7 @@ W("*Keyed to the course manifest; module ids and titles are generated, reference
 W("")
 
 doc = "\n".join(p)
-out = "/home/claude/elixir-course/elixir-references.md"
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "elixir-references.md")
 open(out, "w").write(doc)
 
 # counts + voice gate
