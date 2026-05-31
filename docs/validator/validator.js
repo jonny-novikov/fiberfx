@@ -23,11 +23,19 @@ class Validator {
     this.vh = opts.viewportHeight || 900;
     this.settleMs = opts.settleMs ?? 1300;            // pause for async render / KaTeX
     this.pass = 0; this.fail = 0;
+    this.pageErrors = []; this.consoleErrors = [];     // captured per page; reset in open()
   }
 
   async start() {
     this.browser = await chromium.launch({ headless: this.headless });
     this.page = await this.browser.newPage({ viewport: { width: this.vw, height: this.vh } });
+    // Capture runtime failures cms can't see: uncaught JS exceptions + console errors.
+    this.page.on('pageerror', (e) => this.pageErrors.push(String((e && e.message) || e)));
+    this.page.on('console', (m) => {
+      if (m.type() !== 'error') return;
+      const t = m.text();
+      if (!/favicon|net::ERR|ERR_|Failed to load resource/i.test(t)) this.consoleErrors.push(t); // drop resource-load noise
+    });
   }
   async stop() { if (this.browser) await this.browser.close(); }
 
@@ -39,6 +47,7 @@ class Validator {
   /** Navigate, wait for network idle, then settle for async widgets/KaTeX. */
   async open(path) {
     console.log(`\n── ${path} ──`);
+    this.pageErrors = []; this.consoleErrors = [];
     await this.page.goto(this.resolve(path), { waitUntil: 'networkidle' });
     await this.page.waitForTimeout(this.settleMs);
   }
@@ -92,6 +101,53 @@ class Validator {
     let ok = !!d; if (ok && field !== undefined) ok = d[field] === value;
     this.check(`localStorage["${key}"]${field !== undefined ? '.' + field : ''} set`, ok, d);
   }
+  // ---- runtime assertions (what cms's static gates cannot see) --------------
+  /** No uncaught JS exceptions or console errors fired on this page. */
+  async noJsErrors() {
+    const errs = [...this.pageErrors, ...this.consoleErrors];
+    this.check('no JS / console errors', errs.length === 0, errs.slice(0, 3));
+  }
+  /** Resize the viewport (e.g. to a ~390px mobile width) for a follow-up check. */
+  async setViewport(w, h) { await this.page.setViewportSize({ width: w, height: h || this.vh }); }
+  /** body background equals the expected token colour (e.g. ink "rgb(10, 14, 26)"). */
+  async expectBackground(rgb) {
+    const bg = await this.page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    this.check(`body background == ${rgb}`, bg === rgb, bg);
+  }
+  /** The branded Snowflake build stamp decodes on-page: #stampId is a 14-char id and #st-ts a date. */
+  async stampDecodes() {
+    const r = await this.page.evaluate(() => ({
+      id: (document.querySelector('#stampId') || {}).textContent ? document.querySelector('#stampId').textContent.trim() : '',
+      ts: (document.querySelector('#st-ts') || {}).textContent ? document.querySelector('#st-ts').textContent.trim() : '',
+    }));
+    const ok = /^[A-Za-z]{3}[0-9A-Za-z]{11}$/.test(r.id) && /^\d{4}-\d{2}-\d{2} /.test(r.ts);
+    this.check('build stamp decodes (id → timestamp)', ok, r);
+  }
+  /** Scroll the page to trigger reveal-on-scroll, then assert no .reveal stays hidden. */
+  async revealsVisible() {
+    await this.page.evaluate(async () => {
+      const step = 400, h = document.body.scrollHeight;
+      for (let y = 0; y <= h; y += step) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 25)); }
+      window.scrollTo(0, 0);
+    });
+    await this.settle(300);
+    const hidden = await this.page.evaluate(() =>
+      [...document.querySelectorAll('.reveal')].filter((e) => parseFloat(getComputedStyle(e).opacity) < 0.5).length);
+    this.check('all .reveal content visible after scroll', hidden === 0, hidden + ' still hidden');
+  }
+  /** A toggle group responds: clicking a button sets .active and throws no error. */
+  async toggleWorks(groupSel) {
+    const btns = this.page.locator(`${groupSel} button`);
+    const n = await btns.count();
+    if (n < 2) { this.check(`toggle ${groupSel} present`, false, `${n} buttons`); return; }
+    const before = this.pageErrors.length + this.consoleErrors.length;
+    await btns.nth(n - 1).click();
+    await this.settle(200);
+    const active = await this.page.locator(`${groupSel} button.active`).count();
+    const newErrs = (this.pageErrors.length + this.consoleErrors.length) - before;
+    this.check(`toggle ${groupSel} responds (active set, no error)`, active >= 1 && newErrs === 0, { active, newErrs });
+  }
+
   /** Print summary; return counts. */
   report() {
     console.log(`\n═══ RESULT: ${this.pass} PASS, ${this.fail} FAIL ═══`);
