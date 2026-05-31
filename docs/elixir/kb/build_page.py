@@ -219,7 +219,7 @@ MODULES = {
     ],
     "F4": [
         dict(n="F4.01", title="Lists, recursion & complexity", one="Cons cells; big-O on the BEAM.", slug="lists", status="built", lab=False),
-        dict(n="F4.02", title="Trees & traversals", one="Binary and n-ary trees; DFS/BFS, functionally.", slug="trees", status="planned", lab=False),
+        dict(n="F4.02", title="Trees & traversals", one="Binary and n-ary trees; DFS/BFS, functionally.", slug="trees", status="built", lab=False),
         dict(n="F4.03", title="Sorting & searching", one="Merge/quick sort and binary search, immutably.", slug="sorting", status="built", lab=False),
         dict(n="F4.04", title="Maps, sets & hashing", one="Hash maps, collisions, the cost model.", slug="maps", status="planned", lab=False),
         dict(n="F4.05", title="Hash Array Mapped Tries (HAMT)", one="Persistent maps via prefix trees.", slug="hamt", status="planned", lab=False),
@@ -328,6 +328,11 @@ SUBPAGES = {
         dict(slug='functions', title='Defining functions', one='Named functions with def and defp, multiple clauses that dispatch by pattern and guard, arity, a'),
         dict(slug='organising', title='Organising with modules', one='defmodule, module attributes, alias and import, and documentation — how the Portal namespace is '),
         dict(slug='pipe', title='The pipe operator', one='|> threads a value as the first argument to the next call, turning nested calls into a readable '),
+    ],
+    "F4.02": [
+        dict(slug='bfs', title='Breadth-first & balance', one='Breadth-first traversal walks the tree level by level with a FIFO queue.'),
+        dict(slug='dfs', title='Depth-first: pre, in, post-order', one='Depth-first traversal makes the same two recursive calls and differs only in when it visits the '),
+        dict(slug='shape', title='Binary trees & recursive shape', one='A node is {value, left, right} or nil, so every tree function handles nil as the base case and a'),
     ],
 }
 

@@ -114,7 +114,7 @@ var Modules = map[string][]Module{
 	},
 	"F4": {
 		{N: "F4.01", Title: "Lists, recursion & complexity", One: "Cons cells; big-O on the BEAM.", Slug: "lists", Status: "built"},
-		{N: "F4.02", Title: "Trees & traversals", One: "Binary/n-ary trees; DFS/BFS functionally.", Slug: "trees", Status: "planned"},
+		{N: "F4.02", Title: "Trees & traversals", One: "Binary/n-ary trees; DFS/BFS functionally.", Slug: "trees", Status: "built"},
 		{N: "F4.03", Title: "Sorting & searching", One: "Merge/quick sort, binary search, immutably.", Slug: "sorting", Status: "built"},
 		{N: "F4.04", Title: "Maps, sets & hashing", One: "Hash maps, collisions, the cost model.", Slug: "maps", Status: "planned"},
 		{N: "F4.05", Title: "Hash Array Mapped Tries (HAMT)", One: "Persistent maps via prefix trees.", Slug: "hamt", Status: "planned"},
@@ -220,6 +220,11 @@ var Subpages = map[string][]Subpage{
 		{"functions", "Defining functions", "Named functions with def and defp, multiple clauses that dispatch by pattern and guard, arity, a"},
 		{"organising", "Organising with modules", "defmodule, module attributes, alias and import, and documentation — how the Portal namespace is "},
 		{"pipe", "The pipe operator", "|> threads a value as the first argument to the next call, turning nested calls into a readable "},
+	},
+	"F4.02": {
+		{"bfs", "Breadth-first & balance", "Breadth-first traversal walks the tree level by level with a FIFO queue."},
+		{"dfs", "Depth-first: pre, in, post-order", "Depth-first traversal makes the same two recursive calls and differs only in when it visits the "},
+		{"shape", "Binary trees & recursive shape", "A node is {value, left, right} or nil, so every tree function handles nil as the base case and a"},
 	},
 }
 
