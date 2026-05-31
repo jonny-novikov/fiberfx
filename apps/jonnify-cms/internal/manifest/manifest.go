@@ -57,7 +57,7 @@ var Chapters = []Chapter{
 	{"F0", "History", "course", "/elixir/course", "live", "Where this came from — the languages, the runtimes, and the BEAM.", "Context, not a prerequisite. F1 stands on its own.", "blue"},
 	{"F1", "Algebra", "algebra", "/elixir/algebra", "live", "The functional mindset, straight from the math you already know.", "Starts from the algebra you already know.", "gold"},
 	{"F2", "Functional Programming", "functional", "/elixir/functional", "live", "Pure functions, immutability, and higher-order functions on their own terms.", "Builds on F1 · Algebra.", "elixir"},
-	{"F3", "The Elixir Language", "language", "/elixir/language", "planned", "Syntax, pipelines, pattern matching, and structs on the BEAM.", "Builds on F2 · Functional Programming.", "elixir"},
+	{"F3", "The Elixir Language", "language", "/elixir/language", "live", "Syntax, pipelines, pattern matching, and structs on the BEAM.", "Builds on F2 · Functional Programming.", "elixir"},
 	{"F4", "Algorithms & Data Structures", "algorithms", "/elixir/algorithms", "planned", "Classical and advanced problems, from lists to branded CHAMP tries.", "Builds on F3 · The Elixir Language.", "sage"},
 	{"F5", "Pragmatic Programming", "pragmatic", "/elixir/pragmatic", "planned", "Real-world engineering: structure, testing, telemetry, releases.", "Builds on F4 · Algorithms & Data Structures.", "sage"},
 	{"F6", "Phoenix Framework", "phoenix", "/elixir/phoenix", "planned", "Web applications on Elixir, and the road into real-time LiveView.", "Builds on F5 · Pragmatic Programming.", "blue"},
@@ -102,8 +102,8 @@ var Modules = map[string][]Module{
 		{N: "F2.09", Title: "The data-pipeline lab", One: "Compose map/filter/reduce over a dataset.", Slug: "pipeline-lab", Status: "built", Lab: true},
 	},
 	"F3": {
-		{N: "F3.01", Title: "Values, types & IEx", One: "The data you build with; the shell.", Slug: "values", Status: "planned"},
-		{N: "F3.02", Title: "Pattern matching & the match operator", One: "= is a match, not assignment.", Slug: "match", Status: "planned"},
+		{N: "F3.01", Title: "Values, types & IEx", One: "The data you build with; the shell.", Slug: "values", Status: "built"},
+		{N: "F3.02", Title: "Pattern matching & the match operator", One: "= is a match, not assignment.", Slug: "match", Status: "built"},
 		{N: "F3.03", Title: "Functions, modules & the pipe", One: "Defining and composing in modules.", Slug: "modules", Status: "planned"},
 		{N: "F3.04", Title: "Enumerables & streams", One: "Eager versus lazy traversal.", Slug: "enum-streams", Status: "planned"},
 		{N: "F3.05", Title: "Structs, maps & keyword lists", One: "Shaping data; when to use which.", Slug: "structs", Status: "planned"},
@@ -176,6 +176,22 @@ var Subpages = map[string][]Subpage{
 		{"pipe", "The pipe operator", "|> threads a value left to right, as the first argument."},
 		{"pipeline", "Building pipelines", "map, filter, and reduce stages over a dataset, end to end."},
 	},
+	"F3.02": {
+		{"operator", "The match operator", "= binds by matching structure rather than assigning."},
+		{"destructuring", "Destructuring data", "Pulling values out of tuples, lists, and maps by shape."},
+		{"branching", "Branching with case & guards", "case, with, and guard clauses that match on structure."},
+	},
+}
+
+// ChapterExtras are chapter-level context pages (not numbered modules) that live
+// directly under a chapter route, e.g. /elixir/language/history. They become
+// linkable once the chapter itself is linkable.
+var ChapterExtras = map[string][]Subpage{
+	"F3": {
+		{"history", "A short history of Elixir", "Where the language came from."},
+		{"timeline", "The Elixir release timeline", "Versions and milestones."},
+		{"under-the-hood", "Under the hood", "How the language runs on the BEAM."},
+	},
 }
 
 // ChapterByID returns the chapter with the given id.
@@ -236,6 +252,9 @@ func AllowedRoutes() map[string]bool {
 	for _, c := range Chapters {
 		if Linkable(c.Status) {
 			allowed[c.Route] = true
+			for _, e := range ChapterExtras[c.ID] {
+				allowed[c.Route+"/"+e.Slug] = true
+			}
 		}
 		for _, m := range Modules[c.ID] {
 			if !Linkable(m.Status) {

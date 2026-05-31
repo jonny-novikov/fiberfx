@@ -125,7 +125,7 @@ CHAPTERS = [
          reuses="Builds on F1 · Algebra.",
          accent="elixir"),
     dict(id="F3", title="The Elixir Language", slug="language", route="/elixir/language",
-         status="planned",
+         status="live",
          one="Syntax, pipelines, pattern matching, and structs on the BEAM.",
          reuses="Builds on F2 · Functional Programming.",
          accent="elixir"),
@@ -207,8 +207,8 @@ MODULES = {
         dict(n="F2.09", title="The data-pipeline lab", one="Compose map/filter/reduce over a dataset; watch each stage.", slug="pipeline-lab", status="built", lab=True),
     ],
     "F3": [
-        dict(n="F3.01", title="Values, types & IEx", one="The data you build with; the shell as a tool.", slug="values", status="planned", lab=False),
-        dict(n="F3.02", title="Pattern matching & the match operator", one="= is a match, not assignment.", slug="match", status="planned", lab=False),
+        dict(n="F3.01", title="Values, types & IEx", one="The data you build with; the shell as a tool.", slug="values", status="built", lab=False),
+        dict(n="F3.02", title="Pattern matching & the match operator", one="= is a match, not assignment.", slug="match", status="built", lab=False),
         dict(n="F3.03", title="Functions, modules & the pipe", one="Defining and composing in modules.", slug="modules", status="planned", lab=False),
         dict(n="F3.04", title="Enumerables & streams", one="Eager versus lazy traversal.", slug="enum-streams", status="planned", lab=False),
         dict(n="F3.05", title="Structs, maps & keyword lists", one="Shaping data; when to use which.", slug="structs", status="planned", lab=False),
@@ -284,6 +284,22 @@ SUBPAGES = {
         dict(slug="pipe",     title="The pipe operator",    one="|> threads a value left to right, as the first argument."),
         dict(slug="pipeline", title="Building pipelines",   one="map, filter, and reduce stages over a dataset, end to end."),
     ],
+    "F3.02": [
+        dict(slug="operator",      title="The match operator",            one="= binds by matching structure rather than assigning."),
+        dict(slug="destructuring", title="Destructuring data",            one="Pulling values out of tuples, lists, and maps by shape."),
+        dict(slug="branching",     title="Branching with case & guards",  one="case, with, and guard clauses that match on structure."),
+    ],
+}
+
+# Chapter-level context pages (not numbered modules): intro/background pages that
+# live directly under a chapter route, e.g. /elixir/language/history. They become
+# linkable once the chapter itself is linkable.
+CHAPTER_EXTRAS = {
+    "F3": [
+        dict(slug="history",        title="A short history of Elixir",   one="Where the language came from."),
+        dict(slug="timeline",       title="The Elixir release timeline", one="Versions and milestones."),
+        dict(slug="under-the-hood", title="Under the hood",              one="How the language runs on the BEAM."),
+    ],
 }
 
 
@@ -308,6 +324,8 @@ def allowed_routes() -> set[str]:
     for ch in CHAPTERS:
         if ch["status"] in LINKABLE:
             routes.add(ch["route"])
+            for e in CHAPTER_EXTRAS.get(ch["id"], []):
+                routes.add(f'{ch["route"]}/{e["slug"]}')
     for cid, mods in MODULES.items():
         chapter = next(c for c in CHAPTERS if c["id"] == cid)
         for m in mods:
