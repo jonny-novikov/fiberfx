@@ -26,7 +26,7 @@
 
 **Типы страниц** (спецификации — в playbook):
 1. **Лендинг главы** (max-width 1080px): hero → 3 intro-карточки → сетка $6$ тайлов-модулей (последний — капстоун) → цепочка глав → футер.
-2. **Дидактический модуль** (max-width 920px): hero → $6$ разделов `.sect` (kicker/h2/lead $+$ `formula-card` KaTeX) → интерактив `.task-block` → `.quote-block` → `.takeaway` ($5$ пунктов $I$–$V$) → `.quiz` → `.references` → `.nav-prev-next`.
+2. **Дидактический модуль** (max-width 920px): hero → $6$ разделов `.sect` (kicker/h2/lead $+$ `formula-card` KaTeX) → интерактив `.task-block` → `.quote-block` → `.takeaway` ($5$ пунктов $I$–$V$) → `.quiz` → `.references` → `.nav-prev-next`. Сверху — **липкая навигация по секциям** (`.section-nav` под топбаром, top:72px; подсветка активной секции через IntersectionObserver; секции — `id="s1..s6"` + `scroll-margin-top:126px`). Внизу — **удобная навигация**: `.nav-prev-next` (пред./след. модуль) + кнопка «↑ Наверх» (`<body id="top">`).
 3. **Капстоун главы** (модуль $.6$): как дидактический $+$ итоговый интерактив-синтез $+$ баннер завершения главы → следующая глава.
 4. **Страница «Квиз главы»** (`/logic/{глава}/kviz`): $6$ вопросов — по одному на каждый модуль (генератор — `logic/build_chapter_quiz.py`).
 
