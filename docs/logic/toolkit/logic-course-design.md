@@ -134,7 +134,7 @@
 
 ## 5. Сквозные элементы (из playbook — не дублировать)
 
-- **CSS `:root`-токены, шрифты** (Cormorant Garamond / PT Serif / Manrope / JetBrains Mono): playbook, раздел дизайна. На страницу подставляется только `--accent/--accent-bright/--accent-deep` $+$ `RGB`-триплет главы из §3.
+- **CSS `:root`-токены, шрифты** (Cormorant Garamond / PT Serif / Manrope / JetBrains Mono): playbook, раздел дизайна. На страницу подставляется только `--accent/--accent-bright/--accent-deep` $+$ `RGB`-триплет главы из §3. **Десктоп-шрифт:** в базовый CSS включён медиазапрос `@media (min-width:1024px){html{font-size:18px}body{font-size:18.5px}}` (и `19px` при `min-width:1440px`) — крупнит все rem-размеры на больших экранах; применять на всех страницах курса.
 - **Компоненты:** topbar, hero, `.sect`, `.formula-card`, `.task-block`, `.quote-block`, `.takeaway`, `.references`, `.nav-prev-next`, `.completion-card` — разметка и стили в playbook.
 - **Движок квиза** (single/tf/calc, localStorage, мгновенная обратная связь, вердикт) — полный JS в playbook.
 - **Блок «Источники»** — формат `.references` с поиском Google Scholar; контент — `logic-references.md`.
