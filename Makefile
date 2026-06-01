@@ -39,7 +39,7 @@ SITE_BASE   ?= https://jonnify.fly.dev
 
 export GOWORK := off
 
-.PHONY: help build sitemap start stop restart run status clean
+.PHONY: help build sitemap elixir-llms start stop restart run status clean
 
 help:
 	@echo "jonnify static server — targets:"
@@ -51,6 +51,7 @@ help:
 	@echo "  make status     Show whether server is running"
 	@echo "  make clean      Remove binary, PID file, and log file"
 	@echo "  make sitemap    Regenerate sitemap.xml + robots.txt (cmd/sitemap)"
+	@echo "  make elixir-llms Regenerate per-chapter elixir/**/llms.txt (cmd/elixir-llms)"
 	@echo ""
 	@echo "Server listens on http://localhost:$(PORT)"
 	@echo "  /                    → $(INDEX_HTML)"
@@ -83,6 +84,14 @@ sitemap:
 	@echo "→ Generating sitemap.xml + robots.txt (base $(SITE_BASE))"
 	@cd $(REPO_DIR) && go run ./cmd/sitemap -base $(SITE_BASE) -root $(REPO_DIR) -out $(SITEMAP_XML) -robots $(ROBOTS_TXT)
 	@echo "✓ Wrote $(SITEMAP_XML) and $(ROBOTS_TXT)"
+
+# Regenerate the per-chapter elixir/<chapter>/llms.txt agent maps (+ course-root
+# elixir/llms.txt) from page metadata. Served as text/plain by serveDirTree; re-run
+# after adding/renaming elixir lessons so the maps stay accurate.
+elixir-llms:
+	@echo "→ Generating per-chapter elixir/**/llms.txt"
+	@cd $(REPO_DIR) && go run ./cmd/elixir-llms -root $(REPO_DIR)
+	@echo "✓ Wrote elixir/llms.txt + per-chapter maps"
 
 start: build
 	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \

@@ -875,6 +875,52 @@ facade behind a LiveView sketch and hand a UI-ready boundary to F6, the Phoenix 
   mobile = 91 PASS, 0 FAIL, 0 images** (front matter 4 + module 4 = 8 pages). Docs regenerated: course-md **voice
   CLEAN, 4 mermaid** (now with F6 dive sub-rows for every module); refs **59 / 59**, voice CLEAN.
 
+## Toolkit CSS fix — active tab + readout wrap (whole site rebuilt)
+
+- **Two HEAD_CSS bugs reported from an F6.01.3 screenshot, fixed at the toolkit level:**
+  - **Active tab invisible.** `.solid-select button.active` set `color:var(--ink)` (near-black) but supplied a light
+    background **only** through `[data-c="…"]` selectors &mdash; and the page buttons carry no `data-c`, so the active
+    tab was dark-on-dark. Fix: `.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}`
+    &mdash; a light pill with dark text, visible **with or without** `data-c` (the `[data-c]` accent variants still
+    override the background).
+  - **Readout horizontal scroll.** `.geo-readout` had `overflow-x:auto;white-space:nowrap`, forcing long readouts onto
+    one scrolling line. Fix: `white-space:normal;overflow-wrap:break-word;word-break:break-word` (no overflow-x) so the
+    text wraps.
+- **Propagation:** `HEAD_CSS` &rarr; `HEAD_HTML` &rarr; **`extract-head`** rewrites `_head.html` &rarr; **`build`**
+  inlines `_head.html` per page. So after editing HEAD_CSS the order is *extract-head, then rebuild*. Ran
+  `extract-head` and **rebuilt every page**: all **120 buildable pages (F4/F5/F6) A+**; the 51 &ldquo;non-A+&rdquo; are
+  `FileNotFoundError` for F0&ndash;F3 fragments not present in this tree (deployed-only, pre-existing, out of scope).
+  Post-fix validator (cosmetic change, no regression): **F4 577, F5 448, F6 91 PASS, all 0 FAIL / 0 images**. A full
+  un-scoped run still fails on missing F0&ndash;F3 outputs &mdash; pre-existing; always verify per-chapter with `ONLY`.
+
+## F6.02 — second module built (hub + three dives) + landing tile promoted
+
+- **F6.02 &middot; Routing, controllers &amp; plugs is built** on the deepest standard: hub + three dives, blue
+  accent, real Phoenix router/plug code. `MODULES["F6"]` F6.02 + its three dives flipped to `built`;
+  `SUBPAGES["F6.02"]` added; four PAGES entries (`routing.html`, `routing-routes.html`, `routing-pipelines.html`,
+  `routing-plugs.html`). Routes 172 &rarr; **176**, PAGES 171 &rarr; **175**, module tally **50 built / 7 planned**.
+  - **Hub** (`content/f6-02-routing.html`, prefix `ro`): a route/pipeline/plug selector (default route) + three dive
+    cards (blue/gold/sage) + **hub References** (Phoenix Routing, Router, Controllers, Plug).
+  - **F6.02.1 &middot; Routes &amp; verbs** (`rv`): a route-kind selector (get/post/resources/live, default get) with
+    a live `setText` readout, a **second SVG** of route anatomy (verb / path+:id / controller / action), and a router
+    in code with verified `~p` paths.
+  - **F6.02.2 &middot; Pipelines &amp; scopes** (`pl`): a pipeline selector (`:browser`/`:api`/`:require_auth`), a
+    **second SVG** of three scopes routing through pipelines (including a stacked `[:browser, :require_auth]`), and
+    pipelines + scopes in code.
+  - **F6.02.3 &middot; Writing a plug** (`pg`): an `init`/`call`/`halt` selector, a **second SVG** of a conn through
+    the pipeline where `halt` short-circuits the chain (the action skipped), and a real `RequireUser` module plug + a
+    function plug. Dives carry no References (hub-only rule); two SVGs each.
+- **Landing**: the F6.02 tile is now a linkable `<a class="mod" href="/elixir/phoenix/routing">` with a `built` pill
+  (its dives `<ul>` kept); intro/arc prose updated to &ldquo;F6.01 and F6.02 are built&rdquo;.
+- **Build guides**: `build-guide/f6-02-routing.md` (module spec + five copy-paste **build prompts** &mdash; routes +
+  `~p`, pipelines + a protected scope, the `RequireUser` module plug, a function plug, verify). `build-guide/phoenix.md`
+  updated: F6.02 entry now links the guide and the global build sequence lists `f6-02` separately. Voice clean.
+- **All five pages Apollo A+** (hub + 3 dives + landing); `node --check` clean on each; REF URLs `200`. **Validator**:
+  an `F6.02` desktop block (hub piece&rarr;role, and one per dive) + 390px mobile entries for all four pages.
+  `ONLY="F6"` now reports **111 desktop + 24 mobile = 135 PASS, 0 FAIL, 0 images** (front matter 4 + F6.01 4 + F6.02 4
+  = 12 pages). Docs regenerated: course-md **voice CLEAN, 4 mermaid** (F6.02 sub-rows now ●); refs **59 / 59**, voice
+  CLEAN.
+
 
 
 **Deployment (not authoring), unchanged and now slightly larger:** the site-wide `/elixir` home and the
@@ -907,13 +953,15 @@ What a resuming agent should know, condensed:
    `build-guide/f5-09-engine-lab.md`, a spec whose copy-paste build prompts generate the Portal logic). **The F5
    chapter is now module-complete: all nine modules + three design subpages + the landing are built**, with REFS and
    `A`-map abstracts keyed by module `n`. **F6 (Phoenix) is under construction**: the chapter is `live` with a landing
-   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01 is built** &mdash; a
-   hub + three dives at `/elixir/phoenix/lifecycle` (+ `/request-path`, `/endpoint`, `/controllers`) with the
-   `build-guide/f6-01-lifecycle.md` prompts. Every F6 module now carries its three dives in the manifest, so the
-   landing tiles and course-md show the whole chapter plan; F6.02 (Routing) is the next module.
-   `allowed_routes()` returns **172** link routes; only built/live routes are linkable
-   (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter subpages, and F6.01 + its three
-   dives are; **the planned F6.02&ndash;F6.09 module and dive routes are not**), external `https://` links are exempt.
+   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01 and F6.02 are
+   built** &mdash; each a hub + three dives (`/elixir/phoenix/lifecycle` and `/elixir/phoenix/routing` + their three
+   dive slugs) with `build-guide/f6-01-lifecycle.md` and `build-guide/f6-02-routing.md` prompts. Every F6 module
+   carries its three dives in the manifest, so the landing tiles and course-md show the whole chapter plan; F6.03
+   (Ecto) is the next module.
+   `allowed_routes()` returns **176** link routes; only built/live routes are linkable
+   (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter subpages, and F6.01 + F6.02
+   with their dives are; **the planned F6.03&ndash;F6.09 module and dive routes are not**), external `https://` links
+   are exempt.
 2. Rebuild any page with `python3 build_page.py build --page KEY`, grade with `check OUT.html` (nine gates + A+),
    regenerate `_head.html` with `extract-head` after editing `HEAD_CSS`. The voice gate scans all visible text
    including `<pre class="code">` comments (only `<script>`/`<style>`/`<svg>` are stripped); `expectText` in the

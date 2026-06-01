@@ -244,7 +244,7 @@ MODULES = {
     ],
     "F6": [
         dict(n="F6.01", title="Architecture & the request lifecycle", one="endpoint → router → controller → view.", slug="lifecycle", status="built", lab=False),
-        dict(n="F6.02", title="Routing, controllers & plugs", one="The plug pipeline.", slug="routing", status="planned", lab=False),
+        dict(n="F6.02", title="Routing, controllers & plugs", one="The plug pipeline.", slug="routing", status="built", lab=False),
         dict(n="F6.03", title="Ecto: schemas, changesets & queries", one="Data, validation, the repo.", slug="ecto", status="planned", lab=False),
         dict(n="F6.04", title="Contexts & domain design", one="Boundaries that scale.", slug="contexts", status="planned", lab=False),
         dict(n="F6.05", title="Templates, components & HEEx", one="Server-rendered markup.", slug="heex", status="planned", lab=False),
@@ -431,6 +431,11 @@ SUBPAGES = {
         dict(slug='controllers', title='Controllers, views & the facade seam', one='Where your code lives in the lifecycle: a thin controller calls only the Portal facade, branches'),
         dict(slug='endpoint', title='The endpoint, supervised', one='PortalWeb.Endpoint has two roles: the outermost plug — static files, parsers, session, the route'),
         dict(slug='request-path', title='The request lifecycle', one='A request from the browser to the response, step by step: Bandit hands the connection to PortalW'),
+    ],
+    "F6.02": [
+        dict(slug='pipelines', title='Pipelines & scopes', one='A named pipeline is a reusable, ordered stack of plugs;'),
+        dict(slug='plugs', title='Writing a plug', one='The contract every stage of the pipeline shares: a plug is init/1 plus call(conn, opts), taking '),
+        dict(slug='routes', title='Routes & verbs', one='How a verb and a path map to one controller action: get and post, resources for the seven RESTfu'),
     ],
 }
 
