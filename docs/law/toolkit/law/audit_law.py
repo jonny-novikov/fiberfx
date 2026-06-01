@@ -107,7 +107,7 @@ def scan_file(path):
     fname = parts[-1]
     # «Глава» — только известный слаг-каталог; топ-уровневые страницы (index.html,
     # nesovershennoletnie.html — сквозная памятка) не относятся к главе.
-    chapter = parts[1] if (len(parts) == 3 and parts[1] in CHAPTER_COLOR) else None
+    chapter = parts[1] if (len(parts) == 3 and parts[1] in CHAPTERS) else None
     is_course_home = (rel == os.path.join('law', 'index.html'))
     is_landing = (chapter is not None and fname == 'index.html')
     is_kviz = (fname == 'kviz.html')
@@ -126,7 +126,8 @@ def scan_file(path):
         add('ERROR', rel, 'XCOURSE-CRUMB', 'хлебная крошка «Курс · Логика»')
 
     # 3) тема главы (цвет) — alias --accent:#hex должен совпадать с темой главы.
-    if chapter:
+    #    Только для глав с известной темой; новые главы (тема ещё не в карте) — пропуск.
+    if chapter and chapter in CHAPTER_COLOR:
         want = ACCENT_HEX[CHAPTER_COLOR[chapter]]
         m = re.search(r'--accent\s*:\s*(#[0-9a-fA-F]{6})', h)
         if not m:
@@ -173,18 +174,31 @@ def course_level():
             modules += [f for f in os.listdir(d) if f.endswith('.html') and f not in ('index.html', 'kviz.html')]
 
     print('\n── курс-уровень ──')
-    print(f'  лендингов глав: {len(have_landing)}/6   квизов глав: {len(have_kviz)}/6   модулей: {len(modules)}/36')
+    print(f'  глав обнаружено: {len(CHAPTERS)} ({", ".join(CHAPTERS)})')
+    print(f'  лендингов: {len(have_landing)} · квизов глав: {len(have_kviz)} · модулей: {len(modules)}')
     if missing_kviz:
         add('WARN', 'law/', 'DRIFT-KVIZ', f'нет kviz.html в главах: {missing_kviz}')
 
-    # сверка с заявленным в law-status.md (если файл на месте)
+    # Дрифт served-дерева относительно law-status.md. Served-дерево = источник истины
+    # для того, что РЕАЛЬНО публикуется (Dockerfile COPY law/). Статус склонен забегать
+    # вперёд (контент собран в снапшоте/work-папке, статус помечен ✓, но синк в law/ не
+    # сделан) → страница 404-ит в проде. Парсим ТОЛЕРАНТНО (6/6, 6/7, любые N/M).
     if os.path.exists(STATUS_MD):
         st = open(STATUS_MD, encoding='utf-8').read()
-        claims_6_quiz = re.search(r'Квиз[^\n|]*\|\s*\$?6\s*/\s*6', st) or 'Квиз главы` готовы' in st or '6 / 6$ ✓ — сгенерированы' in st
-        if claims_6_quiz and len(have_kviz) < 6:
+        # claimed-built квизов: число перед "/" в строке про «Квиз главы», помеченной ✓.
+        m = re.search(r'Квиз глав[^\n|]*\|\s*\$?(\d+)\s*/\s*\d+\s*\$?\s*✓', st)
+        claimed_quiz = int(m.group(1)) if m else (6 if ('6 / 6$ ✓ — сгенерированы' in st or 'Квиз главы` готовы' in st) else None)
+        if claimed_quiz is not None and claimed_quiz > len(have_kviz):
             add('ERROR', 'docs/law/law-status.md', 'DRIFT-STATUS',
-                f'статус заявляет 6/6 «Квиз главы», в дереве law/ их {len(have_kviz)} '
-                f'(нет: {missing_kviz}) — статус расходится с файловой системой')
+                f'статус заявляет {claimed_quiz} «Квиз главы» (✓), а в served-дереве law/ их {len(have_kviz)} '
+                f'(нет: {missing_kviz}) — served отстаёт от статуса (404 в проде)')
+        # /law/final заявлен построенным, но отсутствует в served-дереве.
+        if re.search(r'/law/final', st) and re.search(r'final`?[^\n]*(?:✓|построен)', st, re.I):
+            if not (os.path.exists(os.path.join(LAW, 'final.html')) or
+                    os.path.exists(os.path.join(LAW, 'final', 'index.html'))):
+                add('ERROR', 'docs/law/law-status.md', 'DRIFT-FINAL',
+                    'статус заявляет /law/final построенным, но в served-дереве law/ его нет '
+                    '(ни final.html, ни final/index.html)')
 
 def main():
     args = sys.argv[1:]

@@ -1,0 +1,217 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag">/elixir/language/otp/call-cast</span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/language">F3</a>
+      <span class="sep">/</span>
+      <a href="/elixir/language/otp">F3.08</a>
+      <span class="sep">/</span>
+      <span class="here">call-cast</span>
+    </div>
+    <p class="eyebrow">F3.08 &middot; part 2 of 3</p>
+    <h1>Synchronous call, asynchronous cast</h1>
+    <p class="lede">Two ways to message a GenServer. <code class="inl">GenServer.call</code> sends a request and
+      blocks until the server replies, returning the value &mdash; a round trip. <code class="inl">GenServer.cast</code>
+      sends a request and returns <code class="inl">:ok</code> at once, without waiting &mdash; fire and forget.
+      <code class="inl">call</code> routes to <code class="inl">handle_call</code>, <code class="inl">cast</code> to
+      <code class="inl">handle_cast</code>.</p>
+    <p class="kicker">Choose based on whether the caller needs an answer. A read wants <code class="inl">call</code>;
+      a fire-and-forget update wants <code class="inl">cast</code>. Select each and watch where it routes and what the
+      client gets back.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#route">Where each one routes</a>
+      <a href="#api">A clean client API</a>
+    </div>
+  </section>
+
+  <section id="route">
+    <h2>Where each one routes</h2>
+    <div class="prose">
+      <p><code class="inl">call</code> makes the caller wait for the server's reply; <code class="inl">cast</code> lets
+        it move on immediately. The cost of <code class="inl">call</code> is the wait: if the server does not reply
+        within the timeout, the caller exits. Select each and follow both lanes.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="ccTitle">
+      <h4 id="ccTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The client request &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="ccSel" role="group" aria-label="The client request">
+          <button type="button" data-k="call" data-c="elixir" class="active">call :get</button>
+          <button type="button" data-k="cast" data-c="blue">cast :inc</button>
+          <button type="button" data-k="timeout" data-c="sage">call (timeout)</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 196" role="img" aria-label="The client lane and the GenServer lane, which callback the request routes to, and the value the client receives.">
+        <text x="24" y="34" font-family="Manrope, sans-serif" font-size="10.5" letter-spacing="0.12em" fill="#6b7494">CLIENT</text>
+        <rect id="ccClient" x="24" y="44" width="412" height="38" rx="10" fill="#1a1530" stroke="#7ba387" stroke-width="2"></rect>
+        <text id="ccClientT" x="42" y="68" font-family="JetBrains Mono, monospace" font-size="12.5" fill="#d7cfb9">blocks until the server replies</text>
+
+        <line id="ccArr" x1="230" y1="86" x2="230" y2="108" stroke="#5a87c4" stroke-width="2"></line>
+        <path id="ccArrHead" d="M230 108 l-5 -10 h10 z" fill="#5a87c4"></path>
+        <text id="ccArrLbl" x="244" y="102" font-family="Manrope, sans-serif" font-size="10.5" fill="#9fc0ea">call (sync)</text>
+
+        <text x="24" y="128" font-family="Manrope, sans-serif" font-size="10.5" letter-spacing="0.12em" fill="#6b7494">GENSERVER &middot; ROUTES TO</text>
+        <rect id="ccServer" x="24" y="138" width="412" height="38" rx="10" fill="#10162b" stroke="#7ba387" stroke-width="2"></rect>
+        <text id="ccServerT" x="42" y="162" font-family="JetBrains Mono, monospace" font-size="12.5" fill="#a7c9b1">handle_call(:get, _from, count)</text>
+
+        <text x="460" y="34" font-family="Manrope, sans-serif" font-size="10.5" letter-spacing="0.12em" fill="#6b7494">CLIENT RECEIVES</text>
+        <rect id="ccRet" x="460" y="44" width="236" height="132" rx="12" fill="#15101f" stroke="#b39ddb" stroke-width="2"></rect>
+        <text id="ccRetT" x="478" y="116" font-family="JetBrains Mono, monospace" font-size="15" fill="#cdb8f0">2</text>
+      </svg>
+
+      <pre class="code" id="ccCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="ccOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">A <code class="inl">cast</code> is faster for the caller but tells you nothing &mdash; not even
+      that the server is alive. A <code class="inl">call</code> confirms the work and returns a value, at the price of
+      waiting. The choice is about whether you need the answer, not about speed alone.</p>
+  </section>
+
+  <section id="api">
+    <h2>A clean client API</h2>
+    <div class="prose">
+      <p>Callers should not write <code class="inl">GenServer.call</code> and raw message tags themselves. Wrap them
+        in named functions on the module, so the public surface reads as <code class="inl">Tally.get/1</code> and
+        <code class="inl">Tally.inc/1</code> and the call-versus-cast choice stays an implementation detail.</p>
+    </div>
+    <pre class="code"><span class="op">defmodule</span> <span class="fn elixir">Portal.Tally</span> <span class="op">do</span>
+  <span class="cmt"># ... use GenServer, init, handle_call, handle_cast ...</span>
+
+  <span class="op">def</span> <span class="fn">get</span>(pid), <span class="op">do:</span> <span class="fn elixir">GenServer</span>.<span class="fn">call</span>(pid, <span class="res">:get</span>)   <span class="cmt"># sync: returns the count</span>
+  <span class="op">def</span> <span class="fn">inc</span>(pid), <span class="op">do:</span> <span class="fn elixir">GenServer</span>.<span class="fn">cast</span>(pid, <span class="res">:inc</span>)   <span class="cmt"># async: returns :ok</span>
+<span class="op">end</span>
+
+<span class="fn elixir">Tally</span>.<span class="fn">inc</span>(tally)   <span class="cmt"># =&gt; :ok   (fire and forget)</span>
+<span class="fn elixir">Tally</span>.<span class="fn">inc</span>(tally)   <span class="cmt"># =&gt; :ok</span>
+<span class="fn elixir">Tally</span>.<span class="fn">get</span>(tally)   <span class="cmt"># =&gt; 2     (waits for the reply)</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">The idea</p>
+        <p>Ask and wait for an answer, or tell and move on without one.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">In Elixir</p>
+        <p><code class="inl">call</code> &rarr; <code class="inl">handle_call</code> &rarr; a reply; <code class="inl">cast</code> &rarr; <code class="inl">handle_cast</code> &rarr; <code class="inl">:ok</code>.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/language/otp/supervisors"><strong>supervisors and restart
+      strategies</strong></a> &mdash; what keeps the server alive when it crashes.</p>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/language/otp/genserver"><span aria-hidden="true">&larr;</span>&nbsp; F3.08.1 &middot; genserver</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/language/otp/supervisors">Next &middot; supervisors <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <p class="colophon">Built with the jonnify dark-editorial design system. Every page carries a branded
+      <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
+      It is the same id convention used as a cross-system pivot key throughout the course.</p>
+    <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+      build <span class="id" id="stampId">{{BUILD_ID}}</span>
+      <dl class="panel">
+        <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+        <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+        <dt>node</dt><dd id="st-node">&mdash;</dd>
+        <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+        <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+      </dl>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var SAGE = '#7ba387', BLUE = '#5a87c4', ERR = '#e08f8b', BASE = '#5a6688', PURP = '#b39ddb';
+  var CASES = {
+    call: {
+      client: SAGE, clientT: 'blocks until the server replies',
+      arr: BLUE, arrLbl: 'call (sync)', arrLblFill: '#9fc0ea',
+      server: SAGE, serverT: 'handle_call(:get, _from, count)', serverFill: '#a7c9b1',
+      ret: '2', retFill: '#cdb8f0', retStroke: PURP,
+      code: 'count = <span class="fn elixir">GenServer</span>.<span class="fn">call</span>(tally, <span class="res">:get</span>)\n<span class="cmt"># blocks until handle_call replies</span>\n<span class="cmt"># =&gt; 2</span>',
+      out: 'A <code class="inl">call</code> routes to <code class="inl">handle_call/3</code>, which returns <code class="inl">{:reply, value, state}</code>. The caller waits for that reply and receives the value &mdash; here, the count 2.'
+    },
+    cast: {
+      client: SAGE, clientT: 'returns :ok at once, does not wait',
+      arr: BLUE, arrLbl: 'cast (async)', arrLblFill: '#9fc0ea',
+      server: SAGE, serverT: 'handle_cast(:inc, count)', serverFill: '#a7c9b1',
+      ret: ':ok', retFill: '#9fc0ea', retStroke: BLUE,
+      code: '<span class="res">:ok</span> = <span class="fn elixir">GenServer</span>.<span class="fn">cast</span>(tally, <span class="res">:inc</span>)\n<span class="cmt"># returns at once; handle_cast runs after</span>\n<span class="cmt"># =&gt; :ok</span>',
+      out: 'A <code class="inl">cast</code> routes to <code class="inl">handle_cast/2</code>, which returns <code class="inl">{:noreply, state}</code>. The caller does not wait and gets <code class="inl">:ok</code> &mdash; no value, no confirmation that the work has run yet.'
+    },
+    timeout: {
+      client: ERR, clientT: 'waits, then exits :timeout',
+      arr: ERR, arrLbl: 'call · 1000 ms', arrLblFill: '#e08f8b',
+      server: BASE, serverT: 'still working — no reply yet', serverFill: '#a39c89',
+      ret: '** (exit) :timeout', retFill: '#e08f8b', retStroke: ERR,
+      code: '<span class="fn elixir">GenServer</span>.<span class="fn">call</span>(slow, <span class="res">:report</span>, <span class="res">1_000</span>)\n<span class="cmt"># no reply within 1000 ms</span>\n<span class="cmt"># ** (exit) {:timeout, {GenServer, :call, ...}}</span>',
+      out: 'A <code class="inl">call</code> waits at most for its timeout, 5000 ms by default and 1000 ms here. If the server has not replied by then, the caller exits with <code class="inl">:timeout</code>. The server itself keeps running.'
+    }
+  };
+  function pick(k) {
+    var c = CASES[k]; if (!c) return;
+    document.querySelectorAll('#ccSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var client = document.getElementById('ccClient'); if (client) client.setAttribute('stroke', c.client);
+    var clientT = document.getElementById('ccClientT'); if (clientT) clientT.textContent = c.clientT;
+    var arr = document.getElementById('ccArr'); if (arr) arr.setAttribute('stroke', c.arr);
+    var arrH = document.getElementById('ccArrHead'); if (arrH) arrH.setAttribute('fill', c.arr);
+    var arrL = document.getElementById('ccArrLbl'); if (arrL) { arrL.textContent = c.arrLbl; arrL.setAttribute('fill', c.arrLblFill); }
+    var server = document.getElementById('ccServer'); if (server) server.setAttribute('stroke', c.server);
+    var serverT = document.getElementById('ccServerT'); if (serverT) { serverT.textContent = c.serverT; serverT.setAttribute('fill', c.serverFill); }
+    var ret = document.getElementById('ccRet'); if (ret) ret.setAttribute('stroke', c.retStroke);
+    var retT = document.getElementById('ccRetT'); if (retT) { retT.textContent = c.ret; retT.setAttribute('fill', c.retFill); }
+    var code = document.getElementById('ccCode'); if (code) code.innerHTML = c.code;
+    var out = document.getElementById('ccOut'); if (out) out.innerHTML = c.out;
+  }
+  document.querySelectorAll('#ccSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('call');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
