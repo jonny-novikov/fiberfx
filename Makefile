@@ -33,6 +33,7 @@ LOGIC_DIR  ?= $(REPO_DIR)/logic
 LAW_DIR    ?= $(REPO_DIR)/law
 SITEMAP_XML ?= $(REPO_DIR)/sitemap.xml
 ROBOTS_TXT  ?= $(REPO_DIR)/robots.txt
+LLMS_TXT    ?= $(REPO_DIR)/llms.txt
 SITE_BASE   ?= https://jonnify.fly.dev
 
 export GOWORK := off
@@ -65,6 +66,7 @@ help:
 	@echo "  /law, /law/**        → $(LAW_DIR)/ (folder tree → index.html / <module>.html)"
 	@echo "  /sitemap.xml         → $(SITEMAP_XML)"
 	@echo "  /robots.txt          → $(ROBOTS_TXT)"
+	@echo "  /llms.txt            → $(LLMS_TXT)"
 	@echo "  (errors)             → $(ERROR_DIR)/<status>.html (404, 500, …)"
 
 $(BIN_DIR):
@@ -97,6 +99,7 @@ start: build
 	 ELIXIR_DIR=$(ELIXIR_DIR) \
 	 SITEMAP_XML=$(SITEMAP_XML) \
 	 ROBOTS_TXT=$(ROBOTS_TXT) \
+	 LLMS_TXT=$(LLMS_TXT) \
 	 GAME_HTML=$(GAME_HTML) \
 	 HEALTH_DIR=$(HEALTH_DIR) \
 	 LOGIC_DIR=$(LOGIC_DIR) \
@@ -148,6 +151,7 @@ run: build
 	 ELIXIR_DIR=$(ELIXIR_DIR) \
 	 SITEMAP_XML=$(SITEMAP_XML) \
 	 ROBOTS_TXT=$(ROBOTS_TXT) \
+	 LLMS_TXT=$(LLMS_TXT) \
 	 GAME_HTML=$(GAME_HTML) \
 	 HEALTH_DIR=$(HEALTH_DIR) \
 	 LOGIC_DIR=$(LOGIC_DIR) \

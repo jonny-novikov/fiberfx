@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Algorithms &amp; Data Structures — F4 · jonnify</title>
-<meta name="description" content="The F4 chapter overview: nine modules from lists through trees, sorting, and hash-based maps to the persistent trie family — HAMT, CHAMP, and the branded CHAMP map keyed by a Snowflake pivot — plus dynamic programming and a lab. F4.01 is built; the rest show their planned dives.">
+<title>Redis keys — F4.08.3 · jonnify</title>
+<meta name="description" content="In Redis the id is a namespaced string key, user:USR0NbWMtkosp8. The self-validating id pays off hardest at a cache: an edge validator rejects malformed, out-of-range, wrong-namespace, and future ids with a 404 before a GET or a database fallback, so a scanner&#x27;s flood becomes constant-time rejects. The honest limit is that a well-formed but absent id still costs one lookup.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -292,17 +292,27 @@ html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transfo
 pre.code .rdx{background:rgba(179,157,219,.18);border-radius:4px;padding:0 .18em;color:var(--elixir-bright)}
 pre.code .step{color:var(--cream-dim)}
 .lin-arrow{fill:var(--cream-dim)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to the chapter</a>
+<a class="skip" href="#main">Skip to the lesson</a>
 
 <header class="site">
   <div class="wrap">
     <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
     <nav>
       <a href="/elixir/course">Contents</a>
-      <span class="route-tag">/elixir/algorithms</span>
+      <span class="route-tag">/elixir/algorithms/persistence/redis</span>
     </nav>
   </div>
 </header>
@@ -311,244 +321,129 @@ pre.code .step{color:var(--cream-dim)}
 
   <section class="hero">
     <div class="crumbs">
-      <a href="/elixir/course">Contents</a>
+      <a href="/elixir/algorithms">F4</a>
       <span class="sep">/</span>
-      <span class="here">F4 &middot; Algorithms &amp; Data Structures</span>
+      <a href="/elixir/algorithms/persistence">F4.08</a>
+      <span class="sep">/</span>
+      <span class="here">redis</span>
     </div>
-    <p class="eyebrow">F4 &middot; chapter overview</p>
-    <h1>Algorithms &amp; <span class="ex">data structures</span></h1>
-    <p class="lede">The data behind the systems you built in F3. This chapter starts at the list &mdash; the BEAM's
-      fundamental sequence &mdash; and works up through trees, sorting, and hash-based maps to the persistent tries
-      that make immutable maps fast: HAMT and CHAMP. From there it turns to the ids that key them &mdash; the
-      Snowflake bigint and its branded, base62 form &mdash; their persistence across SQLite, PostgreSQL, and Redis,
-      and the branded CHAMP map behind a GenServer. Each structure comes with the cost model that tells you when to
-      reach for it.</p>
-    <p class="kicker">Twelve modules, each grounded in working Elixir and the running portal's data. The arc is
-      deliberate: foundations first (lists, trees, sorting, maps), then the persistent-map spine (HAMT &rarr; CHAMP
-      &rarr; identifiers &rarr; persistence &rarr; branded CHAMP), then practical recipes, dynamic programming, and a
-      lab where you watch a branded CHAMP map grow node by node.</p>
+    <p class="eyebrow">F4.08 &middot; part 3 of 3</p>
+    <h1>Redis <span class="ex">keys</span></h1>
+    <p class="lede">In Redis the id is a string key, namespaced with a colon: <code class="inl">user:USR0NbWMtkosp8</code>.
+      The namespace keeps key spaces apart and makes a scan or an eviction policy easy to scope. The same
+      self-validating id pays off harder here than anywhere: a cache exists to absorb load, so the cheapest win is to
+      reject the load that should never reach it. A malformed or impossible id is a <code class="inl">404</code> at the
+      edge &mdash; no <code class="inl">GET</code>, no fallback query.</p>
+    <p class="kicker">A burst of eight requests, some real and some the kind a scanner sends. Compare an edge that
+      validates first with one that forwards everything. Select a mode.</p>
     <div class="toc-mini" aria-label="On this page">
-      <a href="#arc">The chapter arc</a>
-      <a href="#modules">Module navigation</a>
+      <a href="#shed">Validate, then reach the cache</a>
+      <a href="#advanced">Advanced: the keyspace and the honest limit</a>
     </div>
   </section>
 
-  <section id="arc">
-    <h2>The chapter arc</h2>
+  <section id="shed">
+    <h2>Validate, then reach the cache</h2>
     <div class="prose">
-      <p>Read it in order. The foundations earn the tries: once you can reason about a list's O(n) walk and a map's
-        average-O(1) lookup, the HAMT and CHAMP show how a tree of small nodes gives you both persistence and speed.
-        Modules F4.01 through F4.06 &mdash; lists through CHAMP maps &mdash; are built; the id, persistence, and
-        branded-CHAMP modules that follow are in production.</p>
+      <p>The same eight requests, two edges. With validation, only well-formed, plausibly-timed
+        <code class="inl">USR</code> ids become a cache lookup; the rest are shed for the cost of a decode. Without it,
+        every request becomes a <code class="inl">GET</code>, and the ones that cannot exist miss the cache and fall
+        through to the database. Select a mode.</p>
     </div>
 
-    <figure class="fig" aria-labelledby="arcTitle">
-      <h4 id="arcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Twelve modules &middot; F4.01 through F4.06 are built</h4>
+    <figure class="fig" aria-labelledby="reTitle">
+      <h4 id="reTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Edge mode &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="reSel" role="group" aria-label="Edge mode">
+          <button type="button" data-k="validate" data-c="sage" class="active">validate at edge</button>
+          <button type="button" data-k="passthrough" data-c="gold">forward everything</button>
+        </div>
+      </div>
 
-      <svg viewBox="0 0 720 158" role="img" aria-label="A spine of twelve F4 modules from lists through the persistent-map spine to a branded CHAMP lab, with F4.01 highlighted as the starting point.">
-        <line x1="40" y1="70" x2="680" y2="70" stroke="#2a3252" stroke-width="2"></line>
+      <svg viewBox="0 0 720 248" role="img" aria-label="Eight incoming requests are each routed: with edge validation, valid ids reach the Redis cache and invalid ids are answered 404 with no I/O; forwarding everything sends all eight to the cache, where the impossible ids miss and fall through to a database query.">
+        <text x="180" y="26" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.08em" fill="#6b7494">request id (expects USR)</text>
+        <text x="560" y="26" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.08em" fill="#6b7494">outcome</text>
 
-        <!-- 01 lists (start, built) -->
-        <circle cx="40" cy="70" r="11" fill="#1a2b22" stroke="#a7c9b1" stroke-width="2.5"></circle>
-        <text x="40" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#a7c9b1">01</text>
-        <text x="40" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#a7c9b1">lists</text>
-        <text x="40" y="108" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">start</text>
+        <g id="reRows"></g>
 
-        <!-- 02 trees --><circle cx="98" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="98" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">02</text>
-        <text x="98" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">trees</text>
-
-        <!-- 03 sorting --><circle cx="156" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="156" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">03</text>
-        <text x="156" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">sort</text>
-
-        <!-- 04 maps --><circle cx="214" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="214" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">04</text>
-        <text x="214" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">maps</text>
-
-        <!-- 05 HAMT (spine) --><circle cx="273" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="273" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">05</text>
-        <text x="273" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">HAMT</text>
-
-        <!-- 06 CHAMP --><circle cx="331" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="331" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">06</text>
-        <text x="331" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">CHAMP</text>
-
-        <!-- 07 identifiers --><circle cx="389" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="389" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">07</text>
-        <text x="389" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">ids</text>
-
-        <!-- 08 persistence --><circle cx="447" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="447" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">08</text>
-        <text x="447" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">store</text>
-
-        <!-- 09 branded champ --><circle cx="505" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="505" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">09</text>
-        <text x="505" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">branded</text>
-
-        <!-- 10 recipes --><circle cx="564" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="564" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">10</text>
-        <text x="564" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">recipe</text>
-
-        <!-- 11 DP --><circle cx="622" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="622" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">11</text>
-        <text x="622" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">DP</text>
-
-        <!-- 12 lab --><circle cx="680" cy="70" r="9" fill="#1a1530" stroke="#b39ddb" stroke-width="2"></circle>
-        <text x="680" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#cdb8f0">12</text>
-        <text x="680" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#cdb8f0">lab</text>
-
-        <text x="360" y="138" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.06em" fill="#6b7494">foundations &middot; the persistent-map spine (05&ndash;09) &middot; recipes &middot; DP &middot; lab</text>
+        <rect x="40" y="214" width="640" height="26" rx="7" fill="#161d38" stroke="#3a4263" stroke-width="1.2"></rect>
+        <text id="reSummary" x="360" y="231" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">3 of 8 reach the cache · 5 shed at the edge (0 I/O)</text>
       </svg>
 
-      <div class="geo-readout">The persistent-map spine runs through five modules: a Hash Array Mapped Trie (F4.05),
-        its compressed successor CHAMP (F4.06), the identifiers that key them (F4.07), their persistence in SQL and
-        Redis (F4.08), and the branded CHAMP map behind a GenServer (F4.09). The F4.12 lab then animates one growing.</div>
+      <pre class="code" id="reCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="reOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">edge: <span id="reRole" style="color:var(--sage-bright)">validates before the cache</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">load on store: <span id="reResult" style="color:var(--cream)">3 lookups</span></p>
     </figure>
-    <p class="take">A data structure is a bet about which operations you will do most. This chapter is about reading
-      that bet from the cost model &mdash; and choosing the structure that wins it.</p>
+    <p class="take">A cache absorbs load best when it never sees the load it should not. Validating the id at the edge
+      turns a scanner&rsquo;s flood into constant-time 404s and leaves the cache for requests that could be real.</p>
   </section>
 
-  <section id="modules">
-    <h2>Module navigation</h2>
+  <section id="advanced">
+    <h2>Advanced: the keyspace and the honest limit</h2>
     <div class="prose">
-      <p>F4.01 is built; open it below. The rest list their planned deep dives so the path through the chapter is
-        visible from here.</p>
+      <p>The key is the branded id under a type namespace &mdash; <code class="inl">user:USR0NbWMtkosp8</code>,
+        <code class="inl">session:SES&hellip;</code> &mdash; so one Redis instance holds several record kinds without
+        collision, and a colon prefix scopes a <code class="inl">SCAN</code> or a per-type eviction. The validating
+        plug runs before the Redix call, so a rejected id never becomes a network round-trip to the cache, let alone a
+        database read.</p>
+      <p>The honest limit, the same as the hub&rsquo;s: validation proves an id is <em>well-formed and
+        plausibly-timed</em>, not that it <em>exists</em>. A correctly-shaped <code class="inl">USR</code> id that was
+        never issued still costs one cache lookup, and a miss still falls through to one query &mdash; that path
+        cannot be skipped without knowing the keyspace. What the edge removes is the high-volume, zero-effort probe:
+        wrong length, non-base62, out of range, wrong namespace, future timestamp. Those are most of a scan, and they
+        now cost the attacker a <code class="inl">404</code> and the store nothing.</p>
     </div>
-
-    <div class="mods" style="margin-top:1.3rem">
-      <a class="mod" href="/elixir/algorithms/lists">
-        <div class="top"><span class="num">F4.01</span><span class="pill built">built</span></div>
-        <p class="t">Lists, recursion &amp; complexity</p>
-        <p class="o">Cons cells; big-O on the BEAM.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.01.1</span><span>Cons cells &amp; the shape of a list</span></li>
-          <li><span class="dn">F4.01.2</span><span>Recursion over lists</span></li>
-          <li><span class="dn">F4.01.3</span><span>Complexity &amp; big-O on the BEAM</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/trees">
-        <div class="top"><span class="num">F4.02</span><span class="pill built">built</span></div>
-        <p class="t">Trees &amp; traversals</p>
-        <p class="o">Recursive tree shape and the three depth-first orders.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.02.1</span><span>Binary trees &amp; recursive shape</span></li>
-          <li><span class="dn">F4.02.2</span><span>Depth-first: pre, in, post-order</span></li>
-          <li><span class="dn">F4.02.3</span><span>Breadth-first &amp; balance</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/sorting">
-        <div class="top"><span class="num">F4.03</span><span class="pill built">built</span></div>
-        <p class="t">Sorting &amp; searching</p>
-        <p class="o">Comparison sorts and the cost of finding things.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.03.1</span><span>Merge &amp; quicksort</span></li>
-          <li><span class="dn">F4.03.2</span><span>Linear &amp; binary search</span></li>
-          <li><span class="dn">F4.03.3</span><span>Stability &amp; sort cost</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/maps">
-        <div class="top"><span class="num">F4.04</span><span class="pill built">built</span></div>
-        <p class="t">Maps, sets &amp; hashing</p>
-        <p class="o">Key lookup, membership, and what a hash buys you.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.04.1</span><span>Maps &amp; key lookup</span></li>
-          <li><span class="dn">F4.04.2</span><span>MapSet &amp; membership</span></li>
-          <li><span class="dn">F4.04.3</span><span>Hashing &amp; collisions</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/hamt">
-        <div class="top"><span class="num">F4.05</span><span class="pill built">built</span></div>
-        <p class="t">Hash Array Mapped Tries (HAMT)</p>
-        <p class="o">A tree of small nodes indexed by slices of the hash.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.05.1</span><span>Bitmapped nodes</span></li>
-          <li><span class="dn">F4.05.2</span><span>Hash-prefix indexing</span></li>
-          <li><span class="dn">F4.05.3</span><span>Structural sharing</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/champ">
-        <div class="top"><span class="num">F4.06</span><span class="pill built">built</span></div>
-        <p class="t">CHAMP maps</p>
-        <p class="o">A compressed HAMT: tighter nodes, faster iteration.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.06.1</span><span>Compressed node layout</span></li>
-          <li><span class="dn">F4.06.2</span><span>Cache-friendly iteration</span></li>
-          <li><span class="dn">F4.06.3</span><span>Canonical equality</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/identifiers">
-        <div class="top"><span class="num">F4.07</span><span class="pill built">built</span></div>
-        <p class="t">Identifiers, Snowflake &amp; branded ids</p>
-        <p class="o">From naive ids to a Snowflake bigint and a branded, base62 id.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.07.1</span><span>Choosing an identifier</span></li>
-          <li><span class="dn">F4.07.2</span><span>The Snowflake bigint</span></li>
-          <li><span class="dn">F4.07.3</span><span>Branded ids</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/persistence">
-        <div class="top"><span class="num">F4.08</span><span class="pill built">built</span></div>
-        <p class="t">Branded ids &amp; persistence</p>
-        <p class="o">Branded ids as keys in SQLite, PostgreSQL, and Redis.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.08.1</span><span>Branded ids as keys</span></li>
-          <li><span class="dn">F4.08.2</span><span>SQLite &amp; PostgreSQL</span></li>
-          <li><span class="dn">F4.08.3</span><span>Redis keys</span></li>
-        </ul>
-      </a>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.09</span><span class="pill planned">planned</span></div>
-        <p class="t">Branded CHAMP maps &amp; GenServer</p>
-        <p class="o">A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.09.1</span><span>Namespace-prefix partitioning</span></li>
-          <li><span class="dn">F4.09.2</span><span>The BrandedChamp trie</span></li>
-          <li><span class="dn">F4.09.3</span><span>A BrandedChamp GenServer</span></li>
-        </ul>
+    <pre class="code"><span class="cmt"># validate at the edge; only then touch Redis, only then the DB</span>
+<span class="op">def</span> <span class="fn">profile</span>(conn, %{<span class="str">"id"</span> =&gt; id}) <span class="op">do</span>
+  <span class="op">with</span> {<span class="res">:ok</span>, _snow} &lt;- <span class="fn sage">Portal.Id</span>.<span class="fn">validate</span>(id, <span class="res">:USR</span>),         <span class="cmt"># no I/O</span>
+       {<span class="res">:ok</span>, json} &lt;- <span class="fn sage">Redix</span>.<span class="fn">command</span>([<span class="str">"GET"</span>, <span class="str">"user:"</span> &lt;&gt; id]) <span class="op">do</span>
+    <span class="fn">json</span>(conn, json)                                          <span class="cmt"># cache hit</span>
+  <span class="op">else</span>
+    {<span class="res">:error</span>, _} -&gt; <span class="fn">send_resp</span>(conn, <span class="res">404</span>, <span class="str">""</span>)              <span class="cmt"># malformed id: shed</span>
+    {<span class="res">:ok</span>, <span class="res">nil</span>}    -&gt; <span class="fn">load_from_db_and_cache</span>(conn, id)        <span class="cmt"># well-formed miss</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">a self-describing id</p>
+        <p>The edge can judge its shape and time with no lookup.</p>
       </div>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.10</span><span class="pill planned">planned</span></div>
-        <p class="t">Practical recipes in Elixir</p>
-        <p class="o">Turning algorithmic problems into idiomatic Elixir.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.10.1</span><span>Idiomatic patterns</span></li>
-          <li><span class="dn">F4.10.2</span><span>Streams &amp; pipelines</span></li>
-          <li><span class="dn">F4.10.3</span><span>Profiling &amp; complexity</span></li>
-        </ul>
-      </div>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.11</span><span class="pill planned">planned</span></div>
-        <p class="t">Dynamic programming &amp; advanced problems</p>
-        <p class="o">Overlapping subproblems, memoized and tabulated.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.11.1</span><span>Memoization &amp; overlapping subproblems</span></li>
-          <li><span class="dn">F4.11.2</span><span>Tabulation &amp; bottom-up</span></li>
-          <li><span class="dn">F4.11.3</span><span>Classic DP problems</span></li>
-        </ul>
-      </div>
-      <div class="mod is-quiet lab">
-        <div class="top"><span class="num">F4.12</span><span class="pill planned">planned</span></div>
-        <p class="t">Lab: build a branded CHAMP store</p>
-        <p class="o">An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.12.1</span><span>Watch a branded CHAMP grow</span></li>
-          <li><span class="dn">F4.12.2</span><span>A Snowflake registry</span></li>
-          <li><span class="dn">F4.12.3</span><span>Query by time range</span></li>
-        </ul>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">a protected cache</p>
+        <p>Bogus traffic is 404&rsquo;d before Redis; only plausible ids reach the keyspace.</p>
       </div>
     </div>
+    <p class="note">That completes F4.08: the branded id is a bigint key, a time-range bound, and a namespaced cache
+      key &mdash; and a gate that sheds what cannot exist. Next module: <strong>F4.09 &mdash; Branded CHAMP maps &amp;
+      GenServer</strong> (in production), which keys an in-memory CHAMP on the same id, partitioned by namespace.</p>
+  </section>
 
-    <p class="note">Begin with <a href="/elixir/algorithms/lists"><strong>F4.01 &mdash; Lists, recursion &amp;
-      complexity</strong></a>. The chapter builds toward the branded CHAMP map, so the early modules on cost and
-      hashing pay off directly in the persistent-map spine.</p>
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://redis.io/docs/latest/develop/use/keyspace/">Redis &mdash; Keys &amp; key space</a> &mdash; namespaced string keys and key conventions.</li>
+        <li><a href="https://hexdocs.pm/redix/Redix.html">Redix</a> &mdash; the Elixir Redis client used at the edge.</li>
+        <li><a href="https://owasp.org/www-project-top-ten/2017/A5_2017-Broken_Access_Control">OWASP &mdash; Broken Access Control (IDOR)</a> &mdash; the enumeration class this shedding narrows.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/persistence">F4.08 &middot; Branded ids &amp; persistence</a> &mdash; the module hub and its request validator.</li>
+        <li><a href="/elixir/algorithms/identifiers">F4.07 &middot; Identifiers, Snowflake &amp; branded ids</a> &mdash; why the id is self-describing.</li>
+        <li><a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a></li>
+      </ul>
+    </div>
   </section>
 
   <section>
-    <nav class="pager" aria-label="Chapter navigation">
-      <a class="btn ghost" href="/elixir/language"><span aria-hidden="true">&larr;</span>&nbsp; F3 &middot; The Elixir Language</a>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/persistence/sql"><span aria-hidden="true">&larr;</span>&nbsp; F4.08.2 &middot; sql</a>
       <span class="spacer"></span>
-      <a class="btn" href="/elixir/algorithms/lists">Start &middot; F4.01 lists <span aria-hidden="true">&rarr;</span></a>
+      <a class="btn" href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures <span aria-hidden="true">&rarr;</span></a>
     </nav>
   </section>
 
@@ -558,15 +453,15 @@ pre.code .step{color:var(--cream-dim)}
   <div class="wrap">
     <p class="colophon">Built with the jonnify dark-editorial design system. Every page carries a branded
       <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
-      It is the same id convention the branded CHAMP map uses as a pivot key.</p>
+      It is the same id this module persists and validates.</p>
     <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
-      build <span class="id" id="stampId">TSK0NcV2vhoCS8</span>
+      build <span class="id" id="stampId">TSK0NcaQNZJakK</span>
       <dl class="panel">
         <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
         <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
         <dt>node</dt><dd id="st-node">&mdash;</dd>
         <dt>seq</dt><dd id="st-seq">&mdash;</dd>
-        <dt>timestamp</dt><dd id="st-ts">2026-06-01 08:49:06 UTC</dd>
+        <dt>timestamp</dt><dd id="st-ts">2026-06-01 10:04:21 UTC</dd>
       </dl>
     </div>
   </div>
@@ -575,10 +470,102 @@ pre.code .step{color:var(--cream-dim)}
 <script>
 (function () {
   "use strict";
+  var SAGE = '#a7c9b1', GOLD = '#f0cd7f', BURG = '#e08f8b', BLUE = '#9fc0ea';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   var EPOCH_MS = 1704067200000;
+  var MAX64 = 18446744073709551615n;
   function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
   function pad2(x) { return (x < 10 ? '0' : '') + x; }
+
+  /* the same validator as the hub: structure + range + namespace + time */
+  function validate(pathId, expectedNs) {
+    if (pathId.length !== 14) return { ok: false, why: 'length' };
+    var ns = pathId.slice(0, 3), payload = pathId.slice(3);
+    for (var i = 0; i < payload.length; i++) { if (B62.indexOf(payload.charAt(i)) < 0) return { ok: false, why: 'base62' }; }
+    var snow = b62decode(payload);
+    if (snow > MAX64) return { ok: false, why: 'range' };
+    if (ns !== expectedNs) return { ok: false, why: 'type' };
+    if (Number(snow >> 22n) + EPOCH_MS > Date.now() + 60000) return { ok: false, why: 'future' };
+    return { ok: true, snow: snow };
+  }
+
+  /* a burst: three real USR ids, five the shape a scanner sends */
+  var REQ = [
+    "USR0NbWMtkosp8",
+    "USR0NbLeJJpTmr",
+    "USR0NXh7MFjxT6",
+    "TSK0KHTOWnGLuC",
+    "USR0NbWM",
+    "USRzzzzzzzzzzz",
+    "USR0NbWM*kosp8",
+    "usr0NbWMtkosp8"
+  ];
+  var RES = REQ.map(function (id) { return validate(id, 'USR'); });
+  var nValid = RES.filter(function (r) { return r.ok; }).length;
+  var nShed = REQ.length - nValid;
+
+  /* build the eight rows once */
+  var g = document.getElementById('reRows');
+  function mk(tag, attrs, text) {
+    var el = document.createElementNS(SVGNS, tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    if (text != null) el.textContent = text;
+    return el;
+  }
+  if (g) {
+    for (var i = 0; i < REQ.length; i++) {
+      var y = 40 + i * 21;
+      g.appendChild(mk('rect', { id: 'reBox' + i, x: 40, y: y, width: 640, height: 18, rx: 5, fill: '#10162b', stroke: '#3a4263', 'stroke-width': '1' }));
+      g.appendChild(mk('text', { x: 52, y: y + 13, 'font-family': 'JetBrains Mono, monospace', 'font-size': '10.5', fill: '#d7cfb9' }, REQ[i]));
+      g.appendChild(mk('text', { id: 'reTag' + i, 'text-anchor': 'end', x: 668, y: y + 13, 'font-family': 'JetBrains Mono, monospace', 'font-size': '10' }, ''));
+    }
+  }
+
+  var WHY = { length: 'malformed length', base62: 'not base62', range: 'out of range', type: 'wrong type', future: 'future' };
+
+  function pick(k) {
+    document.querySelectorAll('#reSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    for (var i = 0; i < REQ.length; i++) {
+      var r = RES[i], boxEl = document.getElementById('reBox' + i), tagEl = document.getElementById('reTag' + i);
+      var stroke, tag, fill;
+      if (k === 'validate') {
+        if (r.ok) { stroke = SAGE; fill = SAGE; tag = '\u2192 cache GET'; }
+        else { stroke = BURG; fill = BURG; tag = '404 \u00b7 ' + WHY[r.why] + ' (no I/O)'; }
+      } else {
+        if (r.ok) { stroke = SAGE; fill = SAGE; tag = '\u2192 cache hit'; }
+        else { stroke = GOLD; fill = GOLD; tag = '\u2192 cache miss \u2192 DB query'; }
+      }
+      if (boxEl) { boxEl.setAttribute('stroke', stroke); boxEl.setAttribute('stroke-width', '1.4'); }
+      if (tagEl) { tagEl.textContent = tag; tagEl.setAttribute('fill', fill); }
+    }
+    var sEl = document.getElementById('reSummary');
+    var rEl = document.getElementById('reRole'), resEl = document.getElementById('reResult');
+    var code, out;
+    if (k === 'validate') {
+      if (sEl) { sEl.textContent = nValid + ' of ' + REQ.length + ' reach the cache \u00b7 ' + nShed + ' shed at the edge (0 I/O)'; sEl.setAttribute('fill', SAGE); }
+      if (rEl) { rEl.textContent = 'validates before the cache'; rEl.style.color = SAGE; }
+      if (resEl) resEl.textContent = nValid + ' cache lookups';
+      code = '<span class="cmt"># validate first — ' + nShed + ' of ' + REQ.length + ' rejected with no I/O</span>\n<span class="op">with</span> {<span class="res">:ok</span>, _} &lt;- <span class="fn sage">Portal.Id</span>.<span class="fn">validate</span>(id, <span class="res">:USR</span>),\n     {<span class="res">:ok</span>, v} &lt;- <span class="fn sage">Redix</span>.<span class="fn">command</span>([<span class="str">"GET"</span>, <span class="str">"user:"</span> &lt;&gt; id])\n<span class="cmt"># only ' + nValid + ' well-formed ids ever become a cache GET</span>';
+      out = 'With validation, <b style="color:var(--sage-bright)">' + nValid + ' of ' + REQ.length + '</b> requests reach Redis; the other <b style="color:#e08f8b">' + nShed + '</b> are answered <code class="inl">404</code> for the cost of a decode. The cache and the database see none of the scanner traffic.';
+    } else {
+      if (sEl) { sEl.textContent = REQ.length + ' cache lookups \u00b7 ' + nShed + ' DB queries for ids that cannot exist'; sEl.setAttribute('fill', GOLD); }
+      if (rEl) { rEl.textContent = 'forwards everything'; rEl.style.color = GOLD; }
+      if (resEl) resEl.textContent = REQ.length + ' lookups + ' + nShed + ' DB reads';
+      code = '<span class="cmt"># no validation — every request is a cache GET</span>\n{<span class="res">:ok</span>, v} = <span class="fn sage">Redix</span>.<span class="fn">command</span>([<span class="str">"GET"</span>, <span class="str">"user:"</span> &lt;&gt; id])\n<span class="op">if</span> v == <span class="res">nil</span>, <span class="op">do:</span> <span class="fn">load_from_db</span>(id)\n<span class="cmt"># ' + nShed + ' impossible ids miss the cache and hit the database anyway</span>';
+      out = 'Forwarding everything, all <b style="color:var(--sage-bright)">' + REQ.length + '</b> become a cache <code class="inl">GET</code>; the <b style="color:var(--gold-bright)">' + nShed + '</b> that cannot exist miss and fall through to a database query. The store pays for traffic an edge check would have shed.';
+    }
+    var cEl = document.getElementById('reCode'); if (cEl) cEl.innerHTML = code;
+    var oEl = document.getElementById('reOut'); if (oEl) oEl.innerHTML = out;
+  }
+  document.querySelectorAll('#reSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('validate');
+
+  /* ---------- Branded Snowflake decoder ---------- */
   function decodeBranded(id) {
     if (!id || id.length < 4) return null;
     var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
@@ -588,9 +575,9 @@ pre.code .step{color:var(--cream-dim)}
     var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
     return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
   }
-  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
-  if (stamp && idEl) {
-    var info = decodeBranded(idEl.textContent.trim());
+  var stamp = document.getElementById('stamp'), sidEl = document.getElementById('stampId');
+  if (stamp && sidEl) {
+    var info = decodeBranded(sidEl.textContent.trim());
     if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
       put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
     var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Algorithms &amp; Data Structures — F4 · jonnify</title>
-<meta name="description" content="The F4 chapter overview: nine modules from lists through trees, sorting, and hash-based maps to the persistent trie family — HAMT, CHAMP, and the branded CHAMP map keyed by a Snowflake pivot — plus dynamic programming and a lab. F4.01 is built; the rest show their planned dives.">
+<title>Branded ids as keys — F4.08.1 · jonnify</title>
+<meta name="description" content="The database stores the 64-bit integer as a bigint primary key — eight bytes, numerically ordered — and the application brands it into a fourteen-character string only at the edge. An index on the integer answers a point lookup in O(log n), and because time is in the high bits the same index is clustered by creation time, which the next dive&#x27;s range query rides on.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -292,17 +292,27 @@ html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transfo
 pre.code .rdx{background:rgba(179,157,219,.18);border-radius:4px;padding:0 .18em;color:var(--elixir-bright)}
 pre.code .step{color:var(--cream-dim)}
 .lin-arrow{fill:var(--cream-dim)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to the chapter</a>
+<a class="skip" href="#main">Skip to the lesson</a>
 
 <header class="site">
   <div class="wrap">
     <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
     <nav>
       <a href="/elixir/course">Contents</a>
-      <span class="route-tag">/elixir/algorithms</span>
+      <span class="route-tag">/elixir/algorithms/persistence/keys</span>
     </nav>
   </div>
 </header>
@@ -311,244 +321,134 @@ pre.code .step{color:var(--cream-dim)}
 
   <section class="hero">
     <div class="crumbs">
-      <a href="/elixir/course">Contents</a>
+      <a href="/elixir/algorithms">F4</a>
       <span class="sep">/</span>
-      <span class="here">F4 &middot; Algorithms &amp; Data Structures</span>
+      <a href="/elixir/algorithms/persistence">F4.08</a>
+      <span class="sep">/</span>
+      <span class="here">keys</span>
     </div>
-    <p class="eyebrow">F4 &middot; chapter overview</p>
-    <h1>Algorithms &amp; <span class="ex">data structures</span></h1>
-    <p class="lede">The data behind the systems you built in F3. This chapter starts at the list &mdash; the BEAM's
-      fundamental sequence &mdash; and works up through trees, sorting, and hash-based maps to the persistent tries
-      that make immutable maps fast: HAMT and CHAMP. From there it turns to the ids that key them &mdash; the
-      Snowflake bigint and its branded, base62 form &mdash; their persistence across SQLite, PostgreSQL, and Redis,
-      and the branded CHAMP map behind a GenServer. Each structure comes with the cost model that tells you when to
-      reach for it.</p>
-    <p class="kicker">Twelve modules, each grounded in working Elixir and the running portal's data. The arc is
-      deliberate: foundations first (lists, trees, sorting, maps), then the persistent-map spine (HAMT &rarr; CHAMP
-      &rarr; identifiers &rarr; persistence &rarr; branded CHAMP), then practical recipes, dynamic programming, and a
-      lab where you watch a branded CHAMP map grow node by node.</p>
+    <p class="eyebrow">F4.08 &middot; part 1 of 3</p>
+    <h1>Branded ids as <span class="ex">keys</span></h1>
+    <p class="lede">The wire shows <code class="inl">USR0NbWMtkosp8</code>, but the database does not store that
+      string. It stores the 64-bit integer underneath it as a <code class="inl">bigint</code> primary key &mdash;
+      eight bytes, not fourteen characters &mdash; and the application brands it back into a string only at the edge,
+      on the way out. The integer key is compact, it sorts by time, and it carries enough to validate itself.</p>
+    <p class="kicker">One record, three views of its key: the integer the database keeps, the branded string the
+      client sees, and the index that turns either into a row. Select one.</p>
     <div class="toc-mini" aria-label="On this page">
-      <a href="#arc">The chapter arc</a>
-      <a href="#modules">Module navigation</a>
+      <a href="#store">Store the integer, brand at the edge</a>
+      <a href="#advanced">Advanced: eight bytes that sort themselves</a>
     </div>
   </section>
 
-  <section id="arc">
-    <h2>The chapter arc</h2>
+  <section id="store">
+    <h2>Store the integer, brand at the edge</h2>
     <div class="prose">
-      <p>Read it in order. The foundations earn the tries: once you can reason about a list's O(n) walk and a map's
-        average-O(1) lookup, the HAMT and CHAMP show how a tree of small nodes gives you both persistence and speed.
-        Modules F4.01 through F4.06 &mdash; lists through CHAMP maps &mdash; are built; the id, persistence, and
-        branded-CHAMP modules that follow are in production.</p>
+      <p>The integer and the string are the same value in two encodings: the column holds the number, the view layer
+        brands it. Storing the number keeps the key small and numerically ordered; an index on it answers a point
+        lookup in <code class="inl">O(log n)</code>. Select a view.</p>
     </div>
 
-    <figure class="fig" aria-labelledby="arcTitle">
-      <h4 id="arcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Twelve modules &middot; F4.01 through F4.06 are built</h4>
+    <figure class="fig" aria-labelledby="keTitle">
+      <h4 id="keTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">View &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="keSel" role="group" aria-label="Key view">
+          <button type="button" data-k="integer" data-c="sage" class="active">stored integer</button>
+          <button type="button" data-k="string" data-c="blue">wire string</button>
+          <button type="button" data-k="index" data-c="gold">index</button>
+        </div>
+      </div>
 
-      <svg viewBox="0 0 720 158" role="img" aria-label="A spine of twelve F4 modules from lists through the persistent-map spine to a branded CHAMP lab, with F4.01 highlighted as the starting point.">
-        <line x1="40" y1="70" x2="680" y2="70" stroke="#2a3252" stroke-width="2"></line>
+      <svg viewBox="0 0 720 220" role="img" aria-label="The same key shown three ways: a 64-bit bigint stored in the database, the fourteen-character branded string sent on the wire, and a B-tree index that locates the row in logarithmic time.">
+        <rect id="keIntHi" x="40" y="48" width="640" height="44" rx="9" fill="#a7c9b1" fill-opacity="0.10" stroke="none"></rect>
+        <rect x="46" y="52" width="628" height="36" rx="7" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="62" y="75" font-family="JetBrains Mono, monospace" font-size="11" fill="#8b93b0">bigint PK</text>
+        <text x="662" y="75" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="13" fill="#a7c9b1">319545566822428714</text>
+        <text x="62" y="106" font-family="Manrope, sans-serif" font-size="9" fill="#6b7494">8 bytes &middot; numerically ordered</text>
 
-        <!-- 01 lists (start, built) -->
-        <circle cx="40" cy="70" r="11" fill="#1a2b22" stroke="#a7c9b1" stroke-width="2.5"></circle>
-        <text x="40" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#a7c9b1">01</text>
-        <text x="40" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#a7c9b1">lists</text>
-        <text x="40" y="108" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">start</text>
+        <rect id="keStrHi" x="40" y="120" width="640" height="44" rx="9" fill="#9fc0ea" fill-opacity="0" stroke="none"></rect>
+        <rect x="46" y="124" width="628" height="36" rx="7" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="62" y="147" font-family="JetBrains Mono, monospace" font-size="11" fill="#8b93b0">wire</text>
+        <text x="662" y="147" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="13"><tspan fill="#cdb8f0">USR</tspan><tspan fill="#9fc0ea">0NbWMtkosp8</tspan></text>
+        <text x="62" y="178" font-family="Manrope, sans-serif" font-size="9" fill="#6b7494">14 chars &middot; branded on the way out</text>
 
-        <!-- 02 trees --><circle cx="98" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="98" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">02</text>
-        <text x="98" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">trees</text>
+        <g id="keIdx" opacity="0">
+          <rect x="46" y="120" width="628" height="40" rx="7" fill="#241c14" stroke="#f0cd7f" stroke-width="1.6"></rect>
+          <text x="62" y="138" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#f0cd7f">B-tree index on id (bigint)</text>
+          <text x="62" y="154" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#cdb8f0">WHERE id = 319545566822428714  ->  O(log n), one row</text>
+        </g>
 
-        <!-- 03 sorting --><circle cx="156" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="156" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">03</text>
-        <text x="156" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">sort</text>
-
-        <!-- 04 maps --><circle cx="214" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="214" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">04</text>
-        <text x="214" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">maps</text>
-
-        <!-- 05 HAMT (spine) --><circle cx="273" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="273" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">05</text>
-        <text x="273" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">HAMT</text>
-
-        <!-- 06 CHAMP --><circle cx="331" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="331" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">06</text>
-        <text x="331" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">CHAMP</text>
-
-        <!-- 07 identifiers --><circle cx="389" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="389" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">07</text>
-        <text x="389" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">ids</text>
-
-        <!-- 08 persistence --><circle cx="447" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="447" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">08</text>
-        <text x="447" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">store</text>
-
-        <!-- 09 branded champ --><circle cx="505" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="505" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">09</text>
-        <text x="505" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">branded</text>
-
-        <!-- 10 recipes --><circle cx="564" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="564" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">10</text>
-        <text x="564" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">recipe</text>
-
-        <!-- 11 DP --><circle cx="622" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="622" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">11</text>
-        <text x="622" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">DP</text>
-
-        <!-- 12 lab --><circle cx="680" cy="70" r="9" fill="#1a1530" stroke="#b39ddb" stroke-width="2"></circle>
-        <text x="680" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#cdb8f0">12</text>
-        <text x="680" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#cdb8f0">lab</text>
-
-        <text x="360" y="138" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.06em" fill="#6b7494">foundations &middot; the persistent-map spine (05&ndash;09) &middot; recipes &middot; DP &middot; lab</text>
+        <text id="keCaption" x="360" y="206" text-anchor="middle" font-family="Manrope, sans-serif" font-size="10.5" fill="#a7c9b1">the database stores the 64-bit integer, not the string</text>
       </svg>
 
-      <div class="geo-readout">The persistent-map spine runs through five modules: a Hash Array Mapped Trie (F4.05),
-        its compressed successor CHAMP (F4.06), the identifiers that key them (F4.07), their persistence in SQL and
-        Redis (F4.08), and the branded CHAMP map behind a GenServer (F4.09). The F4.12 lab then animates one growing.</div>
+      <pre class="code" id="keCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="keOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">role: <span id="keRole" style="color:var(--sage-bright)">the stored primary key</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">size: <span id="keResult" style="color:var(--cream)">8 bytes</span></p>
     </figure>
-    <p class="take">A data structure is a bet about which operations you will do most. This chapter is about reading
-      that bet from the cost model &mdash; and choosing the structure that wins it.</p>
+    <p class="take">Store the number, show the string. The column stays eight bytes and sorts by time on its own,
+      and the branded form is a pure function of it &mdash; computed at the edge, never persisted twice.</p>
   </section>
 
-  <section id="modules">
-    <h2>Module navigation</h2>
+  <section id="advanced">
+    <h2>Advanced: eight bytes that sort themselves</h2>
     <div class="prose">
-      <p>F4.01 is built; open it below. The rest list their planned deep dives so the path through the chapter is
-        visible from here.</p>
+      <p>A <code class="inl">bigint</code> is fixed at eight bytes and compares in one instruction; the fourteen-character
+        string is larger, sorts lexically rather than numerically, and would need care to keep its width. Keeping the
+        integer as the key also makes the primary-key index do double duty: because the high bits are a timestamp, rows
+        inserted in time order land in id order, so the index is naturally clustered by time &mdash; new rows append at
+        the end rather than scattering. That is what the next dive&rsquo;s range query rides on.</p>
+      <p>The brand is a boundary concern, not a storage one. The schema&rsquo;s <code class="inl">id</code> is the
+        integer; a view or serializer prepends the namespace and base62-encodes on the way out, and a plug strips and
+        decodes on the way in. Storing the string instead would double the key&rsquo;s width, lose the cheap numeric
+        order, and tempt code to parse it everywhere rather than at one edge.</p>
     </div>
+    <pre class="code"><span class="cmt"># the schema keys on the integer; the namespace lives at the edge</span>
+<span class="op">schema</span> <span class="str">"users"</span> <span class="op">do</span>
+  <span class="op">field</span> <span class="res">:id</span>, <span class="res">:integer</span>, <span class="op">primary_key:</span> <span class="res">true</span>   <span class="cmt"># bigint Snowflake, 8 bytes</span>
+  <span class="op">field</span> <span class="res">:email</span>, <span class="res">:string</span>
+<span class="op">end</span>
 
-    <div class="mods" style="margin-top:1.3rem">
-      <a class="mod" href="/elixir/algorithms/lists">
-        <div class="top"><span class="num">F4.01</span><span class="pill built">built</span></div>
-        <p class="t">Lists, recursion &amp; complexity</p>
-        <p class="o">Cons cells; big-O on the BEAM.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.01.1</span><span>Cons cells &amp; the shape of a list</span></li>
-          <li><span class="dn">F4.01.2</span><span>Recursion over lists</span></li>
-          <li><span class="dn">F4.01.3</span><span>Complexity &amp; big-O on the BEAM</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/trees">
-        <div class="top"><span class="num">F4.02</span><span class="pill built">built</span></div>
-        <p class="t">Trees &amp; traversals</p>
-        <p class="o">Recursive tree shape and the three depth-first orders.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.02.1</span><span>Binary trees &amp; recursive shape</span></li>
-          <li><span class="dn">F4.02.2</span><span>Depth-first: pre, in, post-order</span></li>
-          <li><span class="dn">F4.02.3</span><span>Breadth-first &amp; balance</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/sorting">
-        <div class="top"><span class="num">F4.03</span><span class="pill built">built</span></div>
-        <p class="t">Sorting &amp; searching</p>
-        <p class="o">Comparison sorts and the cost of finding things.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.03.1</span><span>Merge &amp; quicksort</span></li>
-          <li><span class="dn">F4.03.2</span><span>Linear &amp; binary search</span></li>
-          <li><span class="dn">F4.03.3</span><span>Stability &amp; sort cost</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/maps">
-        <div class="top"><span class="num">F4.04</span><span class="pill built">built</span></div>
-        <p class="t">Maps, sets &amp; hashing</p>
-        <p class="o">Key lookup, membership, and what a hash buys you.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.04.1</span><span>Maps &amp; key lookup</span></li>
-          <li><span class="dn">F4.04.2</span><span>MapSet &amp; membership</span></li>
-          <li><span class="dn">F4.04.3</span><span>Hashing &amp; collisions</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/hamt">
-        <div class="top"><span class="num">F4.05</span><span class="pill built">built</span></div>
-        <p class="t">Hash Array Mapped Tries (HAMT)</p>
-        <p class="o">A tree of small nodes indexed by slices of the hash.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.05.1</span><span>Bitmapped nodes</span></li>
-          <li><span class="dn">F4.05.2</span><span>Hash-prefix indexing</span></li>
-          <li><span class="dn">F4.05.3</span><span>Structural sharing</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/champ">
-        <div class="top"><span class="num">F4.06</span><span class="pill built">built</span></div>
-        <p class="t">CHAMP maps</p>
-        <p class="o">A compressed HAMT: tighter nodes, faster iteration.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.06.1</span><span>Compressed node layout</span></li>
-          <li><span class="dn">F4.06.2</span><span>Cache-friendly iteration</span></li>
-          <li><span class="dn">F4.06.3</span><span>Canonical equality</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/identifiers">
-        <div class="top"><span class="num">F4.07</span><span class="pill built">built</span></div>
-        <p class="t">Identifiers, Snowflake &amp; branded ids</p>
-        <p class="o">From naive ids to a Snowflake bigint and a branded, base62 id.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.07.1</span><span>Choosing an identifier</span></li>
-          <li><span class="dn">F4.07.2</span><span>The Snowflake bigint</span></li>
-          <li><span class="dn">F4.07.3</span><span>Branded ids</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/persistence">
-        <div class="top"><span class="num">F4.08</span><span class="pill built">built</span></div>
-        <p class="t">Branded ids &amp; persistence</p>
-        <p class="o">Branded ids as keys in SQLite, PostgreSQL, and Redis.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.08.1</span><span>Branded ids as keys</span></li>
-          <li><span class="dn">F4.08.2</span><span>SQLite &amp; PostgreSQL</span></li>
-          <li><span class="dn">F4.08.3</span><span>Redis keys</span></li>
-        </ul>
-      </a>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.09</span><span class="pill planned">planned</span></div>
-        <p class="t">Branded CHAMP maps &amp; GenServer</p>
-        <p class="o">A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.09.1</span><span>Namespace-prefix partitioning</span></li>
-          <li><span class="dn">F4.09.2</span><span>The BrandedChamp trie</span></li>
-          <li><span class="dn">F4.09.3</span><span>A BrandedChamp GenServer</span></li>
-        </ul>
+<span class="fn sage">Portal.Id</span>.<span class="fn">brand</span>(<span class="str">"USR"</span>, user.id)   <span class="cmt"># => "USR0NbWMtkosp8"  (only at the edge)</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">F4.07 &middot; the id</p>
+        <p>A 64-bit integer with a branded, base62 wire form.</p>
       </div>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.10</span><span class="pill planned">planned</span></div>
-        <p class="t">Practical recipes in Elixir</p>
-        <p class="o">Turning algorithmic problems into idiomatic Elixir.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.10.1</span><span>Idiomatic patterns</span></li>
-          <li><span class="dn">F4.10.2</span><span>Streams &amp; pipelines</span></li>
-          <li><span class="dn">F4.10.3</span><span>Profiling &amp; complexity</span></li>
-        </ul>
-      </div>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.11</span><span class="pill planned">planned</span></div>
-        <p class="t">Dynamic programming &amp; advanced problems</p>
-        <p class="o">Overlapping subproblems, memoized and tabulated.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.11.1</span><span>Memoization &amp; overlapping subproblems</span></li>
-          <li><span class="dn">F4.11.2</span><span>Tabulation &amp; bottom-up</span></li>
-          <li><span class="dn">F4.11.3</span><span>Classic DP problems</span></li>
-        </ul>
-      </div>
-      <div class="mod is-quiet lab">
-        <div class="top"><span class="num">F4.12</span><span class="pill planned">planned</span></div>
-        <p class="t">Lab: build a branded CHAMP store</p>
-        <p class="o">An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.12.1</span><span>Watch a branded CHAMP grow</span></li>
-          <li><span class="dn">F4.12.2</span><span>A Snowflake registry</span></li>
-          <li><span class="dn">F4.12.3</span><span>Query by time range</span></li>
-        </ul>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">F4.08.1 &middot; the stored key</p>
+        <p>Persist the integer as a bigint PK; brand it only when it leaves the system.</p>
       </div>
     </div>
+    <p class="note">Next: <a href="/elixir/algorithms/persistence/sql"><strong>SQLite &amp; PostgreSQL</strong></a>
+      &mdash; how the same integer key range-queries by time without a <code class="inl">created_at</code> column.</p>
+  </section>
 
-    <p class="note">Begin with <a href="/elixir/algorithms/lists"><strong>F4.01 &mdash; Lists, recursion &amp;
-      complexity</strong></a>. The chapter builds toward the branded CHAMP map, so the early modules on cost and
-      hashing pay off directly in the persistent-map spine.</p>
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://www.sqlite.org/datatype3.html">SQLite &mdash; Datatypes</a> &mdash; the INTEGER storage class for a 64-bit key.</li>
+        <li><a href="https://www.postgresql.org/docs/current/datatype-numeric.html">PostgreSQL &mdash; Numeric Types</a> &mdash; <code>bigint</code>, eight bytes, indexed and compared cheaply.</li>
+        <li><a href="https://hexdocs.pm/ecto/Ecto.Schema.html">Ecto.Schema</a> &mdash; defining the integer primary key in Elixir.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/persistence">F4.08 &middot; Branded ids &amp; persistence</a> &mdash; the module hub.</li>
+        <li><a href="/elixir/algorithms/identifiers">F4.07 &middot; Identifiers, Snowflake &amp; branded ids</a> &mdash; the id being stored.</li>
+        <li><a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a></li>
+      </ul>
+    </div>
   </section>
 
   <section>
-    <nav class="pager" aria-label="Chapter navigation">
-      <a class="btn ghost" href="/elixir/language"><span aria-hidden="true">&larr;</span>&nbsp; F3 &middot; The Elixir Language</a>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/persistence"><span aria-hidden="true">&larr;</span>&nbsp; F4.08 &middot; persistence</a>
       <span class="spacer"></span>
-      <a class="btn" href="/elixir/algorithms/lists">Start &middot; F4.01 lists <span aria-hidden="true">&rarr;</span></a>
+      <a class="btn" href="/elixir/algorithms/persistence/sql">Next &middot; SQLite &amp; PostgreSQL <span aria-hidden="true">&rarr;</span></a>
     </nav>
   </section>
 
@@ -558,15 +458,15 @@ pre.code .step{color:var(--cream-dim)}
   <div class="wrap">
     <p class="colophon">Built with the jonnify dark-editorial design system. Every page carries a branded
       <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
-      It is the same id convention the branded CHAMP map uses as a pivot key.</p>
+      It is the same id convention used as a cross-system pivot key throughout the course.</p>
     <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
-      build <span class="id" id="stampId">TSK0NcV2vhoCS8</span>
+      build <span class="id" id="stampId">TSK0NcaQMsSA6a</span>
       <dl class="panel">
         <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
         <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
         <dt>node</dt><dd id="st-node">&mdash;</dd>
         <dt>seq</dt><dd id="st-seq">&mdash;</dd>
-        <dt>timestamp</dt><dd id="st-ts">2026-06-01 08:49:06 UTC</dd>
+        <dt>timestamp</dt><dd id="st-ts">2026-06-01 10:04:21 UTC</dd>
       </dl>
     </div>
   </div>
@@ -575,17 +475,73 @@ pre.code .step{color:var(--cream-dim)}
 <script>
 (function () {
   "use strict";
+  var SAGE = '#a7c9b1', BLUE = '#9fc0ea', GOLD = '#f0cd7f';
+  function set(id, attr, v) { var e = document.getElementById(id); if (e) e.setAttribute(attr, String(v)); }
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   var EPOCH_MS = 1704067200000;
+  var SNOW = 319545566822428714n;
+  var NS = "USR";
+  function b62encode(n) { if (n === 0n) return "0".padStart(11, "0"); var s = ""; while (n > 0n) { s = B62.charAt(Number(n % 62n)) + s; n = n / 62n; } return s.padStart(11, "0"); }
   function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
   function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  var PAY = b62encode(SNOW), WIRE = NS + PAY;
+  var d = new Date(Number(SNOW >> 22n) + EPOCH_MS);
+  var TSTR = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+
+  var CASES = {
+    integer: {
+      intHi: 0.10, strHi: 0, idx: 0,
+      caption: 'the database stores the 64-bit integer, not the string', captionFill: SAGE,
+      role: 'the stored primary key', roleFill: SAGE,
+      result: '8 bytes', resultFill: '#e8e2d0',
+      code: '<span class="cmt"># the column value — a bigint Snowflake</span>\nid = <span class="res">' + SNOW.toString() + '</span>\n<span class="cmt"># 8 bytes, sorts numerically, and decodes to ' + TSTR + '</span>',
+      out: 'The stored key is the <b style="color:var(--sage-bright)">64-bit integer</b> <code class="inl">' + SNOW.toString() + '</code> &mdash; eight bytes that compare in one instruction and, because time is in the high bits, sort by creation time on their own.'
+    },
+    string: {
+      intHi: 0, strHi: 0.10, idx: 0,
+      caption: 'the branded string is derived for the wire, then discarded', captionFill: BLUE,
+      role: 'the branded wire form', roleFill: BLUE,
+      result: '14 chars (derived)', resultFill: '#e8e2d0',
+      code: '<span class="cmt"># branded at the edge — a pure function of the integer</span>\n<span class="fn sage">Portal.Id</span>.<span class="fn">brand</span>(<span class="str">"' + NS + '"</span>, <span class="res">' + SNOW.toString() + '</span>)\n<span class="cmt"># => "' + WIRE + '"  (computed on the way out, not stored)</span>',
+      out: 'The <b style="color:var(--blue-bright)">wire form</b> <code class="inl">' + WIRE + '</code> is base62 of the same integer with a namespace prepended. It is computed at the edge and never persisted &mdash; storing it would double the key width and lose numeric order.'
+    },
+    index: {
+      intHi: 0, strHi: 0, idx: 1,
+      caption: 'a B-tree index on the integer answers a lookup in O(log n)', captionFill: GOLD,
+      role: 'the primary-key index', roleFill: GOLD,
+      result: 'O(log n) lookup', resultFill: '#e8e2d0',
+      code: '<span class="cmt"># the PK index turns an id into a row in logarithmic time</span>\n<span class="op">SELECT</span> * <span class="op">FROM</span> users <span class="op">WHERE</span> id = <span class="res">' + SNOW.toString() + '</span>\n<span class="cmt"># one B-tree descent — and the same index serves time ranges (next dive)</span>',
+      out: 'A <b style="color:var(--gold-bright)">B-tree index</b> on the bigint locates the row in <code class="inl">O(log n)</code>. Because ids are time-ordered, that one index also serves range scans by time, so no separate timestamp index is needed.'
+    }
+  };
+  function pick(k) {
+    var c = CASES[k]; if (!c) return;
+    document.querySelectorAll('#keSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    set('keIntHi', 'fill-opacity', c.intHi);
+    set('keStrHi', 'fill-opacity', c.strHi);
+    set('keIdx', 'opacity', c.idx);
+    var t;
+    t = document.getElementById('keCaption'); if (t) { t.textContent = c.caption; t.setAttribute('fill', c.captionFill); }
+    t = document.getElementById('keRole'); if (t) { t.textContent = c.role; t.style.color = c.roleFill; }
+    t = document.getElementById('keResult'); if (t) { t.textContent = c.result; t.style.color = c.resultFill; }
+    t = document.getElementById('keCode'); if (t) t.innerHTML = c.code;
+    t = document.getElementById('keOut'); if (t) t.innerHTML = c.out;
+  }
+  document.querySelectorAll('#keSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('integer');
+
+  /* ---------- Branded Snowflake decoder ---------- */
   function decodeBranded(id) {
     if (!id || id.length < 4) return null;
     var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
     if (snow === null) return null;
     var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
-    var d = new Date(Number(ts) + EPOCH_MS);
-    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    var dt = new Date(Number(ts) + EPOCH_MS);
+    var tstr = dt.getUTCFullYear() + '-' + pad2(dt.getUTCMonth() + 1) + '-' + pad2(dt.getUTCDate()) + ' ' + pad2(dt.getUTCHours()) + ':' + pad2(dt.getUTCMinutes()) + ':' + pad2(dt.getUTCSeconds()) + ' UTC';
     return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
   }
   var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');

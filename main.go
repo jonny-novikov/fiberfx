@@ -53,6 +53,9 @@ var (
 	// image; served as-is at /sitemap.xml and /robots.txt.
 	sitemapXML = "/app/sitemap.xml"
 	robotsTxt  = "/app/robots.txt"
+	// llms.txt — the llmstxt.org site map for LLMs/agents (a markdown body served as
+	// text/plain so it renders inline in a browser). LLMS_TXT env-overridable.
+	llmsTxt = "/app/llms.txt"
 )
 
 // errorPages caches the custom HTML error pages by HTTP status code, loaded
@@ -115,6 +118,9 @@ func main() {
 	if path := os.Getenv("ROBOTS_TXT"); path != "" {
 		robotsTxt = path
 	}
+	if path := os.Getenv("LLMS_TXT"); path != "" {
+		llmsTxt = path
+	}
 
 	// Load styled error pages into memory once (env overrides are already applied).
 	errorPages = loadErrorPages(errorDir)
@@ -169,6 +175,17 @@ func main() {
 		c.Set("Content-Type", "text/plain; charset=utf-8")
 		c.Set("Cache-Control", "public, max-age=3600, must-revalidate")
 		return c.SendFile(robotsTxt)
+	})
+	// llms.txt — the llmstxt.org convention: a markdown map of the site for LLMs and
+	// agents. Served as text/plain; charset=utf-8 (like robots.txt) so it renders
+	// inline rather than downloading, and crawlers read it verbatim.
+	app.Get("/llms.txt", func(c *fiber.Ctx) error {
+		if _, err := os.Stat(llmsTxt); err != nil {
+			return fiber.NewError(fiber.StatusNotFound, "llms.txt not found")
+		}
+		c.Set("Content-Type", "text/plain; charset=utf-8")
+		c.Set("Cache-Control", "public, max-age=3600, must-revalidate")
+		return c.SendFile(llmsTxt)
 	})
 
 	// Serve index.html at root

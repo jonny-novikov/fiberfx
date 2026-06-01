@@ -120,7 +120,7 @@ var Modules = map[string][]Module{
 		{N: "F4.05", Title: "Hash Array Mapped Tries (HAMT)", One: "Persistent maps via prefix trees.", Slug: "hamt", Status: "built"},
 		{N: "F4.06", Title: "CHAMP maps", One: "Compressed HAMT trees; layout & iteration.", Slug: "champ", Status: "built"},
 		{N: "F4.07", Title: "Identifiers, Snowflake & branded ids", One: "From naive ids to a Snowflake bigint and a branded, base62 id.", Slug: "identifiers", Status: "built"},
-		{N: "F4.08", Title: "Branded ids & persistence", One: "Branded ids as keys in SQLite, PostgreSQL, and Redis.", Slug: "persistence", Status: "planned"},
+		{N: "F4.08", Title: "Branded ids & persistence", One: "Branded ids as keys in SQLite, PostgreSQL, and Redis.", Slug: "persistence", Status: "built"},
 		{N: "F4.09", Title: "Branded CHAMP maps & GenServer", One: "A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.", Slug: "branded-champ", Status: "planned"},
 		{N: "F4.10", Title: "Practical recipes in Elixir", One: "Turning algorithmic problems into idiomatic Elixir.", Slug: "recipes", Status: "planned"},
 		{N: "F4.11", Title: "Dynamic programming & advanced problems", One: "Overlapping subproblems, memoized and tabulated.", Slug: "dynamic-programming", Status: "planned"},
@@ -248,6 +248,11 @@ var Subpages = map[string][]Subpage{
 		{"snowflake", "The Snowflake bigint", "A Snowflake packs three fields into 64 bits: a 42-bit millisecond timestamp from a custom 2024 e"},
 		{"branded", "Branded ids", "A branded id encodes the 64-bit Snowflake in base62 over 0-9A-Za-z, left-pads it to eleven chara"},
 		{"choosing", "Choosing an identifier", "An auto-increment counter is ordered and tiny but needs one writer, so it cannot scale across ma"},
+	},
+	"F4.08": {
+		{"keys", "Branded ids as keys", "The database stores the 64-bit integer as a bigint primary key — eight bytes, numerically ordere"},
+		{"redis", "Redis keys", "In Redis the id is a namespaced string key, user:USR0NbWMtkosp8."},
+		{"sql", "SQLite & PostgreSQL", "Because the high bits of the id are a timestamp, a window of time is a contiguous window of ids:"},
 	},
 }
 
