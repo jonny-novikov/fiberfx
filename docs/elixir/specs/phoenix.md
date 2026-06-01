@@ -79,7 +79,7 @@ Phoenix contexts and how they relate to the F5 facade rather than duplicate it; 
 
 Server-rendered markup: templates and assigns, function components and slots, forms and inputs.
 
-### F6.06 · Phoenix LiveView fundamentals
+### F6.06 · Phoenix LiveView fundamentals → [guide](f6-06-liveview.md)
 
 Interactive UIs with no hand-written JavaScript: `mount` loads state from a query, `handle_event` issues a command,
 `render` draws from assigns — all over the facade.
@@ -110,8 +110,10 @@ Run each module's build prompts in order; each lives in its module guide.
    port · cross-context composition through public APIs · a `with` orchestration returning one closed error · verify.
 5. `f6-05` — The index template over assigns · the course_card function component · compose it and add a slot wrapper ·
    a changeset-backed form · create with inline errors · verify the view layer.
-6. `f6-06` … `f6-08` — LiveView, PubSub, and deployment (companion HTML modules).
-7. `f6-09` — assemble the live dashboard over a socket, broadcast to many clients.
+6. `f6-06` — The CatalogLive LiveView · a live search box on phx-change · a live create form on phx-submit · side
+   effects only on the live connection · streams for a large list · verify the LiveView.
+7. `f6-07` … `f6-08` — PubSub and deployment (companion HTML modules).
+8. `f6-09` — assemble the live dashboard over a socket, broadcast to many clients.
 
 After F6 the headless engine from F5 is a deployed, real-time learning platform, and everything below the facade is
 unchanged from F5.

@@ -994,6 +994,87 @@ facade behind a LiveView sketch and hand a UI-ready boundary to F6, the Phoenix 
   `ONLY="F6"` now reports **183 desktop + 40 mobile = 223 PASS, 0 FAIL, 0 images** (20 F6 pages). Docs regenerated:
   course-md **voice CLEAN, 4 mermaid** (F6.04 sub-rows now ●); refs **59 / 59**, voice CLEAN.
 
+## F6.05 — fifth module built at the deeper standard (HEEx, the view layer)
+
+- **F6.05 &middot; Templates, components &amp; HEEx** is built to the deeper standard (four sections per dive, two
+  SVGs + two `pre.code` each, reference-grounded prose, real-world code, an anti-pattern pair). `MODULES["F6"]` F6.05 +
+  its three dives flipped to `built`; `SUBPAGES["F6.05"]` added; four PAGES entries (`heex.html`,
+  `heex-templates.html`, `heex-components.html`, `heex-forms.html`). Routes 184 &rarr; **188**, PAGES 183 &rarr;
+  **187**, module tally **53 built / 4 planned**.
+  - **Hub** (`content/f6-05-heex.html`, prefix `hx`): a template/component/form selector + a **view-pipeline diagram**
+    (facade &rarr; assigns &rarr; HEEx template w/ `&lt;.course_card&gt;` &rarr; HTML) + three dive cards + an
+    F6.01-returns-a-response &harr; F6.05-renders-it bridge + **hub References** (Phoenix.Component, the components
+    guide, Phoenix.HTML.Form, form bindings). Framing: HEEx is the view half of the request the controller returns; a
+    template renders data the contexts expose, never the database.
+  - **F6.05.1 &middot; Templates &amp; assigns** (`tp`): interpolation / `:for` / `:if` selector + an
+    @courses&rarr;`:for`&rarr;rendered-list diagram + a real HEEx index template (escaped) + a controller-assign
+    (RIGHT) vs in-template-query (WRONG) pair. Auto-escaping and `~p` verified links covered.
+  - **F6.05.2 &middot; Function components &amp; slots** (`fc`): `attr` / `slot` / `render_slot` selector + a
+    component-interface diagram (attrs + slot &rarr; component &rarr; markup) + a real `course_card` component
+    (`attr`/`~H`) + composing it with `:for` plus a `panel` slot-wrapper using `render_slot/1`.
+  - **F6.05.3 &middot; Forms &amp; inputs** (`fm`): `to_form` / `&lt;.form&gt;` / `&lt;.input&gt;` selector + a
+    form-round-trip diagram (changeset &rarr; form &rarr; submit &rarr; context &rarr; ok|errors, with an error
+    feedback arrow) + a changeset-backed `&lt;.form&gt;`/`&lt;.input&gt;` (escaped) + the `create` action that
+    redirects on `{:ok}` and re-renders inline F6.03 errors on `{:error, changeset}`. Selector labels use raw `&lt;`
+    escaped to `&amp;lt;`; the readout escapes names via `.replace(/</g,'&amp;lt;')`. (A brace bug in the
+    `pick()` function was found and fixed.) Dives carry no References; two SVGs + two `pre.code` each. **All HEEx code
+    blocks fully escape every `&lt;`/`&gt;`** (incl. `&lt;%!-- --%&gt;`, the `:for` `&lt;-`, `&lt;.link&gt;`,
+    `&lt;.form&gt;`, `&lt;.input&gt;`, `&lt;article&gt;`); the in-code raw-`&lt;` sweep is 0.
+- **Landing**: the F6.05 tile is now a linkable `<a class="mod" href="/elixir/phoenix/heex">` with a `built` pill;
+  intro/arc prose updated to &ldquo;F6.01&ndash;F6.05 are built&rdquo;.
+- **Build guide**: `build-guide/f6-05-heex.md` is deep &mdash; Concepts, Specs tables, Build it (with `heex`/`elixir`
+  fences), and **six robust copy-paste prompts** (index template over assigns, the `course_card` component, compose +
+  slot wrapper, changeset-backed form, create-with-inline-errors, verify the view layer), plus Definition of done and
+  Next&rarr;F6.06. `build-guide/phoenix.md` updated: F6.05 entry links the guide and the global sequence lists `f6-05`
+  separately (numbering corrected). All guides voice-clean.
+- **All five pages Apollo A+** (hub + 3 dives + landing); `node --check` clean on each (incl. the fixed `pick()`); REF
+  URLs `200`. **Validator**: an `F6.05` desktop block (hub piece&rarr;role, and one per dive) + 390px mobile entries
+  for all four pages. `ONLY="F6"` now reports **219 desktop + 48 mobile = 267 PASS, 0 FAIL, 0 images** (24 F6 pages).
+  Docs regenerated: course-md **voice CLEAN, 4 mermaid** (F6.05 sub-rows now ●); refs **59 / 59**, voice CLEAN.
+
+## F6.06 — sixth module built at the deeper standard (LiveView)
+
+- **F6.06 &middot; Phoenix LiveView fundamentals** is built to the deeper standard (four sections per dive, two SVGs +
+  two `pre.code` each, reference-grounded prose, real-world code, an anti-pattern/contrast pair). `MODULES["F6"]` F6.06
+  + its three dives flipped to `built`; `SUBPAGES["F6.06"]` added; four PAGES entries (`liveview.html`,
+  `liveview-mount.html`, `liveview-events.html`, `liveview-render.html`). Routes 188 &rarr; **192**, PAGES 187 &rarr;
+  **191**, module tally **54 built / 3 planned**.
+  - **Hub** (`content/f6-06-liveview.html`, prefix `lv`): a mount/event/render selector + a **stateless-request vs
+    stateful-LiveView contrast diagram** (controller request closes vs a LiveView process holding state and trading
+    diffs over a socket) + three dive cards + an F5-gave-us-OTP-processes &harr; LiveView-is-that-actor bridge +
+    **hub References** (LiveView Welcome, Phoenix.LiveView, bindings, assigns &amp; change tracking). Framing: a
+    LiveView is an OTP process (like the F5 GenServers) holding socket assigns, rendering the F6.05 HEEx, pushing
+    diffs; data still comes from the F6.04 contexts.
+  - **F6.06.1 &middot; mount &amp; assigns** (`mt`): a socket / `assign/3` / `connected?/1` selector + a **two-stage
+    mount diagram** (disconnected HTTP paint &rarr; connected WebSocket process &rarr; render loop) + a real
+    `PortalWeb.CatalogLive` with `mount/3` + `render/1` (HEEx escaped) + a `connected?/1` side-effect guard
+    (subscribe only on the live connection).
+  - **F6.06.2 &middot; handle_event &amp; state** (`ev`): a `phx-click` / `phx-change` / `phx-submit` selector + an
+    **event-loop diagram** (browser &rarr; socket &rarr; `handle_event` &rarr; assign &rarr; re-render &rarr; diff
+    back) + a live search box (`phx-change` &rarr; `handle_event` filtering through the context, HEEx escaped) + a
+    live create `handle_event` (`phx-submit` &rarr; `Portal.create_course/1`, flash on `{:ok}` / `to_form` errors on
+    `{:error}`). Reuses the F6.04 context and F6.03 changeset unchanged, over a socket instead of a request.
+  - **F6.06.3 &middot; render &amp; diffs** (`rd`): a static / dynamic / diff selector + a **change-tracking diagram**
+    (first render full payload vs an update where only `count` 41&rarr;42 sends one positional hole, the static shell
+    and unchanged list skipped) + a `render/1` with `{@count}` + `{course.title}` explaining what re-sends + **streams**
+    (`stream/3` + `stream_insert/3` + `phx-update="stream"` + `@streams.courses`, HEEx escaped) for large,
+    append-only lists. Completes the module &rarr; F6.07. Dives carry no References; two SVGs + two `pre.code` each.
+    **All HEEx code blocks fully escape every `&lt;`/`&gt;`** (incl. `&lt;%!-- --%&gt;`, the `:for` `&lt;-`,
+    `&lt;.course_card&gt;`, `&lt;form&gt;`, `&lt;input&gt;`, `phx-update`, the `{{dom_id, course}}` stream tuple); the
+    in-code raw-`&lt;` sweep is 0. (Five voice hits &mdash; &ldquo;just&rdquo;&times;4 and &ldquo;simply&rdquo;, one
+    inside an svg aria-label &mdash; were caught and replaced with &ldquo;only&rdquo;/removed.)
+- **Landing**: the F6.06 tile is now a linkable `<a class="mod" href="/elixir/phoenix/liveview">` with a `built` pill;
+  intro/arc prose updated to &ldquo;F6.01&ndash;F6.06 are built&rdquo;.
+- **Build guide**: `build-guide/f6-06-liveview.md` is deep &mdash; Concepts, Specs tables, Build it (with `elixir`
+  fences), and **six robust copy-paste prompts** (the CatalogLive LiveView, a live search box, a live create form,
+  side effects only on the live connection, streams, verify), plus Definition of done and Next&rarr;F6.07.
+  `build-guide/phoenix.md` updated: F6.06 entry links the guide and the global sequence lists `f6-06` separately
+  (numbering corrected). All guides voice-clean.
+- **All five pages Apollo A+** (hub + 3 dives + landing); `node --check` clean on each; REF URLs `200`. **Validator**:
+  an `F6.06` desktop block (hub callback&rarr;role, and one per dive) + 390px mobile entries for all four pages.
+  `ONLY="F6"` now reports **255 desktop + 56 mobile = 311 PASS, 0 FAIL, 0 images** (28 F6 pages). Docs regenerated:
+  course-md **voice CLEAN, 4 mermaid** (F6.06 sub-rows now ●); refs **59 / 59**, voice CLEAN.
+
 
 
 **Deployment (not authoring), unchanged and now slightly larger:** the site-wide `/elixir` home and the
@@ -1026,17 +1107,17 @@ What a resuming agent should know, condensed:
    `build-guide/f5-09-engine-lab.md`, a spec whose copy-paste build prompts generate the Portal logic). **The F5
    chapter is now module-complete: all nine modules + three design subpages + the landing are built**, with REFS and
    `A`-map abstracts keyed by module `n`. **F6 (Phoenix) is under construction**: the chapter is `live` with a landing
-   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01 through F6.04 are
-   built** &mdash; each a hub + three dives (`/elixir/phoenix/lifecycle`, `/routing`, `/ecto`, and `/contexts` + their
-   three dive slugs) with `build-guide/f6-01-lifecycle.md` through `f6-04-contexts.md` prompts. **F6.04 onward follows a
-   deeper standard** (four sections per dive, two SVGs + two code blocks, reference-grounded prose, real-world
-   examples); the F6.01&ndash;F6.03 build guides were enriched with real-world examples and extra robust prompts, and
-   their HTML dives remain available to deepen to the same bar as a follow-up. Every F6 module carries its three dives
-   in the manifest, so the landing tiles and course-md show the whole chapter plan; F6.05 (HEEx &amp; components) is the
-   next module.
-   `allowed_routes()` returns **184** link routes; only built/live routes are linkable
-   (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter subpages, and F6.01&ndash;F6.04
-   with their dives are; **the planned F6.05&ndash;F6.09 module and dive routes are not**), external `https://` links
+   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01 through F6.06 are
+   built** &mdash; each a hub + three dives (`/elixir/phoenix/lifecycle`, `/routing`, `/ecto`, `/contexts`, `/heex`, and
+   `/liveview` + their three dive slugs) with `build-guide/f6-01-lifecycle.md` through `f6-06-liveview.md` prompts.
+   **F6.04 onward follows a deeper standard** (four sections per dive, two SVGs + two code blocks, reference-grounded
+   prose, real-world examples; HEEx code blocks fully escape every `&lt;`/`&gt;`); the F6.01&ndash;F6.03 build guides
+   were enriched with real-world examples and extra robust prompts, and their HTML dives remain available to deepen to
+   the same bar as a follow-up. Every F6 module carries its three dives in the manifest, so the landing tiles and
+   course-md show the whole chapter plan; F6.07 (PubSub &amp; real-time) is the next module.
+   `allowed_routes()` returns **192** link routes; only built/live routes are linkable
+   (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter subpages, and F6.01&ndash;F6.06
+   with their dives are; **the planned F6.07&ndash;F6.09 module and dive routes are not**), external `https://` links
    are exempt.
 2. Rebuild any page with `python3 build_page.py build --page KEY`, grade with `check OUT.html` (nine gates + A+),
    regenerate `_head.html` with `extract-head` after editing `HEAD_CSS`. The voice gate scans all visible text

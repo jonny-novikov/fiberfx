@@ -248,7 +248,7 @@ MODULES = {
         dict(n="F6.03", title="Ecto: schemas, changesets & queries", one="Data, validation, the repo.", slug="ecto", status="built", lab=False),
         dict(n="F6.04", title="Contexts & domain design", one="Boundaries that scale.", slug="contexts", status="built", lab=False),
         dict(n="F6.05", title="Templates, components & HEEx", one="Server-rendered markup.", slug="heex", status="built", lab=False),
-        dict(n="F6.06", title="Phoenix LiveView fundamentals", one="Interactive UIs without hand-written JS.", slug="liveview", status="planned", lab=False),
+        dict(n="F6.06", title="Phoenix LiveView fundamentals", one="Interactive UIs without hand-written JS.", slug="liveview", status="built", lab=False),
         dict(n="F6.07", title="PubSub, channels & real-time", one="Live updates over WebSockets.", slug="pubsub", status="planned", lab=False),
         dict(n="F6.08", title="Auth, deployment & going live", one="Sessions, releases, production.", slug="deployment", status="planned", lab=False),
         dict(n="F6.09", title="The live dashboard", one="Real-time LiveView state over a socket; multi-client via PubSub.", slug="live-dashboard", status="planned", lab=True),
@@ -451,6 +451,11 @@ SUBPAGES = {
         dict(slug='components', title='Function components & slots', one='A function component is a pure function from assigns to markup, declared with attr and slot so i'),
         dict(slug='forms', title='Forms & inputs', one='A form is a changeset turned into a form with to_form/1.'),
         dict(slug='templates', title='Templates & assigns', one='A HEEx template renders the assigns a controller set — @courses, @course — using :for and :if as'),
+    ],
+    "F6.06": [
+        dict(slug='mount', title='mount & assigns', one='A LiveView is a stateful process connected to the browser over a socket.'),
+        dict(slug='events', title='handle_event & state', one='Bindings like phx-click, phx-change, and phx-submit send events to handle_event/3, which transfo'),
+        dict(slug='render', title='render & diffs', one='render/1 returns HEEx from the assigns, and LiveView tracks which assigns changed to send only t'),
     ],
 }
 
