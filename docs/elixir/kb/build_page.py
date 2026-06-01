@@ -224,7 +224,7 @@ MODULES = {
         dict(n="F4.04", title="Maps, sets & hashing", one="Hash maps, collisions, the cost model.", slug="maps", status="built", lab=False),
         dict(n="F4.05", title="Hash Array Mapped Tries (HAMT)", one="Persistent maps via prefix trees.", slug="hamt", status="built", lab=False),
         dict(n="F4.06", title="CHAMP maps", one="Compressed Hash-Array Mapped Prefix-trees; layout & iteration.", slug="champ", status="built", lab=False),
-        dict(n="F4.07", title="Identifiers, Snowflake & branded ids", one="From naive ids to a Snowflake bigint and a branded, base62 id.", slug="identifiers", status="planned", lab=False),
+        dict(n="F4.07", title="Identifiers, Snowflake & branded ids", one="From naive ids to a Snowflake bigint and a branded, base62 id.", slug="identifiers", status="built", lab=False),
         dict(n="F4.08", title="Branded ids & persistence", one="Branded ids as keys in SQLite, PostgreSQL, and Redis.", slug="persistence", status="planned", lab=False),
         dict(n="F4.09", title="Branded CHAMP maps & GenServer", one="A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.", slug="branded-champ", status="planned", lab=False),
         dict(n="F4.10", title="Practical recipes in Elixir", one="Turning algorithmic problems into idiomatic Elixir.", slug="recipes", status="planned", lab=False),
@@ -351,6 +351,10 @@ SUBPAGES = {
         dict(slug='bitmap', title='Bitmapped nodes', one='A HAMT node keeps one 32-bit bitmap marking which of its slots are occupied and one packed array'),
         dict(slug='indexing', title='Hash-prefix indexing', one="A HAMT reads the key's hash in five-bit chunks from the low end: level 0 reads bits 0-4, level 1"),
         dict(slug='sharing', title='Structural sharing', one='An insert builds new nodes only along the path from the root to the changed leaf and shares ever'),
+    ],
+    "F4.07": [
+        dict(slug='snowflake', title='The Snowflake bigint', one='A Snowflake packs three fields into 64 bits: a 42-bit millisecond timestamp from a custom 2024 e'),
+        dict(slug='branded', title='Branded ids', one='A branded id encodes the 64-bit Snowflake in base62 over 0-9A-Za-z, left-pads it to eleven chara'),
     ],
 }
 

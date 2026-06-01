@@ -50,8 +50,8 @@ The attached guide was unpacked, verified safe, and stood up as a working toolki
 
 Scope is six numbered chapters; five carry nine modules and F4 now carries twelve (57 core), plus the optional
 two-part F0 history chapter.
-**35 modules are built in the manifest; 24 are planned.** Of the 99 registered page fragments, the whole of F3
-(9 modules) plus the F4 landing and F4.01, F4.02, F4.03, F4.04, F4.05, and F4.06 are authorable source in this working tree and were
+**36 modules are built in the manifest; 23 are planned.** Of the 103 registered page fragments, the whole of F3
+(9 modules) plus the F4 landing and F4.01, F4.02, F4.03, F4.04, F4.05, F4.06, and F4.07 are authorable source in this working tree and were
 validated A+ here. The earlier chapters (F0–F2 and F3.01–F3.03) are authored in the full repository and most are
 deployed; their source is not part of this working tree.
 
@@ -159,11 +159,13 @@ built (each a hub plus three dives; F4.02&ndash;F4.06 carry an advanced section 
 built &mdash; a hub plus three dives (bitmap / indexing / sharing), each with an advanced section &mdash; closing the
 gap before **F4.06 (CHAMP maps)**, so F4.06&rsquo;s hub pager now points back to `/elixir/algorithms/hamt` and the
 F4.04 &rarr; F4.05 and F4.06 &rarr; F4.05 references are linked. **The chapter was then restructured from nine
-modules to twelve**: F4.07&ndash;F4.12 are planned, and each carries a three-dive roadmap in the manifest so the
-navigation shows the whole path. The five-module **persistent-map spine** is now F4.05&ndash;F4.09 (HAMT &rarr;
-CHAMP &rarr; **identifiers, Snowflake &amp; branded ids** &rarr; **branded ids &amp; persistence** &rarr; **branded
-CHAMP maps &amp; GenServer**), followed by practical recipes (F4.10), dynamic programming (F4.11), and a lab that
-builds a branded CHAMP store (F4.12, three dives). The id, persistence, and branded-CHAMP modules give the branded
+modules to twelve**, and **F4.07 (Identifiers, Snowflake &amp; branded ids)** is now built &mdash; a hub plus three
+dives (choosing / snowflake / branded), each with an advanced section and a References block &mdash; so F4.06&rsquo;s
+&ldquo;next module&rdquo; notes now link it. F4.08&ndash;F4.12 remain planned, each carrying a three-dive roadmap in
+the manifest so the navigation shows the whole path. The five-module **persistent-map spine** is F4.05&ndash;F4.09
+(HAMT &rarr; CHAMP &rarr; **identifiers, Snowflake &amp; branded ids** &rarr; **branded ids &amp; persistence** &rarr;
+**branded CHAMP maps &amp; GenServer**), followed by practical recipes (F4.10), dynamic programming (F4.11), and a lab
+that builds a branded CHAMP store (F4.12, three dives). The id, persistence, and branded-CHAMP modules give the branded
 Snowflake / trie convention used across the course its own modules; **F4.05.2 was renamed from slug `index` to
 `indexing`** so its route (`/elixir/algorithms/hamt/indexing`) does not collide with an `index.html` when the site
 is served statically.
@@ -244,7 +246,10 @@ F4.06 build precedent.
 | ↳ F4.06.1 Compressed node layout | `/elixir/algorithms/champ/layout` | built | planned | **yes** | **yes** |
 | ↳ F4.06.2 Cache-friendly iteration | `/elixir/algorithms/champ/iteration` | built | planned | **yes** | **yes** |
 | ↳ F4.06.3 Canonical equality | `/elixir/algorithms/champ/equality` | built | planned | **yes** | **yes** |
-| F4.07 Identifiers, Snowflake & branded ids (+ 3 dives) | `/elixir/algorithms/identifiers` | planned | planned | — | — |
+| **F4.07 Identifiers, Snowflake & branded ids (hub)** | `/elixir/algorithms/identifiers` | built | planned | **yes** | **yes** |
+| ↳ F4.07.1 Choosing an identifier | `/elixir/algorithms/identifiers/choosing` | built | planned | **yes** | **yes** |
+| ↳ F4.07.2 The Snowflake bigint | `/elixir/algorithms/identifiers/snowflake` | built | planned | **yes** | **yes** |
+| ↳ F4.07.3 Branded ids | `/elixir/algorithms/identifiers/branded` | built | planned | **yes** | **yes** |
 | F4.08 Branded ids & persistence (+ 3 dives) | `/elixir/algorithms/persistence` | planned | planned | — | — |
 | F4.09 Branded CHAMP maps & GenServer (+ 3 dives) | `/elixir/algorithms/branded-champ` | planned | planned | — | — |
 | F4.10 Practical recipes in Elixir (+ 3 dives) | `/elixir/algorithms/recipes` | planned | planned | — | — |
@@ -371,6 +376,20 @@ node --check (page JS)     ->  OK for hamt-indexing.html and all rebuilt pages
 routes                     ->  100 link routes unchanged (index→indexing is net-zero); planned identifiers/branded-champ/recipes/dynamic-programming/lab correctly absent from link routes
 suite.elixir.js ONLY=F4.05  ->  references /hamt-indexing.html (see Part-2 validation below)
 site-wide home (/elixir) + Contents (/elixir/course) module count 54→57: DEPLOY step — those fragments are not in this working tree
+
+# F4.07 authored (Identifiers, Snowflake & branded ids) + References-block convention
+NEW standing rule: every page carries a References section (.reveal, .refs: Sources + Related in this course)
+added .refs CSS to HEAD_CSS → extract-head → _head.html (8 rules); the builder-injected reveal observer makes .reveal degrade-safe
+authored content/f4-07-identifiers.html (hub) + f4-07-1-choosing / f4-07-2-snowflake / f4-07-3-branded (3 dives)
+each: single SVG, one teaching + one advanced section, sage accent, References block, branded decoder footer
+interactives compute the real operation: hub decodes TSK0KHTOWnGLuC live; choosing runs a real lexical sort (Snowflake/counter recover order, UUID does not); snowflake extracts ts/worker(7)/seq(42) by shift+mask; branded base62-encodes 319545566822428714 → 0NbWMtkosp8 → PGE0NbWMtkosp8 → decode round-trip
+promote F4.07 planned→built, added SUBPAGES (choosing, snowflake, branded) + 4 PAGES (identifiers*.html)
+relink f4-6 + f4-6-equality "next module" notes → /elixir/algorithms/identifiers (dropped "in production"); landing F4.07 card div→a, pill built (journey-SVG node left thematic)
+build f4-7 / f4-7-choosing / f4-7-snowflake / f4-7-branded + rebuilt f4-6 / f4-6-equality / f4-landing  ->  all Apollo A+ · 9/9 gates
+voice sweep  ->  clean (fixed one "just" in the branded dive); node --check  ->  OK for all four pages
+routes                     ->  104 link routes (was 100); F4.08 /algorithms/persistence correctly absent
+suite.elixir.js ONLY=F4.07  ->  34 PASS desktop + 8 PASS mobile · 0 FAIL · images embedded: 0
+_gen_course_md.py / _gen_refs_md.py  ->  regenerated; voice gate CLEAN; F4.07 shows built hub + 3 built dives; 59/59 modules carry references
 ```
 
 F4.03's pages are validated by deterministic select-and-read sequences over the sorted seven-element array: the
@@ -386,65 +405,68 @@ Apollo gates that passed, per page: `containers`, `svg`, `no-future`, `voice`, `
 
 ## Resume point and next actions
 
-**The F4 chapter is open; F4.01&ndash;F4.06 are complete.** The chapter is
-`live`, the landing (`/elixir/algorithms`) is built, and **F4.01&ndash;F4.06** each ship as a hub plus three dives.
-F4.02&ndash;F4.06 carry a dedicated advanced section on every page, all A+ and green in the validator (F4.04:
-45+8 = 53 PASS; F4.05: 44+8 = 52 PASS; F4.06: 46+8 = 54 PASS). The persistent-map spine is now continuous:
+**The F4 chapter is open; F4.01&ndash;F4.07 are complete.** The chapter is
+`live`, the landing (`/elixir/algorithms`) is built, and **F4.01&ndash;F4.07** each ship as a hub plus three dives.
+F4.02&ndash;F4.07 carry a dedicated advanced section on every page, all A+ and green in the validator (F4.04:
+45+8 = 53 PASS; F4.05: 44+8 = 52 PASS; F4.06: 46+8 = 54 PASS; F4.07: 34+8 = 42 PASS). Every page now also carries a
+**References** section (Sources + Related in this course), styled by `.refs` in `HEAD_CSS`. The persistent-map
+spine is now continuous:
 **F4.04** grounds maps/sets/hashing in the course&rsquo;s own page registry (a map keyed by branded `PGE`
 Snowflake ids, the route sets behind the links gate, `phash2` into a 32-way HAMT); **F4.05 (HAMT)** builds that
 32-way trie explicitly &mdash; one bitmap and one packed array per node, a 5-bit hash-chunk descent, and path-copy
 structural sharing; **F4.06 (CHAMP)** compresses the node into two bitmaps and two arrays for a canonical shape and
 cheap diffs. With F4.05 built, the F4.04 &rarr; F4.05 and F4.06 &rarr; F4.05 references are linked, the F4.06 hub
 back-pager points to `/elixir/algorithms/hamt`, and the F4 landing&rsquo;s F4.05 card is linkable (its journey-SVG
-node left thematic, per the F4.06 precedent). **The chapter was then restructured to twelve modules**
-(F4.07&ndash;F4.12 planned): the spine now extends through F4.05&ndash;F4.09 (HAMT, CHAMP, identifiers,
-persistence, branded CHAMP), with recipes (F4.10), dynamic programming (F4.11), and a branded-CHAMP lab (F4.12)
-after it. F4.05.2 was renamed slug `index`&rarr;`indexing` (route `/elixir/algorithms/hamt/indexing`) to avoid an
-`index.html` collision when serving statically. The chapter accent is sage; `.ex`/`code.inl` stay the global
-Elixir purple.
+node left thematic, per the F4.06 precedent). **The chapter was then restructured to twelve modules and F4.07
+(Identifiers, Snowflake &amp; branded ids) built**: a hub plus three dives (choosing / snowflake / branded) whose
+interactives decode a real branded id, run a real lexical sort, extract Snowflake fields by shift and mask, and
+base62-encode then decode a 64-bit integer. F4.08&ndash;F4.12 remain planned; the spine extends through
+F4.05&ndash;F4.09 (HAMT, CHAMP, identifiers, persistence, branded CHAMP), with recipes (F4.10), dynamic programming
+(F4.11), and a branded-CHAMP lab (F4.12) after it. F4.05.2 was renamed slug `index`&rarr;`indexing` (route
+`/elixir/algorithms/hamt/indexing`) to avoid an `index.html` collision when serving statically. The chapter accent
+is sage; `.ex`/`code.inl` stay the global Elixir purple.
 
-**Resume at F4.07 — Identifiers, Snowflake & branded ids** (`slug` "identifiers", route
-`/elixir/algorithms/identifiers`), the first of three id-and-persistence modules that lead to the branded CHAMP
-map. It is `planned` with a three-dive roadmap (choosing an identifier / the Snowflake bigint / branded ids), and
-builds directly on the saved `EchoData` implementation in `reference/echo_data/`: `EchoData.Snowflake`
-(42/10/12-bit layout, epoch 1704067200000) and `EchoData.Base62` (`0-9A-Za-z`, 11-char width), both matching the
-course decoder bit-for-bit. The bridge in is F4.04/F4.05 (a key&rsquo;s `phash2` and the trie that stores it); the
-worked id is the page registry&rsquo;s `PGE` / `TSK` branded ids. F4.08 (branded ids & persistence) and F4.09
-(branded CHAMP maps & GenServer) follow, then F4.10 recipes, F4.11 dynamic programming, and the F4.12 lab.
+**Resume at F4.08 — Branded ids & persistence** (`slug` "persistence", route
+`/elixir/algorithms/persistence`), the second of the three id-and-persistence modules. It is `planned` with a
+three-dive roadmap (branded ids as keys / SQLite & PostgreSQL / Redis keys). It builds on F4.07: a branded
+Snowflake stored as a 64-bit `bigint` column and indexed, range-queried by time without a separate timestamp
+column, or used as a namespaced Redis string key. The bridge in is F4.07 (the id itself); F4.09 (branded CHAMP
+maps & GenServer) then keys an in-memory CHAMP on the same id, partitioned by namespace, ahead of recipes (F4.10),
+dynamic programming (F4.11), and the F4.12 lab.
 
-Immediate steps for F4.07, in order:
+Immediate steps for F4.08, in order:
 
-1. Author the F4.07 hub + three dive subpages into `content/` (e.g. `f4-07-identifiers.html` + three dives:
-   choosing, snowflake, branded), following the page anatomy in `SKILL.md`, with an advanced section per page.
-   Ground them in `reference/echo_data/` &mdash; the dives walk from a naive/incrementing id to the Snowflake
-   bigint to the branded base62 form. Keep interactive element prefixes off `st` and unique per page.
-2. Promote F4.07 to `built`; the `dives` roadmap is already in the manifest — add `SUBPAGES["F4.07"]` and register
-   PAGES with unique output filenames (e.g. `identifiers*.html`). Confirm the route is
-   `/elixir/algorithms/identifiers`.
-3. Relink F4.06&rsquo;s "next module" references to F4.07 &mdash; they already name **F4.07 — Identifiers,
-   Snowflake & branded ids** unlinked ("in production"); wrap them in `<a href="/elixir/algorithms/identifiers">`
-   and drop "(in production)". On the F4 landing, change the F4.07 card from `<div class="mod is-quiet">` to a
-   linkable `<a class="mod" href="/elixir/algorithms/identifiers">`, pill `planned` → `built` (leave the
-   journey-SVG node thematic, as for F4.05/F4.06).
+1. Author the F4.08 hub + three dive subpages into `content/` (e.g. `f4-08-persistence.html` + three dives: keys,
+   sql, redis), following the page anatomy in `SKILL.md`, with an advanced section and a References block per page.
+   The bridge back is F4.07 (the branded id); the worked frame is the portal&rsquo;s page registry persisted to a
+   store. Keep interactive element prefixes off `st` and unique per page.
+2. Promote F4.08 to `built`; the `dives` roadmap is already in the manifest — add `SUBPAGES["F4.08"]` and register
+   PAGES with unique output filenames (e.g. `persistence*.html`). Confirm the route is
+   `/elixir/algorithms/persistence`.
+3. Relink F4.07&rsquo;s "next module" references to F4.08 (the F4.07 hub note and the branded-dive note name
+   **F4.08 — Branded ids & persistence** unlinked, "in production"): wrap them in
+   `<a href="/elixir/algorithms/persistence">` and drop "(in production)". On the F4 landing, change the F4.08 card
+   from `<div class="mod is-quiet">` to a linkable `<a class="mod" href="/elixir/algorithms/persistence">`, pill
+   `planned` → `built` (leave the journey-SVG node thematic).
 4. Verify routes, run the voice sweep (incl. JS strings AND static code comments — a dismissive adverb inside a
    `<pre class="code">` comment is visible text and fails the voice gate, because static code is NOT stripped the
-   way `<script>` is; this caught the F4.04 hashing dive on first build, and an "F4.05" `just` on first authoring),
-   build, grade for A+, `node --check` the JS, and add a tagged validator block run with `ONLY="F4.07"`.
-5. Regenerate `functional-programming-in-elixir.md` and `elixir-references.md`, update this tracker, then
-   deliver. (After F4.07: F4.08 persistence, then F4.09 branded CHAMP & GenServer complete the spine; F4.10
-   recipes, F4.11 dynamic programming, and the F4.12 lab remain in the chapter.)
+   way `<script>` is), build, grade for A+, `node --check` the JS, and add a tagged validator block run with
+   `ONLY="F4.08"`. Confirm each new page carries a References section.
+5. Regenerate `functional-programming-in-elixir.md` and `elixir-references.md`, update this tracker, then deliver.
+   (After F4.08: F4.09 branded CHAMP & GenServer completes the spine; F4.10 recipes, F4.11 dynamic programming, and
+   the F4.12 lab remain in the chapter.)
 
 **Deferred wiring (not authoring):** lighting up F3.05–F3.09 on the F3 chapter landing needs
 `content/f3-00-landing.html`, which is not in this bundle. The deploy gap above is the same kind of step — the
 live site still trails the local manifest (now including the whole of F3 and the F4 landing + F4.01 + F4.02 +
-F4.03 + F4.04 + F4.05 + F4.06). Both are sync/deploy steps to run against the full repository.
+F4.03 + F4.04 + F4.05 + F4.06 + F4.07). Both are sync/deploy steps to run against the full repository.
 
 ## Known follow-ups
 
 - The outline generator's hand-written "At a glance" summary prose lags the manifest (it predates the
   F2.09, F3.01–F3.09, and F4 promotions); its per-chapter tables, derived from the manifest, are correct and now
-  show F3 fully built and the F4 chapter open with F4.01&ndash;F4.06 as built hubs (three nested dives each) and the
-  planned F4.07&ndash;F4.12 with their three-dive roadmaps. Refresh the summary prose in `_gen_course_md.py` when convenient.
+  show F3 fully built and the F4 chapter open with F4.01&ndash;F4.07 as built hubs (three nested dives each) and the
+  planned F4.08&ndash;F4.12 with their three-dive roadmaps. Refresh the summary prose in `_gen_course_md.py` when convenient.
 - Wiring references into the builder as a `references` manifest field with a `render_references()` footer
   (rather than a separate document) remains an open enhancement noted in the playbook.
 

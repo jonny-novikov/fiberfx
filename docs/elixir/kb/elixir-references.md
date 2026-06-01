@@ -239,22 +239,39 @@ Algorithms and data structures. The persistent-map family rests on primary paper
 - [Steindorfer & Vinju, “Optimizing Hash-Array Mapped Tries…” (OOPSLA 2015)](https://michael.steindorfer.name/publications/oopsla15.pdf) — the CHAMP paper (DOI 10.1145/2814270.2814312).
 - [The Morning Paper — CHAMP summary](https://blog.acolyer.org/2015/11/27/hamt/) — an accessible walkthrough.
 
-### F4.07 &middot; Branded Champ maps
+### F4.07 &middot; Identifiers, Snowflake & branded ids
 
-- [Steindorfer & Vinju, CHAMP (OOPSLA 2015)](https://michael.steindorfer.name/publications/oopsla15.pdf) — the trie the branded map extends.
-- [Snowflake ID — Wikipedia](https://en.wikipedia.org/wiki/Snowflake_ID) — the 64-bit id layout.
+- [Snowflake ID — Wikipedia](https://en.wikipedia.org/wiki/Snowflake_ID) — the 64-bit time-ordered id layout.
 - [Twitter Snowflake (archived source, 2010)](https://github.com/twitter-archive/snowflake/tree/snowflake-2010) — the original generator.
 - [Discord — Snowflakes (developer reference)](https://discord.com/developers/docs/reference#snowflakes) — a practical bit-layout spec.
 
-### F4.08 &middot; Dynamic programming & advanced problems
+### F4.08 &middot; Branded ids & persistence
+
+- [SQLite — Datatypes](https://www.sqlite.org/datatype3.html) — storing branded ids as TEXT keys.
+- [PostgreSQL — Data Types](https://www.postgresql.org/docs/current/datatype.html) — a branded id as a primary key.
+- [Ecto — Ecto.Schema](https://hexdocs.pm/ecto/Ecto.Schema.html) — custom primary-key types in Elixir persistence.
+
+### F4.09 &middot; Branded CHAMP maps & GenServer
+
+- [Steindorfer & Vinju, CHAMP (OOPSLA 2015)](https://michael.steindorfer.name/publications/oopsla15.pdf) — the trie keyed by branded ids.
+- [Elixir — GenServer](https://hexdocs.pm/elixir/GenServer.html) — the server holding the partitioned map.
+- [Snowflake ID — Wikipedia](https://en.wikipedia.org/wiki/Snowflake_ID) — the branded-key namespace scheme.
+
+### F4.10 &middot; Practical recipes in Elixir
+
+- [Elixir — Enum](https://hexdocs.pm/elixir/Enum.html) — idiomatic collection recipes.
+- [Elixir — Stream](https://hexdocs.pm/elixir/Stream.html) — lazy pipelines over large data.
+
+### F4.11 &middot; Dynamic programming & advanced problems
 
 - [Dynamic programming — Wikipedia](https://en.wikipedia.org/wiki/Dynamic_programming) — memoisation and overlapping subproblems.
 - [*Introduction to Algorithms* (CLRS)](https://mitpress.mit.edu/9780262046305/) — the dynamic-programming chapter.
 
-### F4.09 &middot; Watch a Branded Champ map grow
+### F4.12 &middot; Lab: build a branded CHAMP store
 
-- [Steindorfer & Vinju, CHAMP (OOPSLA 2015)](https://michael.steindorfer.name/publications/oopsla15.pdf) — the structure being animated.
-- [Snowflake ID — Wikipedia](https://en.wikipedia.org/wiki/Snowflake_ID) — the branded-key scheme.
+- [Steindorfer & Vinju, CHAMP (OOPSLA 2015)](https://michael.steindorfer.name/publications/oopsla15.pdf) — the structure the lab builds.
+- [Elixir — GenServer](https://hexdocs.pm/elixir/GenServer.html) — the store behind the lab.
+- [Snowflake ID — Wikipedia](https://en.wikipedia.org/wiki/Snowflake_ID) — the branded keys inserted.
 
 ## F5 &middot; Pragmatic Programming
 

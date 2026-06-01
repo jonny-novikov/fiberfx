@@ -173,19 +173,38 @@ REFS = {
    ("Steindorfer & Vinju, \u201cOptimizing Hash-Array Mapped Tries\u2026\u201d (OOPSLA 2015)", "https://michael.steindorfer.name/publications/oopsla15.pdf", "the CHAMP paper (DOI 10.1145/2814270.2814312)."),
    ("The Morning Paper \u2014 CHAMP summary", "https://blog.acolyer.org/2015/11/27/hamt/", "an accessible walkthrough."),
  ],
+ # F4.07-F4.12 re-keyed for the 9->12 restructure (2026-06-01): the old F4.07 Snowflake
+ # sources stay on the new F4.07 (Identifiers, Snowflake & branded ids); the CHAMP paper
+ # moves to F4.09 (Branded CHAMP maps & GenServer); the old F4.08 DP sources move to F4.11.
+ # The four new topics (F4.08 persistence, F4.10 recipes) carry canonical docs to refine at
+ # authoring time.
  "F4.07": [
-   ("Steindorfer & Vinju, CHAMP (OOPSLA 2015)", "https://michael.steindorfer.name/publications/oopsla15.pdf", "the trie the branded map extends."),
-   ("Snowflake ID \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Snowflake_ID", "the 64-bit id layout."),
+   ("Snowflake ID \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Snowflake_ID", "the 64-bit time-ordered id layout."),
    ("Twitter Snowflake (archived source, 2010)", "https://github.com/twitter-archive/snowflake/tree/snowflake-2010", "the original generator."),
    ("Discord \u2014 Snowflakes (developer reference)", "https://discord.com/developers/docs/reference#snowflakes", "a practical bit-layout spec."),
  ],
  "F4.08": [
+   ("SQLite \u2014 Datatypes", "https://www.sqlite.org/datatype3.html", "storing branded ids as TEXT keys."),
+   ("PostgreSQL \u2014 Data Types", "https://www.postgresql.org/docs/current/datatype.html", "a branded id as a primary key."),
+   ("Ecto \u2014 Ecto.Schema", "https://hexdocs.pm/ecto/Ecto.Schema.html", "custom primary-key types in Elixir persistence."),
+ ],
+ "F4.09": [
+   ("Steindorfer & Vinju, CHAMP (OOPSLA 2015)", "https://michael.steindorfer.name/publications/oopsla15.pdf", "the trie keyed by branded ids."),
+   ("Elixir \u2014 GenServer", "https://hexdocs.pm/elixir/GenServer.html", "the server holding the partitioned map."),
+   ("Snowflake ID \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Snowflake_ID", "the branded-key namespace scheme."),
+ ],
+ "F4.10": [
+   ("Elixir \u2014 Enum", "https://hexdocs.pm/elixir/Enum.html", "idiomatic collection recipes."),
+   ("Elixir \u2014 Stream", "https://hexdocs.pm/elixir/Stream.html", "lazy pipelines over large data."),
+ ],
+ "F4.11": [
    ("Dynamic programming \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Dynamic_programming", "memoisation and overlapping subproblems."),
    ("*Introduction to Algorithms* (CLRS)", "https://mitpress.mit.edu/9780262046305/", "the dynamic-programming chapter."),
  ],
- "F4.09": [
-   ("Steindorfer & Vinju, CHAMP (OOPSLA 2015)", "https://michael.steindorfer.name/publications/oopsla15.pdf", "the structure being animated."),
-   ("Snowflake ID \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Snowflake_ID", "the branded-key scheme."),
+ "F4.12": [
+   ("Steindorfer & Vinju, CHAMP (OOPSLA 2015)", "https://michael.steindorfer.name/publications/oopsla15.pdf", "the structure the lab builds."),
+   ("Elixir \u2014 GenServer", "https://hexdocs.pm/elixir/GenServer.html", "the store behind the lab."),
+   ("Snowflake ID \u2014 Wikipedia", "https://en.wikipedia.org/wiki/Snowflake_ID", "the branded keys inserted."),
  ],
  # ---------- F5 · Pragmatic Programming ----------
  "F5.01": [

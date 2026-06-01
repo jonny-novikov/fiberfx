@@ -1,6 +1,6 @@
 # Elixir references — offline mirror
 
-Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-references.md). 112/113 pages mirrored into `files/`. Regenerate with `python3 fetch_refs.py`.
+Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-references.md). 115/116 pages mirrored into `files/`. Regenerate with `python3 fetch_refs.py`.
 
 ## Core references
 
@@ -169,19 +169,33 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 
 - Steindorfer & Vinju, “Optimizing Hash-Array Mapped Tries…” (OOPSLA 2015) — [offline](files/michael.steindorfer.name_publications_oopsla15.pdf) · [source](https://michael.steindorfer.name/publications/oopsla15.pdf)
 - The Morning Paper — CHAMP summary — [offline](files/blog.acolyer.org_2015_11_27_hamt.html) · [source](https://blog.acolyer.org/2015/11/27/hamt/)
-## F4.07 &middot; Branded Champ maps
+## F4.07 &middot; Identifiers, Snowflake & branded ids
 
-- Steindorfer & Vinju, CHAMP (OOPSLA 2015) — [offline](files/michael.steindorfer.name_publications_oopsla15.pdf) · [source](https://michael.steindorfer.name/publications/oopsla15.pdf)
 - Snowflake ID — Wikipedia — [offline](files/en.wikipedia.org_wiki_Snowflake_ID.html) · [source](https://en.wikipedia.org/wiki/Snowflake_ID)
 - Twitter Snowflake (archived source, 2010) — [offline](files/github.com_twitter-archive_snowflake_tree_snowflake-2010.html) · [source](https://github.com/twitter-archive/snowflake/tree/snowflake-2010)
 - Discord — Snowflakes (developer reference) — [offline](files/discord.com_developers_docs_reference.html#snowflakes) · [source](https://discord.com/developers/docs/reference#snowflakes)
-## F4.08 &middot; Dynamic programming & advanced problems
+## F4.08 &middot; Branded ids & persistence
+
+- SQLite — Datatypes — [offline](files/www.sqlite.org_datatype3.html) · [source](https://www.sqlite.org/datatype3.html)
+- PostgreSQL — Data Types — [offline](files/www.postgresql.org_docs_current_datatype.html) · [source](https://www.postgresql.org/docs/current/datatype.html)
+- Ecto — Ecto.Schema — [offline](files/hexdocs.pm_ecto_Ecto.Schema.html) · [source](https://hexdocs.pm/ecto/Ecto.Schema.html)
+## F4.09 &middot; Branded CHAMP maps & GenServer
+
+- Steindorfer & Vinju, CHAMP (OOPSLA 2015) — [offline](files/michael.steindorfer.name_publications_oopsla15.pdf) · [source](https://michael.steindorfer.name/publications/oopsla15.pdf)
+- Elixir — GenServer — [offline](files/hexdocs.pm_elixir_GenServer.html) · [source](https://hexdocs.pm/elixir/GenServer.html)
+- Snowflake ID — Wikipedia — [offline](files/en.wikipedia.org_wiki_Snowflake_ID.html) · [source](https://en.wikipedia.org/wiki/Snowflake_ID)
+## F4.10 &middot; Practical recipes in Elixir
+
+- Elixir — Enum — [offline](files/hexdocs.pm_elixir_Enum.html) · [source](https://hexdocs.pm/elixir/Enum.html)
+- Elixir — Stream — [offline](files/hexdocs.pm_elixir_Stream.html) · [source](https://hexdocs.pm/elixir/Stream.html)
+## F4.11 &middot; Dynamic programming & advanced problems
 
 - Dynamic programming — Wikipedia — [offline](files/en.wikipedia.org_wiki_Dynamic_programming.html) · [source](https://en.wikipedia.org/wiki/Dynamic_programming)
 - *Introduction to Algorithms* (CLRS) — [offline](files/mitpress.mit.edu_9780262046305.html) · [source](https://mitpress.mit.edu/9780262046305/)
-## F4.09 &middot; Watch a Branded Champ map grow
+## F4.12 &middot; Lab: build a branded CHAMP store
 
 - Steindorfer & Vinju, CHAMP (OOPSLA 2015) — [offline](files/michael.steindorfer.name_publications_oopsla15.pdf) · [source](https://michael.steindorfer.name/publications/oopsla15.pdf)
+- Elixir — GenServer — [offline](files/hexdocs.pm_elixir_GenServer.html) · [source](https://hexdocs.pm/elixir/GenServer.html)
 - Snowflake ID — Wikipedia — [offline](files/en.wikipedia.org_wiki_Snowflake_ID.html) · [source](https://en.wikipedia.org/wiki/Snowflake_ID)
 ## F5.01 &middot; Project structure & Mix
 

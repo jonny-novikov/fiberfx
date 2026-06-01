@@ -119,7 +119,7 @@ var Modules = map[string][]Module{
 		{N: "F4.04", Title: "Maps, sets & hashing", One: "Hash maps, collisions, the cost model.", Slug: "maps", Status: "built"},
 		{N: "F4.05", Title: "Hash Array Mapped Tries (HAMT)", One: "Persistent maps via prefix trees.", Slug: "hamt", Status: "built"},
 		{N: "F4.06", Title: "CHAMP maps", One: "Compressed HAMT trees; layout & iteration.", Slug: "champ", Status: "built"},
-		{N: "F4.07", Title: "Identifiers, Snowflake & branded ids", One: "From naive ids to a Snowflake bigint and a branded, base62 id.", Slug: "identifiers", Status: "planned"},
+		{N: "F4.07", Title: "Identifiers, Snowflake & branded ids", One: "From naive ids to a Snowflake bigint and a branded, base62 id.", Slug: "identifiers", Status: "built"},
 		{N: "F4.08", Title: "Branded ids & persistence", One: "Branded ids as keys in SQLite, PostgreSQL, and Redis.", Slug: "persistence", Status: "planned"},
 		{N: "F4.09", Title: "Branded CHAMP maps & GenServer", One: "A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.", Slug: "branded-champ", Status: "planned"},
 		{N: "F4.10", Title: "Practical recipes in Elixir", One: "Turning algorithmic problems into idiomatic Elixir.", Slug: "recipes", Status: "planned"},
@@ -243,6 +243,10 @@ var Subpages = map[string][]Subpage{
 		{"bitmap", "Bitmapped nodes", "A HAMT node keeps one 32-bit bitmap marking which of its slots are occupied and one packed array"},
 		{"indexing", "Hash-prefix indexing", "A HAMT reads the key's hash in five-bit chunks from the low end: level 0 reads bits 0-4, level 1"},
 		{"sharing", "Structural sharing", "An insert builds new nodes only along the path from the root to the changed leaf and shares ever"},
+	},
+	"F4.07": {
+		{"snowflake", "The Snowflake bigint", "A Snowflake packs three fields into 64 bits: a 42-bit millisecond timestamp from a custom 2024 e"},
+		{"branded", "Branded ids", "A branded id encodes the 64-bit Snowflake in base62 over 0-9A-Za-z, left-pads it to eleven chara"},
 	},
 }
 
