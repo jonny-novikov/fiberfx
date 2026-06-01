@@ -245,7 +245,7 @@ MODULES = {
     "F6": [
         dict(n="F6.01", title="Architecture & the request lifecycle", one="endpoint → router → controller → view.", slug="lifecycle", status="built", lab=False),
         dict(n="F6.02", title="Routing, controllers & plugs", one="The plug pipeline.", slug="routing", status="built", lab=False),
-        dict(n="F6.03", title="Ecto: schemas, changesets & queries", one="Data, validation, the repo.", slug="ecto", status="planned", lab=False),
+        dict(n="F6.03", title="Ecto: schemas, changesets & queries", one="Data, validation, the repo.", slug="ecto", status="built", lab=False),
         dict(n="F6.04", title="Contexts & domain design", one="Boundaries that scale.", slug="contexts", status="planned", lab=False),
         dict(n="F6.05", title="Templates, components & HEEx", one="Server-rendered markup.", slug="heex", status="planned", lab=False),
         dict(n="F6.06", title="Phoenix LiveView fundamentals", one="Interactive UIs without hand-written JS.", slug="liveview", status="planned", lab=False),
@@ -436,6 +436,11 @@ SUBPAGES = {
         dict(slug='pipelines', title='Pipelines & scopes', one='A named pipeline is a reusable, ordered stack of plugs;'),
         dict(slug='plugs', title='Writing a plug', one='The contract every stage of the pipeline shares: a plug is init/1 plus call(conn, opts), taking '),
         dict(slug='routes', title='Routes & verbs', one='How a verb and a path map to one controller action: get and post, resources for the seven RESTfu'),
+    ],
+    "F6.03": [
+        dict(slug='schemas', title='Schemas & migrations', one='A migration creates and evolves a database table;'),
+        dict(slug='changesets', title='Changesets & validation', one='A changeset is a pure pipeline — cast permits and coerces fields, validate checks the rules, and'),
+        dict(slug='repo', title='Queries & the repo', one='The Repo executes composable Ecto queries and persists changesets — get one row by Snowflake id,'),
     ],
 }
 

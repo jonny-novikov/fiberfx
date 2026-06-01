@@ -921,6 +921,38 @@ facade behind a LiveView sketch and hand a UI-ready boundary to F6, the Phoenix 
   = 12 pages). Docs regenerated: course-md **voice CLEAN, 4 mermaid** (F6.02 sub-rows now ●); refs **59 / 59**, voice
   CLEAN.
 
+## F6.03 — third module built (hub + three dives) + landing tile promoted
+
+- **F6.03 &middot; Ecto: schemas, changesets &amp; queries is built** on the deepest standard: hub + three dives,
+  blue accent, real Ecto code with the Snowflake-id and port-boundary tie-ins. `MODULES["F6"]` F6.03 + its three
+  dives flipped to `built`; `SUBPAGES["F6.03"]` added; four PAGES entries (`ecto.html`, `ecto-schemas.html`,
+  `ecto-changesets.html`, `ecto-repo.html`). Routes 176 &rarr; **180**, PAGES 175 &rarr; **179**, module tally **51
+  built / 6 planned**.
+  - **Hub** (`content/f6-03-ecto.html`, prefix `ec`): a schema/changeset/query selector (default schema) + three dive
+    cards (blue/gold/sage) + **hub References** (Ecto.Schema, Changeset, Query, Repo). Framing: Ecto lives behind the
+    F5.09 `Portal.EventStore` port, so the core names no database.
+  - **F6.03.1 &middot; Schemas &amp; migrations** (`sc`): a migration/schema/struct selector, a **second SVG** mapping
+    one column across table &rarr; schema &rarr; struct, and a migration + schema in code with a **Snowflake bigint
+    primary key** (`@primary_key {:id, :id, autogenerate: false}`).
+  - **F6.03.2 &middot; Changesets &amp; validation** (`cs`): a cast/validate/constraint selector, a **second SVG** of
+    the changeset flow with the `valid?`/`errors` branch (valid &rarr; `Repo.insert`; invalid &rarr; `%Portal.Error{}`),
+    and a real changeset feeding `Portal.Error.from_changeset/1`.
+  - **F6.03.3 &middot; Queries &amp; the repo** (`rp`): a `Repo.get`/`all`/`insert` selector, a **second SVG** of the
+    domain &rarr; port &rarr; Postgres adapter &rarr; database boundary (Ecto only past the seam), and a composable
+    query + the `Portal.EventStore.Postgres` adapter implementing the F5.09 behaviour. Dives carry no References
+    (hub-only rule); two SVGs each.
+- **Landing**: the F6.03 tile is now a linkable `<a class="mod" href="/elixir/phoenix/ecto">` with a `built` pill (its
+  dives `<ul>` kept); intro/arc prose updated to &ldquo;F6.01&ndash;F6.03 are built&rdquo;.
+- **Build guides**: `build-guide/f6-03-ecto.md` (module spec + six copy-paste **build prompts** &mdash; migration +
+  schema with a Snowflake id, the changeset, the `from_changeset/1` error bridge, composable queries, the Postgres
+  adapter behind the port, verify). `build-guide/phoenix.md` updated: F6.03 entry links the guide and the global build
+  sequence lists `f6-03` separately. Voice clean.
+- **All five pages Apollo A+** (hub + 3 dives + landing); `node --check` clean on each; REF URLs `200`. **Validator**:
+  an `F6.03` desktop block (hub piece&rarr;role, and one per dive) + 390px mobile entries for all four pages.
+  `ONLY="F6"` now reports **147 desktop + 32 mobile = 179 PASS, 0 FAIL, 0 images** (front matter 4 + F6.01 4 + F6.02 4
+  + F6.03 4 = 16 pages). Docs regenerated: course-md **voice CLEAN, 4 mermaid** (F6.03 sub-rows now ●); refs **59 /
+  59**, voice CLEAN.
+
 
 
 **Deployment (not authoring), unchanged and now slightly larger:** the site-wide `/elixir` home and the
@@ -953,14 +985,14 @@ What a resuming agent should know, condensed:
    `build-guide/f5-09-engine-lab.md`, a spec whose copy-paste build prompts generate the Portal logic). **The F5
    chapter is now module-complete: all nine modules + three design subpages + the landing are built**, with REFS and
    `A`-map abstracts keyed by module `n`. **F6 (Phoenix) is under construction**: the chapter is `live` with a landing
-   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01 and F6.02 are
-   built** &mdash; each a hub + three dives (`/elixir/phoenix/lifecycle` and `/elixir/phoenix/routing` + their three
-   dive slugs) with `build-guide/f6-01-lifecycle.md` and `build-guide/f6-02-routing.md` prompts. Every F6 module
-   carries its three dives in the manifest, so the landing tiles and course-md show the whole chapter plan; F6.03
-   (Ecto) is the next module.
-   `allowed_routes()` returns **176** link routes; only built/live routes are linkable
-   (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter subpages, and F6.01 + F6.02
-   with their dives are; **the planned F6.03&ndash;F6.09 module and dive routes are not**), external `https://` links
+   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01, F6.02, and F6.03
+   are built** &mdash; each a hub + three dives (`/elixir/phoenix/lifecycle`, `/elixir/phoenix/routing`, and
+   `/elixir/phoenix/ecto` + their three dive slugs) with `build-guide/f6-01-lifecycle.md`, `f6-02-routing.md`, and
+   `f6-03-ecto.md` prompts. Every F6 module carries its three dives in the manifest, so the landing tiles and
+   course-md show the whole chapter plan; F6.04 (Contexts &amp; domain design) is the next module.
+   `allowed_routes()` returns **180** link routes; only built/live routes are linkable
+   (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter subpages, and F6.01&ndash;F6.03
+   with their dives are; **the planned F6.04&ndash;F6.09 module and dive routes are not**), external `https://` links
    are exempt.
 2. Rebuild any page with `python3 build_page.py build --page KEY`, grade with `check OUT.html` (nine gates + A+),
    regenerate `_head.html` with `extract-head` after editing `HEAD_CSS`. The voice gate scans all visible text

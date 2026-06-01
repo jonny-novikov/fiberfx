@@ -140,7 +140,7 @@ var Modules = map[string][]Module{
 	"F6": {
 		{N: "F6.01", Title: "Architecture & the request lifecycle", One: "endpoint → router → controller → view.", Slug: "lifecycle", Status: "built"},
 		{N: "F6.02", Title: "Routing, controllers & plugs", One: "The plug pipeline.", Slug: "routing", Status: "built"},
-		{N: "F6.03", Title: "Ecto: schemas, changesets & queries", One: "Data, validation, the repo.", Slug: "ecto", Status: "planned"},
+		{N: "F6.03", Title: "Ecto: schemas, changesets & queries", One: "Data, validation, the repo.", Slug: "ecto", Status: "built"},
 		{N: "F6.04", Title: "Contexts & domain design", One: "Boundaries that scale.", Slug: "contexts", Status: "planned"},
 		{N: "F6.05", Title: "Templates, components & HEEx", One: "Server-rendered markup.", Slug: "heex", Status: "planned"},
 		{N: "F6.06", Title: "Phoenix LiveView fundamentals", One: "Interactive UIs without hand-written JS.", Slug: "liveview", Status: "planned"},
@@ -328,6 +328,11 @@ var Subpages = map[string][]Subpage{
 		{"pipelines", "Pipelines & scopes", "A named pipeline is a reusable, ordered stack of plugs;"},
 		{"plugs", "Writing a plug", "The contract every stage of the pipeline shares: a plug is init/1 plus call(conn, opts), taking "},
 		{"routes", "Routes & verbs", "How a verb and a path map to one controller action: get and post, resources for the seven RESTfu"},
+	},
+	"F6.03": {
+		{"schemas", "Schemas & migrations", "A migration creates and evolves a database table;"},
+		{"changesets", "Changesets & validation", "A changeset is a pure pipeline — cast permits and coerces fields, validate checks the rules, and"},
+		{"repo", "Queries & the repo", "The Repo executes composable Ecto queries and persists changesets — get one row by Snowflake id,"},
 	},
 }
 
