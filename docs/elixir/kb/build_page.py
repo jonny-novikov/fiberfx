@@ -233,8 +233,8 @@ MODULES = {
     ],
     "F5": [
         dict(n="F5.01", title="Foundations", one="Start thin: a running Portal from day one.", slug="foundations", status="built", lab=False),
-        dict(n="F5.02", title="Testing with ExUnit & doctests", one="Fast, deterministic tests.", slug="testing", status="planned", lab=False),
-        dict(n="F5.03", title="Documentation & typespecs", one="@doc, @spec, Dialyzer.", slug="typespecs", status="planned", lab=False),
+        dict(n="F5.02", title="Modeling the Portal domain", one="Bounded contexts, structs, and the public API.", slug="domain", status="built", lab=False),
+        dict(n="F5.03", title="Tracer bullets: a walking skeleton", one="Thin end-to-end first, then iterate.", slug="tracer-bullets", status="built", lab=False),
         dict(n="F5.04", title="Error handling & “let it crash”", one="Tagged tuples versus exceptions; supervision.", slug="let-it-crash", status="planned", lab=False),
         dict(n="F5.05", title="Concurrency patterns & Tasks", one="Task, async/await, back-pressure.", slug="tasks", status="planned", lab=False),
         dict(n="F5.06", title="Telemetry, logging & observability", one="Seeing inside a running system.", slug="telemetry", status="planned", lab=False),
@@ -386,6 +386,16 @@ SUBPAGES = {
         dict(slug='replaceable', title='A web layer built for replacement', one='The thin server is a detail, by design.'),
         dict(slug='roadmap', title='The development roadmap', one='The whole course is one development roadmap: HTML templating, then a simple web server, then the'),
         dict(slug='thin-server', title='A thin web server in Elixir', one='A minimal HTTP front end for the Portal: a Plug.Router matched and dispatched by Bandit, where e'),
+    ],
+    "F5.02": [
+        dict(slug='api', title="A context's public API", one='Each context exposes a small set of public functions — a smart constructor that validates and re'),
+        dict(slug='contexts', title='Bounded contexts', one='A bounded context is a module that owns a few entities and guards their rules — Accounts owns Us'),
+        dict(slug='structs', title='Structs & typespecs', one='An entity is a plain struct: @enforce_keys names the fields it cannot exist without, defstruct g'),
+    ],
+    "F5.03": [
+        dict(slug='iterating', title='Iterating the slice', one='Once the skeleton walks, you grow it one thin vertical slice at a time: deliver the first lesson'),
+        dict(slug='prototypes', title='Tracer bullets vs prototypes', one='Both are built fast, but their fates are opposite.'),
+        dict(slug='skeleton', title='The walking skeleton', one='The enroll-a-learner slice, end to end: a POST /enroll route calls Learning.enroll/2, which buil'),
     ],
 }
 

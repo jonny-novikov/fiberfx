@@ -277,7 +277,7 @@ Algorithms and data structures. The persistent-map family rests on primary paper
 
 Engineering practice. Tooling docs, the OTP guides, and the “let it crash” primary sources.
 
-### F5.01 &middot; Project structure & Mix
+### F5.01 &middot; Foundations
 
 - [Elixir — Introduction to Mix (guide)](https://hexdocs.pm/elixir/introduction-to-mix.html) — applications, deps, tasks.
 - [Elixir — Mix](https://hexdocs.pm/mix/Mix.html) — the build tool reference.

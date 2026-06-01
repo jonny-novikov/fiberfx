@@ -128,8 +128,8 @@ var Modules = map[string][]Module{
 	},
 	"F5": {
 		{N: "F5.01", Title: "Foundations", One: "Start thin: a running Portal from day one.", Slug: "foundations", Status: "built"},
-		{N: "F5.02", Title: "Testing with ExUnit & doctests", One: "Fast, deterministic tests.", Slug: "testing", Status: "planned"},
-		{N: "F5.03", Title: "Documentation & typespecs", One: "@doc, @spec, Dialyzer.", Slug: "typespecs", Status: "planned"},
+		{N: "F5.02", Title: "Modeling the Portal domain", One: "Bounded contexts, structs, and the public API.", Slug: "domain", Status: "built"},
+		{N: "F5.03", Title: "Tracer bullets: a walking skeleton", One: "Thin end-to-end first, then iterate.", Slug: "tracer-bullets", Status: "built"},
 		{N: "F5.04", Title: "Error handling & \"let it crash\"", One: "Tagged tuples vs exceptions; supervision.", Slug: "let-it-crash", Status: "planned"},
 		{N: "F5.05", Title: "Concurrency patterns & Tasks", One: "Task, async/await, back-pressure.", Slug: "tasks", Status: "planned"},
 		{N: "F5.06", Title: "Telemetry, logging & observability", One: "Seeing inside a running system.", Slug: "telemetry", Status: "planned"},
@@ -278,6 +278,16 @@ var Subpages = map[string][]Subpage{
 		{"replaceable", "A web layer built for replacement", "The thin server is a detail, by design."},
 		{"roadmap", "The development roadmap", "The whole course is one development roadmap: HTML templating, then a simple web server, then the"},
 		{"thin-server", "A thin web server in Elixir", "A minimal HTTP front end for the Portal: a Plug.Router matched and dispatched by Bandit, where e"},
+	},
+	"F5.02": {
+		{"api", "A context's public API", "Each context exposes a small set of public functions — a smart constructor that validates and re"},
+		{"contexts", "Bounded contexts", "A bounded context is a module that owns a few entities and guards their rules — Accounts owns Us"},
+		{"structs", "Structs & typespecs", "An entity is a plain struct: @enforce_keys names the fields it cannot exist without, defstruct g"},
+	},
+	"F5.03": {
+		{"iterating", "Iterating the slice", "Once the skeleton walks, you grow it one thin vertical slice at a time: deliver the first lesson"},
+		{"prototypes", "Tracer bullets vs prototypes", "Both are built fast, but their fates are opposite."},
+		{"skeleton", "The walking skeleton", "The enroll-a-learner slice, end to end: a POST /enroll route calls Learning.enroll/2, which buil"},
 	},
 }
 

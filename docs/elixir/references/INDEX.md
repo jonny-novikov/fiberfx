@@ -197,7 +197,7 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 - Steindorfer & Vinju, CHAMP (OOPSLA 2015) — [offline](files/michael.steindorfer.name_publications_oopsla15.pdf) · [source](https://michael.steindorfer.name/publications/oopsla15.pdf)
 - Elixir — GenServer — [offline](files/hexdocs.pm_elixir_GenServer.html) · [source](https://hexdocs.pm/elixir/GenServer.html)
 - Snowflake ID — Wikipedia — [offline](files/en.wikipedia.org_wiki_Snowflake_ID.html) · [source](https://en.wikipedia.org/wiki/Snowflake_ID)
-## F5.01 &middot; Project structure & Mix
+## F5.01 &middot; Foundations
 
 - Elixir — Introduction to Mix (guide) — [offline](files/hexdocs.pm_elixir_introduction-to-mix.html) · [source](https://hexdocs.pm/elixir/introduction-to-mix.html)
 - Elixir — Mix — [offline](files/hexdocs.pm_mix_Mix.html) · [source](https://hexdocs.pm/mix/Mix.html)

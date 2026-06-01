@@ -610,19 +610,57 @@ This session opened F5 by building its overview and laying the roadmap:
   On the landing, the F5.01 card was promoted from a planned `<div class="mod is-quiet">` to a linkable
   `<a class="mod">` with a `built` pill and the new title + dives, the hero lede&rsquo;s first technique now reads
   &ldquo;stand it up behind a thin web server so it runs from day one&rdquo;, and the chapter-arc node 01 was
-  relabelled `DRY` &rarr; `serve`. Routes 128 &rarr; **132**, PAGES 127 &rarr; **131**, module tally 41 &rarr;
-  **42 built / 17 planned**. F5.02 (Modeling the Portal domain) is the next authoring target.
+  relabelled `DRY` &rarr; `serve`. Routes 128 &rarr; 132, PAGES 127 &rarr; 131, module tally 41 &rarr;
+  42 built / 17 planned.
+- **F5.02 was authored and built as a full module** (hub + three dives, A+ on the nine gates, the second built F5
+  module): **&ldquo;Modeling the Portal domain&rdquo;**, slug `domain` (`/elixir/pragmatic/domain`). It builds the
+  domain in three layers and goes deeper than the F5.0.2 design subpage (which is the map). The hub centerpiece is an
+  **anatomy-of-a-context** figure &mdash; the Learning context shown inside out (structs at the core, the context
+  boundary, the public-API band) as a three-way selector mapping each layer to its dive; prefix `dn`, burgundy.
+  Three dives: **F5.02.1 Structs & typespecs** (`/structs`, burgundy, prefix `sr`) &mdash; an
+  `@enforce_keys` / `defstruct` / `@type t` selector over an `Enrollment` struct, plus the full struct in code with
+  the `KeyError`-on-missing-key behaviour; **F5.02.2 Bounded contexts** (`/contexts`, blue, prefix `cx`) &mdash; a
+  three-context map (Accounts / Catalog / Learning) with by-id reference arrows and a per-context selector
+  (owns / references), plus the module-per-context layout and the reference-by-id rule in code; **F5.02.3 A
+  context's public API** (`/api`, gold, prefix `ap`) &mdash; a public-surface / private-core figure with a function
+  selector (`enroll/2` constructor, `record_progress/2` command, `courses_of/1` query), plus the Learning API in code
+  with `@spec`s, tagged tuples, a `with`-chain smart constructor, and `defp` validation. Dive-card borders follow the
+  convention (burgundy / blue / gold); References on the hub only. `MODULES["F5"]` F5.02 + its three dives promoted to
+  `built`; `SUBPAGES["F5.02"]` added; four PAGES entries (`domain.html`, `domain-structs.html`,
+  `domain-contexts.html`, `domain-api.html`). On the landing the F5.02 card was promoted to a linkable
+  `<a class="mod">` with a `built` pill (arc node 02 was already labelled `domain`). Routes 132 &rarr; 136, PAGES
+  131 &rarr; 135, module tally 42 &rarr; 43 built / 16 planned.
+- **F5.03 was authored and built as a full module** (hub + three dives, A+ on the nine gates, the third built F5
+  module): **&ldquo;Tracer bullets: a walking skeleton&rdquo;**, slug `tracer-bullets`
+  (`/elixir/pragmatic/tracer-bullets`). It connects F5.01 (the running server) and F5.02 (the domain) by driving one
+  use case &mdash; enroll a learner &mdash; through every layer at once. The hub centerpiece is a **vertical-slice**
+  figure (the enroll tracer piercing web / context API / struct / store) with a layer selector; prefix `tb`, burgundy.
+  Three dives: **F5.03.1 Tracer bullets vs prototypes** (`/prototypes`, burgundy, prefix `tp`) &mdash; a two-row
+  technique selector (kept-and-built-upon vs thrown-away) plus a real enroll route contrasted with a throwaway
+  prototype script; **F5.03.2 The walking skeleton** (`/skeleton`, blue, prefix `sk`) &mdash; the enroll round-trip
+  (request &rarr; `Learning.enroll/2` &rarr; `Store.put` &rarr; 201) as a four-step selector, plus the route + context
+  `with`-chain wired end to end; **F5.03.3 Iterating the slice** (`/iterating`, gold, prefix `it`) &mdash; three
+  vertical slices over a four-layer grid (enroll / deliver lesson / record progress) with an iteration selector, plus
+  the second slice added in code (a new route + one Catalog function). Dive-card borders follow the convention
+  (burgundy / blue / gold); References on the hub only. `MODULES["F5"]` F5.03 + its three dives promoted to `built`;
+  `SUBPAGES["F5.03"]` added; four PAGES entries (`tracer-bullets.html`, `tracer-bullets-prototypes.html`,
+  `tracer-bullets-skeleton.html`, `tracer-bullets-iterating.html`). On the landing the F5.03 card was promoted to a
+  linkable `<a class="mod">` with a `built` pill (arc node 03 was already labelled `tracer`). Routes 136 &rarr;
+  **140**, PAGES 135 &rarr; **139**, module tally 43 &rarr; **44 built / 15 planned**. F5.04 (Design by contract) is
+  the next authoring target.
 - **The landing was authored and built**: `content/f5-00-landing.html` &rarr; `pragmatic.html`, route
   `/elixir/pragmatic`. Hero + a nine-node chapter-arc SVG (shape it to change &middot; make it trustworthy &middot;
-  make it usable) + the three design cards (`#design`) + nine module cards with their submodules (F5.01 now linkable,
-  F5.02&ndash;F5.09 planned) + a back-pager to F4 and a forward link to Contents. **Apollo A+ across the nine gates**;
-  `node --check` clean; voice gate clean. Planned module cards are `<div class="mod is-quiet">`; the design cards and
-  the F5.01 card are linkable `<a class="mod">`; the F5.09 card carries the `lab` class.
+  make it usable) + the three design cards (`#design`) + nine module cards with their submodules (F5.01&ndash;F5.03 now
+  linkable, F5.04&ndash;F5.09 planned) + a back-pager to F4 and a forward link to Contents. **Apollo A+ across the nine
+  gates**; `node --check` clean; voice gate clean. Planned module cards are `<div class="mod is-quiet">`; the design
+  cards and the F5.01&ndash;F5.03 cards are linkable `<a class="mod">`; the F5.09 card carries the `lab` class.
 - **Validator**: a tagged `F5` desktop block (base + the twelve landing cards + the design/planned pills + the
   LiveView-ready lab card), one desktop block per design subpage (layer&rarr;module, context&rarr;entities,
-  stage&rarr;module), and one per F5.01 page &mdash; the hub roadmap selector (stage&rarr;chapter) and each dive
-  selector (approach&rarr;first-run, request-step, front-end&rarr;engine-unchanged) &mdash; plus 390px mobile entries
-  for all eight F5 pages &mdash; **76 + 16 = 92 PASS, 0 FAIL, 0 images**.
+  stage&rarr;module), one per F5.01 page (roadmap stage&rarr;chapter; approach&rarr;first-run, request-step,
+  front-end&rarr;engine-unchanged), one per F5.02 page (context-layer&rarr;dive; struct-declaration,
+  context&rarr;references, API-function&rarr;kind), and one per F5.03 page (slice-layer&rarr;artifact;
+  technique&rarr;fate, round-trip step, iteration&rarr;what-it-adds) &mdash; plus 390px mobile entries for all sixteen
+  F5 pages &mdash; **151 + 32 = 183 PASS, 0 FAIL, 0 images**.
 - **Docs reframed and regenerated**: the F5.01 abstract (`A` map) and references (`REFS`) now describe the thin-server
   approach and the roadmap (sources: Pragmatic Programmer tracer bullets, Plug, Bandit, Phoenix), and the three
   F5.01 dives render as `\u25cf` sub-rows under F5.01 in the course-md table. Both generators report **voice gate
@@ -644,15 +682,16 @@ What a resuming agent should know, condensed:
    `lab.html` / `lab-grow.html` / `lab-registry.html` / `lab-range.html`). **F5 is `live` with its landing built**
    (`content/f5-00-landing.html` &rarr; `pragmatic.html`, route `/elixir/pragmatic`) plus **three front-matter design
    subpages** in `CHAPTER_SUBPAGES["F5"]` (`architecture` / `domain-model` / `flow` &rarr; `pragmatic-architecture.html`
-   / `pragmatic-domain-model.html` / `pragmatic-flow.html`), linked as cards on the landing. **F5.01 is built** as a
-   full module (hub + three dives: `/foundations` + `/foundations/{roadmap,thin-server,replaceable}` &rarr;
-   `foundations.html`, `foundations-roadmap.html`, `foundations-thin-server.html`, `foundations-replaceable.html`),
-   the &ldquo;start thin: a running Portal from day one&rdquo; approach; its modules `F5.02`&ndash;`F5.09` remain
-   `planned`, each with a three-dive roadmap &mdash; the next authoring targets (start at F5.02, Modeling the Portal
-   domain), with REFS and `A`-map abstracts already keyed by module `n`. `allowed_routes()` returns **132** link
-   routes; only built/live routes are linkable (F5.02&ndash;F5.09 module routes are not, since those modules are
-   planned; F5.01 and the chapter front-matter subpages are, since they are built and the chapter is `live`),
-   external `https://` links are exempt.
+   / `pragmatic-domain-model.html` / `pragmatic-flow.html`), linked as cards on the landing. **F5.01, F5.02, and
+   F5.03 are built** as full modules (hub + three dives each): F5.01 `/foundations` +
+   `/foundations/{roadmap,thin-server,replaceable}` (the &ldquo;start thin&rdquo; approach), F5.02 `/domain` +
+   `/domain/{structs,contexts,api}` (modeling the Portal domain), and F5.03 `/tracer-bullets` +
+   `/tracer-bullets/{prototypes,skeleton,iterating}` (a walking skeleton, enroll a learner end to end); its modules
+   `F5.04`&ndash;`F5.09` remain `planned`, each with a three-dive roadmap &mdash; the next authoring targets (start at
+   F5.04, Design by contract), with REFS and `A`-map abstracts already keyed by module `n`. `allowed_routes()`
+   returns **140** link routes; only built/live routes are linkable (F5.04&ndash;F5.09 module routes are not, since
+   those modules are planned; F5.01&ndash;F5.03 and the chapter front-matter subpages are, since they are built and the
+   chapter is `live`), external `https://` links are exempt.
 2. Rebuild any page with `python3 build_page.py build --page KEY`, grade with `check OUT.html` (nine gates + A+),
    regenerate `_head.html` with `extract-head` after editing `HEAD_CSS`. The voice gate scans all visible text
    including `<pre class="code">` comments (only `<script>`/`<style>`/`<svg>` are stripped); `expectText` in the
