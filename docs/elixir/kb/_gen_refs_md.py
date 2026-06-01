@@ -228,7 +228,7 @@ REFS = {
  "F5.05": [
    ("Martin Fowler \u2014 CQRS", "https://martinfowler.com/bliki/CQRS.html", "separate the write model from the read model."),
    ("Martin Fowler \u2014 Event Sourcing", "https://martinfowler.com/eaaDev/EventSourcing.html", "state as a log of events to fold over."),
-   ("Martin Fowler \u2014 CommandQuerySeparation", "https://martinfowler.com/bliki/CommandQuerySeparation.html", "Meyer's rule: a method asks or acts, not both."),
+   ("Commanded", "https://hexdocs.pm/commanded/Commanded.html", "CQRS/ES building blocks in Elixir."),
  ],
  "F5.06": [
    ("Elixir \u2014 GenServer", "https://hexdocs.pm/elixir/GenServer.html", "a process that holds state behind a contract."),
