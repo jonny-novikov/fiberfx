@@ -215,7 +215,7 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 - Armstrong thesis — “let it crash” and supervision — [offline](files/erlang.org_download_armstrong_thesis_2003.pdf) · [source](https://erlang.org/download/armstrong_thesis_2003.pdf)
 - Elixir — Mix & OTP: Supervision trees and applications — [offline](files/hexdocs.pm_elixir_supervisor-and-application.html) · [source](https://hexdocs.pm/elixir/supervisor-and-application.html)
 - Fred Hébert, *Stuff Goes Bad: Erlang in Anger* (free) — [offline](files/www.erlang-in-anger.com.html) · [source](https://www.erlang-in-anger.com/)
-## F5.05 &middot; Concurrency patterns & Tasks
+## F5.05 &middot; Commands, queries & events
 
 - Elixir — Task — [offline](files/hexdocs.pm_elixir_Task.html) · [source](https://hexdocs.pm/elixir/Task.html)
 - GenStage — [offline](files/hexdocs.pm_gen_stage_GenStage.html) · [source](https://hexdocs.pm/gen_stage/GenStage.html)

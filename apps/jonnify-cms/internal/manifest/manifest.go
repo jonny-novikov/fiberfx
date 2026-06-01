@@ -132,7 +132,7 @@ var Modules = map[string][]Module{
 		{N: "F5.03", Title: "Tracer bullets: a walking skeleton", One: "Thin end-to-end first, then iterate.", Slug: "tracer-bullets", Status: "built"},
 		{N: "F5.04", Title: "Design by contract", One: "Preconditions, postconditions, and failing fast.", Slug: "contracts", Status: "built"},
 		{N: "F5.05", Title: "Commands, queries & events", One: "Separate writes from reads; the engine as a reducer over events.", Slug: "cqrs", Status: "built"},
-		{N: "F5.06", Title: "Telemetry, logging & observability", One: "Seeing inside a running system.", Slug: "telemetry", Status: "planned"},
+		{N: "F5.06", Title: "Where engine state lives", One: "One process holds the state; one supervisor keeps it alive.", Slug: "state", Status: "built"},
 		{N: "F5.07", Title: "Dependencies, releases & deployment", One: "mix release, config, runtime.", Slug: "releases", Status: "planned"},
 		{N: "F5.08", Title: "Performance & profiling", One: "Benchmarks, the scheduler, hot paths.", Slug: "performance", Status: "planned"},
 		{N: "F5.09", Title: "Let it crash — a supervision tree that heals", One: "Crash a worker; watch the restart.", Slug: "supervision-lab", Status: "planned", Lab: true},
@@ -298,6 +298,11 @@ var Subpages = map[string][]Subpage{
 		{"cqs", "Command/query separation", "One rule, due to Bertrand Meyer: a function either changes state or returns a value, never both."},
 		{"events", "Domain events", "A record that something happened, written in the past tense and never changed once stored."},
 		{"reducer", "The engine as a reducer", "Once every change is an event, new state is a left fold: the old state plus the next event."},
+	},
+	"F5.06": {
+		{"choosing", "Choosing where state lives", "Three places on the BEAM can hold live state, and they are not interchangeable — only one fits the engine."},
+		{"genserver", "The engine GenServer", "Three callbacks carry the whole engine: init folds the log on start, then calls and casts thread state through."},
+		{"supervision", "Supervision", "A stateful process will eventually crash; a supervisor restarts it, and the engine replays its log to recover."},
 	},
 }
 

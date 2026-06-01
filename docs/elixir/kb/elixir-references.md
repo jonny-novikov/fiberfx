@@ -299,7 +299,7 @@ Engineering practice. Tooling docs, the OTP guides, and the “let it crash” p
 - [Elixir — Mix & OTP: Supervision trees and applications](https://hexdocs.pm/elixir/supervisor-and-application.html) — rescue versus restart.
 - [Fred Hébert, *Stuff Goes Bad: Erlang in Anger* (free)](https://www.erlang-in-anger.com/) — failure in production systems.
 
-### F5.05 &middot; Concurrency patterns & Tasks
+### F5.05 &middot; Commands, queries & events
 
 - [Elixir — Task](https://hexdocs.pm/elixir/Task.html) — async/await concurrency.
 - [GenStage](https://hexdocs.pm/gen_stage/GenStage.html) — demand-driven back-pressure.

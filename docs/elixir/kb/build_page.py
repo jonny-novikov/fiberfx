@@ -237,7 +237,7 @@ MODULES = {
         dict(n="F5.03", title="Tracer bullets: a walking skeleton", one="Thin end-to-end first, then iterate.", slug="tracer-bullets", status="built", lab=False),
         dict(n="F5.04", title="Design by contract", one="Preconditions, postconditions, and failing fast.", slug="contracts", status="built", lab=False),
         dict(n="F5.05", title="Commands, queries & events", one="Separate writes from reads; the engine as a reducer over events.", slug="cqrs", status="built", lab=False),
-        dict(n="F5.06", title="Telemetry, logging & observability", one="Seeing inside a running system.", slug="telemetry", status="planned", lab=False),
+        dict(n="F5.06", title="Where engine state lives", one="One process holds the state; one supervisor keeps it alive.", slug="state", status="built", lab=False),
         dict(n="F5.07", title="Dependencies, releases & deployment", one="mix release, config, runtime.", slug="releases", status="planned", lab=False),
         dict(n="F5.08", title="Performance & profiling", one="Benchmarks, the scheduler, hot paths.", slug="performance", status="planned", lab=False),
         dict(n="F5.09", title="Let it crash — a supervision tree that heals", one="Crash a worker; watch the supervisor restart it.", slug="supervision-lab", status="planned", lab=True),
@@ -406,6 +406,11 @@ SUBPAGES = {
         dict(slug='cqs', title='Command/query separation', one='One rule, due to Bertrand Meyer: a function either changes state or returns a value, never both.'),
         dict(slug='events', title='Domain events', one='A record that something happened, written in the past tense and never changed once stored.'),
         dict(slug='reducer', title='The engine as a reducer', one='Once every change is an event, new state is a left fold: the old state plus the next event.'),
+    ],
+    "F5.06": [
+        dict(slug='choosing', title='Choosing where state lives', one='Three places on the BEAM can hold live state, and they are not interchangeable — only one fits the engine.'),
+        dict(slug='genserver', title='The engine GenServer', one='Three callbacks carry the whole engine: init folds the log on start, then calls and casts thread state through.'),
+        dict(slug='supervision', title='Supervision', one='A stateful process will eventually crash; a supervisor restarts it, and the engine replays its log to recover.'),
     ],
 }
 
