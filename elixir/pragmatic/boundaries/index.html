@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boundaries &amp; integration seams — F5.08 · jonnify</title>
+<meta name="description" content="The engine works, but its callers still have to know it is a process with message shapes and a chosen store. F5.08 draws the boundary with hexagonal architecture: the core declares its needs as ports (behaviours), adapters implement them, a facade is the one door the UI calls, and failures cross the line as a closed set of typed errors. Three dives on ports and adapters, the engine facade, and error contracts for the UI.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem+0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(179,157,219,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem+4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--elixir-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem+1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem+.6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem+1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--sans);color:var(--cream-dim);font-size:.95rem;max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--elixir-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="elixir"]{background:var(--elixir-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;overflow-x:auto;white-space:nowrap}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--elixir-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- arc svg ---- */
+.arc-node rect{transition:fill .2s ease, stroke .2s ease}
+.arc-node{cursor:pointer}
+.arc-node .num{font-family:var(--serif-display);font-weight:600;fill:var(--cream)}
+.arc-node .nm{font-family:var(--sans);font-weight:600;fill:var(--cream-dim);letter-spacing:.02em}
+.arc-node:hover rect{stroke:var(--cream-dim)}
+.arc-node.active rect{fill:var(--ink-3);stroke:var(--elixir-bright)}
+.arc-node.active .num{fill:var(--gold-bright)}
+.arc-node.active .nm{fill:var(--elixir-bright)}
+.arc-node:focus{outline:none}
+.arc-node:focus-visible rect{stroke:var(--gold-bright)}
+.arc-flow{stroke:var(--line);stroke-width:2;fill:none;stroke-dasharray:6 9}
+.arc-arrow{fill:var(--cream-dim)}
+@media (prefers-reduced-motion: no-preference){
+  .arc-flow{animation:flow 1.6s linear infinite}
+}
+@keyframes flow{to{stroke-dashoffset:-30}}
+.arc-readout{margin-top:1.1rem}
+.arc-readout .nm{font-family:var(--serif-display);font-size:1.5rem;color:var(--cream);font-weight:600}
+.arc-readout .one{font-family:var(--serif);color:var(--cream-soft);margin:.25rem 0 .5rem;max-width:60ch}
+.arc-readout .meta{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;align-items:center}
+.arc-readout .meta b{color:var(--gold)}
+.arc-open{margin-top:.7rem;font-family:var(--sans);font-size:.9rem}
+.arc-open .muted{color:var(--cream-dim)}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--elixir-bright);border-color:var(--elixir)}
+.chap{padding-top:2.2rem}
+.chap:first-of-type{padding-top:.4rem}
+.chap-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem 1rem;
+  padding-bottom:.6rem;border-bottom:1px solid var(--line);margin-bottom:1.1rem}
+.chap-head .cid{font-family:var(--mono);font-size:.95rem;color:var(--gold)}
+.chap-head h3{margin:0}
+.chap-head .c-one{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);
+  flex-basis:100%;margin-top:.1rem}
+.chap-head .chap-link{font-family:var(--sans);font-size:.82rem;margin-left:auto}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+.mod.is-quiet{opacity:.66;border-style:dashed}
+.mod.is-quiet .t{color:var(--cream-soft)}
+.mod.lab{border-left:2px solid var(--elixir)}
+.mod.lab .num::after{content:" · lab";color:var(--elixir-bright)}
+.dives{list-style:none;margin:.6rem 0 0;padding:.6rem 0 0;border-top:1px dashed var(--line);
+  font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);display:grid;gap:.3rem}
+.dives li{display:flex;gap:.5rem}
+.dives .dn{font-family:var(--mono);color:var(--gold);min-width:3.6rem}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--elixir-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--elixir-bright);
+  border:1px solid var(--elixir);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+pre.code .rdx{background:rgba(179,157,219,.18);border-radius:4px;padding:0 .18em;color:var(--elixir-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag">/elixir/pragmatic/boundaries</span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+      <span class="sep">/</span>
+      <span class="here">F5.08 &middot; boundaries</span>
+    </div>
+    <p class="eyebrow">F5 &middot; the engine &middot; module 8</p>
+    <h1>Boundaries &amp; integration <span class="ex">seams</span></h1>
+    <p class="lede">Seven modules in, the engine works: a pure core of <code class="inl">decide</code> and
+      <code class="inl">evolve</code>, a supervised GenServer that holds the fold, and a test suite that pins it down.
+      What it does not yet have is a <strong>boundary</strong>. Right now a caller would have to know the engine is a
+      process, know the message shapes it accepts, and know how state is stored. That is three kinds of coupling the
+      web layer in F6 should never carry. This module draws the boundary the way Alistair Cockburn frames
+      <strong>ports and adapters</strong> &mdash; the application core defines its edges as interfaces and the outside
+      world plugs into them &mdash; rendered in Elixir as <strong>behaviours</strong>. The core states what it needs
+      (a <strong>driven port</strong> such as an event store) and how it is invoked (a <strong>driving port</strong>,
+      the facade the UI calls); adapters supply the implementations; and every failure that crosses the line does so
+      as a typed <strong>error contract</strong> the UI can render.</p>
+    <p class="kicker">One core, two kinds of port, one error vocabulary. Select a seam to see what it is and which dive
+      builds it.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#hexagon">The shape of the boundary</a>
+      <a href="#seams">Three seams in code</a>
+      <a href="#dives">Three deep dives</a>
+    </div>
+  </section>
+
+  <section id="hexagon">
+    <h2>The shape of the boundary</h2>
+    <div class="prose">
+      <p>The hexagon is Cockburn's picture: the application core sits inside, ignorant of what is outside it, and each
+        edge is a <em>port</em> &mdash; a named interface. Things that <strong>drive</strong> the application (a web
+        request, a test, a CLI) come in through a driving port; things the application <strong>drives</strong> (a
+        database, a clock, a message bus) sit behind driven ports. The crucial rule is the direction of dependency:
+        the core depends on its own ports, never on the adapters that implement them. Select a seam to see where it
+        sits and what it carries.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="bdTitle">
+      <h4 id="bdTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The hexagon &middot; select a seam</h4>
+      <div class="controls">
+        <div class="solid-select" id="bdSel" role="group" aria-label="Boundary seam">
+          <button type="button" data-k="ports" class="active">driven ports</button>
+          <button type="button" data-k="facade">driving port</button>
+          <button type="button" data-k="errors">error contract</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 260" role="img" aria-label="A hexagonal architecture. The engine core sits in the centre. On the left, driven ports (EventStore, Clock) the core needs, implemented by adapters. On the right, the driving port (the Portal facade) the UI calls. Below, the error contract that crosses the boundary to the UI.">
+        <polygon points="300,78 420,78 468,140 420,202 300,202 252,140" fill="#14182c" stroke="#5a6688" stroke-width="1.6"></polygon>
+        <text x="360" y="134" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.06em" fill="#9aa3c0">ENGINE CORE</text>
+        <text x="360" y="150" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#7c86a6">decide &middot; evolve &middot; state</text>
+
+        <text x="34" y="64" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">adapters: InMemory &middot; Postgres</text>
+        <rect id="bdPart_ports" x="34" y="72" width="170" height="50" rx="10" fill="#1d1320" stroke="#c4504c" stroke-width="2"></rect>
+        <text x="119" y="93" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#b07572">DRIVEN PORTS</text>
+        <text x="119" y="108" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#e08f8b">EventStore &middot; Clock</text>
+        <line x1="204" y1="100" x2="252" y2="124" stroke="#3a4263" stroke-width="1.4"></line>
+
+        <text x="686" y="64" text-anchor="end" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">caller: LiveView (F6)</text>
+        <rect id="bdPart_facade" x="516" y="72" width="170" height="50" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="601" y="93" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">DRIVING PORT</text>
+        <text x="601" y="108" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#d7cfb9">the Portal facade</text>
+        <line x1="468" y1="124" x2="516" y2="100" stroke="#3a4263" stroke-width="1.4"></line>
+
+        <line x1="360" y1="202" x2="360" y2="222" stroke="#2a3252" stroke-width="1.3" stroke-dasharray="3 3"></line>
+        <rect id="bdPart_errors" x="255" y="222" width="210" height="34" rx="9" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="360" y="238" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.05em" fill="#8b93b0">ERROR CONTRACT</text>
+        <text x="360" y="250" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#6b7494">%Portal.Error{} &rarr; UI</text>
+      </svg>
+
+      <div class="geo-readout" id="bdOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">seam: <span id="bdRole" style="color:#e08f8b">Driven ports</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">in the Portal: <span id="bdResult" style="color:var(--cream)">behaviours the core needs</span></p>
+    </figure>
+    <p class="take">A boundary is not a folder layout; it is a set of named interfaces with the dependency arrow pointing
+      inward. Get the arrow right and the database, the web, and the clock all become details.</p>
+  </section>
+
+  <section id="seams">
+    <h2>Three seams in code</h2>
+    <div class="prose">
+      <p>Each seam is one small Elixir construct. A driven port is a <code class="inl">@behaviour</code> the core calls
+        and config resolves to an adapter; the driving port is a context module of intention-revealing functions; the
+        error contract is a struct with a closed set of codes. Seen together before the dives unpack them:</p>
+    </div>
+    <pre class="code"><span class="cmt"># 1. a driven port — the core depends on this behaviour, not on any adapter</span>
+<span class="op">defmodule</span> <span class="fn burg">Portal.EventStore</span> <span class="op">do</span>
+  <span class="op">@callback</span> <span class="fn">append</span>(stream :: <span class="fn burg">String</span>.t(), [struct]) :: <span class="res">:ok</span> | {<span class="res">:error</span>, term}
+  <span class="op">@callback</span> <span class="fn">read_stream</span>(stream :: <span class="fn burg">String</span>.t()) :: {<span class="res">:ok</span>, [struct]} | {<span class="res">:error</span>, term}
+<span class="op">end</span>
+
+<span class="cmt"># 2. the driving port — the only surface the UI in F6 will call</span>
+<span class="op">defmodule</span> <span class="fn burg">Portal</span> <span class="op">do</span>
+  <span class="op">def</span> <span class="fn">enroll</span>(user_id, course_id), <span class="op">do:</span> <span class="fn burg">Engine</span>.<span class="fn">command</span>({<span class="res">:enroll</span>, user_id, course_id})
+<span class="op">end</span>
+
+<span class="cmt"># 3. the error contract — a closed vocabulary the UI can render</span>
+<span class="op">defmodule</span> <span class="fn burg">Portal.Error</span> <span class="op">do</span>
+  <span class="op">@type</span> code :: <span class="res">:already_enrolled</span> | <span class="res">:course_not_found</span> | <span class="res">:invalid_progress</span>
+  <span class="op">defstruct</span> [<span class="res">:code</span>, <span class="res">:message</span>, <span class="res">:field</span>]
+<span class="op">end</span></pre>
+    <p class="note">The config line that picks an adapter &mdash;
+      <code class="inl">config :portal, :event_store, Portal.EventStore.Postgres</code> &mdash; is the whole of the
+      wiring; tests set it to <code class="inl">Portal.EventStore.InMemory</code> and nothing in the core changes.</p>
+  </section>
+
+  <section id="dives">
+    <h2>Three deep dives</h2>
+    <div class="prose">
+      <p>In order: ports as behaviours and adapters as their implementations, with the dependency arrow pointing
+        inward; the facade as the one stable door the UI calls; and the error contract that turns internal failures
+        into a finite set of outcomes the UI can render.</p>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:1rem;margin-top:1.4rem">
+      <a href="/elixir/pragmatic/boundaries/ports" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--burgundy);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:#e08f8b">F5.08.1</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Ports &amp; adapters <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">A port is a <code class="inl">@behaviour</code>; adapters implement it; config swaps them. One event-store contract, an in-memory adapter and a Postgres adapter, and a core that never names either.</div>
+      </a>
+      <a href="/elixir/pragmatic/boundaries/facade" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--blue-bright)">F5.08.2</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">The engine facade <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">A small, intention-revealing context &mdash; <code class="inl">enroll/2</code>, <code class="inl">deliver_lesson/2</code>, <code class="inl">progress_of/1</code> &mdash; that hides the GenServer, the log, and the reducer behind one door.</div>
+      </a>
+      <a href="/elixir/pragmatic/boundaries/errors" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--gold-bright)">F5.08.3</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Error contracts for the UI <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">A closed set of <code class="inl">%Portal.Error{}</code> codes, mapped at the boundary, so the UI renders a finite set of outcomes and never sees a raw exception or an internal struct.</div>
+      </a>
+    </div>
+
+    <div class="bridge" style="margin-top:1.8rem">
+      <div class="cell idea">
+        <p class="lbl">F5.07 &middot; a tested engine</p>
+        <p>The core is pure and pinned by tests, but its callers still have to know it is a process with message shapes.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">F5.08 &middot; a usable boundary</p>
+        <p>Ports invert the dependencies, a facade hides the runtime, and errors cross the line in a shape the UI knows.</p>
+      </div>
+    </div>
+    <p class="note">Start with <a href="/elixir/pragmatic/boundaries/ports">ports &amp; adapters</a>, then
+      <a href="/elixir/pragmatic/boundaries/facade">the engine facade</a>, then
+      <a href="/elixir/pragmatic/boundaries/errors">error contracts for the UI</a>. The next module, F5.09 &mdash; the
+      engine lab, assembles the facade end to end and mounts it behind a LiveView sketch for F6. The engine behind this
+      boundary is <a href="/elixir/pragmatic/state">F5.06 &middot; where engine state lives</a>, and the runtime path
+      is the design brief <a href="/elixir/pragmatic/flow">the command &amp; event flow</a>.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Ports and adapters, behaviours as the port mechanism, and adapters chosen by configuration.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://alistair.cockburn.us/hexagonal-architecture/">Alistair Cockburn &mdash; Hexagonal architecture</a> &mdash; the ports-and-adapters pattern.</li>
+        <li><a href="https://hexdocs.pm/elixir/typespecs.html">Elixir &mdash; Typespecs &amp; behaviours</a> &mdash; defining a port as a behaviour.</li>
+        <li><a href="https://dashbit.co/blog/mocks-and-explicit-contracts">Jos&eacute; Valim &mdash; Mocks and explicit contracts</a> &mdash; adapters behind a behaviour, chosen in config.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/pragmatic/boundaries/ports">F5.08.1 &middot; Ports &amp; adapters</a></li>
+        <li><a href="/elixir/pragmatic/boundaries/facade">F5.08.2 &middot; The engine facade</a></li>
+        <li><a href="/elixir/pragmatic/boundaries/errors">F5.08.3 &middot; Error contracts for the UI</a></li>
+        <li><a href="/elixir/pragmatic/state">F5.06 &middot; Where engine state lives</a> &mdash; the engine behind the boundary.</li>
+        <li><a href="/elixir/pragmatic/contracts">F5.04 &middot; Design by contract</a> &mdash; where the error vocabulary begins.</li>
+        <li><a href="/elixir/pragmatic/testing">F5.07 &middot; Pragmatic testing</a> &mdash; the seams are also test seams.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/pragmatic"><span aria-hidden="true">&larr;</span>&nbsp; F5 &middot; overview</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/pragmatic/boundaries/ports">Start &middot; ports &amp; adapters <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <p class="colophon">Built with the jonnify dark-editorial design system. Every page carries a branded
+      <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
+      It is the same id convention the Portal engine uses as a pivot key across its contexts.</p>
+    <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+      build <span class="id" id="stampId">TSK0Nd7nZI0bey</span>
+      <dl class="panel">
+        <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+        <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+        <dt>node</dt><dd id="st-node">&mdash;</dd>
+        <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+        <dt>timestamp</dt><dd id="st-ts">2026-06-01 17:51:23 UTC</dd>
+      </dl>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BURG = '#e08f8b', BURG_MUTE = '#c4504c';
+  var SEAMS = {
+    ports:  { name: 'Driven ports', detail: 'behaviours the core needs', part: 'bdPart_ports',
+      desc: 'The seam of F5.08.1. The core states what it needs \u2014 an event store, a clock \u2014 as a behaviour, and adapters implement it. The core depends on the behaviour, never the adapter, and config picks which adapter runs.' },
+    facade: { name: 'Driving port', detail: 'the API the UI calls', part: 'bdPart_facade',
+      desc: 'The seam of F5.08.2. A small context of intention-revealing functions \u2014 enroll, deliver_lesson, progress_of \u2014 is the only surface the UI knows. Behind it the GenServer, the event log, and the reducer can change freely.' },
+    errors: { name: 'Error contract', detail: 'a closed set the UI renders', part: 'bdPart_errors',
+      desc: 'The seam of F5.08.3. Every failure that crosses the boundary becomes a %Portal.Error{} with a code from a closed set, so the UI renders a finite list of outcomes \u2014 never a raw exception, never an internal struct.' }
+  };
+  var ORDER = ['ports', 'facade', 'errors'];
+  function pick(k) {
+    var S = SEAMS[k]; if (!S) return;
+    document.querySelectorAll('#bdSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var part = document.getElementById(SEAMS[id].part), on = id === k;
+      if (part) { part.setAttribute('stroke', on ? BURG_MUTE : '#3a4263'); part.setAttribute('stroke-width', on ? '2' : '1.3'); part.setAttribute('fill', on ? '#1d1320' : '#10162b'); }
+    });
+    var rEl = document.getElementById('bdRole'); if (rEl) rEl.textContent = S.name;
+    var dEl = document.getElementById('bdResult'); if (dEl) dEl.textContent = S.detail;
+    var oEl = document.getElementById('bdOut'); if (oEl) oEl.innerHTML = 'The <b style="color:' + BURG + '">' + S.name + '</b> seam \u2014 <code class="inl">' + S.detail + '</code>. ' + S.desc;
+  }
+  document.querySelectorAll('#bdSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('ports');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

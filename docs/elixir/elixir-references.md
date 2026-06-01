@@ -324,6 +324,7 @@ Engineering practice. Tooling docs, the OTP guides, and the “let it crash” p
 
 - [Alistair Cockburn — Hexagonal architecture](https://alistair.cockburn.us/hexagonal-architecture/) — ports and adapters.
 - [Elixir — Typespecs & behaviours](https://hexdocs.pm/elixir/typespecs.html) — defining a port as a behaviour.
+- [José Valim — Mocks and explicit contracts](https://dashbit.co/blog/mocks-and-explicit-contracts) — adapters behind a behaviour, chosen in config.
 
 ### F5.09 &middot; Lab: the Portal engine, LiveView-ready
 

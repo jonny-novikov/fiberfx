@@ -311,7 +311,7 @@ Engineering practice. Tooling docs, the OTP guides, and the “let it crash” p
 - [Telemetry.Metrics](https://hexdocs.pm/telemetry_metrics/Telemetry.Metrics.html) — defining metrics.
 - [Phoenix LiveDashboard](https://hexdocs.pm/phoenix_live_dashboard/) — live observability.
 
-### F5.07 &middot; Dependencies, releases & deployment
+### F5.07 &middot; Pragmatic testing
 
 - [Elixir — Mix & OTP: Configuration and releases](https://hexdocs.pm/elixir/releases.html) — runtime config and releases.
 - [Elixir — mix release](https://hexdocs.pm/mix/Mix.Tasks.Release.html) — building a release.

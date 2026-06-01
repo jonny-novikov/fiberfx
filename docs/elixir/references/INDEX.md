@@ -225,7 +225,7 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 - :telemetry — [offline](files/hexdocs.pm_telemetry_readme.html) · [source](https://hexdocs.pm/telemetry/readme.html)
 - Telemetry.Metrics — [offline](files/hexdocs.pm_telemetry_metrics_Telemetry.Metrics.html) · [source](https://hexdocs.pm/telemetry_metrics/Telemetry.Metrics.html)
 - Phoenix LiveDashboard — [offline](files/hexdocs.pm_phoenix_live_dashboard.html) · [source](https://hexdocs.pm/phoenix_live_dashboard/)
-## F5.07 &middot; Dependencies, releases & deployment
+## F5.07 &middot; Pragmatic testing
 
 - Elixir — Mix & OTP: Configuration and releases — [offline](files/hexdocs.pm_elixir_releases.html) · [source](https://hexdocs.pm/elixir/releases.html)
 - Elixir — mix release — [offline](files/hexdocs.pm_mix_Mix.Tasks.Release.html) · [source](https://hexdocs.pm/mix/Mix.Tasks.Release.html)
@@ -286,6 +286,6 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 - Darin Wilson & Eric Meadows-Jönsson, *Programming Ecto* — [offline](files/pragprog.com_titles_wmecto.html) · [source](https://pragprog.com/titles/wmecto/)
 - Chris McCord, *Metaprogramming Elixir* — [offline](files/pragprog.com_titles_cmelixir.html) · [source](https://pragprog.com/titles/cmelixir/)
 - Abelson, Sussman & Sussman, *Structure and Interpretation of Computer Programs* (2nd ed.) — [offline](files/mitpress.mit.edu_sicp.html) · [source](https://mitpress.mit.edu/sicp/)
-- Chris Okasaki, *Purely Functional Data Structures* — _offline copy unavailable_ (403) · [source](https://www.cambridge.org/9780521663502)
+- Chris Okasaki, *Purely Functional Data Structures* — _offline copy unavailable_ (000) · [source](https://www.cambridge.org/9780521663502)
 - Cormen, Leiserson, Rivest & Stein, *Introduction to Algorithms* (4th ed.) — [offline](files/mitpress.mit.edu_9780262046305.html) · [source](https://mitpress.mit.edu/9780262046305/)
 - Fred Hébert, *Learn You Some Erlang for Great Good!* — [offline](files/learnyousomeerlang.com.html) · [source](https://learnyousomeerlang.com/)

@@ -679,8 +679,65 @@ This session opened F5 by building its overview and laying the roadmap:
   References on the hub only. `MODULES["F5"]` F5.05 + its three dives promoted to `built`; `SUBPAGES["F5.05"]` added;
   four PAGES entries (`cqrs.html`, `cqrs-cqs.html`, `cqrs-events.html`, `cqrs-reducer.html`). On the landing the
   F5.05 card was promoted to a linkable `<a class="mod">` with a `built` pill (arc node 05 was already labelled
-  `events`). Routes 144 &rarr; **148**, PAGES 143 &rarr; **147**, module tally 45 &rarr; **46 built / 13 planned**.
-  F5.06 (Where engine state lives) is the next authoring target.
+  `events`). Routes 144 &rarr; 148, PAGES 143 &rarr; 147, module tally 45 &rarr; 46 built / 13 planned.
+- **F5.06 was authored and built as a full module** (hub + three dives, A+ on the nine gates, the sixth built F5
+  module): **&ldquo;Where engine state lives&rdquo;**, slug `state` (`/elixir/pragmatic/state`). It answers where the
+  F5.05 fold actually lives at runtime &mdash; the reducer is pure and forgets its result, so the Portal keeps the
+  folded state alive in a **process**. The hub centerpiece is a **runtime** figure (a supervisor over the engine
+  GenServer, fed by the event log) with a piece selector mapping holder / engine / supervisor to the three dives;
+  prefix `wl`, burgundy. Three dives: **F5.06.1 Choosing where state lives** (`/choosing`, burgundy, prefix `ch`)
+  &mdash; a three-row holder selector (GenServer / Agent / ETS) plus the three shapes and the GenServer choice;
+  **F5.06.2 The engine GenServer** (`/genserver`, blue, prefix `gs`) &mdash; a three-callback selector
+  (init / command / query) plus `Portal.Engine` with `init` folding the log, a command `handle_call` running
+  decide/evolve, and a query `handle_call` reading; **F5.06.3 Supervision** (`/supervision`, gold, prefix `sv`)
+  &mdash; a crash &rarr; restart &rarr; replay cycle selector plus `Portal.Application` with a `:one_for_one` tree.
+  The throughline: state is a fold (F5.05), a GenServer holds it, and a supervisor rebuilds it by replaying the log on
+  restart. Dive-card borders follow the convention (burgundy / blue / gold); References on the hub only (GenServer /
+  Agent / ETS). `MODULES["F5"]` F5.06 + its three dives promoted to `built`; `SUBPAGES["F5.06"]` added; four PAGES
+  entries (`state.html`, `state-choosing.html`, `state-genserver.html`, `state-supervision.html`). On the landing the
+  F5.06 card was promoted to a linkable `<a class="mod">` with a `built` pill (arc node 06 was already labelled
+  `state`). Routes 148 &rarr; 152, PAGES 147 &rarr; 151, module tally 46 &rarr; 47 built / 12 planned.
+- **F5.07 was authored and built as a full module** (hub + three dives, A+ on the nine gates, the seventh built F5
+  module): **&ldquo;Pragmatic testing&rdquo;**, slug `testing` (`/elixir/pragmatic/testing`). It tests the F5.06
+  engine and leans on the architecture &mdash; because `decide`/`evolve` are pure and state is a fold, most of the
+  engine is checked with plain example tests. The hub centerpiece is a **testing pyramid** (pure core at the base,
+  properties in the middle, contracts on top) with a tier selector; prefix `tp`, burgundy. Three dives: **F5.07.1
+  Testing the pure core** (`/pure-core`, burgundy, prefix `pc`) &mdash; a three-function selector (decide / evolve /
+  replay) plus arrange-call-assert example tests with no process or mocks; **F5.07.2 Property-based testing**
+  (`/property`, blue, prefix `pr`) &mdash; a three-property selector (determinism / invariant / totality) plus
+  `StreamData` `check all` properties over generated logs and command sequences; **F5.07.3 Contract tests**
+  (`/contract-tests`, gold, prefix `ct`) &mdash; a three-term selector (precondition / postcondition / invariant)
+  plus the F5.04 contract written as assertions and a `doctest` line. The throughline: purity makes the tests cheap,
+  and the F5.04 contract from earlier becomes executable here. Dive-card borders follow the convention (burgundy /
+  blue / gold); References on the hub only (ExUnit / StreamData / ExUnit.DocTest). Because F5.06 is built, the hub
+  links back to it as the engine under test. `MODULES["F5"]` F5.07 + its three dives promoted to `built`;
+  `SUBPAGES["F5.07"]` added; four PAGES entries (`testing.html`, `testing-pure-core.html`, `testing-property.html`,
+  `testing-contract-tests.html`). On the landing the F5.07 card was promoted to a linkable `<a class="mod">` with a
+  `built` pill (arc node 07 was already labelled `tests`). Routes 152 &rarr; **156**, PAGES 151 &rarr; **155**,
+  module tally 47 &rarr; 48 built / 11 planned.
+- **F5.08 was authored and built as a full module on a deeper standard** (hub + three dives, A+ on the nine gates,
+  the eighth built F5 module): **&ldquo;Boundaries &amp; integration seams&rdquo;**, slug `boundaries`
+  (`/elixir/pragmatic/boundaries`). It is the first module written to the elevated brief &mdash; longer,
+  expert-level, with each dive grounded in its references and carrying real Portal code rather than a single toy
+  snippet. The subject is hexagonal architecture (ports &amp; adapters) applied to the F5.06 engine. The hub
+  centerpiece is a **hexagon** (core in the centre; driven ports left, driving port right, the error contract crossing
+  to the UI) with a seam selector; prefix `bd`, burgundy; it also carries a three-seam teaser code block. Three dives,
+  each with four sections, an interactive figure, a second static diagram, and multiple real code blocks:
+  **F5.08.1 Ports &amp; adapters** (`/ports`, burgundy, prefix `pa`) &mdash; the `Portal.EventStore` behaviour with a
+  config resolver, an `InMemory` (Agent) adapter and a `Postgres` (Ecto) adapter both carrying `@behaviour`, and a
+  dependency-direction diagram showing the arrows point inward; **F5.08.2 The engine facade** (`/facade`, blue, prefix
+  `fc`) &mdash; the `Portal` context (`enroll/2`, `deliver_lesson/2`, `progress_of/1`), the `Engine.command/query`
+  wrappers that are the only callers of `GenServer.call`, and an enroll call-sequence diagram; **F5.08.3 Error
+  contracts for the UI** (`/errors`, gold, prefix `er`) &mdash; the `%Portal.Error{}` struct with a closed `code`
+  union, a no-catch-all `from/1` translator (unmodelled reasons raise), a reason-to-render flow diagram, and a total
+  LiveView `case`. References were enriched with Jos&eacute; Valim&rsquo;s &ldquo;Mocks and explicit contracts&rdquo;
+  alongside Cockburn (hexagonal) and the Elixir behaviours doc; the dives cross-link F5.04/F5.05/F5.06/F5.07. Dive-card
+  borders follow the convention (burgundy / blue / gold); References on the hub only. `MODULES["F5"]` F5.08 + its three
+  dives promoted to `built`; `SUBPAGES["F5.08"]` added; four PAGES entries (`boundaries.html`, `boundaries-ports.html`,
+  `boundaries-facade.html`, `boundaries-errors.html`). On the landing the F5.08 card was promoted to a linkable
+  `<a class="mod">` with a `built` pill (arc node 08 was already labelled `seams`). Routes 156 &rarr; **160**, PAGES
+  155 &rarr; **159**, module tally 48 &rarr; **49 built / 10 planned**. F5.09 (the engine lab) is the next authoring
+  target &mdash; and should be written to this same deeper standard.
 - **The landing was authored and built**: `content/f5-00-landing.html` &rarr; `pragmatic.html`, route
   `/elixir/pragmatic`. Hero + a nine-node chapter-arc SVG (shape it to change &middot; make it trustworthy &middot;
   make it usable) + the three design cards (`#design`) + nine module cards with their submodules (F5.01&ndash;F5.05 now
@@ -693,9 +750,12 @@ This session opened F5 by building its overview and laying the roadmap:
   front-end&rarr;engine-unchanged), one per F5.02 page (context-layer&rarr;dive; struct-declaration,
   context&rarr;references, API-function&rarr;kind), one per F5.03 page (slice-layer&rarr;artifact; technique&rarr;fate,
   round-trip step, iteration&rarr;what-it-adds), one per F5.04 page (contract-term&rarr;detail; term&rarr;owner,
-  idiom&rarr;what-it-expresses, fail-fast&rarr;where), and one per F5.05 page (engine-piece&rarr;detail; kind&rarr;return,
-  event&rarr;records, fold-step&rarr;transition) &mdash; plus 390px mobile entries for all twenty-four F5 pages &mdash;
-  **224 + 48 = 272 PASS, 0 FAIL, 0 images**.
+  idiom&rarr;what-it-expresses, fail-fast&rarr;where), one per F5.05 page (engine-piece&rarr;detail; kind&rarr;return,
+  event&rarr;records, fold-step&rarr;transition), and one per F5.06 page (engine-piece&rarr;detail; holder&rarr;verdict,
+  callback&rarr;does, step&rarr;what-happens), and one per F5.07 page (test-tier&rarr;detail; function&rarr;the-test,
+  property&rarr;rule, contract-term&rarr;assertion), and one per F5.08 page (boundary-seam&rarr;detail;
+  port-piece&rarr;what-it-is, facade-function&rarr;kind, error-case&rarr;message) &mdash; plus 390px mobile entries for
+  all thirty-six F5 pages &mdash; **332 + 72 = 404 PASS, 0 FAIL, 0 images**.
 - **Build-guide specs** (`build-guide/`): five Writerside-friendly markdown guides documenting how to build the
   Portal &mdash; `pragmatic.md` (TOC, conventions, branded-Snowflake id contract, global build sequence) plus
   `f5-01-start-thin.md`, `f5-02-domain.md`, `f5-03-tracer-bullets.md`, `f5-04-contracts.md`, each with What you'll
@@ -723,26 +783,32 @@ What a resuming agent should know, condensed:
    `lab.html` / `lab-grow.html` / `lab-registry.html` / `lab-range.html`). **F5 is `live` with its landing built**
    (`content/f5-00-landing.html` &rarr; `pragmatic.html`, route `/elixir/pragmatic`) plus **three front-matter design
    subpages** in `CHAPTER_SUBPAGES["F5"]` (`architecture` / `domain-model` / `flow` &rarr; `pragmatic-architecture.html`
-   / `pragmatic-domain-model.html` / `pragmatic-flow.html`), linked as cards on the landing. **F5.01&ndash;F5.05 are
+   / `pragmatic-domain-model.html` / `pragmatic-flow.html`), linked as cards on the landing. **F5.01&ndash;F5.08 are
    built** as full modules (hub + three dives each): F5.01 `/foundations` +
    `/foundations/{roadmap,thin-server,replaceable}` (the &ldquo;start thin&rdquo; approach), F5.02 `/domain` +
    `/domain/{structs,contexts,api}` (modeling the Portal domain), F5.03 `/tracer-bullets` +
    `/tracer-bullets/{prototypes,skeleton,iterating}` (a walking skeleton, enroll a learner end to end), F5.04
    `/contracts` + `/contracts/{conditions,assertions,fail-fast}` (design by contract on the engine's commands), and
-   F5.05 `/cqrs` + `/cqrs/{cqs,events,reducer}` (commands, queries & events; the engine as a reducer); its modules
-   `F5.06`&ndash;`F5.09` remain `planned`, each with a three-dive roadmap &mdash; the next authoring targets (start at
-   F5.06, Where engine state lives), with REFS and `A`-map abstracts already keyed by module `n`.
-   `allowed_routes()` returns **148** link routes; only built/live routes are linkable (F5.06&ndash;F5.09 module
-   routes are not, since those modules are planned; F5.01&ndash;F5.05 and the chapter front-matter subpages are, since
-   they are built and the chapter is `live`), external `https://` links are exempt.
+   F5.05 `/cqrs` + `/cqrs/{cqs,events,reducer}` (commands, queries & events; the engine as a reducer), F5.06
+   `/state` + `/state/{choosing,genserver,supervision}` (where engine state lives; a GenServer holds the fold, a
+   supervisor replays it on restart), F5.07 `/testing` + `/testing/{pure-core,property,contract-tests}`
+   (pragmatic testing; pure-core examples, StreamData properties, the F5.04 contract run as tests), and F5.08
+   `/boundaries` + `/boundaries/{ports,facade,errors}` (boundaries &amp; integration seams; ports as behaviours with
+   swappable adapters, the facade as the driving port, a closed error contract for the UI &mdash; the first module on
+   the deeper standard: longer dives grounded in references with real Portal code); its one remaining module
+   `F5.09` (the engine lab) is still `planned`, with a three-dive roadmap &mdash; the next authoring target (write it
+   to the same deeper standard), with REFS and `A`-map abstracts already keyed by module `n`.
+   `allowed_routes()` returns **160** link routes; only built/live routes are linkable
+   (the `F5.09` module route is not, since it is planned; F5.01&ndash;F5.08 and the chapter
+   front-matter subpages are, since they are built and the chapter is `live`), external `https://` links are exempt.
 2. Rebuild any page with `python3 build_page.py build --page KEY`, grade with `check OUT.html` (nine gates + A+),
    regenerate `_head.html` with `extract-head` after editing `HEAD_CSS`. The voice gate scans all visible text
    including `<pre class="code">` comments (only `<script>`/`<style>`/`<svg>` are stripped); `expectText` in the
    validator is case-SENSITIVE.
 3. The validator (`validator/suite.elixir.js`) has a tagged desktop block and a 390px mobile entry for every module;
    run all with `BASE_URL="file:///home/claude/elixir-course" node validator/suite.elixir.js`, or one module with
-   `ONLY="F4.NN"`. F4.12 is 35 desktop + 8 mobile = 43 PASS; the F5 landing (`ONLY="F5"`) is 9 desktop + 2 mobile =
-   11 PASS.
+   `ONLY="F4.NN"`. F4.12 is 35 desktop + 8 mobile = 43 PASS; the whole F5 chapter so far (`ONLY="F5"`) is 332 desktop
+   + 72 mobile = 404 PASS.
 4. `_gen_course_md.py` and `_gen_refs_md.py` read the manifest and both run a voice gate that must report CLEAN;
    keep 59/59 modules carrying references.
 
@@ -753,6 +819,13 @@ F4.03 + F4.04 + F4.05 + F4.06 + F4.07 + F4.08 + F4.09 + F4.10 + F4.11 + F4.12). 
 
 ## Known follow-ups
 
+- **Authoring standard raised at F5.08.** Per reviewer feedback, modules were too short and not expert-level; dives
+  must be longer, draw robust approaches from their references, and carry real Portal app code rather than a single
+  toy snippet. F5.08 is the first module built to this bar &mdash; each dive has four sections, an interactive figure,
+  a second static diagram, and multiple real code blocks (the `EventStore` behaviour + two adapters, the `Portal`
+  facade + engine wrappers, the `%Portal.Error{}` struct + `from/1` + a total LiveView `case`), with an enriched
+  reference set. F5.09 should match it. Earlier F5 modules (notably F5.05&ndash;F5.07) predate the standard and are
+  candidates for a depth retrofit if desired &mdash; same structure, more sections and real code per dive.
 - The outline generator's hand-written "At a glance" summary prose lags the manifest (it predates the
   F2.09, F3.01–F3.09, and F4 promotions); its per-chapter tables, derived from the manifest, are correct and now
   show F3 fully built and the F4 chapter complete with F4.01&ndash;F4.12 all built hubs (three nested dives each). Refresh the summary prose in `_gen_course_md.py` when convenient.
