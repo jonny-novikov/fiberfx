@@ -236,7 +236,7 @@ MODULES = {
         dict(n="F5.02", title="Modeling the Portal domain", one="Bounded contexts, structs, and the public API.", slug="domain", status="built", lab=False),
         dict(n="F5.03", title="Tracer bullets: a walking skeleton", one="Thin end-to-end first, then iterate.", slug="tracer-bullets", status="built", lab=False),
         dict(n="F5.04", title="Design by contract", one="Preconditions, postconditions, and failing fast.", slug="contracts", status="built", lab=False),
-        dict(n="F5.05", title="Concurrency patterns & Tasks", one="Task, async/await, back-pressure.", slug="tasks", status="planned", lab=False),
+        dict(n="F5.05", title="Commands, queries & events", one="Separate writes from reads; the engine as a reducer over events.", slug="cqrs", status="built", lab=False),
         dict(n="F5.06", title="Telemetry, logging & observability", one="Seeing inside a running system.", slug="telemetry", status="planned", lab=False),
         dict(n="F5.07", title="Dependencies, releases & deployment", one="mix release, config, runtime.", slug="releases", status="planned", lab=False),
         dict(n="F5.08", title="Performance & profiling", one="Benchmarks, the scheduler, hot paths.", slug="performance", status="planned", lab=False),
@@ -401,6 +401,11 @@ SUBPAGES = {
         dict(slug='assertions', title='Assertions in Elixir', one='Elixir has no design-by-contract keywords, so contracts are written in its idioms: guards and pa'),
         dict(slug='conditions', title='Preconditions, postconditions & invariants', one='A contract has three parts and three owners.'),
         dict(slug='fail-fast', title='Failing fast', one='Check at the boundary and stop on the first violation, before the struct is built or the store i'),
+    ],
+    "F5.05": [
+        dict(slug='cqs', title='Command/query separation', one='One rule, due to Bertrand Meyer: a function either changes state or returns a value, never both.'),
+        dict(slug='events', title='Domain events', one='A record that something happened, written in the past tense and never changed once stored.'),
+        dict(slug='reducer', title='The engine as a reducer', one='Once every change is an event, new state is a left fold: the old state plus the next event.'),
     ],
 }
 

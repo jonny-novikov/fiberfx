@@ -293,7 +293,7 @@ Engineering practice. Tooling docs, the OTP guides, and the “let it crash” p
 - [Elixir — Typespecs](https://hexdocs.pm/elixir/typespecs.html) — @spec and types.
 - [Dialyxir](https://hexdocs.pm/dialyxir/readme.html) — Dialyzer for Elixir.
 
-### F5.04 &middot; Error handling & “let it crash”
+### F5.04 &middot; Design by contract
 
 - [Armstrong thesis — “let it crash” and supervision](https://erlang.org/download/armstrong_thesis_2003.pdf) — the philosophy, from the source.
 - [Elixir — Mix & OTP: Supervision trees and applications](https://hexdocs.pm/elixir/supervisor-and-application.html) — rescue versus restart.

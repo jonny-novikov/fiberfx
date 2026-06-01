@@ -131,7 +131,7 @@ var Modules = map[string][]Module{
 		{N: "F5.02", Title: "Modeling the Portal domain", One: "Bounded contexts, structs, and the public API.", Slug: "domain", Status: "built"},
 		{N: "F5.03", Title: "Tracer bullets: a walking skeleton", One: "Thin end-to-end first, then iterate.", Slug: "tracer-bullets", Status: "built"},
 		{N: "F5.04", Title: "Design by contract", One: "Preconditions, postconditions, and failing fast.", Slug: "contracts", Status: "built"},
-		{N: "F5.05", Title: "Concurrency patterns & Tasks", One: "Task, async/await, back-pressure.", Slug: "tasks", Status: "planned"},
+		{N: "F5.05", Title: "Commands, queries & events", One: "Separate writes from reads; the engine as a reducer over events.", Slug: "cqrs", Status: "built"},
 		{N: "F5.06", Title: "Telemetry, logging & observability", One: "Seeing inside a running system.", Slug: "telemetry", Status: "planned"},
 		{N: "F5.07", Title: "Dependencies, releases & deployment", One: "mix release, config, runtime.", Slug: "releases", Status: "planned"},
 		{N: "F5.08", Title: "Performance & profiling", One: "Benchmarks, the scheduler, hot paths.", Slug: "performance", Status: "planned"},
@@ -293,6 +293,11 @@ var Subpages = map[string][]Subpage{
 		{"assertions", "Assertions in Elixir", "Elixir has no design-by-contract keywords, so contracts are written in its idioms: guards and pa"},
 		{"conditions", "Preconditions, postconditions & invariants", "A contract has three parts and three owners."},
 		{"fail-fast", "Failing fast", "Check at the boundary and stop on the first violation, before the struct is built or the store i"},
+	},
+	"F5.05": {
+		{"cqs", "Command/query separation", "One rule, due to Bertrand Meyer: a function either changes state or returns a value, never both."},
+		{"events", "Domain events", "A record that something happened, written in the past tense and never changed once stored."},
+		{"reducer", "The engine as a reducer", "Once every change is an event, new state is a left fold: the old state plus the next event."},
 	},
 }
 

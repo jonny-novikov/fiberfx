@@ -210,7 +210,7 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 - Elixir — Writing documentation — [offline](files/hexdocs.pm_elixir_writing-documentation.html) · [source](https://hexdocs.pm/elixir/writing-documentation.html)
 - Elixir — Typespecs — [offline](files/hexdocs.pm_elixir_typespecs.html) · [source](https://hexdocs.pm/elixir/typespecs.html)
 - Dialyxir — [offline](files/hexdocs.pm_dialyxir_readme.html) · [source](https://hexdocs.pm/dialyxir/readme.html)
-## F5.04 &middot; Error handling & “let it crash”
+## F5.04 &middot; Design by contract
 
 - Armstrong thesis — “let it crash” and supervision — [offline](files/erlang.org_download_armstrong_thesis_2003.pdf) · [source](https://erlang.org/download/armstrong_thesis_2003.pdf)
 - Elixir — Mix & OTP: Supervision trees and applications — [offline](files/hexdocs.pm_elixir_supervisor-and-application.html) · [source](https://hexdocs.pm/elixir/supervisor-and-application.html)
