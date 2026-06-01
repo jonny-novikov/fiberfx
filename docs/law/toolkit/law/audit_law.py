@@ -24,17 +24,30 @@ LAW = os.path.join(_REPO_ROOT, 'law')
 STATUS_MD = os.path.join(_REPO_ROOT, 'docs', 'law', 'law-status.md')
 
 # Карта тема-главы курса ПРАВА (своя, отличается от health-палитры в playbook §4.2).
+# Гл.7 nesovershennoletnie добавлена позже (тема blue); финал /law/final — sage.
 CHAPTER_COLOR = {
     'dogovor': 'slate', 'potrebitel': 'gold', 'trud': 'copper',
     'semya': 'burgundy', 'nasledstvo': 'plum', 'pretenziya': 'jade',
+    'nesovershennoletnie': 'blue',
 }
-CHAPTERS = list(CHAPTER_COLOR)
 # Hex-значения акцентов (playbook §4.1). Страница главы задаёт alias --accent:#hex
 # и использует var(--accent*) — проверяем, что hex совпадает с темой главы.
 ACCENT_HEX = {
     'slate': '#5a8fa4', 'gold': '#d4a85a', 'copper': '#b8804a',
     'burgundy': '#c4504c', 'plum': '#9b6fa0', 'jade': '#3d8a8e',
+    'blue': '#5a87c4', 'sage': '#7ba387',
 }
+
+def discover_chapters():
+    """Глава = каталог под law/ с index.html. Открытие списка ДИНАМИЧЕСКИ —
+    курс растёт (6→7 глав + финал), хардкод устарел бы молча."""
+    if not os.path.isdir(LAW):
+        return []
+    return sorted(d for d in os.listdir(LAW)
+                  if os.path.isdir(os.path.join(LAW, d))
+                  and os.path.exists(os.path.join(LAW, d, 'index.html')))
+
+CHAPTERS = discover_chapters()
 
 # Маркеры обязательного дисклеймера (хотя бы один на странице).
 DISCLAIMER_MARKERS = ('не юридическая консультация', 'образовательн', 'class="disclaimer"', 'law-banner')
