@@ -222,7 +222,7 @@ MODULES = {
         dict(n="F4.02", title="Trees & traversals", one="Binary and n-ary trees; DFS/BFS, functionally.", slug="trees", status="built", lab=False),
         dict(n="F4.03", title="Sorting & searching", one="Merge/quick sort and binary search, immutably.", slug="sorting", status="built", lab=False),
         dict(n="F4.04", title="Maps, sets & hashing", one="Hash maps, collisions, the cost model.", slug="maps", status="built", lab=False),
-        dict(n="F4.05", title="Hash Array Mapped Tries (HAMT)", one="Persistent maps via prefix trees.", slug="hamt", status="planned", lab=False),
+        dict(n="F4.05", title="Hash Array Mapped Tries (HAMT)", one="Persistent maps via prefix trees.", slug="hamt", status="built", lab=False),
         dict(n="F4.06", title="CHAMP maps", one="Compressed Hash-Array Mapped Prefix-trees; layout & iteration.", slug="champ", status="built", lab=False),
         dict(n="F4.07", title="Branded Champ maps", one="Namespaced keys as cross-system pivots, e.g. TSK0KHTOWnGLuC.", slug="branded-champ", status="planned", lab=False),
         dict(n="F4.08", title="Dynamic programming & advanced problems", one="Memoisation and harder challenges.", slug="dynamic-programming", status="planned", lab=False),
@@ -343,6 +343,11 @@ SUBPAGES = {
         dict(slug='equality', title='Canonical equality', one='CHAMP maintains one canonical shape per set of entries, so two equal maps are structurally ident'),
         dict(slug='iteration', title='Cache-friendly iteration', one='Because a CHAMP node keeps its entries contiguous and separate from sub-node pointers, iteration'),
         dict(slug='layout', title='Compressed node layout', one='A CHAMP node carries a datamap and a nodemap — two bitmaps marking which of its 32 slots hold in'),
+    ],
+    "F4.05": [
+        dict(slug='bitmap', title='Bitmapped nodes', one='A HAMT node keeps one 32-bit bitmap marking which of its slots are occupied and one packed array'),
+        dict(slug='indexing', title='Hash-prefix indexing', one="A HAMT reads the key's hash in five-bit chunks from the low end: level 0 reads bits 0-4, level 1"),
+        dict(slug='sharing', title='Structural sharing', one='An insert builds new nodes only along the path from the root to the changed leaf and shares ever'),
     ],
 }
 

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Algorithms &amp; Data Structures — F4 · jonnify</title>
-<meta name="description" content="The F4 chapter overview: nine modules from lists through trees, sorting, and hash-based maps to the persistent trie family — HAMT, CHAMP, and the branded CHAMP map keyed by a Snowflake pivot — plus dynamic programming and a lab. F4.01 is built; the rest show their planned dives.">
+<title>Hash array mapped tries — F4.05 · jonnify</title>
+<meta name="description" content="A HAMT spreads a hash table over a tree: it consumes the key&#x27;s hash five bits at a time, branching up to 32 ways per level, so a node is a bitmap plus one packed array and depth is about log32 n. It is the structure the BEAM uses for a large immutable map, and the first of the chapter&#x27;s three persistent-map modules — the page registry is a map, and that map is a trie like this one.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -242,6 +242,17 @@ a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
 .colophon{max-width:42ch}
 .colophon b{color:var(--cream-soft)}
 
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
 /* ---- reveal (JS-gated; content visible without JS) ---- */
 html.js .reveal{opacity:0;transform:translateY(14px)}
 html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
@@ -295,14 +306,14 @@ pre.code .step{color:var(--cream-dim)}
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to the chapter</a>
+<a class="skip" href="#main">Skip to the lesson</a>
 
 <header class="site">
   <div class="wrap">
     <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
     <nav>
       <a href="/elixir/course">Contents</a>
-      <span class="route-tag">/elixir/algorithms</span>
+      <span class="route-tag">/elixir/algorithms/hamt</span>
     </nav>
   </div>
 </header>
@@ -311,201 +322,180 @@ pre.code .step{color:var(--cream-dim)}
 
   <section class="hero">
     <div class="crumbs">
-      <a href="/elixir/course">Contents</a>
+      <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
       <span class="sep">/</span>
-      <span class="here">F4 &middot; Algorithms &amp; Data Structures</span>
+      <span class="here">F4.05 &middot; hamt</span>
     </div>
-    <p class="eyebrow">F4 &middot; chapter overview</p>
-    <h1>Algorithms &amp; <span class="ex">data structures</span></h1>
-    <p class="lede">The data behind the systems you built in F3. This chapter starts at the list &mdash; the BEAM's
-      fundamental sequence &mdash; and works up through trees, sorting, and hash-based maps to the persistent tries
-      that make immutable maps fast: HAMT, CHAMP, and the branded CHAMP map that carries a Snowflake key as a
-      cross-system pivot. Each structure comes with the cost model that tells you when to reach for it.</p>
-    <p class="kicker">Nine modules, each grounded in working Elixir and the running portal's data. The arc is
-      deliberate: foundations first (lists, trees, sorting, maps), then the trie family (HAMT &rarr; CHAMP &rarr;
-      branded CHAMP), then dynamic programming and a lab where you watch a branded CHAMP map grow node by node.</p>
+    <p class="eyebrow">F4 &middot; Persistent maps &middot; module 5</p>
+    <h1>Hash array mapped <span class="ex">tries</span></h1>
+    <p class="lede">F4.04 sent a key through a hash to a slot in one flat table. A <strong>HAMT</strong> &mdash; a hash
+      array mapped trie &mdash; spreads that idea over a tree. It consumes the key&rsquo;s hash a few bits at a time,
+      branching up to 32 ways at each level, so a node is a small <strong>bitmap</strong> plus one packed array, and
+      the depth is about <code class="inl">log&#8323;&#8322;&nbsp;n</code> &mdash; roughly four levels for millions of
+      keys.</p>
+    <p class="kicker">It is the structure the BEAM uses for a large immutable map, and the first of the chapter&rsquo;s
+      three persistent-map modules: the page registry behind the portal is a map, and that map is a trie like this
+      one.</p>
     <div class="toc-mini" aria-label="On this page">
-      <a href="#arc">The chapter arc</a>
-      <a href="#modules">Module navigation</a>
+      <a href="#node">Inside a HAMT node</a>
+      <a href="#dives">Three deep dives</a>
+      <a href="#advanced">Advanced: a tree of 32-way nodes</a>
     </div>
   </section>
 
-  <section id="arc">
-    <h2>The chapter arc</h2>
+  <section id="node">
+    <h2>Inside a HAMT node</h2>
     <div class="prose">
-      <p>Read it in order. The foundations earn the tries: once you can reason about a list's O(n) walk and a map's
-        average-O(1) lookup, the HAMT and CHAMP show how a tree of small nodes gives you both persistence and speed.
-        Module F4.01 &mdash; lists, recursion, and complexity &mdash; is built and ready.</p>
+      <p>A node describes its 32 slots with one bitmap: a bit is set for each occupied slot. The occupants live in a
+        single packed array sized to the number of set bits, so an empty slot costs nothing. A slot can hold an inline
+        entry or a child node &mdash; both kinds share that one array. Select an angle.</p>
     </div>
 
-    <figure class="fig" aria-labelledby="arcTitle">
-      <h4 id="arcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Nine modules &middot; F4.01 is the entry point</h4>
+    <figure class="fig" aria-labelledby="hmTitle">
+      <h4 id="hmTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The angle &middot; select one (8 of 32 slots shown)</h4>
+      <div class="controls">
+        <div class="solid-select" id="hmSel" role="group" aria-label="The angle">
+          <button type="button" data-k="bitmap" data-c="sage" class="active">bitmap</button>
+          <button type="button" data-k="index" data-c="blue">index</button>
+          <button type="button" data-k="sharing" data-c="gold">sharing</button>
+        </div>
+      </div>
 
-      <svg viewBox="0 0 720 158" role="img" aria-label="A spine of nine F4 modules from lists through the trie family to a branded CHAMP lab, with F4.01 highlighted as the starting point.">
-        <line x1="60" y1="70" x2="660" y2="70" stroke="#2a3252" stroke-width="2"></line>
+      <svg viewBox="0 0 720 216" role="img" aria-label="A HAMT node: one bitmap with three set slots points to a single packed array holding two leaves and one child node; popcount of the lower bits gives a slot's array index.">
+        <rect x="16" y="16" width="688" height="184" rx="14" fill="#10162b" stroke="#2a3252" stroke-width="1.4"></rect>
 
-        <!-- 01 lists (start, built) -->
-        <circle cx="60" cy="70" r="12" fill="#1a2b22" stroke="#a7c9b1" stroke-width="2.5"></circle>
-        <text x="60" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">01</text>
-        <text x="60" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#a7c9b1">lists</text>
-        <text x="60" y="114" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">start</text>
+        <text x="36" y="78" font-family="JetBrains Mono, monospace" font-size="11.5" fill="#a7c9b1">bitmap</text>
+        <rect x="110" y="64" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="132" y="64" width="20" height="20" rx="4" fill="#1a2230" stroke="#a7c9b1" stroke-width="2"></rect>
+        <rect x="154" y="64" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="176" y="64" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="198" y="64" width="20" height="20" rx="4" fill="#1a2230" stroke="#a7c9b1" stroke-width="2"></rect>
+        <rect x="220" y="64" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="242" y="64" width="20" height="20" rx="4" fill="#1a2230" stroke="#a7c9b1" stroke-width="2"></rect>
+        <rect x="264" y="64" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="300" y="79" font-family="JetBrains Mono, monospace" font-size="13" fill="#5a6688">&rarr;</text>
 
-        <!-- 02 trees -->
-        <circle cx="135" cy="70" r="10" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="135" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494">02</text>
-        <text x="135" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8b93b0">trees</text>
+        <text x="330" y="54" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.1em" fill="#6b7494">one packed array (leaves &amp; children)</text>
+        <rect id="hmArr" x="330" y="64" width="150" height="20" rx="5" fill="#1a2230" stroke="#a7c9b1" stroke-width="2.4"></rect>
+        <line x1="380" y1="64" x2="380" y2="84" stroke="#0f1626" stroke-width="1.4"></line>
+        <line x1="430" y1="64" x2="430" y2="84" stroke="#0f1626" stroke-width="1.4"></line>
+        <text x="355" y="79" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#cdb8f0">k&rarr;v</text>
+        <text x="405" y="79" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9fc0ea">&#9679;</text>
+        <text x="455" y="79" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#cdb8f0">k&rarr;v</text>
 
-        <!-- 03 sorting -->
-        <circle cx="210" cy="70" r="10" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="210" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494">03</text>
-        <text x="210" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8b93b0">sort</text>
+        <g id="hmBadgePop" opacity="0">
+          <rect x="150" y="112" width="420" height="44" rx="10" fill="#241c14" stroke="#f0cd7f" stroke-width="1.6"></rect>
+          <text x="170" y="132" font-family="JetBrains Mono, monospace" font-size="11" fill="#f0cd7f">slot 4 is set &mdash; its position in the array is:</text>
+          <text x="170" y="149" font-family="JetBrains Mono, monospace" font-size="11" fill="#cdb8f0">popcount(bits below 4) = 1 (slot 1) &rarr; array[1]</text>
+        </g>
 
-        <!-- 04 maps -->
-        <circle cx="285" cy="70" r="10" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="285" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494">04</text>
-        <text x="285" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8b93b0">maps</text>
+        <g id="hmBadgeShare" opacity="0">
+          <rect x="150" y="112" width="420" height="44" rx="10" fill="#1a2b22" stroke="#a7c9b1" stroke-width="1.6"></rect>
+          <text x="170" y="132" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">insert rebuilds only the path to the changed leaf;</text>
+          <text x="170" y="149" font-family="JetBrains Mono, monospace" font-size="11" fill="#cdb8f0">every other sub-node is shared with the old map</text>
+        </g>
 
-        <!-- 05 HAMT (trie family) -->
-        <circle cx="360" cy="70" r="10" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="360" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8aa896">05</text>
-        <text x="360" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8aa896">HAMT</text>
-
-        <!-- 06 CHAMP -->
-        <circle cx="435" cy="70" r="10" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="435" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8aa896">06</text>
-        <text x="435" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8aa896">CHAMP</text>
-
-        <!-- 07 branded champ -->
-        <circle cx="510" cy="70" r="10" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="510" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8aa896">07</text>
-        <text x="510" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8aa896">branded</text>
-
-        <!-- 08 DP -->
-        <circle cx="585" cy="70" r="10" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="585" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494">08</text>
-        <text x="585" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8b93b0">DP</text>
-
-        <!-- 09 lab -->
-        <circle cx="660" cy="70" r="10" fill="#1a1530" stroke="#b39ddb" stroke-width="2"></circle>
-        <text x="660" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#cdb8f0">09</text>
-        <text x="660" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#cdb8f0">lab</text>
-
-        <text x="360" y="138" text-anchor="middle" font-family="Manrope, sans-serif" font-size="10" letter-spacing="0.06em" fill="#6b7494">foundations · the trie family (05–07) · dynamic programming · lab</text>
+        <text id="hmCaption" x="360" y="186" text-anchor="middle" font-family="Manrope, sans-serif" font-size="10.5" fill="#a7c9b1">one bitmap marks the three occupied slots</text>
       </svg>
 
-      <div class="geo-readout">The three middle modules are the chapter's spine: a Hash Array Mapped Trie (F4.05),
-        its compressed successor CHAMP (F4.06), and the branded CHAMP map (F4.07) that keys nodes by a
-        <code class="inl">Snowflake</code> id. F4.09 then animates one growing.</div>
+      <pre class="code" id="hmCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="hmOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">role: <span id="hmRole" style="color:var(--sage-bright)">one bitmap, one packed array</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">in short: <span id="hmExpr" style="color:var(--cream)">the array holds only the present slots</span></p>
     </figure>
-    <p class="take">A data structure is a bet about which operations you will do most. This chapter is about reading
-      that bet from the cost model &mdash; and choosing the structure that wins it.</p>
+    <p class="take">A bitmap plus a packed array turns a 32-wide node into a compact one, and a few hash bits per level
+      keep the tree shallow. The three dives take the node, the descent, and the way an edit shares structure in turn.</p>
   </section>
 
-  <section id="modules">
-    <h2>Module navigation</h2>
+  <section id="dives">
+    <h2>Three deep dives</h2>
     <div class="prose">
-      <p>F4.01 is built; open it below. The rest list their planned deep dives so the path through the chapter is
-        visible from here.</p>
+      <p>In order: how one node packs its slots, how the hash chooses a path down the tree, and how an insert reuses
+        almost all of the old map &mdash; each tied to the portal&rsquo;s page registry.</p>
     </div>
 
-    <div class="mods" style="margin-top:1.3rem">
-      <a class="mod" href="/elixir/algorithms/lists">
-        <div class="top"><span class="num">F4.01</span><span class="pill built">built</span></div>
-        <p class="t">Lists, recursion &amp; complexity</p>
-        <p class="o">Cons cells; big-O on the BEAM.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.01.1</span><span>Cons cells &amp; the shape of a list</span></li>
-          <li><span class="dn">F4.01.2</span><span>Recursion over lists</span></li>
-          <li><span class="dn">F4.01.3</span><span>Complexity &amp; big-O on the BEAM</span></li>
-        </ul>
+    <div style="display:flex;flex-direction:column;gap:1rem;margin-top:1.4rem">
+      <a href="/elixir/algorithms/hamt/bitmap" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--sage);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--sage-bright)">F4.05.1</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Bitmapped nodes <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">One <code class="inl">bitmap</code> marks the occupied slots; a single packed array holds them, and a slot&rsquo;s position is found by <code class="inl">popcount</code>.</div>
       </a>
-      <a class="mod" href="/elixir/algorithms/trees">
-        <div class="top"><span class="num">F4.02</span><span class="pill built">built</span></div>
-        <p class="t">Trees &amp; traversals</p>
-        <p class="o">Recursive tree shape and the three depth-first orders.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.02.1</span><span>Binary trees &amp; recursive shape</span></li>
-          <li><span class="dn">F4.02.2</span><span>Depth-first: pre, in, post-order</span></li>
-          <li><span class="dn">F4.02.3</span><span>Breadth-first &amp; balance</span></li>
-        </ul>
+      <a href="/elixir/algorithms/hamt/indexing" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--blue-bright)">F4.05.2</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Hash-prefix indexing <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">Five bits of the hash pick a slot at each level; the next five pick the next, so the depth is about <code class="inl">log&#8323;&#8322;&nbsp;n</code>.</div>
       </a>
-      <a class="mod" href="/elixir/algorithms/sorting">
-        <div class="top"><span class="num">F4.03</span><span class="pill built">built</span></div>
-        <p class="t">Sorting &amp; searching</p>
-        <p class="o">Comparison sorts and the cost of finding things.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.03.1</span><span>Merge &amp; quicksort</span></li>
-          <li><span class="dn">F4.03.2</span><span>Linear &amp; binary search</span></li>
-          <li><span class="dn">F4.03.3</span><span>Stability &amp; sort cost</span></li>
-        </ul>
+      <a href="/elixir/algorithms/hamt/sharing" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--gold-bright)">F4.05.3</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Structural sharing <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">An insert copies the path from root to the changed leaf and shares every other sub-tree, so the old map stays intact.</div>
       </a>
-      <a class="mod" href="/elixir/algorithms/maps">
-        <div class="top"><span class="num">F4.04</span><span class="pill built">built</span></div>
-        <p class="t">Maps, sets &amp; hashing</p>
-        <p class="o">Key lookup, membership, and what a hash buys you.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.04.1</span><span>Maps &amp; key lookup</span></li>
-          <li><span class="dn">F4.04.2</span><span>MapSet &amp; membership</span></li>
-          <li><span class="dn">F4.04.3</span><span>Hashing &amp; collisions</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/hamt">
-        <div class="top"><span class="num">F4.05</span><span class="pill built">built</span></div>
-        <p class="t">Hash Array Mapped Tries (HAMT)</p>
-        <p class="o">A tree of small nodes indexed by slices of the hash.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.05.1</span><span>Bitmapped nodes</span></li>
-          <li><span class="dn">F4.05.2</span><span>Hash-prefix indexing</span></li>
-          <li><span class="dn">F4.05.3</span><span>Structural sharing</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/champ">
-        <div class="top"><span class="num">F4.06</span><span class="pill built">built</span></div>
-        <p class="t">CHAMP maps</p>
-        <p class="o">A compressed HAMT: tighter nodes, faster iteration.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.06.1</span><span>Compressed node layout</span></li>
-          <li><span class="dn">F4.06.2</span><span>Cache-friendly iteration</span></li>
-          <li><span class="dn">F4.06.3</span><span>Canonical equality</span></li>
-        </ul>
-      </a>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.07</span><span class="pill planned">planned</span></div>
-        <p class="t">Branded CHAMP maps</p>
-        <p class="o">A CHAMP keyed by a branded Snowflake pivot id.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.07.1</span><span>Branded Snowflake keys</span></li>
-          <li><span class="dn">F4.07.2</span><span>A cross-system pivot key</span></li>
-          <li><span class="dn">F4.07.3</span><span>Base62 encode &amp; decode</span></li>
-        </ul>
+    </div>
+  </section>
+
+  <section id="advanced">
+    <h2>Advanced: a tree of 32-way nodes</h2>
+    <div class="prose">
+      <p>Why 32, and not two? A binary trie on a 27-bit hash would be 27 levels deep; a 32-way trie reads five bits at
+        a time, so 27 bits is about six levels and a realistic hash about four. Each level is a constant-time slot
+        lookup, so a wide, shallow tree behaves like the flat table from F4.04 while staying a tree &mdash; which is
+        what makes it cheap to share and to grow. A small map skips the tree entirely and stays a flat sorted array
+        until it outgrows 32 keys; only then does it become a trie.</p>
+      <p>The BEAM&rsquo;s built-in map is exactly this kind of structure, so reaching for <code class="inl">Map</code>
+        already gives you a HAMT &mdash; you build one by hand only when you want a variant the runtime does not offer,
+        which is where F4.06 (CHAMP) and the stack&rsquo;s <code class="inl">BrandedChamp</code> trie come in. For the
+        portal, the page registry is a map from a route to a <code class="inl">%Page{}</code>, keyed by a branded
+        Snowflake id; storing it as a trie is what lets a new snapshot reuse the old one.</p>
+    </div>
+    <pre class="code"><span class="cmt"># a HAMT node: one bitmap + one packed array, sized to the set bits</span>
+<span class="op">defmodule</span> <span class="fn sage">Hamt.Node</span> <span class="op">do</span>
+  <span class="op">defstruct</span> bitmap: <span class="res">0</span>, slots: {}   <span class="cmt"># slots holds leaves and children, packed</span>
+<span class="op">end</span>
+
+<span class="cmt"># F4.04: one flat table, a slot per hash-mod-size, resized as it fills</span>
+<span class="cmt"># F4.05: a tree of these nodes, branch-32 per level, depth ~ log32 n</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">F4.04 &middot; one flat slot table</p>
+        <p>A hash sends each key to a slot in a single array that is resized as it fills.</p>
       </div>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.08</span><span class="pill planned">planned</span></div>
-        <p class="t">Dynamic programming &amp; advanced problems</p>
-        <p class="o">Overlapping subproblems, memoized and tabulated.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.08.1</span><span>Memoization &amp; overlapping subproblems</span></li>
-          <li><span class="dn">F4.08.2</span><span>Tabulation &amp; bottom-up</span></li>
-          <li><span class="dn">F4.08.3</span><span>Classic DP problems</span></li>
-        </ul>
-      </div>
-      <div class="mod is-quiet lab">
-        <div class="top"><span class="num">F4.09</span><span class="pill planned">planned</span></div>
-        <p class="t">Watch a branded CHAMP map grow</p>
-        <p class="o">An interactive lab: insert keys and watch the trie restructure.</p>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">F4.05 &middot; a tree of 32-way nodes</p>
+        <p>The hash picks a path through small bitmapped nodes; depth stays near <code class="inl">log&#8323;&#8322;&nbsp;n</code>.</p>
       </div>
     </div>
+    <p class="note">Start with <a href="/elixir/algorithms/hamt/bitmap">bitmapped nodes</a>, then
+      <a href="/elixir/algorithms/hamt/indexing">hash-prefix indexing</a>, then
+      <a href="/elixir/algorithms/hamt/sharing">structural sharing</a>. Predecessor:
+      <a href="/elixir/algorithms/maps"><strong>F4.04 &mdash; Maps, sets &amp; hashing</strong></a>. Next module:
+      <a href="/elixir/algorithms/champ"><strong>F4.06 &mdash; CHAMP maps</strong></a>, the compressed successor that
+      splits the one array into two and gives the tree a canonical shape.</p>
+  </section>
 
-    <p class="note">Begin with <a href="/elixir/algorithms/lists"><strong>F4.01 &mdash; Lists, recursion &amp;
-      complexity</strong></a>. The chapter builds toward the branded CHAMP map, so the early modules on cost and
-      hashing pay off directly in the trie family.</p>
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://lampwww.epfl.ch/papers/idealhashtrees.pdf">Bagwell, P. (2001). <em>Ideal Hash Trees.</em></a> &mdash; the original HAMT paper.</li>
+        <li><a href="https://en.wikipedia.org/wiki/Hash_array_mapped_trie">Hash array mapped trie &mdash; Wikipedia</a> &mdash; the structure in brief.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/maps">F4.04 &middot; Maps, sets &amp; hashing</a> &mdash; the flat table this trie generalises.</li>
+        <li><a href="/elixir/algorithms/champ">F4.06 &middot; CHAMP maps</a> &mdash; the compressed successor.</li>
+        <li><a href="/elixir/algorithms/hamt/sharing">Structural sharing</a> &mdash; how an insert reuses the old map.</li>
+      </ul>
+    </div>
   </section>
 
   <section>
-    <nav class="pager" aria-label="Chapter navigation">
-      <a class="btn ghost" href="/elixir/language"><span aria-hidden="true">&larr;</span>&nbsp; F3 &middot; The Elixir Language</a>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/maps"><span aria-hidden="true">&larr;</span>&nbsp; F4.04 &middot; maps</a>
       <span class="spacer"></span>
-      <a class="btn" href="/elixir/algorithms/lists">Start &middot; F4.01 lists <span aria-hidden="true">&rarr;</span></a>
+      <a class="btn" href="/elixir/algorithms/hamt/bitmap">Start &middot; bitmapped nodes <span aria-hidden="true">&rarr;</span></a>
     </nav>
   </section>
 
@@ -515,15 +505,15 @@ pre.code .step{color:var(--cream-dim)}
   <div class="wrap">
     <p class="colophon">Built with the jonnify dark-editorial design system. Every page carries a branded
       <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
-      It is the same id convention the branded CHAMP map uses as a pivot key.</p>
+      It is the same id convention used as a cross-system pivot key throughout the course.</p>
     <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
-      build <span class="id" id="stampId">TSK0NbZQGsujZo</span>
+      build <span class="id" id="stampId">TSK0NcRkmRv7GS</span>
       <dl class="panel">
         <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
         <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
         <dt>node</dt><dd id="st-node">&mdash;</dd>
         <dt>seq</dt><dd id="st-seq">&mdash;</dd>
-        <dt>timestamp</dt><dd id="st-ts">2026-05-31 19:22:44 UTC</dd>
+        <dt>timestamp</dt><dd id="st-ts">2026-06-01 08:03:01 UTC</dd>
       </dl>
     </div>
   </div>
@@ -532,6 +522,52 @@ pre.code .step{color:var(--cream-dim)}
 <script>
 (function () {
   "use strict";
+  var SAGE = '#a7c9b1', BLUE = '#9fc0ea', GOLD = '#f0cd7f';
+  function set(id, attr, v) { var e = document.getElementById(id); if (e) e.setAttribute(attr, String(v)); }
+  var CASES = {
+    bitmap: {
+      arrStroke: SAGE, arrW: '2.4', pop: 0, share: 0,
+      caption: 'one bitmap marks the three occupied slots', captionFill: SAGE,
+      role: 'one bitmap, one packed array', roleFill: SAGE,
+      expr: 'the array holds only the present slots', exprFill: '#e8e2d0',
+      code: '<span class="op">defmodule</span> <span class="fn sage">Hamt.Node</span> <span class="op">do</span>\n  <span class="op">defstruct</span> bitmap: <span class="res">0</span>, slots: {}\n<span class="op">end</span>\n<span class="cmt"># a set bit means the slot is used; slots is packed, no gaps</span>',
+      out: 'A HAMT node keeps <b style="color:var(--sage-bright)">one bitmap and one packed array</b>. The bitmap says which of 32 slots are occupied &mdash; here three &mdash; and the array stores exactly those three, in slot order, with nothing in between.'
+    },
+    index: {
+      arrStroke: BLUE, arrW: '2.6', pop: 1, share: 0,
+      caption: 'popcount of the lower bits gives the array position', captionFill: BLUE,
+      role: 'a slot index by popcount', roleFill: BLUE,
+      expr: 'one CPU instruction per level', exprFill: '#e8e2d0',
+      code: '<span class="op">import</span> <span class="fn sage">Bitwise</span>\n<span class="fn">index</span>(bitmap, slot) =\n  <span class="fn">popcount</span>(bitmap &amp;&amp;&amp; ((<span class="res">1</span> &lt;&lt;&lt; slot) - <span class="res">1</span>))  <span class="cmt"># set bits below slot</span>\n<span class="cmt"># index(bitmap, 4) = 1  ->  array[1]</span>',
+      out: 'To turn a slot into an array position, <b style="color:var(--blue-bright)">popcount</b> the bitmap bits below it. Slot 4 has one set bit beneath it (slot 1), so its occupant is at <code class="inl">array[1]</code> &mdash; constant time, one instruction per level.'
+    },
+    sharing: {
+      arrStroke: GOLD, arrW: '2.4', pop: 0, share: 1,
+      caption: 'an insert copies the path and shares the rest', captionFill: GOLD,
+      role: 'persistent — shares structure', roleFill: GOLD,
+      expr: 'the old map stays intact', exprFill: '#e8e2d0',
+      code: '<span class="cmt"># put returns a new map; the old one is untouched</span>\nv2 = <span class="fn sage">Map</span>.<span class="fn">put</span>(v1, <span class="str">"PGE0NcQgyPQEbI"</span>, page)\n<span class="cmt"># only the nodes on the path to the new leaf are rebuilt</span>',
+      out: 'Because the node is immutable, an insert builds <b style="color:var(--gold-bright)">new nodes only along the path</b> from the root to the changed leaf. Every other sub-tree is shared, pointer-identical, with the previous map &mdash; so the old map is still there and the new one is cheap.'
+    }
+  };
+  function pick(k) {
+    var c = CASES[k]; if (!c) return;
+    document.querySelectorAll('#hmSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    set('hmArr', 'stroke', c.arrStroke); set('hmArr', 'stroke-width', c.arrW);
+    set('hmBadgePop', 'opacity', c.pop); set('hmBadgeShare', 'opacity', c.share);
+    var t;
+    t = document.getElementById('hmCaption'); if (t) { t.textContent = c.caption; t.setAttribute('fill', c.captionFill); }
+    t = document.getElementById('hmRole'); if (t) { t.textContent = c.role; t.style.color = c.roleFill; }
+    t = document.getElementById('hmExpr'); if (t) { t.textContent = c.expr; t.style.color = c.exprFill; }
+    t = document.getElementById('hmCode'); if (t) t.innerHTML = c.code;
+    t = document.getElementById('hmOut'); if (t) t.innerHTML = c.out;
+  }
+  document.querySelectorAll('#hmSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('bitmap');
+
+  /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   var EPOCH_MS = 1704067200000;
   function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }

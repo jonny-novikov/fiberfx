@@ -117,7 +117,7 @@ var Modules = map[string][]Module{
 		{N: "F4.02", Title: "Trees & traversals", One: "Binary/n-ary trees; DFS/BFS functionally.", Slug: "trees", Status: "built"},
 		{N: "F4.03", Title: "Sorting & searching", One: "Merge/quick sort, binary search, immutably.", Slug: "sorting", Status: "built"},
 		{N: "F4.04", Title: "Maps, sets & hashing", One: "Hash maps, collisions, the cost model.", Slug: "maps", Status: "built"},
-		{N: "F4.05", Title: "Hash Array Mapped Tries (HAMT)", One: "Persistent maps via prefix trees.", Slug: "hamt", Status: "planned"},
+		{N: "F4.05", Title: "Hash Array Mapped Tries (HAMT)", One: "Persistent maps via prefix trees.", Slug: "hamt", Status: "built"},
 		{N: "F4.06", Title: "CHAMP maps", One: "Compressed HAMT trees; layout & iteration.", Slug: "champ", Status: "built"},
 		{N: "F4.07", Title: "Branded Champ maps", One: "Namespaced keys as cross-system pivots.", Slug: "branded-champ", Status: "planned"},
 		{N: "F4.08", Title: "Dynamic programming & advanced problems", One: "Memoisation and harder challenges.", Slug: "dynamic-programming", Status: "planned"},
@@ -235,6 +235,11 @@ var Subpages = map[string][]Subpage{
 		{"equality", "Canonical equality", "CHAMP maintains one canonical shape per set of entries, so two equal maps are structurally ident"},
 		{"iteration", "Cache-friendly iteration", "Because a CHAMP node keeps its entries contiguous and separate from sub-node pointers, iteration"},
 		{"layout", "Compressed node layout", "A CHAMP node carries a datamap and a nodemap — two bitmaps marking which of its 32 slots hold in"},
+	},
+	"F4.05": {
+		{"bitmap", "Bitmapped nodes", "A HAMT node keeps one 32-bit bitmap marking which of its slots are occupied and one packed array"},
+		{"indexing", "Hash-prefix indexing", "A HAMT reads the key's hash in five-bit chunks from the low end: level 0 reads bits 0-4, level 1"},
+		{"sharing", "Structural sharing", "An insert builds new nodes only along the path from the root to the changed leaf and shares ever"},
 	},
 }
 

@@ -3,12 +3,17 @@
 build_chapter_landing.py — генератор лендингов глав курса «Право повседневной жизни».
 Лендинг: hero → 3 intro-карточки → сетка из 6 тайлов-модулей (последний — капстоун)
 → цепочка глав → футер. Тема главы, крупный десктоп-шрифт.
-Выход: {OUT_BASE}/{слаг}/index.html   Запуск: python3 build_chapter_landing.py
+Выход (по умолчанию): <repo>/docs/law/toolkit/.gen/{слаг}/index.html — СТЕЙДЖИНГ-папка,
+НЕ живое дерево law/ (лендинги Гл.2/3 вручную сделаны интерактивными — генератор их затёр бы).
+Сгенерируй в .gen, сравни (diff) и перенеси нужное. В живое дерево — явно: OUT_BASE=<repo>/law.
 Тайлы ведут на модули (пути готовы, страницы строятся позже); ссылка «Квиз главы» уже работает.
 """
 import os
 
-OUT_BASE = os.environ.get('OUT_BASE', '/mnt/user-data/outputs/logic')
+# Локальная адаптация: путь резолвится от расположения скрипта (CWD-независимо).
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.abspath(os.path.join(_HERE, '..', '..', '..', '..'))
+OUT_BASE = os.environ.get('OUT_BASE', os.path.join(_REPO_ROOT, 'docs', 'law', 'toolkit', '.gen'))
 COURSE_NAME = 'Право повседневной жизни'
 COURSE_BASE = '/law'
 

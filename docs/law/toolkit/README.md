@@ -14,20 +14,35 @@
 - `law-course-design.md`, `law-references.md`, `law-status.md` — спецификации
 - `course-build-playbook.md` — общий гайд по сборке (разделяется всеми курсами)
 - `law/verify_numbers.py` — арифметика калькуляторов + правовые константы (запуск: `python3 law/verify_numbers.py`)
-- `law/build_chapter_quiz.py` — генератор «Квиз главы» (запуск: `OUT_BASE=. python3 law/build_chapter_quiz.py`)
-- `law/build_chapter_landing.py` — генератор лендингов глав
+- `law/build_chapter_quiz.py`, `law/build_chapter_landing.py` — генераторы; по умолчанию пишут
+  в стейджинг `.gen/` (НЕ в живое дерево — лендинги Гл.2/3 допилены вручную). В живое дерево: `OUT_BASE=<repo>/law`.
 - `law/preflight.py` — pre-flight скан (KaTeX/смешанные скрипты/ссылки/структура)
+- `law/audit_law.py` — **аудит консистентности** (честность/дисклеймеры, кросс-курсовые протечки,
+  тема главы, целостность ссылок, дрифт `status ↔ fs`). Постранично или по всему `law/`.
+- `checks.sh` — **единый локальный прогон всех гейтов** (preflight + verify + audit + DOM-suite)
+- `watch_law.sh` — **вотчер консистентности** (см. `WATCH.md`)
+- `toolkit/validator.js`, `toolkit/suite.law.js` — headless DOM-валидация живого `law/` (0 изображений);
+  `toolkit/visual.js` — визуальная регрессия (нужны `pngjs`+`pixelmatch`, локально не ставятся)
 - `law/index.html` — главная курса; `law/{глава}/index.html` — лендинги (Гл.2–3 интерактивные);
   `law/{глава}/kviz.html` — квизы; `law/dogovor/sila.html` — модуль 1.1
-- `toolkit/validator.js`, `toolkit/visual.js` — headless-валидация (0 изображений)
 
-## Валидация (0 image budget)
+## Локальный прогон (в jonnify-репо)
+Всё резолвится от расположения скрипта — работает из любой CWD; playwright берётся из
+`apps/e2e/node_modules`.
+```bash
+docs/law/toolkit/checks.sh                       # все гейты по всему law/
+docs/law/toolkit/checks.sh law/trud/index.html   # только указанные страницы
+docs/law/toolkit/watch_law.sh audit              # разовый полный аудит консистентности
+LAW_AI=0 bash docs/law/toolkit/watch_law.sh start # запустить вотчер (см. WATCH.md)
 ```
-BASE_URL="file:///abs/path/to/law" \
-NODE_PATH="/path/to/node_modules" \
-node suite.X.js
+
+## Валидация (0 image budget, прямой запуск)
 ```
-Проверяет DOM/computedStyle через stdout, без скриншотов. См. `toolkit/suite.example.js`.
+BASE_URL="file:///Users/jonny/dev/jonnify/law" \
+NODE_PATH="/Users/jonny/dev/jonnify/apps/e2e/node_modules" \
+node toolkit/suite.law.js [relpath ...]
+```
+Проверяет DOM/computedStyle через stdout, без скриншотов. См. `toolkit/suite.law.js` (живой набор) и `toolkit/suite.example.js` (шаблон).
 
 ## Состояние
 Готово: главная `/law`, 6 лендингов глав (Гл.2 `potrebitel` и Гл.3 `trud` — интерактивные),

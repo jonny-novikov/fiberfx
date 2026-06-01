@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Algorithms &amp; Data Structures — F4 · jonnify</title>
-<meta name="description" content="The F4 chapter overview: nine modules from lists through trees, sorting, and hash-based maps to the persistent trie family — HAMT, CHAMP, and the branded CHAMP map keyed by a Snowflake pivot — plus dynamic programming and a lab. F4.01 is built; the rest show their planned dives.">
+<title>Bitmapped nodes — F4.05.1 · jonnify</title>
+<meta name="description" content="A HAMT node keeps one 32-bit bitmap marking which of its slots are occupied and one packed array holding only the occupants, in slot order; a slot&#x27;s position in the array is the popcount of the lower bits. The single array mixes inline entries and child nodes — the one compromise that F4.06 removes with two bitmaps and two arrays.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -242,6 +242,17 @@ a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
 .colophon{max-width:42ch}
 .colophon b{color:var(--cream-soft)}
 
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--elixir-bright)}
+.refs a:hover{color:var(--cream)}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
 /* ---- reveal (JS-gated; content visible without JS) ---- */
 html.js .reveal{opacity:0;transform:translateY(14px)}
 html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
@@ -295,14 +306,14 @@ pre.code .step{color:var(--cream-dim)}
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to the chapter</a>
+<a class="skip" href="#main">Skip to the lesson</a>
 
 <header class="site">
   <div class="wrap">
     <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
     <nav>
       <a href="/elixir/course">Contents</a>
-      <span class="route-tag">/elixir/algorithms</span>
+      <span class="route-tag">/elixir/algorithms/hamt/bitmap</span>
     </nav>
   </div>
 </header>
@@ -311,201 +322,157 @@ pre.code .step{color:var(--cream-dim)}
 
   <section class="hero">
     <div class="crumbs">
-      <a href="/elixir/course">Contents</a>
+      <a href="/elixir/algorithms">F4</a>
       <span class="sep">/</span>
-      <span class="here">F4 &middot; Algorithms &amp; Data Structures</span>
+      <a href="/elixir/algorithms/hamt">F4.05</a>
+      <span class="sep">/</span>
+      <span class="here">bitmap</span>
     </div>
-    <p class="eyebrow">F4 &middot; chapter overview</p>
-    <h1>Algorithms &amp; <span class="ex">data structures</span></h1>
-    <p class="lede">The data behind the systems you built in F3. This chapter starts at the list &mdash; the BEAM's
-      fundamental sequence &mdash; and works up through trees, sorting, and hash-based maps to the persistent tries
-      that make immutable maps fast: HAMT, CHAMP, and the branded CHAMP map that carries a Snowflake key as a
-      cross-system pivot. Each structure comes with the cost model that tells you when to reach for it.</p>
-    <p class="kicker">Nine modules, each grounded in working Elixir and the running portal's data. The arc is
-      deliberate: foundations first (lists, trees, sorting, maps), then the trie family (HAMT &rarr; CHAMP &rarr;
-      branded CHAMP), then dynamic programming and a lab where you watch a branded CHAMP map grow node by node.</p>
+    <p class="eyebrow">F4.05 &middot; part 1 of 3</p>
+    <h1>Bitmapped <span class="ex">nodes</span></h1>
+    <p class="lede">A HAMT node could be a 32-element array, but most slots in most nodes are empty, so that wastes
+      space. Instead a node keeps one 32-bit <strong>bitmap</strong> &mdash; a bit set for each occupied slot &mdash;
+      and one packed array holding only the occupants, in slot order. To find a slot&rsquo;s position in that array
+      you take a <strong>popcount</strong>: the number of set bits below it.</p>
+    <p class="kicker">A node with entries at slots 1 and 6 and a child at slot 4 (8 of 32 slots shown). One array holds
+      all three. Select what to read.</p>
     <div class="toc-mini" aria-label="On this page">
-      <a href="#arc">The chapter arc</a>
-      <a href="#modules">Module navigation</a>
+      <a href="#bits">One bitmap, one array</a>
+      <a href="#advanced">Advanced: leaves and children, mixed</a>
     </div>
   </section>
 
-  <section id="arc">
-    <h2>The chapter arc</h2>
+  <section id="bits">
+    <h2>One bitmap, one array</h2>
     <div class="prose">
-      <p>Read it in order. The foundations earn the tries: once you can reason about a list's O(n) walk and a map's
-        average-O(1) lookup, the HAMT and CHAMP show how a tree of small nodes gives you both persistence and speed.
-        Module F4.01 &mdash; lists, recursion, and complexity &mdash; is built and ready.</p>
+      <p>The bitmap says <em>which</em> slots are used; the array holds the contents densely. Reading a slot is two
+        steps: test the bit, then index into the array by the popcount of the lower bits. Select the bitmap, the
+        array, or watch the index get computed.</p>
     </div>
 
-    <figure class="fig" aria-labelledby="arcTitle">
-      <h4 id="arcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Nine modules &middot; F4.01 is the entry point</h4>
+    <figure class="fig" aria-labelledby="bmTitle">
+      <h4 id="bmTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">What to read &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="bmSel" role="group" aria-label="What to read">
+          <button type="button" data-k="bitmap" data-c="sage" class="active">bitmap</button>
+          <button type="button" data-k="array" data-c="blue">packed array</button>
+          <button type="button" data-k="popcount" data-c="gold">popcount</button>
+        </div>
+      </div>
 
-      <svg viewBox="0 0 720 158" role="img" aria-label="A spine of nine F4 modules from lists through the trie family to a branded CHAMP lab, with F4.01 highlighted as the starting point.">
-        <line x1="60" y1="70" x2="660" y2="70" stroke="#2a3252" stroke-width="2"></line>
+      <svg viewBox="0 0 720 220" role="img" aria-label="A node's bitmap has bits set at slots 1, 4 and 6; one packed array holds an entry, a child node, and an entry in that order; the array index for slot 4 is the popcount of the lower bits, which is 1.">
+        <rect id="bmHi" x="96" y="46" width="320" height="40" rx="8" fill="#a7c9b1" fill-opacity="0.08" stroke="none"></rect>
 
-        <!-- 01 lists (start, built) -->
-        <circle cx="60" cy="70" r="12" fill="#1a2b22" stroke="#a7c9b1" stroke-width="2.5"></circle>
-        <text x="60" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">01</text>
-        <text x="60" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#a7c9b1">lists</text>
-        <text x="60" y="114" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">start</text>
+        <text x="108" y="30" font-family="JetBrains Mono, monospace" font-size="9" fill="#5a6688">0</text>
+        <text x="148" y="30" font-family="JetBrains Mono, monospace" font-size="9" fill="#5a6688">1</text>
+        <text x="188" y="30" font-family="JetBrains Mono, monospace" font-size="9" fill="#5a6688">2</text>
+        <text x="228" y="30" font-family="JetBrains Mono, monospace" font-size="9" fill="#5a6688">3</text>
+        <text x="268" y="30" font-family="JetBrains Mono, monospace" font-size="9" fill="#5a6688">4</text>
+        <text x="308" y="30" font-family="JetBrains Mono, monospace" font-size="9" fill="#5a6688">5</text>
+        <text x="348" y="30" font-family="JetBrains Mono, monospace" font-size="9" fill="#5a6688">6</text>
+        <text x="388" y="30" font-family="JetBrains Mono, monospace" font-size="9" fill="#5a6688">7</text>
 
-        <!-- 02 trees -->
-        <circle cx="135" cy="70" r="10" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="135" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494">02</text>
-        <text x="135" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8b93b0">trees</text>
+        <text x="36" y="70" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">bitmap</text>
+        <rect x="104" y="52" width="24" height="24" rx="5" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect id="bmB1" x="144" y="52" width="24" height="24" rx="5" fill="#1a2230" stroke="#a7c9b1" stroke-width="2.2"></rect>
+        <rect x="184" y="52" width="24" height="24" rx="5" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="224" y="52" width="24" height="24" rx="5" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect id="bmB4" x="264" y="52" width="24" height="24" rx="5" fill="#16203a" stroke="#9fc0ea" stroke-width="2.2"></rect>
+        <rect x="304" y="52" width="24" height="24" rx="5" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect id="bmB6" x="344" y="52" width="24" height="24" rx="5" fill="#1a2230" stroke="#a7c9b1" stroke-width="2.2"></rect>
+        <rect x="384" y="52" width="24" height="24" rx="5" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="430" y="68" font-family="JetBrains Mono, monospace" font-size="13" fill="#5a6688">&rarr;</text>
 
-        <!-- 03 sorting -->
-        <circle cx="210" cy="70" r="10" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="210" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494">03</text>
-        <text x="210" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8b93b0">sort</text>
+        <text x="462" y="44" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.1em" fill="#6b7494">slots[] (packed)</text>
+        <rect id="bmArr" x="462" y="52" width="168" height="24" rx="5" fill="#1a2230" stroke="#a7c9b1" stroke-width="2.4"></rect>
+        <line x1="518" y1="52" x2="518" y2="76" stroke="#0f1626" stroke-width="1.4"></line>
+        <line x1="574" y1="52" x2="574" y2="76" stroke="#0f1626" stroke-width="1.4"></line>
+        <text x="490" y="69" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#cdb8f0">k&rarr;v</text>
+        <text x="546" y="69" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9fc0ea">&#9679;</text>
+        <text x="602" y="69" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#cdb8f0">k&rarr;v</text>
+        <text x="490" y="90" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#6b7494">@1</text>
+        <text x="546" y="90" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#6b7494">@4</text>
+        <text x="602" y="90" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#6b7494">@6</text>
 
-        <!-- 04 maps -->
-        <circle cx="285" cy="70" r="10" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="285" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494">04</text>
-        <text x="285" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8b93b0">maps</text>
+        <g id="bmPop" opacity="0">
+          <rect x="104" y="150" width="470" height="44" rx="9" fill="#241c14" stroke="#f0cd7f" stroke-width="1.6"></rect>
+          <text x="120" y="170" font-family="JetBrains Mono, monospace" font-size="11" fill="#f0cd7f">slot 4 is set &mdash; its index in slots[] is:</text>
+          <text x="120" y="187" font-family="JetBrains Mono, monospace" font-size="11" fill="#cdb8f0">popcount(bitmap below slot 4) = 1 set bit (slot 1) &rarr; slots[1]</text>
+        </g>
 
-        <!-- 05 HAMT (trie family) -->
-        <circle cx="360" cy="70" r="10" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="360" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8aa896">05</text>
-        <text x="360" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8aa896">HAMT</text>
-
-        <!-- 06 CHAMP -->
-        <circle cx="435" cy="70" r="10" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="435" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8aa896">06</text>
-        <text x="435" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8aa896">CHAMP</text>
-
-        <!-- 07 branded champ -->
-        <circle cx="510" cy="70" r="10" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="510" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8aa896">07</text>
-        <text x="510" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8aa896">branded</text>
-
-        <!-- 08 DP -->
-        <circle cx="585" cy="70" r="10" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="585" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494">08</text>
-        <text x="585" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8b93b0">DP</text>
-
-        <!-- 09 lab -->
-        <circle cx="660" cy="70" r="10" fill="#1a1530" stroke="#b39ddb" stroke-width="2"></circle>
-        <text x="660" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#cdb8f0">09</text>
-        <text x="660" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#cdb8f0">lab</text>
-
-        <text x="360" y="138" text-anchor="middle" font-family="Manrope, sans-serif" font-size="10" letter-spacing="0.06em" fill="#6b7494">foundations · the trie family (05–07) · dynamic programming · lab</text>
+        <text id="bmCaption" x="300" y="212" text-anchor="middle" font-family="Manrope, sans-serif" font-size="10.5" fill="#a7c9b1">bitmap marks slots 1, 4 and 6 — three occupants, packed</text>
       </svg>
 
-      <div class="geo-readout">The three middle modules are the chapter's spine: a Hash Array Mapped Trie (F4.05),
-        its compressed successor CHAMP (F4.06), and the branded CHAMP map (F4.07) that keys nodes by a
-        <code class="inl">Snowflake</code> id. F4.09 then animates one growing.</div>
+      <pre class="code" id="bmCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="bmOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">role: <span id="bmRole" style="color:var(--sage-bright)">which slots are occupied</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">result: <span id="bmResult" style="color:var(--cream)">bitmap → 3 packed slots</span></p>
     </figure>
-    <p class="take">A data structure is a bet about which operations you will do most. This chapter is about reading
-      that bet from the cost model &mdash; and choosing the structure that wins it.</p>
+    <p class="take">A bitmap plus a popcount replaces a 32-wide array of mostly-empty slots with a compact one. The node
+      stores one small array and one integer, and still finds any slot in constant time.</p>
   </section>
 
-  <section id="modules">
-    <h2>Module navigation</h2>
+  <section id="advanced">
+    <h2>Advanced: leaves and children, mixed</h2>
     <div class="prose">
-      <p>F4.01 is built; open it below. The rest list their planned deep dives so the path through the chapter is
-        visible from here.</p>
+      <p>That one array holds two kinds of thing: an inline entry (a key and its value) and a child node (a pointer to
+        the next level). They sit together, so the code that reads a slot needs a way to tell them apart &mdash; a tag
+        on each cell, or a side table. The bitmap alone does not say which is which; it only says the slot is used.
+        That mixing is the one compromise the layout makes, and it is the thing F4.06 removes by keeping
+        <strong>two</strong> bitmaps and two arrays, one per kind. The index trick is the same popcount either way, and
+        <code class="inl">popcount</code> is a single CPU instruction on modern hardware, so the lookup stays cheap.</p>
+      <p>This compact node is the unit the rest of the spine builds on: a HAMT stacks these into a tree (F4.05.2),
+        an insert copies a path of them and shares the rest (F4.05.3), and a CHAMP refines the node into its
+        canonical, two-bitmap form (F4.06). The portal&rsquo;s page registry is stored in nodes like this, one per
+        level of a key&rsquo;s hash.</p>
     </div>
+    <pre class="code"><span class="op">import</span> <span class="fn sage">Bitwise</span>
 
-    <div class="mods" style="margin-top:1.3rem">
-      <a class="mod" href="/elixir/algorithms/lists">
-        <div class="top"><span class="num">F4.01</span><span class="pill built">built</span></div>
-        <p class="t">Lists, recursion &amp; complexity</p>
-        <p class="o">Cons cells; big-O on the BEAM.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.01.1</span><span>Cons cells &amp; the shape of a list</span></li>
-          <li><span class="dn">F4.01.2</span><span>Recursion over lists</span></li>
-          <li><span class="dn">F4.01.3</span><span>Complexity &amp; big-O on the BEAM</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/trees">
-        <div class="top"><span class="num">F4.02</span><span class="pill built">built</span></div>
-        <p class="t">Trees &amp; traversals</p>
-        <p class="o">Recursive tree shape and the three depth-first orders.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.02.1</span><span>Binary trees &amp; recursive shape</span></li>
-          <li><span class="dn">F4.02.2</span><span>Depth-first: pre, in, post-order</span></li>
-          <li><span class="dn">F4.02.3</span><span>Breadth-first &amp; balance</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/sorting">
-        <div class="top"><span class="num">F4.03</span><span class="pill built">built</span></div>
-        <p class="t">Sorting &amp; searching</p>
-        <p class="o">Comparison sorts and the cost of finding things.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.03.1</span><span>Merge &amp; quicksort</span></li>
-          <li><span class="dn">F4.03.2</span><span>Linear &amp; binary search</span></li>
-          <li><span class="dn">F4.03.3</span><span>Stability &amp; sort cost</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/maps">
-        <div class="top"><span class="num">F4.04</span><span class="pill built">built</span></div>
-        <p class="t">Maps, sets &amp; hashing</p>
-        <p class="o">Key lookup, membership, and what a hash buys you.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.04.1</span><span>Maps &amp; key lookup</span></li>
-          <li><span class="dn">F4.04.2</span><span>MapSet &amp; membership</span></li>
-          <li><span class="dn">F4.04.3</span><span>Hashing &amp; collisions</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/hamt">
-        <div class="top"><span class="num">F4.05</span><span class="pill built">built</span></div>
-        <p class="t">Hash Array Mapped Tries (HAMT)</p>
-        <p class="o">A tree of small nodes indexed by slices of the hash.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.05.1</span><span>Bitmapped nodes</span></li>
-          <li><span class="dn">F4.05.2</span><span>Hash-prefix indexing</span></li>
-          <li><span class="dn">F4.05.3</span><span>Structural sharing</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/champ">
-        <div class="top"><span class="num">F4.06</span><span class="pill built">built</span></div>
-        <p class="t">CHAMP maps</p>
-        <p class="o">A compressed HAMT: tighter nodes, faster iteration.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.06.1</span><span>Compressed node layout</span></li>
-          <li><span class="dn">F4.06.2</span><span>Cache-friendly iteration</span></li>
-          <li><span class="dn">F4.06.3</span><span>Canonical equality</span></li>
-        </ul>
-      </a>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.07</span><span class="pill planned">planned</span></div>
-        <p class="t">Branded CHAMP maps</p>
-        <p class="o">A CHAMP keyed by a branded Snowflake pivot id.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.07.1</span><span>Branded Snowflake keys</span></li>
-          <li><span class="dn">F4.07.2</span><span>A cross-system pivot key</span></li>
-          <li><span class="dn">F4.07.3</span><span>Base62 encode &amp; decode</span></li>
-        </ul>
+<span class="cmt"># is slot i occupied? — test the one bitmap</span>
+<span class="op">def</span> <span class="fn">occupied?</span>(bitmap, i), <span class="op">do:</span> (bitmap &amp;&amp;&amp; (<span class="res">1</span> &lt;&lt;&lt; i)) != <span class="res">0</span>
+
+<span class="cmt"># position in the packed array = popcount of the lower bits</span>
+<span class="op">def</span> <span class="fn">index</span>(bitmap, i), <span class="op">do:</span> <span class="fn">popcount</span>(bitmap &amp;&amp;&amp; ((<span class="res">1</span> &lt;&lt;&lt; i) - <span class="res">1</span>))
+<span class="cmt"># index(bitmap, 4) = popcount(bits 0..3) = 1  ->  slots[1]</span>
+<span class="cmt"># each slots[] cell is a leaf or a child — a tag says which</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">F4.05.1 &middot; one bitmap, one mixed array</p>
+        <p>Leaves and children share a single packed array; a tag tells them apart.</p>
       </div>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.08</span><span class="pill planned">planned</span></div>
-        <p class="t">Dynamic programming &amp; advanced problems</p>
-        <p class="o">Overlapping subproblems, memoized and tabulated.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.08.1</span><span>Memoization &amp; overlapping subproblems</span></li>
-          <li><span class="dn">F4.08.2</span><span>Tabulation &amp; bottom-up</span></li>
-          <li><span class="dn">F4.08.3</span><span>Classic DP problems</span></li>
-        </ul>
-      </div>
-      <div class="mod is-quiet lab">
-        <div class="top"><span class="num">F4.09</span><span class="pill planned">planned</span></div>
-        <p class="t">Watch a branded CHAMP map grow</p>
-        <p class="o">An interactive lab: insert keys and watch the trie restructure.</p>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">F4.06 &middot; two bitmaps, two arrays</p>
+        <p>A CHAMP separates entries from children, so no tag is needed and the shape is canonical.</p>
       </div>
     </div>
+    <p class="note">Next: <a href="/elixir/algorithms/hamt/indexing"><strong>hash-prefix indexing</strong></a> &mdash; how the
+      key&rsquo;s hash chooses which slot to read at each level of the tree.</p>
+  </section>
 
-    <p class="note">Begin with <a href="/elixir/algorithms/lists"><strong>F4.01 &mdash; Lists, recursion &amp;
-      complexity</strong></a>. The chapter builds toward the branded CHAMP map, so the early modules on cost and
-      hashing pay off directly in the trie family.</p>
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://lampwww.epfl.ch/papers/idealhashtrees.pdf">Bagwell, &ldquo;Ideal Hash Trees&rdquo; (2001)</a> &mdash; the original HAMT paper.</li>
+        <li><a href="https://en.wikipedia.org/wiki/Hash_array_mapped_trie">Hash array mapped trie &mdash; Wikipedia</a> &mdash; the structure in brief.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/hamt">F4.05 &middot; Hash Array Mapped Tries (HAMT)</a></li>
+        <li><a href="/elixir/algorithms/maps">F4.04 &middot; Maps, sets &amp; hashing</a></li>
+        <li><a href="/elixir/algorithms/champ">F4.06 &middot; CHAMP maps</a></li>
+      </ul>
+    </div>
   </section>
 
   <section>
-    <nav class="pager" aria-label="Chapter navigation">
-      <a class="btn ghost" href="/elixir/language"><span aria-hidden="true">&larr;</span>&nbsp; F3 &middot; The Elixir Language</a>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/hamt"><span aria-hidden="true">&larr;</span>&nbsp; F4.05 &middot; hamt</a>
       <span class="spacer"></span>
-      <a class="btn" href="/elixir/algorithms/lists">Start &middot; F4.01 lists <span aria-hidden="true">&rarr;</span></a>
+      <a class="btn" href="/elixir/algorithms/hamt/indexing">Next &middot; indexing <span aria-hidden="true">&rarr;</span></a>
     </nav>
   </section>
 
@@ -515,15 +482,15 @@ pre.code .step{color:var(--cream-dim)}
   <div class="wrap">
     <p class="colophon">Built with the jonnify dark-editorial design system. Every page carries a branded
       <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
-      It is the same id convention the branded CHAMP map uses as a pivot key.</p>
+      It is the same id convention used as a cross-system pivot key throughout the course.</p>
     <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
-      build <span class="id" id="stampId">TSK0NbZQGsujZo</span>
+      build <span class="id" id="stampId">TSK0NcRkmfpSdc</span>
       <dl class="panel">
         <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
         <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
         <dt>node</dt><dd id="st-node">&mdash;</dd>
         <dt>seq</dt><dd id="st-seq">&mdash;</dd>
-        <dt>timestamp</dt><dd id="st-ts">2026-05-31 19:22:44 UTC</dd>
+        <dt>timestamp</dt><dd id="st-ts">2026-06-01 08:03:01 UTC</dd>
       </dl>
     </div>
   </div>
@@ -532,6 +499,53 @@ pre.code .step{color:var(--cream-dim)}
 <script>
 (function () {
   "use strict";
+  var SAGE = '#a7c9b1', BLUE = '#9fc0ea', GOLD = '#f0cd7f';
+  function set(id, attr, v) { var e = document.getElementById(id); if (e) e.setAttribute(attr, String(v)); }
+  var CASES = {
+    bitmap: {
+      hi: 0.08, hiFill: SAGE, arrW: '2.4', pop: 0,
+      caption: 'bitmap marks slots 1, 4 and 6 — three occupants, packed', captionFill: SAGE,
+      role: 'which slots are occupied', roleFill: SAGE,
+      result: 'bitmap → 3 packed slots', resultFill: '#e8e2d0',
+      code: '<span class="cmt"># bitmap has bits set at slots 1, 4 and 6</span>\nbitmap = <span class="res">0b0101_0010</span>          <span class="cmt"># slots 6, 4, 1</span>\nslots  = {entry_1, child_4, entry_6}  <span class="cmt"># packed, in slot order</span>',
+      out: 'The <b style="color:var(--sage-bright)">bitmap</b> records which of the 32 slots are occupied &mdash; here slots 1, 4 and 6. The <code class="inl">slots</code> array holds exactly those three, packed in slot order, with nothing in between.'
+    },
+    array: {
+      hi: 0.08, hiFill: BLUE, arrW: '2.8', pop: 0,
+      caption: 'the array holds the three occupants — two leaves and a child', captionFill: BLUE,
+      role: 'the contents, densely packed', roleFill: BLUE,
+      result: 'slots[] = {leaf, child, leaf}', resultFill: '#e8e2d0',
+      code: '<span class="cmt"># the packed array, in slot order — leaves and a child together</span>\nslots = {\n  {<span class="str">"PGE0NXh7MFjxT6"</span>, page},  <span class="cmt"># slot 1: an inline entry (leaf)</span>\n  child_node,               <span class="cmt"># slot 4: a sub-node</span>\n  {<span class="str">"PGE0NbLeJJpTmr"</span>, page}   <span class="cmt"># slot 6: an inline entry (leaf)</span>\n}',
+      out: 'The <b style="color:var(--blue-bright)">packed array</b> holds the three occupants in slot order. Two are inline entries and one is a child node &mdash; both kinds live in this one array, which is the trait F4.06 changes.'
+    },
+    popcount: {
+      hi: 0.08, hiFill: GOLD, arrW: '2.4', pop: 1,
+      caption: 'index in slots[] = popcount of the lower bitmap bits', captionFill: GOLD,
+      role: 'popcount gives the array index', roleFill: GOLD,
+      result: 'index = popcount(bitmap & lower bits)', resultFill: '#e8e2d0',
+      code: '<span class="op">import</span> <span class="fn sage">Bitwise</span>\n<span class="fn">index</span>(bitmap, <span class="res">4</span>) =\n  <span class="fn">popcount</span>(bitmap &amp;&amp;&amp; ((<span class="res">1</span> &lt;&lt;&lt; <span class="res">4</span>) - <span class="res">1</span>))  <span class="cmt"># count set bits below slot 4</span>\n<span class="cmt"># = 1 (only slot 1 is set below 4)  ->  slots[1]</span>',
+      out: 'To turn a slot into an array position, <b style="color:var(--gold-bright)">popcount</b> the bitmap bits below it. Slot 4 has one set bit beneath it (slot 1), so its occupant is at <code class="inl">slots[1]</code> &mdash; constant time, one instruction.'
+    }
+  };
+  function pick(k) {
+    var c = CASES[k]; if (!c) return;
+    document.querySelectorAll('#bmSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    set('bmHi', 'fill-opacity', c.hi); set('bmHi', 'fill', c.hiFill);
+    set('bmArr', 'stroke-width', c.arrW);
+    set('bmPop', 'opacity', c.pop);
+    var t;
+    t = document.getElementById('bmCaption'); if (t) { t.textContent = c.caption; t.setAttribute('fill', c.captionFill); }
+    t = document.getElementById('bmRole'); if (t) { t.textContent = c.role; t.style.color = c.roleFill; }
+    t = document.getElementById('bmResult'); if (t) { t.textContent = c.result; t.style.color = c.resultFill; }
+    t = document.getElementById('bmCode'); if (t) t.innerHTML = c.code;
+    t = document.getElementById('bmOut'); if (t) t.innerHTML = c.out;
+  }
+  document.querySelectorAll('#bmSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('bitmap');
+
+  /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   var EPOCH_MS = 1704067200000;
   function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }

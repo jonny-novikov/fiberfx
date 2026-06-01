@@ -5,13 +5,20 @@ preflight.py — pre-flight скан страниц курса «Право по
   1) KaTeX strict-чистоту: запрещённые символы и «голый» % внутри $...$ (HTML и JS-литералы, с учётом \\% и ${...});
   2) смешанные кириллица+латиница слова (ловит опечатки вида «обмen»);
   3) структурную целостность: один </html>, баланс <script>/</script>, баланс $.
-Запуск:  python3 preflight.py [glob ...]   (по умолчанию logic/*.html logic/*/*.html)
+Запуск:  python3 preflight.py [glob ...]
+По умолчанию (без аргументов) сканирует ЖИВОЕ дерево law/ репозитория — путь
+резолвится от расположения скрипта, поэтому работает из любой рабочей директории
+(в т.ч. из вотчера). Явные glob-аргументы используются как есть (относительно CWD).
 JS-парс выполняется отдельно через node в toolkit-валидации.
 """
 import re, sys, glob, os
 
 BAD = set('№«»“”„…₽')                    # не-ASCII символы, ломающие KaTeX strict
-DEFAULT_GLOBS = ['law/*.html', 'law/*/*.html']
+# Локальная адаптация: docs/law/toolkit/law/<this> -> вверх 4 уровня = корень репозитория.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.abspath(os.path.join(_HERE, '..', '..', '..', '..'))
+_LAW = os.path.join(_REPO_ROOT, 'law')
+DEFAULT_GLOBS = [os.path.join(_LAW, '*.html'), os.path.join(_LAW, '*', '*.html')]
 
 def find_math_spans(text):
     """$$...$$ и $...$ после удаления JS-интерполяций ${...}."""

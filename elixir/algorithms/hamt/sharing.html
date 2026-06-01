@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Algorithms &amp; Data Structures — F4 · jonnify</title>
-<meta name="description" content="The F4 chapter overview: nine modules from lists through trees, sorting, and hash-based maps to the persistent trie family — HAMT, CHAMP, and the branded CHAMP map keyed by a Snowflake pivot — plus dynamic programming and a lab. F4.01 is built; the rest show their planned dives.">
+<title>Structural sharing — F4.05.3 · jonnify</title>
+<meta name="description" content="An insert builds new nodes only along the path from the root to the changed leaf and shares every other sub-tree by reference, so the old map stays intact and a new version costs about log32 n nodes. That persistence makes a snapshot history nearly free — the basis for cheap LiveView diffs and the spine that leads to CHAMP.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -242,6 +242,17 @@ a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
 .colophon{max-width:42ch}
 .colophon b{color:var(--cream-soft)}
 
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
 /* ---- reveal (JS-gated; content visible without JS) ---- */
 html.js .reveal{opacity:0;transform:translateY(14px)}
 html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
@@ -295,14 +306,14 @@ pre.code .step{color:var(--cream-dim)}
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to the chapter</a>
+<a class="skip" href="#main">Skip to the lesson</a>
 
 <header class="site">
   <div class="wrap">
     <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
     <nav>
       <a href="/elixir/course">Contents</a>
-      <span class="route-tag">/elixir/algorithms</span>
+      <span class="route-tag">/elixir/algorithms/hamt/sharing</span>
     </nav>
   </div>
 </header>
@@ -311,201 +322,150 @@ pre.code .step{color:var(--cream-dim)}
 
   <section class="hero">
     <div class="crumbs">
-      <a href="/elixir/course">Contents</a>
+      <a href="/elixir/algorithms">F4</a>
       <span class="sep">/</span>
-      <span class="here">F4 &middot; Algorithms &amp; Data Structures</span>
+      <a href="/elixir/algorithms/hamt">F4.05</a>
+      <span class="sep">/</span>
+      <span class="here">sharing</span>
     </div>
-    <p class="eyebrow">F4 &middot; chapter overview</p>
-    <h1>Algorithms &amp; <span class="ex">data structures</span></h1>
-    <p class="lede">The data behind the systems you built in F3. This chapter starts at the list &mdash; the BEAM's
-      fundamental sequence &mdash; and works up through trees, sorting, and hash-based maps to the persistent tries
-      that make immutable maps fast: HAMT, CHAMP, and the branded CHAMP map that carries a Snowflake key as a
-      cross-system pivot. Each structure comes with the cost model that tells you when to reach for it.</p>
-    <p class="kicker">Nine modules, each grounded in working Elixir and the running portal's data. The arc is
-      deliberate: foundations first (lists, trees, sorting, maps), then the trie family (HAMT &rarr; CHAMP &rarr;
-      branded CHAMP), then dynamic programming and a lab where you watch a branded CHAMP map grow node by node.</p>
+    <p class="eyebrow">F4.05 &middot; part 3 of 3</p>
+    <h1>Structural <span class="ex">sharing</span></h1>
+    <p class="lede">The trie nodes are immutable, so an insert cannot edit them in place. Instead it builds new nodes
+      only along the path from the root to the changed leaf, and reuses every other sub-tree exactly as it was. The
+      result is a second map that shares almost all of its structure with the first &mdash; and the first map is still
+      there, unchanged.</p>
+    <p class="kicker">Adding one page to the registry, <code class="inl">"PGE0NcQgyPQEbI"</code>, turning version
+      <code class="inl">v1</code> into <code class="inl">v2</code>. Select what to highlight.</p>
     <div class="toc-mini" aria-label="On this page">
-      <a href="#arc">The chapter arc</a>
-      <a href="#modules">Module navigation</a>
+      <a href="#share">Copy the path, share the rest</a>
+      <a href="#advanced">Advanced: persistence and snapshots</a>
     </div>
   </section>
 
-  <section id="arc">
-    <h2>The chapter arc</h2>
+  <section id="share">
+    <h2>Copy the path, share the rest</h2>
     <div class="prose">
-      <p>Read it in order. The foundations earn the tries: once you can reason about a list's O(n) walk and a map's
-        average-O(1) lookup, the HAMT and CHAMP show how a tree of small nodes gives you both persistence and speed.
-        Module F4.01 &mdash; lists, recursion, and complexity &mdash; is built and ready.</p>
+      <p>An insert walks the new key&rsquo;s hash down the tree, rebuilding each node it passes and leaving everything
+        off that path untouched. The new root points to the rebuilt path and to the old, shared sub-trees; the old
+        root still points only to the old ones. Select the copied path, the shared sub-trees, or both versions at
+        once.</p>
     </div>
 
-    <figure class="fig" aria-labelledby="arcTitle">
-      <h4 id="arcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Nine modules &middot; F4.01 is the entry point</h4>
+    <figure class="fig" aria-labelledby="shTitle">
+      <h4 id="shTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">What to highlight &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="shSel" role="group" aria-label="What to highlight">
+          <button type="button" data-k="copied" data-c="gold" class="active">copied path</button>
+          <button type="button" data-k="shared" data-c="sage">shared sub-trees</button>
+          <button type="button" data-k="persist" data-c="blue">both versions</button>
+        </div>
+      </div>
 
-      <svg viewBox="0 0 720 158" role="img" aria-label="A spine of nine F4 modules from lists through the trie family to a branded CHAMP lab, with F4.01 highlighted as the starting point.">
-        <line x1="60" y1="70" x2="660" y2="70" stroke="#2a3252" stroke-width="2"></line>
+      <svg viewBox="0 0 720 240" role="img" aria-label="Version v1's root and version v2's root both point to two shared sub-trees A and C; v2 has a rebuilt node B-prime and a new leaf on the insert path, while v1 keeps its original node B. Only the root, the path node, and the new leaf are copied.">
+        <line id="shEA1" x1="170" y1="51" x2="300" y2="45" stroke="#3a4263" stroke-width="1.6"></line>
+        <line id="shEC1" x1="170" y1="60" x2="300" y2="93" stroke="#3a4263" stroke-width="1.6"></line>
+        <line id="shEA2" x1="550" y1="51" x2="420" y2="45" stroke="#3a4263" stroke-width="1.6"></line>
+        <line id="shEC2" x1="550" y1="60" x2="420" y2="93" stroke="#3a4263" stroke-width="1.6"></line>
+        <line id="shEB1" x1="105" y1="68" x2="105" y2="150" stroke="#3a4263" stroke-width="1.6"></line>
+        <line id="shEBp" x1="615" y1="68" x2="615" y2="120" stroke="#3a4263" stroke-width="1.6"></line>
+        <line id="shELeaf" x1="615" y1="154" x2="615" y2="176" stroke="#3a4263" stroke-width="1.6"></line>
 
-        <!-- 01 lists (start, built) -->
-        <circle cx="60" cy="70" r="12" fill="#1a2b22" stroke="#a7c9b1" stroke-width="2.5"></circle>
-        <text x="60" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">01</text>
-        <text x="60" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#a7c9b1">lists</text>
-        <text x="60" y="114" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">start</text>
+        <rect id="shV1Root" x="40" y="34" width="130" height="34" rx="8" fill="#10162b" stroke="#3a4263" stroke-width="1.6"></rect>
+        <text x="105" y="55" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8b93b0">v1 root</text>
 
-        <!-- 02 trees -->
-        <circle cx="135" cy="70" r="10" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="135" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494">02</text>
-        <text x="135" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8b93b0">trees</text>
+        <rect id="shV2Root" x="550" y="34" width="130" height="34" rx="8" fill="#241c14" stroke="#f0cd7f" stroke-width="2.4"></rect>
+        <text x="615" y="55" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#f0cd7f">v2 root (new)</text>
 
-        <!-- 03 sorting -->
-        <circle cx="210" cy="70" r="10" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="210" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494">03</text>
-        <text x="210" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8b93b0">sort</text>
+        <rect id="shA" x="300" y="30" width="120" height="30" rx="7" fill="#10162b" stroke="#3a4263" stroke-width="1.6"></rect>
+        <text x="360" y="49" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#8b93b0">sub-tree A</text>
+        <rect id="shC" x="300" y="78" width="120" height="30" rx="7" fill="#10162b" stroke="#3a4263" stroke-width="1.6"></rect>
+        <text x="360" y="97" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#8b93b0">sub-tree C</text>
+        <text x="360" y="126" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.08em" fill="#6b7494">shared by both roots</text>
 
-        <!-- 04 maps -->
-        <circle cx="285" cy="70" r="10" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="285" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494">04</text>
-        <text x="285" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8b93b0">maps</text>
+        <rect id="shB" x="40" y="150" width="130" height="34" rx="8" fill="#10162b" stroke="#3a4263" stroke-width="1.6"></rect>
+        <text x="105" y="171" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8b93b0">node B</text>
 
-        <!-- 05 HAMT (trie family) -->
-        <circle cx="360" cy="70" r="10" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="360" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8aa896">05</text>
-        <text x="360" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8aa896">HAMT</text>
+        <rect id="shBp" x="550" y="120" width="130" height="34" rx="8" fill="#241c14" stroke="#f0cd7f" stroke-width="2.4"></rect>
+        <text x="615" y="141" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#f0cd7f">node B&#8242; (rebuilt)</text>
 
-        <!-- 06 CHAMP -->
-        <circle cx="435" cy="70" r="10" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="435" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8aa896">06</text>
-        <text x="435" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8aa896">CHAMP</text>
+        <rect id="shLeaf" x="550" y="176" width="130" height="30" rx="8" fill="#241c14" stroke="#f0cd7f" stroke-width="2.4"></rect>
+        <text x="615" y="195" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#f0cd7f">+ new leaf</text>
 
-        <!-- 07 branded champ -->
-        <circle cx="510" cy="70" r="10" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="510" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8aa896">07</text>
-        <text x="510" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8aa896">branded</text>
-
-        <!-- 08 DP -->
-        <circle cx="585" cy="70" r="10" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="585" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494">08</text>
-        <text x="585" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#8b93b0">DP</text>
-
-        <!-- 09 lab -->
-        <circle cx="660" cy="70" r="10" fill="#1a1530" stroke="#b39ddb" stroke-width="2"></circle>
-        <text x="660" y="45" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#cdb8f0">09</text>
-        <text x="660" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#cdb8f0">lab</text>
-
-        <text x="360" y="138" text-anchor="middle" font-family="Manrope, sans-serif" font-size="10" letter-spacing="0.06em" fill="#6b7494">foundations · the trie family (05–07) · dynamic programming · lab</text>
+        <text id="shCaption" x="360" y="228" text-anchor="middle" font-family="Manrope, sans-serif" font-size="10.5" fill="#f0cd7f">v2 rebuilds the root, the path node, and the new leaf — three nodes</text>
       </svg>
 
-      <div class="geo-readout">The three middle modules are the chapter's spine: a Hash Array Mapped Trie (F4.05),
-        its compressed successor CHAMP (F4.06), and the branded CHAMP map (F4.07) that keys nodes by a
-        <code class="inl">Snowflake</code> id. F4.09 then animates one growing.</div>
+      <pre class="code" id="shCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="shOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">role: <span id="shRole" style="color:var(--gold-bright)">copy only the path</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">result: <span id="shResult" style="color:var(--cream)">3 rebuilt, the rest shared</span></p>
     </figure>
-    <p class="take">A data structure is a bet about which operations you will do most. This chapter is about reading
-      that bet from the cost model &mdash; and choosing the structure that wins it.</p>
+    <p class="take">An insert costs new nodes only along one root-to-leaf path &mdash; about
+      <code class="inl">log&#8323;&#8322;&nbsp;n</code> of them &mdash; and shares the rest. That is what makes an
+      immutable map cheap to update and its old versions free to keep.</p>
   </section>
 
-  <section id="modules">
-    <h2>Module navigation</h2>
+  <section id="advanced">
+    <h2>Advanced: persistence and snapshots</h2>
     <div class="prose">
-      <p>F4.01 is built; open it below. The rest list their planned deep dives so the path through the chapter is
-        visible from here.</p>
+      <p>Because each insert keeps the old map intact and shares all but one path, a sequence of edits is a sequence of
+        versions that overlap almost entirely. A history of a hundred edits does not cost a hundred copies of the map;
+        it costs a hundred short paths, with every untouched sub-tree shared across all of them. That is the meaning of
+        a <strong>persistent</strong> data structure: old versions stay valid and cheap, so holding a snapshot is
+        nearly free.</p>
+      <p>For the portal&rsquo;s page registry &mdash; read on every request, edited when a page is added &mdash; that
+        is the property that matters: a new registry shares its structure with the one before it, so a LiveView can
+        diff two snapshots by comparing references and skip the shared sub-trees entirely. F4.06 (CHAMP) keeps this
+        sharing and adds a <strong>canonical</strong> shape, which makes those snapshot comparisons cheaper still; the
+        stack&rsquo;s <code class="inl">BrandedChamp</code> trie (F4.07) is that structure, keyed by branded Snowflake
+        ids.</p>
     </div>
+    <pre class="code"><span class="cmt"># v1 holds three pages; adding one returns v2 — v1 is untouched</span>
+v1 = %{<span class="str">"PGE0NXh7MFjxT6"</span> =&gt; modules, <span class="str">"PGE0NbLeJJpTmr"</span> =&gt; sorting, <span class="str">"PGE0NbWMtkolM0"</span> =&gt; maps}
+v2 = <span class="fn sage">Map</span>.<span class="fn">put</span>(v1, <span class="str">"PGE0NcQgyPQEbI"</span>, trees)
 
-    <div class="mods" style="margin-top:1.3rem">
-      <a class="mod" href="/elixir/algorithms/lists">
-        <div class="top"><span class="num">F4.01</span><span class="pill built">built</span></div>
-        <p class="t">Lists, recursion &amp; complexity</p>
-        <p class="o">Cons cells; big-O on the BEAM.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.01.1</span><span>Cons cells &amp; the shape of a list</span></li>
-          <li><span class="dn">F4.01.2</span><span>Recursion over lists</span></li>
-          <li><span class="dn">F4.01.3</span><span>Complexity &amp; big-O on the BEAM</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/trees">
-        <div class="top"><span class="num">F4.02</span><span class="pill built">built</span></div>
-        <p class="t">Trees &amp; traversals</p>
-        <p class="o">Recursive tree shape and the three depth-first orders.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.02.1</span><span>Binary trees &amp; recursive shape</span></li>
-          <li><span class="dn">F4.02.2</span><span>Depth-first: pre, in, post-order</span></li>
-          <li><span class="dn">F4.02.3</span><span>Breadth-first &amp; balance</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/sorting">
-        <div class="top"><span class="num">F4.03</span><span class="pill built">built</span></div>
-        <p class="t">Sorting &amp; searching</p>
-        <p class="o">Comparison sorts and the cost of finding things.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.03.1</span><span>Merge &amp; quicksort</span></li>
-          <li><span class="dn">F4.03.2</span><span>Linear &amp; binary search</span></li>
-          <li><span class="dn">F4.03.3</span><span>Stability &amp; sort cost</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/maps">
-        <div class="top"><span class="num">F4.04</span><span class="pill built">built</span></div>
-        <p class="t">Maps, sets &amp; hashing</p>
-        <p class="o">Key lookup, membership, and what a hash buys you.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.04.1</span><span>Maps &amp; key lookup</span></li>
-          <li><span class="dn">F4.04.2</span><span>MapSet &amp; membership</span></li>
-          <li><span class="dn">F4.04.3</span><span>Hashing &amp; collisions</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/hamt">
-        <div class="top"><span class="num">F4.05</span><span class="pill built">built</span></div>
-        <p class="t">Hash Array Mapped Tries (HAMT)</p>
-        <p class="o">A tree of small nodes indexed by slices of the hash.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.05.1</span><span>Bitmapped nodes</span></li>
-          <li><span class="dn">F4.05.2</span><span>Hash-prefix indexing</span></li>
-          <li><span class="dn">F4.05.3</span><span>Structural sharing</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/champ">
-        <div class="top"><span class="num">F4.06</span><span class="pill built">built</span></div>
-        <p class="t">CHAMP maps</p>
-        <p class="o">A compressed HAMT: tighter nodes, faster iteration.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.06.1</span><span>Compressed node layout</span></li>
-          <li><span class="dn">F4.06.2</span><span>Cache-friendly iteration</span></li>
-          <li><span class="dn">F4.06.3</span><span>Canonical equality</span></li>
-        </ul>
-      </a>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.07</span><span class="pill planned">planned</span></div>
-        <p class="t">Branded CHAMP maps</p>
-        <p class="o">A CHAMP keyed by a branded Snowflake pivot id.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.07.1</span><span>Branded Snowflake keys</span></li>
-          <li><span class="dn">F4.07.2</span><span>A cross-system pivot key</span></li>
-          <li><span class="dn">F4.07.3</span><span>Base62 encode &amp; decode</span></li>
-        </ul>
+<span class="cmt"># only the nodes on the path to the new leaf are rebuilt</span>
+<span class="cmt"># v2's other sub-trees are the same references as v1's — shared, not copied</span>
+v1[<span class="str">"PGE0NbWMtkolM0"</span>] == v2[<span class="str">"PGE0NbWMtkolM0"</span>]   <span class="cmt"># true; v1 still works</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">F4.05.3 &middot; path-copy sharing</p>
+        <p>An insert copies one path and shares the rest; old versions survive.</p>
       </div>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.08</span><span class="pill planned">planned</span></div>
-        <p class="t">Dynamic programming &amp; advanced problems</p>
-        <p class="o">Overlapping subproblems, memoized and tabulated.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.08.1</span><span>Memoization &amp; overlapping subproblems</span></li>
-          <li><span class="dn">F4.08.2</span><span>Tabulation &amp; bottom-up</span></li>
-          <li><span class="dn">F4.08.3</span><span>Classic DP problems</span></li>
-        </ul>
-      </div>
-      <div class="mod is-quiet lab">
-        <div class="top"><span class="num">F4.09</span><span class="pill planned">planned</span></div>
-        <p class="t">Watch a branded CHAMP map grow</p>
-        <p class="o">An interactive lab: insert keys and watch the trie restructure.</p>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">F4.06 &middot; a canonical shape</p>
+        <p>CHAMP keeps the sharing and gives the tree one shape per map, so diffs are cheaper.</p>
       </div>
     </div>
+    <p class="note">That completes F4.05: a HAMT packs each node with a bitmap, indexes by five-bit chunks of the
+      hash, and shares structure on every insert. Next module:
+      <a href="/elixir/algorithms/champ"><strong>F4.06 &mdash; CHAMP maps</strong></a>, the compressed successor that
+      splits the node into two bitmaps and two arrays &mdash; the next step of the persistent-map spine.</p>
+  </section>
 
-    <p class="note">Begin with <a href="/elixir/algorithms/lists"><strong>F4.01 &mdash; Lists, recursion &amp;
-      complexity</strong></a>. The chapter builds toward the branded CHAMP map, so the early modules on cost and
-      hashing pay off directly in the trie family.</p>
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://lampwww.epfl.ch/papers/idealhashtrees.pdf">Bagwell, P. (2001). <em>Ideal Hash Trees.</em></a> &mdash; the original HAMT paper, where path-copy sharing on insert is set out.</li>
+        <li><a href="https://en.wikipedia.org/wiki/Hash_array_mapped_trie">Hash array mapped trie &mdash; Wikipedia</a> &mdash; the structure in brief.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/hamt">F4.05 &middot; Hash Array Mapped Tries (HAMT)</a></li>
+        <li><a href="/elixir/algorithms/maps">F4.04 &middot; Maps, sets &amp; hashing</a></li>
+        <li><a href="/elixir/algorithms/champ">F4.06 &middot; CHAMP maps</a> &mdash; the compressed successor that keeps this sharing.</li>
+      </ul>
+    </div>
   </section>
 
   <section>
-    <nav class="pager" aria-label="Chapter navigation">
-      <a class="btn ghost" href="/elixir/language"><span aria-hidden="true">&larr;</span>&nbsp; F3 &middot; The Elixir Language</a>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/hamt/indexing"><span aria-hidden="true">&larr;</span>&nbsp; F4.05.2 &middot; index</a>
       <span class="spacer"></span>
-      <a class="btn" href="/elixir/algorithms/lists">Start &middot; F4.01 lists <span aria-hidden="true">&rarr;</span></a>
+      <a class="btn" href="/elixir/algorithms">Back to F4 &middot; Algorithms &amp; Data Structures <span aria-hidden="true">&rarr;</span></a>
     </nav>
   </section>
 
@@ -515,15 +475,15 @@ pre.code .step{color:var(--cream-dim)}
   <div class="wrap">
     <p class="colophon">Built with the jonnify dark-editorial design system. Every page carries a branded
       <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
-      It is the same id convention the branded CHAMP map uses as a pivot key.</p>
+      It is the same id convention used as a cross-system pivot key throughout the course.</p>
     <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
-      build <span class="id" id="stampId">TSK0NbZQGsujZo</span>
+      build <span class="id" id="stampId">TSK0NcRkn8Uwm8</span>
       <dl class="panel">
         <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
         <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
         <dt>node</dt><dd id="st-node">&mdash;</dd>
         <dt>seq</dt><dd id="st-seq">&mdash;</dd>
-        <dt>timestamp</dt><dd id="st-ts">2026-05-31 19:22:44 UTC</dd>
+        <dt>timestamp</dt><dd id="st-ts">2026-06-01 08:03:01 UTC</dd>
       </dl>
     </div>
   </div>
@@ -532,6 +492,60 @@ pre.code .step{color:var(--cream-dim)}
 <script>
 (function () {
   "use strict";
+  var SAGE = '#a7c9b1', BLUE = '#9fc0ea', GOLD = '#f0cd7f', DIM = '#3a4263';
+  function set(id, attr, v) { var e = document.getElementById(id); if (e) e.setAttribute(attr, String(v)); }
+  function edge(id, on, color) { var e = document.getElementById(id); if (e) { e.setAttribute('stroke', on ? color : DIM); e.setAttribute('stroke-width', on ? '2.4' : '1.6'); } }
+  function box(id, txt, on, color, fill) { var r = document.getElementById(id); if (r) { r.setAttribute('stroke', on ? color : DIM); r.setAttribute('stroke-width', on ? '2.4' : '1.6'); r.setAttribute('fill', on ? fill : '#10162b'); } if (txt) { var t = document.getElementById(txt); if (t) t.setAttribute('fill', on ? color : '#8b93b0'); } }
+  var CASES = {
+    copied: {
+      caption: 'v2 rebuilds the root, the path node, and the new leaf — three nodes', captionFill: GOLD,
+      role: 'copy only the path', roleFill: GOLD,
+      result: '3 rebuilt, the rest shared', resultFill: '#e8e2d0',
+      code: '<span class="cmt"># put walks the new key down the tree and rebuilds each node it passes</span>\nv2 = <span class="fn sage">Map</span>.<span class="fn">put</span>(v1, <span class="str">"PGE0NcQgyPQEbI"</span>, trees)\n<span class="cmt"># rebuilt: the root, the node on the path (B&#8242;), and the new leaf</span>',
+      out: 'An insert rebuilds <b style="color:var(--gold-bright)">only the nodes on the path</b> from the root to the new leaf &mdash; here the root, one node B&#8242;, and the leaf itself. Three new nodes; nothing else is touched.'
+    },
+    shared: {
+      caption: 'sub-trees A and C are shared — pointer-identical with v1', captionFill: SAGE,
+      role: 'reuse everything off the path', roleFill: SAGE,
+      result: '2 sub-trees shared, not copied', resultFill: '#e8e2d0',
+      code: '<span class="cmt"># v2 points at the very same sub-trees v1 had, off the path</span>\nv1[<span class="str">"PGE0NbWMtkolM0"</span>] == v2[<span class="str">"PGE0NbWMtkolM0"</span>]   <span class="cmt"># true</span>\n<span class="cmt"># A and C are reused by reference — no copy, no walk</span>',
+      out: 'Every sub-tree off the insert path &mdash; <b style="color:var(--sage-bright)">A and C here</b> &mdash; is reused by reference, identical to v1&rsquo;s. The map shares almost all of its structure, so the new version costs only the rebuilt path.'
+    },
+    persist: {
+      caption: 'v1 still points only to its own nodes — unchanged and usable', captionFill: BLUE,
+      role: 'the old map survives', roleFill: BLUE,
+      result: 'v1 intact, v2 alongside it', resultFill: '#e8e2d0',
+      code: '<span class="cmt"># both versions are valid maps at the same time</span>\n<span class="fn sage">Map</span>.<span class="fn">get</span>(v1, <span class="str">"PGE0NbWMtkolM0"</span>)  <span class="cmt"># still there — v1 never changed</span>\n<span class="fn sage">Map</span>.<span class="fn">get</span>(v2, <span class="str">"PGE0NcQgyPQEbI"</span>)  <span class="cmt"># the page added in v2</span>',
+      out: 'Because nothing was edited in place, <b style="color:var(--blue-bright)">v1 is unchanged</b> and still usable; v2 lives alongside it, sharing all but the copied path. Keeping both &mdash; a snapshot history &mdash; is nearly free.'
+    }
+  };
+  function pick(k) {
+    var c = CASES[k]; if (!c) return;
+    document.querySelectorAll('#shSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var copied = k === 'copied', shared = k === 'shared', persist = k === 'persist';
+    box('shV2Root', null, copied || persist, copied ? GOLD : BLUE, copied ? '#241c14' : '#16203a');
+    box('shBp', null, copied, GOLD, '#241c14');
+    box('shLeaf', null, copied, GOLD, '#241c14');
+    edge('shEBp', copied, GOLD); edge('shELeaf', copied, GOLD);
+    box('shA', null, shared, SAGE, '#1a2230');
+    box('shC', null, shared, SAGE, '#1a2230');
+    edge('shEA1', shared, SAGE); edge('shEC1', shared, SAGE); edge('shEA2', shared, SAGE); edge('shEC2', shared, SAGE);
+    box('shV1Root', null, persist, BLUE, '#16203a');
+    box('shB', null, persist, BLUE, '#16203a');
+    edge('shEB1', persist, BLUE);
+    var t;
+    t = document.getElementById('shCaption'); if (t) { t.textContent = c.caption; t.setAttribute('fill', c.captionFill); }
+    t = document.getElementById('shRole'); if (t) { t.textContent = c.role; t.style.color = c.roleFill; }
+    t = document.getElementById('shResult'); if (t) { t.textContent = c.result; t.style.color = c.resultFill; }
+    t = document.getElementById('shCode'); if (t) t.innerHTML = c.code;
+    t = document.getElementById('shOut'); if (t) t.innerHTML = c.out;
+  }
+  document.querySelectorAll('#shSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('copied');
+
+  /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   var EPOCH_MS = 1704067200000;
   function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
