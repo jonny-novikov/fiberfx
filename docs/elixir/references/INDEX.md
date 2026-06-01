@@ -201,11 +201,11 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 
 - Elixir — Introduction to Mix (guide) — [offline](files/hexdocs.pm_elixir_introduction-to-mix.html) · [source](https://hexdocs.pm/elixir/introduction-to-mix.html)
 - Elixir — Mix — [offline](files/hexdocs.pm_mix_Mix.html) · [source](https://hexdocs.pm/mix/Mix.html)
-## F5.02 &middot; Testing with ExUnit & doctests
+## F5.02 &middot; Modeling the Portal domain
 
 - Elixir — ExUnit — [offline](files/hexdocs.pm_ex_unit_ExUnit.html) · [source](https://hexdocs.pm/ex_unit/ExUnit.html)
 - Elixir — ExUnit.DocTest — [offline](files/hexdocs.pm_ex_unit_ExUnit.DocTest.html) · [source](https://hexdocs.pm/ex_unit/ExUnit.DocTest.html)
-## F5.03 &middot; Documentation & typespecs
+## F5.03 &middot; Tracer bullets: a walking skeleton
 
 - Elixir — Writing documentation — [offline](files/hexdocs.pm_elixir_writing-documentation.html) · [source](https://hexdocs.pm/elixir/writing-documentation.html)
 - Elixir — Typespecs — [offline](files/hexdocs.pm_elixir_typespecs.html) · [source](https://hexdocs.pm/elixir/typespecs.html)

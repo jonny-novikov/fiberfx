@@ -282,12 +282,12 @@ Engineering practice. Tooling docs, the OTP guides, and the “let it crash” p
 - [Elixir — Introduction to Mix (guide)](https://hexdocs.pm/elixir/introduction-to-mix.html) — applications, deps, tasks.
 - [Elixir — Mix](https://hexdocs.pm/mix/Mix.html) — the build tool reference.
 
-### F5.02 &middot; Testing with ExUnit & doctests
+### F5.02 &middot; Modeling the Portal domain
 
 - [Elixir — ExUnit](https://hexdocs.pm/ex_unit/ExUnit.html) — the test framework.
 - [Elixir — ExUnit.DocTest](https://hexdocs.pm/ex_unit/ExUnit.DocTest.html) — tests from documentation examples.
 
-### F5.03 &middot; Documentation & typespecs
+### F5.03 &middot; Tracer bullets: a walking skeleton
 
 - [Elixir — Writing documentation](https://hexdocs.pm/elixir/writing-documentation.html) — @doc and @moduledoc.
 - [Elixir — Typespecs](https://hexdocs.pm/elixir/typespecs.html) — @spec and types.
