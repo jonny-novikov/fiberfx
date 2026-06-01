@@ -305,7 +305,7 @@ Engineering practice. Tooling docs, the OTP guides, and the “let it crash” p
 - [GenStage](https://hexdocs.pm/gen_stage/GenStage.html) — demand-driven back-pressure.
 - [Flow](https://hexdocs.pm/flow/Flow.html) — parallel data pipelines.
 
-### F5.06 &middot; Telemetry, logging & observability
+### F5.06 &middot; Where engine state lives
 
 - [:telemetry](https://hexdocs.pm/telemetry/readme.html) — the metrics and events library.
 - [Telemetry.Metrics](https://hexdocs.pm/telemetry_metrics/Telemetry.Metrics.html) — defining metrics.

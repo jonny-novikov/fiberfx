@@ -133,7 +133,7 @@ var Modules = map[string][]Module{
 		{N: "F5.04", Title: "Design by contract", One: "Preconditions, postconditions, and failing fast.", Slug: "contracts", Status: "built"},
 		{N: "F5.05", Title: "Commands, queries & events", One: "Separate writes from reads; the engine as a reducer over events.", Slug: "cqrs", Status: "built"},
 		{N: "F5.06", Title: "Where engine state lives", One: "One process holds the state; one supervisor keeps it alive.", Slug: "state", Status: "built"},
-		{N: "F5.07", Title: "Dependencies, releases & deployment", One: "mix release, config, runtime.", Slug: "releases", Status: "planned"},
+		{N: "F5.07", Title: "Pragmatic testing", One: "Testing the pure core, property-based tests, and contracts as tests.", Slug: "testing", Status: "built"},
 		{N: "F5.08", Title: "Performance & profiling", One: "Benchmarks, the scheduler, hot paths.", Slug: "performance", Status: "planned"},
 		{N: "F5.09", Title: "Let it crash — a supervision tree that heals", One: "Crash a worker; watch the restart.", Slug: "supervision-lab", Status: "planned", Lab: true},
 	},
@@ -303,6 +303,11 @@ var Subpages = map[string][]Subpage{
 		{"choosing", "Choosing where state lives", "Three places on the BEAM can hold live state, and they are not interchangeable — only one fits the engine."},
 		{"genserver", "The engine GenServer", "Three callbacks carry the whole engine: init folds the log on start, then calls and casts thread state through."},
 		{"supervision", "Supervision", "A stateful process will eventually crash; a supervisor restarts it, and the engine replays its log to recover."},
+	},
+	"F5.07": {
+		{"pure-core", "Testing the pure core", "The engine's logic lives in pure functions, so a plain example test — given a state and a command, assert the result — covers the core."},
+		{"property", "Property-based testing", "An example test checks the cases you thought of; a property test asserts a rule over the cases a generator invents."},
+		{"contract-tests", "Contract tests", "The F5.04 contract — precondition, postcondition, invariant — becomes three assertions that a command keeps its promises."},
 	},
 }
 

@@ -238,7 +238,7 @@ MODULES = {
         dict(n="F5.04", title="Design by contract", one="Preconditions, postconditions, and failing fast.", slug="contracts", status="built", lab=False),
         dict(n="F5.05", title="Commands, queries & events", one="Separate writes from reads; the engine as a reducer over events.", slug="cqrs", status="built", lab=False),
         dict(n="F5.06", title="Where engine state lives", one="One process holds the state; one supervisor keeps it alive.", slug="state", status="built", lab=False),
-        dict(n="F5.07", title="Dependencies, releases & deployment", one="mix release, config, runtime.", slug="releases", status="planned", lab=False),
+        dict(n="F5.07", title="Pragmatic testing", one="Testing the pure core, property-based tests, and contracts as tests.", slug="testing", status="built", lab=False),
         dict(n="F5.08", title="Performance & profiling", one="Benchmarks, the scheduler, hot paths.", slug="performance", status="planned", lab=False),
         dict(n="F5.09", title="Let it crash — a supervision tree that heals", one="Crash a worker; watch the supervisor restart it.", slug="supervision-lab", status="planned", lab=True),
     ],
@@ -411,6 +411,11 @@ SUBPAGES = {
         dict(slug='choosing', title='Choosing where state lives', one='Three places on the BEAM can hold live state, and they are not interchangeable — only one fits the engine.'),
         dict(slug='genserver', title='The engine GenServer', one='Three callbacks carry the whole engine: init folds the log on start, then calls and casts thread state through.'),
         dict(slug='supervision', title='Supervision', one='A stateful process will eventually crash; a supervisor restarts it, and the engine replays its log to recover.'),
+    ],
+    "F5.07": [
+        dict(slug='pure-core', title='Testing the pure core', one="The engine's logic lives in pure functions, so a plain example test — given a state and a command, assert the result — covers the core."),
+        dict(slug='property', title='Property-based testing', one='An example test checks the cases you thought of; a property test asserts a rule over the cases a generator invents.'),
+        dict(slug='contract-tests', title='Contract tests', one='The F5.04 contract — precondition, postcondition, invariant — becomes three assertions that a command keeps its promises.'),
     ],
 }
 

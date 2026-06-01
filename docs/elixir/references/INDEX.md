@@ -220,7 +220,7 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 - Elixir — Task — [offline](files/hexdocs.pm_elixir_Task.html) · [source](https://hexdocs.pm/elixir/Task.html)
 - GenStage — [offline](files/hexdocs.pm_gen_stage_GenStage.html) · [source](https://hexdocs.pm/gen_stage/GenStage.html)
 - Flow — [offline](files/hexdocs.pm_flow_Flow.html) · [source](https://hexdocs.pm/flow/Flow.html)
-## F5.06 &middot; Telemetry, logging & observability
+## F5.06 &middot; Where engine state lives
 
 - :telemetry — [offline](files/hexdocs.pm_telemetry_readme.html) · [source](https://hexdocs.pm/telemetry/readme.html)
 - Telemetry.Metrics — [offline](files/hexdocs.pm_telemetry_metrics_Telemetry.Metrics.html) · [source](https://hexdocs.pm/telemetry_metrics/Telemetry.Metrics.html)
