@@ -141,7 +141,7 @@ var Modules = map[string][]Module{
 		{N: "F6.01", Title: "Architecture & the request lifecycle", One: "endpoint → router → controller → view.", Slug: "lifecycle", Status: "built"},
 		{N: "F6.02", Title: "Routing, controllers & plugs", One: "The plug pipeline.", Slug: "routing", Status: "built"},
 		{N: "F6.03", Title: "Ecto: schemas, changesets & queries", One: "Data, validation, the repo.", Slug: "ecto", Status: "built"},
-		{N: "F6.04", Title: "Contexts & domain design", One: "Boundaries that scale.", Slug: "contexts", Status: "planned"},
+		{N: "F6.04", Title: "Contexts & domain design", One: "Boundaries that scale.", Slug: "contexts", Status: "built"},
 		{N: "F6.05", Title: "Templates, components & HEEx", One: "Server-rendered markup.", Slug: "heex", Status: "planned"},
 		{N: "F6.06", Title: "Phoenix LiveView fundamentals", One: "Interactive UIs without hand-written JS.", Slug: "liveview", Status: "planned"},
 		{N: "F6.07", Title: "PubSub, channels & real-time", One: "Live updates over WebSockets.", Slug: "pubsub", Status: "planned"},
@@ -333,6 +333,11 @@ var Subpages = map[string][]Subpage{
 		{"schemas", "Schemas & migrations", "A migration creates and evolves a database table;"},
 		{"changesets", "Changesets & validation", "A changeset is a pure pipeline — cast permits and coerces fields, validate checks the rules, and"},
 		{"repo", "Queries & the repo", "The Repo executes composable Ecto queries and persists changesets — get one row by Snowflake id,"},
+	},
+	"F6.04": {
+		{"boundaries", "Context boundaries", "A context groups related functionality behind a public API and keeps its schemas and the Repo pr"},
+		{"vs-facade", "Contexts vs the F5 facade", "A Phoenix context and the F5 Portal facade are the same idea — a public API over a slice of the "},
+		{"composition", "Composing contexts", "How one context depends on another without breaking boundaries: call the public API, pass ids or"},
 	},
 }
 

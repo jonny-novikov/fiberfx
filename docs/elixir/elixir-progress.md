@@ -953,6 +953,47 @@ facade behind a LiveView sketch and hand a UI-ready boundary to F6, the Phoenix 
   + F6.03 4 = 16 pages). Docs regenerated: course-md **voice CLEAN, 4 mermaid** (F6.03 sub-rows now ●); refs **59 /
   59**, voice CLEAN.
 
+## F6.04 — fourth module built at a deeper standard + F6.01&ndash;F6.03 guides enriched
+
+- **New depth directive applied.** Per the request that modules be deeper, more comprehensive, reference-grounded, and
+  roughly twice the length with real-world examples, **F6.04 &middot; Contexts &amp; domain design** is built to a
+  deeper standard than F6.01&ndash;F6.03: each dive carries **four substantive sections** (not three), **two SVGs and
+  two `pre.code` blocks**, longer prose tied to the Phoenix contexts guide, and real-world code (a `Catalog` context, a
+  `Portal` facade, an `Enrollment` context, cross-context composition). The hub carries **two SVGs** (selector + a full
+  context map). `MODULES["F6"]` F6.04 + its three dives flipped to `built`; `SUBPAGES["F6.04"]` added; four PAGES
+  entries (`contexts.html`, `contexts-boundaries.html`, `contexts-vs-facade.html`, `contexts-composition.html`). Routes
+  180 &rarr; **184**, PAGES 179 &rarr; **183**, module tally **52 built / 5 planned**.
+  - **Hub** (`content/f6-04-contexts.html`, prefix `ct`): a boundary/facade/composition selector + a **context-map
+    diagram** (Catalog / Enrollment / Accounts as public APIs with private schemas, Repo sealed, Enrollment&rarr;Catalog
+    one-way) + three dive cards + a Phoenix-context&harr;F5-facade bridge + **hub References** (Phoenix Contexts,
+    phx.gen.context, Fowler Bounded Context, Ecto.Multi). Framing: &ldquo;Phoenix is not your application&rdquo;.
+  - **F6.04.1 &middot; Context boundaries** (`bd`): public-API / private-schema / Repo selector + a cohesion diagram
+    (cohesive split vs table-per-context) + a real `Portal.Catalog` context (list/get!/fetch/create, schema private) +
+    an **anti-pattern-vs-correct** controller pair.
+  - **F6.04.2 &middot; Contexts vs the F5 facade** (`vf`): context / facade / port selector + a web&rarr;facade&rarr;
+    contexts&rarr;adapters layering diagram + the `Portal` `defdelegate` facade + an `Enrollment` context that calls the
+    F5.09 **port** (not `Repo`), reconciling where Ecto sits.
+  - **F6.04.3 &middot; Composing contexts** (`cp`): by-API / by-id / never-schema selector + a **dependency-graph
+    diagram** (one-way `Enrollment`&rarr;`Catalog`, a `Billing`&harr;`Orders` cycle marked &ldquo;avoid&rdquo;, drawn
+    with `marker`/`defs` arrowheads) + a real `Enrollment.enroll/2` calling `Catalog.fetch_course/1` and returning the
+    closed error + a cross-context **`with` pipeline** (the `&lt;-` operators escaped) and an `Ecto.Multi` note. Dives
+    carry no References; two SVGs + two `pre.code` each.
+- **Landing**: the F6.04 tile is now a linkable `<a class="mod" href="/elixir/phoenix/contexts">` with a `built` pill;
+  intro/arc prose updated to &ldquo;F6.01&ndash;F6.04 are built&rdquo;.
+- **Build guides**: `build-guide/f6-04-contexts.md` is the deep exemplar &mdash; Concepts, Specs tables, Build it, and
+  **six robust copy-paste prompts** (Catalog with a private schema, the Portal facade by delegation, Enrollment on the
+  port, cross-context composition done right, a `with` orchestration, enforce the dependency graph). **F6.01&ndash;F6.03
+  guides enriched** per the &ldquo;for F6.1&ndash;F6.3&rdquo; ask: each gained a **Real-world example** section
+  (lifecycle: a real request + `action_fallback`; routing: public/admin/api scopes + a JSON-401 API pipeline; Ecto: a
+  `Course`&rarr;`Lesson` association + a filterable/preloaded query) and **one more robust prompt** (a uniform
+  `action_fallback` edge; an API token pipeline + rate-limit plug; an `Ecto.Multi` transactional write + upsert) &mdash;
+  now 7/6/7 prompts. `build-guide/phoenix.md` updated: F6.04 entry links the guide and the global sequence lists `f6-04`
+  separately. All guides voice-clean.
+- **All five pages Apollo A+** (hub + 3 dives + landing); `node --check` clean on each; REF URLs `200`. **Validator**:
+  an `F6.04` desktop block (hub view&rarr;role, and one per dive) + 390px mobile entries for all four pages.
+  `ONLY="F6"` now reports **183 desktop + 40 mobile = 223 PASS, 0 FAIL, 0 images** (20 F6 pages). Docs regenerated:
+  course-md **voice CLEAN, 4 mermaid** (F6.04 sub-rows now ●); refs **59 / 59**, voice CLEAN.
+
 
 
 **Deployment (not authoring), unchanged and now slightly larger:** the site-wide `/elixir` home and the
@@ -985,14 +1026,17 @@ What a resuming agent should know, condensed:
    `build-guide/f5-09-engine-lab.md`, a spec whose copy-paste build prompts generate the Portal logic). **The F5
    chapter is now module-complete: all nine modules + three design subpages + the landing are built**, with REFS and
    `A`-map abstracts keyed by module `n`. **F6 (Phoenix) is under construction**: the chapter is `live` with a landing
-   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01, F6.02, and F6.03
-   are built** &mdash; each a hub + three dives (`/elixir/phoenix/lifecycle`, `/elixir/phoenix/routing`, and
-   `/elixir/phoenix/ecto` + their three dive slugs) with `build-guide/f6-01-lifecycle.md`, `f6-02-routing.md`, and
-   `f6-03-ecto.md` prompts. Every F6 module carries its three dives in the manifest, so the landing tiles and
-   course-md show the whole chapter plan; F6.04 (Contexts &amp; domain design) is the next module.
-   `allowed_routes()` returns **180** link routes; only built/live routes are linkable
-   (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter subpages, and F6.01&ndash;F6.03
-   with their dives are; **the planned F6.04&ndash;F6.09 module and dive routes are not**), external `https://` links
+   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01 through F6.04 are
+   built** &mdash; each a hub + three dives (`/elixir/phoenix/lifecycle`, `/routing`, `/ecto`, and `/contexts` + their
+   three dive slugs) with `build-guide/f6-01-lifecycle.md` through `f6-04-contexts.md` prompts. **F6.04 onward follows a
+   deeper standard** (four sections per dive, two SVGs + two code blocks, reference-grounded prose, real-world
+   examples); the F6.01&ndash;F6.03 build guides were enriched with real-world examples and extra robust prompts, and
+   their HTML dives remain available to deepen to the same bar as a follow-up. Every F6 module carries its three dives
+   in the manifest, so the landing tiles and course-md show the whole chapter plan; F6.05 (HEEx &amp; components) is the
+   next module.
+   `allowed_routes()` returns **184** link routes; only built/live routes are linkable
+   (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter subpages, and F6.01&ndash;F6.04
+   with their dives are; **the planned F6.05&ndash;F6.09 module and dive routes are not**), external `https://` links
    are exempt.
 2. Rebuild any page with `python3 build_page.py build --page KEY`, grade with `check OUT.html` (nine gates + A+),
    regenerate `_head.html` with `extract-head` after editing `HEAD_CSS`. The voice gate scans all visible text

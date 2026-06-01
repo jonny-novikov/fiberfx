@@ -246,7 +246,7 @@ MODULES = {
         dict(n="F6.01", title="Architecture & the request lifecycle", one="endpoint → router → controller → view.", slug="lifecycle", status="built", lab=False),
         dict(n="F6.02", title="Routing, controllers & plugs", one="The plug pipeline.", slug="routing", status="built", lab=False),
         dict(n="F6.03", title="Ecto: schemas, changesets & queries", one="Data, validation, the repo.", slug="ecto", status="built", lab=False),
-        dict(n="F6.04", title="Contexts & domain design", one="Boundaries that scale.", slug="contexts", status="planned", lab=False),
+        dict(n="F6.04", title="Contexts & domain design", one="Boundaries that scale.", slug="contexts", status="built", lab=False),
         dict(n="F6.05", title="Templates, components & HEEx", one="Server-rendered markup.", slug="heex", status="planned", lab=False),
         dict(n="F6.06", title="Phoenix LiveView fundamentals", one="Interactive UIs without hand-written JS.", slug="liveview", status="planned", lab=False),
         dict(n="F6.07", title="PubSub, channels & real-time", one="Live updates over WebSockets.", slug="pubsub", status="planned", lab=False),
@@ -441,6 +441,11 @@ SUBPAGES = {
         dict(slug='schemas', title='Schemas & migrations', one='A migration creates and evolves a database table;'),
         dict(slug='changesets', title='Changesets & validation', one='A changeset is a pure pipeline — cast permits and coerces fields, validate checks the rules, and'),
         dict(slug='repo', title='Queries & the repo', one='The Repo executes composable Ecto queries and persists changesets — get one row by Snowflake id,'),
+    ],
+    "F6.04": [
+        dict(slug='boundaries', title='Context boundaries', one='A context groups related functionality behind a public API and keeps its schemas and the Repo pr'),
+        dict(slug='vs-facade', title='Contexts vs the F5 facade', one='A Phoenix context and the F5 Portal facade are the same idea — a public API over a slice of the '),
+        dict(slug='composition', title='Composing contexts', one='How one context depends on another without breaking boundaries: call the public API, pass ids or'),
     ],
 }
 

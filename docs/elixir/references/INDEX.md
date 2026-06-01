@@ -203,41 +203,43 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 - Elixir — Mix — [offline](files/hexdocs.pm_mix_Mix.html) · [source](https://hexdocs.pm/mix/Mix.html)
 ## F5.02 &middot; Modeling the Portal domain
 
-- Elixir — ExUnit — [offline](files/hexdocs.pm_ex_unit_ExUnit.html) · [source](https://hexdocs.pm/ex_unit/ExUnit.html)
-- Elixir — ExUnit.DocTest — [offline](files/hexdocs.pm_ex_unit_ExUnit.DocTest.html) · [source](https://hexdocs.pm/ex_unit/ExUnit.DocTest.html)
+- Phoenix — Contexts — [offline](files/hexdocs.pm_phoenix_contexts.html) · [source](https://hexdocs.pm/phoenix/contexts.html)
+- Eric Evans — Domain-Driven Design — [offline](files/www.domainlanguage.com_ddd.html) · [source](https://www.domainlanguage.com/ddd/)
+- Elixir — Structs — [offline](files/hexdocs.pm_elixir_structs.html) · [source](https://hexdocs.pm/elixir/structs.html)
 ## F5.03 &middot; Tracer bullets: a walking skeleton
 
-- Elixir — Writing documentation — [offline](files/hexdocs.pm_elixir_writing-documentation.html) · [source](https://hexdocs.pm/elixir/writing-documentation.html)
-- Elixir — Typespecs — [offline](files/hexdocs.pm_elixir_typespecs.html) · [source](https://hexdocs.pm/elixir/typespecs.html)
-- Dialyxir — [offline](files/hexdocs.pm_dialyxir_readme.html) · [source](https://hexdocs.pm/dialyxir/readme.html)
+- Hunt and Thomas — The Pragmatic Programmer — [offline](files/pragprog.com_titles_tpp20_the-pragmatic-programmer-20th-anniversary-edition.html) · [source](https://pragprog.com/titles/tpp20/the-pragmatic-programmer-20th-anniversary-edition/)
+- Elixir — Introduction to Mix — [offline](files/hexdocs.pm_elixir_introduction-to-mix.html) · [source](https://hexdocs.pm/elixir/introduction-to-mix.html)
 ## F5.04 &middot; Design by contract
 
-- Armstrong thesis — “let it crash” and supervision — [offline](files/erlang.org_download_armstrong_thesis_2003.pdf) · [source](https://erlang.org/download/armstrong_thesis_2003.pdf)
-- Elixir — Mix & OTP: Supervision trees and applications — [offline](files/hexdocs.pm_elixir_supervisor-and-application.html) · [source](https://hexdocs.pm/elixir/supervisor-and-application.html)
-- Fred Hébert, *Stuff Goes Bad: Erlang in Anger* (free) — [offline](files/www.erlang-in-anger.com.html) · [source](https://www.erlang-in-anger.com/)
+- Bertrand Meyer — Applying Design by Contract — [offline](files/se.inf.ethz.ch_meyer_publications_computer_contract.pdf) · [source](https://se.inf.ethz.ch/~meyer/publications/computer/contract.pdf)
+- Eiffel — Design by Contract and assertions — [offline](files/www.eiffel.org_doc_solutions_Design_by_Contract_and_Assertions.html) · [source](https://www.eiffel.org/doc/solutions/Design_by_Contract_and_Assertions)
+- Elixir — Patterns and guards — [offline](files/hexdocs.pm_elixir_patterns-and-guards.html) · [source](https://hexdocs.pm/elixir/patterns-and-guards.html)
 ## F5.05 &middot; Commands, queries & events
 
-- Elixir — Task — [offline](files/hexdocs.pm_elixir_Task.html) · [source](https://hexdocs.pm/elixir/Task.html)
-- GenStage — [offline](files/hexdocs.pm_gen_stage_GenStage.html) · [source](https://hexdocs.pm/gen_stage/GenStage.html)
-- Flow — [offline](files/hexdocs.pm_flow_Flow.html) · [source](https://hexdocs.pm/flow/Flow.html)
+- Martin Fowler — CQRS — [offline](files/martinfowler.com_bliki_CQRS.html) · [source](https://martinfowler.com/bliki/CQRS.html)
+- Martin Fowler — Event Sourcing — [offline](files/martinfowler.com_eaaDev_EventSourcing.html) · [source](https://martinfowler.com/eaaDev/EventSourcing.html)
+- Martin Fowler — CommandQuerySeparation — [offline](files/martinfowler.com_bliki_CommandQuerySeparation.html) · [source](https://martinfowler.com/bliki/CommandQuerySeparation.html)
 ## F5.06 &middot; Where engine state lives
 
-- :telemetry — [offline](files/hexdocs.pm_telemetry_readme.html) · [source](https://hexdocs.pm/telemetry/readme.html)
-- Telemetry.Metrics — [offline](files/hexdocs.pm_telemetry_metrics_Telemetry.Metrics.html) · [source](https://hexdocs.pm/telemetry_metrics/Telemetry.Metrics.html)
-- Phoenix LiveDashboard — [offline](files/hexdocs.pm_phoenix_live_dashboard.html) · [source](https://hexdocs.pm/phoenix_live_dashboard/)
+- Elixir — GenServer — [offline](files/hexdocs.pm_elixir_GenServer.html) · [source](https://hexdocs.pm/elixir/GenServer.html)
+- Elixir — Agent — [offline](files/hexdocs.pm_elixir_Agent.html) · [source](https://hexdocs.pm/elixir/Agent.html)
+- Erlang — ets — [offline](files/www.erlang.org_doc_man_ets.html) · [source](https://www.erlang.org/doc/man/ets.html)
 ## F5.07 &middot; Pragmatic testing
 
-- Elixir — Mix & OTP: Configuration and releases — [offline](files/hexdocs.pm_elixir_releases.html) · [source](https://hexdocs.pm/elixir/releases.html)
-- Elixir — mix release — [offline](files/hexdocs.pm_mix_Mix.Tasks.Release.html) · [source](https://hexdocs.pm/mix/Mix.Tasks.Release.html)
+- Elixir — ExUnit — [offline](files/hexdocs.pm_ex_unit_ExUnit.html) · [source](https://hexdocs.pm/ex_unit/ExUnit.html)
+- StreamData — [offline](files/hexdocs.pm_stream_data_StreamData.html) · [source](https://hexdocs.pm/stream_data/StreamData.html)
+- Elixir — ExUnit.DocTest — [offline](files/hexdocs.pm_ex_unit_ExUnit.DocTest.html) · [source](https://hexdocs.pm/ex_unit/ExUnit.DocTest.html)
 ## F5.08 &middot; Boundaries & integration seams
 
-- Erlang — Efficiency Guide — [offline](files/www.erlang.org_doc_system_efficiency_guide.html) · [source](https://www.erlang.org/doc/system/efficiency_guide.html)
-- Benchee — [offline](files/hexdocs.pm_benchee_readme.html) · [source](https://hexdocs.pm/benchee/readme.html)
+- Alistair Cockburn — Hexagonal architecture — [offline](files/alistair.cockburn.us_hexagonal-architecture.html) · [source](https://alistair.cockburn.us/hexagonal-architecture/)
+- Elixir — Typespecs and behaviours — [offline](files/hexdocs.pm_elixir_typespecs.html) · [source](https://hexdocs.pm/elixir/typespecs.html)
+- José Valim — Mocks and explicit contracts — [offline](files/dashbit.co_blog_mocks-and-explicit-contracts.html) · [source](https://dashbit.co/blog/mocks-and-explicit-contracts)
 ## F5.09 &middot; Lab: the Portal engine, LiveView-ready
 
+- Phoenix — Phoenix.LiveView — [offline](files/hexdocs.pm_phoenix_live_view_Phoenix.LiveView.html) · [source](https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html)
+- Phoenix — Phoenix.Component (HEEx) — [offline](files/hexdocs.pm_phoenix_live_view_Phoenix.Component.html) · [source](https://hexdocs.pm/phoenix_live_view/Phoenix.Component.html)
 - Elixir — Supervisor — [offline](files/hexdocs.pm_elixir_Supervisor.html) · [source](https://hexdocs.pm/elixir/Supervisor.html)
-- Elixir — DynamicSupervisor — [offline](files/hexdocs.pm_elixir_DynamicSupervisor.html) · [source](https://hexdocs.pm/elixir/DynamicSupervisor.html)
-- Armstrong thesis — [offline](files/erlang.org_download_armstrong_thesis_2003.pdf) · [source](https://erlang.org/download/armstrong_thesis_2003.pdf)
 ## F6.01 &middot; Architecture & the request lifecycle
 
 - Phoenix — Overview — [offline](files/hexdocs.pm_phoenix_overview.html) · [source](https://hexdocs.pm/phoenix/overview.html)
