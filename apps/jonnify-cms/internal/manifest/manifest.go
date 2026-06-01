@@ -247,6 +247,7 @@ var Subpages = map[string][]Subpage{
 	"F4.07": {
 		{"snowflake", "The Snowflake bigint", "A Snowflake packs three fields into 64 bits: a 42-bit millisecond timestamp from a custom 2024 e"},
 		{"branded", "Branded ids", "A branded id encodes the 64-bit Snowflake in base62 over 0-9A-Za-z, left-pads it to eleven chara"},
+		{"choosing", "Choosing an identifier", "An auto-increment counter is ordered and tiny but needs one writer, so it cannot scale across ma"},
 	},
 }
 
