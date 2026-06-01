@@ -110,10 +110,10 @@ func main() {
 		}
 	}
 
-	// Folder-routed sections (elixir, health): recurse — the on-disk tree mirrors
-	// the URL tree. A dir with index.html -> the directory URL; any other
-	// <name>.html -> the clean leaf URL.
-	for _, sec := range []string{"elixir", "health", "logic", "law"} {
+	// Folder-routed sections (elixir, health, logic, law, physics): recurse — the
+	// on-disk tree mirrors the URL tree. A dir with index.html -> the directory URL;
+	// any other <name>.html -> the clean leaf URL.
+	for _, sec := range []string{"elixir", "health", "logic", "law", "physics"} {
 		secRoot := filepath.Join(*root, sec)
 		_ = filepath.WalkDir(secRoot, func(p string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".html") {

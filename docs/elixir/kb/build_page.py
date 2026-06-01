@@ -232,7 +232,7 @@ MODULES = {
         dict(n="F4.12", title="Lab: build a branded CHAMP store", one="An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.", slug="lab", status="built", lab=True),
     ],
     "F5": [
-        dict(n="F5.01", title="Project structure & Mix", one="Apps, deps, tasks.", slug="mix", status="planned", lab=False),
+        dict(n="F5.01", title="Foundations", one="Start thin: a running Portal from day one.", slug="foundations", status="built", lab=False),
         dict(n="F5.02", title="Testing with ExUnit & doctests", one="Fast, deterministic tests.", slug="testing", status="planned", lab=False),
         dict(n="F5.03", title="Documentation & typespecs", one="@doc, @spec, Dialyzer.", slug="typespecs", status="planned", lab=False),
         dict(n="F5.04", title="Error handling & “let it crash”", one="Tagged tuples versus exceptions; supervision.", slug="let-it-crash", status="planned", lab=False),
@@ -381,6 +381,11 @@ SUBPAGES = {
         dict(slug='grow', title='Watch a branded CHAMP grow', one="Each put reads a branded id's three-letter namespace and drops the entry into that namespace's p"),
         dict(slug='registry', title='A Snowflake registry', one='Hand the store any branded id and get/1 resolves it in one call: the prefix names the partition,'),
         dict(slug='range', title='Query by time range', one='Because a Snowflake puts the timestamp in its high bits, ids sort by creation time and a time wi'),
+    ],
+    "F5.01": [
+        dict(slug='replaceable', title='A web layer built for replacement', one='The thin server is a detail, by design.'),
+        dict(slug='roadmap', title='The development roadmap', one='The whole course is one development roadmap: HTML templating, then a simple web server, then the'),
+        dict(slug='thin-server', title='A thin web server in Elixir', one='A minimal HTTP front end for the Portal: a Plug.Router matched and dispatched by Bandit, where e'),
     ],
 }
 

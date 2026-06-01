@@ -31,6 +31,7 @@ ERROR_DIR  ?= $(REPO_DIR)/error
 ELIXIR_DIR ?= $(REPO_DIR)/elixir
 LOGIC_DIR  ?= $(REPO_DIR)/logic
 LAW_DIR    ?= $(REPO_DIR)/law
+PHYSICS_DIR ?= $(REPO_DIR)/physics
 SITEMAP_XML ?= $(REPO_DIR)/sitemap.xml
 ROBOTS_TXT  ?= $(REPO_DIR)/robots.txt
 LLMS_TXT    ?= $(REPO_DIR)/llms.txt
@@ -64,6 +65,7 @@ help:
 	@echo "  /health, /health/**  → $(HEALTH_DIR)/ (folder tree → index.html / <module>.html)"
 	@echo "  /logic, /logic/**    → $(LOGIC_DIR)/ (folder tree → index.html / <module>.html)"
 	@echo "  /law, /law/**        → $(LAW_DIR)/ (folder tree → index.html / <module>.html)"
+	@echo "  /physics, /physics/**→ $(PHYSICS_DIR)/ (folder tree → index.html / <module>.html)"
 	@echo "  /sitemap.xml         → $(SITEMAP_XML)"
 	@echo "  /robots.txt          → $(ROBOTS_TXT)"
 	@echo "  /llms.txt            → $(LLMS_TXT)"
@@ -104,6 +106,7 @@ start: build
 	 HEALTH_DIR=$(HEALTH_DIR) \
 	 LOGIC_DIR=$(LOGIC_DIR) \
 	 LAW_DIR=$(LAW_DIR) \
+	 PHYSICS_DIR=$(PHYSICS_DIR) \
 	 VENDOR_DIR=$(VENDOR_DIR) \
 	 ERROR_DIR=$(ERROR_DIR) \
 	 nohup $(BINARY) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE)
@@ -156,6 +159,7 @@ run: build
 	 HEALTH_DIR=$(HEALTH_DIR) \
 	 LOGIC_DIR=$(LOGIC_DIR) \
 	 LAW_DIR=$(LAW_DIR) \
+	 PHYSICS_DIR=$(PHYSICS_DIR) \
 	 VENDOR_DIR=$(VENDOR_DIR) \
 	 ERROR_DIR=$(ERROR_DIR) \
 	 $(BINARY)

@@ -127,7 +127,7 @@ var Modules = map[string][]Module{
 		{N: "F4.12", Title: "Lab: build a branded CHAMP store", One: "An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.", Slug: "lab", Status: "built", Lab: true},
 	},
 	"F5": {
-		{N: "F5.01", Title: "Project structure & Mix", One: "Apps, deps, tasks.", Slug: "mix", Status: "planned"},
+		{N: "F5.01", Title: "Foundations", One: "Start thin: a running Portal from day one.", Slug: "foundations", Status: "built"},
 		{N: "F5.02", Title: "Testing with ExUnit & doctests", One: "Fast, deterministic tests.", Slug: "testing", Status: "planned"},
 		{N: "F5.03", Title: "Documentation & typespecs", One: "@doc, @spec, Dialyzer.", Slug: "typespecs", Status: "planned"},
 		{N: "F5.04", Title: "Error handling & \"let it crash\"", One: "Tagged tuples vs exceptions; supervision.", Slug: "let-it-crash", Status: "planned"},
@@ -273,6 +273,11 @@ var Subpages = map[string][]Subpage{
 		{"grow", "Watch a branded CHAMP grow", "Each put reads a branded id's three-letter namespace and drops the entry into that namespace's p"},
 		{"registry", "A Snowflake registry", "Hand the store any branded id and get/1 resolves it in one call: the prefix names the partition,"},
 		{"range", "Query by time range", "Because a Snowflake puts the timestamp in its high bits, ids sort by creation time and a time wi"},
+	},
+	"F5.01": {
+		{"replaceable", "A web layer built for replacement", "The thin server is a detail, by design."},
+		{"roadmap", "The development roadmap", "The whole course is one development roadmap: HTML templating, then a simple web server, then the"},
+		{"thin-server", "A thin web server in Elixir", "A minimal HTTP front end for the Portal: a Plug.Router matched and dispatched by Bandit, where e"},
 	},
 }
 

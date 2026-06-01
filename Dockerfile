@@ -107,6 +107,9 @@ COPY logic/ /app/logic/
 # Copy the Law course (folder tree → /law/<chapter>/<module>) served under /law/*
 COPY law/ /app/law/
 
+# Copy the Physics course (folder tree → /physics/<chapter>/<module>) served under /physics/*
+COPY physics/ /app/physics/
+
 # Copy the 3D orbital knowledge map (three.js WebGL node-graph) served under /map
 COPY map/ /app/map/
 
