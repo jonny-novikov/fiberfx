@@ -1,9 +1,9 @@
 ---
-name: jonnify-elixir-course
+name: elixir-course
 description: "Use this skill to author or continue the technical course 'Functional Programming in Elixir' on the jonnify dark-editorial design system (published at https://jonnify.fly.dev/elixir). Triggers: any request to create, continue, extend, relink, or validate a course page, module, hub, subpage, or lab in this course; to build or check pages with build_page.py; to run the Apollo A+ quality gates; to mint or decode branded Snowflake IDs (TSK… form); or to run the headless zero-screenshot validator. The deliverable is always self-contained static HTML graded A+ across nine gates, authored into the existing builder and design system — never a rebuild of the system. Do NOT use for unrelated Elixir coding, generic Word/PDF/PPTX/XLSX documents, or courses on a different design system."
 ---
 
-# Authoring the jonnify "Functional Programming in Elixir" course
+# Authoring the "Functional Programming in Elixir" course
 
 This skill continues a long-running course. **`build_page.py` is the single source of truth** for the
 manifest, the nine gates, the routes, and the ID tools; **`course-authoring-playbook.md`** is the full

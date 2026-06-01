@@ -46,7 +46,11 @@ var (
 	// FOLDER-routed like the other courses (chapters are dirs, modules are files
 	// inside them), so the URL tree mirrors the filesystem. PHYSICS_DIR env-overridable.
 	physicsDir = "/app/physics"
-	gameHTML   = "/app/game.html"
+	// AI-at-work course content («ИИ на работе: считать, проверять, автоматизировать») —
+	// FOLDER-routed like the other courses (chapters are dirs, modules are files
+	// inside them), so the URL tree mirrors the filesystem. AI_RABOTA_DIR env-overridable.
+	aiRabotaDir = "/app/ai-rabota"
+	gameHTML    = "/app/game.html"
 	// On-disk dir for files served at the /vendor/* URL. Named "assets" (NOT
 	// "vendor") because a vendor/ dir at the Go module root is reserved by the
 	// toolchain (it forces vendor-mode builds).
@@ -112,6 +116,9 @@ func main() {
 	}
 	if dir := os.Getenv("PHYSICS_DIR"); dir != "" {
 		physicsDir = dir
+	}
+	if dir := os.Getenv("AI_RABOTA_DIR"); dir != "" {
+		aiRabotaDir = dir
 	}
 	if dir := os.Getenv("VENDOR_DIR"); dir != "" {
 		vendorDir = dir
@@ -396,7 +403,7 @@ func main() {
 		return serveMap(c, c.Params("name"))
 	})
 
-	// Folder-routed sections: /elixir, /health, /logic, /law and /physics each map a clean URL to a
+	// Folder-routed sections: /elixir, /health, /logic, /law, /physics and /ai-rabota each map a clean URL to a
 	// path under their section dir via serveDirTree's try_files cascade (a directory
 	// → its index.html, an exact file as-is, else <path>.html). This is what lets the
 	// URL tree MIRROR the filesystem — chapters are directories, modules are files:
@@ -409,6 +416,7 @@ func main() {
 	//   /law/dogovor                    → law/dogovor/index.html               (chapter dir)
 	//   /law/dogovor/sila               → law/dogovor/sila.html                (module file)
 	//   /physics/tok                    → physics/tok/index.html               (chapter dir)
+	//   /ai-rabota/promt                → ai-rabota/promt/index.html           (chapter dir)
 	// resolveUnder guards every join (".." → 403), as with /distr/* and /vendor/*.
 	app.Get("/elixir", func(c *fiber.Ctx) error { return serveDirTree(c, elixirDir, "", "elixir") })
 	app.Get("/elixir/*", func(c *fiber.Ctx) error { return serveDirTree(c, elixirDir, c.Params("*"), "elixir") })
@@ -420,6 +428,8 @@ func main() {
 	app.Get("/law/*", func(c *fiber.Ctx) error { return serveDirTree(c, lawDir, c.Params("*"), "law") })
 	app.Get("/physics", func(c *fiber.Ctx) error { return serveDirTree(c, physicsDir, "", "physics") })
 	app.Get("/physics/*", func(c *fiber.Ctx) error { return serveDirTree(c, physicsDir, c.Params("*"), "physics") })
+	app.Get("/ai-rabota", func(c *fiber.Ctx) error { return serveDirTree(c, aiRabotaDir, "", "ai-rabota") })
+	app.Get("/ai-rabota/*", func(c *fiber.Ctx) error { return serveDirTree(c, aiRabotaDir, c.Params("*"), "ai-rabota") })
 
 	// Serve distribution files with proper headers
 	app.Get("/distr/*", func(c *fiber.Ctx) error {
@@ -448,7 +458,7 @@ func main() {
 		return c.SendFile(cleanPath)
 	})
 
-	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, elixir: %s, game: %s, health: %s, logic: %s, law: %s, physics: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, elixirDir, gameHTML, healthDir, logicDir, lawDir, physicsDir, errorDir, len(errorPages))
+	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, elixir: %s, game: %s, health: %s, logic: %s, law: %s, physics: %s, ai-rabota: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, elixirDir, gameHTML, healthDir, logicDir, lawDir, physicsDir, aiRabotaDir, errorDir, len(errorPages))
 	log.Fatal(app.Listen(":" + port))
 }
 
