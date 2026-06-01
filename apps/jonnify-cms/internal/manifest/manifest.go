@@ -138,7 +138,7 @@ var Modules = map[string][]Module{
 		{N: "F5.09", Title: "Lab: the Portal engine, LiveView-ready", One: "Assemble the engine end to end, then mount it behind a LiveView.", Slug: "engine-lab", Status: "built", Lab: true},
 	},
 	"F6": {
-		{N: "F6.01", Title: "Architecture & the request lifecycle", One: "endpoint → router → controller → view.", Slug: "lifecycle", Status: "planned"},
+		{N: "F6.01", Title: "Architecture & the request lifecycle", One: "endpoint → router → controller → view.", Slug: "lifecycle", Status: "built"},
 		{N: "F6.02", Title: "Routing, controllers & plugs", One: "The plug pipeline.", Slug: "routing", Status: "planned"},
 		{N: "F6.03", Title: "Ecto: schemas, changesets & queries", One: "Data, validation, the repo.", Slug: "ecto", Status: "planned"},
 		{N: "F6.04", Title: "Contexts & domain design", One: "Boundaries that scale.", Slug: "contexts", Status: "planned"},
@@ -318,6 +318,11 @@ var Subpages = map[string][]Subpage{
 		{"end-to-end", "The engine facade end to end", "Assemble the parts into one supervised system; the F5.04 contracts are what make the wiring hold."},
 		{"mount", "A LiveView mount sketch", "Three LiveView callbacks call the facade and nothing deeper — the UI never reaches past the boundary."},
 		{"handoff", "What ships in F6", "F6 brings Phoenix, but the boundary makes it an addition, not a rewrite: the engine ships unchanged."},
+	},
+	"F6.01": {
+		{"controllers", "Controllers, views & the facade seam", "Where your code lives in the lifecycle: a thin controller calls only the Portal facade, branches"},
+		{"endpoint", "The endpoint, supervised", "PortalWeb.Endpoint has two roles: the outermost plug — static files, parsers, session, the route"},
+		{"request-path", "The request lifecycle", "A request from the browser to the response, step by step: Bandit hands the connection to PortalW"},
 	},
 }
 

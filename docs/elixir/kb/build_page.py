@@ -243,7 +243,7 @@ MODULES = {
         dict(n="F5.09", title="Lab: the Portal engine, LiveView-ready", one="Assemble the engine end to end, then mount it behind a LiveView.", slug="engine-lab", status="built", lab=True),
     ],
     "F6": [
-        dict(n="F6.01", title="Architecture & the request lifecycle", one="endpoint → router → controller → view.", slug="lifecycle", status="planned", lab=False),
+        dict(n="F6.01", title="Architecture & the request lifecycle", one="endpoint → router → controller → view.", slug="lifecycle", status="built", lab=False),
         dict(n="F6.02", title="Routing, controllers & plugs", one="The plug pipeline.", slug="routing", status="planned", lab=False),
         dict(n="F6.03", title="Ecto: schemas, changesets & queries", one="Data, validation, the repo.", slug="ecto", status="planned", lab=False),
         dict(n="F6.04", title="Contexts & domain design", one="Boundaries that scale.", slug="contexts", status="planned", lab=False),
@@ -426,6 +426,11 @@ SUBPAGES = {
         dict(slug='end-to-end', title='The engine facade end to end', one='Assemble the parts into one supervised system; the F5.04 contracts are what make the wiring hold.'),
         dict(slug='mount', title='A LiveView mount sketch', one='Three LiveView callbacks call the facade and nothing deeper — the UI never reaches past the boundary.'),
         dict(slug='handoff', title='What ships in F6', one='F6 brings Phoenix, but the boundary makes it an addition, not a rewrite: the engine ships unchanged.'),
+    ],
+    "F6.01": [
+        dict(slug='controllers', title='Controllers, views & the facade seam', one='Where your code lives in the lifecycle: a thin controller calls only the Portal facade, branches'),
+        dict(slug='endpoint', title='The endpoint, supervised', one='PortalWeb.Endpoint has two roles: the outermost plug — static files, parsers, session, the route'),
+        dict(slug='request-path', title='The request lifecycle', one='A request from the browser to the response, step by step: Bandit hands the connection to PortalW'),
     ],
 }
 

@@ -316,12 +316,12 @@ Engineering practice. Tooling docs, the OTP guides, and the “let it crash” p
 - [Elixir — Mix & OTP: Configuration and releases](https://hexdocs.pm/elixir/releases.html) — runtime config and releases.
 - [Elixir — mix release](https://hexdocs.pm/mix/Mix.Tasks.Release.html) — building a release.
 
-### F5.08 &middot; Performance & profiling
+### F5.08 &middot; Boundaries & integration seams
 
 - [Erlang — Efficiency Guide](https://www.erlang.org/doc/system/efficiency_guide.html) — the scheduler and hot paths.
 - [Benchee](https://hexdocs.pm/benchee/readme.html) — benchmarking in Elixir.
 
-### F5.09 &middot; Let it crash — a supervision tree that heals
+### F5.09 &middot; Lab: the Portal engine, LiveView-ready
 
 - [Elixir — Supervisor](https://hexdocs.pm/elixir/Supervisor.html) — supervision strategies.
 - [Elixir — DynamicSupervisor](https://hexdocs.pm/elixir/DynamicSupervisor.html) — supervising at runtime.

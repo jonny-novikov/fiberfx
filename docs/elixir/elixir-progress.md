@@ -836,6 +836,46 @@ facade behind a LiveView sketch and hand a UI-ready boundary to F6, the Phoenix 
   connection), plus 390px mobile entries for all four pages &mdash; `ONLY="F6"` reports **39 desktop + 8 mobile =
   47 PASS, 0 FAIL, 0 images**. Docs regenerated: course-md **voice CLEAN, 4 mermaid**; refs **59 / 59**, voice CLEAN.
 
+## F6.01 — first module built (hub + three dives) + landing tiles show subpages
+
+- **F6.01 &middot; Architecture &amp; the request lifecycle is built** on the deepest standard: a hub plus three
+  dives, blue accent, practical Phoenix code throughout. `MODULES["F6"]` F6.01 + its three dives flipped to `built`;
+  `SUBPAGES["F6.01"]` added; four PAGES entries (`lifecycle.html`, `lifecycle-request-path.html`,
+  `lifecycle-endpoint.html`, `lifecycle-controllers.html`). Routes 168 &rarr; **172**, PAGES 167 &rarr; **171**,
+  module tally **49 built / 8 planned**.
+  - **Hub** (`content/f6-01-lifecycle.html`, prefix `lc`): a four-stage lifecycle selector
+    (endpoint/router/controller/view, default controller &mdash; the stage that calls the facade) + three dive cards
+    (blue/gold/sage borders) + **hub References** (Phoenix Request life-cycle, Overview, Plug, Endpoint).
+  - **F6.01.1 &middot; The request lifecycle** (`rl`): a five-step request path (request &rarr; endpoint &rarr; router
+    &rarr; action &rarr; response, default action), a **second SVG** of the endpoint plug stack (Static, RequestId,
+    Parsers, Session, Router), and the path in code (a router line + a controller action calling
+    `Portal.courses_of/1`).
+  - **F6.01.2 &middot; The endpoint, supervised** (`ep`): a dual-role selector (plug stack / socket / tree child), a
+    **second SVG** of the supervision tree with `PortalWeb.Endpoint` added as one more child of the F5.09 tree, and
+    the endpoint module + the one-line `Application` change in code.
+  - **F6.01.3 &middot; Controllers, views &amp; the facade seam** (`cv`): a three-player selector
+    (controller/view/facade), a **second SVG** of the one-way seam (controller calls down to the facade, hands assigns
+    sideways to the view), and a real controller + view with an **entity-escaped HEEx** template. The dives carry no
+    References (hub-only rule); each carries two SVGs.
+- **The F6 landing was rewritten** (`content/f6-00-landing.html`): **every module tile now lists its three deep
+  dives** (a `<ul class="dives">`), so the whole chapter plan is visible. F6.01 is a linkable `<a class="mod">` with a
+  `built` pill; F6.02&ndash;F6.09 are `is-quiet` planned cards with their dives listed (the F6.09 lab card keeps the
+  `lab` class). The intro/arc prose was updated from &ldquo;all planned&rdquo; to &ldquo;F6.01 built, the rest
+  planned&rdquo;. To feed the tiles and the course-md, **all nine F6 modules now carry `dives` in `MODULES["F6"]`**
+  (F6.01 dives `built`, the rest `planned`); only `SUBPAGES["F6.01"]` exists, so the planned dive routes stay
+  non-linkable.
+- **Build guides (the requested md with Claude prompts)**: `build-guide/phoenix.md` (the F6 chapter index &mdash; the
+  platform layers, conventions, the one rule, the module list, and a global build sequence) and
+  `build-guide/f6-01-lifecycle.md` (the module spec: What you'll build / Concepts / Specs tables / Build it / six
+  copy-paste **build prompts** &mdash; the endpoint, the one-line tree change, the router + browser pipeline, a thin
+  controller over the facade, the view, and a run-and-verify / Definition of done / Next). Voice gate clean.
+- **All five pages Apollo A+** (hub + 3 dives + rewritten landing); `node --check` clean on each. Reference URLs
+  verified `200`. **Validator**: an `F6.01` desktop block (hub stage&rarr;role, and one per dive: step&rarr;does,
+  role&rarr;is, player&rarr;does) + 390px mobile entries for all four pages. `ONLY="F6"` now reports **75 desktop + 16
+  mobile = 91 PASS, 0 FAIL, 0 images** (front matter 4 + module 4 = 8 pages). Docs regenerated: course-md **voice
+  CLEAN, 4 mermaid** (now with F6 dive sub-rows for every module); refs **59 / 59**, voice CLEAN.
+
+
 
 **Deployment (not authoring), unchanged and now slightly larger:** the site-wide `/elixir` home and the
 `/elixir/course` Contents page are not in this working tree. Contents must move its module count 54 &rarr; 57 (F4&rsquo;s
@@ -866,13 +906,14 @@ What a resuming agent should know, condensed:
    supervised tree end to end, a LiveView mount sketch, and the F6 handoff &mdash; shipped with
    `build-guide/f5-09-engine-lab.md`, a spec whose copy-paste build prompts generate the Portal logic). **The F5
    chapter is now module-complete: all nine modules + three design subpages + the landing are built**, with REFS and
-   `A`-map abstracts keyed by module `n`. **F6 (Phoenix) front matter is now published**: the chapter is `live` with a
-   landing + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`); its nine modules remain
-   planned and are the next authoring targets, starting at F6.01 (Architecture &amp; the request lifecycle).
-   `allowed_routes()` returns **168** link routes; only built/live routes are linkable
-   (F5.01&ndash;F5.09, the F5 design subpages, and the F6 chapter + its three front-matter subpages are, since they are
-   built and their chapter is `live`; **F6 module routes are not** &mdash; the modules are still planned), external
-   `https://` links are exempt.
+   `A`-map abstracts keyed by module `n`. **F6 (Phoenix) is under construction**: the chapter is `live` with a landing
+   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01 is built** &mdash; a
+   hub + three dives at `/elixir/phoenix/lifecycle` (+ `/request-path`, `/endpoint`, `/controllers`) with the
+   `build-guide/f6-01-lifecycle.md` prompts. Every F6 module now carries its three dives in the manifest, so the
+   landing tiles and course-md show the whole chapter plan; F6.02 (Routing) is the next module.
+   `allowed_routes()` returns **172** link routes; only built/live routes are linkable
+   (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter subpages, and F6.01 + its three
+   dives are; **the planned F6.02&ndash;F6.09 module and dive routes are not**), external `https://` links are exempt.
 2. Rebuild any page with `python3 build_page.py build --page KEY`, grade with `check OUT.html` (nine gates + A+),
    regenerate `_head.html` with `extract-head` after editing `HEAD_CSS`. The voice gate scans all visible text
    including `<pre class="code">` comments (only `<script>`/`<style>`/`<svg>` are stripped); `expectText` in the
