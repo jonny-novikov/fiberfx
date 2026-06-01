@@ -140,7 +140,7 @@ CHAPTERS = [
          reuses="Builds on F4 · Algorithms & Data Structures.",
          accent="sage"),
     dict(id="F6", title="Phoenix Framework", slug="phoenix", route="/elixir/phoenix",
-         status="planned",
+         status="live",
          one="Web applications on Elixir, and the road into real-time LiveView.",
          reuses="Builds on F5 · Pragmatic Programming.",
          accent="blue"),
@@ -239,8 +239,8 @@ MODULES = {
         dict(n="F5.05", title="Commands, queries & events", one="Separate writes from reads; the engine as a reducer over events.", slug="cqrs", status="built", lab=False),
         dict(n="F5.06", title="Where engine state lives", one="One process holds the state; one supervisor keeps it alive.", slug="state", status="built", lab=False),
         dict(n="F5.07", title="Pragmatic testing", one="Testing the pure core, property-based tests, and contracts as tests.", slug="testing", status="built", lab=False),
-        dict(n="F5.08", title="Performance & profiling", one="Benchmarks, the scheduler, hot paths.", slug="performance", status="planned", lab=False),
-        dict(n="F5.09", title="Let it crash — a supervision tree that heals", one="Crash a worker; watch the supervisor restart it.", slug="supervision-lab", status="planned", lab=True),
+        dict(n="F5.08", title="Boundaries & integration seams", one="Ports out, a facade in, one error vocabulary for the UI.", slug="boundaries", status="built", lab=False),
+        dict(n="F5.09", title="Lab: the Portal engine, LiveView-ready", one="Assemble the engine end to end, then mount it behind a LiveView.", slug="engine-lab", status="built", lab=True),
     ],
     "F6": [
         dict(n="F6.01", title="Architecture & the request lifecycle", one="endpoint → router → controller → view.", slug="lifecycle", status="planned", lab=False),
@@ -417,6 +417,16 @@ SUBPAGES = {
         dict(slug='property', title='Property-based testing', one='An example test checks the cases you thought of; a property test asserts a rule over the cases a generator invents.'),
         dict(slug='contract-tests', title='Contract tests', one='The F5.04 contract — precondition, postcondition, invariant — becomes three assertions that a command keeps its promises.'),
     ],
+    "F5.08": [
+        dict(slug='ports', title='Ports & adapters', one='The engine names a port — a behaviour — for each outside dependency; production and tests supply different adapters.'),
+        dict(slug='facade', title='The engine facade', one='Ports are how the engine reaches out; the facade is the single door the outside calls in through.'),
+        dict(slug='errors', title='Error contracts for the UI', one='A boundary translates every internal failure into one stable error shape the UI can render.'),
+    ],
+    "F5.09": [
+        dict(slug='end-to-end', title='The engine facade end to end', one='Assemble the parts into one supervised system; the F5.04 contracts are what make the wiring hold.'),
+        dict(slug='mount', title='A LiveView mount sketch', one='Three LiveView callbacks call the facade and nothing deeper — the UI never reaches past the boundary.'),
+        dict(slug='handoff', title='What ships in F6', one='F6 brings Phoenix, but the boundary makes it an addition, not a rewrite: the engine ships unchanged.'),
+    ],
 }
 
 # Chapter-level context pages (not numbered modules): intro/background pages that
@@ -435,6 +445,11 @@ CHAPTER_EXTRAS = {
         dict(slug="architecture",  title="The Portal engine blueprint", one="The system this chapter builds, at a glance."),
         dict(slug="domain-model",  title="The domain model",            one="Three bounded contexts and their branded ids."),
         dict(slug="flow",          title="The command & event flow",    one="One use case through the five-stage pipeline."),
+    ],
+    "F6": [
+        dict(slug="journey",   title="The developer journey",              one="Arriving at F6 holding the supervised engine F5 built."),
+        dict(slug="blueprint", title="What we're building",                one="The learning platform this chapter builds — a real app, not a framework demo."),
+        dict(slug="wiring",    title="Wiring Phoenix onto the F5 engine",  one="The seam the chapter turns on: three small connections, no rewrite."),
     ],
 }
 

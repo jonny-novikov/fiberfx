@@ -802,6 +802,41 @@ The throughline to hold while authoring F5: each module applies one pragmatic te
 engine &mdash; not nine demos but one coherent Portal engine &mdash; so that the F5.09 lab can mount the engine&rsquo;s
 facade behind a LiveView sketch and hand a UI-ready boundary to F6, the Phoenix chapter.
 
+## F6 — chapter front matter published (landing + three design subpages)
+
+- **F6 is now a `live` chapter.** The chapter status was flipped `planned` &rarr; `live` so its route
+  `/elixir/phoenix` and its front-matter subpage routes become linkable. **The nine F6 modules stay `planned`** &mdash;
+  only the chapter front matter is published; the modules are listed as a visible build path.
+- **The landing was authored and built**: `content/f6-00-landing.html` &rarr; `phoenix.html`, route `/elixir/phoenix`
+  (blue accent). Hero + a nine-node chapter-arc SVG (stand it up &middot; data &amp; domain &middot; the UI &middot;
+  real-time &amp; ship; node 09 keeps the purple `lab` styling, labelled *live*) + three design cards (`#design`) +
+  nine **planned** module cards (`<div class="mod is-quiet">`, the F6.09 card carries `lab`). The F6 modules carry no
+  dives yet, so the cards show num/pill/title/one without a dives list. **Apollo A+** across the nine gates;
+  `node --check` clean; voice gate clean (one `just` in a wiring SVG caption was rewritten to *one more*).
+- **`CHAPTER_SUBPAGES["F6"]`** added with three design subpages, mirroring F5: `journey` / `blueprint` / `wiring`
+  &rarr; `phoenix-journey.html` / `phoenix-blueprint.html` / `phoenix-wiring.html`, linked as cards on the landing.
+  Each subpage is a front-matter design page: hero (crumbs to chapter + *system design &middot; N of 3* eyebrow) +
+  an interactive figure (selector + SVG + readout) + a code/second section with a `.bridge` + **its own References**
+  block + pager + footer/decoder.
+  - **F6.0.1 &middot; the developer journey** (prefix `jr`): a four-arc journey selector (stand it up / data &amp;
+    domain / the live UI / real-time &amp; ship &rarr; arc&rarr;modules), and a start/finish code block (the F5 facade
+    you bring &rarr; a `live "/enroll/:id"` route you ship).
+  - **F6.0.2 &middot; what we&rsquo;re building** (prefix `bp`): the full stack with Phoenix added on top of the F5
+    facade &mdash; a four-layer selector (web / facade / core / store &rarr; layer&rarr;chapter), defaulting to the new
+    Phoenix web band &mdash; plus the thin web layer in code (a controller calling `Portal.enroll/2`).
+  - **F6.0.3 &middot; wiring Phoenix onto the F5 engine** (prefix `wr`): the richest front-matter page &mdash; a
+    three-point selector (supervision tree / router / LiveView), a **second SVG** (the supervision tree with
+    `PortalWeb.Endpoint` added as one more child of the F5.09 tree), and three code blocks (the `Application` tree, a
+    `live` route, and a `mount` calling the facade). Implements the F5.09.3 handoff.
+- **Wiring**: four PAGES entries (`f6-landing`, `f6-journey`, `f6-blueprint`, `f6-wiring`). Routes 164 &rarr; **168**,
+  PAGES 163 &rarr; **167**, module tally unchanged (F6 modules remain planned). All new reference URLs verified `200`
+  (Phoenix Overview / LiveView / Endpoint / Router, Ecto, Elixir Supervisor).
+- **Validator**: a tagged `F6` desktop block for the landing (base + the twelve cards + the design/planned pills +
+  the `live dashboard` lab card) and one per design subpage (arc&rarr;modules, layer&rarr;chapter, wiring-point&rarr;
+  connection), plus 390px mobile entries for all four pages &mdash; `ONLY="F6"` reports **39 desktop + 8 mobile =
+  47 PASS, 0 FAIL, 0 images**. Docs regenerated: course-md **voice CLEAN, 4 mermaid**; refs **59 / 59**, voice CLEAN.
+
+
 **Deployment (not authoring), unchanged and now slightly larger:** the site-wide `/elixir` home and the
 `/elixir/course` Contents page are not in this working tree. Contents must move its module count 54 &rarr; 57 (F4&rsquo;s
 twelve modules) **and** now surface F5 as a `live` chapter linking `/elixir/pragmatic`; the new `pragmatic.html`
@@ -831,10 +866,13 @@ What a resuming agent should know, condensed:
    supervised tree end to end, a LiveView mount sketch, and the F6 handoff &mdash; shipped with
    `build-guide/f5-09-engine-lab.md`, a spec whose copy-paste build prompts generate the Portal logic). **The F5
    chapter is now module-complete: all nine modules + three design subpages + the landing are built**, with REFS and
-   `A`-map abstracts keyed by module `n`. F6 is the next chapter (replace the thin server with Phoenix + LiveView).
-   `allowed_routes()` returns **164** link routes; only built/live routes are linkable
-   (F5.01&ndash;F5.09 and the chapter front-matter subpages are, since they are built and the chapter is `live`;
-   F6+ module routes are not), external `https://` links are exempt.
+   `A`-map abstracts keyed by module `n`. **F6 (Phoenix) front matter is now published**: the chapter is `live` with a
+   landing + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`); its nine modules remain
+   planned and are the next authoring targets, starting at F6.01 (Architecture &amp; the request lifecycle).
+   `allowed_routes()` returns **168** link routes; only built/live routes are linkable
+   (F5.01&ndash;F5.09, the F5 design subpages, and the F6 chapter + its three front-matter subpages are, since they are
+   built and their chapter is `live`; **F6 module routes are not** &mdash; the modules are still planned), external
+   `https://` links are exempt.
 2. Rebuild any page with `python3 build_page.py build --page KEY`, grade with `check OUT.html` (nine gates + A+),
    regenerate `_head.html` with `extract-head` after editing `HEAD_CSS`. The voice gate scans all visible text
    including `<pre class="code">` comments (only `<script>`/`<style>`/`<svg>` are stripped); `expectText` in the

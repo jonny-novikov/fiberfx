@@ -60,7 +60,7 @@ var Chapters = []Chapter{
 	{"F3", "The Elixir Language", "language", "/elixir/language", "live", "Syntax, pipelines, pattern matching, and structs on the BEAM.", "Builds on F2 · Functional Programming.", "elixir"},
 	{"F4", "Algorithms & Data Structures", "algorithms", "/elixir/algorithms", "live", "Classical and advanced problems, from lists to branded CHAMP tries.", "Builds on F3 · The Elixir Language.", "sage"},
 	{"F5", "Pragmatic Programming", "pragmatic", "/elixir/pragmatic", "live", "Real-world engineering: structure, testing, telemetry, releases.", "Builds on F4 · Algorithms & Data Structures.", "sage"},
-	{"F6", "Phoenix Framework", "phoenix", "/elixir/phoenix", "planned", "Web applications on Elixir, and the road into real-time LiveView.", "Builds on F5 · Pragmatic Programming.", "blue"},
+	{"F6", "Phoenix Framework", "phoenix", "/elixir/phoenix", "live", "Web applications on Elixir, and the road into real-time LiveView.", "Builds on F5 · Pragmatic Programming.", "blue"},
 }
 
 // Modules maps a chapter id to its ordered modules. Statuses are verbatim from
@@ -134,8 +134,8 @@ var Modules = map[string][]Module{
 		{N: "F5.05", Title: "Commands, queries & events", One: "Separate writes from reads; the engine as a reducer over events.", Slug: "cqrs", Status: "built"},
 		{N: "F5.06", Title: "Where engine state lives", One: "One process holds the state; one supervisor keeps it alive.", Slug: "state", Status: "built"},
 		{N: "F5.07", Title: "Pragmatic testing", One: "Testing the pure core, property-based tests, and contracts as tests.", Slug: "testing", Status: "built"},
-		{N: "F5.08", Title: "Performance & profiling", One: "Benchmarks, the scheduler, hot paths.", Slug: "performance", Status: "planned"},
-		{N: "F5.09", Title: "Let it crash — a supervision tree that heals", One: "Crash a worker; watch the restart.", Slug: "supervision-lab", Status: "planned", Lab: true},
+		{N: "F5.08", Title: "Boundaries & integration seams", One: "Ports out, a facade in, one error vocabulary for the UI.", Slug: "boundaries", Status: "built"},
+		{N: "F5.09", Title: "Lab: the Portal engine, LiveView-ready", One: "Assemble the engine end to end, then mount it behind a LiveView.", Slug: "engine-lab", Status: "built", Lab: true},
 	},
 	"F6": {
 		{N: "F6.01", Title: "Architecture & the request lifecycle", One: "endpoint → router → controller → view.", Slug: "lifecycle", Status: "planned"},
@@ -309,6 +309,16 @@ var Subpages = map[string][]Subpage{
 		{"property", "Property-based testing", "An example test checks the cases you thought of; a property test asserts a rule over the cases a generator invents."},
 		{"contract-tests", "Contract tests", "The F5.04 contract — precondition, postcondition, invariant — becomes three assertions that a command keeps its promises."},
 	},
+	"F5.08": {
+		{"ports", "Ports & adapters", "The engine names a port — a behaviour — for each outside dependency; production and tests supply different adapters."},
+		{"facade", "The engine facade", "Ports are how the engine reaches out; the facade is the single door the outside calls in through."},
+		{"errors", "Error contracts for the UI", "A boundary translates every internal failure into one stable error shape the UI can render."},
+	},
+	"F5.09": {
+		{"end-to-end", "The engine facade end to end", "Assemble the parts into one supervised system; the F5.04 contracts are what make the wiring hold."},
+		{"mount", "A LiveView mount sketch", "Three LiveView callbacks call the facade and nothing deeper — the UI never reaches past the boundary."},
+		{"handoff", "What ships in F6", "F6 brings Phoenix, but the boundary makes it an addition, not a rewrite: the engine ships unchanged."},
+	},
 }
 
 // ChapterExtras are chapter-level context pages (not numbered modules) that live
@@ -327,6 +337,11 @@ var ChapterExtras = map[string][]Subpage{
 		{"architecture", "The Portal engine blueprint", "The system this chapter builds, at a glance."},
 		{"domain-model", "The domain model", "Three bounded contexts and their branded ids."},
 		{"flow", "The command & event flow", "One use case through the five-stage pipeline."},
+	},
+	"F6": {
+		{"journey", "The developer journey", "Arriving at F6 holding the supervised engine F5 built."},
+		{"blueprint", "What we're building", "The learning platform this chapter builds — a real app, not a framework demo."},
+		{"wiring", "Wiring Phoenix onto the F5 engine", "The seam the chapter turns on: three small connections, no rewrite."},
 	},
 }
 
