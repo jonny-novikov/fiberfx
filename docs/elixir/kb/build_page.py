@@ -228,7 +228,7 @@ MODULES = {
         dict(n="F4.08", title="Branded ids & persistence", one="Branded ids as keys in SQLite, PostgreSQL, and Redis.", slug="persistence", status="built", lab=False),
         dict(n="F4.09", title="Branded CHAMP maps & GenServer", one="A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.", slug="branded-champ", status="built", lab=False),
         dict(n="F4.10", title="Practical recipes in Elixir", one="Turning algorithmic problems into idiomatic Elixir.", slug="recipes", status="built", lab=False),
-        dict(n="F4.11", title="Dynamic programming & advanced problems", one="Overlapping subproblems, memoized and tabulated.", slug="dynamic-programming", status="planned", lab=False),
+        dict(n="F4.11", title="Dynamic programming & advanced problems", one="Overlapping subproblems, memoized and tabulated.", slug="dynamic-programming", status="built", lab=False),
         dict(n="F4.12", title="Lab: build a branded CHAMP store", one="An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.", slug="lab", status="planned", lab=True),
     ],
     "F5": [
@@ -371,6 +371,11 @@ SUBPAGES = {
         dict(slug='patterns', title='Idiomatic patterns', one='A request to view a lesson clears four gates — validate the id, authenticate the caller, fetch t'),
         dict(slug='pipelines', title='Streams & pipelines', one='The activity feed wants the three most recent completions for a course.'),
         dict(slug='profiling', title='Profiling & complexity', one='Every request finds an active session.'),
+    ],
+    "F4.11": [
+        dict(slug='memoization', title='Memoization & overlapping subproblems', one='The longest prerequisite chain to a lesson is one plus the deepest of its prerequisites — a recu'),
+        dict(slug='problems', title='Classic DP problems', one='Edit distance — the fewest single-character inserts, deletes, or substitutions between two strin'),
+        dict(slug='tabulation', title='Tabulation & bottom-up', one='The fewest modules (worth 1, 3, or 4 credits) summing to a target is one more than the best answ'),
     ],
 }
 
