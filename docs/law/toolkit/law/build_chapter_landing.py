@@ -3,22 +3,18 @@
 build_chapter_landing.py — генератор лендингов глав курса «Право повседневной жизни».
 Лендинг: hero → 3 intro-карточки → сетка из 6 тайлов-модулей (последний — капстоун)
 → цепочка глав → футер. Тема главы, крупный десктоп-шрифт.
-Выход: <repo>/law/{слаг}/index.html (по умолчанию; переопределяется OUT_BASE)
+Выход: {OUT_BASE}/{слаг}/index.html   Запуск: python3 build_chapter_landing.py
 Тайлы ведут на модули (пути готовы, страницы строятся позже); ссылка «Квиз главы» уже работает.
 """
 import os
 
-# Default output target is the repo's served law/ tree, resolved relative to this
-# script (docs/law/toolkit/ → repo root → law/) so it works on the local filesystem
-# out of the box. OUT_BASE env still overrides it (e.g. a sandbox path).
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-OUT_BASE = os.environ.get('OUT_BASE', os.path.join(_REPO_ROOT, 'law'))
+OUT_BASE = os.environ.get('OUT_BASE', '/mnt/user-data/outputs/logic')
 COURSE_NAME = 'Право повседневной жизни'
 COURSE_BASE = '/law'
 
 # короткие подписи глав для цепочки
-CHAIN = [(1,'iskazheniya','Искажения'),(2,'veroyatnost','Вероятность'),(3,'bayes','Байес'),
-         (4,'igry','Игры'),(5,'dannye','Данные'),(6,'resheniya','Решения')]
+CHAIN = [(1,'dogovor','Договор'),(2,'potrebitel','Потребитель'),(3,'trud','Труд'),
+         (4,'semya','Семья'),(5,'nasledstvo','Наследство'),(6,'pretenziya','Спор')]
 
 CH = [
  dict(n=1, roman='I', slug='dogovor', title='Как читать договор', em='читать',
@@ -254,12 +250,12 @@ a{color:var(--accent-bright);text-decoration:none;transition:.2s}
       <div class="brand-mark">@@ROMAN@@</div>
       <div class="brand-text">
         <span class="brand-name">@@TITLE@@</span>
-        <span class="brand-sub">Курс · Логика · Глава @@N@@</span>
+        <span class="brand-sub">Курс · Право · Глава @@N@@</span>
       </div>
     </a>
     <nav class="breadcrumb">
       <a href="/">Курс</a><span class="sep">/</span>
-      <a href="@@CBASE@@">Логика</a><span class="sep">/</span>
+      <a href="@@CBASE@@">Право</a><span class="sep">/</span>
       <span class="current">Глава @@N@@</span>
     </nav>
     <a class="back-link" href="@@CBASE@@">К курсу</a>
