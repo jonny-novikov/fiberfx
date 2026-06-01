@@ -235,7 +235,7 @@ MODULES = {
         dict(n="F5.01", title="Foundations", one="Start thin: a running Portal from day one.", slug="foundations", status="built", lab=False),
         dict(n="F5.02", title="Modeling the Portal domain", one="Bounded contexts, structs, and the public API.", slug="domain", status="built", lab=False),
         dict(n="F5.03", title="Tracer bullets: a walking skeleton", one="Thin end-to-end first, then iterate.", slug="tracer-bullets", status="built", lab=False),
-        dict(n="F5.04", title="Error handling & “let it crash”", one="Tagged tuples versus exceptions; supervision.", slug="let-it-crash", status="planned", lab=False),
+        dict(n="F5.04", title="Design by contract", one="Preconditions, postconditions, and failing fast.", slug="contracts", status="built", lab=False),
         dict(n="F5.05", title="Concurrency patterns & Tasks", one="Task, async/await, back-pressure.", slug="tasks", status="planned", lab=False),
         dict(n="F5.06", title="Telemetry, logging & observability", one="Seeing inside a running system.", slug="telemetry", status="planned", lab=False),
         dict(n="F5.07", title="Dependencies, releases & deployment", one="mix release, config, runtime.", slug="releases", status="planned", lab=False),
@@ -396,6 +396,11 @@ SUBPAGES = {
         dict(slug='iterating', title='Iterating the slice', one='Once the skeleton walks, you grow it one thin vertical slice at a time: deliver the first lesson'),
         dict(slug='prototypes', title='Tracer bullets vs prototypes', one='Both are built fast, but their fates are opposite.'),
         dict(slug='skeleton', title='The walking skeleton', one='The enroll-a-learner slice, end to end: a POST /enroll route calls Learning.enroll/2, which buil'),
+    ],
+    "F5.04": [
+        dict(slug='assertions', title='Assertions in Elixir', one='Elixir has no design-by-contract keywords, so contracts are written in its idioms: guards and pa'),
+        dict(slug='conditions', title='Preconditions, postconditions & invariants', one='A contract has three parts and three owners.'),
+        dict(slug='fail-fast', title='Failing fast', one='Check at the boundary and stop on the first violation, before the struct is built or the store i'),
     ],
 }
 
