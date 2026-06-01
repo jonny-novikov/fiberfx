@@ -159,7 +159,7 @@ graph TD
 
 ## The road ahead &mdash; F3 to F6
 
-The four remaining chapters are planned. Each follows the same shape as F1 and F2: nine modules read in order, the ninth an interactive lab. The hub-and-subpages treatment seen in F2 will extend into them where a topic earns the depth.
+F3 and F4 are built. F5 is open — its overview is live and its nine modules are in production — and unlike the earlier chapters it is organised around shipping one thing: the **Portal engine**, a framework-free core built pragmatically, technique by technique, until it is ready to integrate with Phoenix LiveView. F6 then mounts that engine in a Phoenix application. Each chapter keeps the same shape: nine modules read in order, the ninth an interactive lab, with the hub-and-subpages treatment where a topic earns the depth.
 
 ```mermaid
 graph LR
@@ -258,23 +258,29 @@ Functional algorithmics. From lists, trees, sorting, and hashing up through the 
 | ↳ F4.11 &middot; Memoization & overlapping subproblems | Top-down: compute the longest prerequisite chain to a lesson recursively and cache each lesson's depth, so a shared prerequisite is evaluated once instead of along every path that reaches it. | `/elixir/algorithms/dynamic-programming/memoization` | ● |
 | ↳ F4.11 &middot; Tabulation & bottom-up | Bottom-up: fill a table of the fewest modules to reach each credit total from zero upward, so the target's answer reads off a row built from smaller answers, where greedy choice fails and the table is optimal. | `/elixir/algorithms/dynamic-programming/tabulation` | ● |
 | ↳ F4.11 &middot; Classic DP problems | Edit distance, the textbook two-dimensional DP: how many single-character edits turn a misspelled query into a catalog title, filled cell by cell to power a typo-tolerant 'did you mean' suggestion. | `/elixir/algorithms/dynamic-programming/problems` | ● |
-| **F4.12 · Lab: build a branded CHAMP store** | An interactive lab: insert branded keys and watch a partitioned CHAMP restructure as it grows. | `/elixir/algorithms/lab` | ○ ▣ lab |
+| **F4.12 · Lab: build a branded CHAMP store** | An interactive lab: insert branded keys and watch a partitioned CHAMP restructure as it grows. | `/elixir/algorithms/lab` | ● ⬡ hub ▣ lab |
+| ↳ F4.12 &middot; Watch a branded CHAMP grow | Insert branded keys one by one and watch the store take shape: each key routes to its partition by its three-letter namespace, each partition's CHAMP fills, and a new partition appears the first time its namespace is used. | `/elixir/algorithms/lab/grow` | ● |
+| ↳ F4.12 &middot; A Snowflake registry | Resolve any branded id in one call: route it to its partition, look it up in O(log32 n) hops, and read its creation time straight from the embedded Snowflake, or reject it before any search when its namespace has no partition. | `/elixir/algorithms/lab/registry` | ● |
+| ↳ F4.12 &middot; Query by time range | Because Snowflake ids are time-ordered, a time window becomes an id range: compute the bounds from the clock, scan one namespace partition, and return the entries created inside the window with no stored timestamp column. | `/elixir/algorithms/lab/range` | ● |
 
 ### F5 &middot; Pragmatic Programming &mdash; `/elixir/pragmatic`
 
-The engineering craft: Mix, ExUnit and doctests, typespecs and Dialyzer, “let it crash”, Tasks and concurrency, telemetry, releases, and performance — ending in a self-healing supervision-tree lab.
+A pragmatic, end-to-end build of one product: the Portal engine. Nine modules carry the same framework-free core from DRY, orthogonal foundations through domain modeling, a tracer-bullet walking skeleton, design by contract, commands/queries/events, where state lives, testing, and integration seams — ending in a lab where the engine facade is mounted behind a LiveView sketch, ready to integrate with Phoenix LiveView in F6.
 
 | Module | Abstract | Route | Status |
 |---|---|---|---|
-| **F5.01 · Project structure & Mix** | Project structure with Mix: applications, dependencies, and tasks. | `/elixir/pragmatic/mix` | ○ |
-| **F5.02 · Testing with ExUnit & doctests** | Fast, deterministic testing with ExUnit and doctests. | `/elixir/pragmatic/testing` | ○ |
-| **F5.03 · Documentation & typespecs** | Documentation with @doc and contracts with @spec, checked by Dialyzer. | `/elixir/pragmatic/typespecs` | ○ |
-| **F5.04 · Error handling & “let it crash”** | Error handling the BEAM way: tagged tuples versus exceptions, and “let it crash” under supervision. | `/elixir/pragmatic/let-it-crash` | ○ |
-| **F5.05 · Concurrency patterns & Tasks** | Concurrency patterns with Task, async/await, and back-pressure. | `/elixir/pragmatic/tasks` | ○ |
-| **F5.06 · Telemetry, logging & observability** | Telemetry, logging, and observability — seeing inside a running system. | `/elixir/pragmatic/telemetry` | ○ |
-| **F5.07 · Dependencies, releases & deployment** | Dependencies, mix release, and configuration for deployment. | `/elixir/pragmatic/releases` | ○ |
-| **F5.08 · Performance & profiling** | Benchmarking, the scheduler, and finding hot paths. | `/elixir/pragmatic/performance` | ○ |
-| **F5.09 · Let it crash — a supervision tree that heals** | An interactive lab: crash a worker and watch the supervisor restart it. | `/elixir/pragmatic/supervision-lab` | ○ ▣ lab |
+| **F5.01 · Start thin: a running Portal from day one** | Start thin: stand the Portal up behind a minimal Elixir web server from day one, place that move on the course roadmap — templating, simple server, Portal logic, Phoenix, Fly — and keep the web replaceable so F6 swaps in Phoenix untouched. | `/elixir/pragmatic/foundations` | ● ⬡ hub |
+| ↳ F5.01 &middot; The development roadmap | The path the whole course walks — HTML templating, a simple web server, Portal logic, Phoenix, then production — and why you start thin and grow rather than build big up front. | `/elixir/pragmatic/foundations/roadmap` | ● |
+| ↳ F5.01 &middot; A thin web server in Elixir | A minimal Plug-and-Bandit server that answers a request by calling the Portal engine and nothing more — a real HTTP front end, running from the first day. | `/elixir/pragmatic/foundations/thin-server` | ● |
+| ↳ F5.01 &middot; A web layer built for replacement | Keep the web as a thin adapter over the engine facade, so Phoenix can replace it in F6 by calling the same functions, with the Portal untouched. | `/elixir/pragmatic/foundations/replaceable` | ● |
+| **F5.02 · Modeling the Portal domain** | Modeling the Portal domain in plain structs, typespecs, and bounded contexts — Accounts, Catalog, Learning — each with a small public API. | `/elixir/pragmatic/domain` | ○ |
+| **F5.03 · Tracer bullets: a walking skeleton** | Tracer bullets: build one use case end to end first — enroll a learner, then deliver the first lesson — as a walking skeleton, then iterate the slice. | `/elixir/pragmatic/tracer-bullets` | ○ |
+| **F5.04 · Design by contract** | Design by contract: preconditions, postconditions, and invariants on the engine’s commands, asserted in Elixir, failing fast at the boundary. | `/elixir/pragmatic/contracts` | ○ |
+| **F5.05 · Commands, queries & events** | Commands, queries, and events: separate writes from reads and model every change to the engine as a domain event, with the engine as a reducer. | `/elixir/pragmatic/cqrs` | ○ |
+| **F5.06 · Where engine state lives** | Where engine state lives — GenServer, Agent, or ETS — and the process boundary and supervision around it. | `/elixir/pragmatic/state` | ○ |
+| **F5.07 · Pragmatic testing** | Pragmatic testing: testing the pure core, property-based tests with StreamData, and contracts run as tests. | `/elixir/pragmatic/testing` | ○ |
+| **F5.08 · Boundaries & integration seams** | Boundaries and integration seams: ports, adapters, and the engine facade the UI will call, with error shapes the UI can render. | `/elixir/pragmatic/boundaries` | ○ |
+| **F5.09 · Lab: the Portal engine, LiveView-ready** | An interactive lab: assemble the engine facade and mount it behind a LiveView sketch — ready to integrate with Phoenix LiveView in F6. | `/elixir/pragmatic/engine-lab` | ○ ▣ lab |
 
 ### F6 &middot; Phoenix Framework &mdash; `/elixir/phoenix`
 

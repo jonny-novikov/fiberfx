@@ -59,7 +59,7 @@ var Chapters = []Chapter{
 	{"F2", "Functional Programming", "functional", "/elixir/functional", "live", "Pure functions, immutability, and higher-order functions on their own terms.", "Builds on F1 · Algebra.", "elixir"},
 	{"F3", "The Elixir Language", "language", "/elixir/language", "live", "Syntax, pipelines, pattern matching, and structs on the BEAM.", "Builds on F2 · Functional Programming.", "elixir"},
 	{"F4", "Algorithms & Data Structures", "algorithms", "/elixir/algorithms", "live", "Classical and advanced problems, from lists to branded CHAMP tries.", "Builds on F3 · The Elixir Language.", "sage"},
-	{"F5", "Pragmatic Programming", "pragmatic", "/elixir/pragmatic", "planned", "Real-world engineering: structure, testing, telemetry, releases.", "Builds on F4 · Algorithms & Data Structures.", "sage"},
+	{"F5", "Pragmatic Programming", "pragmatic", "/elixir/pragmatic", "live", "Real-world engineering: structure, testing, telemetry, releases.", "Builds on F4 · Algorithms & Data Structures.", "sage"},
 	{"F6", "Phoenix Framework", "phoenix", "/elixir/phoenix", "planned", "Web applications on Elixir, and the road into real-time LiveView.", "Builds on F5 · Pragmatic Programming.", "blue"},
 }
 
@@ -287,6 +287,11 @@ var ChapterExtras = map[string][]Subpage{
 		{"history", "A short history of Elixir", "Where the language came from."},
 		{"timeline", "The Elixir release timeline", "Versions and milestones."},
 		{"under-the-hood", "Under the hood", "How the language runs on the BEAM."},
+	},
+	"F5": {
+		{"architecture", "The Portal engine blueprint", "The system this chapter builds, at a glance."},
+		{"domain-model", "The domain model", "Three bounded contexts and their branded ids."},
+		{"flow", "The command & event flow", "One use case through the five-stage pipeline."},
 	},
 }
 

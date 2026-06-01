@@ -559,34 +559,108 @@ built. F4.05.2 was renamed slug `index`&rarr;`indexing` (route `/elixir/algorith
 `index.html` collision when serving statically. The chapter accent is sage; `.ex`/`code.inl` stay the global Elixir
 purple.
 
-**Nothing left to author &mdash; F4.12 was the final module, and every module in the manifest&rsquo;s live chapters
-(F3 and F4) is built.** The Algorithms &amp; Data Structures chapter is complete: twelve modules, each a hub plus
-three dives with an advanced section and a References section, all A+ on the nine gates and green in the validator.
-F4.12, the capstone lab, assembles the whole chapter into one `Portal.Store` &mdash; a GenServer over
-`%{namespace => CHAMP}` &mdash; and exercises it across three dives (grow / registry / range), with the `Portal.Store`
-module given as a code reference: `put/2` routes on the three-letter prefix and updates one partition,
-`get/1` resolves an id to its entry and a free Snowflake timestamp (rejecting unknown namespaces at the edge), and
-`range/2` turns a time window into id bounds.
+**F4 is complete; F5 is now open as the product chapter.** The Algorithms &amp; Data Structures chapter shipped
+twelve modules (each a hub plus three dives, A+ on the nine gates, green in the validator), closing with the F4.12
+lab that assembles them into one `Portal.Store`. F5 &mdash; **Pragmatic Programming** &mdash; is the chapter that
+turns those parts into a product. It has been reframed from a generic engineering survey into a single-product build
+of the **Portal engine**: a framework-free domain core built pragmatically, technique by technique, until it is
+ready to integrate with Phoenix LiveView. The chapter accent is **burgundy** (`--burgundy`), distinct from F4&rsquo;s
+sage.
 
-The only remaining work is **not authoring but deployment** &mdash; the standing gap below: the site-wide `/elixir`
-home and the `/elixir/course` Contents page (its module count needs to move 54 &rarr; 57) are not in this working
-tree and must be regenerated and deployed against the full repository, along with the per-chapter relinks already
-prepared here. If the course is later extended, the next unit would be a new chapter (F5 onward), authored with the
-same toolkit, page anatomy, gates, and validator pattern documented throughout this tracker.
+This session opened F5 by building its overview and laying the roadmap:
+
+- **Chapter promoted to `live`** in the manifest (was `planned`), accent `sage` &rarr; `burgundy`, one-liner reframed
+  to the engine build. `/elixir/pragmatic` is now a linkable route.
+- **The nine F5 modules were rewritten** from the old generic topics (Mix, testing, typespecs, &hellip;) into the
+  Portal-engine arc, keeping the module numbers `F5.01`&ndash;`F5.09` so the doc and reference maps (keyed by module
+  `n`) stay valid: foundations (DRY/orthogonality/ETC) &rarr; domain modeling &rarr; tracer bullets / walking
+  skeleton &rarr; design by contract &rarr; commands/queries/events &rarr; where state lives &rarr; pragmatic testing
+  &rarr; boundaries &amp; seams &rarr; the **F5.09 lab: the Portal engine, LiveView-ready**. Every module now carries a
+  three-dive roadmap; all are `planned` &mdash; they are the next authoring targets, in order.
+- **Three system-design front-matter subpages were authored and built** (`CHAPTER_SUBPAGES["F5"]`, linkable because
+  F5 is `live`): **F5.0.1** the blueprint (`pragmatic-architecture.html`, `/elixir/pragmatic/architecture`) &mdash; a
+  four-layer stack (UI / facade / domain core / persistence) with a selector mapping each layer to the module that
+  builds it; **F5.0.2** the domain model (`pragmatic-domain-model.html`, `/elixir/pragmatic/domain-model`) &mdash;
+  the three bounded contexts (Accounts USR/SES, Catalog CRS/LSN/PGE, Learning ENR/PRG) with a selector listing each
+  context&rsquo;s entities and branded-id namespaces; **F5.0.3** the command &amp; event flow
+  (`pragmatic-flow.html`, `/elixir/pragmatic/flow`) &mdash; the five-stage command &rarr; contract &rarr; event &rarr;
+  state &rarr; query pipeline with a selector mapping each stage to its module (F5.04/F5.05/F5.06). Each is **A+ on
+  the nine gates**, `node --check` clean, voice clean, with a References block; burgundy accent, single SVG, prefixes
+  `ar`/`dm`/`fl`. They are linked from a new **&ldquo;The system we&rsquo;re building&rdquo;** (`#design`) section on
+  the landing as three `<a class="mod">` cards with a `design` pill &mdash; read-before-the-modules design pages, not
+  modules (not counted in the module tally). Routes 125 &rarr; 128, PAGES 124 &rarr; 127.
+- **F5.01 was authored and built as a full module** (hub + three dives, A+ on the nine gates, the first built F5
+  module), reframing the old &ldquo;Pragmatic foundations / DRY-orthogonality-ETC&rdquo; placeholder into the concrete
+  approach the user asked for: **stand the Portal up behind a thin Elixir web server from day one and grow it**, with
+  Phoenix replacing the server in F6. Title **&ldquo;Start thin: a running Portal from day one&rdquo;**, slug
+  `foundations` (`/elixir/pragmatic/foundations`). The hub centerpiece is the course-wide **development roadmap**
+  &mdash; HTML templating &rarr; simple web server &rarr; Portal logic &rarr; Phoenix &rarr; Fly (Fly marked out of
+  scope) &mdash; as a five-chip selector mapping each stage to its chapter; prefix `fo`, burgundy. Three dives:
+  **F5.01.1 The development roadmap** (`/roadmap`, burgundy, prefix `rm`) &mdash; a big-design-up-front vs
+  start-thin-and-iterate selector keyed on &ldquo;first running build&rdquo;, plus the roadmap mapped onto a Mix
+  project tree; **F5.01.2 A thin web server in Elixir** (`/thin-server`, blue, prefix `ts`) &mdash; a request-path
+  selector (request / route / engine / response) and the whole `Plug.Router` + `Bandit` child spec in code, each
+  route a single `Portal.Engine` call; **F5.01.3 A web layer built for replacement** (`/replaceable`, gold, prefix
+  `rp`) &mdash; a front-end toggle (thin server now / Phoenix in F6) over one constant engine box, with the same
+  `dispatch/1` call shown from a Plug handler and a LiveView `handle_event` (orthogonality and ETC made concrete).
+  Dive-card borders follow the convention (dive 1 = chapter accent burgundy, then blue, then gold); each dive page
+  is themed to its card. References on the hub only (matching the F4 module pattern); dives end with pager + footer.
+  `MODULES["F5"]` F5.01 + its three dives promoted to `built`; `SUBPAGES["F5.01"]` added; four PAGES entries
+  (`foundations.html`, `foundations-roadmap.html`, `foundations-thin-server.html`, `foundations-replaceable.html`).
+  On the landing, the F5.01 card was promoted from a planned `<div class="mod is-quiet">` to a linkable
+  `<a class="mod">` with a `built` pill and the new title + dives, the hero lede&rsquo;s first technique now reads
+  &ldquo;stand it up behind a thin web server so it runs from day one&rdquo;, and the chapter-arc node 01 was
+  relabelled `DRY` &rarr; `serve`. Routes 128 &rarr; **132**, PAGES 127 &rarr; **131**, module tally 41 &rarr;
+  **42 built / 17 planned**. F5.02 (Modeling the Portal domain) is the next authoring target.
+- **The landing was authored and built**: `content/f5-00-landing.html` &rarr; `pragmatic.html`, route
+  `/elixir/pragmatic`. Hero + a nine-node chapter-arc SVG (shape it to change &middot; make it trustworthy &middot;
+  make it usable) + the three design cards (`#design`) + nine module cards with their submodules (F5.01 now linkable,
+  F5.02&ndash;F5.09 planned) + a back-pager to F4 and a forward link to Contents. **Apollo A+ across the nine gates**;
+  `node --check` clean; voice gate clean. Planned module cards are `<div class="mod is-quiet">`; the design cards and
+  the F5.01 card are linkable `<a class="mod">`; the F5.09 card carries the `lab` class.
+- **Validator**: a tagged `F5` desktop block (base + the twelve landing cards + the design/planned pills + the
+  LiveView-ready lab card), one desktop block per design subpage (layer&rarr;module, context&rarr;entities,
+  stage&rarr;module), and one per F5.01 page &mdash; the hub roadmap selector (stage&rarr;chapter) and each dive
+  selector (approach&rarr;first-run, request-step, front-end&rarr;engine-unchanged) &mdash; plus 390px mobile entries
+  for all eight F5 pages &mdash; **76 + 16 = 92 PASS, 0 FAIL, 0 images**.
+- **Docs reframed and regenerated**: the F5.01 abstract (`A` map) and references (`REFS`) now describe the thin-server
+  approach and the roadmap (sources: Pragmatic Programmer tracer bullets, Plug, Bandit, Phoenix), and the three
+  F5.01 dives render as `\u25cf` sub-rows under F5.01 in the course-md table. Both generators report **voice gate
+  CLEAN**, and the references still cover **59 / 59** modules.
+
+The throughline to hold while authoring F5: each module applies one pragmatic technique to the **same** growing
+engine &mdash; not nine demos but one coherent Portal engine &mdash; so that the F5.09 lab can mount the engine&rsquo;s
+facade behind a LiveView sketch and hand a UI-ready boundary to F6, the Phoenix chapter.
+
+**Deployment (not authoring), unchanged and now slightly larger:** the site-wide `/elixir` home and the
+`/elixir/course` Contents page are not in this working tree. Contents must move its module count 54 &rarr; 57 (F4&rsquo;s
+twelve modules) **and** now surface F5 as a `live` chapter linking `/elixir/pragmatic`; the new `pragmatic.html`
+landing must be deployed alongside the per-chapter relinks already prepared here.
 
 What a resuming agent should know, condensed:
 
 1. The manifest (`build_page.py`) is the single source of truth. `MODULES` is keyed by chapter; every F4 module and
    dive is `status="built"`. `SUBPAGES` and `PAGES` are populated for all of F4 (`PAGES` filenames: the F4.12 lab is
-   `lab.html` / `lab-grow.html` / `lab-registry.html` / `lab-range.html`). `allowed_routes()` returns **124** link
-   routes; only built routes are linkable, external `https://` links are exempt.
+   `lab.html` / `lab-grow.html` / `lab-registry.html` / `lab-range.html`). **F5 is `live` with its landing built**
+   (`content/f5-00-landing.html` &rarr; `pragmatic.html`, route `/elixir/pragmatic`) plus **three front-matter design
+   subpages** in `CHAPTER_SUBPAGES["F5"]` (`architecture` / `domain-model` / `flow` &rarr; `pragmatic-architecture.html`
+   / `pragmatic-domain-model.html` / `pragmatic-flow.html`), linked as cards on the landing. **F5.01 is built** as a
+   full module (hub + three dives: `/foundations` + `/foundations/{roadmap,thin-server,replaceable}` &rarr;
+   `foundations.html`, `foundations-roadmap.html`, `foundations-thin-server.html`, `foundations-replaceable.html`),
+   the &ldquo;start thin: a running Portal from day one&rdquo; approach; its modules `F5.02`&ndash;`F5.09` remain
+   `planned`, each with a three-dive roadmap &mdash; the next authoring targets (start at F5.02, Modeling the Portal
+   domain), with REFS and `A`-map abstracts already keyed by module `n`. `allowed_routes()` returns **132** link
+   routes; only built/live routes are linkable (F5.02&ndash;F5.09 module routes are not, since those modules are
+   planned; F5.01 and the chapter front-matter subpages are, since they are built and the chapter is `live`),
+   external `https://` links are exempt.
 2. Rebuild any page with `python3 build_page.py build --page KEY`, grade with `check OUT.html` (nine gates + A+),
    regenerate `_head.html` with `extract-head` after editing `HEAD_CSS`. The voice gate scans all visible text
    including `<pre class="code">` comments (only `<script>`/`<style>`/`<svg>` are stripped); `expectText` in the
    validator is case-SENSITIVE.
 3. The validator (`validator/suite.elixir.js`) has a tagged desktop block and a 390px mobile entry for every module;
    run all with `BASE_URL="file:///home/claude/elixir-course" node validator/suite.elixir.js`, or one module with
-   `ONLY="F4.NN"`. F4.12 is 35 desktop + 8 mobile = 43 PASS.
+   `ONLY="F4.NN"`. F4.12 is 35 desktop + 8 mobile = 43 PASS; the F5 landing (`ONLY="F5"`) is 9 desktop + 2 mobile =
+   11 PASS.
 4. `_gen_course_md.py` and `_gen_refs_md.py` read the manifest and both run a voice gate that must report CLEAN;
    keep 59/59 modules carrying references.
 

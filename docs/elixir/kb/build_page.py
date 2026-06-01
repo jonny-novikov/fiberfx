@@ -135,7 +135,7 @@ CHAPTERS = [
          reuses="Builds on F3 · The Elixir Language.",
          accent="sage"),
     dict(id="F5", title="Pragmatic Programming", slug="pragmatic", route="/elixir/pragmatic",
-         status="planned",
+         status="live",
          one="Real-world engineering: structure, testing, telemetry, releases.",
          reuses="Builds on F4 · Algorithms & Data Structures.",
          accent="sage"),
@@ -395,6 +395,11 @@ CHAPTER_EXTRAS = {
         dict(slug="history",        title="A short history of Elixir",   one="Where the language came from."),
         dict(slug="timeline",       title="The Elixir release timeline", one="Versions and milestones."),
         dict(slug="under-the-hood", title="Under the hood",              one="How the language runs on the BEAM."),
+    ],
+    "F5": [
+        dict(slug="architecture",  title="The Portal engine blueprint", one="The system this chapter builds, at a glance."),
+        dict(slug="domain-model",  title="The domain model",            one="Three bounded contexts and their branded ids."),
+        dict(slug="flow",          title="The command & event flow",    one="One use case through the five-stage pipeline."),
     ],
 }
 

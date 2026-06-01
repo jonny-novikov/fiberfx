@@ -41,6 +41,12 @@ FINDINGS="$WD/findings.txt"  # снимок последнего полного 
 PIDFILE="$WD/pid"
 LOCK="$WD/lock"
 STATUS_STATE="$WD/status_mtime"
+STATUS_CORE="$WD/status_core"  # последний записанный автоблок (без таймштампа) — для идемпотентности
+
+# Маркеры автоблока мониторинга в law-status.md. audit_law.py отрезает ВСЁ от
+# BEGIN перед парсингом дрифта → собственный вывод вотчера не зацикливает детект.
+ST_BEGIN='<!-- LAW-WATCHER:BEGIN — автоблок вотчера watch_law.sh; НЕ редактировать вручную, перезапишется при следующем скане -->'
+ST_END='<!-- LAW-WATCHER:END -->'
 
 INTERVAL="${INTERVAL:-20}"
 LAW_AI="${LAW_AI:-0}"
@@ -69,7 +75,93 @@ run_full_audit() {
   warns=$(grep -c '⚠️' "$FINDINGS" 2>/dev/null || echo 0)
   log "audit: $errs ERROR, $warns WARN (полный отчёт: $FINDINGS)"
   [ "$errs" -gt 0 ] && grep '❌' "$FINDINGS" | sed 's/^/    /' >> "$LOG"
+  update_status_md          # отразить вердикт в law-status.md (видимый слой мониторинга)
   return $rc
+}
+
+# Записать раздел МОНИТОРИНГА в law-status.md (между маркерами ST_BEGIN/ST_END),
+# сохранив рукописную часть файла ВЫШЕ маркера. Это «видимый» слой: пользователь
+# смотрит law-status.md, а не .watch/. Содержимое — дайджест последнего аудита:
+# охват, вердикт ERROR/WARN, сами ERROR-строки (дрифт), валидность ссылок (FWD-LINK)
+# и таблица готовности по главам из файловой системы.
+#
+# Идемпотентность: пишем ТОЛЬКО когда содержимое (без строки таймштампа) изменилось —
+# иначе no-op скан/рестарт плодил бы churn в git и дёргал детект status-mtime. После
+# записи обновляем STATUS_STATE, чтобы наш собственный апдейт не считался «внешним
+# изменением» статуса на следующем скане (иначе петля переаудита).
+update_status_md() {
+  [ -f "$STATUS_MD" ] || return 0
+  [ -f "$FINDINGS" ]  || return 0
+
+  local files chap land total fwd dead errs
+  files="$(grep -m1 'Аудит консистентности' "$FINDINGS" 2>/dev/null | sed 's/^ *//;s/Аудит консистентности: //;s/ из .*//;s/ файлов//')"
+  chap="$(grep -m1 'глав обнаружено'        "$FINDINGS" 2>/dev/null | sed 's/^ *//')"
+  land="$(grep -m1 'лендингов:'             "$FINDINGS" 2>/dev/null | sed 's/^ *//')"
+  total="$(grep -m1 'Итого'                 "$FINDINGS" 2>/dev/null | sed 's/^ *//')"
+  # grep -c печатает 0 даже без совпадений, но выходит с кодом 1 → '|| true' (НЕ '|| echo 0',
+  # иначе к нулю grep-а добавится второй ноль и получится "0\n0").
+  fwd="$(grep -c 'FWD-LINK' "$FINDINGS" 2>/dev/null || true)"
+  dead="$(grep -c 'DEADLINK' "$FINDINGS" 2>/dev/null || true)"
+  errs="$(grep '❌' "$FINDINGS" 2>/dev/null | sed 's/^ *❌ */- /')"
+
+  # Таблица готовности по главам — прямо из served-дерева law/ (источник истины).
+  local rows='' d ch K M
+  for d in "$WATCH_DIR"/*/; do
+    [ -d "$d" ] && [ -f "${d}index.html" ] || continue
+    ch="$(basename "$d")"
+    if [ -f "${d}kviz.html" ]; then K='✓'; else K='—'; fi
+    M="$(find "$d" -maxdepth 1 -type f -name '*.html' ! -name index.html ! -name kviz.html 2>/dev/null | grep -c .)"
+    rows="${rows}| \`${ch}\` | ✓ | ${K} | ${M} |
+"
+  done
+
+  local verdict
+  if [ -n "$errs" ]; then
+    verdict="**🔴 Требует действия (ERROR) — served-дерево \`law/\` расходится с заявленным статусом:**
+
+$errs"
+  else
+    verdict="**🟢 ERROR нет** — served-дерево \`law/\` согласовано с заявленным статусом."
+  fi
+
+  local ts; ts="$(date '+%F %H:%M')"
+  local block
+  block="$ST_BEGIN
+## 🔭 Мониторинг консистентности (автоблок)
+
+> Раздел ведёт вотчер \`watch_law.sh\` автоматически при каждом изменении в \`law/\`. **Не редактируйте вручную** — он перезапишется при следующем скане. Полный отчёт: \`docs/law/toolkit/.watch/findings.txt\`; журнал: \`docs/law/toolkit/.watch/watch.log\`.
+
+**Последний скан:** $ts · страниц под наблюдением: ${files:-?}
+**${chap:-глав обнаружено: ?}**
+**${land:-лендингов: ?}**
+
+**Вердикт аудита:** ${total:-—}
+
+$verdict
+
+**🔗 Валидность ссылок:** битых ссылок на уже-построенные страницы — **$dead**; ссылок-вперёд на ещё-не-построенные страницы (FWD-LINK, норма на этапе сборки) — **$fwd** (перечень в findings.txt).
+
+**Готовность по главам (served-дерево \`law/\`):**
+
+| Глава | Лендинг | Квиз главы | Модулей |
+|---|---|---|---|
+${rows}
+$ST_END"
+
+  # Идемпотентность: сравниваем «ядро» (без строки таймштампа) с прошлой записью.
+  local core
+  core="$(printf '%s\n' "$block" | grep -v '^\*\*Последний скан:')"
+  if [ -f "$STATUS_CORE" ] && printf '%s' "$core" | cmp -s - "$STATUS_CORE"; then
+    return 0   # ничего по сути не изменилось — не трогаем файл (без churn в git)
+  fi
+
+  # Рукописная шапка = всё ДО маркера BEGIN (или весь файл, если маркера ещё нет).
+  local head
+  head="$(awk '/LAW-WATCHER:BEGIN/{exit} {print}' "$STATUS_MD")"
+  printf '%s\n\n%s\n' "$head" "$block" > "$STATUS_MD.tmp" && mv "$STATUS_MD.tmp" "$STATUS_MD"
+  printf '%s' "$core" > "$STATUS_CORE"
+  stat_mtime "$STATUS_MD" > "$STATUS_STATE" 2>/dev/null   # наш апдейт ≠ внешнее изменение
+  log "law-status.md: раздел мониторинга обновлён (${total:-—})"
 }
 
 # Гейты конкретных страниц (preflight + verify + audit + DOM-suite).
@@ -146,6 +238,11 @@ scan_once() {
   # Затронутые страницы = строки cur, которых нет в STATE (новые или с новым mtime).
   local touched
   touched="$(LC_ALL=C comm -23 <(printf '%s\n' "$cur" | LC_ALL=C sort) <(LC_ALL=C sort "$STATE") 2>/dev/null | cut -f2-)"
+  # Удалённые страницы = пути, что были в STATE, но исчезли из cur. Сравниваем ТОЛЬКО
+  # пути (не mtime), иначе изменённая страница попала бы и в «удалённые». Удаление тоже
+  # меняет консистентность (висячие ссылки-вперёд, дрифт счётчиков) → нужен переаудит.
+  local removed
+  removed="$(LC_ALL=C comm -23 <(cut -f2- "$STATE" | LC_ALL=C sort -u) <(printf '%s\n' "$cur" | cut -f2- | LC_ALL=C sort -u) 2>/dev/null)"
   printf '%s\n' "$cur" > "$STATE"
   # Второй триггер: изменился law-status.md (мог поехать дрифт status↔fs).
   local sm_new sm_old status_changed=0
@@ -153,9 +250,10 @@ scan_once() {
   [ -n "$sm_new" ] && [ "$sm_new" != "$sm_old" ] && status_changed=1
   echo "$sm_new" > "$STATUS_STATE"
 
-  [ -z "$touched" ] && [ "$status_changed" = 0 ] && return 0
+  [ -z "$touched" ] && [ -z "$removed" ] && [ "$status_changed" = 0 ] && return 0
   [ "$status_changed" = 1 ] && log "law-status.md изменился → переаудит"
   [ -n "$touched" ] && log "затронуто страниц: $(printf '%s\n' "$touched" | grep -c .)"
+  [ -n "$removed" ] && log "удалено страниц: $(printf '%s\n' "$removed" | grep -c .) ($(printf '%s\n' "$removed" | sed "s|^$ROOT/||" | tr '\n' ' '))"
 
   # Проактивный слой: всегда полный аудит консистентности.
   run_full_audit
@@ -180,7 +278,11 @@ baseline() {
   log "baselined $n pages (ни одна не считается изменённой)"; echo "baselined $n pages"
 }
 
-loop() { log "watcher loop start (interval ${INTERVAL}s, LAW_AI=$LAW_AI)"; while true; do scan_once; sleep "$INTERVAL"; done; }
+loop() {
+  log "watcher loop start (interval ${INTERVAL}s, LAW_AI=$LAW_AI)"
+  run_full_audit            # стартовый снимок: сразу заполнить findings + раздел мониторинга в law-status.md
+  while true; do scan_once; sleep "$INTERVAL"; done
+}
 is_running() { [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
 
 case "${1:-}" in

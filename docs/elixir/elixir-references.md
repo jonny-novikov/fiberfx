@@ -278,55 +278,57 @@ Algorithms and data structures. The persistent-map family rests on primary paper
 
 Engineering practice. Tooling docs, the OTP guides, and the “let it crash” primary sources.
 
-### F5.01 &middot; Project structure & Mix
+### F5.01 &middot; Start thin: a running Portal from day one
 
-- [Elixir — Introduction to Mix (guide)](https://hexdocs.pm/elixir/introduction-to-mix.html) — applications, deps, tasks.
-- [Elixir — Mix](https://hexdocs.pm/mix/Mix.html) — the build tool reference.
+- [Hunt & Thomas, *The Pragmatic Programmer* (20th Anniversary)](https://pragprog.com/titles/tpp20/the-pragmatic-programmer-20th-anniversary-edition/) — tracer bullets and walking skeletons.
+- [Elixir — Plug](https://hexdocs.pm/plug/readme.html) — the composable adapter for HTTP.
+- [Bandit](https://hexdocs.pm/bandit/Bandit.html) — a pure-Elixir HTTP server for a Plug.
+- [Phoenix — Overview](https://hexdocs.pm/phoenix/overview.html) — what replaces the thin server in F6.
 
-### F5.02 &middot; Testing with ExUnit & doctests
+### F5.02 &middot; Modeling the Portal domain
+
+- [Elixir — Structs](https://hexdocs.pm/elixir/structs.html) — modeling the domain entities.
+- [Elixir — Typespecs](https://hexdocs.pm/elixir/typespecs.html) — @type and @spec for the domain.
+- [Phoenix — Contexts](https://hexdocs.pm/phoenix/contexts.html) — bounded contexts and their public APIs.
+
+### F5.03 &middot; Tracer bullets: a walking skeleton
+
+- [The Pragmatic Programmer — Tracer Bullets](https://pragprog.com/titles/tpp20/the-pragmatic-programmer-20th-anniversary-edition/) — build the system end to end first.
+- [Alistair Cockburn — Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton) — a thin slice that runs end to end.
+
+### F5.04 &middot; Design by contract
+
+- [Bertrand Meyer — Design by Contract](https://en.wikipedia.org/wiki/Design_by_contract) — preconditions, postconditions, invariants.
+- [Elixir — Patterns and guards](https://hexdocs.pm/elixir/patterns-and-guards.html) — checks at the boundary.
+- [Elixir — with](https://hexdocs.pm/elixir/Kernel.SpecialForms.html#with/1) — happy-path composition that fails fast.
+
+### F5.05 &middot; Commands, queries & events
+
+- [Martin Fowler — CQRS](https://martinfowler.com/bliki/CQRS.html) — command/query responsibility separation.
+- [Martin Fowler — Domain Event](https://martinfowler.com/eaaDev/DomainEvent.html) — modeling change as events.
+- [Commanded](https://hexdocs.pm/commanded/Commanded.html) — CQRS/ES building blocks in Elixir.
+
+### F5.06 &middot; Where engine state lives
+
+- [Elixir — GenServer](https://hexdocs.pm/elixir/GenServer.html) — stateful server processes.
+- [Elixir — Agent](https://hexdocs.pm/elixir/Agent.html) — simple shared state.
+- [Erlang — ETS](https://www.erlang.org/doc/man/ets.html) — in-memory term storage.
+
+### F5.07 &middot; Pragmatic testing
 
 - [Elixir — ExUnit](https://hexdocs.pm/ex_unit/ExUnit.html) — the test framework.
-- [Elixir — ExUnit.DocTest](https://hexdocs.pm/ex_unit/ExUnit.DocTest.html) — tests from documentation examples.
+- [StreamData](https://hexdocs.pm/stream_data/StreamData.html) — property-based testing.
+- [Elixir — ExUnit.DocTest](https://hexdocs.pm/ex_unit/ExUnit.DocTest.html) — contracts as runnable examples.
 
-### F5.03 &middot; Documentation & typespecs
+### F5.08 &middot; Boundaries & integration seams
 
-- [Elixir — Writing documentation](https://hexdocs.pm/elixir/writing-documentation.html) — @doc and @moduledoc.
-- [Elixir — Typespecs](https://hexdocs.pm/elixir/typespecs.html) — @spec and types.
-- [Dialyxir](https://hexdocs.pm/dialyxir/readme.html) — Dialyzer for Elixir.
+- [Alistair Cockburn — Hexagonal architecture](https://alistair.cockburn.us/hexagonal-architecture/) — ports and adapters.
+- [Elixir — Typespecs & behaviours](https://hexdocs.pm/elixir/typespecs.html) — defining a port as a behaviour.
 
-### F5.04 &middot; Error handling & “let it crash”
+### F5.09 &middot; Lab: the Portal engine, LiveView-ready
 
-- [Armstrong thesis — “let it crash” and supervision](http://erlang.org/download/armstrong_thesis_2003.pdf) — the philosophy, from the source.
-- [Elixir — Mix & OTP: Supervision trees and applications](https://hexdocs.pm/elixir/supervisor-and-application.html) — rescue versus restart.
-- [Fred Hébert, *Stuff Goes Bad: Erlang in Anger* (free)](https://www.erlang-in-anger.com/) — failure in production systems.
-
-### F5.05 &middot; Concurrency patterns & Tasks
-
-- [Elixir — Task](https://hexdocs.pm/elixir/Task.html) — async/await concurrency.
-- [GenStage](https://hexdocs.pm/gen_stage/GenStage.html) — demand-driven back-pressure.
-- [Flow](https://hexdocs.pm/flow/Flow.html) — parallel data pipelines.
-
-### F5.06 &middot; Telemetry, logging & observability
-
-- [:telemetry](https://hexdocs.pm/telemetry/readme.html) — the metrics and events library.
-- [Telemetry.Metrics](https://hexdocs.pm/telemetry_metrics/Telemetry.Metrics.html) — defining metrics.
-- [Phoenix LiveDashboard](https://hexdocs.pm/phoenix_live_dashboard/) — live observability.
-
-### F5.07 &middot; Dependencies, releases & deployment
-
-- [Elixir — Mix & OTP: Configuration and releases](https://hexdocs.pm/elixir/releases.html) — runtime config and releases.
-- [Elixir — mix release](https://hexdocs.pm/mix/Mix.Tasks.Release.html) — building a release.
-
-### F5.08 &middot; Performance & profiling
-
-- [Erlang — Efficiency Guide](https://www.erlang.org/doc/system/efficiency_guide.html) — the scheduler and hot paths.
-- [Benchee](https://hexdocs.pm/benchee/readme.html) — benchmarking in Elixir.
-
-### F5.09 &middot; Let it crash — a supervision tree that heals
-
-- [Elixir — Supervisor](https://hexdocs.pm/elixir/Supervisor.html) — supervision strategies.
-- [Elixir — DynamicSupervisor](https://hexdocs.pm/elixir/DynamicSupervisor.html) — supervising at runtime.
-- [Armstrong thesis](http://erlang.org/download/armstrong_thesis_2003.pdf) — why a tree heals.
+- [Phoenix — LiveView](https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html) — the UI layer F6 mounts the engine in.
+- [Elixir — GenServer](https://hexdocs.pm/elixir/GenServer.html) — the engine boundary behind the facade.
 
 ## F6 &middot; Phoenix Framework
 
