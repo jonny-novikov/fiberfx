@@ -122,7 +122,7 @@ var Modules = map[string][]Module{
 		{N: "F4.07", Title: "Identifiers, Snowflake & branded ids", One: "From naive ids to a Snowflake bigint and a branded, base62 id.", Slug: "identifiers", Status: "built"},
 		{N: "F4.08", Title: "Branded ids & persistence", One: "Branded ids as keys in SQLite, PostgreSQL, and Redis.", Slug: "persistence", Status: "built"},
 		{N: "F4.09", Title: "Branded CHAMP maps & GenServer", One: "A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.", Slug: "branded-champ", Status: "built"},
-		{N: "F4.10", Title: "Practical recipes in Elixir", One: "Turning algorithmic problems into idiomatic Elixir.", Slug: "recipes", Status: "planned"},
+		{N: "F4.10", Title: "Practical recipes in Elixir", One: "Turning algorithmic problems into idiomatic Elixir.", Slug: "recipes", Status: "built"},
 		{N: "F4.11", Title: "Dynamic programming & advanced problems", One: "Overlapping subproblems, memoized and tabulated.", Slug: "dynamic-programming", Status: "planned"},
 		{N: "F4.12", Title: "Lab: build a branded CHAMP store", One: "An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.", Slug: "lab", Status: "planned", Lab: true},
 	},
@@ -258,6 +258,11 @@ var Subpages = map[string][]Subpage{
 		{"genserver", "Own it with a GenServer", "The Portal's session store is a CHAMP behind a GenServer."},
 		{"partition", "Partition by namespace", "The Portal's entity registry keeps users, sessions, lessons, and pages in one store: a tiny top-"},
 		{"trie", "Structural sharing", "Inside a partition the CHAMP is keyed on the lesson's Snowflake, and Portal.Progress marks a les"},
+	},
+	"F4.10": {
+		{"patterns", "Idiomatic patterns", "A request to view a lesson clears four gates — validate the id, authenticate the caller, fetch t"},
+		{"pipelines", "Streams & pipelines", "The activity feed wants the three most recent completions for a course."},
+		{"profiling", "Profiling & complexity", "Every request finds an active session."},
 	},
 }
 

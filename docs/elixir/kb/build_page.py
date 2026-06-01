@@ -227,7 +227,7 @@ MODULES = {
         dict(n="F4.07", title="Identifiers, Snowflake & branded ids", one="From naive ids to a Snowflake bigint and a branded, base62 id.", slug="identifiers", status="built", lab=False),
         dict(n="F4.08", title="Branded ids & persistence", one="Branded ids as keys in SQLite, PostgreSQL, and Redis.", slug="persistence", status="built", lab=False),
         dict(n="F4.09", title="Branded CHAMP maps & GenServer", one="A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.", slug="branded-champ", status="built", lab=False),
-        dict(n="F4.10", title="Practical recipes in Elixir", one="Turning algorithmic problems into idiomatic Elixir.", slug="recipes", status="planned", lab=False),
+        dict(n="F4.10", title="Practical recipes in Elixir", one="Turning algorithmic problems into idiomatic Elixir.", slug="recipes", status="built", lab=False),
         dict(n="F4.11", title="Dynamic programming & advanced problems", one="Overlapping subproblems, memoized and tabulated.", slug="dynamic-programming", status="planned", lab=False),
         dict(n="F4.12", title="Lab: build a branded CHAMP store", one="An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.", slug="lab", status="planned", lab=True),
     ],
@@ -366,6 +366,11 @@ SUBPAGES = {
         dict(slug='genserver', title='Own it with a GenServer', one="The Portal's session store is a CHAMP behind a GenServer."),
         dict(slug='partition', title='Partition by namespace', one="The Portal's entity registry keeps users, sessions, lessons, and pages in one store: a tiny top-"),
         dict(slug='trie', title='Structural sharing', one="Inside a partition the CHAMP is keyed on the lesson's Snowflake, and Portal.Progress marks a les"),
+    ],
+    "F4.10": [
+        dict(slug='patterns', title='Idiomatic patterns', one='A request to view a lesson clears four gates — validate the id, authenticate the caller, fetch t'),
+        dict(slug='pipelines', title='Streams & pipelines', one='The activity feed wants the three most recent completions for a course.'),
+        dict(slug='profiling', title='Profiling & complexity', one='Every request finds an active session.'),
     ],
 }
 

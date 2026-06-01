@@ -50,8 +50,8 @@ The attached guide was unpacked, verified safe, and stood up as a working toolki
 
 Scope is six numbered chapters; five carry nine modules and F4 now carries twelve (57 core), plus the optional
 two-part F0 history chapter.
-**38 modules are built in the manifest; 21 are planned.** Of the 111 registered page fragments, the whole of F3
-(9 modules) plus the F4 landing and F4.01, F4.02, F4.03, F4.04, F4.05, F4.06, F4.07, F4.08, and F4.09 are authorable source in this working tree and were
+**39 modules are built in the manifest; 20 are planned.** Of the 115 registered page fragments, the whole of F3
+(9 modules) plus the F4 landing and F4.01, F4.02, F4.03, F4.04, F4.05, F4.06, F4.07, F4.08, F4.09, and F4.10 are authorable source in this working tree and were
 validated A+ here. The earlier chapters (F0–F2 and F3.01–F3.03) are authored in the full repository and most are
 deployed; their source is not part of this working tree.
 
@@ -159,18 +159,21 @@ built (each a hub plus three dives; F4.02&ndash;F4.06 carry an advanced section 
 built &mdash; a hub plus three dives (bitmap / indexing / sharing), each with an advanced section &mdash; closing the
 gap before **F4.06 (CHAMP maps)**, so F4.06&rsquo;s hub pager now points back to `/elixir/algorithms/hamt` and the
 F4.04 &rarr; F4.05 and F4.06 &rarr; F4.05 references are linked. **The chapter was then restructured from nine
-modules to twelve, and F4.07 (Identifiers, Snowflake &amp; branded ids), F4.08 (Branded ids &amp; persistence), and
-F4.09 (Branded CHAMP maps &amp; GenServer) are now built** &mdash; each a hub plus three dives with an advanced
-section and a References block. F4.09 closes the spine: it folds the CHAMP node (F4.06) and the branded id
-(F4.07/F4.08) into one in-memory store &mdash; a CHAMP keyed by branded ids, partitioned by the three-letter
-namespace, owned by a GenServer &mdash; and threads three Portal uses through its dives: the entity registry
-(partition), progress snapshots (structural sharing), and the session store (GenServer, lock-free reads over a
-published immutable root). F4.10&ndash;F4.12 remain planned. The five-module **persistent-map spine is now complete**:
-F4.05&ndash;F4.09 (HAMT &rarr; CHAMP &rarr; **identifiers, Snowflake &amp; branded ids** &rarr; **branded ids &amp;
-persistence** &rarr; **branded CHAMP maps &amp; GenServer**), followed by practical recipes (F4.10), dynamic
-programming (F4.11), and a lab that builds a branded CHAMP store (F4.12, three dives). The id, persistence, and
-branded-CHAMP modules give the branded Snowflake / trie convention used across the course its own modules;
-**F4.05.2 was renamed from slug `index` to
+modules to twelve, and F4.07 (Identifiers, Snowflake &amp; branded ids), F4.08 (Branded ids &amp; persistence),
+F4.09 (Branded CHAMP maps &amp; GenServer), and F4.10 (Practical recipes in Elixir) are now built** &mdash; each a
+hub plus three dives with an advanced section and a References block. F4.09 closes the spine: it folds the CHAMP node
+(F4.06) and the branded id (F4.07/F4.08) into one in-memory store &mdash; a CHAMP keyed by branded ids, partitioned
+by the three-letter namespace, owned by a GenServer &mdash; and threads three Portal uses through its dives: the
+entity registry (partition), progress snapshots (structural sharing), and the session store (GenServer, lock-free
+reads over a published immutable root). F4.10 then turns those structures into the Portal&rsquo;s everyday code: a
+`with` chain for the request lifecycle (validate &rarr; authenticate &rarr; load &rarr; authorize, short-circuiting
+to a status), a lazy `Stream` pipeline for the activity feed (fused filter/map that stops at `take/2`), and reading
+complexity to choose a lookup (`O(n)` list scan vs `O(log32 n)` CHAMP). F4.11&ndash;F4.12 remain planned. The
+five-module **persistent-map spine is complete**: F4.05&ndash;F4.09 (HAMT &rarr; CHAMP &rarr; **identifiers, Snowflake
+&amp; branded ids** &rarr; **branded ids &amp; persistence** &rarr; **branded CHAMP maps &amp; GenServer**), followed
+by practical recipes (F4.10, built), dynamic programming (F4.11), and a lab that builds a branded CHAMP store (F4.12,
+three dives). The id, persistence, branded-CHAMP, and recipes modules give the branded Snowflake / trie convention
+used across the course its own modules; **F4.05.2 was renamed from slug `index` to
 `indexing`** so its route (`/elixir/algorithms/hamt/indexing`) does not collide with an `index.html` when the site
 is served statically.
 
@@ -262,7 +265,10 @@ F4.06 build precedent.
 | ↳ F4.09.1 Partition by namespace | `/elixir/algorithms/branded-champ/partition` | built | planned | **yes** | **yes** |
 | ↳ F4.09.2 Structural sharing | `/elixir/algorithms/branded-champ/trie` | built | planned | **yes** | **yes** |
 | ↳ F4.09.3 Own it with a GenServer | `/elixir/algorithms/branded-champ/genserver` | built | planned | **yes** | **yes** |
-| F4.10 Practical recipes in Elixir (+ 3 dives) | `/elixir/algorithms/recipes` | planned | planned | — | — |
+| **F4.10 Practical recipes in Elixir (hub)** | `/elixir/algorithms/recipes` | built | planned | **yes** | **yes** |
+| ↳ F4.10.1 Idiomatic patterns | `/elixir/algorithms/recipes/patterns` | built | planned | **yes** | **yes** |
+| ↳ F4.10.2 Streams & pipelines | `/elixir/algorithms/recipes/pipelines` | built | planned | **yes** | **yes** |
+| ↳ F4.10.3 Profiling & complexity | `/elixir/algorithms/recipes/profiling` | built | planned | **yes** | **yes** |
 | F4.11 Dynamic programming & advanced problems (+ 3 dives) | `/elixir/algorithms/dynamic-programming` | planned | planned | — | — |
 | F4.12 Lab: build a branded CHAMP store (+ 3 dives) | `/elixir/algorithms/lab` | planned | planned | — | — |
 
@@ -435,6 +441,25 @@ suite.elixir.js ONLY=F4.09  ->  34 PASS desktop + 8 PASS mobile · 0 FAIL · ima
 _gen_course_md.py / _gen_refs_md.py  ->  regenerated; voice gate CLEAN; F4.09 shows built hub + 3 built dives; 59/59 modules carry references
 ```
 
+# F4.10 authored (Practical recipes in Elixir) — turns the chapter's structures into everyday Portal code; 3 recipes, one per dive
+authored content/f4-10-recipes.html (hub) + f4-10-1-patterns / f4-10-2-pipelines / f4-10-3-profiling (3 dives)
+each: single SVG, one teaching + one advanced section, sage accent, References block, branded decoder footer
+THREAD: the spine built the structures (F4.05–F4.09); this module is how the Portal uses them — three recurring recipes that compose into one request flow (validate with `with`, aggregate with `Stream`, look up via an O(log n) store)
+THREE REAL-WORLD PORTAL CASES (per request), one per dive:
+  - hub                = the progress report: Progress.percent_complete/1 as a real count over the F4.09 store (select learner: ada 5/5=100%, kit 3/5=60%, jo 1/5=20%)
+  - F4.10.1 patterns   = the request lifecycle: a with-chain (validate_id -> current_user -> fetch_lesson -> authorize -> render); select failing gate -> real short-circuit walk, ran/failed/skipped rows + HTTP status (200/400/401/404/403)
+  - F4.10.2 pipelines  = the activity feed: lazy Stream vs eager Enum over 12 completions (matches at {0,2,4,5,7,9,11}=7; take 3 -> indices 0,2,4); Stream examines 5 of 12, maps 3, 0 lists; Enum examines 12, maps 7, 2 lists (real classify)
+  - F4.10.3 profiling  = choosing a lookup: list O(n) vs CHAMP O(log32 n); select size {1,000|100,000|10,000,000} -> list comparisons vs map hops (2/4/5) + ~speedup, bars on log10 scale (real ceil(log32 n))
+manifest dive titles already matched the pages (Idiomatic patterns / Streams & pipelines / Profiling & complexity; slugs patterns/pipelines/profiling) — no realign
+promote F4.10 planned->built, added SUBPAGES (patterns, pipelines, profiling) + 4 PAGES (recipes*.html)
+relink f4-09-branded-champ + f4-09-3-genserver "next module" notes -> /elixir/algorithms/recipes (dropped "in production"); landing F4.10 card div->a, pill built
+build f4-10 / f4-10-patterns / f4-10-pipelines / f4-10-profiling + rebuilt f4-9 / f4-9-genserver / f4-landing  ->  all Apollo A+ · 9/9 gates
+voice sweep clean (no fixes; `!` hits all JS/regex); node --check  ->  OK for all four pages; References block present on all four (grep id="refsTitle")
+routes                     ->  116 link routes (was 112); F4.11 /algorithms/dynamic correctly absent
+suite.elixir.js ONLY=F4.10  ->  33 PASS desktop + 8 PASS mobile · 0 FAIL · images embedded: 0  (fixed one assertion: expectText is case-SENSITIVE via nospace, so #ptStatus needle "Not Found" not "not found")
+_gen_course_md.py / _gen_refs_md.py  ->  regenerated; voice gate CLEAN; F4.10 shows built hub + 3 built dives; 59/59 modules carry references
+```
+
 F4.03's pages are validated by deterministic select-and-read sequences over the sorted seven-element array: the
 hub cycles sort → search → cost (role text, the first box's sage stroke, and the result line moving from the
 sorted sequence to "found 20" to the "log n" cost); the sorts dive reads the merge step and the `[1, 3, 5, 8]`
@@ -448,12 +473,12 @@ Apollo gates that passed, per page: `containers`, `svg`, `no-future`, `voice`, `
 
 ## Resume point and next actions
 
-**The F4 chapter is open; F4.01&ndash;F4.09 are complete.** The chapter is
-`live`, the landing (`/elixir/algorithms`) is built, and **F4.01&ndash;F4.09** each ship as a hub plus three dives.
-F4.02&ndash;F4.09 carry a dedicated advanced section on every page, all A+ and green in the validator (F4.04:
+**The F4 chapter is open; F4.01&ndash;F4.10 are complete.** The chapter is
+`live`, the landing (`/elixir/algorithms`) is built, and **F4.01&ndash;F4.10** each ship as a hub plus three dives.
+F4.02&ndash;F4.10 carry a dedicated advanced section on every page, all A+ and green in the validator (F4.04:
 45+8 = 53 PASS; F4.05: 44+8 = 52 PASS; F4.06: 46+8 = 54 PASS; F4.07: 34+8 = 42 PASS; F4.08: 33+8 = 41 PASS; F4.09:
-34+8 = 42 PASS). Every page now also carries a **References** section (Sources + Related in this course), styled by
-`.refs` in `HEAD_CSS`. The persistent-map spine is now complete:
+34+8 = 42 PASS; F4.10: 33+8 = 41 PASS). Every page now also carries a **References** section (Sources + Related in
+this course), styled by `.refs` in `HEAD_CSS`. The persistent-map spine is complete:
 **F4.04** grounds maps/sets/hashing in the course&rsquo;s own page registry (a map keyed by branded `PGE`
 Snowflake ids, the route sets behind the links gate, `phash2` into a 32-way HAMT); **F4.05 (HAMT)** builds that
 32-way trie explicitly &mdash; one bitmap and one packed array per node, a 5-bit hash-chunk descent, and path-copy
@@ -461,55 +486,61 @@ structural sharing; **F4.06 (CHAMP)** compresses the node into two bitmaps and t
 cheap diffs. With F4.05 built, the F4.04 &rarr; F4.05 and F4.06 &rarr; F4.05 references are linked, the F4.06 hub
 back-pager points to `/elixir/algorithms/hamt`, and the F4 landing&rsquo;s F4.05 card is linkable (its journey-SVG
 node left thematic, per the F4.06 precedent). **The chapter was then restructured to twelve modules, with F4.07
-(Identifiers, Snowflake &amp; branded ids), F4.08 (Branded ids &amp; persistence), and F4.09 (Branded CHAMP maps &amp;
-GenServer) built**: F4.07&rsquo;s dives decode a branded id, run a real lexical sort, and extract Snowflake fields;
-F4.08&rsquo;s dives store the id as a `bigint`, range-query by time via `id >= min AND id < max`, and validate a
-request id at the edge to answer malformed or impossible ids with a `404` before any I/O; F4.09&rsquo;s dives fold
-the lot into one in-memory store &mdash; a CHAMP keyed by branded ids, partitioned by namespace, owned by a GenServer
-&mdash; with three Portal uses (entity registry, progress snapshots, session store). F4.10&ndash;F4.12 remain planned;
-the now-complete spine is F4.05&ndash;F4.09 (HAMT, CHAMP, identifiers, persistence, branded CHAMP), with recipes
-(F4.10), dynamic programming (F4.11), and a branded-CHAMP lab (F4.12) after it. F4.05.2 was renamed slug
-`index`&rarr;`indexing` (route `/elixir/algorithms/hamt/indexing`) to avoid an `index.html` collision when serving
-statically. The chapter accent is sage; `.ex`/`code.inl` stay the global Elixir purple.
+(Identifiers, Snowflake &amp; branded ids), F4.08 (Branded ids &amp; persistence), F4.09 (Branded CHAMP maps &amp;
+GenServer), and F4.10 (Practical recipes in Elixir) built**: F4.07&rsquo;s dives decode a branded id, run a real
+lexical sort, and extract Snowflake fields; F4.08&rsquo;s dives store the id as a `bigint`, range-query by time via
+`id >= min AND id < max`, and validate a request id at the edge to answer malformed or impossible ids with a `404`
+before any I/O; F4.09&rsquo;s dives fold the lot into one in-memory store &mdash; a CHAMP keyed by branded ids,
+partitioned by namespace, owned by a GenServer &mdash; with three Portal uses (entity registry, progress snapshots,
+session store); F4.10&rsquo;s dives turn those structures into everyday code &mdash; a `with` chain for the request
+lifecycle, a lazy `Stream` pipeline for the activity feed, and reading `O(n)` vs `O(log32 n)` to choose a lookup.
+F4.11&ndash;F4.12 remain planned; the now-complete spine is F4.05&ndash;F4.09 (HAMT, CHAMP, identifiers, persistence,
+branded CHAMP), with recipes (F4.10, built), dynamic programming (F4.11), and a branded-CHAMP lab (F4.12) after it.
+F4.05.2 was renamed slug `index`&rarr;`indexing` (route `/elixir/algorithms/hamt/indexing`) to avoid an `index.html`
+collision when serving statically. The chapter accent is sage; `.ex`/`code.inl` stay the global Elixir purple.
 
-**Resume at F4.10 — Practical recipes in Elixir** (`slug` "recipes", route
-`/elixir/algorithms/recipes`), the module after the now-complete persistent-map spine. It is `planned` with a
-three-dive roadmap (idiomatic patterns / streams & pipelines / profiling & complexity). It turns the chapter&rsquo;s
-structures into everyday Elixir: the patterns that recur across the Portal, lazy `Stream` pipelines over large
-collections, and reading complexity from real code. The bridge in is F4.09 (the live store) and the chapter&rsquo;s
-data structures generally; after it: F4.11 dynamic programming and the F4.12 lab that builds a branded CHAMP store.
+**Resume at F4.11 — Dynamic programming &amp; advanced problems** (`slug` "dynamic-programming", route
+`/elixir/algorithms/dynamic-programming`), the module after the recipes. It is `planned` with a three-dive roadmap
+(memoization &amp; overlapping subproblems / tabulation &amp; bottom-up / classic DP problems). It covers
+memoisation, tabulation, and harder challenges, with the natural Portal frame being cached or precomputed results
+&mdash; a memoised computation over the catalog, a bottom-up table, a classic DP problem worked in Elixir. The bridge
+in is F4.10 (the recipes) and the chapter&rsquo;s data structures; after it: the F4.12 lab that builds a branded
+CHAMP store.
 
-Immediate steps for F4.10, in order:
+Immediate steps for F4.11, in order:
 
-1. Author the F4.10 hub + three dive subpages into `content/` (e.g. `f4-10-recipes.html` + three dives: patterns,
-   pipelines, profiling), following the page anatomy in `SKILL.md`, with an advanced section and a References block
-   per page. The worked frame stays the Portal; keep interactive element prefixes off `st` and unique per page.
-2. Promote F4.10 to `built`; the `dives` roadmap is already in the manifest — add `SUBPAGES["F4.10"]` and register
-   PAGES with unique output filenames (e.g. `recipes*.html`). Confirm the route is `/elixir/algorithms/recipes`.
-3. Relink F4.09&rsquo;s "next module" references to F4.10 (the F4.09 hub note and the genserver-dive note name
-   **F4.10 — Practical recipes in Elixir** unlinked, "in production"): wrap them in
-   `<a href="/elixir/algorithms/recipes">` and drop "(in production)". On the F4 landing, change the F4.10 card from
-   `<div class="mod is-quiet">` to a linkable `<a class="mod" href="/elixir/algorithms/recipes">`, pill `planned`
-   → `built` (leave the journey-SVG node thematic).
+1. Author the F4.11 hub + three dive subpages into `content/` (e.g. `f4-11-dynamic-programming.html` + three dives:
+   memoization, tabulation, problems), following the page anatomy in `SKILL.md`, with an advanced section and a
+   References block per page. Keep the Portal frame; keep interactive element prefixes off `st` and unique per page.
+2. Promote F4.11 to `built`; the `dives` roadmap is already in the manifest — add `SUBPAGES["F4.11"]` and register
+   PAGES with unique output filenames (e.g. `dynamic-programming*.html`). Confirm the route is
+   `/elixir/algorithms/dynamic-programming`.
+3. Relink F4.10&rsquo;s "next module" references to F4.11 (the F4.10 hub note and the profiling-dive note name
+   **F4.11 — Dynamic programming in Elixir** unlinked, "in production"): wrap them in
+   `<a href="/elixir/algorithms/dynamic-programming">` and drop "(in production)". On the F4 landing, change the
+   F4.11 card from `<div class="mod is-quiet">` to a linkable
+   `<a class="mod" href="/elixir/algorithms/dynamic-programming">`, pill `planned` → `built` (leave the journey-SVG
+   node thematic). Note the F4.11 hub title in the manifest is "Dynamic programming &amp; advanced problems" while the
+   F4.10 forward-pointers say "Dynamic programming in Elixir" — reconcile the wording when relinking.
 4. Verify routes, run the voice sweep (incl. JS strings AND static code comments — a dismissive adverb inside a
    `<pre class="code">` comment is visible text and fails the voice gate, because static code is NOT stripped the
-   way `<script>` is), build, grade for A+, `node --check` the JS, and add a tagged validator block run with
-   `ONLY="F4.10"`. Confirm each new page carries a References section.
+   way `<script>` is; note `expectText` is case-SENSITIVE, so validator needles must match the page's capitalisation),
+   build, grade for A+, `node --check` the JS, and add a tagged validator block run with `ONLY="F4.11"`. Confirm each
+   new page carries a References section.
 5. Regenerate `functional-programming-in-elixir.md` and `elixir-references.md`, update this tracker, then deliver.
-   (After F4.10: F4.11 dynamic programming, then the F4.12 lab — `lab=True` with dives grow / registry / range —
-   close the chapter.)
+   (After F4.11: the F4.12 lab — `lab=True` with dives grow / registry / range — closes the chapter.)
 
 **Deferred wiring (not authoring):** lighting up F3.05–F3.09 on the F3 chapter landing needs
 `content/f3-00-landing.html`, which is not in this bundle. The deploy gap above is the same kind of step — the
 live site still trails the local manifest (now including the whole of F3 and the F4 landing + F4.01 + F4.02 +
-F4.03 + F4.04 + F4.05 + F4.06 + F4.07 + F4.08 + F4.09). Both are sync/deploy steps to run against the full repository.
+F4.03 + F4.04 + F4.05 + F4.06 + F4.07 + F4.08 + F4.09 + F4.10). Both are sync/deploy steps to run against the full repository.
 
 ## Known follow-ups
 
 - The outline generator's hand-written "At a glance" summary prose lags the manifest (it predates the
   F2.09, F3.01–F3.09, and F4 promotions); its per-chapter tables, derived from the manifest, are correct and now
-  show F3 fully built and the F4 chapter open with F4.01&ndash;F4.09 as built hubs (three nested dives each) and the
-  planned F4.10&ndash;F4.12 with their three-dive roadmaps. Refresh the summary prose in `_gen_course_md.py` when convenient.
+  show F3 fully built and the F4 chapter open with F4.01&ndash;F4.10 as built hubs (three nested dives each) and the
+  planned F4.11&ndash;F4.12 with their three-dive roadmaps. Refresh the summary prose in `_gen_course_md.py` when convenient.
 - Wiring references into the builder as a `references` manifest field with a `render_references()` footer
   (rather than a separate document) remains an open enhancement noted in the playbook.
 
