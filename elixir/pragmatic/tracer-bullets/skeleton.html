@@ -436,6 +436,92 @@ pre.code .step{color:var(--cream-dim)}
       &mdash; growing the skeleton one thin vertical slice at a time.</p>
   </section>
 
+  <section class="reveal" aria-labelledby="wireTitle">
+    <h2 id="wireTitle">Wire every layer before the logic</h2>
+    <div class="prose">
+      <p>Before the validation, the struct, or the store call exist, the enroll path is wired through every
+        architectural layer at once &mdash; web entry, the <code class="inl">Portal.enroll/2</code> facade, the
+        <code class="inl">Portal.Engine</code> command, and the <code class="inl">Portal.EventStore</code> port &mdash;
+        with each layer a thin stub that returns a canned value. The single goal is to prove the whole call connects:
+        a <code class="inl">POST /enroll</code> reaches the facade, the facade reaches the engine, the engine reaches
+        the port, and a <code class="inl">201</code> travels back. No id is minted and nothing is persisted; only the
+        wiring is exercised.</p>
+      <p>This is the tracer-bullet discipline from Hunt and Thomas, <em>The Pragmatic Programmer</em>: the canned
+        layers are not a throwaway prototype but <strong>permanent scaffolding</strong>. Each stub stays in its place
+        and is fleshed out where it stands &mdash; the engine stub gains <code class="inl">decide</code> and
+        <code class="inl">evolve</code>, the port stub gains a real adapter &mdash; so the skeleton that proved the
+        path is the same skeleton the finished system grows from. The shape never moves; only the bodies fill in.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="wireFigTitle">
+      <h4 id="wireFigTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Four layers wired, every body still canned</h4>
+      <svg viewBox="0 0 720 196" role="img" aria-label="Four stacked layers — the web route, the Portal.enroll facade, the Portal.Engine command, and the Portal.EventStore port — each a thin stub returning a canned value. A request descends through all four and a 201 returns, proving the path connects before any real logic exists.">
+        <text x="148" y="20" text-anchor="end" font-family="Manrope, sans-serif" font-size="9" fill="#6b7494">request &#8595;</text>
+        <text x="572" y="20" font-family="Manrope, sans-serif" font-size="9" fill="#6b7494">&#8593; 201</text>
+        <line x1="360" y1="30" x2="360" y2="178" stroke="#3a4d40" stroke-width="2" stroke-dasharray="3 4"></line>
+
+        <rect x="150" y="30" width="420" height="30" rx="8" fill="#14211c" stroke="#7ba387" stroke-width="1.6"></rect>
+        <text x="166" y="49" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#a7c9b1">POST /enroll</text>
+        <text x="554" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#8fae98">stub &middot; returns 201</text>
+
+        <rect x="150" y="68" width="420" height="30" rx="8" fill="#14211c" stroke="#7ba387" stroke-width="1.6"></rect>
+        <text x="166" y="87" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#a7c9b1">Portal.enroll/2</text>
+        <text x="554" y="87" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#8fae98">stub &middot; calls the engine</text>
+
+        <rect x="150" y="106" width="420" height="30" rx="8" fill="#14211c" stroke="#7ba387" stroke-width="1.6"></rect>
+        <text x="166" y="125" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#a7c9b1">Portal.Engine</text>
+        <text x="554" y="125" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#8fae98">stub &middot; canned :ok</text>
+
+        <rect x="150" y="144" width="420" height="30" rx="8" fill="#14211c" stroke="#7ba387" stroke-width="1.6"></rect>
+        <text x="166" y="163" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#a7c9b1">Portal.EventStore</text>
+        <text x="554" y="163" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#8fae98">stub &middot; no-op append</text>
+
+        <text x="148" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">web</text>
+        <text x="148" y="87" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">facade</text>
+        <text x="148" y="125" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">engine</text>
+        <text x="148" y="163" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">port</text>
+      </svg>
+      <div class="geo-readout">every layer present &middot; every body <span class="dim">canned</span> &middot; the path connects, then each stub is fleshed out in place</div>
+    </figure>
+
+    <pre class="code"><span class="cmt"># web — the one route, wired to the facade; status is canned for now</span>
+<span class="fn">post</span> <span class="str">"/enroll"</span> <span class="op">do</span>
+  {<span class="res">:ok</span>, _} = <span class="fn sage">Portal</span>.<span class="fn">enroll</span>(conn.params[<span class="str">"user"</span>], conn.params[<span class="str">"course"</span>])
+  <span class="fn">send_resp</span>(conn, <span class="res">201</span>, <span class="str">"wired"</span>)
+<span class="op">end</span>
+
+<span class="cmt"># facade — reaches the engine; no validation yet, only the wire</span>
+<span class="op">def</span> <span class="fn">enroll</span>(user_id, course_id) <span class="op">do</span>
+  <span class="fn sage">Portal.Engine</span>.<span class="fn">command</span>({<span class="res">:enroll</span>, user_id, course_id})
+<span class="op">end</span>
+
+<span class="cmt"># engine — reaches the port and answers; no decide/evolve yet</span>
+<span class="op">def</span> <span class="fn">command</span>(_cmd) <span class="op">do</span>
+  <span class="res">:ok</span> = <span class="fn sage">Portal.EventStore</span>.<span class="fn">append</span>([])   <span class="cmt"># canned: append nothing</span>
+  {<span class="res">:ok</span>, <span class="res">:enrolled</span>}                       <span class="cmt"># canned result</span>
+<span class="op">end</span>
+
+<span class="cmt"># port — the seam the real adapter drops into later; a no-op stub today</span>
+<span class="op">def</span> <span class="fn">append</span>(_events), <span class="op">do:</span> <span class="res">:ok</span>
+
+<span class="cmt"># the whole path runs, with not one line of domain logic written</span>
+<span class="fn sage">Portal</span>.<span class="fn">enroll</span>(<span class="str">"USR-1"</span>, <span class="str">"CRS-1"</span>)
+<span class="cmt"># => {:ok, :enrolled}</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">the wire comes first</p>
+        <p>Web, facade, engine, port &mdash; all four connected end to end while every body is still a canned stub.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">scaffolding, not a prototype</p>
+        <p>Each stub stays put and is fleshed out in place; the proven frame is the one the system grows from.</p>
+      </div>
+    </div>
+    <p class="take">Wire the whole path through every layer before writing the logic: once the canned end-to-end call
+      returns, each stub is filled in where it stands, so the skeleton that proved the path is the one the system keeps.</p>
+  </section>
+
   <section class="reveal" aria-labelledby="refsTitle">
     <h2 id="refsTitle">References</h2>
     <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>

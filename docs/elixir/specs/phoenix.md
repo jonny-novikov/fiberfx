@@ -75,7 +75,7 @@ database.
 
 Phoenix contexts and how they relate to the F5 facade rather than duplicate it; composing contexts behind one edge.
 
-### F6.05 · Templates, components & HEEx
+### F6.05 · Templates, components & HEEx → [guide](f6-05-heex.md)
 
 Server-rendered markup: templates and assigns, function components and slots, forms and inputs.
 
@@ -108,8 +108,10 @@ Run each module's build prompts in order; each lives in its module guide.
    the Postgres adapter behind the F5.09 port · verify.
 4. `f6-04` — The Catalog context with a private schema · the Portal facade by delegation · Enrollment on the F6.03
    port · cross-context composition through public APIs · a `with` orchestration returning one closed error · verify.
-5. `f6-05` … `f6-08` — HEEx, LiveView, PubSub, and deployment (companion HTML modules).
-6. `f6-09` — assemble the live dashboard over a socket, broadcast to many clients.
+5. `f6-05` — The index template over assigns · the course_card function component · compose it and add a slot wrapper ·
+   a changeset-backed form · create with inline errors · verify the view layer.
+6. `f6-06` … `f6-08` — LiveView, PubSub, and deployment (companion HTML modules).
+7. `f6-09` — assemble the live dashboard over a socket, broadcast to many clients.
 
 After F6 the headless engine from F5 is a deployed, real-time learning platform, and everything below the facade is
 unchanged from F5.

@@ -247,7 +247,7 @@ MODULES = {
         dict(n="F6.02", title="Routing, controllers & plugs", one="The plug pipeline.", slug="routing", status="built", lab=False),
         dict(n="F6.03", title="Ecto: schemas, changesets & queries", one="Data, validation, the repo.", slug="ecto", status="built", lab=False),
         dict(n="F6.04", title="Contexts & domain design", one="Boundaries that scale.", slug="contexts", status="built", lab=False),
-        dict(n="F6.05", title="Templates, components & HEEx", one="Server-rendered markup.", slug="heex", status="planned", lab=False),
+        dict(n="F6.05", title="Templates, components & HEEx", one="Server-rendered markup.", slug="heex", status="built", lab=False),
         dict(n="F6.06", title="Phoenix LiveView fundamentals", one="Interactive UIs without hand-written JS.", slug="liveview", status="planned", lab=False),
         dict(n="F6.07", title="PubSub, channels & real-time", one="Live updates over WebSockets.", slug="pubsub", status="planned", lab=False),
         dict(n="F6.08", title="Auth, deployment & going live", one="Sessions, releases, production.", slug="deployment", status="planned", lab=False),
@@ -446,6 +446,11 @@ SUBPAGES = {
         dict(slug='boundaries', title='Context boundaries', one='A context groups related functionality behind a public API and keeps its schemas and the Repo pr'),
         dict(slug='vs-facade', title='Contexts vs the F5 facade', one='A Phoenix context and the F5 Portal facade are the same idea — a public API over a slice of the '),
         dict(slug='composition', title='Composing contexts', one='How one context depends on another without breaking boundaries: call the public API, pass ids or'),
+    ],
+    "F6.05": [
+        dict(slug='components', title='Function components & slots', one='A function component is a pure function from assigns to markup, declared with attr and slot so i'),
+        dict(slug='forms', title='Forms & inputs', one='A form is a changeset turned into a form with to_form/1.'),
+        dict(slug='templates', title='Templates & assigns', one='A HEEx template renders the assigns a controller set — @courses, @course — using :for and :if as'),
     ],
 }
 

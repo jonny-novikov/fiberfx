@@ -142,7 +142,7 @@ var Modules = map[string][]Module{
 		{N: "F6.02", Title: "Routing, controllers & plugs", One: "The plug pipeline.", Slug: "routing", Status: "built"},
 		{N: "F6.03", Title: "Ecto: schemas, changesets & queries", One: "Data, validation, the repo.", Slug: "ecto", Status: "built"},
 		{N: "F6.04", Title: "Contexts & domain design", One: "Boundaries that scale.", Slug: "contexts", Status: "built"},
-		{N: "F6.05", Title: "Templates, components & HEEx", One: "Server-rendered markup.", Slug: "heex", Status: "planned"},
+		{N: "F6.05", Title: "Templates, components & HEEx", One: "Server-rendered markup.", Slug: "heex", Status: "built"},
 		{N: "F6.06", Title: "Phoenix LiveView fundamentals", One: "Interactive UIs without hand-written JS.", Slug: "liveview", Status: "planned"},
 		{N: "F6.07", Title: "PubSub, channels & real-time", One: "Live updates over WebSockets.", Slug: "pubsub", Status: "planned"},
 		{N: "F6.08", Title: "Auth, deployment & going live", One: "Sessions, releases, production.", Slug: "deployment", Status: "planned"},
@@ -338,6 +338,11 @@ var Subpages = map[string][]Subpage{
 		{"boundaries", "Context boundaries", "A context groups related functionality behind a public API and keeps its schemas and the Repo pr"},
 		{"vs-facade", "Contexts vs the F5 facade", "A Phoenix context and the F5 Portal facade are the same idea — a public API over a slice of the "},
 		{"composition", "Composing contexts", "How one context depends on another without breaking boundaries: call the public API, pass ids or"},
+	},
+	"F6.05": {
+		{"components", "Function components & slots", "A function component is a pure function from assigns to markup, declared with attr and slot so i"},
+		{"forms", "Forms & inputs", "A form is a changeset turned into a form with to_form/1."},
+		{"templates", "Templates & assigns", "A HEEx template renders the assigns a controller set — @courses, @course — using :for and :if as"},
 	},
 }
 

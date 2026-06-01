@@ -219,7 +219,7 @@ Local copies of the sources in [`../kb/elixir-references.md`](../kb/elixir-refer
 
 - Martin Fowler — CQRS — [offline](files/martinfowler.com_bliki_CQRS.html) · [source](https://martinfowler.com/bliki/CQRS.html)
 - Martin Fowler — Event Sourcing — [offline](files/martinfowler.com_eaaDev_EventSourcing.html) · [source](https://martinfowler.com/eaaDev/EventSourcing.html)
-- Martin Fowler — CommandQuerySeparation — [offline](files/martinfowler.com_bliki_CommandQuerySeparation.html) · [source](https://martinfowler.com/bliki/CommandQuerySeparation.html)
+- Commanded — [offline](files/hexdocs.pm_commanded_Commanded.html) · [source](https://hexdocs.pm/commanded/Commanded.html)
 ## F5.06 &middot; Where engine state lives
 
 - Elixir — GenServer — [offline](files/hexdocs.pm_elixir_GenServer.html) · [source](https://hexdocs.pm/elixir/GenServer.html)

@@ -306,6 +306,12 @@ pre.code .step{color:var(--cream-dim)}
 .refs a{color:var(--sage-bright)}
 .refs a:hover{color:var(--cream)}
 .refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+/* ---- replay-to-Progress figure (sage) ---- */
+.rp-flow{stroke:var(--sage);stroke-width:2;fill:none;stroke-dasharray:5 8;stroke-dashoffset:0}
+@media (prefers-reduced-motion: no-preference){
+  .rp-flow{animation:rpflow 1.7s linear infinite}
+}
+@keyframes rpflow{to{stroke-dashoffset:-26}}
 </style>
 </head>
 <body>
@@ -344,6 +350,7 @@ pre.code .step{color:var(--cream-dim)}
     <div class="toc-mini" aria-label="On this page">
       <a href="#fold">Folding the log</a>
       <a href="#code">In code</a>
+      <a href="#replay-progress">Replaying to Progress</a>
     </div>
   </section>
 
@@ -430,6 +437,99 @@ pre.code .step{color:var(--cream-dim)}
       next module, F5.06 &mdash; Where engine state lives, picks the process that holds this folded state &mdash; a
       GenServer, an Agent, ETS. Back to <a href="/elixir/pragmatic/cqrs">the module overview</a> or
       <a href="/elixir/pragmatic">the chapter</a>.</p>
+  </section>
+
+  <section id="replay-progress" class="reveal" aria-labelledby="replayTitle">
+    <h2 id="replayTitle">Rebuilding a learner&rsquo;s Progress by replaying events</h2>
+    <div class="prose">
+      <p>The whole-engine <code class="inl">replay/1</code> above folds every event into one big state. The same fold
+        narrows to a single learner. Keep one event log per enrollment, define a small projection struct
+        <code class="inl">%Progress{}</code>, and give <code class="inl">evolve/2</code> a clause per event that
+        advances it. Replaying that learner&rsquo;s log &mdash;
+        <code class="inl">Enum.reduce(events, %Progress{}, &amp;evolve/2)</code> &mdash; rebuilds the current
+        <code class="inl">%Progress{}</code> from nothing but the recorded facts. This is the pattern Martin Fowler
+        names <strong>Event Sourcing</strong>: the current state is the left fold of the full history, so the log is
+        authoritative and the struct is a cache of it that can be thrown away and recomputed.</p>
+      <p>Because the state is a pure function of an ordered log, the log can be <strong>audited</strong> &mdash; every
+        field traces to the event that set it &mdash; and <strong>replayed to any point</strong>. Folding a prefix of
+        the events, <code class="inl">Enum.take(events, n)</code>, reconstructs the exact
+        <code class="inl">%Progress{}</code> the learner had after the first <span class="math">n</span> facts, with no
+        snapshot kept for that moment. There is one rule, the same as for any fold: replaying the events in their
+        recorded order must always yield the same state.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="rpTitle">
+      <h4 id="rpTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">One learner&rsquo;s log, folded into a %Progress&#123;&#125; struct</h4>
+      <svg viewBox="0 0 720 188" role="img" aria-label="Three events for one learner — LearnerEnrolled, LessonDelivered, ProgressRecorded — folded left by evolve/2 into a Progress struct showing the course id, one lesson seen, and 100 percent.">
+        <!-- ordered event log (left column) -->
+        <text x="20" y="26" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.12em" fill="#7e87a6">EVENT LOG · ENROLLMENT</text>
+        <g font-family="JetBrains Mono, monospace" font-size="10.5" fill="#d7cfb9">
+          <rect x="20" y="40" width="218" height="30" rx="8" fill="#10162b" stroke="#3a4263" stroke-width="1.2"></rect>
+          <text x="34" y="59">%LearnerEnrolled&#123;&#125;</text>
+          <rect x="20" y="80" width="218" height="30" rx="8" fill="#10162b" stroke="#3a4263" stroke-width="1.2"></rect>
+          <text x="34" y="99">%LessonDelivered&#123;&#125;</text>
+          <rect x="20" y="120" width="218" height="30" rx="8" fill="#10162b" stroke="#3a4263" stroke-width="1.2"></rect>
+          <text x="34" y="139">%ProgressRecorded&#123;&#125;</text>
+        </g>
+
+        <!-- fold arrows into the accumulator -->
+        <path class="rp-flow" d="M238 55 C 320 55, 360 94, 452 94"></path>
+        <path class="rp-flow" d="M238 95 L 452 95"></path>
+        <path class="rp-flow" d="M238 135 C 320 135, 360 96, 452 96"></path>
+        <polygon points="452,90 464,95 452,100" fill="#7ba387"></polygon>
+        <text x="346" y="158" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.04em" fill="#5a6688">Enum.reduce(events, %Progress&#123;&#125;, &amp;evolve/2)</text>
+
+        <!-- folded %Progress{} accumulator (right card) -->
+        <rect x="470" y="40" width="232" height="110" rx="12" fill="#1a241c" stroke="#7ba387" stroke-width="1.6"></rect>
+        <text x="486" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">%Progress&#123;</text>
+        <g font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">
+          <text x="500" y="82">course_id: "CRS-7",</text>
+          <text x="500" y="100">lessons_seen: 1,</text>
+          <text x="500" y="118">percent: 100</text>
+        </g>
+        <text x="486" y="140" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">&#125;</text>
+      </svg>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">replay: <span style="color:var(--sage-bright)">3 events &rarr; %Progress&#123;percent: 100&#125;</span> &middot; audit: each field traces to one fact</p>
+    </figure>
+
+    <pre class="code"><span class="cmt"># a per-learner projection: the left fold of one enrollment's event log</span>
+<span class="op">defmodule</span> <span class="fn sage">Portal.Progress</span> <span class="op">do</span>
+  <span class="op">defstruct</span> course_id: <span class="op">nil</span>, lessons_seen: <span class="res">0</span>, percent: <span class="res">0</span>
+<span class="op">end</span>
+
+<span class="cmt"># one evolve/2 clause per event — each advances the %Progress{} accumulator</span>
+<span class="op">defp</span> <span class="fn">evolve</span>(%<span class="fn sage">Progress</span>{} = p, %<span class="fn blue">LearnerEnrolled</span>{course_id: c}),
+  <span class="op">do:</span> %{p | course_id: c}
+
+<span class="op">defp</span> <span class="fn">evolve</span>(%<span class="fn sage">Progress</span>{lessons_seen: n} = p, %<span class="fn blue">LessonDelivered</span>{}),
+  <span class="op">do:</span> %{p | lessons_seen: n + <span class="res">1</span>}
+
+<span class="op">defp</span> <span class="fn">evolve</span>(%<span class="fn sage">Progress</span>{} = p, %<span class="fn blue">ProgressRecorded</span>{percent: pct}),
+  <span class="op">do:</span> %{p | percent: pct}
+
+<span class="cmt"># replay/1: reconstruct the learner's Progress from the full log — current state</span>
+<span class="cmt"># is a pure function of history (Martin Fowler, "Event Sourcing").</span>
+<span class="op">def</span> <span class="fn sage">replay</span>(events), <span class="op">do:</span> <span class="fn gold">Enum</span>.<span class="fn">reduce</span>(events, %<span class="fn sage">Progress</span>{}, &amp;<span class="fn">evolve</span>/<span class="res">2</span>)
+
+log = [
+  %<span class="fn blue">LearnerEnrolled</span>{id: <span class="str">"EVT-1"</span>, user_id: <span class="str">"USR-9"</span>, course_id: <span class="str">"CRS-7"</span>, at: t1},
+  %<span class="fn blue">LessonDelivered</span>{user_id: <span class="str">"USR-9"</span>, lesson_id: <span class="str">"LSN-1"</span>},
+  %<span class="fn blue">ProgressRecorded</span>{enrollment_id: <span class="str">"ENR-3"</span>, percent: <span class="res">100</span>}
+]
+
+<span class="fn sage">replay</span>(log)
+<span class="cmt"># => %Portal.Progress{course_id: "CRS-7", lessons_seen: 1, percent: 100}</span>
+
+<span class="cmt"># replay to a point in the log: fold a prefix to recover an earlier state,</span>
+<span class="cmt"># with no snapshot kept for that moment — audit / time-travel.</span>
+log |> <span class="fn gold">Enum</span>.<span class="fn">take</span>(<span class="res">2</span>) |> <span class="fn sage">replay</span>()
+<span class="cmt"># => %Portal.Progress{course_id: "CRS-7", lessons_seen: 1, percent: 0}</span>
+
+log |> <span class="fn gold">Enum</span>.<span class="fn">take</span>(<span class="res">1</span>) |> <span class="fn sage">replay</span>()
+<span class="cmt"># => %Portal.Progress{course_id: "CRS-7", lessons_seen: 0, percent: 0}</span></pre>
+    <p class="take">When state is the left fold of its events, the log is the source of truth and the struct is a cache:
+      a learner&rsquo;s Progress can be rebuilt from nothing, audited fact by fact, or replayed to any point in the
+      history.</p>
   </section>
 
   <section class="reveal" aria-labelledby="refsTitle">

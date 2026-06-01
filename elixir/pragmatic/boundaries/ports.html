@@ -533,6 +533,76 @@ pre.code .step{color:var(--cream-dim)}
       the driving port, the one stable API the UI calls into.</p>
   </section>
 
+  <section class="reveal" aria-labelledby="stubTitle">
+    <h2 id="stubTitle">A test double is a module, not a mutated global</h2>
+    <div class="prose">
+      <p>The earlier sections swap the whole edge per environment: production resolves <code class="inl">:event_store</code>
+        to <code class="inl">Portal.EventStore.Postgres</code>, the test environment to <code class="inl">Portal.EventStore.InMemory</code>.
+        Some tests need finer control than an environment-wide choice &mdash; a single test wants the store to fail an
+        <code class="inl">append/2</code>, or to hand back a fixed stream, so the engine's error path can be exercised.
+        The tempting shortcut is to reach for a library that rewrites <code class="inl">Portal.EventStore.InMemory</code>
+        in place at runtime, redefining its functions for the duration of the test. That mutates a module every other
+        test shares, and the technique is global: two tests touching the same module can no longer run concurrently.</p>
+      <p>José Valim's <a href="https://dashbit.co/blog/mocks-and-explicit-contracts">Mocks and explicit contracts</a>
+        names the fix in one line &mdash; <em>a mock is a noun, not a verb</em>. The remedy is not to mock the store (verb,
+        a thing done to a shared global) but to define a mock (noun): one more ordinary module that carries
+        <code class="inl">@behaviour Portal.EventStore</code> and answers the two callbacks the way a particular test needs.
+        The behaviour declared in the section above is already the contract, so a hand-written stub is interchangeable
+        with the real adapters by construction. Selecting it stays one config line, scoped to the test environment;
+        no production module is touched, and tests that pick different adapters never collide.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># test/support/event_store_stub.ex — a third adapter, authored for tests</span>
+<span class="op">defmodule</span> <span class="fn sage">Portal.EventStore.Stub</span> <span class="op">do</span>
+  <span class="op">@behaviour</span> <span class="fn burg">Portal.EventStore</span>    <span class="cmt"># the same contract InMemory and Postgres satisfy</span>
+
+  <span class="cmt"># a noun: a module that conforms, returning exactly what a test asks for</span>
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">append</span>(_stream, _events), <span class="op">do:</span> {<span class="res">:error</span>, <span class="res">:store_unavailable</span>}
+
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">read_stream</span>(_stream), <span class="op">do:</span> {<span class="res">:ok</span>, []}
+<span class="op">end</span></pre>
+    <div class="prose">
+      <p>The stub is injected the way every other adapter is &mdash; through configuration, not by redefining a function
+        at runtime. The engine calls <code class="inl">Portal.EventStore.append/2</code> exactly as in production; only the
+        resolved adapter differs, so the failure branch under test is the genuine one:</p>
+    </div>
+    <pre class="code"><span class="cmt"># config/test.exs — point the port at the stub for the failing-store case</span>
+<span class="fn burg">config</span> <span class="res">:portal</span>, <span class="res">:event_store</span>, <span class="fn sage">Portal.EventStore.Stub</span>
+
+<span class="cmt"># the call site is unchanged; the contract is what is exercised</span>
+<span class="fn burg">Portal.EventStore</span>.<span class="fn">append</span>(<span class="str">"enrollment-1"</span>, [%<span class="fn burg">Enrolled</span>{}])
+<span class="cmt"># => {:error, :store_unavailable}   — Portal.Error.from/1 then maps it for the UI</span>
+<span class="fn burg">Portal.EventStore</span>.<span class="fn">read_stream</span>(<span class="str">"enrollment-1"</span>)
+<span class="cmt"># => {:ok, []}</span></pre>
+
+    <figure class="fig" aria-labelledby="stubFigTitle">
+      <h4 id="stubFigTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Mock the verb, or define the mock as a noun</h4>
+      <svg viewBox="0 0 720 196" role="img" aria-label="Two approaches. On the left, the verb: a library mutates the shared InMemory module in place at runtime, a global change. On the right, the noun: a separate Stub module implements the same EventStore behaviour and is selected by config, leaving every shared module untouched.">
+        <text x="190" y="22" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.12em" fill="#b07572">VERB &middot; mutate a shared global</text>
+        <rect x="40" y="36" width="300" height="50" rx="11" fill="#1d1320" stroke="#c4504c" stroke-width="1.4"></rect>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#d7cfb9">redefine InMemory.append/2 at runtime</text>
+        <text x="60" y="74" font-family="Manrope, sans-serif" font-size="8.5" fill="#b07572">every test shares it &middot; cannot run concurrently</text>
+        <rect x="40" y="96" width="300" height="40" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.2"></rect>
+        <text x="190" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#8b93b0">Portal.EventStore.InMemory  (rewritten)</text>
+        <text x="190" y="170" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">the change leaks into the next test</text>
+
+        <line x1="360" y1="30" x2="360" y2="178" stroke="#2a3252" stroke-width="1" stroke-dasharray="3 5"></line>
+
+        <text x="530" y="22" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.12em" fill="#a7c9b1">NOUN &middot; a module that conforms</text>
+        <rect x="380" y="36" width="300" height="50" rx="11" fill="#14211c" stroke="#7ba387" stroke-width="1.6"></rect>
+        <text x="400" y="58" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#d7cfb9">@behaviour Portal.EventStore</text>
+        <text x="400" y="74" font-family="Manrope, sans-serif" font-size="8.5" fill="#a7c9b1">a separate Stub &middot; config selects it &middot; concurrent-safe</text>
+        <rect x="380" y="96" width="300" height="40" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.2"></rect>
+        <text x="530" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a7c9b1">Portal.EventStore.Stub  (untouched modules)</text>
+        <text x="530" y="170" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">shared modules stay as written</text>
+      </svg>
+    </figure>
+    <p class="take">A test double earns its keep by satisfying the same behaviour as the real adapter, selected through
+      config like any other &mdash; the contract is mocked as a noun, never the module mutated as a verb.</p>
+  </section>
+
   <section class="reveal" aria-labelledby="refsTitle">
     <h2 id="refsTitle">References</h2>
     <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
