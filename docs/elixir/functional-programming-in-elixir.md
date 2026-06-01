@@ -301,7 +301,10 @@ A pragmatic, end-to-end build of one product: the Portal engine. Nine modules ca
 | ↳ F5.08 &middot; Ports & adapters | A port is a behaviour the core depends on; adapters implement it; config swaps them. One EventStore contract with an in-memory adapter and a Postgres adapter, and dependencies that point inward. | `/elixir/pragmatic/boundaries/ports` | ● |
 | ↳ F5.08 &middot; The engine facade | The driving port: a small context — enroll/2, deliver_lesson/2, progress_of/1 — that hides the GenServer, the event log, and the reducer behind one stable, intention-revealing door. | `/elixir/pragmatic/boundaries/facade` | ● |
 | ↳ F5.08 &middot; Error contracts for the UI | A closed set of %Portal.Error{} codes, mapped from internal reasons at the boundary, so the UI renders a finite list of outcomes; impossible states stay crashes for the supervisor. | `/elixir/pragmatic/boundaries/errors` | ● |
-| **F5.09 · Lab: the Portal engine, LiveView-ready** | An interactive lab: assemble the engine facade and mount it behind a LiveView sketch — ready to integrate with Phoenix LiveView in F6. | `/elixir/pragmatic/engine-lab` | ○ ▣ lab |
+| **F5.09 · Lab: the Portal engine, LiveView-ready** | An interactive lab: assemble the engine facade and mount it behind a LiveView sketch — ready to integrate with Phoenix LiveView in F6. | `/elixir/pragmatic/engine-lab` | ● ⬡ hub ▣ lab |
+| ↳ F5.09 &middot; The engine facade end to end | The full supervision tree: the Application starts the store and the engine, init reads the stream through the port and replays, and an enroll runs facade to engine to store and persists. | `/elixir/pragmatic/engine-lab/end-to-end` | ● |
+| ↳ F5.09 &middot; A LiveView mount sketch | mount/3 loads state via a query, handle_event calls a command and branches on the closed error contract, and render/1 shows assigns — the LiveView touches only the facade. | `/elixir/pragmatic/engine-lab/mount` | ● |
+| ↳ F5.09 &middot; What ships in F6 | The handoff: F6 replaces the thin web layer with Phoenix and adds its endpoint to the tree, but the facade, the error contract, and the tests carry over unchanged. | `/elixir/pragmatic/engine-lab/handoff` | ● |
 
 ### F6 &middot; Phoenix Framework &mdash; `/elixir/phoenix`
 

@@ -328,8 +328,10 @@ Engineering practice. Tooling docs, the OTP guides, and the “let it crash” p
 
 ### F5.09 &middot; Lab: the Portal engine, LiveView-ready
 
-- [Phoenix — LiveView](https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html) — the UI layer F6 mounts the engine in.
+- [Elixir — Supervisor](https://hexdocs.pm/elixir/Supervisor.html) — the assembled supervision tree.
 - [Elixir — GenServer](https://hexdocs.pm/elixir/GenServer.html) — the engine boundary behind the facade.
+- [Phoenix — LiveView](https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html) — the UI layer F6 mounts the engine in.
+- [Phoenix — Overview](https://hexdocs.pm/phoenix/overview.html) — the framework that replaces the thin server in F6.
 
 ## F6 &middot; Phoenix Framework
 
