@@ -89,8 +89,8 @@
 ### Глава 7 · Права несовершеннолетнего — `/law/nesovershennoletnie` · blue · интерактив
 Лендинг-памятка ✓ — обзорные секции и интерактив «возрастная сводка» (что можно в 14, 15, 16 и 17 лет), со сквозной нитью дисциплинарных и административных нюансов на каждом этапе.
 
-- 7.1 — Права с 16 лет · `/law/nesovershennoletnie/prava-16`
-- 7.2 — Готовность к взрослой жизни · `/law/nesovershennoletnie/gotovnost`
+- 7.1 — Права с 16 лет · `/law/nesovershennoletnie/prava-16` ✓
+- 7.2 — Готовность к взрослой жизни · `/law/nesovershennoletnie/gotovnost` ✓
 - 7.3 — Студенчество и ВУЗ · `/law/nesovershennoletnie/vuz`
 - 7.4 — Во взрослую жизнь (капстоун → финал) · `/law/nesovershennoletnie/vzroslost`
 - Квиз главы (4 вопроса) · `/law/nesovershennoletnie/kviz`
