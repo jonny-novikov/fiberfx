@@ -124,7 +124,7 @@ var Modules = map[string][]Module{
 		{N: "F4.09", Title: "Branded CHAMP maps & GenServer", One: "A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.", Slug: "branded-champ", Status: "built"},
 		{N: "F4.10", Title: "Practical recipes in Elixir", One: "Turning algorithmic problems into idiomatic Elixir.", Slug: "recipes", Status: "built"},
 		{N: "F4.11", Title: "Dynamic programming & advanced problems", One: "Overlapping subproblems, memoized and tabulated.", Slug: "dynamic-programming", Status: "built"},
-		{N: "F4.12", Title: "Lab: build a branded CHAMP store", One: "An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.", Slug: "lab", Status: "planned", Lab: true},
+		{N: "F4.12", Title: "Lab: build a branded CHAMP store", One: "An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.", Slug: "lab", Status: "built", Lab: true},
 	},
 	"F5": {
 		{N: "F5.01", Title: "Project structure & Mix", One: "Apps, deps, tasks.", Slug: "mix", Status: "planned"},
@@ -268,6 +268,11 @@ var Subpages = map[string][]Subpage{
 		{"memoization", "Memoization & overlapping subproblems", "The longest prerequisite chain to a lesson is one plus the deepest of its prerequisites — a recu"},
 		{"problems", "Classic DP problems", "Edit distance — the fewest single-character inserts, deletes, or substitutions between two strin"},
 		{"tabulation", "Tabulation & bottom-up", "The fewest modules (worth 1, 3, or 4 credits) summing to a target is one more than the best answ"},
+	},
+	"F4.12": {
+		{"grow", "Watch a branded CHAMP grow", "Each put reads a branded id's three-letter namespace and drops the entry into that namespace's p"},
+		{"registry", "A Snowflake registry", "Hand the store any branded id and get/1 resolves it in one call: the prefix names the partition,"},
+		{"range", "Query by time range", "Because a Snowflake puts the timestamp in its high bits, ids sort by creation time and a time wi"},
 	},
 }
 

@@ -229,7 +229,7 @@ MODULES = {
         dict(n="F4.09", title="Branded CHAMP maps & GenServer", one="A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.", slug="branded-champ", status="built", lab=False),
         dict(n="F4.10", title="Practical recipes in Elixir", one="Turning algorithmic problems into idiomatic Elixir.", slug="recipes", status="built", lab=False),
         dict(n="F4.11", title="Dynamic programming & advanced problems", one="Overlapping subproblems, memoized and tabulated.", slug="dynamic-programming", status="built", lab=False),
-        dict(n="F4.12", title="Lab: build a branded CHAMP store", one="An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.", slug="lab", status="planned", lab=True),
+        dict(n="F4.12", title="Lab: build a branded CHAMP store", one="An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.", slug="lab", status="built", lab=True),
     ],
     "F5": [
         dict(n="F5.01", title="Project structure & Mix", one="Apps, deps, tasks.", slug="mix", status="planned", lab=False),
@@ -376,6 +376,11 @@ SUBPAGES = {
         dict(slug='memoization', title='Memoization & overlapping subproblems', one='The longest prerequisite chain to a lesson is one plus the deepest of its prerequisites — a recu'),
         dict(slug='problems', title='Classic DP problems', one='Edit distance — the fewest single-character inserts, deletes, or substitutions between two strin'),
         dict(slug='tabulation', title='Tabulation & bottom-up', one='The fewest modules (worth 1, 3, or 4 credits) summing to a target is one more than the best answ'),
+    ],
+    "F4.12": [
+        dict(slug='grow', title='Watch a branded CHAMP grow', one="Each put reads a branded id's three-letter namespace and drops the entry into that namespace's p"),
+        dict(slug='registry', title='A Snowflake registry', one='Hand the store any branded id and get/1 resolves it in one call: the prefix names the partition,'),
+        dict(slug='range', title='Query by time range', one='Because a Snowflake puts the timestamp in its high bits, ids sort by creation time and a time wi'),
     ],
 }
 
