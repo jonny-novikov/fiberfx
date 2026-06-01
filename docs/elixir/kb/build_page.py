@@ -226,7 +226,7 @@ MODULES = {
         dict(n="F4.06", title="CHAMP maps", one="Compressed Hash-Array Mapped Prefix-trees; layout & iteration.", slug="champ", status="built", lab=False),
         dict(n="F4.07", title="Identifiers, Snowflake & branded ids", one="From naive ids to a Snowflake bigint and a branded, base62 id.", slug="identifiers", status="built", lab=False),
         dict(n="F4.08", title="Branded ids & persistence", one="Branded ids as keys in SQLite, PostgreSQL, and Redis.", slug="persistence", status="built", lab=False),
-        dict(n="F4.09", title="Branded CHAMP maps & GenServer", one="A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.", slug="branded-champ", status="planned", lab=False),
+        dict(n="F4.09", title="Branded CHAMP maps & GenServer", one="A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.", slug="branded-champ", status="built", lab=False),
         dict(n="F4.10", title="Practical recipes in Elixir", one="Turning algorithmic problems into idiomatic Elixir.", slug="recipes", status="planned", lab=False),
         dict(n="F4.11", title="Dynamic programming & advanced problems", one="Overlapping subproblems, memoized and tabulated.", slug="dynamic-programming", status="planned", lab=False),
         dict(n="F4.12", title="Lab: build a branded CHAMP store", one="An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.", slug="lab", status="planned", lab=True),
@@ -361,6 +361,11 @@ SUBPAGES = {
         dict(slug='keys', title='Branded ids as keys', one='The database stores the 64-bit integer as a bigint primary key — eight bytes, numerically ordere'),
         dict(slug='redis', title='Redis keys', one='In Redis the id is a namespaced string key, user:USR0NbWMtkosp8.'),
         dict(slug='sql', title='SQLite & PostgreSQL', one='Because the high bits of the id are a timestamp, a window of time is a contiguous window of ids:'),
+    ],
+    "F4.09": [
+        dict(slug='genserver', title='Own it with a GenServer', one="The Portal's session store is a CHAMP behind a GenServer."),
+        dict(slug='partition', title='Partition by namespace', one="The Portal's entity registry keeps users, sessions, lessons, and pages in one store: a tiny top-"),
+        dict(slug='trie', title='Structural sharing', one="Inside a partition the CHAMP is keyed on the lesson's Snowflake, and Portal.Progress marks a les"),
     ],
 }
 

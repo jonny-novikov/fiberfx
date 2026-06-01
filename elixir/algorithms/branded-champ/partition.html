@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Algorithms &amp; Data Structures — F4 · jonnify</title>
-<meta name="description" content="The F4 chapter overview: nine modules from lists through trees, sorting, and hash-based maps to the persistent trie family — HAMT, CHAMP, and the branded CHAMP map keyed by a Snowflake pivot — plus dynamic programming and a lab. F4.01 is built; the rest show their planned dives.">
+<title>Partition by namespace — F4.09.1 · jonnify</title>
+<meta name="description" content="The Portal&#x27;s entity registry keeps users, sessions, lessons, and pages in one store: a tiny top-level map from a three-letter namespace to a CHAMP per kind. A lookup reads the prefix it already has, picks the partition, and descends only that sub-trie — so a USR key never shares a node with an LSN key, each partition stays shallow, and a kind can be snapshotted or evicted on its own.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -292,17 +292,27 @@ html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transfo
 pre.code .rdx{background:rgba(179,157,219,.18);border-radius:4px;padding:0 .18em;color:var(--elixir-bright)}
 pre.code .step{color:var(--cream-dim)}
 .lin-arrow{fill:var(--cream-dim)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to the chapter</a>
+<a class="skip" href="#main">Skip to the lesson</a>
 
 <header class="site">
   <div class="wrap">
     <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
     <nav>
       <a href="/elixir/course">Contents</a>
-      <span class="route-tag">/elixir/algorithms</span>
+      <span class="route-tag">/elixir/algorithms/branded-champ/partition</span>
     </nav>
   </div>
 </header>
@@ -311,244 +321,145 @@ pre.code .step{color:var(--cream-dim)}
 
   <section class="hero">
     <div class="crumbs">
-      <a href="/elixir/course">Contents</a>
+      <a href="/elixir/algorithms">F4</a>
       <span class="sep">/</span>
-      <span class="here">F4 &middot; Algorithms &amp; Data Structures</span>
+      <a href="/elixir/algorithms/branded-champ">F4.09</a>
+      <span class="sep">/</span>
+      <span class="here">partition</span>
     </div>
-    <p class="eyebrow">F4 &middot; chapter overview</p>
-    <h1>Algorithms &amp; <span class="ex">data structures</span></h1>
-    <p class="lede">The data behind the systems you built in F3. This chapter starts at the list &mdash; the BEAM's
-      fundamental sequence &mdash; and works up through trees, sorting, and hash-based maps to the persistent tries
-      that make immutable maps fast: HAMT and CHAMP. From there it turns to the ids that key them &mdash; the
-      Snowflake bigint and its branded, base62 form &mdash; their persistence across SQLite, PostgreSQL, and Redis,
-      and the branded CHAMP map behind a GenServer. Each structure comes with the cost model that tells you when to
-      reach for it.</p>
-    <p class="kicker">Twelve modules, each grounded in working Elixir and the running portal's data. The arc is
-      deliberate: foundations first (lists, trees, sorting, maps), then the persistent-map spine (HAMT &rarr; CHAMP
-      &rarr; identifiers &rarr; persistence &rarr; branded CHAMP), then practical recipes, dynamic programming, and a
-      lab where you watch a branded CHAMP map grow node by node.</p>
+    <p class="eyebrow">F4.09 &middot; part 1 of 3 &middot; the entity registry</p>
+    <h1>Partition by <span class="ex">namespace</span></h1>
+    <p class="lede">The Portal keeps users, sessions, lessons, and pages in one in-memory registry. Rather than one
+      CHAMP holding every kind of key, the store is a tiny top-level map from a three-letter <strong>namespace</strong>
+      to a CHAMP per kind. A lookup reads the prefix it already has, picks the partition, and descends only that
+      sub-trie &mdash; so a <code class="inl">USR</code> key never shares a node with an <code class="inl">LSN</code>
+      key, and each partition stays shallow.</p>
+    <p class="kicker">The registry, grouped. Select a namespace to see its partition and how many records it holds
+      &mdash; counted from the same eight records.</p>
     <div class="toc-mini" aria-label="On this page">
-      <a href="#arc">The chapter arc</a>
-      <a href="#modules">Module navigation</a>
+      <a href="#parts">Four partitions, one prefix away</a>
+      <a href="#advanced">Advanced: why not one big map</a>
     </div>
   </section>
 
-  <section id="arc">
-    <h2>The chapter arc</h2>
+  <section id="parts">
+    <h2>Four partitions, one prefix away</h2>
     <div class="prose">
-      <p>Read it in order. The foundations earn the tries: once you can reason about a list's O(n) walk and a map's
-        average-O(1) lookup, the HAMT and CHAMP show how a tree of small nodes gives you both persistence and speed.
-        Modules F4.01 through F4.06 &mdash; lists through CHAMP maps &mdash; are built; the id, persistence, and
-        branded-CHAMP modules that follow are in production.</p>
+      <p>The top-level map has one entry per namespace; its value is the partition for that kind. Selecting a
+        namespace routes to its CHAMP and lists what it holds. The routing is a single map read on the three-character
+        prefix.</p>
     </div>
 
-    <figure class="fig" aria-labelledby="arcTitle">
-      <h4 id="arcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Twelve modules &middot; F4.01 through F4.06 are built</h4>
+    <figure class="fig" aria-labelledby="paTitle">
+      <h4 id="paTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Namespace &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="paSel" role="group" aria-label="Namespace partition">
+          <button type="button" data-k="USR" data-c="sage" class="active">USR</button>
+          <button type="button" data-k="SES" data-c="blue">SES</button>
+          <button type="button" data-k="LSN" data-c="gold">LSN</button>
+          <button type="button" data-k="PGE" data-c="sage">PGE</button>
+        </div>
+      </div>
 
-      <svg viewBox="0 0 720 158" role="img" aria-label="A spine of twelve F4 modules from lists through the persistent-map spine to a branded CHAMP lab, with F4.01 highlighted as the starting point.">
-        <line x1="40" y1="70" x2="680" y2="70" stroke="#2a3252" stroke-width="2"></line>
+      <svg viewBox="0 0 720 230" role="img" aria-label="A top-level map of four namespaces, each with a record count, routes to a partition; the selected partition is highlighted and its records are listed below.">
+        <text x="40" y="32" font-family="Manrope, sans-serif" font-size="10" letter-spacing="0.08em" fill="#6b7494">store : namespace -&gt; CHAMP</text>
 
-        <!-- 01 lists (start, built) -->
-        <circle cx="40" cy="70" r="11" fill="#1a2b22" stroke="#a7c9b1" stroke-width="2.5"></circle>
-        <text x="40" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#a7c9b1">01</text>
-        <text x="40" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#a7c9b1">lists</text>
-        <text x="40" y="108" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">start</text>
+        <rect id="paHi" x="44" y="42" width="152" height="44" rx="9" fill="#a7c9b1" fill-opacity="0.12" stroke="none"></rect>
+        <rect x="50" y="46" width="140" height="36" rx="7" fill="#161d38" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="120" y="63" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#a7c9b1">USR</text>
+        <text x="120" y="76" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">2 users</text>
 
-        <!-- 02 trees --><circle cx="98" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="98" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">02</text>
-        <text x="98" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">trees</text>
+        <rect x="222" y="46" width="140" height="36" rx="7" fill="#161d38" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="292" y="63" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#9fc0ea">SES</text>
+        <text x="292" y="76" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">1 session</text>
 
-        <!-- 03 sorting --><circle cx="156" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="156" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">03</text>
-        <text x="156" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">sort</text>
+        <rect x="394" y="46" width="140" height="36" rx="7" fill="#161d38" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="464" y="63" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#f0cd7f">LSN</text>
+        <text x="464" y="76" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">3 lessons</text>
 
-        <!-- 04 maps --><circle cx="214" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="214" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">04</text>
-        <text x="214" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">maps</text>
+        <rect x="566" y="46" width="140" height="36" rx="7" fill="#161d38" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="636" y="63" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#a7c9b1">PGE</text>
+        <text x="636" y="76" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">2 pages</text>
 
-        <!-- 05 HAMT (spine) --><circle cx="273" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="273" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">05</text>
-        <text x="273" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">HAMT</text>
+        <text x="360" y="106" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#5a6688">&darr;</text>
+        <rect x="40" y="116" width="640" height="86" rx="9" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text id="paHead" x="56" y="136" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#a7c9b1">USR partition &middot; 2 records</text>
+        <text id="paE0" x="56" y="156" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#cdb8f0">&mdash;</text>
+        <text id="paE1" x="56" y="174" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#cdb8f0">&mdash;</text>
+        <text id="paE2" x="56" y="192" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#cdb8f0">&mdash;</text>
 
-        <!-- 06 CHAMP --><circle cx="331" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="331" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">06</text>
-        <text x="331" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">CHAMP</text>
-
-        <!-- 07 identifiers --><circle cx="389" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="389" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">07</text>
-        <text x="389" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">ids</text>
-
-        <!-- 08 persistence --><circle cx="447" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="447" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">08</text>
-        <text x="447" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">store</text>
-
-        <!-- 09 branded champ --><circle cx="505" cy="70" r="9" fill="#10162b" stroke="#7ba387" stroke-width="2"></circle>
-        <text x="505" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#8aa896">09</text>
-        <text x="505" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8aa896">branded</text>
-
-        <!-- 10 recipes --><circle cx="564" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="564" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">10</text>
-        <text x="564" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">recipe</text>
-
-        <!-- 11 DP --><circle cx="622" cy="70" r="9" fill="#10162b" stroke="#5a6688" stroke-width="2"></circle>
-        <text x="622" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">11</text>
-        <text x="622" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#8b93b0">DP</text>
-
-        <!-- 12 lab --><circle cx="680" cy="70" r="9" fill="#1a1530" stroke="#b39ddb" stroke-width="2"></circle>
-        <text x="680" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#cdb8f0">12</text>
-        <text x="680" y="94" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#cdb8f0">lab</text>
-
-        <text x="360" y="138" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.06em" fill="#6b7494">foundations &middot; the persistent-map spine (05&ndash;09) &middot; recipes &middot; DP &middot; lab</text>
+        <text id="paCaption" x="360" y="224" text-anchor="middle" font-family="Manrope, sans-serif" font-size="10.5" fill="#a7c9b1">the USR partition holds only user records</text>
       </svg>
 
-      <div class="geo-readout">The persistent-map spine runs through five modules: a Hash Array Mapped Trie (F4.05),
-        its compressed successor CHAMP (F4.06), the identifiers that key them (F4.07), their persistence in SQL and
-        Redis (F4.08), and the branded CHAMP map behind a GenServer (F4.09). The F4.12 lab then animates one growing.</div>
+      <pre class="code" id="paCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="paOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">partition: <span id="paRole" style="color:var(--sage-bright)">USR</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">records: <span id="paResult" style="color:var(--cream)">2</span></p>
     </figure>
-    <p class="take">A data structure is a bet about which operations you will do most. This chapter is about reading
-      that bet from the cost model &mdash; and choosing the structure that wins it.</p>
+    <p class="take">The store is a map of namespaces over CHAMPs. The prefix you already hold is the routing key, so
+      finding the right partition costs one map read and never mixes one kind of record with another.</p>
   </section>
 
-  <section id="modules">
-    <h2>Module navigation</h2>
+  <section id="advanced">
+    <h2>Advanced: why not one big map</h2>
     <div class="prose">
-      <p>F4.01 is built; open it below. The rest list their planned deep dives so the path through the chapter is
-        visible from here.</p>
+      <p>You could put every record in a single CHAMP. Correctness would hold &mdash; the keys are unique &mdash; but
+        three things get worse. The trie is deeper, because it holds every key at once. Keys of different kinds share
+        nodes, so a hot path of session writes churns nodes that user reads also touch. And there is no seam to act on
+        a single kind: you cannot snapshot only the lessons, evict only the sessions, or hand one kind to a different
+        process. Partitioning by the prefix gives each kind its own shallow sub-trie and its own lifecycle, for the
+        price of one extra map read.</p>
+      <p>The prefix is the natural partition key because it is already in the id and already means &ldquo;what kind of
+        thing this is.&rdquo; The top-level map is tiny &mdash; one entry per namespace &mdash; so it stays in cache,
+        and within a partition the keys are Snowflakes, which keeps that sub-trie time-ordered for the range scans of
+        F4.08.</p>
     </div>
+    <pre class="code"><span class="cmt"># the store routes on the prefix, then works one partition</span>
+<span class="op">defp</span> <span class="fn">partition</span>(<span class="str">"USR"</span> &lt;&gt; _), <span class="op">do:</span> <span class="res">:users</span>
+<span class="op">defp</span> <span class="fn">partition</span>(<span class="str">"SES"</span> &lt;&gt; _), <span class="op">do:</span> <span class="res">:sessions</span>
+<span class="op">defp</span> <span class="fn">partition</span>(<span class="str">"LSN"</span> &lt;&gt; _), <span class="op">do:</span> <span class="res">:lessons</span>
 
-    <div class="mods" style="margin-top:1.3rem">
-      <a class="mod" href="/elixir/algorithms/lists">
-        <div class="top"><span class="num">F4.01</span><span class="pill built">built</span></div>
-        <p class="t">Lists, recursion &amp; complexity</p>
-        <p class="o">Cons cells; big-O on the BEAM.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.01.1</span><span>Cons cells &amp; the shape of a list</span></li>
-          <li><span class="dn">F4.01.2</span><span>Recursion over lists</span></li>
-          <li><span class="dn">F4.01.3</span><span>Complexity &amp; big-O on the BEAM</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/trees">
-        <div class="top"><span class="num">F4.02</span><span class="pill built">built</span></div>
-        <p class="t">Trees &amp; traversals</p>
-        <p class="o">Recursive tree shape and the three depth-first orders.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.02.1</span><span>Binary trees &amp; recursive shape</span></li>
-          <li><span class="dn">F4.02.2</span><span>Depth-first: pre, in, post-order</span></li>
-          <li><span class="dn">F4.02.3</span><span>Breadth-first &amp; balance</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/sorting">
-        <div class="top"><span class="num">F4.03</span><span class="pill built">built</span></div>
-        <p class="t">Sorting &amp; searching</p>
-        <p class="o">Comparison sorts and the cost of finding things.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.03.1</span><span>Merge &amp; quicksort</span></li>
-          <li><span class="dn">F4.03.2</span><span>Linear &amp; binary search</span></li>
-          <li><span class="dn">F4.03.3</span><span>Stability &amp; sort cost</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/maps">
-        <div class="top"><span class="num">F4.04</span><span class="pill built">built</span></div>
-        <p class="t">Maps, sets &amp; hashing</p>
-        <p class="o">Key lookup, membership, and what a hash buys you.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.04.1</span><span>Maps &amp; key lookup</span></li>
-          <li><span class="dn">F4.04.2</span><span>MapSet &amp; membership</span></li>
-          <li><span class="dn">F4.04.3</span><span>Hashing &amp; collisions</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/hamt">
-        <div class="top"><span class="num">F4.05</span><span class="pill built">built</span></div>
-        <p class="t">Hash Array Mapped Tries (HAMT)</p>
-        <p class="o">A tree of small nodes indexed by slices of the hash.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.05.1</span><span>Bitmapped nodes</span></li>
-          <li><span class="dn">F4.05.2</span><span>Hash-prefix indexing</span></li>
-          <li><span class="dn">F4.05.3</span><span>Structural sharing</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/champ">
-        <div class="top"><span class="num">F4.06</span><span class="pill built">built</span></div>
-        <p class="t">CHAMP maps</p>
-        <p class="o">A compressed HAMT: tighter nodes, faster iteration.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.06.1</span><span>Compressed node layout</span></li>
-          <li><span class="dn">F4.06.2</span><span>Cache-friendly iteration</span></li>
-          <li><span class="dn">F4.06.3</span><span>Canonical equality</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/identifiers">
-        <div class="top"><span class="num">F4.07</span><span class="pill built">built</span></div>
-        <p class="t">Identifiers, Snowflake &amp; branded ids</p>
-        <p class="o">From naive ids to a Snowflake bigint and a branded, base62 id.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.07.1</span><span>Choosing an identifier</span></li>
-          <li><span class="dn">F4.07.2</span><span>The Snowflake bigint</span></li>
-          <li><span class="dn">F4.07.3</span><span>Branded ids</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/persistence">
-        <div class="top"><span class="num">F4.08</span><span class="pill built">built</span></div>
-        <p class="t">Branded ids &amp; persistence</p>
-        <p class="o">Branded ids as keys in SQLite, PostgreSQL, and Redis.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.08.1</span><span>Branded ids as keys</span></li>
-          <li><span class="dn">F4.08.2</span><span>SQLite &amp; PostgreSQL</span></li>
-          <li><span class="dn">F4.08.3</span><span>Redis keys</span></li>
-        </ul>
-      </a>
-      <a class="mod" href="/elixir/algorithms/branded-champ">
-        <div class="top"><span class="num">F4.09</span><span class="pill built">built</span></div>
-        <p class="t">Branded CHAMP maps &amp; GenServer</p>
-        <p class="o">A CHAMP keyed by branded ids, partitioned by namespace, behind a GenServer.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.09.1</span><span>Namespace-prefix partitioning</span></li>
-          <li><span class="dn">F4.09.2</span><span>The BrandedChamp trie</span></li>
-          <li><span class="dn">F4.09.3</span><span>A BrandedChamp GenServer</span></li>
-        </ul>
-      </a>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.10</span><span class="pill planned">planned</span></div>
-        <p class="t">Practical recipes in Elixir</p>
-        <p class="o">Turning algorithmic problems into idiomatic Elixir.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.10.1</span><span>Idiomatic patterns</span></li>
-          <li><span class="dn">F4.10.2</span><span>Streams &amp; pipelines</span></li>
-          <li><span class="dn">F4.10.3</span><span>Profiling &amp; complexity</span></li>
-        </ul>
+<span class="op">def</span> <span class="fn">get</span>(id), <span class="op">do:</span> parts |&gt; <span class="fn">Map.fetch!</span>(<span class="fn">partition</span>(id)) |&gt; <span class="fn sage">Champ</span>.<span class="fn">get</span>(id)
+<span class="cmt"># one map read for the partition, then the CHAMP lookup within it</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">a branded id&rsquo;s prefix</p>
+        <p><code class="inl">USR</code>, <code class="inl">SES</code>, <code class="inl">LSN</code>, <code class="inl">PGE</code> &mdash; the kind, baked in.</p>
       </div>
-      <div class="mod is-quiet">
-        <div class="top"><span class="num">F4.11</span><span class="pill planned">planned</span></div>
-        <p class="t">Dynamic programming &amp; advanced problems</p>
-        <p class="o">Overlapping subproblems, memoized and tabulated.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.11.1</span><span>Memoization &amp; overlapping subproblems</span></li>
-          <li><span class="dn">F4.11.2</span><span>Tabulation &amp; bottom-up</span></li>
-          <li><span class="dn">F4.11.3</span><span>Classic DP problems</span></li>
-        </ul>
-      </div>
-      <div class="mod is-quiet lab">
-        <div class="top"><span class="num">F4.12</span><span class="pill planned">planned</span></div>
-        <p class="t">Lab: build a branded CHAMP store</p>
-        <p class="o">An interactive lab: insert branded keys and watch the partitioned CHAMP restructure.</p>
-        <ul class="dives">
-          <li><span class="dn">F4.12.1</span><span>Watch a branded CHAMP grow</span></li>
-          <li><span class="dn">F4.12.2</span><span>A Snowflake registry</span></li>
-          <li><span class="dn">F4.12.3</span><span>Query by time range</span></li>
-        </ul>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">a partition</p>
+        <p>One CHAMP per kind, each shallow and independently managed.</p>
       </div>
     </div>
+    <p class="note">Next: <a href="/elixir/algorithms/branded-champ/trie"><strong>structural sharing</strong></a>
+      &mdash; inside a partition, how marking a lesson complete keeps every prior snapshot for free.</p>
+  </section>
 
-    <p class="note">Begin with <a href="/elixir/algorithms/lists"><strong>F4.01 &mdash; Lists, recursion &amp;
-      complexity</strong></a>. The chapter builds toward the branded CHAMP map, so the early modules on cost and
-      hashing pay off directly in the persistent-map spine.</p>
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://michael.steindorfer.name/publications/oopsla15.pdf">Steindorfer &amp; Vinju, &ldquo;Optimizing Hash-Array Mapped Tries&rdquo; (OOPSLA 2015)</a> &mdash; the CHAMP each partition is.</li>
+        <li><a href="https://hexdocs.pm/elixir/Map.html">Elixir &mdash; Map</a> &mdash; the tiny top-level namespace map.</li>
+        <li><a href="https://hexdocs.pm/elixir/Kernel.SpecialForms.html#%3C%3E/2">Elixir &mdash; binary matching (<code>&lt;&gt;</code>)</a> &mdash; matching the prefix to route.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/branded-champ">F4.09 &middot; Branded CHAMP maps &amp; GenServer</a> &mdash; the module hub.</li>
+        <li><a href="/elixir/algorithms/identifiers/branded">F4.07.3 &middot; Branded ids</a> &mdash; where the prefix comes from.</li>
+        <li><a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a></li>
+      </ul>
+    </div>
   </section>
 
   <section>
-    <nav class="pager" aria-label="Chapter navigation">
-      <a class="btn ghost" href="/elixir/language"><span aria-hidden="true">&larr;</span>&nbsp; F3 &middot; The Elixir Language</a>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/branded-champ"><span aria-hidden="true">&larr;</span>&nbsp; F4.09 &middot; branded-champ</a>
       <span class="spacer"></span>
-      <a class="btn" href="/elixir/algorithms/lists">Start &middot; F4.01 lists <span aria-hidden="true">&rarr;</span></a>
+      <a class="btn" href="/elixir/algorithms/branded-champ/trie">Next &middot; structural sharing <span aria-hidden="true">&rarr;</span></a>
     </nav>
   </section>
 
@@ -558,15 +469,15 @@ pre.code .step{color:var(--cream-dim)}
   <div class="wrap">
     <p class="colophon">Built with the jonnify dark-editorial design system. Every page carries a branded
       <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
-      It is the same id convention the branded CHAMP map uses as a pivot key.</p>
+      It is the same id convention used as a cross-system pivot key throughout the course.</p>
     <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
-      build <span class="id" id="stampId">TSK0NcV2vhoCS8</span>
+      build <span class="id" id="stampId">TSK0Ncc9OEXXcm</span>
       <dl class="panel">
         <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
         <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
         <dt>node</dt><dd id="st-node">&mdash;</dd>
         <dt>seq</dt><dd id="st-seq">&mdash;</dd>
-        <dt>timestamp</dt><dd id="st-ts">2026-06-01 08:49:06 UTC</dd>
+        <dt>timestamp</dt><dd id="st-ts">2026-06-01 10:28:31 UTC</dd>
       </dl>
     </div>
   </div>
@@ -575,6 +486,46 @@ pre.code .step{color:var(--cream-dim)}
 <script>
 (function () {
   "use strict";
+  var SAGE = '#a7c9b1', BLUE = '#9fc0ea', GOLD = '#f0cd7f';
+  function set(id, attr, v) { var e = document.getElementById(id); if (e) e.setAttribute(attr, String(v)); }
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
+  /* the registry — eight records across four partitions */
+  var REG = {
+    USR: { x: 44, fill: SAGE, kind: 'users', rows: [['USR0NbAb1xcFCy', 'ada@portal.dev'], ['USR0NbWMtkosp8', 'kit@portal.dev']] },
+    SES: { x: 216, fill: BLUE, kind: 'sessions', rows: [['SES0NbAb29FnXc', 'ada · active']] },
+    LSN: { x: 388, fill: GOLD, kind: 'lessons', rows: [['LSN0NbAb2Lk9GS', 'Hash array mapped tries'], ['LSN0NbCMKoAopE', 'Bitmapped nodes'], ['LSN0NbCiUI0Sg4', 'Structural sharing']] },
+    PGE: { x: 566, fill: SAGE, kind: 'pages', rows: [['PGE0NbWMtkolM0', '/elixir/algorithms/hamt'], ['PGE0NXh7MFjxT6', '/elixir/algorithms/champ']] }
+  };
+
+  function pick(k) {
+    var p = REG[k]; if (!p) return;
+    document.querySelectorAll('#paSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var n = p.rows.length;
+    set('paHi', 'x', p.x); set('paHi', 'fill', p.fill);
+    txt('paHead', k + ' partition \u00b7 ' + n + (n === 1 ? ' record' : ' records'));
+    var t = document.getElementById('paHead'); if (t) t.setAttribute('fill', p.fill);
+    for (var i = 0; i < 3; i++) {
+      var el = document.getElementById('paE' + i);
+      if (!el) continue;
+      if (i < n) { el.textContent = p.rows[i][0] + '   ' + p.rows[i][1]; }
+      else { el.textContent = ''; }
+    }
+    t = document.getElementById('paCaption'); if (t) { t.textContent = 'the ' + k + ' partition holds only ' + p.kind.replace(/s$/, '') + ' records'; t.setAttribute('fill', p.fill); }
+    t = document.getElementById('paRole'); if (t) { t.textContent = k; t.style.color = p.fill; }
+    txt('paResult', String(n));
+    var list = p.rows.map(function (r) { return '<span class="str">"' + r[0] + '"</span>'; }).join(', ');
+    var code = '<span class="cmt"># the ' + p.kind + ' partition — one CHAMP, ' + n + ' ' + (n === 1 ? 'key' : 'keys') + '</span>\nparts.' + p.kind + '\n  |&gt; <span class="fn sage">Champ</span>.<span class="fn">keys</span>()\n<span class="cmt"># => [' + list.replace(/<[^>]+>/g, '') + ']</span>';
+    t = document.getElementById('paCode'); if (t) t.innerHTML = code;
+    var out = 'The <b style="color:' + p.fill + '">' + k + '</b> partition is a CHAMP holding <b>' + n + '</b> ' + (n === 1 ? 'record' : 'records') + ' &mdash; only ' + p.kind + '. No other kind of key reaches this sub-trie, so it stays shallow and can be snapshotted on its own.';
+    t = document.getElementById('paOut'); if (t) t.innerHTML = out;
+  }
+  document.querySelectorAll('#paSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('USR');
+
+  /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   var EPOCH_MS = 1704067200000;
   function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
