@@ -52,8 +52,10 @@ In Portal terms, the write path for an enrollment is:
 
 ```elixir
 # F5.5 — the pure core (Portal.Engine.Core): decide returns events only
-def decide(_state, {:enroll, user_id, course_id}) do
-  [%Portal.Learning.Events.LearnerEnrolled{user_id: user_id, course_id: course_id, at: now()}]
+# Note: `now()` here is illustrative; the pure core takes `at` as an input (the boundary stamps it and passes it in as
+# the command's 4th element), so decide holds no clock — per f5.5.md line 49 / INV2.
+def decide(_state, {:enroll, user_id, course_id, at}) do
+  [%Portal.Learning.Events.LearnerEnrolled{user_id: user_id, course_id: course_id, at: at}]
 end
 
 def evolve(%Portal.Learning.Events.LearnerEnrolled{} = e, state) do
