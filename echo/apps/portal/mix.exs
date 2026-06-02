@@ -29,7 +29,8 @@ defmodule Portal.MixProject do
       {:echo_data, in_umbrella: true},
       {:bandit, "~> 1.5"},
       {:plug, "~> 1.16"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:stream_data, "~> 1.0", only: :test}
     ]
   end
 end

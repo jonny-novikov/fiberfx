@@ -51,4 +51,12 @@ defmodule Portal.Web.EnrollSliceTest do
     assert call(:get, "/lessons/#{Portal.ID.new("LSN")}").status == 404
     assert call(:get, "/nope").status == 404
   end
+
+  test "POST /enroll with a malformed user id → 422 :course_not_found", %{course: course} do
+    # "USR1" passes namespace/1 but fails valid?/1 → rejected at the door.
+    conn = call(:post, "/enroll?user=USR1&course=#{course.id}")
+
+    assert conn.status == 422
+    assert %{"error" => %{"code" => "course_not_found"}} = Jason.decode!(conn.resp_body)
+  end
 end

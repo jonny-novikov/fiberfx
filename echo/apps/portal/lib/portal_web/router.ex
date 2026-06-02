@@ -17,8 +17,11 @@ defmodule Portal.Web.Router do
     command = %{type: :enroll, user_id: conn.params["user"], course_id: conn.params["course"]}
 
     case Portal.Engine.dispatch(command) do
-      {:ok, enrollment} -> send_json(conn, 201, %{data: %{id: enrollment.id}})
-      {:error, reason} -> send_json(conn, 422, %{error: reason})
+      {:ok, enrollment} ->
+        send_json(conn, 201, %{data: %{id: enrollment.id}})
+
+      {:error, %Portal.Error{code: code, message: message}} ->
+        send_json(conn, 422, %{error: %{code: code, message: message}})
     end
   end
 

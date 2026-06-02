@@ -8,6 +8,8 @@ defmodule Portal.LearningTest do
   test "enroll/2 mints an ENR id, persists progress 0, and lists it" do
     user_id = Portal.ID.new("USR")
     course_id = Portal.ID.new("CRS")
+    # enroll/2 now checks the course exists (F5.4) — seed it in the store first.
+    :ok = Portal.Store.put(%Portal.Catalog.Course{id: course_id, title: "Elixir", slug: "elixir"})
 
     assert {:ok, %Enrollment{} = e} = Learning.enroll(user_id, course_id)
 

@@ -35,6 +35,18 @@ defmodule Portal.Store do
     GenServer.call(__MODULE__, {:put, struct})
   end
 
+  @doc """
+  Clear every namespace, returning the store to empty.
+
+  Synchronous, so a caller observes an empty store as soon as the call returns.
+  Intended for test isolation (each test starts from `%{}`): the branded
+  snowflake sequence resets per process, so without a per-test reset two tests
+  minting in the same millisecond can collide on an id (see
+  `Portal.EnrollContractTest`).
+  """
+  @spec reset() :: :ok
+  def reset, do: GenServer.call(__MODULE__, :reset)
+
   @impl true
   def init(state), do: {:ok, state}
 
@@ -50,5 +62,9 @@ defmodule Portal.Store do
   def handle_call({:put, %{id: id} = struct}, _from, state) do
     kind = Portal.ID.namespace(id)
     {:reply, :ok, Map.update(state, kind, %{id => struct}, &Map.put(&1, id, struct))}
+  end
+
+  def handle_call(:reset, _from, _state) do
+    {:reply, :ok, %{}}
   end
 end
