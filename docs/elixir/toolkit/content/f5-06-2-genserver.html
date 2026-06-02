@@ -1,0 +1,249 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/pragmatic">pragmatic</a><span class="rsep">/</span><a href="/elixir/pragmatic/state">state</a><span class="rsep">/</span><span class="rcur">genserver</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/pragmatic">F5</a>
+      <span class="sep">/</span>
+      <a href="/elixir/pragmatic/state">F5.06</a>
+      <span class="sep">/</span>
+      <span class="here">genserver</span>
+    </div>
+    <p class="eyebrow">F5.06 &middot; part 2 of 3</p>
+    <h1>The engine GenServer</h1>
+    <p class="lede">Three callbacks carry the whole engine. <code class="inl">init/1</code> runs once on start: it folds
+      the event log into the starting state &mdash; the F5.05 reduce, run here. <code class="inl">handle_call</code>
+      for a <strong>command</strong> runs <code class="inl">decide</code> (the F5.04 contract, emitting events) and
+      <code class="inl">evolve</code> (folding them in), replies <code class="inl">:ok</code>, and keeps the new
+      state. <code class="inl">handle_call</code> for a <strong>query</strong> reads the state and replies with data,
+      leaving it unchanged. The command/query split from F5.05 becomes two clauses, and because a GenServer handles one
+      message at a time, writes serialize for free.</p>
+    <p class="kicker">One process, three callbacks. Select one to see what runs and how the state threads through.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#calls">Three callbacks</a>
+      <a href="#code">In code</a>
+    </div>
+  </section>
+
+  <section id="calls">
+    <h2>Three callbacks</h2>
+    <div class="prose">
+      <p>Each callback takes the current state and returns the next one alongside a reply. <code class="inl">init</code>
+        builds the first state from the log; a command threads state in and a changed state out; a query threads state
+        in and the same state out. The single mailbox means these never overlap. Select a callback.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="gsTitle">
+      <h4 id="gsTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Engine callback &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="gsSel" role="group" aria-label="GenServer callback">
+          <button type="button" data-k="init" class="active">init/1</button>
+          <button type="button" data-k="command">command</button>
+          <button type="button" data-k="query">query</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 200" role="img" aria-label="Three GenServer callbacks. init folds the log into state. A command call runs decide and evolve and returns a new state. A query call reads state and returns data unchanged.">
+        <rect id="gsRow_init" x="40" y="24" width="640" height="48" rx="11" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="44" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">INIT/1</text>
+        <text x="60" y="62" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">fold the log &rarr; {:ok, state}</text>
+        <text x="660" y="52" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#86a7d8">on start</text>
+
+        <rect id="gsRow_command" x="40" y="80" width="640" height="48" rx="11" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="100" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">HANDLE_CALL &middot; COMMAND</text>
+        <text x="60" y="118" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">decide &middot; evolve &rarr; {:reply, :ok, new_state}</text>
+        <text x="660" y="108" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">state changes</text>
+
+        <rect id="gsRow_query" x="40" y="136" width="640" height="48" rx="11" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="156" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">HANDLE_CALL &middot; QUERY</text>
+        <text x="60" y="174" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">read &rarr; {:reply, data, state}</text>
+        <text x="660" y="164" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">state unchanged</text>
+      </svg>
+
+      <div class="geo-readout" id="gsOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">callback: <span id="gsRole" style="color:#9fc0ea">init/1</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">does: <span id="gsResult" style="color:var(--cream)">fold the log into state</span></p>
+    </figure>
+    <p class="take">A GenServer is the F5.05 reducer wearing a uniform: <code class="inl">init</code> folds, a command
+      evolves, a query reads &mdash; and the mailbox keeps them in line.</p>
+  </section>
+
+  <section id="code">
+    <h2>In code</h2>
+    <div class="prose">
+      <p>The engine in three callbacks. <code class="inl">init</code> folds the log once with the F5.05
+        <code class="inl">replay</code>; the command clause runs <code class="inl">decide</code> and folds its events;
+        the query clause reads and replies. The contract from F5.04 lives inside <code class="inl">decide</code>, so a
+        bad command returns <code class="inl">{:error, _}</code> and leaves the state alone.</p>
+    </div>
+    <pre class="code"><span class="op">defmodule</span> <span class="fn blue">Portal.Engine</span> <span class="op">do</span>
+  <span class="op">use</span> <span class="fn blue">GenServer</span>
+
+  <span class="cmt"># init folds the event log (F5.05) into the starting state, once</span>
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">init</span>(events), <span class="op">do:</span> {<span class="res">:ok</span>, <span class="fn">replay</span>(events)}
+
+  <span class="cmt"># a command: run decide (contract + emit), evolve, keep the new state</span>
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">handle_call</span>({<span class="res">:enroll</span>, user_id, course_id}, _from, state) <span class="op">do</span>
+    <span class="op">case</span> <span class="fn">decide</span>(state, {<span class="res">:enroll</span>, user_id, course_id}) <span class="op">do</span>
+      {<span class="res">:ok</span>, events}      -> {<span class="res">:reply</span>, <span class="res">:ok</span>, <span class="fn blue">Enum</span>.<span class="fn">reduce</span>(events, state, &amp;<span class="fn">evolve</span>/<span class="res">2</span>)}
+      {<span class="res">:error</span>, _} = err -> {<span class="res">:reply</span>, err, state}
+    <span class="op">end</span>
+  <span class="op">end</span>
+
+  <span class="cmt"># a query: read the state and reply with data; state is unchanged</span>
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">handle_call</span>({<span class="res">:courses_of</span>, user_id}, _from, state),
+    <span class="op">do:</span> {<span class="res">:reply</span>, <span class="fn blue">State</span>.<span class="fn">enrollments_for</span>(state, user_id), state}
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">one message at a time</p>
+        <p>A GenServer's mailbox serializes calls, so writes never race &mdash; ordering is free.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">split into clauses</p>
+        <p>The F5.05 command/query split becomes two <code class="inl">handle_call</code> clauses.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/pragmatic/state/supervision"><strong>supervision</strong></a> &mdash; what
+      restarts this process when it crashes, and how <code class="inl">init</code> replays the log to rebuild its
+      state.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/elixir/GenServer.html">Elixir &mdash; GenServer</a> &mdash; a process that holds state behind a contract.</li>
+        <li><a href="https://hexdocs.pm/elixir/Agent.html">Elixir &mdash; Agent</a> &mdash; the minimal state-holding process.</li>
+        <li><a href="https://www.erlang.org/doc/man/ets.html">Erlang &mdash; ets</a> &mdash; in-memory tables for shared, fast reads.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/pragmatic/state/choosing">F5.06.1 &middot; Choosing where state lives</a></li>
+        <li><a href="/elixir/pragmatic/state/supervision">F5.06.3 &middot; Supervision</a></li>
+        <li><a href="/elixir/pragmatic/cqrs/reducer">F5.05 &middot; The reducer</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/pragmatic/state/choosing"><span aria-hidden="true">&larr;</span>&nbsp; F5.06.1 &middot; choosing</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/pragmatic/state/supervision">Next &middot; supervision <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var CALLS = {
+    init:    { name: 'init/1', does: 'fold the log into state',
+      desc: 'Runs once when the process starts. It folds the event log with replay (F5.05) and returns {:ok, state} \u2014 the starting state the engine then holds between calls.' },
+    command: { name: 'handle_call (command)', does: 'decide, evolve, reply :ok',
+      desc: 'A write. It runs decide \u2014 the F5.04 contract that emits events \u2014 folds them with evolve into a new state, and replies :ok. A bad command replies {:error, _} and the state is left alone.' },
+    query:   { name: 'handle_call (query)', does: 'read state, reply data',
+      desc: 'A read. It reads the held state and replies with data, returning the same state unchanged. Because queries do not write, the reply is a free, repeatable observation.' }
+  };
+  var ORDER = ['init', 'command', 'query'];
+  var ROW = { init: 'gsRow_init', command: 'gsRow_command', query: 'gsRow_query' };
+  function pick(k) {
+    var C = CALLS[k]; if (!C) return;
+    document.querySelectorAll('#gsSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(ROW[id]), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('gsRole'); if (rEl) rEl.textContent = C.name;
+    var dEl = document.getElementById('gsResult'); if (dEl) dEl.textContent = C.does;
+    var oEl = document.getElementById('gsOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + C.name + '</b> \u2014 ' + C.does + '. ' + C.desc;
+  }
+  document.querySelectorAll('#gsSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('init');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

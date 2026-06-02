@@ -1,0 +1,277 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/ecto">ecto</a><span class="rsep">/</span><span class="rcur">repo</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/ecto">F6.03</a>
+      <span class="sep">/</span>
+      <span class="here">repo</span>
+    </div>
+    <p class="eyebrow">F6.03 &middot; part 3 of 3</p>
+    <h1>Queries &amp; the <span class="ex">repo</span></h1>
+    <p class="lede">Ecto splits describing a question from asking it. A <strong>query</strong> is data &mdash; a value
+      built with the <code class="inl">from</code> DSL that you can pass around and compose, adding a
+      <code class="inl">where</code> or an <code class="inl">order_by</code> to an existing query without running
+      anything. The <strong>repo</strong> is the one module that executes: <code class="inl">Repo.all</code> runs a
+      query, <code class="inl">Repo.get</code> fetches one row by its Snowflake id, and
+      <code class="inl">Repo.insert</code> persists a changeset. The architectural point is where the repo sits:
+      <strong>behind the engine&rsquo;s port</strong>. The domain core from F5 reads and appends through the
+      <code class="inl">Portal.EventStore</code> behaviour, and the Postgres adapter is the only module that calls
+      <code class="inl">Repo</code> &mdash; so swapping in-memory for Postgres is a config change, and the Portal logic
+      never imports Ecto.</p>
+    <p class="kicker">See the three repo operations, then the boundary that keeps Ecto on the far side of the port, then
+      a composable query and the adapter that implements the F5.09 behaviour.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#ops">Three repo operations</a>
+      <a href="#boundary">Ecto sits behind the port</a>
+      <a href="#code">A query and the adapter</a>
+    </div>
+  </section>
+
+  <section id="ops">
+    <h2>Three repo operations</h2>
+    <div class="prose">
+      <p>Most data access is three calls. <code class="inl">Repo.get</code> takes a schema and an id and returns one
+        struct or <code class="inl">nil</code>; <code class="inl">Repo.all</code> runs a query and returns a list;
+        <code class="inl">Repo.insert</code> takes a changeset and writes it, returning the tagged tuple from F6.03.2.
+        Select an operation.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="rpTitle">
+      <h4 id="rpTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Repo operations &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="rpSel" role="group" aria-label="Repo operation">
+          <button type="button" data-k="get" class="active">Repo.get</button>
+          <button type="button" data-k="all">Repo.all</button>
+          <button type="button" data-k="insert">Repo.insert</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three repo operations: get returns one row by id, all runs a query and returns a list, and insert persists a changeset.">
+        <rect id="rpRow_get" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">Repo.get</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">Repo.get(Course, "CRS0KHTOWnGLuC") &mdash; one row by id, or nil</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">by Snowflake</text>
+
+        <rect id="rpRow_all" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">Repo.all</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">Repo.all(published()) &mdash; run a query, return a list</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">a list</text>
+
+        <rect id="rpRow_insert" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">Repo.insert</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">Repo.insert(changeset) &mdash; persist; {:ok, _} | {:error, cs}</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">tagged tuple</text>
+      </svg>
+
+      <div class="geo-readout" id="rpOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">operation: <span id="rpRole" style="color:#9fc0ea">Repo.get</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">returns: <span id="rpResult" style="color:var(--cream)">one row by id</span></p>
+    </figure>
+    <p class="take">A query is a value; the repo is the only thing that runs it. That split is what lets you build a
+      query in one function, test it without a database, and execute it somewhere else entirely.</p>
+  </section>
+
+  <section id="boundary">
+    <h2>Ecto sits behind the port</h2>
+    <div class="prose">
+      <p>The Portal&rsquo;s layering does not change for the database. The domain core calls the
+        <code class="inl">Portal.EventStore</code> behaviour &mdash; the driven port from F5.09 &mdash; which has two
+        adapters chosen by config: an in-memory one for tests and a Postgres one for production. Only that Postgres
+        adapter touches <code class="inl">Repo</code> and Ecto. The core, and everything above it, names no database.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="rpBoundaryTitle">
+      <h4 id="rpBoundaryTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">domain &rarr; port &rarr; adapter &rarr; database</h4>
+      <svg viewBox="0 0 720 150" role="img" aria-label="The domain core calls the EventStore port, which the Postgres adapter implements using Ecto and the Repo to reach the database; Ecto is only on the adapter side of the port.">
+        <rect x="16" y="50" width="150" height="44" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="91" y="68" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">DOMAIN CORE</text>
+        <text x="91" y="82" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#7c86a6">no Ecto</text>
+        <line x1="166" y1="72" x2="196" y2="72" stroke="#3a4263" stroke-width="1.6"></line>
+
+        <rect x="196" y="50" width="150" height="44" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="271" y="68" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#86a7d8">PORT</text>
+        <text x="271" y="82" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7.5" fill="#9fc0ea">EventStore behaviour</text>
+
+        <line x1="346" y1="72" x2="376" y2="72" stroke="#5a87c4" stroke-width="1.6" stroke-dasharray="4 3"></line>
+        <text x="361" y="42" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#86a7d8">the seam</text>
+
+        <rect x="376" y="50" width="160" height="44" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="456" y="68" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">POSTGRES ADAPTER</text>
+        <text x="456" y="82" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7.5" fill="#7c86a6">Ecto + Repo here</text>
+        <line x1="536" y1="72" x2="566" y2="72" stroke="#3a4263" stroke-width="1.6"></line>
+
+        <rect x="566" y="50" width="138" height="44" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="635" y="68" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">DATABASE</text>
+        <text x="635" y="82" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#7c86a6">Postgres</text>
+
+        <text x="360" y="124" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">Ecto lives only to the right of the seam; config picks the adapter, and the core never changes</text>
+      </svg>
+    </figure>
+    <p class="take">This is the F5.09 port paying off. The database is the most replaceable detail in the system, and
+      the port is why &mdash; the engine asked for &ldquo;append&rdquo; and &ldquo;read,&rdquo; not for Postgres.</p>
+  </section>
+
+  <section id="code">
+    <h2>A query and the adapter</h2>
+    <div class="prose">
+      <p>A query function returns a composable value; callers add to it before the repo runs it. The Postgres adapter
+        is the one place <code class="inl">Repo</code> and <code class="inl">Ecto.Query</code> appear: it implements
+        <code class="inl">append/2</code> and <code class="inl">read_stream/1</code> from the F5.09 behaviour, so the
+        engine&rsquo;s <code class="inl">init/1</code> replay and command append run against Postgres unchanged.</p>
+    </div>
+    <pre class="code"><span class="op">import</span> <span class="fn blue">Ecto.Query</span>
+
+<span class="cmt"># a composable query — data, not execution</span>
+<span class="op">def</span> <span class="fn">published</span>(query \\ <span class="fn blue">Course</span>), <span class="op">do:</span> <span class="op">from</span> c <span class="op">in</span> query, where: c.published == <span class="res">true</span>
+
+<span class="fn blue">Repo</span>.<span class="fn">all</span>(<span class="fn">published</span>())                                  <span class="cmt"># run the query</span>
+<span class="fn blue">Repo</span>.<span class="fn">all</span>(<span class="op">from</span> c <span class="op">in</span> <span class="fn">published</span>(), order_by: [desc: c.inserted_at])  <span class="cmt"># compose</span>
+<span class="fn blue">Repo</span>.<span class="fn">get</span>(<span class="fn blue">Course</span>, <span class="str">"CRS0KHTOWnGLuC"</span>)                      <span class="cmt"># one row by Snowflake id</span>
+
+<span class="cmt"># Ecto lives behind the engine's port — the F5.09 Postgres adapter</span>
+<span class="op">defmodule</span> <span class="fn blue">Portal.EventStore.Postgres</span> <span class="op">do</span>
+  <span class="op">@behaviour</span> <span class="fn blue">Portal.EventStore</span>
+  <span class="op">import</span> <span class="fn blue">Ecto.Query</span>
+
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">append</span>(stream, events), <span class="op">do:</span> <span class="fn blue">Repo</span>.<span class="fn">insert_all</span>(<span class="fn blue">Event</span>, <span class="fn">rows_for</span>(stream, events))
+
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">read_stream</span>(stream) <span class="op">do</span>
+    {<span class="res">:ok</span>, <span class="fn blue">Repo</span>.<span class="fn">all</span>(<span class="op">from</span> e <span class="op">in</span> <span class="fn blue">Event</span>, where: e.stream == ^stream, order_by: e.seq)}
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">a query is data</p>
+        <p>Built with <code class="inl">from</code>, composed freely, and run only by the repo.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">the repo is the adapter</p>
+        <p><code class="inl">Repo</code> appears only in the Postgres adapter behind the F5.09 port.</p>
+      </div>
+    </div>
+    <p class="note">That completes F6.03. Ecto is wired as an adapter, not a dependency of the core. The next module,
+      <strong>F6.04 &mdash; Contexts &amp; domain design</strong>, draws the boundary between Phoenix contexts and the
+      F5 facade. Back to <a href="/elixir/phoenix/ecto">the module overview</a> or the
+      <a href="/elixir/phoenix">F6 chapter</a>.</p>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/ecto/changesets"><span aria-hidden="true">&larr;</span>&nbsp; F6.03.2 &middot; changesets &amp; validation</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/ecto">Back to F6.03 &middot; overview <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var OPS = {
+    get:    { name: 'Repo.get', returns: 'one row by id', row: 'rpRow_get',
+      desc: 'Repo.get(Course, id) fetches one row by its primary key \u2014 a Snowflake id here \u2014 and returns the struct or nil. Repo.get! raises instead of returning nil.' },
+    all:    { name: 'Repo.all', returns: 'run a query', row: 'rpRow_all',
+      desc: 'Repo.all(query) executes a composable Ecto query and returns a list of structs. The query is a value built with from; all is what actually hits the database.' },
+    insert: { name: 'Repo.insert', returns: 'persist a changeset', row: 'rpRow_insert',
+      desc: 'Repo.insert(changeset) writes a valid changeset and returns {:ok, struct} or {:error, changeset} \u2014 the tagged tuple the engine maps to %Portal.Error{} from F6.03.2.' }
+  };
+  var ORDER = ['get', 'all', 'insert'];
+  function pick(k) {
+    var O = OPS[k]; if (!O) return;
+    document.querySelectorAll('#rpSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(OPS[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('rpRole'); if (rEl) rEl.textContent = O.name;
+    var dEl = document.getElementById('rpResult'); if (dEl) dEl.textContent = O.returns;
+    var oEl = document.getElementById('rpOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + O.name + '</b> \u2014 ' + O.returns + '. ' + O.desc;
+  }
+  document.querySelectorAll('#rpSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('get');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

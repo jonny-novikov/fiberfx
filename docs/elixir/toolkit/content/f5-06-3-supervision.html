@@ -1,0 +1,256 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/pragmatic">pragmatic</a><span class="rsep">/</span><a href="/elixir/pragmatic/state">state</a><span class="rsep">/</span><span class="rcur">supervision</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/pragmatic">F5</a>
+      <span class="sep">/</span>
+      <a href="/elixir/pragmatic/state">F5.06</a>
+      <span class="sep">/</span>
+      <span class="here">supervision</span>
+    </div>
+    <p class="eyebrow">F5.06 &middot; part 3 of 3</p>
+    <h1>Supervision</h1>
+    <p class="lede">A process that holds state will eventually meet a bug or a bad message and crash. The BEAM answer is
+      not to wrap every line in defensive code but to <strong>let it crash</strong> and put a
+      <strong>supervisor</strong> above it. When the engine dies, the supervisor starts a fresh one;
+      <code class="inl">init/1</code> folds the event log again, and the state is back. This is exactly why the F5.05
+      fold matters: because the log is the source of truth and replay is deterministic, a restart loses nothing. A
+      strategy of <code class="inl">:one_for_one</code> restarts only the child that failed, and
+      <code class="inl">:permanent</code> means it is always brought back.</p>
+    <p class="kicker">Crash, restart, replay &mdash; a full cycle. Select a step to see what happens to the engine and
+      its state.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#cycle">The crash-restart cycle</a>
+      <a href="#code">In code</a>
+    </div>
+  </section>
+
+  <section id="cycle">
+    <h2>The crash-restart cycle</h2>
+    <div class="prose">
+      <p>Start with the engine running and holding state. A bad message crashes it &mdash; the process stops,
+        and its in-memory state is gone. The supervisor notices and starts a fresh engine, whose
+        <code class="inl">init</code> folds the log and rebuilds the state. The snapshot was disposable; the log was
+        not. Select a step.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="svTitle">
+      <h4 id="svTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Crash, restart, replay &middot; select a step</h4>
+      <div class="controls">
+        <div class="solid-select" id="svSel" role="group" aria-label="Supervision step">
+          <button type="button" data-k="run" class="active">running</button>
+          <button type="button" data-k="crash">crash</button>
+          <button type="button" data-k="restart">restart</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 200" role="img" aria-label="The crash-restart cycle. The engine runs and holds state, a crash takes it down losing the in-memory state, and the supervisor restarts a fresh engine whose init replays the log to rebuild the state.">
+        <rect x="270" y="18" width="180" height="38" rx="9" fill="#10162b" stroke="#46506f" stroke-width="1.3"></rect>
+        <text x="360" y="36" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">SUPERVISOR</text>
+        <text x="360" y="49" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">one_for_one &middot; restart</text>
+        <line x1="360" y1="56" x2="360" y2="92" stroke="#2a3252" stroke-width="1.3" stroke-dasharray="3 3"></line>
+
+        <circle id="svNode_run" cx="120" cy="120" r="28" fill="#241d10" stroke="#d4a85a" stroke-width="2"></circle>
+        <text x="120" y="118" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#f0cd7f">live</text>
+        <text x="120" y="164" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#c9a877">holds state</text>
+
+        <line id="svArrow_crash" x1="150" y1="120" x2="330" y2="120" stroke="#3a4263" stroke-width="1.6"></line>
+        <text x="240" y="110" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">crash</text>
+        <circle id="svNode_down" cx="360" cy="120" r="28" fill="#10162b" stroke="#46506f" stroke-width="1.3"></circle>
+        <text x="360" y="118" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8b93b0">down</text>
+        <text x="360" y="164" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">state lost</text>
+
+        <line id="svArrow_restart" x1="390" y1="120" x2="570" y2="120" stroke="#3a4263" stroke-width="1.6"></line>
+        <text x="480" y="110" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">restart + replay</text>
+        <circle id="svNode_back" cx="600" cy="120" r="28" fill="#10162b" stroke="#46506f" stroke-width="1.3"></circle>
+        <text x="600" y="118" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8b93b0">live</text>
+        <text x="600" y="164" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">state replayed</text>
+      </svg>
+
+      <div class="geo-readout" id="svOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">step: <span id="svRole" style="color:#f0cd7f">running</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">what happens: <span id="svResult" style="color:var(--cream)">engine holds the folded state</span></p>
+    </figure>
+    <p class="take">Recovery is replay, not repair. Keep the log and a crash costs you nothing but the moment it took to
+      fold it again.</p>
+  </section>
+
+  <section id="code">
+    <h2>In code</h2>
+    <div class="prose">
+      <p>A small supervision tree. The application starts a supervisor whose one child is the engine, handed its event
+        log. <code class="inl">:one_for_one</code> restarts only the engine if it falls over, and on restart
+        <code class="inl">init</code> folds the log again &mdash; the state rebuilds itself from the record.</p>
+    </div>
+    <pre class="code"><span class="op">defmodule</span> <span class="fn gold">Portal.Application</span> <span class="op">do</span>
+  <span class="op">use</span> <span class="fn gold">Application</span>
+
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">start</span>(_type, _args) <span class="op">do</span>
+    children = [
+      {<span class="fn gold">Portal.Engine</span>, <span class="fn">load_events</span>()}    <span class="cmt"># the engine, started with its event log</span>
+    ]
+    <span class="cmt"># one_for_one: if a child crashes, restart only that child</span>
+    opts = [strategy: <span class="res">:one_for_one</span>, name: <span class="fn gold">Portal.Supervisor</span>]
+    <span class="fn gold">Supervisor</span>.<span class="fn">start_link</span>(children, opts)
+  <span class="op">end</span>
+<span class="op">end</span>
+
+<span class="cmt"># when Portal.Engine crashes, the supervisor starts a fresh one;</span>
+<span class="cmt"># init/1 folds the log again, so the state is rebuilt — the log is the source of truth.</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">let it crash</p>
+        <p>Instead of defending every line, let a broken process die and have a supervisor replace it.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">restart replays</p>
+        <p>A fresh engine's <code class="inl">init</code> folds the log, so the state returns on its own.</p>
+      </div>
+    </div>
+    <p class="note">That closes F5.06: a GenServer owns the folded state, and a supervisor keeps it alive by replaying
+      the log on restart. The next module, F5.07 &mdash; Pragmatic testing, tests the pure core and the engine
+      boundary. Back to <a href="/elixir/pragmatic/state">the module overview</a> or
+      <a href="/elixir/pragmatic">the chapter</a>.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/elixir/GenServer.html">Elixir &mdash; GenServer</a> &mdash; a process that holds state behind a contract.</li>
+        <li><a href="https://hexdocs.pm/elixir/Agent.html">Elixir &mdash; Agent</a> &mdash; the minimal state-holding process.</li>
+        <li><a href="https://www.erlang.org/doc/man/ets.html">Erlang &mdash; ets</a> &mdash; in-memory tables for shared, fast reads.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/pragmatic/state">F5.06 &middot; Where engine state lives</a></li>
+        <li><a href="/elixir/pragmatic/state/genserver">F5.06.2 &middot; The GenServer that owns state</a></li>
+        <li><a href="/elixir/pragmatic/cqrs">F5.05 &middot; Commands, queries &amp; events</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/pragmatic/state/genserver"><span aria-hidden="true">&larr;</span>&nbsp; F5.06.2 &middot; genserver</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/pragmatic/state">Back to F5.06 <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var GOLD = '#f0cd7f', GOLD_MUTE = '#d4a85a', DIM = '#46506f';
+  var STEPS = {
+    run:     { name: 'running', res: 'engine holds the folded state', node: 'svNode_run', arrow: null,
+      desc: 'The engine is alive and holding the state it folded from the log. Commands change it and queries read it \u2014 the normal operating state.' },
+    crash:   { name: 'crash', res: 'a bad message kills the process', node: 'svNode_down', arrow: 'svArrow_crash',
+      desc: 'A bug or an impossible message takes the process down. Its in-memory state is gone with it \u2014 and on the BEAM that is acceptable, because nothing durable lived only in that snapshot.' },
+    restart: { name: 'restart', res: 'supervisor restarts; init replays', node: 'svNode_back', arrow: 'svArrow_restart',
+      desc: 'The supervisor starts a fresh engine. Its init folds the event log again, rebuilding the same state \u2014 recovery is replay from the log, not repair of the old process.' }
+  };
+  var ORDER = ['run', 'crash', 'restart'];
+  var NODES = ['svNode_run', 'svNode_down', 'svNode_back'], ARROWS = ['svArrow_crash', 'svArrow_restart'];
+  function pick(k) {
+    var S = STEPS[k]; if (!S) return;
+    document.querySelectorAll('#svSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    NODES.forEach(function (id) {
+      var c = document.getElementById(id), on = id === S.node;
+      if (c) { c.setAttribute('stroke', on ? GOLD_MUTE : DIM); c.setAttribute('stroke-width', on ? '2' : '1.3'); c.setAttribute('fill', on ? '#241d10' : '#10162b'); }
+    });
+    ARROWS.forEach(function (id) {
+      var a = document.getElementById(id), on = id === S.arrow;
+      if (a) { a.setAttribute('stroke', on ? GOLD_MUTE : '#3a4263'); a.setAttribute('stroke-width', on ? '2' : '1.6'); }
+    });
+    var rEl = document.getElementById('svRole'); if (rEl) rEl.textContent = S.name;
+    var tEl = document.getElementById('svResult'); if (tEl) tEl.textContent = S.res;
+    var oEl = document.getElementById('svOut'); if (oEl) oEl.innerHTML = '<b style="color:' + GOLD + '">' + S.name + '</b> \u2014 ' + S.res + '. ' + S.desc;
+  }
+  document.querySelectorAll('#svSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('run');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

@@ -1,0 +1,434 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><span class="rcur">deployment</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="hero-copy">
+      <div class="crumbs">
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+        <span class="sep">/</span>
+        <span class="here">F6.08 &middot; deployment</span>
+      </div>
+      <p class="eyebrow">F6 &middot; the architecture &middot; module 8</p>
+      <h1>Auth, deployment &amp; <span class="ex">going live</span></h1>
+      
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#pieces">Three concerns of going live</a>
+        <a href="#prod">What runs in production</a>
+        <a href="#dives">Three deep dives</a>
+      </div>
+    </div>
+
+    <div class="hero-lede">
+      <p class="lede">Everything built so far &mdash; the F5 engine, the contexts, the controllers, LiveView, PubSub and
+        Presence &mdash; now has to run as one supervised system in production, and three concerns stand between a
+        working app and a live one. First, the app must know <strong>who the user is</strong>: sessions and
+        authentication, which in Phoenix is a generated <em>context</em> plus a signed-cookie session and a plug, not a
+        special subsystem. Second, the app must be <strong>packaged to run</strong> on a server with no Elixir toolchain
+        present: a <code class="inl">mix release</code> bundles your code, its dependencies, and the BEAM itself into one
+        self-contained artifact, with secrets supplied at boot through <code class="inl">runtime.exs</code> rather than
+        baked in at compile time. Third, it must actually <strong>go live</strong>: build the release, run pending
+        migrations through a release command (there is no <code class="inl">mix</code> on the server), and boot the
+        supervision tree so the endpoint serves &mdash; with the nodes clustered so the F6.07 broadcasts and presence
+        span every machine. None of this replaces what you built; it wraps the same tree from F5 in the operational
+        concerns that make it a real, running platform.</p>
+      <p class="kicker">Three dives: sessions and authentication, releases and runtime config, and the deploy itself
+        &mdash; the same supervised system from F5, now in production.</p>
+    </div>
+
+    <div class="hero-art">
+      <figure class="hero-fig" aria-labelledby="hpTitle">
+        <figcaption>
+          <p class="fc-lbl" id="hpTitle">Going live &middot; build, migrate, boot</p>
+        </figcaption>
+        <svg viewBox="0 0 320 280" role="img" aria-label="The path to production for the Portal app. A mix release packages the app, its dependencies, and the BEAM into one self-contained artifact. From there a marker advances down three production stages: build the release, run pending migrations through a release command, and boot the supervised app so the endpoint serves. The marker starts at the build stage.">
+          <!-- static initial state: the deploy sits at stage 0, BUILD (visible without JS) -->
+          <!-- the self-contained release artifact mix release produced -->
+          <rect x="60" y="14" width="232" height="36" rx="9" fill="#1a1530" stroke="#d4a85a" stroke-width="1.6"></rect>
+          <text x="76" y="31" font-family="JetBrains Mono, monospace" font-size="11" fill="#f0cd7f">mix release</text>
+          <text x="76" y="44" font-family="Manrope, sans-serif" font-size="7.5" fill="#caa258">app + deps + BEAM &mdash; one artifact</text>
+          <text x="284" y="36" text-anchor="end" font-family="Manrope, sans-serif" font-size="13" fill="#caa258">&#9679;</text>
+
+          <!-- the production track the marker walks -->
+          <line x1="60" y1="58" x2="60" y2="262" stroke="#2a3252" stroke-width="2"></line>
+          <!-- marker entering at the build stage -->
+          <text x="60" y="72" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.08em" fill="#9fc0ea">deploy</text>
+          <circle id="hpTok" class="hp-tok" cx="60" cy="102" r="9" fill="#9fc0ea" stroke="#0a0e1a" stroke-width="1.5"></circle>
+
+          <!-- stage 0: build (current at load) -->
+          <g id="hpStage_build">
+            <rect x="60" y="86" width="232" height="34" rx="8" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+            <text x="76" y="103" font-family="JetBrains Mono, monospace" font-size="11" fill="#9fc0ea">build</text>
+            <text x="76" y="115" font-family="Manrope, sans-serif" font-size="7.5" fill="#86a7d8">compile the release</text>
+            <text x="284" y="107" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">1 of 3</text>
+          </g>
+          <line x1="60" y1="120" x2="60" y2="132" stroke="#3a4263" stroke-width="1.6"></line>
+          <path d="M56 128 l4 5 l4 -5 z" fill="#3a4263"></path>
+
+          <!-- stage 1: migrate -->
+          <g id="hpStage_migrate">
+            <rect x="60" y="134" width="232" height="34" rx="8" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+            <text x="76" y="151" font-family="JetBrains Mono, monospace" font-size="11" fill="#d7cfb9">migrate</text>
+            <text x="76" y="163" font-family="Manrope, sans-serif" font-size="7.5" fill="#8b93b0">run pending migrations &mdash; a release command</text>
+            <text x="284" y="155" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">2 of 3</text>
+          </g>
+          <line x1="60" y1="168" x2="60" y2="180" stroke="#3a4263" stroke-width="1.6"></line>
+          <path d="M56 176 l4 5 l4 -5 z" fill="#3a4263"></path>
+
+          <!-- stage 2: boot -->
+          <g id="hpStage_boot">
+            <rect x="60" y="182" width="232" height="34" rx="8" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+            <text x="76" y="199" font-family="JetBrains Mono, monospace" font-size="11" fill="#d7cfb9">boot</text>
+            <text x="76" y="211" font-family="Manrope, sans-serif" font-size="7.5" fill="#8b93b0">start the supervision tree</text>
+            <text x="284" y="203" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">3 of 3</text>
+          </g>
+          <line x1="60" y1="216" x2="60" y2="228" stroke="#3a4263" stroke-width="1.6"></line>
+          <path d="M56 224 l4 5 l4 -5 z" fill="#3a4263"></path>
+
+          <!-- terminal: the endpoint serves (reached only after boot) -->
+          <g id="hpServe">
+            <rect x="60" y="230" width="232" height="32" rx="8" fill="#0d1322" stroke="#3a4263" stroke-width="1.3"></rect>
+            <text x="76" y="250" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.04em" fill="#7c86a6">the endpoint serves &mdash; live</text>
+            <text x="284" y="250" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">HTTPS</text>
+          </g>
+        </svg>
+        <div class="hp-ctrls">
+          <button type="button" class="hp-btn" id="hpAdv">&#9656; advance</button>
+          <button type="button" class="hp-btn ghost" id="hpReset">reset</button>
+        </div>
+        <p class="hp-cap" id="hpCap" aria-live="polite">
+          <span class="stg">build</span> &mdash; compile the release into a runnable image.<br>
+          <span class="art">mix release packages the app, its deps, and the BEAM into one artifact.</span>
+        </p>
+      </figure>
+    </div>
+  </section>
+
+  <section id="pieces">
+    <h2>Three concerns of going live</h2>
+    <div class="prose">
+      <p>Production splits into three questions, and this module takes each in turn. <strong>Authentication</strong>
+        answers who the user is. <strong>A release</strong> packages the app to run anywhere. <strong>Deployment</strong>
+        boots it and keeps it serving. Select a concern.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="dpTitle">
+      <h4 id="dpTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Going live &middot; select a concern</h4>
+      <div class="controls">
+        <div class="solid-select" id="dpSel" role="group" aria-label="Production concern">
+          <button type="button" data-k="auth" class="active">auth</button>
+          <button type="button" data-k="release">release</button>
+          <button type="button" data-k="deploy">deploy</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three concerns of going live: authentication knows who the user is, a release packages the app to run, and deployment boots it in production.">
+        <rect id="dpRow_auth" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">AUTHENTICATION</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">know who the user is &mdash; a context, a session, a plug</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">F6.08.1</text>
+
+        <rect id="dpRow_release" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">A RELEASE</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">package the app + the BEAM to run &mdash; config at boot</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">F6.08.2</text>
+
+        <rect id="dpRow_deploy" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">DEPLOYMENT</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">build, migrate, boot &mdash; the supervision tree serves</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">F6.08.3</text>
+      </svg>
+
+      <div class="geo-readout" id="dpOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">concern: <span id="dpRole" style="color:#9fc0ea">authentication</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">does: <span id="dpResult" style="color:var(--cream)">know who the user is</span></p>
+    </figure>
+    <p class="take">All three lean on the foundations rather than replacing them: auth is a context, a release packages
+      the same supervision tree, and the deploy boots that tree. Production is the F5 system wearing operational
+      clothes.</p>
+  </section>
+
+  <section id="prod">
+    <h2>What runs in production</h2>
+    <div class="prose">
+      <p>A release boots on a server with no Elixir installed, because the BEAM is bundled inside it. At boot,
+        <code class="inl">runtime.exs</code> reads the environment &mdash; the database URL, the secret key base, the
+        host &mdash; and the application&rsquo;s supervision tree starts: the Repo, the Endpoint, PubSub, Presence, and
+        the F5 engine, each a supervised child. Migrations run on deploy through a release command. From there the
+        endpoint serves, and if the app is clustered, PubSub and Presence reach across every node.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="dpProdTitle">
+      <h4 id="dpProdTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">release artifact &rarr; boot &rarr; supervised, serving</h4>
+      <svg viewBox="0 0 720 210" role="img" aria-label="A self-contained release boots, runtime config reads environment variables, the supervision tree starts the Repo, Endpoint, PubSub, Presence, and engine, and the app serves users across clustered nodes.">
+        <rect x="20" y="78" width="150" height="54" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="95" y="98" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">RELEASE ARTIFACT</text>
+        <text x="95" y="114" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">app + deps + BEAM</text>
+        <text x="95" y="127" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7c86a6">no toolchain needed</text>
+        <line x1="170" y1="105" x2="206" y2="105" stroke="#5a87c4" stroke-width="1.6"></line>
+        <text x="188" y="98" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#86a7d8">boot</text>
+
+        <rect x="206" y="74" width="150" height="62" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="281" y="92" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#9fc0ea">runtime.exs</text>
+        <text x="281" y="107" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#86a7d8">reads env at boot:</text>
+        <text x="281" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#86a7d8">DATABASE_URL, SECRET,</text>
+        <text x="281" y="130" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#86a7d8">PHX_HOST</text>
+        <line x1="356" y1="105" x2="392" y2="105" stroke="#3a4263" stroke-width="1.6"></line>
+
+        <rect x="392" y="34" width="200" height="142" rx="10" fill="#0d1322" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="492" y="52" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.05em" fill="#7c86a6">SUPERVISION TREE (F5)</text>
+        <rect x="408" y="60" width="168" height="20" rx="6" fill="#11203a" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="492" y="74" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">Repo</text>
+        <rect x="408" y="84" width="168" height="20" rx="6" fill="#11203a" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="492" y="98" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">Endpoint</text>
+        <rect x="408" y="108" width="168" height="20" rx="6" fill="#11203a" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="492" y="122" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">PubSub + Presence</text>
+        <rect x="408" y="132" width="168" height="20" rx="6" fill="#11203a" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="492" y="146" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">Portal.Engine</text>
+        <text x="492" y="167" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7c86a6">each supervised &middot; restarts on crash</text>
+        <line x1="592" y1="105" x2="628" y2="105" stroke="#7ba387" stroke-width="1.6"></line>
+
+        <rect x="628" y="80" width="74" height="50" rx="9" fill="#13201a" stroke="#7ba387" stroke-width="1.4"></rect>
+        <text x="665" y="100" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#a7c9b1">serves</text>
+        <text x="665" y="113" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#a7c9b1">users</text>
+        <text x="665" y="124" text-anchor="middle" font-family="Manrope, sans-serif" font-size="6.5" fill="#7ba387">HTTPS</text>
+
+        <text x="360" y="198" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">clustered across nodes, PubSub and Presence span every machine &mdash; the same code as one node</text>
+      </svg>
+    </figure>
+    <p class="take">The deploy does not start your processes by hand &mdash; it boots the supervision tree, and the
+      tree starts everything in order and keeps it alive. The reliability you designed in F5 is exactly what carries
+      into production.</p>
+  </section>
+
+  <section id="dives">
+    <h2>Three deep dives</h2>
+    <div class="prose">
+      <p>In order: sessions and authentication as a generated context; releases and the compile-time-versus-runtime
+        config split; and the build-migrate-boot deploy with clustering.</p>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:1rem;margin-top:1.4rem">
+      <a href="/elixir/phoenix/deployment/auth" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--blue-bright)">F6.08.1</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Sessions &amp; authentication <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)"><code class="inl">mix phx.gen.auth</code>, the signed-cookie session, a <code class="inl">fetch_current_user</code> plug, and <code class="inl">on_mount</code> for LiveView.</div>
+      </a>
+      <a href="/elixir/phoenix/deployment/releases" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--gold-bright)">F6.08.2</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Releases &amp; config <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)"><code class="inl">mix release</code>, compile-time versus <code class="inl">runtime.exs</code>, and running migrations without <code class="inl">mix</code>.</div>
+      </a>
+      <a href="/elixir/phoenix/deployment/deploy" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--sage);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--sage-bright)">F6.08.3</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Deploying to production <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">The build-migrate-boot sequence, the supervision tree in production, and clustering so PubSub and Presence span nodes.</div>
+      </a>
+    </div>
+
+    <div class="bridge" style="margin-top:1.8rem">
+      <div class="cell idea">
+        <p class="lbl">F5 supervised it</p>
+        <p>a tree of processes designed to start in order and restart on failure.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">F6.08 ships it</p>
+        <p>the same tree, packaged in a release and booted in production.</p>
+      </div>
+    </div>
+    <p class="note">Start with <a href="/elixir/phoenix/deployment/auth">sessions and authentication</a>, then
+      <a href="/elixir/phoenix/deployment/releases">releases and config</a>, then
+      <a href="/elixir/phoenix/deployment/deploy">deploying to production</a>. This module follows F6.07 &mdash;
+      <a href="/elixir/phoenix/pubsub">PubSub</a> &mdash; and the chapter closes with F6.09, which assembles the live
+      dashboard on everything built here.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Generated authentication, releases, runtime config, and going to production.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/phoenix/mix_phx_gen_auth.html">Phoenix &mdash; mix phx.gen.auth</a> &mdash; the generated authentication system.</li>
+        <li><a href="https://hexdocs.pm/phoenix/releases.html">Phoenix &mdash; Deploying with releases</a> &mdash; release-based deployment.</li>
+        <li><a href="https://hexdocs.pm/mix/Mix.Tasks.Release.html">Mix &mdash; mix release</a> &mdash; assembling a release and runtime config.</li>
+        <li><a href="https://hexdocs.pm/phoenix/deployment.html">Phoenix &mdash; Deployment</a> &mdash; going to production.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/phoenix/deployment/auth">F6.08.1 &middot; Sessions &amp; authentication</a></li>
+        <li><a href="/elixir/phoenix/deployment/releases">F6.08.2 &middot; Releases &amp; config</a></li>
+        <li><a href="/elixir/phoenix/deployment/deploy">F6.08.3 &middot; Deploying to production</a></li>
+        <li><a href="/elixir/phoenix/pubsub">F6.07 &middot; PubSub</a> &mdash; clustered across nodes in production.</li>
+        <li><a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/pubsub"><span aria-hidden="true">&larr;</span>&nbsp; F6.07 &middot; PubSub</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/deployment/auth">Start &middot; sessions &amp; authentication <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var PARTS = {
+    auth:    { name: 'authentication', does: 'know who the user is', row: 'dpRow_auth',
+      desc: 'Authentication is a generated Accounts context plus a signed-cookie session and a plug that loads the current user into conn.assigns. It is ordinary domain code, not a separate subsystem.' },
+    release: { name: 'a release', does: 'package the app to run', row: 'dpRow_release',
+      desc: 'mix release bundles your app, its dependencies, and the BEAM into one self-contained artifact that runs on a server with no Elixir installed, with secrets supplied at boot by runtime.exs.' },
+    deploy:  { name: 'deployment', does: 'boot it in production', row: 'dpRow_deploy',
+      desc: 'Deployment is build, migrate, boot: compile the release, run pending migrations through a release command, and start the supervision tree so the endpoint serves \u2014 clustered across nodes.' }
+  };
+  var ORDER = ['auth', 'release', 'deploy'];
+  function pick(k) {
+    var P = PARTS[k]; if (!P) return;
+    document.querySelectorAll('#dpSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(PARTS[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('dpRole'); if (rEl) rEl.textContent = P.name;
+    var dEl = document.getElementById('dpResult'); if (dEl) dEl.textContent = P.does;
+    var oEl = document.getElementById('dpOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + P.name + '</b> \u2014 ' + P.does + '. ' + P.desc;
+  }
+  document.querySelectorAll('#dpSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('auth');
+
+  /* ---------- hero: build -> migrate -> boot to production ---------- */
+  (function () {
+    var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4', LINE = '#3a4263', INK2 = '#10162b', ACTIVE_FILL = '#11203a';
+    // stage order = the deploy sequence; cy = the row centre on the vertical track
+    var PATH = [
+      { id: 'build',   cy: 102, cap: '<span class="stg">build</span> &mdash; compile the release into a runnable image.' },
+      { id: 'migrate', cy: 150, cap: '<span class="stg">migrate</span> &mdash; run pending migrations through a release command, with no mix on the server.' },
+      { id: 'boot',    cy: 198, cap: '<span class="stg">boot</span> &mdash; start the supervision tree from F5; the endpoint serves and the app is live.' }
+    ];
+    var ART = '<br><span class="art">mix release packages the app, its deps, and the BEAM into one artifact.</span>';
+    var tok = document.getElementById('hpTok');
+    var advBtn = document.getElementById('hpAdv');
+    var resetBtn = document.getElementById('hpReset');
+    var cap = document.getElementById('hpCap');
+    if (!tok || !advBtn || !resetBtn || !cap) return;
+
+    var at = 0; // index into PATH; the static markup already shows stage 0 (build)
+
+    function paint() {
+      var step = PATH[at]; if (!step) return;
+      tok.setAttribute('cy', String(step.cy));
+      PATH.forEach(function (s) {
+        var g = document.getElementById('hpStage_' + s.id); if (!g) return;
+        var rect = g.querySelector('rect'); if (!rect) return;
+        var on = s.id === step.id;
+        rect.setAttribute('stroke', on ? BLUE_MUTE : LINE);
+        rect.setAttribute('stroke-width', on ? '2' : '1.3');
+        rect.setAttribute('fill', on ? ACTIVE_FILL : INK2);
+        var label = g.querySelector('text'); // the stage name (first text in the group)
+        if (label) label.setAttribute('fill', on ? BLUE : '#d7cfb9');
+      });
+      // the endpoint serves only once boot is reached (the final stage)
+      var live = step.id === 'boot';
+      var serve = document.getElementById('hpServe');
+      if (serve) {
+        var sRect = serve.querySelector('rect');
+        if (sRect) { sRect.setAttribute('stroke', live ? '#7ba387' : LINE); sRect.setAttribute('stroke-width', live ? '1.6' : '1.3'); sRect.setAttribute('fill', live ? '#13201a' : '#0d1322'); }
+        var sTxt = serve.querySelector('text');
+        if (sTxt) sTxt.setAttribute('fill', live ? '#a7c9b1' : '#7c86a6');
+      }
+      cap.innerHTML = step.cap + ART;
+    }
+    advBtn.addEventListener('click', function () {
+      at = (at + 1) % PATH.length; // advance one stage; wrap back to build after boot
+      paint();
+    });
+    resetBtn.addEventListener('click', function () {
+      at = 0;
+      paint(); // returns the deploy to the build stage over the JS-painted track
+    });
+    // No paint on load: the static SVG already shows the deploy at the build stage.
+  })();
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

@@ -1,0 +1,314 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/contexts">contexts</a><span class="rsep">/</span><span class="rcur">composition</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/contexts">F6.04</a>
+      <span class="sep">/</span>
+      <span class="here">composition</span>
+    </div>
+    <p class="eyebrow">F6.04 &middot; part 3 of 3</p>
+    <h1>Composing <span class="ex">contexts</span></h1>
+    <p class="lede">Real domains have dependencies: enrolling a student needs to know the course exists. The boundary
+      does not forbid that &mdash; it dictates <em>how</em> it happens. One context depends on another only through its
+      <strong>public API</strong>: <code class="inl">Enrollment</code> calls
+      <code class="inl">Catalog.fetch_course/1</code>, branches on the public struct it gets back, and never builds a
+      query against <code class="inl">Catalog</code>&rsquo;s tables or touches its <code class="inl">Repo</code>. Data
+      crosses a boundary as an <strong>id or a public struct</strong>, not as a schema the other side could couple to.
+      And the dependency graph stays <strong>acyclic</strong> &mdash; if <code class="inl">Enrollment</code> uses
+      <code class="inl">Catalog</code>, then <code class="inl">Catalog</code> must not reach back, or the two collapse
+      into one tangled unit. When a single operation spans contexts, you orchestrate the public calls with
+      <code class="inl">with</code> and return the one closed error shape; when writes inside a single context must be
+      atomic, you reach for <code class="inl">Ecto.Multi</code>. The Phoenix guides frame this as the difference
+      between cross-context dependencies and intra-context transactions, and getting it right is what keeps a growing
+      app from turning back into a ball of mud.</p>
+    <p class="kicker">Four parts: the rules for one context calling another, the shape of a healthy dependency graph,
+      a real cross-context call, and how to keep an operation consistent across or within contexts.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#how">How contexts relate</a>
+      <a href="#graph">A healthy graph</a>
+      <a href="#call">One context calling another</a>
+      <a href="#consistency">Consistency across contexts</a>
+    </div>
+  </section>
+
+  <section id="how">
+    <h2>How contexts relate</h2>
+    <div class="prose">
+      <p>Three rules keep composition from eroding the boundary. Relate <strong>by public API</strong> &mdash; call the
+        other context&rsquo;s functions. Pass data <strong>by id or public struct</strong> &mdash; never a private
+        schema. And <strong>never the schema or Repo</strong> &mdash; one context does not query another&rsquo;s
+        tables. Select a rule.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="cpTitle">
+      <h4 id="cpTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Rules of composition &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="cpSel" role="group" aria-label="Composition rule">
+          <button type="button" data-k="api" class="active">by public API</button>
+          <button type="button" data-k="id">by id or struct</button>
+          <button type="button" data-k="schema">never the schema</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three composition rules: relate by public API, pass data by id or public struct, and never reach a foreign schema or Repo.">
+        <rect id="cpRow_api" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">BY PUBLIC API</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">Enrollment calls Catalog.fetch_course/1 &mdash; a public function</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">allowed</text>
+
+        <rect id="cpRow_id" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">BY ID OR STRUCT</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">pass course_id or a public %Course{} &mdash; not a private schema</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">data, not internals</text>
+
+        <rect id="cpRow_schema" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">NEVER THE SCHEMA</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">no Repo.get(Catalog.Course, id) from outside Catalog</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">forbidden</text>
+      </svg>
+
+      <div class="geo-readout" id="cpOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">rule: <span id="cpRole" style="color:#9fc0ea">By public API</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">means: <span id="cpResult" style="color:var(--cream)">call its public functions</span></p>
+    </figure>
+    <p class="take">A foreign struct passed across a boundary is a quiet coupling: if
+      <code class="inl">Enrollment</code> pattern-matches the internal fields of <code class="inl">Catalog</code>&rsquo;s
+      schema, a column rename in <code class="inl">Catalog</code> now breaks <code class="inl">Enrollment</code>. Pass
+      the id, or a struct the other context publishes on purpose.</p>
+  </section>
+
+  <section id="graph">
+    <h2>A healthy graph</h2>
+    <div class="prose">
+      <p>Dependencies between contexts form a graph, and the graph should have no cycles. A one-way edge
+        (<code class="inl">Enrollment</code> &rarr; <code class="inl">Catalog</code>) is fine: enrollment needs the
+        catalog, the catalog knows nothing of enrollment. A cycle &mdash; each context calling the other &mdash; means
+        they cannot be understood, tested, or compiled apart, and the boundary is fiction. When you feel a cycle
+        forming, the fix is usually a third context, an event, or moving the shared concept to whichever side truly
+        owns it.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="cpGraphTitle">
+      <h4 id="cpGraphTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">One-way edges, no cycles</h4>
+      <svg viewBox="0 0 720 190" role="img" aria-label="A healthy dependency graph: Enrollment depends one-way on Catalog, Accounts is independent, and a cycle between two contexts is marked as the shape to avoid.">
+        <text x="220" y="22" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#a7c9b1">HEALTHY &mdash; acyclic</text>
+        <rect x="60" y="40" width="150" height="40" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="1.6"></rect>
+        <text x="135" y="64" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#9fc0ea">Enrollment</text>
+        <line x1="210" y1="60" x2="270" y2="60" stroke="#7ba387" stroke-width="2" marker-end="url(#cpArrow)"></line>
+        <rect x="270" y="40" width="130" height="40" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="1.6"></rect>
+        <text x="335" y="64" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#9fc0ea">Catalog</text>
+        <rect x="60" y="98" width="150" height="36" rx="10" fill="#13201a" stroke="#7ba387" stroke-width="1.4"></rect>
+        <text x="135" y="121" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a7c9b1">Accounts (independent)</text>
+        <text x="240" y="50" font-family="Manrope, sans-serif" font-size="7.5" fill="#8fae99">one way</text>
+
+        <text x="560" y="22" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#e08f8b">AVOID &mdash; a cycle</text>
+        <rect x="470" y="40" width="120" height="40" rx="10" fill="#1d1320" stroke="#c4504c" stroke-width="1.4"></rect>
+        <text x="530" y="64" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#e08f8b">Billing</text>
+        <rect x="470" y="104" width="120" height="40" rx="10" fill="#1d1320" stroke="#c4504c" stroke-width="1.4"></rect>
+        <text x="530" y="128" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#e08f8b">Orders</text>
+        <line x1="600" y1="60" x2="600" y2="104" stroke="#c4504c" stroke-width="1.8" marker-end="url(#cpArrowR)"></line>
+        <line x1="560" y1="104" x2="560" y2="80" stroke="#c4504c" stroke-width="1.8" marker-end="url(#cpArrowR)"></line>
+        <text x="635" y="86" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#a87f7c">each calls</text>
+        <text x="635" y="98" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#a87f7c">the other</text>
+
+        <defs>
+          <marker id="cpArrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#7ba387"></path></marker>
+          <marker id="cpArrowR" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#c4504c"></path></marker>
+        </defs>
+      </svg>
+    </figure>
+    <p class="take">A cycle is the clearest signal a boundary is wrong. Two contexts that need each other constantly
+      were probably one context all along &mdash; or there is a missing third that both should depend on.</p>
+  </section>
+
+  <section id="call">
+    <h2>One context calling another</h2>
+    <div class="prose">
+      <p><code class="inl">Enrollment.enroll/2</code> must refuse to enroll in a course that does not exist or is not
+        published. It does so by calling <code class="inl">Catalog</code>&rsquo;s public, non-raising
+        <code class="inl">fetch_course/1</code>, branching on the returned struct&rsquo;s public field, and folding
+        every outcome into the closed <code class="inl">%Portal.Error{}</code> contract. It never imports
+        <code class="inl">Catalog.Course</code> and never calls <code class="inl">Repo</code>.</p>
+    </div>
+    <pre class="code"><span class="op">defmodule</span> <span class="fn blue">Portal.Enrollment</span> <span class="op">do</span>
+  <span class="op">alias</span> <span class="fn blue">Portal.Catalog</span>               <span class="cmt"># depend on Catalog's public API only</span>
+  <span class="op">alias</span> <span class="fn blue">Portal.{EventStore, Error}</span>
+  <span class="op">alias</span> <span class="fn blue">Portal.Enrollment.Enrolled</span>
+
+  <span class="op">@doc</span> <span class="str">"Enroll a user, refusing an unknown or unpublished course."</span>
+  <span class="op">def</span> <span class="fn">enroll</span>(user_id, course_id) <span class="op">do</span>
+    <span class="op">case</span> <span class="fn blue">Catalog</span>.<span class="fn">fetch_course</span>(course_id) <span class="op">do</span>   <span class="cmt"># {:ok, course} | {:error, :not_found}</span>
+      {<span class="res">:ok</span>, %{published: <span class="res">true</span>} = course} ->
+        event = %<span class="fn blue">Enrolled</span>{user_id: user_id, course_id: course.id, at: <span class="fn blue">DateTime</span>.<span class="fn">utc_now</span>()}
+        <span class="fn blue">EventStore</span>.<span class="fn">append</span>(<span class="str">"enrollment:#{user_id}"</span>, [event])
+
+      {<span class="res">:ok</span>, %{published: <span class="res">false</span>}} ->
+        {<span class="res">:error</span>, <span class="fn blue">Error</span>.<span class="fn">new</span>(<span class="res">:course_unpublished</span>)}
+
+      {<span class="res">:error</span>, <span class="res">:not_found</span>} ->
+        {<span class="res">:error</span>, <span class="fn blue">Error</span>.<span class="fn">new</span>(<span class="res">:course_not_found</span>)}
+    <span class="op">end</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+    <p class="take">Notice the variant: composition wants <code class="inl">fetch_course/1</code> returning a tagged
+      tuple, not the raising <code class="inl">get_course!/1</code> a controller uses. A context exposes both so each
+      caller picks the failure mode it can handle.</p>
+  </section>
+
+  <section id="consistency">
+    <h2>Consistency across contexts</h2>
+    <div class="prose">
+      <p>When one operation spans contexts, chain their public calls with <code class="inl">with</code>: each step
+        returns a tagged tuple, the first error short-circuits to <code class="inl">else</code>, and the whole thing
+        returns one <code class="inl">%Portal.Error{}</code>. That is orchestration, not a transaction &mdash; each
+        context owns its own writes. When writes <em>within</em> one context must be all-or-nothing, that context
+        reaches for <code class="inl">Ecto.Multi</code> and a single <code class="inl">Repo.transaction</code>; you do
+        not stretch one transaction across contexts.</p>
+    </div>
+    <pre class="code"><span class="cmt"># orchestrating across contexts: each step is a public call returning a tagged tuple</span>
+<span class="op">def</span> <span class="fn">enroll_and_welcome</span>(user_id, course_id) <span class="op">do</span>
+  <span class="op">with</span> {<span class="res">:ok</span>, course} &lt;- <span class="fn blue">Catalog</span>.<span class="fn">fetch_course</span>(course_id),
+       {<span class="res">:ok</span>, _enr}  &lt;- <span class="fn blue">Enrollment</span>.<span class="fn">enroll</span>(user_id, course.id),
+       {<span class="res">:ok</span>, _msg}  &lt;- <span class="fn blue">Accounts</span>.<span class="fn">notify</span>(user_id, {<span class="res">:enrolled</span>, course.id}) <span class="op">do</span>
+    {<span class="res">:ok</span>, course}
+  <span class="op">else</span>
+    {<span class="res">:error</span>, %<span class="fn blue">Portal.Error</span>{} = err} -> {<span class="res">:error</span>, err}   <span class="cmt"># one closed error shape</span>
+  <span class="op">end</span>
+<span class="op">end</span>
+
+<span class="cmt"># inside ONE context, group writes transactionally with Ecto.Multi (all-or-nothing):</span>
+<span class="cmt">#   Multi.new() |> Multi.insert(:enr, cs) |> Multi.update(:seat, seat_cs) |> Repo.transaction()</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">across contexts</p>
+        <p>Orchestrate public calls with <code class="inl">with</code>; return the closed error.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">within a context</p>
+        <p><code class="inl">Ecto.Multi</code> + one <code class="inl">Repo.transaction</code> for atomicity.</p>
+      </div>
+    </div>
+    <p class="note">That completes F6.04. The domain is a graph of public APIs, each a context, all reachable through the
+      <code class="inl">Portal</code> facade. The next module, <strong>F6.05 &mdash; HEEx &amp; components</strong>,
+      renders these contexts&rsquo; data into markup. Back to <a href="/elixir/phoenix/contexts">the module
+      overview</a> or the <a href="/elixir/phoenix">F6 chapter</a>.</p>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/contexts/vs-facade"><span aria-hidden="true">&larr;</span>&nbsp; F6.04.2 &middot; contexts vs the F5 facade</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/contexts">Back to F6.04 &middot; overview <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var RULES = {
+    api:    { name: 'By public API', means: 'call its public functions', row: 'cpRow_api',
+      desc: 'One context depends on another by calling its named functions \u2014 Enrollment calls Catalog.fetch_course/1. That is the only sanctioned dependency, and it is visible in the alias list.' },
+    id:     { name: 'By id or struct', means: 'pass ids, not internals', row: 'cpRow_id',
+      desc: 'Data crosses a boundary as a course_id or a public struct the other context chooses to publish \u2014 never a private schema. Passing a foreign schema quietly couples the two contexts.' },
+    schema: { name: 'Never the schema', means: 'no foreign Repo', row: 'cpRow_schema',
+      desc: 'No context runs Repo.get(Catalog.Course, id) or builds a query against another context\u2019s tables. Reaching the schema or Repo of a foreign slice breaks the boundary even though it compiles.' }
+  };
+  var ORDER = ['api', 'id', 'schema'];
+  function pick(k) {
+    var R = RULES[k]; if (!R) return;
+    document.querySelectorAll('#cpSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(RULES[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('cpRole'); if (rEl) rEl.textContent = R.name;
+    var dEl = document.getElementById('cpResult'); if (dEl) dEl.textContent = R.means;
+    var oEl = document.getElementById('cpOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + R.name + '</b> \u2014 ' + R.means + '. ' + R.desc;
+  }
+  document.querySelectorAll('#cpSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('api');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

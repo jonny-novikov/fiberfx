@@ -1,0 +1,290 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/lifecycle">lifecycle</a><span class="rsep">/</span><span class="rcur">controllers</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/lifecycle">F6.01</a>
+      <span class="sep">/</span>
+      <span class="here">controllers</span>
+    </div>
+    <p class="eyebrow">F6.01 &middot; part 3 of 3</p>
+    <h1>Controllers, views &amp; the facade <span class="ex">seam</span></h1>
+    <p class="lede">This is where your code lives in the lifecycle, and it is the place the whole F5/F6 split pays off.
+      A <strong>controller action</strong> receives the matched request, calls the <code class="inl">Portal</code>
+      facade, branches on the closed <code class="inl">%Portal.Error{}</code> contract, and hands a
+      <strong>view</strong> its data; the view turns that data into markup. The rule is one sentence: a controller
+      names only <code class="inl">Portal</code> and its error struct &mdash; never <code class="inl">Portal.Engine</code>,
+      never a repo, never a <code class="inl">GenServer.call</code>. Keep that rule and the controller stays a thin
+      translation between HTTP and the engine, which is exactly what let the F5.09 lab promise that F6 would change
+      nothing below the facade.</p>
+    <p class="kicker">See the three players and the one-way seam between them, then read a real controller and the view
+      it renders.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#players">Three players</a>
+      <a href="#seam">The seam, one direction</a>
+      <a href="#code">A controller and its view</a>
+    </div>
+  </section>
+
+  <section id="players">
+    <h2>Three players</h2>
+    <div class="prose">
+      <p>The controller, the view, and the facade each do one job. The controller decides and delegates; the facade
+        holds the domain; the view renders. Select one to see its role &mdash; and notice that only the controller
+        touches the facade, and only the view touches markup.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="cvTitle">
+      <h4 id="cvTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The seam &middot; select a player</h4>
+      <div class="controls">
+        <div class="solid-select" id="cvSel" role="group" aria-label="Player">
+          <button type="button" data-k="controller" class="active">controller</button>
+          <button type="button" data-k="view">view</button>
+          <button type="button" data-k="facade">facade</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three players in the seam: a controller that calls the facade and picks a view, a view that renders assigns, and the Portal facade the controller calls.">
+        <rect id="cvRow_controller" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">CONTROLLER</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">calls Portal.*, branches on %Portal.Error{}, renders a view</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">your code</text>
+
+        <rect id="cvRow_view" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">VIEW / HEEx</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">renders assigns to markup &mdash; calls no engine</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">F6.05</text>
+
+        <rect id="cvRow_facade" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">PORTAL FACADE</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">enroll/2, courses_of/1, progress_of/1 &mdash; the engine&rsquo;s edge</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">F5.08</text>
+      </svg>
+
+      <div class="geo-readout" id="cvOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">player: <span id="cvRole" style="color:#9fc0ea">Controller</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">does: <span id="cvResult" style="color:var(--cream)">calls the facade, picks a view</span></p>
+    </figure>
+    <p class="take">A fat controller is the usual way a web app rots: domain logic leaks into actions until the engine
+      and the web are tangled. The facade rule keeps the controller honest &mdash; if a line is not a facade call, a
+      branch on the result, or a render, it does not belong here.</p>
+  </section>
+
+  <section id="seam">
+    <h2>The seam, one direction</h2>
+    <div class="prose">
+      <p>The relationships only point one way. The controller calls down into the facade and hands data sideways to
+        the view; neither the facade nor the view ever calls back into the controller, and the view never calls the
+        facade. That one-way shape is what makes the web layer replaceable &mdash; swap a controller for a LiveView in
+        F6.06 and the facade below does not change.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="cvSeamTitle">
+      <h4 id="cvSeamTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Controller in the middle, calls down, renders sideways</h4>
+      <svg viewBox="0 0 720 188" role="img" aria-label="The controller action in the middle calls down to the Portal facade and hands assigns sideways to the view; both arrows point away from the controller.">
+        <rect x="260" y="18" width="200" height="46" rx="11" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="360" y="38" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#86a7d8">CONTROLLER ACTION</text>
+        <text x="360" y="54" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#9fc0ea">decide &amp; delegate</text>
+
+        <line x1="320" y1="64" x2="190" y2="120" stroke="#5a87c4" stroke-width="1.6"></line>
+        <text x="210" y="98" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">calls</text>
+        <line x1="400" y1="64" x2="530" y2="120" stroke="#5a6688" stroke-width="1.4"></line>
+        <text x="470" y="98" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#9aa3c0">assigns</text>
+
+        <rect x="60" y="120" width="240" height="48" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="180" y="140" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">PORTAL FACADE &middot; F5</text>
+        <text x="180" y="156" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#7c86a6">dispatch / query</text>
+
+        <rect x="420" y="120" width="240" height="48" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="540" y="140" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">VIEW / HEEx &middot; F6.05</text>
+        <text x="540" y="156" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#7c86a6">renders assigns</text>
+      </svg>
+    </figure>
+    <p class="take">One-way dependencies are the whole game. The controller knows the facade and the view; neither
+      knows the controller. Replace the caller and everything it called stays exactly as it was.</p>
+  </section>
+
+  <section id="code">
+    <h2>A controller and its view</h2>
+    <div class="prose">
+      <p>A write action shows the shape: build nothing, call <code class="inl">Portal.enroll/2</code>, and map its two
+        outcomes onto a redirect with a flash message. The view is a separate module that embeds templates; the HEEx
+        renders only from <code class="inl">assigns</code>, so it has no way to reach the engine even if it wanted to.</p>
+    </div>
+    <pre class="code"><span class="cmt"># the controller: call the facade, branch on the contract, redirect</span>
+<span class="op">defmodule</span> <span class="fn blue">PortalWeb.EnrollmentController</span> <span class="op">do</span>
+  <span class="op">use</span> <span class="fn blue">PortalWeb</span>, <span class="res">:controller</span>
+
+  <span class="op">def</span> <span class="fn">create</span>(conn, %{<span class="str">"user"</span> => uid, <span class="str">"course"</span> => cid}) <span class="op">do</span>
+    <span class="op">case</span> <span class="fn blue">Portal</span>.<span class="fn">enroll</span>(uid, cid) <span class="op">do</span>
+      <span class="res">:ok</span> ->
+        conn |> <span class="fn">put_flash</span>(<span class="res">:info</span>, <span class="str">"Enrolled"</span>) |> <span class="fn">redirect</span>(to: ~p<span class="str">"/courses/#{cid}"</span>)
+
+      {<span class="res">:error</span>, %<span class="fn blue">Portal.Error</span>{message: msg}} ->
+        conn |> <span class="fn">put_flash</span>(<span class="res">:error</span>, msg) |> <span class="fn">redirect</span>(to: ~p<span class="str">"/courses"</span>)
+    <span class="op">end</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+    <div class="prose">
+      <p>The view module embeds its templates; the HEEx draws from <code class="inl">assigns</code> and nothing else:</p>
+    </div>
+    <pre class="code"><span class="cmt"># the view module: embed the templates for this controller</span>
+<span class="op">defmodule</span> <span class="fn blue">PortalWeb.CourseHTML</span> <span class="op">do</span>
+  <span class="op">use</span> <span class="fn blue">PortalWeb</span>, <span class="res">:html</span>
+  <span class="op">embed_templates</span> <span class="str">"course_html/*"</span>
+<span class="op">end</span>
+
+<span class="cmt"># course_html/show.html.heex — renders only from assigns, calls no engine</span>
+&lt;h1&gt;{@course.title}&lt;/h1&gt;
+&lt;progress value={@progress} max=<span class="str">"100"</span>&gt;&lt;/progress&gt;
+&lt;.link navigate={~p<span class="str">"/courses"</span>}&gt;All courses&lt;/.link&gt;</pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">decide &amp; delegate</p>
+        <p>The controller calls the facade and maps the result &mdash; the only domain-aware step.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">render assigns</p>
+        <p>The view turns <code class="inl">assigns</code> into HEEx &mdash; data in, markup out.</p>
+      </div>
+    </div>
+    <p class="note">That completes F6.01. The next module, <strong>F6.02 &mdash; Routing, controllers &amp;
+      plugs</strong>, builds out the match in the middle of the lifecycle. Back to
+      <a href="/elixir/phoenix/lifecycle">the module overview</a> or the <a href="/elixir/phoenix">F6 chapter</a>.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/phoenix/overview.html">Overview &mdash; Phoenix documentation</a> &mdash; the framework at a glance.</li>
+        <li><a href="https://hexdocs.pm/phoenix/request_lifecycle.html">Request life-cycle &mdash; Phoenix documentation</a> &mdash; endpoint to view, where the controller sits.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/phoenix/lifecycle">F6.01 &middot; Architecture &amp; the request lifecycle</a></li>
+        <li><a href="/elixir/phoenix/lifecycle/endpoint">The endpoint &mdash; the lifecycle&rsquo;s entry plug</a></li>
+        <li><a href="/elixir/phoenix/routing">F6.02 &middot; Routing, controllers &amp; plugs</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/lifecycle/endpoint"><span aria-hidden="true">&larr;</span>&nbsp; F6.01.2 &middot; the endpoint</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/lifecycle">Back to F6.01 &middot; overview <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var PLAYERS = {
+    controller: { name: 'Controller', does: 'calls the facade, picks a view', row: 'cvRow_controller',
+      desc: 'The action receives the matched request, calls Portal.* (a command or a query), branches on the closed %Portal.Error{} contract, and renders a view. It is the only player that touches the facade.' },
+    view:       { name: 'View / HEEx', does: 'renders assigns to markup', row: 'cvRow_view',
+      desc: 'A view module embeds templates; the HEEx renders from assigns and calls no engine. Built out in F6.05, and rendered live under LiveView in F6.06.' },
+    facade:     { name: 'Portal facade', does: 'the only call the web makes', row: 'cvRow_facade',
+      desc: 'enroll/2, courses_of/1, progress_of/1 from F5.08 \u2014 the engine\u2019s one public edge. The controller calls it; nothing in the web layer reaches past it to Portal.Engine or a repo.' }
+  };
+  var ORDER = ['controller', 'view', 'facade'];
+  function pick(k) {
+    var P = PLAYERS[k]; if (!P) return;
+    document.querySelectorAll('#cvSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(PLAYERS[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('cvRole'); if (rEl) rEl.textContent = P.name;
+    var dEl = document.getElementById('cvResult'); if (dEl) dEl.textContent = P.does;
+    var oEl = document.getElementById('cvOut'); if (oEl) oEl.innerHTML = 'The <b style="color:' + BLUE + '">' + P.name + '</b> \u2014 ' + P.does + '. ' + P.desc;
+  }
+  document.querySelectorAll('#cvSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('controller');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

@@ -1,0 +1,355 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/pragmatic">pragmatic</a><span class="rsep">/</span><span class="rcur">state</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="hero-copy">
+    <div class="crumbs">
+      <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+      <span class="sep">/</span>
+      <span class="here">F5.06 &middot; state</span>
+    </div>
+    <p class="eyebrow">F5 &middot; the engine &middot; module 6</p>
+    <h1>Where engine state <span class="ex">lives</span></h1>
+    
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#runtime">A home for the fold</a>
+      <a href="#dives">Three deep dives</a>
+    </div>
+    </div>
+
+    <div class="hero-lede">
+      <p class="lede">The fold from F5.05 is pure: it takes the event log and returns the current state, then forgets it.
+      That is fine for a calculation, but the Portal must keep the state alive between thousands of HTTP requests &mdash;
+      the next request needs to see the enrollment the last one recorded. On the BEAM, live in-memory state lives in a
+      <strong>process</strong>. F5.06 picks the process that owns the folded state &mdash; a <strong>GenServer</strong>,
+      an <strong>Agent</strong>, or <strong>ETS</strong> &mdash; builds it around <code class="inl">decide</code> and
+      <code class="inl">evolve</code>, and puts a <strong>supervisor</strong> around that so a crash restarts cleanly
+      and replays the log.</p>
+      <p class="kicker">One process holds the state; one supervisor keeps it alive. Select a piece to see what it does
+      and which dive builds it.</p>
+    </div>
+
+    <div class="hero-art">
+      <figure class="hero-fig" aria-labelledby="bhTitle">
+        <figcaption>
+          <p class="fc-lbl" id="bhTitle">Three BEAM homes, one fit</p>
+        </figcaption>
+        <svg viewBox="0 0 320 300" role="img" aria-label="Three candidate homes for the folded state on the BEAM — GenServer, Agent, and ETS — drawn as a column of cards. A pointer marks the home under test and three capability rows below score it: holds state across requests, runs decide and evolve on every command, and survives a crash under a supervisor. The button steps the pointer to the next home. The GenServer is the only card to score all three, which is why the engine picks it.">
+          <!-- static initial state: GenServer under test, all three capabilities met (visible without JS) -->
+          <rect id="bhCard_gen" x="34" y="16" width="252" height="40" rx="10" fill="#14211c" stroke="#a7c9b1" stroke-width="2"></rect>
+          <text x="92" y="34" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#a7c9b1">GENSERVER</text>
+          <text x="92" y="47" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7.5" fill="#8fb59b">state + logic</text>
+          <text id="bhMark_gen" x="262" y="41" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#a7c9b1">&#9656;</text>
+
+          <rect id="bhCard_agent" x="34" y="62" width="252" height="40" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+          <text x="92" y="80" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">AGENT</text>
+          <text x="92" y="93" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7.5" fill="#6b7494">a held value</text>
+          <text id="bhMark_agent" x="262" y="87" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#3a4263">&#9656;</text>
+
+          <rect id="bhCard_ets" x="34" y="108" width="252" height="40" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+          <text x="92" y="126" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">ETS</text>
+          <text x="92" y="139" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7.5" fill="#6b7494">a shared table</text>
+          <text id="bhMark_ets" x="262" y="133" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#3a4263">&#9656;</text>
+
+          <line x1="34" y1="164" x2="286" y2="164" stroke="#2a3252" stroke-width="1" stroke-dasharray="3 3"></line>
+          <text x="34" y="180" font-family="Manrope, sans-serif" font-size="7.5" letter-spacing="0.06em" fill="#6b7494">SCORING THE HOME UNDER TEST</text>
+
+          <g id="bhScores">
+            <g class="hp-row"><text id="bhTick_hold" x="48" y="204" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#a7c9b1">&#10003;</text><text x="64" y="204" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">holds state across requests</text></g>
+            <g class="hp-row"><text id="bhTick_logic" x="48" y="228" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#a7c9b1">&#10003;</text><text x="64" y="228" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">runs decide &middot; evolve per call</text></g>
+            <g class="hp-row"><text id="bhTick_super" x="48" y="252" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#a7c9b1">&#10003;</text><text x="64" y="252" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">restarts under a supervisor</text></g>
+          </g>
+          <text x="34" y="280" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">three of three &mdash; the fit the engine needs</text>
+        </svg>
+        <div class="hp-ctrls">
+          <button type="button" class="hp-btn" id="bhBtn">&#9656; next home</button>
+          <button type="button" class="hp-btn ghost" id="bhReset">reset</button>
+        </div>
+        <p class="hp-cap" id="bhCap" aria-live="polite">
+          <span class="lst">[ GenServer &middot; 3 / 3 ]</span><br>
+          <span class="ohint">Holds state, runs logic per call, and restarts under a supervisor &mdash; the fit the engine needs.</span>
+        </p>
+      </figure>
+    </div>
+  </section>
+
+  <section id="runtime">
+    <h2>A home for the fold</h2>
+    <div class="prose">
+      <p>Reading the diagram: the event log is the source of truth from F5.05. A process folds it once on start and
+        holds the result, answering commands and queries from that state. A supervisor sits above the process and
+        restarts it if it dies. The three selectable pieces are the three questions this module answers &mdash; which
+        process, how it is built, and what keeps it alive. Select a piece.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="wlTitle">
+      <h4 id="wlTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The running engine &middot; select a piece</h4>
+      <div class="controls">
+        <div class="solid-select" id="wlSel" role="group" aria-label="Engine piece">
+          <button type="button" data-k="holder" class="active">holder</button>
+          <button type="button" data-k="engine">engine</button>
+          <button type="button" data-k="supervisor">supervisor</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 215" role="img" aria-label="The running engine: a supervisor sits above a GenServer process that holds the folded state; the process folds the event log on start and answers commands and queries from its callbacks.">
+        <rect id="wlPart_supervisor" x="255" y="18" width="190" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="350" y="38" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.05em" fill="#8b93b0">SUPERVISOR</text>
+        <text x="350" y="52" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">restarts on crash</text>
+
+        <line x1="350" y1="60" x2="350" y2="86" stroke="#2a3252" stroke-width="1.3" stroke-dasharray="3 3"></line>
+        <text x="408" y="76" font-family="Manrope, sans-serif" font-size="7" fill="#5a6688">supervises</text>
+
+        <rect x="24" y="86" width="160" height="46" rx="10" fill="#10162b" stroke="#46506f" stroke-width="1.3"></rect>
+        <text x="104" y="106" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">EVENT LOG</text>
+        <text x="104" y="120" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">F5.05 &middot; the source</text>
+        <line x1="184" y1="109" x2="222" y2="109" stroke="#3a4263" stroke-width="1.6"></line>
+        <text x="203" y="101" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#6b7494">fold</text>
+
+        <rect id="wlPart_holder" x="222" y="86" width="256" height="46" rx="10" fill="#1d1320" stroke="#c4504c" stroke-width="2"></rect>
+        <text x="350" y="106" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.05em" fill="#b07572">ENGINE &middot; GenServer</text>
+        <text x="350" y="121" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#e08f8b">holds the folded state</text>
+
+        <line x1="350" y1="132" x2="350" y2="156" stroke="#2a3252" stroke-width="1.3" stroke-dasharray="3 3"></line>
+
+        <rect id="wlPart_engine" x="255" y="156" width="190" height="44" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="350" y="176" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#d7cfb9">init &middot; handle_call</text>
+        <text x="350" y="190" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#8b93b0">decide &middot; evolve &middot; reply</text>
+      </svg>
+
+      <div class="geo-readout" id="wlOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">piece: <span id="wlRole" style="color:#e08f8b">Holder</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">in the Portal: <span id="wlResult" style="color:var(--cream)">a GenServer owns the state</span></p>
+    </figure>
+    <p class="take">A pure fold computes the state and lets it go; a process is what holds onto it. Choosing that process
+      and the boundary around it is the whole of this module.</p>
+  </section>
+
+  <section id="dives">
+    <h2>Three deep dives</h2>
+    <div class="prose">
+      <p>In order: which kind of process should hold the state and why; building that process as a GenServer around
+        <code class="inl">decide</code> and <code class="inl">evolve</code>; and the supervisor that restarts it and
+        lets the log rebuild the state.</p>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:1rem;margin-top:1.4rem">
+      <a href="/elixir/pragmatic/state/choosing" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--burgundy);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:#e08f8b">F5.06.1</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Choosing where state lives <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">A GenServer holds state and runs logic, an <code class="inl">Agent</code> holds a value, ETS is a shared table &mdash; the engine needs the first.</div>
+      </a>
+      <a href="/elixir/pragmatic/state/genserver" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--blue-bright)">F5.06.2</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">The engine GenServer <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)"><code class="inl">init</code> folds the log into state; a command call runs <code class="inl">decide</code> then <code class="inl">evolve</code>; a query call reads and replies.</div>
+      </a>
+      <a href="/elixir/pragmatic/state/supervision" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--gold-bright)">F5.06.3</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Supervision <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">Let it crash: a supervisor restarts the engine, and <code class="inl">init</code> replays the log so the state returns.</div>
+      </a>
+    </div>
+
+    <div class="bridge" style="margin-top:1.8rem">
+      <div class="cell idea">
+        <p class="lbl">F5.05 &middot; state as a fold</p>
+        <p>The reducer computes the current state from the event log &mdash; pure, deterministic, and gone the moment it returns.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">F5.06 &middot; a home for it</p>
+        <p>A GenServer folds the log once and holds the result; a supervisor keeps that process alive across restarts.</p>
+      </div>
+    </div>
+    <p class="note">Start with <a href="/elixir/pragmatic/state/choosing">choosing where state lives</a>, then
+      <a href="/elixir/pragmatic/state/genserver">the engine GenServer</a>, then
+      <a href="/elixir/pragmatic/state/supervision">supervision</a>. The next module, F5.07 &mdash; Pragmatic testing,
+      tests the pure core and the engine boundary. For the runtime path this module sits on, see the design brief:
+      <a href="/elixir/pragmatic/flow">the command &amp; event flow</a>.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Holding state in a process, and the choices for where it lives.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/elixir/GenServer.html">Elixir &mdash; GenServer</a> &mdash; stateful server processes.</li>
+        <li><a href="https://hexdocs.pm/elixir/Agent.html">Elixir &mdash; Agent</a> &mdash; simple shared state.</li>
+        <li><a href="https://www.erlang.org/doc/man/ets.html">Erlang &mdash; ETS</a> &mdash; in-memory term storage.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/pragmatic/state/choosing">F5.06.1 &middot; Choosing where state lives</a></li>
+        <li><a href="/elixir/pragmatic/state/genserver">F5.06.2 &middot; The engine GenServer</a></li>
+        <li><a href="/elixir/pragmatic/state/supervision">F5.06.3 &middot; Supervision</a></li>
+        <li><a href="/elixir/pragmatic/cqrs">F5.05 &middot; Commands, queries &amp; events</a> &mdash; the fold this state comes from.</li>
+        <li><a href="/elixir/pragmatic/flow">F5.0.3 &middot; The command &amp; event flow</a> &mdash; the runtime path this sits on.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/pragmatic"><span aria-hidden="true">&larr;</span>&nbsp; F5 &middot; overview</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/pragmatic/state/choosing">Start &middot; choosing where state lives <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BURG = '#e08f8b', BURG_MUTE = '#c4504c';
+  var PIECES = {
+    holder:     { name: 'Holder', detail: 'a GenServer owns the state', part: 'wlPart_holder',
+      desc: 'The choice of F5.06.1. Live state on the BEAM lives in a process; the engine uses a GenServer because it must hold state and run logic on every command, not only stash a value.' },
+    engine:     { name: 'Engine', detail: 'fold on init, decide on call', part: 'wlPart_engine',
+      desc: 'The build of F5.06.2. init folds the event log into the starting state once; a command call runs decide then evolve and keeps the new state; a query call reads and replies, state unchanged.' },
+    supervisor: { name: 'Supervisor', detail: 'restart, then replay', part: 'wlPart_supervisor',
+      desc: 'The boundary of F5.06.3. If the engine crashes, the supervisor starts a fresh one and init folds the log again \u2014 the log is the source of truth, so the state comes back.' }
+  };
+  var ORDER = ['holder', 'engine', 'supervisor'];
+  function pick(k) {
+    var P = PIECES[k]; if (!P) return;
+    document.querySelectorAll('#wlSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var part = document.getElementById(PIECES[id].part), on = id === k;
+      if (part) { part.setAttribute('stroke', on ? BURG_MUTE : '#3a4263'); part.setAttribute('stroke-width', on ? '2' : '1.3'); part.setAttribute('fill', on ? '#1d1320' : '#10162b'); }
+    });
+    var rEl = document.getElementById('wlRole'); if (rEl) rEl.textContent = P.name;
+    var dEl = document.getElementById('wlResult'); if (dEl) dEl.textContent = P.detail;
+    var oEl = document.getElementById('wlOut'); if (oEl) oEl.innerHTML = 'The <b style="color:' + BURG + '">' + P.name + '</b> \u2014 <code class="inl">' + P.detail + '</code>. ' + P.desc;
+  }
+  document.querySelectorAll('#wlSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('holder');
+
+  /* ---------- hero concept: step the home under test, score its fit ---------- */
+  (function () {
+    var btn = document.getElementById('bhBtn');
+    var reset = document.getElementById('bhReset');
+    var cap = document.getElementById('bhCap');
+    var scores = document.getElementById('bhScores');
+    if (!btn || !reset || !cap || !scores) return;
+    var SAGE = '#a7c9b1', DIM = '#3a4263', MISS = '#c4504c';
+    var HOMES = [
+      { k: 'gen',   name: 'GenServer', hold: true, logic: true, super: true,
+        note: 'Holds state, runs logic per call, and restarts under a supervisor — the fit the engine needs.' },
+      { k: 'agent', name: 'Agent', hold: true, logic: false, super: true,
+        note: 'Holds a value and restarts under a supervisor, but a query passes a function in; decide and evolve do not live here.' },
+      { k: 'ets',   name: 'ETS', hold: true, logic: false, super: false,
+        note: 'A fast shared table that holds rows, but it runs no command logic and an owner crash drops the table.' }
+    ];
+    var TICKS = [
+      { id: 'bhTick_hold', key: 'hold' },
+      { id: 'bhTick_logic', key: 'logic' },
+      { id: 'bhTick_super', key: 'super' }
+    ];
+    var at = 0;
+    function setMark(k, on) {
+      var m = document.getElementById('bhMark_' + k);
+      if (m) m.setAttribute('fill', on ? SAGE : DIM);
+    }
+    function setCard(k, on) {
+      var c = document.getElementById('bhCard_' + k);
+      if (c) { c.setAttribute('stroke', on ? SAGE : DIM); c.setAttribute('stroke-width', on ? '2' : '1.3'); c.setAttribute('fill', on ? '#14211c' : '#10162b'); }
+    }
+    function render(animate) {
+      var H = HOMES[at], met = 0, i;
+      for (i = 0; i < HOMES.length; i++) { setMark(HOMES[i].k, i === at); setCard(HOMES[i].k, i === at); }
+      TICKS.forEach(function (t) {
+        var ok = H[t.key]; if (ok) met += 1;
+        var el = document.getElementById(t.id);
+        if (el) { el.setAttribute('fill', ok ? SAGE : MISS); el.textContent = ok ? '✓' : '✕'; }
+      });
+      scores.querySelectorAll('.hp-row').forEach(function (r) {
+        r.classList.remove('hp-new'); if (animate) { void r.getBoundingClientRect().width; r.classList.add('hp-new'); }
+      });
+      cap.innerHTML = '<span class="lst">[ ' + H.name + ' &middot; ' + met + ' / 3 ]</span><br>' +
+        '<span class="ohint">' + H.note + '</span>';
+    }
+    btn.addEventListener('click', function () { at = (at + 1) % HOMES.length; render(true); });
+    reset.addEventListener('click', function () { at = 0; render(false); });
+    render(false);
+  })();
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

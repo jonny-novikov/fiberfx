@@ -1,0 +1,336 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/pragmatic">pragmatic</a><span class="rsep">/</span><a href="/elixir/pragmatic/cqrs">cqrs</a><span class="rsep">/</span><span class="rcur">reducer</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/pragmatic">F5</a>
+      <span class="sep">/</span>
+      <a href="/elixir/pragmatic/cqrs">F5.05</a>
+      <span class="sep">/</span>
+      <span class="here">reducer</span>
+    </div>
+    <p class="eyebrow">F5.05 &middot; part 3 of 3</p>
+    <h1>The engine as a reducer</h1>
+    <p class="lede">Once every change is an event, state stops being something you mutate and becomes something you
+      <strong>fold</strong>. The engine is two pure functions: <strong>decide</strong> takes the current state and a
+      command and returns the events it produces, and <strong>evolve</strong> takes the state and one event and
+      returns the next state. Run <code class="inl">evolve</code> across the whole event log with a single
+      <code class="inl">Enum.reduce/3</code> and you have replayed the engine to its current state. Because the
+      functions are pure and the events are ordered, the result is deterministic: the same log always folds to the
+      same state &mdash; on restart, in a test, or on another node.</p>
+    <p class="kicker">Three events, folded left into state. Select one to see the step it performs.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#fold">Folding the log</a>
+      <a href="#code">In code</a>
+      <a href="#replay-progress">Replaying to a point</a>
+    </div>
+  </section>
+
+  <section id="fold">
+    <h2>Folding the log</h2>
+    <div class="prose">
+      <p>Start from an empty state, <code class="inl">s0</code>. Apply the first event to get
+        <code class="inl">s1</code>, the second to get <code class="inl">s2</code>, and so on; the last state is the
+        current one. Each step uses only the running accumulator and the next event, which is the shape of a left
+        fold. Select a step.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="rdTitle">
+      <h4 id="rdTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Reduce over events &middot; select a step</h4>
+      <div class="controls">
+        <div class="solid-select" id="rdSel" role="group" aria-label="Fold step">
+          <button type="button" data-k="e1" class="active">apply 1</button>
+          <button type="button" data-k="e2">apply 2</button>
+          <button type="button" data-k="e3">apply 3</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 180" role="img" aria-label="A left fold over three events: s0 plus LearnerEnrolled gives s1, plus LessonDelivered gives s2, plus ProgressRecorded gives s3, the current state.">
+        <circle cx="60" cy="96" r="24" fill="#10162b" stroke="#46506f" stroke-width="1.3"></circle>
+        <text x="60" y="100" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8b93b0">s0</text>
+
+        <line id="rdArrow_e1" x1="86" y1="96" x2="232" y2="96" stroke="#d4a85a" stroke-width="2"></line>
+        <text x="159" y="86" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#c9a877">LearnerEnrolled</text>
+        <circle id="rdState_s1" cx="258" cy="96" r="24" fill="#241d10" stroke="#d4a85a" stroke-width="2"></circle>
+        <text x="258" y="100" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#f0cd7f">s1</text>
+
+        <line id="rdArrow_e2" x1="284" y1="96" x2="430" y2="96" stroke="#3a4263" stroke-width="1.6"></line>
+        <text x="357" y="86" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">LessonDelivered</text>
+        <circle id="rdState_s2" cx="456" cy="96" r="24" fill="#10162b" stroke="#46506f" stroke-width="1.3"></circle>
+        <text x="456" y="100" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8b93b0">s2</text>
+
+        <line id="rdArrow_e3" x1="482" y1="96" x2="628" y2="96" stroke="#3a4263" stroke-width="1.6"></line>
+        <text x="555" y="86" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">ProgressRecorded</text>
+        <circle id="rdState_s3" cx="654" cy="96" r="24" fill="#10162b" stroke="#46506f" stroke-width="1.3"></circle>
+        <text x="654" y="100" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8b93b0">s3</text>
+
+        <text x="360" y="150" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#5a6688">state = Enum.reduce(events, s0, &amp;evolve/2)</text>
+      </svg>
+
+      <div class="geo-readout" id="rdOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">step: <span id="rdRole" style="color:#f0cd7f">apply LearnerEnrolled</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">transition: <span id="rdResult" style="color:var(--cream)">s0 &rarr; s1</span></p>
+    </figure>
+    <p class="take">State is a fold of its history. Keep the events and you can always recompute the present &mdash; which
+      is why the log, not the snapshot, is the thing that matters.</p>
+  </section>
+
+  <section id="code">
+    <h2>In code</h2>
+    <div class="prose">
+      <p>Two pure functions and a <code class="inl">reduce</code>. <code class="inl">evolve/2</code> has one clause per
+        event and returns the next state; <code class="inl">replay/1</code> folds the whole log from the empty state.
+        A command path runs <code class="inl">decide</code> to produce events, appends them, and applies them &mdash;
+        the same <code class="inl">evolve</code> on the way in and on replay.</p>
+    </div>
+    <pre class="code"><span class="cmt"># the engine is two pure functions:</span>
+<span class="cmt">#   decide: (state, command) -> [event]   — validate, then emit (F5.04 contract runs here)</span>
+<span class="cmt">#   evolve: (state, event)   -> state      — fold one event in</span>
+
+<span class="op">def</span> <span class="fn">replay</span>(events), <span class="op">do:</span> <span class="fn gold">Enum</span>.<span class="fn">reduce</span>(events, <span class="fn">initial_state</span>(), &amp;<span class="fn">evolve</span>/<span class="res">2</span>)
+
+<span class="op">defp</span> <span class="fn">evolve</span>(%<span class="fn gold">LearnerEnrolled</span>{} = e, state),
+  <span class="op">do:</span> <span class="fn">put_in</span>(state.enrollments[e.user_id], e)
+
+<span class="op">defp</span> <span class="fn">evolve</span>(%<span class="fn gold">ProgressRecorded</span>{} = e, state),
+  <span class="op">do:</span> <span class="fn">put_in</span>(state.enrollments[e.enrollment_id].progress, e.percent)</pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">decide, then evolve</p>
+        <p>A command produces events; each event folds into the next state.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">one reduce</p>
+        <p>Folding the log replays the engine to now &mdash; deterministic, every time.</p>
+      </div>
+    </div>
+    <p class="note">That closes F5.05: writes and reads are separate, changes are events, and state is their fold. The
+      next module, F5.06 &mdash; Where engine state lives, picks the process that holds this folded state &mdash; a
+      GenServer, an Agent, ETS. Back to <a href="/elixir/pragmatic/cqrs">the module overview</a> or
+      <a href="/elixir/pragmatic">the chapter</a>.</p>
+  </section>
+
+  <section id="replay-progress" class="reveal" aria-labelledby="replayTitle">
+    <h2 id="replayTitle">Replaying to a point: state as of an earlier event</h2>
+    <div class="prose">
+      <p>The <code class="inl">replay/1</code> above folds the <em>whole</em> log into the present:
+        <code class="inl">Enum.reduce(events, initial_state(), &amp;evolve/2)</code>. Nothing about that fold demands
+        the full history. Hand it a <strong>prefix</strong> instead &mdash; the first <span class="math">n</span> events
+        &mdash; and the same <code class="inl">evolve</code> clauses reconstruct the state the engine held <em>as of</em>
+        that earlier point, with no snapshot kept for the moment. Where <code class="inl">replay/1</code> answers
+        &ldquo;what is the state now?&rdquo;, folding a prefix answers &ldquo;what was the state then?&rdquo;.</p>
+      <p>The selector picks the prefix; <code class="inl">replay/1</code> folds it. <code class="inl">Enum.take(log, n)</code>
+        cuts by count; <code class="inl">Enum.take_while(log, pred)</code> cuts at the first event that fails a test
+        &mdash; up to a given timestamp or id, say. Either feeds the prefix into the established fold:
+        <code class="inl">Enum.reduce(prefix, initial_state(), &amp;evolve/2)</code>. The result depends only on which
+        events precede the cut and on their order, so the reconstruction is deterministic and repeatable.</p>
+      <p>This is the <strong>temporal query</strong> Martin Fowler attaches to <strong>Event Sourcing</strong>: because
+        the current state is the left fold of an ordered, append-only log, any earlier state is the fold of an earlier
+        prefix &mdash; the history is auditable and every past moment is recomputable without storing it. The one rule
+        is the rule of any fold: the events, folded in their recorded order, must always yield the same state.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="rpTitle">
+      <h4 id="rpTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Folding a prefix of the log to reconstruct an earlier state</h4>
+      <svg viewBox="0 0 720 200" role="img" aria-label="An ordered event log of two LearnerEnrolled events with a cut after the first. Folding only the prefix before the cut with Enum.reduce and evolve/2 reconstructs the engine state as of that point: an enrollments map holding one learner, USR-9, with USR-4 not yet present.">
+        <!-- ordered event log (left column) -->
+        <text x="20" y="26" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.12em" fill="#7e87a6">EVENT LOG · APPEND-ONLY</text>
+        <g font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">
+          <rect x="20" y="40" width="244" height="30" rx="8" fill="#1a241c" stroke="#7ba387" stroke-width="1.4"></rect>
+          <text x="34" y="59">%LearnerEnrolled&#123;"USR-9"&#125;</text>
+          <rect x="20" y="118" width="244" height="30" rx="8" fill="#10162b" stroke="#3a4263" stroke-width="1.2"></rect>
+          <text x="34" y="137">%LearnerEnrolled&#123;"USR-4"&#125;</text>
+        </g>
+
+        <!-- the cut: prefix above, future below -->
+        <line x1="20" y1="92" x2="264" y2="92" stroke="#d4a85a" stroke-width="1.4" stroke-dasharray="5 5"></line>
+        <text x="264" y="89" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.06em" fill="#c9a877">take(log, 1) · the cut</text>
+        <text x="20" y="166" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.04em" fill="#5a6688">after the cut — not folded</text>
+
+        <!-- fold arrow into the accumulator (prefix only) -->
+        <path class="rp-flow" d="M264 55 C 348 55, 388 96, 470 96"></path>
+        <polygon points="470,91 482,96 470,101" fill="#7ba387"></polygon>
+        <text x="372" y="182" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.04em" fill="#5a6688">Enum.reduce(prefix, initial_state(), &amp;evolve/2)</text>
+
+        <!-- reconstructed accumulator (right card): the enrollments map as of the cut -->
+        <rect x="488" y="40" width="214" height="118" rx="12" fill="#1a241c" stroke="#7ba387" stroke-width="1.6"></rect>
+        <text x="504" y="62" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#a7c9b1">state as of the cut</text>
+        <g font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">
+          <text x="504" y="86">enrollments: %&#123;</text>
+          <text x="518" y="104">"USR-9" =&gt; %LearnerE…</text>
+          <text x="504" y="122">&#125;</text>
+        </g>
+        <text x="504" y="146" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#6b7494">map_size: 1 · "USR-4" absent</text>
+      </svg>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">prefix of 1 event &rarr; <span style="color:var(--sage-bright)">enrollments holds only "USR-9"</span> &middot; the second enrolment is after the cut</p>
+    </figure>
+
+    <pre class="code"><span class="cmt"># reuse the engine's replay/1 unchanged — the whole-log fold from above:</span>
+<span class="cmt">#   def replay(events), do: Enum.reduce(events, initial_state(), &amp;evolve/2)</span>
+<span class="cmt"># a prefix selector + the same fold reconstructs the state as of an earlier event.</span>
+<span class="op">def</span> <span class="fn">replay_until</span>(events, n), <span class="op">do:</span> events |> <span class="fn gold">Enum</span>.<span class="fn">take</span>(n) |> <span class="fn">replay</span>()
+
+log = [
+  %<span class="fn gold">LearnerEnrolled</span>{id: <span class="str">"EVT-1"</span>, user_id: <span class="str">"USR-9"</span>, course_id: <span class="str">"CRS-7"</span>, at: t1},
+  %<span class="fn gold">LearnerEnrolled</span>{id: <span class="str">"EVT-2"</span>, user_id: <span class="str">"USR-4"</span>, course_id: <span class="str">"CRS-7"</span>, at: t2}
+]
+
+<span class="cmt"># now: the whole log folded — both enrolments are present</span>
+<span class="fn">replay</span>(log).enrollments |> <span class="fn gold">Map</span>.<span class="fn">keys</span>() |> <span class="fn gold">Enum</span>.<span class="fn">sort</span>()
+<span class="cmt"># => ["USR-4", "USR-9"]</span>
+
+<span class="cmt"># then: replay to the point after the first event only — a prefix fold,</span>
+<span class="cmt"># with no snapshot kept for that moment (audit / temporal query)</span>
+<span class="op">as_of_first</span> = <span class="fn">replay_until</span>(log, <span class="res">1</span>)
+<span class="fn gold">Map</span>.<span class="fn">keys</span>(as_of_first.enrollments)
+<span class="cmt"># => ["USR-9"]</span>
+<span class="fn gold">Map</span>.<span class="fn">has_key?</span>(as_of_first.enrollments, <span class="str">"USR-4"</span>)
+<span class="cmt"># => false   — USR-4 enrolled after the cut, so the earlier state never held it</span>
+
+<span class="cmt"># the cut can be a predicate instead of a count — fold up to a timestamp/id:</span>
+<span class="op">before_evt2</span> = log |> <span class="fn gold">Enum</span>.<span class="fn">take_while</span>(<span class="op">fn</span> e -> e.id != <span class="str">"EVT-2"</span> <span class="op">end</span>) |> <span class="fn">replay</span>()
+<span class="fn gold">map_size</span>(before_evt2.enrollments)
+<span class="cmt"># => 1   — same prefix, same reconstructed state</span></pre>
+    <p class="take">A prefix of the log folds to the state as of its last event. Keep the events in order and any past
+      moment is recomputable from them &mdash; the log is auditable, and an earlier state is the fold of an earlier
+      prefix, never a stored snapshot.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://martinfowler.com/bliki/CQRS.html">Martin Fowler &mdash; CQRS</a> &mdash; separate the write model from the read model.</li>
+        <li><a href="https://martinfowler.com/eaaDev/EventSourcing.html">Martin Fowler &mdash; Event Sourcing</a> &mdash; state as a log of events to fold over.</li>
+        <li><a href="https://hexdocs.pm/commanded/Commanded.html">Commanded</a> &mdash; CQRS/ES building blocks in Elixir.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/functional/folds/reduce">F2.05 &middot; reduce, the left fold</a></li>
+        <li><a href="/elixir/pragmatic/cqrs/events">F5.05.2 &middot; Events as the record of change</a></li>
+        <li><a href="/elixir/pragmatic/state">F5.06 &middot; Where engine state lives</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/pragmatic/cqrs/events"><span aria-hidden="true">&larr;</span>&nbsp; F5.05.2 &middot; events</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/pragmatic/cqrs">Back to F5.05 <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var GOLD = '#f0cd7f', GOLD_MUTE = '#d4a85a', DIM = '#46506f';
+  var STEPS = {
+    e1: { name: 'apply LearnerEnrolled', trans: 's0 \u2192 s1', arrow: 'rdArrow_e1', state: 'rdState_s1',
+      desc: 'Folding the first event onto the empty state records the enrollment. evolve(s0, %LearnerEnrolled{}) returns s1, a state in which the learner is on the course.' },
+    e2: { name: 'apply LessonDelivered', trans: 's1 \u2192 s2', arrow: 'rdArrow_e2', state: 'rdState_s2',
+      desc: 'The next event folds onto s1. Each event is applied to the running accumulator, so order is preserved and the result is deterministic.' },
+    e3: { name: 'apply ProgressRecorded', trans: 's2 \u2192 s3', arrow: 'rdArrow_e3', state: 'rdState_s3',
+      desc: 'The last event moves the enrollment\u2019s progress. s3 is the current state \u2014 the sum of every event, computed by one reduce.' }
+  };
+  var ARROWS = ['rdArrow_e1', 'rdArrow_e2', 'rdArrow_e3'], STATES = ['rdState_s1', 'rdState_s2', 'rdState_s3'];
+  function pick(k) {
+    var S = STEPS[k]; if (!S) return;
+    document.querySelectorAll('#rdSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ARROWS.forEach(function (id) {
+      var a = document.getElementById(id), on = id === S.arrow;
+      if (a) { a.setAttribute('stroke', on ? GOLD_MUTE : '#3a4263'); a.setAttribute('stroke-width', on ? '2' : '1.6'); }
+    });
+    STATES.forEach(function (id) {
+      var c = document.getElementById(id), on = id === S.state;
+      if (c) { c.setAttribute('stroke', on ? GOLD_MUTE : DIM); c.setAttribute('stroke-width', on ? '2' : '1.3'); c.setAttribute('fill', on ? '#241d10' : '#10162b'); }
+    });
+    var rEl = document.getElementById('rdRole'); if (rEl) rEl.textContent = S.name;
+    var tEl = document.getElementById('rdResult'); if (tEl) tEl.textContent = S.trans;
+    var oEl = document.getElementById('rdOut'); if (oEl) oEl.innerHTML = '<b style="color:' + GOLD + '">' + S.name + '</b> \u2014 ' + S.trans + '. ' + S.desc;
+  }
+  document.querySelectorAll('#rdSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('e1');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

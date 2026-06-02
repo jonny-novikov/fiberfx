@@ -1,0 +1,299 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/deployment">deployment</a><span class="rsep">/</span><span class="rcur">auth</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/deployment">F6.08</a>
+      <span class="sep">/</span>
+      <span class="here">auth</span>
+    </div>
+    <p class="eyebrow">F6.08 &middot; part 1 of 3</p>
+    <h1>Sessions &amp; <span class="ex">authentication</span></h1>
+    <p class="lede">Authentication in Phoenix is not a framework you bolt on &mdash; it is mostly code you generate and
+      then own. <code class="inl">mix phx.gen.auth Accounts User users</code> writes an <strong>Accounts context</strong>
+      (exactly the F6.04 shape), a <code class="inl">User</code> schema with a hashed-password field, a token schema,
+      the registration and login LiveViews and controllers, and the session plumbing &mdash; then you read it, run its
+      migration, and adjust it like any other code. Three pieces carry the weight. The <strong>session</strong> is a
+      signed cookie: on login the app verifies the password with bcrypt and stores a <em>token</em> in the cookie, not
+      the password and not the user struct. A <strong>plug</strong>, <code class="inl">fetch_current_user</code>, runs
+      in the browser pipeline on every request, reads that token, and puts <code class="inl">current_user</code> into
+      <code class="inl">conn.assigns</code> so controllers and templates can see it. And because a LiveView holds a
+      long-lived socket rather than a request, it enforces auth with <strong><code class="inl">on_mount</code></strong>
+      &mdash; a hook that runs before the socket connects and can halt and redirect. Password hashing, CSRF, and token
+      expiry come built in; what you decide is which routes require a user.</p>
+    <p class="kicker">Four parts: the three moving pieces, the login flow end to end, protecting routes in the router,
+      and enforcing auth in a LiveView with <code class="inl">on_mount</code>.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#what">Session, plug, on_mount</a>
+      <a href="#flow">The login flow</a>
+      <a href="#router">Protecting routes</a>
+      <a href="#live">Enforcing it in LiveView</a>
+    </div>
+  </section>
+
+  <section id="what">
+    <h2>Session, plug, on_mount</h2>
+    <div class="prose">
+      <p>Three pieces make up auth. The <strong>session</strong> is a signed cookie carrying a token. A
+        <strong>plug</strong> reads it and loads <code class="inl">current_user</code> into the connection.
+        <strong><code class="inl">on_mount</code></strong> does the same enforcement for a LiveView, before it
+        connects. Select one.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="auTitle">
+      <h4 id="auTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Authentication &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="auSel" role="group" aria-label="Auth piece">
+          <button type="button" data-k="session" class="active">the session</button>
+          <button type="button" data-k="plug">a plug</button>
+          <button type="button" data-k="onmount">on_mount</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three auth pieces: the session is a signed cookie with a token, a plug loads the current user into the connection, and on_mount enforces auth in a LiveView.">
+        <rect id="auRow_session" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">THE SESSION</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">a signed cookie carrying a token &mdash; not the password</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">state</text>
+
+        <rect id="auRow_plug" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">a plug</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">fetch_current_user &mdash; loads the user into conn.assigns</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">per request</text>
+
+        <rect id="auRow_onmount" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">on_mount</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">checks auth before a LiveView mounts &mdash; cont or halt</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">per socket</text>
+      </svg>
+
+      <div class="geo-readout" id="auOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">piece: <span id="auRole" style="color:#9fc0ea">the session</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">is: <span id="auResult" style="color:var(--cream)">a signed cookie with a token</span></p>
+    </figure>
+    <p class="take">Storing a token rather than the user means the cookie carries no secrets and can be invalidated
+      server-side. The password itself is only ever compared as a bcrypt hash &mdash; it is never stored or sent in the
+      session.</p>
+  </section>
+
+  <section id="flow">
+    <h2>The login flow</h2>
+    <div class="prose">
+      <p>Login is one pass through the layers you already know. The form submits an email and password; the Accounts
+        context looks the user up and verifies the password with bcrypt; on success a token is written into the
+        session cookie. On every later request the <code class="inl">fetch_current_user</code> plug reads the cookie
+        and assigns <code class="inl">current_user</code>, so a protected route checks that assign.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="auFlowTitle">
+      <h4 id="auFlowTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">log in &rarr; token in cookie &rarr; plug loads the user</h4>
+      <svg viewBox="0 0 720 196" role="img" aria-label="A login submits credentials, the context verifies the password with bcrypt and stores a token in the session cookie, and on later requests a plug reads the cookie and assigns the current user.">
+        <text x="180" y="22" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">LOGIN (once)</text>
+        <rect x="30" y="34" width="300" height="28" rx="8" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="180" y="52" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">submit email + password</text>
+        <line x1="180" y1="62" x2="180" y2="74" stroke="#5a6688" stroke-width="1.4"></line>
+        <rect x="30" y="74" width="300" height="28" rx="8" fill="#11203a" stroke="#5a87c4" stroke-width="1.6"></rect>
+        <text x="180" y="92" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#9fc0ea">Accounts: verify password (bcrypt)</text>
+        <line x1="180" y1="102" x2="180" y2="114" stroke="#5a6688" stroke-width="1.4"></line>
+        <rect x="30" y="114" width="300" height="28" rx="8" fill="#13201a" stroke="#7ba387" stroke-width="1.3"></rect>
+        <text x="180" y="132" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#a7c9b1">put token in the session cookie</text>
+
+        <text x="540" y="22" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#86a7d8">EVERY LATER REQUEST</text>
+        <rect x="390" y="34" width="300" height="28" rx="8" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="540" y="52" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">request carries the cookie</text>
+        <line x1="540" y1="62" x2="540" y2="74" stroke="#5a6688" stroke-width="1.4"></line>
+        <rect x="390" y="74" width="300" height="28" rx="8" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="540" y="92" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#9fc0ea">plug: fetch_current_user</text>
+        <line x1="540" y1="102" x2="540" y2="114" stroke="#5a6688" stroke-width="1.4"></line>
+        <rect x="390" y="114" width="300" height="28" rx="8" fill="#0d1322" stroke="#3a4263" stroke-width="1.2"></rect>
+        <text x="540" y="132" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#c8d6ee">conn.assigns.current_user is set</text>
+
+        <line x1="330" y1="128" x2="390" y2="48" stroke="#5a87c4" stroke-width="1.2" stroke-dasharray="4 3"></line>
+        <text x="360" y="170" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">the token, written once, identifies the user on every request that follows</text>
+        <text x="360" y="186" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#4a5478">a protected route checks current_user; no user, no entry</text>
+      </svg>
+    </figure>
+    <p class="take">The lookup-and-verify step is plain context code &mdash;
+      <code class="inl">get_user_by_email_and_password/2</code> returns the user or <code class="inl">nil</code>. The web
+      layer never touches password hashes; it asks the domain and trusts the answer.</p>
+  </section>
+
+  <section id="router">
+    <h2>Protecting routes</h2>
+    <div class="prose">
+      <p>The generator adds <code class="inl">fetch_current_user</code> to the <code class="inl">:browser</code>
+        pipeline so every page knows the current user, and a <code class="inl">require_authenticated_user</code> plug
+        you add to a pipeline for routes that demand one. Pages stay public by default; you opt specific scopes into
+        requiring a login &mdash; the same pipeline composition from F6.02.</p>
+    </div>
+    <pre class="code"><span class="cmt"># the generated plug puts current_user in conn.assigns on every request</span>
+<span class="op">pipeline</span> <span class="res">:browser</span> <span class="op">do</span>
+  <span class="op">plug</span> <span class="res">:fetch_session</span>
+  <span class="op">plug</span> <span class="res">:fetch_current_user</span>
+<span class="op">end</span>
+
+<span class="cmt"># these routes require a logged-in user; public routes stay outside</span>
+<span class="op">scope</span> <span class="str">"/"</span>, <span class="fn blue">PortalWeb</span> <span class="op">do</span>
+  <span class="op">pipe_through</span> [<span class="res">:browser</span>, <span class="res">:require_authenticated_user</span>]
+  <span class="op">live</span> <span class="str">"/catalog"</span>, <span class="fn blue">CatalogLive</span>
+<span class="op">end</span></pre>
+    <p class="take">Authorization &mdash; who may do what &mdash; is a separate question you answer in the context with
+      the <code class="inl">current_user</code>. The router handles only authentication: is there a user at all.</p>
+  </section>
+
+  <section id="live">
+    <h2>Enforcing it in LiveView</h2>
+    <div class="prose">
+      <p>A protected LiveView cannot rely on a request-time plug for its whole life, so it uses
+        <code class="inl">on_mount</code>: a hook grouped under a <code class="inl">live_session</code> that runs as
+        the LiveView mounts. It loads the user from the session and returns <code class="inl">{:cont, socket}</code> to
+        proceed or <code class="inl">{:halt, redirect(...)}</code> to bounce an anonymous visitor &mdash; before the
+        socket connects or any data loads.</p>
+    </div>
+    <pre class="code"><span class="cmt"># group protected LiveViews and run an on_mount hook as they mount</span>
+<span class="op">live_session</span> <span class="res">:authenticated</span>,
+  on_mount: [{<span class="fn blue">PortalWeb.UserAuth</span>, <span class="res">:ensure_authenticated</span>}] <span class="op">do</span>
+  <span class="op">live</span> <span class="str">"/catalog"</span>, <span class="fn blue">CatalogLive</span>
+<span class="op">end</span>
+
+<span class="cmt"># in PortalWeb.UserAuth</span>
+<span class="op">def</span> <span class="fn">on_mount</span>(<span class="res">:ensure_authenticated</span>, _params, session, socket) <span class="op">do</span>
+  socket = <span class="fn">mount_current_user</span>(socket, session)
+
+  <span class="op">if</span> socket.assigns.current_user <span class="op">do</span>
+    {<span class="res">:cont</span>, socket}
+  <span class="op">else</span>
+    {<span class="res">:halt</span>, <span class="fn">redirect</span>(socket, to: <span class="fn">~p</span><span class="str">"/users/log_in"</span>)}
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">requests</p>
+        <p>A plug loads <code class="inl">current_user</code> per request, in the pipeline.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">sockets</p>
+        <p><code class="inl">on_mount</code> enforces it per LiveView, before connecting.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/phoenix/deployment/releases"><strong>releases &amp; config</strong></a>
+      &mdash; with auth in place, the app needs to be packaged to run on a server, with its secrets supplied at boot.</p>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/deployment"><span aria-hidden="true">&larr;</span>&nbsp; F6.08 &middot; overview</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/deployment/releases">Next &middot; releases &amp; config <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var P = {
+    session: { name: 'the session', is: 'a signed cookie with a token', row: 'auRow_session',
+      desc: 'On login the app verifies the password with bcrypt and stores a token in a signed cookie \u2014 not the password, not the user struct. The token can be invalidated server-side.' },
+    plug:    { name: 'a plug', is: 'loads current_user into assigns', row: 'auRow_plug',
+      desc: 'fetch_current_user runs in the :browser pipeline on every request, reads the token from the cookie, and puts current_user into conn.assigns so controllers and templates can see it.' },
+    onmount: { name: 'on_mount', is: 'enforces auth in a LiveView', row: 'auRow_onmount',
+      desc: 'A LiveView holds a socket, not a request, so it enforces auth with on_mount \u2014 a hook that loads the user from the session and returns {:cont, socket} or {:halt, redirect(...)} before connecting.' }
+  };
+  var ORDER = ['session', 'plug', 'onmount'];
+  function pick(k) {
+    var x = P[k]; if (!x) return;
+    document.querySelectorAll('#auSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(P[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('auRole'); if (rEl) rEl.textContent = x.name;
+    var dEl = document.getElementById('auResult'); if (dEl) dEl.textContent = x.is;
+    var oEl = document.getElementById('auOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + x.name + '</b> \u2014 ' + x.is + '. ' + x.desc;
+  }
+  document.querySelectorAll('#auSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('session');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

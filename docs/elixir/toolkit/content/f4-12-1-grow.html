@@ -1,0 +1,279 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/algorithms">algorithms</a><span class="rsep">/</span><a href="/elixir/algorithms/lab">lab</a><span class="rsep">/</span><span class="rcur">grow</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/algorithms">F4</a>
+      <span class="sep">/</span>
+      <a href="/elixir/algorithms/lab">F4.12</a>
+      <span class="sep">/</span>
+      <span class="here">grow</span>
+    </div>
+    <p class="eyebrow">F4.12 &middot; part 1 of 3 &middot; put &amp; partition</p>
+    <h1>Watch a branded CHAMP <span class="ex">grow</span></h1>
+    <p class="lede">The store starts empty. Each <code class="inl">put</code> takes a branded id, reads its
+      three-letter namespace, and drops the entry into that namespace&rsquo;s partition &mdash; creating the partition
+      the first time a namespace appears, and adding to its CHAMP every time after. No entry ever lands in the wrong
+      partition, because the namespace that decides where it goes is part of the key itself.</p>
+    <p class="kicker">Ten entities, inserted in order. Step through the inserts and watch the partitions appear and
+      fill as each key routes itself by namespace.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#insert">Insert and route</a>
+      <a href="#advanced">Advanced: put, and the 33rd entry</a>
+    </div>
+  </section>
+
+  <section id="insert">
+    <h2>Insert and route</h2>
+    <div class="prose">
+      <p>The same ten keys go in every time; what changes is how far through the sequence you are. Each key&rsquo;s
+        prefix &mdash; <code class="inl">USR</code>, <code class="inl">SES</code>, <code class="inl">LSN</code>,
+        <code class="inl">PGE</code> &mdash; picks its partition. Step through the inserts.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="grTitle">
+      <h4 id="grTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Keys inserted &middot; select a checkpoint</h4>
+      <div class="controls">
+        <div class="solid-select" id="grSel" role="group" aria-label="Keys inserted">
+          <button type="button" data-n="0" data-c="sage">start</button>
+          <button type="button" data-n="3" data-c="sage">3 keys</button>
+          <button type="button" data-n="6" data-c="sage">6 keys</button>
+          <button type="button" data-n="10" data-c="sage" class="active">all 10</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 222" role="img" aria-label="Four partition rows — users, sessions, lessons, pages — each filling with one dot per entry as keys are inserted and routed by their namespace.">
+        <text x="40" y="22" font-family="Manrope, sans-serif" font-size="10" letter-spacing="0.06em" fill="#6b7494">%{namespace =&gt; CHAMP}</text>
+        <text id="grTotal" x="680" y="22" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">10 entries &middot; 4 partitions</text>
+        <g id="grRows"></g>
+      </svg>
+
+      <pre class="code" id="grCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="grOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">inserted: <span id="grRole" style="color:var(--sage-bright)">10</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">partitions: <span id="grResult" style="color:var(--cream)">4</span></p>
+    </figure>
+    <p class="take">The store grows by partition. A key never has to be told where it belongs; its namespace routes
+      it, and a partition springs into being the first time its namespace is seen.</p>
+  </section>
+
+  <section id="advanced">
+    <h2>Advanced: put, and the 33rd entry</h2>
+    <div class="prose">
+      <p><code class="inl">put/2</code> is two steps: take the three-character prefix, then update that one
+        partition. <code class="inl">update_in</code> with a default creates the partition&rsquo;s CHAMP on first use
+        and adds to it thereafter, and because each partition is an immutable CHAMP the write returns a new store map
+        that shares every partition it did not touch &mdash; so the cost of a write is one partition&rsquo;s path-copy,
+        not a copy of the store.</p>
+      <p>Inside a partition, the CHAMP&rsquo;s root node holds up to thirty-two entries directly, one per slot of its
+        five-bit bitmap. The thirty-third entry to collide into a slot forces that slot to become a child node &mdash;
+        a second level &mdash; and the depth a lookup walks is <code class="inl">ceil(log&#8323;&#8322; n)</code>: one
+        level to thirty-two entries, two to about a thousand, three to about thirty thousand. The partitions in the
+        demo hold a handful each, so each is a single level; the restructure is what keeps a partition shallow as it
+        scales into the thousands.</p>
+    </div>
+    <pre class="code"><span class="cmt"># put/2 — route on the prefix, update one partition's CHAMP</span>
+<span class="op">def</span> <span class="fn">handle_call</span>({<span class="res">:put</span>, id, value}, _from, store) <span class="op">do</span>
+  ns = <span class="fn sage">binary_part</span>(id, <span class="res">0</span>, <span class="res">3</span>)                    <span class="cmt"># "USR0Nb..." -> "USR"</span>
+  store =
+    <span class="fn">update_in</span>(store[ns], <span class="op">fn</span>
+      <span class="res">nil</span>   -&gt; <span class="fn sage">Champ</span>.<span class="fn">new</span>() |&gt; <span class="fn sage">Champ</span>.<span class="fn">put</span>(id, value)  <span class="cmt"># first key of a namespace</span>
+      champ -&gt; <span class="fn sage">Champ</span>.<span class="fn">put</span>(champ, id, value)             <span class="cmt"># add to the partition</span>
+    <span class="op">end</span>)
+  {<span class="res">:reply</span>, <span class="res">:ok</span>, store}                          <span class="cmt"># new store shares untouched partitions</span>
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">a branded key</p>
+        <p><code class="inl">put("LSN0Nb...", v)</code> &mdash; the namespace is in the key.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">routed into its partition</p>
+        <p>The prefix selects the CHAMP; only that partition is rebuilt, the rest shared.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/algorithms/lab/registry"><strong>a Snowflake registry</strong></a>
+      &mdash; now that entries are in their partitions, resolving any id back to its entry and its creation time.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lab, and the lessons it assembles.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/elixir/Kernel.html#update_in/3">Elixir &mdash; <code>update_in/3</code></a> &mdash; updating one partition, creating it on first use.</li>
+        <li><a href="https://hexdocs.pm/elixir/Kernel.html#binary_part/3">Elixir &mdash; <code>binary_part/3</code></a> &mdash; reading the three-letter prefix.</li>
+        <li><a href="https://hexdocs.pm/elixir/GenServer.html#c:handle_call/3">Elixir &mdash; <code>handle_call/3</code></a> &mdash; serialising the write.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/lab">F4.12 &middot; Lab: build a branded CHAMP store</a> &mdash; the lab hub.</li>
+        <li><a href="/elixir/algorithms/champ">F4.06 &middot; CHAMP</a> &mdash; the node inside each partition and its bitmap.</li>
+        <li><a href="/elixir/algorithms/branded-champ">F4.09 &middot; Branded CHAMP maps &amp; GenServer</a> &mdash; the partitioned store.</li>
+        <li><a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/lab"><span aria-hidden="true">&larr;</span>&nbsp; F4.12 &middot; lab</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/algorithms/lab/registry">Next &middot; a Snowflake registry <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var SAGE = '#a7c9b1';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
+  /* fixed insert order of ten real branded keys */
+  var SEQ = [
+    'USR0NbAb1xcFCy', 'SES0NbAb29FnXc', 'LSN0NbCMKoAopE', 'USR0NXh7MFjxT6', 'LSN0NbCiUI0Sg4',
+    'PGE0NbWMtkolM0', 'LSN0NbD94T0Qtu', 'USR0NbWMtkosp8', 'LSN0NbDmwjVOEa', 'LSN0NbAb2Lk9GS'
+  ];
+  var PARTS = [
+    { ns: 'USR', name: 'users', max: 5 },
+    { ns: 'SES', name: 'sessions', max: 5 },
+    { ns: 'LSN', name: 'lessons', max: 5 },
+    { ns: 'PGE', name: 'pages', max: 5 }
+  ];
+  /* tally first k of the sequence by 3-char prefix — the real routing */
+  function tally(k) {
+    var c = { USR: 0, SES: 0, LSN: 0, PGE: 0 };
+    for (var i = 0; i < k; i++) c[SEQ[i].slice(0, 3)]++;
+    return c;
+  }
+
+  /* build four rows: label + count + five dot slots */
+  var g = document.getElementById('grRows');
+  function mk(tag, attrs, text) { var el = document.createElementNS(SVGNS, tag); for (var k in attrs) el.setAttribute(k, attrs[k]); if (text != null) el.textContent = text; return el; }
+  if (g) {
+    PARTS.forEach(function (p, r) {
+      var y = 50 + r * 42;
+      g.appendChild(mk('text', { id: 'grNs_' + p.ns, x: 44, y: y + 4, 'font-family': 'JetBrains Mono, monospace', 'font-size': '12', fill: '#d7cfb9' }, p.ns));
+      g.appendChild(mk('text', { id: 'grNm_' + p.ns, x: 86, y: y + 4, 'font-family': 'Manrope, sans-serif', 'font-size': '11', fill: '#8b93b0' }, p.name));
+      g.appendChild(mk('text', { id: 'grCnt_' + p.ns, x: 210, y: y + 4, 'text-anchor': 'end', 'font-family': 'JetBrains Mono, monospace', 'font-size': '12', fill: '#a7c9b1' }, '0'));
+      for (var d = 0; d < p.max; d++)
+        g.appendChild(mk('circle', { id: 'grDot_' + p.ns + '_' + d, cx: 240 + d * 30, cy: y, r: 8, fill: '#10162b', stroke: '#3a4263', 'stroke-width': '1.3' }));
+      g.appendChild(mk('text', { id: 'grLvl_' + p.ns, x: 680, y: y + 4, 'text-anchor': 'end', 'font-family': 'Manrope, sans-serif', 'font-size': '9.5', fill: '#6b7494' }, ''));
+    });
+  }
+
+  function pick(k) {
+    document.querySelectorAll('#grSel button').forEach(function (b) {
+      var on = +b.getAttribute('data-n') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var c = tally(k), total = k, parts = 0;
+    PARTS.forEach(function (p) {
+      var n = c[p.ns], live = n > 0; if (live) parts++;
+      var cnt = document.getElementById('grCnt_' + p.ns); if (cnt) { cnt.textContent = String(n); cnt.setAttribute('fill', live ? SAGE : '#3a4263'); }
+      var ns = document.getElementById('grNs_' + p.ns); if (ns) ns.setAttribute('fill', live ? '#d7cfb9' : '#4a5273');
+      var nm = document.getElementById('grNm_' + p.ns); if (nm) nm.setAttribute('fill', live ? '#8b93b0' : '#3a4263');
+      for (var d = 0; d < p.max; d++) {
+        var dot = document.getElementById('grDot_' + p.ns + '_' + d);
+        if (dot) { var on2 = d < n; dot.setAttribute('fill', on2 ? SAGE : '#10162b'); dot.setAttribute('fill-opacity', on2 ? '0.85' : '1'); dot.setAttribute('stroke', on2 ? SAGE : '#3a4263'); }
+      }
+      var lvl = document.getElementById('grLvl_' + p.ns); if (lvl) lvl.textContent = live ? '1 level' : '';
+    });
+    txt('grTotal', total + (total === 1 ? ' entry' : ' entries') + ' \u00b7 ' + parts + (parts === 1 ? ' partition' : ' partitions'));
+    txt('grRole', String(total));
+    txt('grResult', String(parts));
+
+    var code, out;
+    if (k === 0) {
+      code = '<span class="cmt"># empty store</span>\nstore = %{}\n<span class="cmt"># no partitions yet — each is created on its namespace\u2019s first key</span>';
+      out = 'The store is empty: <b>0</b> entries, <b>0</b> partitions. Each partition is created the first time a key of its namespace is inserted.';
+    } else {
+      var last = SEQ[k - 1], lns = last.slice(0, 3);
+      code = '<span class="cmt"># after ' + k + ' inserts — last key routed by its prefix</span>\n<span class="fn sage">Portal.Store</span>.<span class="fn">put</span>(<span class="str">"' + last + '"</span>, v)   <span class="cmt"># ' + lns + ' -> :' + (PARTS.filter(function (p) { return p.ns === lns; })[0].name) + '</span>\n<span class="cmt"># store now holds ' + total + ' entries across ' + parts + ' partitions</span>';
+      out = 'After <b style="color:var(--sage-bright)">' + total + '</b> inserts the store holds <b>' + parts + '</b> partitions &mdash; ' + PARTS.filter(function (p) { return c[p.ns] > 0; }).map(function (p) { return p.name + ' ' + c[p.ns]; }).join(', ') + '. The last key routed itself to <b>' + lns + '</b> on its prefix.';
+    }
+    var cEl = document.getElementById('grCode'); if (cEl) cEl.innerHTML = code;
+    var oEl = document.getElementById('grOut'); if (oEl) oEl.innerHTML = out;
+  }
+  document.querySelectorAll('#grSel button').forEach(function (b) { b.addEventListener('click', function () { pick(+b.getAttribute('data-n')); }); });
+  pick(10);
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

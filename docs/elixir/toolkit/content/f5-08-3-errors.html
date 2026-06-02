@@ -1,0 +1,319 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/pragmatic">pragmatic</a><span class="rsep">/</span><a href="/elixir/pragmatic/boundaries">boundaries</a><span class="rsep">/</span><span class="rcur">errors</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/pragmatic">F5</a>
+      <span class="sep">/</span>
+      <a href="/elixir/pragmatic/boundaries">F5.08</a>
+      <span class="sep">/</span>
+      <span class="here">errors</span>
+    </div>
+    <p class="eyebrow">F5.08 &middot; part 3 of 3</p>
+    <h1>Error contracts for the UI</h1>
+    <p class="lede">A boundary that hands the UI a raw exception, an Ecto changeset, or the engine's internal reason has
+      not finished the job. The UI then has to know the internals to render a message, and the coupling the facade
+      removed comes back in through the error path. The fix is to make failure part of the contract: a closed set of
+      typed errors &mdash; <code class="inl">%Portal.Error{}</code> with a <code class="inl">code</code> drawn from a
+      fixed union &mdash; that the boundary produces and the UI renders. This is where the tagged tuples of F5.04 grow
+      up: an expected failure becomes a named code with a human message; an <em>impossible</em> state stays a crash,
+      caught by the supervisor from F5.06, because a bug is not an error contract. The UI is left with a finite list of
+      outcomes it can render exhaustively.</p>
+    <p class="kicker">Three failures, three rendered shapes. Select a case to see its internal cause and what the UI
+      receives.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#closed">A closed set of outcomes</a>
+      <a href="#struct">The Error struct</a>
+      <a href="#translate">Translating at the boundary</a>
+      <a href="#tested">Errors as part of the contract</a>
+    </div>
+  </section>
+
+  <section id="closed">
+    <h2>A closed set of outcomes</h2>
+    <div class="prose">
+      <p>A closed set is the point. If the failures the UI can receive are a fixed union of codes, then the UI's
+        rendering is <strong>total</strong> &mdash; every case is handled, and the compiler (or a test) can say so.
+        Each code pairs an internal cause with a message a person can read. Select a case.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="erTitle">
+      <h4 id="erTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Error case &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="erSel" role="group" aria-label="Error case">
+          <button type="button" data-k="enrolled" class="active">already_enrolled</button>
+          <button type="button" data-k="notfound">course_not_found</button>
+          <button type="button" data-k="progress">invalid_progress</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 200" role="img" aria-label="Three error cases mapping an internal cause to a code and a message the UI renders: already_enrolled, course_not_found, and invalid_progress.">
+        <rect id="erRow_enrolled" x="40" y="24" width="640" height="48" rx="11" fill="#241d10" stroke="#d4a85a" stroke-width="2"></rect>
+        <text x="60" y="44" font-family="JetBrains Mono, monospace" font-size="10" fill="#f0cd7f">:already_enrolled</text>
+        <text x="60" y="62" font-family="Manrope, sans-serif" font-size="9" fill="#d7cfb9">&ldquo;you are already on this course&rdquo;</text>
+        <text x="660" y="52" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#c9a877">409 conflict</text>
+
+        <rect id="erRow_notfound" x="40" y="80" width="640" height="48" rx="11" fill="#10162b" stroke="#46506f" stroke-width="1.3"></rect>
+        <text x="60" y="100" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">:course_not_found</text>
+        <text x="60" y="118" font-family="Manrope, sans-serif" font-size="9" fill="#8b93b0">&ldquo;we could not find that course&rdquo;</text>
+        <text x="660" y="108" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">404 not found</text>
+
+        <rect id="erRow_progress" x="40" y="136" width="640" height="48" rx="11" fill="#10162b" stroke="#46506f" stroke-width="1.3"></rect>
+        <text x="60" y="156" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">:invalid_progress</text>
+        <text x="60" y="174" font-family="Manrope, sans-serif" font-size="9" fill="#8b93b0">&ldquo;progress must be between 0 and 100&rdquo;</text>
+        <text x="660" y="164" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">422 &middot; field</text>
+      </svg>
+
+      <div class="geo-readout" id="erOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">code: <span id="erRole" style="color:#f0cd7f">already_enrolled</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">the UI shows: <span id="erResult" style="color:var(--cream)">you are already on this course</span></p>
+    </figure>
+    <p class="take">When the set of failures is closed, the UI can render them exhaustively and a new failure cannot slip
+      through as a blank screen. The contract is the list of things that can go wrong, named.</p>
+  </section>
+
+  <section id="struct">
+    <h2>The Error struct</h2>
+    <div class="prose">
+      <p>The vocabulary is a struct with a <code class="inl">code</code> typed as a union of atoms, a human
+        <code class="inl">message</code>, and an optional <code class="inl">field</code> for form errors. The union is
+        the closed set; adding a failure means adding a code here first, which is what keeps the UI and the engine in
+        step.</p>
+    </div>
+    <pre class="code"><span class="op">defmodule</span> <span class="fn gold">Portal.Error</span> <span class="op">do</span>
+  <span class="op">@moduledoc</span> <span class="str">"The closed vocabulary of failures the UI may receive."</span>
+
+  <span class="op">@type</span> code :: <span class="res">:already_enrolled</span> | <span class="res">:course_not_found</span> | <span class="res">:lesson_locked</span> | <span class="res">:invalid_progress</span>
+  <span class="op">@type</span> t :: %<span class="fn gold">__MODULE__</span>{code: code, message: <span class="fn gold">String</span>.t(), field: atom | <span class="res">nil</span>}
+
+  <span class="op">@enforce_keys</span> [<span class="res">:code</span>, <span class="res">:message</span>]
+  <span class="op">defstruct</span> [<span class="res">:code</span>, <span class="res">:message</span>, field: <span class="res">nil</span>]
+<span class="op">end</span></pre>
+  </section>
+
+  <section id="translate">
+    <h2>Translating at the boundary</h2>
+    <div class="prose">
+      <p>One function turns internal reasons into the contract. Each known domain failure has a clause; there is
+        deliberately <strong>no catch-all</strong>. An unmodelled reason raises a <code class="inl">FunctionClauseError</code>
+        rather than being mapped to a vague &ldquo;something went wrong,&rdquo; so a missing case fails loudly in
+        development instead of leaking to a user. Expected failures become contracts; genuine bugs stay crashes for the
+        supervisor in F5.06 to handle.</p>
+    </div>
+    <pre class="code"><span class="cmt"># only known domain failures become a contract — there is no catch-all on purpose</span>
+<span class="op">@spec</span> <span class="fn">from</span>(atom | {atom, term}) :: t()
+<span class="op">def</span> <span class="fn">from</span>(<span class="res">:already_enrolled</span>),
+  <span class="op">do:</span> %<span class="fn gold">Error</span>{code: <span class="res">:already_enrolled</span>, message: <span class="str">"you are already on this course"</span>}
+
+<span class="op">def</span> <span class="fn">from</span>(<span class="res">:course_not_found</span>),
+  <span class="op">do:</span> %<span class="fn gold">Error</span>{code: <span class="res">:course_not_found</span>, message: <span class="str">"we could not find that course"</span>}
+
+<span class="op">def</span> <span class="fn">from</span>({<span class="res">:invalid_progress</span>, _value}),
+  <span class="op">do:</span> %<span class="fn gold">Error</span>{code: <span class="res">:invalid_progress</span>, field: <span class="res">:progress</span>, message: <span class="str">"progress must be between 0 and 100"</span>}
+
+<span class="cmt"># an unmodelled reason has no clause: it raises, so the gap shows up in a test, not in production</span></pre>
+    <div class="prose">
+      <p>The path from a failure to a screen is three steps, and it is closed at every one: an internal reason, the
+        translation, and a render the UI can branch on exhaustively.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="erFlowTitle">
+      <h4 id="erFlowTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">From reason to render</h4>
+      <svg viewBox="0 0 720 150" role="img" aria-label="An internal reason passes through Error.from/1 to become a Portal.Error struct, which the UI renders as a flash or a field error. An unmodelled reason raises instead.">
+        <rect x="30" y="44" width="180" height="52" rx="11" fill="#10162b" stroke="#5a6688" stroke-width="1.4"></rect>
+        <text x="120" y="66" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">INTERNAL</text>
+        <text x="120" y="82" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#7c86a6">{:error, reason}</text>
+
+        <line x1="210" y1="70" x2="262" y2="70" stroke="#6b7494" stroke-width="1.6"></line>
+        <polygon points="264,70 256,66 256,74" fill="#6b7494"></polygon>
+        <text x="236" y="60" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">Error.from/1</text>
+
+        <rect x="266" y="44" width="180" height="52" rx="11" fill="#241d10" stroke="#d4a85a" stroke-width="2"></rect>
+        <text x="356" y="66" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#c9a877">CONTRACT</text>
+        <text x="356" y="82" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#f0cd7f">%Portal.Error{}</text>
+
+        <line x1="446" y1="70" x2="498" y2="70" stroke="#6b7494" stroke-width="1.6"></line>
+        <polygon points="500,70 492,66 492,74" fill="#6b7494"></polygon>
+        <text x="473" y="60" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">render</text>
+
+        <rect x="502" y="44" width="188" height="52" rx="11" fill="#10162b" stroke="#5a6688" stroke-width="1.4"></rect>
+        <text x="596" y="66" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">UI</text>
+        <text x="596" y="82" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#7c86a6">flash / field error</text>
+
+        <text x="360" y="128" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">every reason maps to a code, or it raises &mdash; nothing reaches the UI unnamed</text>
+      </svg>
+    </figure>
+    <p class="take">Translate at the edge, once. Inside, code speaks in domain reasons; outside, the UI speaks in a closed
+      set of errors; the boundary is the only place the two meet.</p>
+  </section>
+
+  <section id="tested">
+    <h2>Errors as part of the contract</h2>
+    <div class="prose">
+      <p>Because the codes are a closed union, the UI can branch on them exhaustively, and the contract tests from
+        F5.07 cover each one: feed the precondition a bad value, assert the <code class="inl">%Error{}</code> code that
+        comes back. Adding a failure is a three-part move kept honest by the type &mdash; a new code in the union, a new
+        clause in <code class="inl">from/1</code>, and a new branch in the UI &mdash; and the message can be localised
+        without touching any of the logic. On the screen it reduces to one total <code class="inl">case</code>:</p>
+    </div>
+    <pre class="code"><span class="cmt"># in the LiveView (F6): a finite set of outcomes, rendered exhaustively</span>
+<span class="op">case</span> <span class="fn gold">Portal</span>.<span class="fn">enroll</span>(user_id, course_id) <span class="op">do</span>
+  <span class="res">:ok</span> ->
+    {<span class="res">:noreply</span>, <span class="fn">redirect</span>(socket, to: ~p<span class="str">"/courses/#{course_id}"</span>)}
+
+  {<span class="res">:error</span>, %<span class="fn gold">Portal.Error</span>{field: <span class="res">nil</span>, message: msg}} ->
+    {<span class="res">:noreply</span>, <span class="fn">put_flash</span>(socket, <span class="res">:error</span>, msg)}
+
+  {<span class="res">:error</span>, %<span class="fn gold">Portal.Error</span>{field: field, message: msg}} ->
+    {<span class="res">:noreply</span>, <span class="fn">assign</span>(socket, :errors, %{field => msg})}
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">fail in a known shape</p>
+        <p>Expected failures are a closed set of typed errors; impossible ones stay crashes for the supervisor.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">the UI stays total</p>
+        <p>A finite list of codes means one exhaustive <code class="inl">case</code> and no unhandled outcome.</p>
+      </div>
+    </div>
+    <p class="note">That closes F5.08: the core declares its needs as ports, the facade is the one door the UI calls,
+      and failures cross the boundary as a closed set of typed errors. The next module, F5.09 &mdash; the engine lab,
+      assembles the facade end to end and mounts it behind a LiveView sketch, ready for F6. Back to
+      <a href="/elixir/pragmatic/boundaries">the module overview</a> or <a href="/elixir/pragmatic">the chapter</a>.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://alistair.cockburn.us/hexagonal-architecture/">Alistair Cockburn &mdash; Hexagonal architecture</a> &mdash; ports and adapters around a core.</li>
+        <li><a href="https://hexdocs.pm/elixir/typespecs.html">Elixir &mdash; Typespecs and behaviours</a> &mdash; @callback defines the port contract.</li>
+        <li><a href="https://dashbit.co/blog/mocks-and-explicit-contracts">José Valim &mdash; Mocks and explicit contracts</a> &mdash; test seams without mutating globals.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/pragmatic/boundaries/facade">F5.08.2 &middot; The facade as the one door</a></li>
+        <li><a href="/elixir/pragmatic/contracts/fail-fast">F5.04 &middot; Fail fast &mdash; tagged tuples for expected failure</a></li>
+        <li><a href="/elixir/pragmatic/testing/contract-tests">F5.07 &middot; Contract tests for each error code</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/pragmatic/boundaries/facade"><span aria-hidden="true">&larr;</span>&nbsp; F5.08.2 &middot; facade</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/pragmatic/boundaries">Back to F5.08 <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var GOLD = '#f0cd7f', GOLD_MUTE = '#d4a85a', DIM = '#46506f';
+  var ERRS = {
+    enrolled: { code: 'already_enrolled', message: 'you are already on this course',
+      desc: 'The engine\u2019s decide returned {:error, :already_enrolled} when a learner tried to join a course twice. The boundary maps it to a 409-style conflict the UI shows as a flash.' },
+    notfound: { code: 'course_not_found', message: 'we could not find that course',
+      desc: 'A lookup missed: the course id does not exist. The boundary maps it to a 404-style code so the UI can show a not-found message rather than a stack trace.' },
+    progress: { code: 'invalid_progress', message: 'progress must be between 0 and 100',
+      desc: 'The F5.04 precondition rejected a progress value outside 0..100. The error carries a field, so the UI can attach the message to the form input rather than a page-level flash.' }
+  };
+  var ORDER = ['enrolled', 'notfound', 'progress'];
+  function pick(k) {
+    var E = ERRS[k]; if (!E) return;
+    document.querySelectorAll('#erSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById('erRow_' + id), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? GOLD_MUTE : DIM); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#241d10' : '#10162b'); }
+    });
+    var rEl = document.getElementById('erRole'); if (rEl) rEl.textContent = E.code;
+    var mEl = document.getElementById('erResult'); if (mEl) mEl.textContent = E.message;
+    var oEl = document.getElementById('erOut'); if (oEl) oEl.innerHTML = '<b style="color:' + GOLD + '">:' + E.code + '</b> \u2014 the UI shows \u201c' + E.message + '\u201d. ' + E.desc;
+  }
+  document.querySelectorAll('#erSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('enrolled');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

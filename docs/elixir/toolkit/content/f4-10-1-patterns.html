@@ -1,0 +1,281 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/algorithms">algorithms</a><span class="rsep">/</span><a href="/elixir/algorithms/recipes">recipes</a><span class="rsep">/</span><span class="rcur">patterns</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/algorithms">F4</a>
+      <span class="sep">/</span>
+      <a href="/elixir/algorithms/recipes">F4.10</a>
+      <span class="sep">/</span>
+      <span class="here">patterns</span>
+    </div>
+    <p class="eyebrow">F4.10 &middot; part 1 of 3 &middot; the request lifecycle</p>
+    <h1>Idiomatic <span class="ex">patterns</span></h1>
+    <p class="lede">A request to view a lesson has to clear four gates before it renders: the id must be well-formed,
+      the caller authenticated, the lesson present, and the caller allowed to see it. Written as nested
+      <code class="inl">case</code> expressions that is a pyramid. Written as a <code class="inl">with</code> chain it
+      is four lines that read top to bottom, each binding the happy path and every failure falling through to one
+      <code class="inl">else</code> that maps a tagged error to a status.</p>
+    <p class="kicker">The same chain, five outcomes. Choose which gate fails and watch where the
+      <code class="inl">with</code> stops and what it returns.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#chain">Where the chain stops</a>
+      <a href="#advanced">Advanced: one else, tagged errors</a>
+    </div>
+  </section>
+
+  <section id="chain">
+    <h2>Where the chain stops</h2>
+    <div class="prose">
+      <p>Each step returns a tagged tuple. The <code class="inl">with</code> proceeds while every step matches its
+        <code class="inl">{:ok, _}</code> pattern and bails to the <code class="inl">else</code> on the first that does
+        not &mdash; so the steps after it never run. Select the gate that fails.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="ptTitle">
+      <h4 id="ptTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Outcome &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="ptSel" role="group" aria-label="Request outcome">
+          <button type="button" data-k="ok" data-c="sage" class="active">all pass</button>
+          <button type="button" data-k="bad" data-c="gold">bad id</button>
+          <button type="button" data-k="auth" data-c="gold">not signed in</button>
+          <button type="button" data-k="missing" data-c="gold">no lesson</button>
+          <button type="button" data-k="forbid" data-c="gold">not enrolled</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 226" role="img" aria-label="Four with-chain steps then a render step; the steps before a failure run, the failing step bails out, and the steps after it are skipped, producing one HTTP status.">
+        <g id="ptRows"></g>
+
+        <rect x="40" y="190" width="640" height="28" rx="7" fill="#161d38" stroke="#3a4263" stroke-width="1.2"></rect>
+        <text id="ptStatus" x="360" y="209" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#a7c9b1">200 OK · lesson rendered</text>
+      </svg>
+
+      <pre class="code" id="ptCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="ptOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">stops at: <span id="ptRole" style="color:var(--sage-bright)">nothing &mdash; all pass</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">status: <span id="ptResult" style="color:var(--cream)">200</span></p>
+    </figure>
+    <p class="take">The happy path is the body; everything that can fail is named once and handled once. The reader
+      sees the four preconditions in order, not a staircase of nested branches.</p>
+  </section>
+
+  <section id="advanced">
+    <h2>Advanced: one else, tagged errors</h2>
+    <div class="prose">
+      <p>Two habits make the chain work. Every step returns a <em>tagged</em> result &mdash;
+        <code class="inl">{:ok, value}</code> or <code class="inl">{:error, reason}</code> &mdash; so the
+        <code class="inl">else</code> can pattern-match the reason and map it to a status without guessing. And the
+        chain binds only what the body needs; intermediate values that are merely checked, like
+        <code class="inl">:ok</code> from <code class="inl">authorize/2</code>, are matched but not named. A
+        <code class="inl">with</code> without an <code class="inl">else</code> returns the first non-matching value
+        as-is, which is why tagging matters: an untagged <code class="inl">nil</code> would leak out of the function
+        instead of becoming a <code class="inl">404</code>.</p>
+      <p>The same shape recurs all over the Portal &mdash; create a session, enrol in a course, submit an answer
+        &mdash; because almost every action is a short sequence of fallible steps with one happy path. It also keeps
+        the validation of F4.08 honest: the first step is the edge check, so a malformed id never reaches the store
+        lookups below it.</p>
+    </div>
+    <pre class="code"><span class="op">def</span> <span class="fn">show</span>(conn, %{<span class="str">"id"</span> =&gt; raw, <span class="str">"sid"</span> =&gt; sid}) <span class="op">do</span>
+  <span class="op">with</span> {<span class="res">:ok</span>, id}     &lt;- <span class="fn sage">Portal.Id</span>.<span class="fn">validate</span>(raw, <span class="res">:LSN</span>),
+       {<span class="res">:ok</span>, user}   &lt;- <span class="fn sage">Auth</span>.<span class="fn">current_user</span>(sid),
+       {<span class="res">:ok</span>, lesson} &lt;- <span class="fn sage">Catalog</span>.<span class="fn">fetch_lesson</span>(id),
+       <span class="res">:ok</span>            &lt;- <span class="fn sage">Catalog</span>.<span class="fn">authorize</span>(user, lesson) <span class="op">do</span>
+    <span class="fn">render</span>(conn, <span class="str">"lesson.json"</span>, lesson: lesson)        <span class="cmt"># 200 — the happy path</span>
+  <span class="op">else</span>
+    {<span class="res">:error</span>, <span class="res">:bad_id</span>}          -&gt; <span class="fn">send_resp</span>(conn, <span class="res">400</span>, <span class="str">""</span>)
+    {<span class="res">:error</span>, <span class="res">:unauthenticated</span>} -&gt; <span class="fn">send_resp</span>(conn, <span class="res">401</span>, <span class="str">""</span>)
+    {<span class="res">:error</span>, <span class="res">:not_found</span>}       -&gt; <span class="fn">send_resp</span>(conn, <span class="res">404</span>, <span class="str">""</span>)
+    {<span class="res">:error</span>, <span class="res">:forbidden</span>}       -&gt; <span class="fn">send_resp</span>(conn, <span class="res">403</span>, <span class="str">""</span>)
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">nested cases</p>
+        <p>A pyramid that drifts right with every precondition.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">a with chain</p>
+        <p>A flat happy path; one <code class="inl">else</code> maps each tagged error to a status.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/algorithms/recipes/pipelines"><strong>streams &amp; pipelines</strong></a>
+      &mdash; once the request is admitted, how the report it asks for is built without materialising every step.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/elixir/Kernel.SpecialForms.html#with/1">Elixir &mdash; <code>with/1</code></a> &mdash; the chaining special form and its <code>else</code>.</li>
+        <li><a href="https://hexdocs.pm/elixir/case-cond-and-if.html">Elixir &mdash; case, cond, and if</a> &mdash; the nested branches <code>with</code> flattens.</li>
+        <li><a href="https://hexdocs.pm/elixir/pattern-matching.html">Elixir &mdash; Pattern matching</a> &mdash; matching tagged tuples in heads and clauses.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/recipes">F4.10 &middot; Practical recipes in Elixir</a> &mdash; the module hub.</li>
+        <li><a href="/elixir/algorithms/persistence">F4.08 &middot; Branded ids &amp; persistence</a> &mdash; the edge validation that is the chain's first step.</li>
+        <li><a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/recipes"><span aria-hidden="true">&larr;</span>&nbsp; F4.10 &middot; recipes</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/algorithms/recipes/pipelines">Next &middot; streams &amp; pipelines <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var SAGE = '#a7c9b1', BURG = '#e08f8b', DIM = '#3a4263';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
+  /* the four gates plus render; each scenario fails at one step (or none) */
+  var STEPS = [
+    { name: 'validate_id', ok: '{:ok, id}', err: '{:error, :bad_id}' },
+    { name: 'current_user', ok: '{:ok, user}', err: '{:error, :unauthenticated}' },
+    { name: 'fetch_lesson', ok: '{:ok, lesson}', err: '{:error, :not_found}' },
+    { name: 'authorize', ok: ':ok', err: '{:error, :forbidden}' },
+    { name: 'render', ok: '{:ok, payload}', err: '' }
+  ];
+  /* failIdx: which step fails (-1 = none); status for each scenario */
+  var SCN = {
+    ok:      { fail: -1, status: '200 OK \u00b7 lesson rendered', code: '200', reason: '' },
+    bad:     { fail: 0,  status: '400 Bad Request', code: '400', reason: ':bad_id' },
+    auth:    { fail: 1,  status: '401 Unauthorized', code: '401', reason: ':unauthenticated' },
+    missing: { fail: 2,  status: '404 Not Found', code: '404', reason: ':not_found' },
+    forbid:  { fail: 3,  status: '403 Forbidden', code: '403', reason: ':forbidden' }
+  };
+
+  /* build the five rows once */
+  var g = document.getElementById('ptRows');
+  function mk(tag, attrs, text) { var el = document.createElementNS(SVGNS, tag); for (var k in attrs) el.setAttribute(k, attrs[k]); if (text != null) el.textContent = text; return el; }
+  if (g) {
+    for (var i = 0; i < STEPS.length; i++) {
+      var y = 30 + i * 31;
+      g.appendChild(mk('rect', { id: 'ptRow' + i, x: 40, y: y, width: 640, height: 25, rx: 6, fill: '#10162b', stroke: '#3a4263', 'stroke-width': '1' }));
+      g.appendChild(mk('text', { x: 54, y: y + 17, 'font-family': 'JetBrains Mono, monospace', 'font-size': '11', fill: '#d7cfb9' }, STEPS[i].name));
+      g.appendChild(mk('text', { id: 'ptTag' + i, 'text-anchor': 'end', x: 668, y: y + 17, 'font-family': 'JetBrains Mono, monospace', 'font-size': '10.5' }, ''));
+    }
+  }
+
+  function pick(k) {
+    var s = SCN[k]; if (!s) return;
+    document.querySelectorAll('#ptSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var lastRan = s.fail === -1 ? STEPS.length - 1 : s.fail;
+    for (var i = 0; i < STEPS.length; i++) {
+      var boxEl = document.getElementById('ptRow' + i), tagEl = document.getElementById('ptTag' + i);
+      var stroke, tag, fill;
+      if (s.fail !== -1 && i === s.fail) { stroke = BURG; fill = BURG; tag = STEPS[i].err + '  \u2717'; }
+      else if (i <= lastRan) { stroke = SAGE; fill = SAGE; tag = STEPS[i].ok + '  \u2713'; }
+      else { stroke = DIM; fill = '#5a6688'; tag = 'skipped'; }
+      if (boxEl) { boxEl.setAttribute('stroke', stroke); boxEl.setAttribute('stroke-width', i === s.fail || (s.fail === -1 && i === lastRan) ? '2' : '1.3'); boxEl.setAttribute('stroke-opacity', i > lastRan && s.fail !== -1 ? '0.5' : '1'); }
+      if (tagEl) { tagEl.textContent = tag; tagEl.setAttribute('fill', fill); }
+    }
+    var accent = s.fail === -1 ? SAGE : BURG;
+    var stEl = document.getElementById('ptStatus'); if (stEl) { stEl.textContent = s.status; stEl.setAttribute('fill', accent); }
+    var rEl = document.getElementById('ptRole');
+    if (rEl) { rEl.textContent = s.fail === -1 ? 'nothing \u2014 all pass' : STEPS[s.fail].name + ' (' + s.reason + ')'; rEl.style.color = accent; }
+    txt('ptResult', s.code);
+
+    var code, out;
+    if (s.fail === -1) {
+      code = '<span class="cmt"># every step matches {:ok, _} — the body runs</span>\n<span class="op">with</span> {<span class="res">:ok</span>, id} &lt;- validate_id(raw), {<span class="res">:ok</span>, user} &lt;- current_user(sid),\n     {<span class="res">:ok</span>, lesson} &lt;- fetch_lesson(id), <span class="res">:ok</span> &lt;- authorize(user, lesson)\n<span class="cmt"># => render(lesson)  ->  200 OK</span>';
+      out = 'All four gates pass, so the <code class="inl">with</code> reaches its body and renders the lesson &mdash; <b style="color:var(--sage-bright)">200 OK</b>.';
+    } else {
+      code = '<span class="cmt"># ' + STEPS[s.fail].name + ' returns ' + STEPS[s.fail].err + '</span>\n<span class="op">with</span> ... &lt;- <span class="fn">' + STEPS[s.fail].name + '</span>(...)   <span class="cmt"># this step fails to match</span>\n<span class="op">else</span> {<span class="res">:error</span>, <span class="res">' + s.reason + '</span>} -&gt; <span class="fn">send_resp</span>(conn, <span class="res">' + s.code + '</span>, <span class="str">""</span>)\n<span class="cmt"># the ' + (STEPS.length - 1 - s.fail) + ' step(s) after it never run</span>';
+      out = 'The chain reaches <code class="inl">' + STEPS[s.fail].name + '</code>, which returns <code class="inl">' + STEPS[s.fail].err + '</code>. It bails to the <code class="inl">else</code>, the clause for <code class="inl">' + s.reason + '</code> maps it to <b style="color:#e08f8b">' + s.status + '</b>, and the steps below it are skipped.';
+    }
+    var cEl = document.getElementById('ptCode'); if (cEl) cEl.innerHTML = code;
+    var oEl = document.getElementById('ptOut'); if (oEl) oEl.innerHTML = out;
+  }
+  document.querySelectorAll('#ptSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('ok');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

@@ -1,0 +1,288 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/algorithms">algorithms</a><span class="rsep">/</span><a href="/elixir/algorithms/lab">lab</a><span class="rsep">/</span><span class="rcur">range</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/algorithms">F4</a>
+      <span class="sep">/</span>
+      <a href="/elixir/algorithms/lab">F4.12</a>
+      <span class="sep">/</span>
+      <span class="here">range</span>
+    </div>
+    <p class="eyebrow">F4.12 &middot; part 3 of 3 &middot; range by time</p>
+    <h1>Query by time <span class="ex">range</span></h1>
+    <p class="lede">The last capability the store needs is &ldquo;what was created between these two times.&rdquo;
+      Because a Snowflake puts the timestamp in its high bits, ids sort by creation time, and a time window becomes an
+      <strong>id range</strong>: compute the id that any entry at the start would have, and the one at the end, and
+      every entry in the window is an id between them. The query needs no separate timestamp column &mdash; the bound
+      is computed straight from the clock.</p>
+    <p class="kicker">Five lessons in the partition, at known times. Pick a window and watch the bounds pick out the
+      entries created inside it.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#window">A window becomes a range</a>
+      <a href="#advanced">Advanced: bounds, sorting, and the catch</a>
+    </div>
+  </section>
+
+  <section id="window">
+    <h2>A window becomes a range</h2>
+    <div class="prose">
+      <p>The window&rsquo;s start and end map to id bounds <code class="inl">[min, max)</code>. An entry is in the
+        window when its id falls in that range &mdash; equivalently, when its decoded time does. The lesson at
+        13:35 sits before every window here, so it is never matched. Pick a window.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="rnTitle">
+      <h4 id="rnTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Time window &middot; select one &middot; 2026-05-31 UTC</h4>
+      <div class="controls">
+        <div class="solid-select" id="rnSel" role="group" aria-label="Time window">
+          <button type="button" data-k="a" data-c="sage" class="active">14:00&ndash;14:10</button>
+          <button type="button" data-k="b" data-c="blue">14:00&ndash;14:15</button>
+          <button type="button" data-k="c" data-c="gold">14:00&ndash;14:25</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 200" role="img" aria-label="A timeline from 13:30 to 14:30 with five lessons plotted at their creation times; the selected window is a shaded band and the lessons inside it are highlighted.">
+        <rect id="rnBand" x="360" y="60" width="100" height="56" rx="6" fill="#a7c9b1" fill-opacity="0.14" stroke="#a7c9b1" stroke-width="1.2" stroke-dasharray="4 3"></rect>
+
+        <line x1="60" y1="116" x2="660" y2="116" stroke="#3a4263" stroke-width="1.4"></line>
+        <g id="rnTicks"></g>
+        <g id="rnDots"></g>
+
+        <text id="rnBounds" x="40" y="160" font-family="JetBrains Mono, monospace" font-size="10" fill="#8b93b0">min &#8804; id &lt; max</text>
+        <text id="rnCount" x="680" y="160" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">2 of 5 in window</text>
+      </svg>
+
+      <pre class="code" id="rnCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="rnOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">window: <span id="rnRole" style="color:var(--sage-bright)">14:00&ndash;14:10</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">matched: <span id="rnResult" style="color:var(--cream)">2 entries</span></p>
+    </figure>
+    <p class="take">No timestamp was stored, yet the store answered a time-range query. The id is the sort key and the
+      clock, so a window of time and a range of ids are the same question.</p>
+  </section>
+
+  <section id="advanced">
+    <h2>Advanced: bounds, sorting, and the catch</h2>
+    <div class="prose">
+      <p>The bound is arithmetic: a Snowflake is <code class="inl">(milliseconds_since_epoch &lt;&lt; 22)</code> plus
+        node and sequence bits, so the smallest id at time <em>t</em> is <code class="inl">(t - epoch) &lt;&lt; 22</code>.
+        Compute that for the window&rsquo;s start and end and you have <code class="inl">[min, max)</code>; the same
+        trick drove the database range query in F4.08, where <code class="inl">id &gt;= min AND id &lt; max</code> rode
+        the primary-key index with no <code class="inl">created_at</code> column.</p>
+      <p>The catch in memory is that a CHAMP is ordered by hash, not by key, so it cannot be sliced by an id range
+        directly. Two honest options: keep a sorted index of ids alongside the partition &mdash; a sorted set or tree
+        &mdash; and binary-search the bounds for a true range scan; or, when a partition is small, filter it by decoded
+        time, which is what the demo does. Either way the namespace partition keeps the work to one entity kind, and
+        the id-as-clock means the window never has to be stored to be queried.</p>
+    </div>
+    <pre class="code"><span class="cmt"># range/2 — a time window becomes id bounds over one partition</span>
+<span class="op">def</span> <span class="fn">handle_call</span>({<span class="res">:range</span>, ns, from, to}, _from, store) <span class="op">do</span>
+  min = <span class="fn sage">Snowflake</span>.<span class="fn">at</span>(from)                    <span class="cmt"># (from - epoch) <<< 22</span>
+  max = <span class="fn sage">Snowflake</span>.<span class="fn">at</span>(to)
+  hits =
+    store
+    |&gt; <span class="fn sage">Map</span>.<span class="fn">get</span>(ns, <span class="fn sage">Champ</span>.<span class="fn">new</span>())              <span class="cmt"># only this namespace's partition</span>
+    |&gt; <span class="fn sage">Champ</span>.<span class="fn">keys</span>()
+    |&gt; <span class="fn sage">Enum</span>.<span class="fn">filter</span>(<span class="op">fn</span> id -&gt; id &gt;= min and id &lt; max <span class="op">end</span>)  <span class="cmt"># in the window</span>
+  {<span class="res">:reply</span>, {<span class="res">:ok</span>, hits}, store}
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">a time window</p>
+        <p>&ldquo;Everything created between 14:00 and 14:10.&rdquo;</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">an id range</p>
+        <p><code class="inl">[min, max)</code> from the clock; the partition&rsquo;s entries in between.</p>
+      </div>
+    </div>
+    <p class="note">That completes the lab &mdash; a partitioned, branded-CHAMP store that grows by namespace,
+      resolves any id with a free timestamp, and answers time-range queries &mdash; and with it the
+      <strong>Algorithms &amp; Data Structures</strong> chapter. Return to the
+      <a href="/elixir/algorithms">chapter overview</a>.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lab, and the lessons it assembles.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://en.wikipedia.org/wiki/Snowflake_ID">Snowflake ID &mdash; Wikipedia</a> &mdash; the time-ordered id and its bit layout.</li>
+        <li><a href="https://hexdocs.pm/elixir/Enum.html#filter/2">Elixir &mdash; <code>Enum.filter/2</code></a> &mdash; selecting the entries in the window.</li>
+        <li><a href="https://www.erlang.org/doc/man/gb_sets.html">Erlang &mdash; <code>:gb_sets</code></a> &mdash; a sorted set for a true id-range scan.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/lab">F4.12 &middot; Lab: build a branded CHAMP store</a> &mdash; the lab hub.</li>
+        <li><a href="/elixir/algorithms/persistence">F4.08 &middot; Branded ids &amp; persistence</a> &mdash; the same bounds as a database range query.</li>
+        <li><a href="/elixir/algorithms/identifiers">F4.07 &middot; Identifiers, Snowflake &amp; branded ids</a> &mdash; why ids sort by time.</li>
+        <li><a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/lab/registry"><span aria-hidden="true">&larr;</span>&nbsp; F4.12.2 &middot; registry</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var SAGE = '#a7c9b1', BLUE = '#9fc0ea', GOLD = '#f0cd7f';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var EPOCH_MS = 1704067200000;
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
+  /* five lessons in the partition at known UTC times (2026-05-31) */
+  var LESSONS = [
+    { id: 'LSN0NbAb2Lk9GS', label: '13:35', ms: Date.UTC(2026, 4, 31, 13, 35, 19) },
+    { id: 'LSN0NbCMKoAopE', label: '14:00', ms: Date.UTC(2026, 4, 31, 14, 0, 0) },
+    { id: 'LSN0NbCiUI0Sg4', label: '14:05', ms: Date.UTC(2026, 4, 31, 14, 5, 0) },
+    { id: 'LSN0NbD94T0Qtu', label: '14:11', ms: Date.UTC(2026, 4, 31, 14, 11, 0) },
+    { id: 'LSN0NbDmwjVOEa', label: '14:20', ms: Date.UTC(2026, 4, 31, 14, 20, 0) }
+  ];
+  var WINDOWS = {
+    a: { label: '14:00\u201314:10', start: Date.UTC(2026, 4, 31, 14, 0, 0), end: Date.UTC(2026, 4, 31, 14, 10, 0), fill: SAGE },
+    b: { label: '14:00\u201314:15', start: Date.UTC(2026, 4, 31, 14, 0, 0), end: Date.UTC(2026, 4, 31, 14, 15, 0), fill: BLUE },
+    c: { label: '14:00\u201314:25', start: Date.UTC(2026, 4, 31, 14, 0, 0), end: Date.UTC(2026, 4, 31, 14, 25, 0), fill: GOLD }
+  };
+  /* timeline 13:30 -> 14:30, 10px per minute from x=60 */
+  var T0 = Date.UTC(2026, 4, 31, 13, 30, 0);
+  function xOf(ms) { return 60 + (ms - T0) / 60000 * 10; }
+
+  /* axis ticks at 13:30, 14:00, 14:30 */
+  var ticks = document.getElementById('rnTicks');
+  function mk(tag, attrs, text) { var el = document.createElementNS(SVGNS, tag); for (var k in attrs) el.setAttribute(k, attrs[k]); if (text != null) el.textContent = text; return el; }
+  if (ticks) {
+    [['13:30', T0], ['14:00', Date.UTC(2026, 4, 31, 14, 0, 0)], ['14:30', Date.UTC(2026, 4, 31, 14, 30, 0)]].forEach(function (t) {
+      var x = xOf(t[1]);
+      ticks.appendChild(mk('line', { x1: x, y1: 112, x2: x, y2: 120, stroke: '#3a4263', 'stroke-width': '1' }));
+      ticks.appendChild(mk('text', { x: x, y: 134, 'text-anchor': 'middle', 'font-family': 'JetBrains Mono, monospace', 'font-size': '9', fill: '#6b7494' }, t[0]));
+    });
+  }
+  /* lesson dots */
+  var dots = document.getElementById('rnDots');
+  if (dots) {
+    LESSONS.forEach(function (l, i) {
+      var x = xOf(l.ms);
+      dots.appendChild(mk('circle', { id: 'rnDot_' + i, cx: x, cy: 116, r: 7, fill: '#10162b', stroke: '#3a4263', 'stroke-width': '1.6' }));
+      dots.appendChild(mk('text', { id: 'rnLbl_' + i, x: x, y: 100, 'text-anchor': 'middle', 'font-family': 'JetBrains Mono, monospace', 'font-size': '8.5', fill: '#6b7494' }, l.label));
+    });
+  }
+
+  function snowAt(ms) { return (BigInt(ms - EPOCH_MS) << 22n).toString(); }
+
+  function pick(k) {
+    var w = WINDOWS[k]; if (!w) return;
+    document.querySelectorAll('#rnSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    /* band geometry */
+    var bx = xOf(w.start), bw = xOf(w.end) - xOf(w.start);
+    var band = document.getElementById('rnBand');
+    if (band) { band.setAttribute('x', bx); band.setAttribute('width', bw); band.setAttribute('fill', w.fill); band.setAttribute('stroke', w.fill); }
+    /* real match: start <= ms < end */
+    var n = 0;
+    LESSONS.forEach(function (l, i) {
+      var inWin = l.ms >= w.start && l.ms < w.end; if (inWin) n++;
+      var dot = document.getElementById('rnDot_' + i), lbl = document.getElementById('rnLbl_' + i);
+      if (dot) { dot.setAttribute('fill', inWin ? w.fill : '#10162b'); dot.setAttribute('fill-opacity', inWin ? '0.9' : '1'); dot.setAttribute('stroke', inWin ? w.fill : '#3a4263'); dot.setAttribute('r', inWin ? '8' : '7'); }
+      if (lbl) lbl.setAttribute('fill', inWin ? w.fill : '#6b7494');
+    });
+    var bEl = document.getElementById('rnBounds'); if (bEl) bEl.textContent = snowAt(w.start) + ' \u2264 id < ' + snowAt(w.end);
+    var cEl2 = document.getElementById('rnCount'); if (cEl2) { cEl2.textContent = n + ' of ' + LESSONS.length + ' in window'; cEl2.setAttribute('fill', w.fill); }
+    var rEl = document.getElementById('rnRole'); if (rEl) { rEl.textContent = w.label; rEl.style.color = w.fill; }
+    txt('rnResult', n + (n === 1 ? ' entry' : ' entries'));
+
+    var matched = LESSONS.filter(function (l) { return l.ms >= w.start && l.ms < w.end; }).map(function (l) { return l.label; });
+    var code = '<span class="cmt"># window ' + w.label + ' -> id bounds over the lessons partition</span>\n<span class="fn sage">Portal.Store</span>.<span class="fn">range</span>(<span class="str">"LSN"</span>, {~U[2026-05-31 ' + w.label.split('\u2013')[0] + ':00Z], ~U[2026-05-31 ' + w.label.split('\u2013')[1] + ':00Z]})\n<span class="cmt"># => ' + n + ' entries: ' + matched.join(', ') + '</span>';
+    var cEl = document.getElementById('rnCode'); if (cEl) cEl.innerHTML = code;
+    var out = 'The window <b style="color:' + w.fill + '">' + w.label + '</b> becomes id bounds <code class="inl">[min, max)</code>, and <b>' + n + '</b> of the partition\u2019s 5 lessons fall inside &mdash; ' + matched.join(', ') + '. The 13:35 lesson is before the window, so it is excluded; no timestamp column was read.';
+    var oEl = document.getElementById('rnOut'); if (oEl) oEl.innerHTML = out;
+  }
+  document.querySelectorAll('#rnSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('a');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

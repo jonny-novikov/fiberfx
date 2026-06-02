@@ -1,0 +1,368 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/pragmatic">pragmatic</a><span class="rsep">/</span><a href="/elixir/pragmatic/state">state</a><span class="rsep">/</span><span class="rcur">choosing</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/pragmatic">F5</a>
+      <span class="sep">/</span>
+      <a href="/elixir/pragmatic/state">F5.06</a>
+      <span class="sep">/</span>
+      <span class="here">choosing</span>
+    </div>
+    <p class="eyebrow">F5.06 &middot; part 1 of 3</p>
+    <h1>Choosing where state lives</h1>
+    <p class="lede">Three places can hold live in-memory state on the BEAM, and they are not interchangeable. A
+      <strong>GenServer</strong> is a process with a state loop: it serializes access and can run real logic on each
+      message, so it can fold events and evolve. An <strong>Agent</strong> is a GenServer narrowed to one job &mdash;
+      hold a value, answer get and update &mdash; with no place to put command logic. <strong>ETS</strong> is a shared
+      in-memory table with concurrent, lock-free reads, but it is a key-value store, not a place to run a reducer, and
+      it lives only as long as its owner process. The engine runs the F5.04 contract and the F5.05 fold on every
+      command, so it needs the one that holds state and executes code: a GenServer. ETS can join later for read-heavy
+      projections.</p>
+    <p class="kicker">Three holders, one job each. Select one to see what it gives and whether the engine can use it.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#three">Three holders</a>
+      <a href="#code">In code</a>
+    </div>
+  </section>
+
+  <section id="three">
+    <h2>Three holders</h2>
+    <div class="prose">
+      <p>The question is not which is fastest but which can do the engine's work. The engine has to take a command,
+        run a contract, decide on events, and fold them into new state &mdash; that is logic plus state, in order, one
+        write at a time. Only a process with its own loop offers that. Select a holder.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="chTitle">
+      <h4 id="chTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">State holder &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="chSel" role="group" aria-label="State holder">
+          <button type="button" data-k="genserver" class="active">GenServer</button>
+          <button type="button" data-k="agent">Agent</button>
+          <button type="button" data-k="ets">ETS</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 200" role="img" aria-label="Three holders for live state. A GenServer holds state and runs decide and evolve. An Agent holds a value with get and update. ETS is a shared table with concurrent reads.">
+        <rect id="chRow_genserver" x="40" y="24" width="640" height="48" rx="11" fill="#1d1320" stroke="#c4504c" stroke-width="2"></rect>
+        <text x="60" y="44" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#b07572">GENSERVER</text>
+        <text x="60" y="62" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">a process with a state loop &middot; holds state &middot; runs decide / evolve</text>
+        <text x="660" y="52" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#a87f7c">the engine</text>
+
+        <rect id="chRow_agent" x="40" y="80" width="640" height="48" rx="11" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="100" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">AGENT</text>
+        <text x="60" y="118" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">a GenServer for one value &middot; get / update &middot; no command logic</text>
+
+        <rect id="chRow_ets" x="40" y="136" width="640" height="48" rx="11" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="156" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">ETS</text>
+        <text x="60" y="174" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">a shared table &middot; concurrent reads &middot; owned by a process</text>
+      </svg>
+
+      <div class="geo-readout" id="chOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">holder: <span id="chRole" style="color:#e08f8b">GenServer</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">for the engine: <span id="chResult" style="color:var(--cream)">holds state + runs decide/evolve</span></p>
+    </figure>
+    <p class="take">Pick the holder by the work it must do, not by raw speed. The engine needs state and logic together,
+      and that is what a process loop is.</p>
+  </section>
+
+  <section id="code">
+    <h2>In code</h2>
+    <div class="prose">
+      <p>The three shapes, side by side, then the choice. An <code class="inl">Agent</code> is the shortest way to hold
+        a value but has nowhere to run the contract; ETS is a shared table you read concurrently; the engine is a
+        GenServer because it has to hold state <em>and</em> fold events on every command.</p>
+    </div>
+    <pre class="code"><span class="cmt"># three places live state can sit on the BEAM:</span>
+<span class="cmt">#   GenServer — a process with a loop; holds state and runs decide/evolve   (the engine)</span>
+<span class="cmt">#   Agent     — a GenServer narrowed to one value; get/update, no logic</span>
+<span class="cmt">#   ETS       — a shared in-memory table; concurrent reads, owned by a process</span>
+
+<span class="fn burg">Agent</span>.<span class="fn">update</span>(pid, <span class="op">fn</span> state -> <span class="fn burg">Map</span>.<span class="fn">put</span>(state, k, v) <span class="op">end</span>)   <span class="cmt"># holds a value; no place for a contract</span>
+:ets.<span class="fn">insert</span>(table, {k, v})                              <span class="cmt"># shared table; great for reads, not a reducer</span>
+
+<span class="cmt"># the engine runs a contract and a fold on every command, so it owns its state in a process:</span>
+<span class="op">defmodule</span> <span class="fn burg">Portal.Engine</span> <span class="op">do</span>
+  <span class="op">use</span> <span class="fn burg">GenServer</span>   <span class="cmt"># state is the fold of the log (F5.05), held between calls</span>
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">value or engine</p>
+        <p>An Agent holds a value; ETS holds a table; only a process loop holds state and runs logic.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">a GenServer</p>
+        <p>The engine folds and evolves on each command, so it lives in a <code class="inl">GenServer</code>.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/pragmatic/state/genserver"><strong>the engine GenServer</strong></a> &mdash;
+      <code class="inl">init</code> folds the log, and <code class="inl">handle_call</code> runs the command and the
+      query.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="cacheTitle">
+    <h2 id="cacheTitle">An ETS read-through cache</h2>
+    <div class="prose">
+      <p>An <strong>ETS read-through cache</strong> splits the read path from the write path. Hot reads &mdash; a
+        lesson lookup, a learner's progress &mdash; are served straight from an <code class="inl">:ets</code> table,
+        which, per <a href="https://www.erlang.org/doc/man/ets.html">Erlang &mdash; ets</a>, supports concurrent,
+        lock-free reads from any process. A read never enters the engine's mailbox, so reads scale with the schedulers
+        rather than queueing behind one process. Writes are unchanged: every command still goes through
+        <code class="inl">Portal.Engine</code>, the GenServer from the previous lesson, which stays the
+        <strong>single writer</strong> &mdash; per <a href="https://hexdocs.pm/elixir/GenServer.html">Elixir &mdash;
+        GenServer</a>, its mailbox serializes those writes. The engine owns the table and refreshes it after each
+        <code class="inl">evolve</code>, so the fold of the log remains the one source of truth and the table is only a
+        derived view of it.</p>
+      <p>The table is created <code class="inl">:protected</code>: one writer, many readers. The query no longer asks
+        the engine for the answer &mdash; it reads the table directly with <code class="inl">:ets.lookup/2</code>. The
+        cost is the honest one for any cache: the table is a projection that must be rebuilt on restart, so
+        <code class="inl">init</code> refills it from the folded state before serving reads.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="caTitle">
+      <h4 id="caTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Two paths &middot; one source of truth</h4>
+      <svg viewBox="0 0 720 210" role="img" aria-label="The read path and the write path are separate. A write enters the single-writer engine through its mailbox, runs decide and evolve, then refreshes the ETS table. Reads go straight to the ETS table concurrently and never touch the engine.">
+        <!-- write path: command -> engine (single writer) -> table -->
+        <rect x="40" y="26" width="150" height="44" rx="11" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="115" y="44" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">COMMAND</text>
+        <text x="115" y="59" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#d7cfb9">{:enroll, …}</text>
+
+        <line class="arc-flow" x1="190" y1="48" x2="286" y2="48"></line>
+        <polygon class="arc-arrow" points="286,43 296,48 286,53"></polygon>
+        <text x="240" y="38" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">mailbox</text>
+
+        <rect x="298" y="22" width="180" height="52" rx="11" fill="#1c2a1f" stroke="#7ba387" stroke-width="2"></rect>
+        <text x="388" y="42" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#a7c9b1">PORTAL.ENGINE</text>
+        <text x="388" y="57" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#d7cfb9">single writer &middot; decide / evolve</text>
+        <text x="388" y="69" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#7e9e88">owns the table</text>
+
+        <line x1="478" y1="48" x2="566" y2="48" stroke="#7ba387" stroke-width="1.6"></line>
+        <polygon points="566,43 576,48 566,53" fill="#7ba387"></polygon>
+        <text x="524" y="38" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#7e9e88">refresh</text>
+
+        <!-- the table -->
+        <rect x="578" y="22" width="104" height="52" rx="11" fill="#241d10" stroke="#d4a85a" stroke-width="2"></rect>
+        <text x="630" y="42" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#e6c178">:ETS</text>
+        <text x="630" y="58" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#f0cd7f">:portal_cache</text>
+
+        <!-- read path: many readers -> table, concurrent, lock-free -->
+        <rect x="40" y="138" width="150" height="44" rx="11" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="115" y="156" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">READERS</text>
+        <text x="115" y="171" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#d7cfb9">progress_of/1</text>
+
+        <line class="arc-flow" x1="190" y1="160" x2="566" y2="160"></line>
+        <polygon class="arc-arrow" points="566,155 576,160 566,165"></polygon>
+        <text x="380" y="150" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">concurrent &middot; lock-free &middot; :ets.lookup/2</text>
+
+        <!-- table reaches down to the read path -->
+        <line x1="630" y1="74" x2="630" y2="160" stroke="#d4a85a" stroke-width="1.4" stroke-dasharray="3 3"></line>
+        <text x="690" y="120" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#c9a877">served</text>
+      </svg>
+
+      <p class="note" style="margin-top:1rem">Writes funnel through one process; reads fan out across many. The dashed
+        lines are the live paths &mdash; one in, one out of the table.</p>
+    </figure>
+
+    <div class="prose">
+      <p>In code, the engine creates the table in <code class="inl">init</code>, fills it from the folded state, and
+        rewrites the touched keys after every command. The query reads the table without a message to the engine.</p>
+    </div>
+    <pre class="code"><span class="op">defmodule</span> <span class="fn sage">Portal.Engine</span> <span class="op">do</span>
+  <span class="op">use</span> <span class="fn sage">GenServer</span>
+
+  <span class="cmt"># init folds the log (F5.05), then builds the read-through table from that state</span>
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">init</span>(events) <span class="op">do</span>
+    state = <span class="fn">replay</span>(events)
+    <span class="cmt"># :protected — this process writes, any process reads; :read_concurrency for hot reads</span>
+    :ets.<span class="fn">new</span>(<span class="res">:portal_cache</span>, [<span class="res">:named_table</span>, <span class="res">:protected</span>, read_concurrency: <span class="res">true</span>])
+    <span class="fn">refresh_cache</span>(state)
+    {<span class="res">:ok</span>, state}
+  <span class="op">end</span>
+
+  <span class="cmt"># a command: the engine stays the single writer — decide, evolve, then refresh the table</span>
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">handle_call</span>({<span class="res">:enroll</span>, user_id, course_id}, _from, state) <span class="op">do</span>
+    <span class="op">case</span> <span class="fn">decide</span>(state, {<span class="res">:enroll</span>, user_id, course_id}) <span class="op">do</span>
+      {<span class="res">:ok</span>, events} ->
+        next = <span class="fn sage">Enum</span>.<span class="fn">reduce</span>(events, state, &amp;<span class="fn">evolve</span>/<span class="res">2</span>)
+        <span class="fn">refresh_cache</span>(next)                  <span class="cmt"># derived view follows the source of truth</span>
+        {<span class="res">:reply</span>, <span class="res">:ok</span>, next}
+      {<span class="res">:error</span>, _} = err ->
+        {<span class="res">:reply</span>, err, state}                  <span class="cmt"># bad command: state and table untouched</span>
+    <span class="op">end</span>
+  <span class="op">end</span>
+
+  <span class="cmt"># write the projection the read path serves: {user_id, progress}</span>
+  <span class="op">defp</span> <span class="fn">refresh_cache</span>(state) <span class="op">do</span>
+    <span class="fn sage">Enum</span>.<span class="fn">each</span>(<span class="fn sage">State</span>.<span class="fn">all_progress</span>(state), <span class="op">fn</span> {user_id, progress} ->
+      :ets.<span class="fn">insert</span>(<span class="res">:portal_cache</span>, {user_id, progress})
+    <span class="op">end</span>)
+  <span class="op">end</span>
+
+  <span class="cmt"># the hot read bypasses the mailbox entirely — concurrent, lock-free, straight off the table</span>
+  <span class="op">def</span> <span class="fn">progress_of</span>(user_id) <span class="op">do</span>
+    <span class="op">case</span> :ets.<span class="fn">lookup</span>(<span class="res">:portal_cache</span>, user_id) <span class="op">do</span>
+      [{^user_id, progress}] -> {<span class="res">:ok</span>, progress}
+      [] -> {<span class="res">:error</span>, <span class="res">:not_enrolled</span>}
+    <span class="op">end</span>
+  <span class="op">end</span>
+<span class="op">end</span>
+
+<span class="cmt"># a write goes through the one writer; the read never does:</span>
+<span class="fn sage">Portal.Engine</span>.<span class="fn">progress_of</span>(<span class="str">"u-7"</span>)
+<span class="cmt"># => {:ok, 0.4}            — read off :ets, no GenServer call</span>
+<span class="fn sage">Portal.Engine</span>.<span class="fn">progress_of</span>(<span class="str">"u-stranger"</span>)
+<span class="cmt"># => {:error, :not_enrolled}</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">read path / write path</p>
+        <p>Reads scale on a shared table; writes serialize through one process &mdash; the two paths share nothing but
+          the truth.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">ets plus GenServer</p>
+        <p><code class="inl">:ets.lookup/2</code> serves reads; <code class="inl">Portal.Engine</code> writes and
+          refreshes the table after each <code class="inl">evolve</code>.</p>
+      </div>
+    </div>
+    <p class="take">Keep one writer and let the reads spread out: the engine still owns the truth, and the
+      <code class="inl">:ets</code> table is a fast, throwaway view it rewrites on every change.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/elixir/GenServer.html">Elixir &mdash; GenServer</a> &mdash; a process that holds state behind a contract.</li>
+        <li><a href="https://hexdocs.pm/elixir/Agent.html">Elixir &mdash; Agent</a> &mdash; the minimal state-holding process.</li>
+        <li><a href="https://www.erlang.org/doc/man/ets.html">Erlang &mdash; ets</a> &mdash; in-memory tables for shared, fast reads.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/pragmatic/state">F5.06 &middot; Where engine state lives</a></li>
+        <li><a href="/elixir/pragmatic/state/genserver">The engine GenServer</a></li>
+        <li><a href="/elixir/pragmatic/cqrs/reducer">F5.05 &middot; The reducer fold</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/pragmatic/state"><span aria-hidden="true">&larr;</span>&nbsp; F5.06 &middot; state</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/pragmatic/state/genserver">Next &middot; the engine GenServer <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BURG = '#e08f8b', BURG_MUTE = '#c4504c';
+  var HOLDERS = {
+    genserver: { name: 'GenServer', verdict: 'holds state + runs decide/evolve',
+      desc: 'A process with its own loop. It serializes access and runs code on each message, so it can hold the folded state and run the contract, decide, and evolve. This is the engine.' },
+    agent:     { name: 'Agent', verdict: 'holds a value, no command logic',
+      desc: 'A GenServer narrowed to one job: hold a value and answer get and update. Convenient for shared settings, but there is no place to run the command contract \u2014 wrong fit for the engine.' },
+    ets:       { name: 'ETS', verdict: 'shared table, concurrent reads',
+      desc: 'A shared in-memory table with concurrent, lock-free reads, owned by a process. Excellent for read-heavy projections later, but it is a key-value store, not a place to fold a log.' }
+  };
+  var ORDER = ['genserver', 'agent', 'ets'];
+  function pick(k) {
+    var H = HOLDERS[k]; if (!H) return;
+    document.querySelectorAll('#chSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById('chRow_' + id), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BURG_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#1d1320' : '#10162b'); }
+    });
+    var rEl = document.getElementById('chRole'); if (rEl) rEl.textContent = H.name;
+    var vEl = document.getElementById('chResult'); if (vEl) vEl.textContent = H.verdict;
+    var oEl = document.getElementById('chOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BURG + '">' + H.name + '</b> \u2014 ' + H.verdict + '. ' + H.desc;
+  }
+  document.querySelectorAll('#chSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('genserver');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

@@ -1,0 +1,290 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/routing">routing</a><span class="rsep">/</span><span class="rcur">pipelines</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/routing">F6.02</a>
+      <span class="sep">/</span>
+      <span class="here">pipelines</span>
+    </div>
+    <p class="eyebrow">F6.02 &middot; part 2 of 3</p>
+    <h1>Pipelines &amp; <span class="ex">scopes</span></h1>
+    <p class="lede">Some work has to happen on the way to almost every action &mdash; fetch the session, reject a forged
+      form, set security headers, require a logged-in user. A <strong>pipeline</strong> is how you name that work once:
+      an ordered stack of plugs given a name like <code class="inl">:browser</code> or <code class="inl">:api</code>.
+      A <strong>scope</strong> then runs a group of routes through one or more pipelines with
+      <code class="inl">pipe_through</code>, so the cross-cutting steps are declared in a single place rather than
+      copied into every controller. Stack pipelines and a route can require both the browser basics and authentication
+      before it is ever reached &mdash; and the action stays as thin as it was in F6.01.</p>
+    <p class="kicker">See three common pipelines, how scopes route groups of paths through them, then the router that
+      declares them. Auth is not special &mdash; it is one more pipeline.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#pipelines">Three pipelines</a>
+      <a href="#scopes">Scopes route through pipelines</a>
+      <a href="#code">The router</a>
+    </div>
+  </section>
+
+  <section id="pipelines">
+    <h2>Three pipelines</h2>
+    <div class="prose">
+      <p>A pipeline groups the plugs a class of request needs. Browser pages need a session and CSRF protection; a JSON
+        API needs none of that but must accept JSON; a protected area needs the user loaded and checked. Select a
+        pipeline to see what it runs.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="plTitle">
+      <h4 id="plTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Pipelines &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="plSel" role="group" aria-label="Pipeline">
+          <button type="button" data-k="browser" class="active">:browser</button>
+          <button type="button" data-k="api">:api</button>
+          <button type="button" data-k="auth">:require_auth</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three pipelines: browser fetches the session and protects from forgery, api accepts JSON, and require_auth loads and checks the current user.">
+        <rect id="plRow_browser" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">:browser</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">fetch_session &middot; fetch_live_flash &middot; protect_from_forgery &middot; headers</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">HTML pages</text>
+
+        <rect id="plRow_api" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">:api</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">accepts ["json"] &mdash; no session, no CSRF</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">JSON clients</text>
+
+        <rect id="plRow_auth" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">:require_auth</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">RequireUser &mdash; load the user, halt if missing (F6.02.3)</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">protected area</text>
+      </svg>
+
+      <div class="geo-readout" id="plOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">pipeline: <span id="plRole" style="color:#9fc0ea">:browser</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">runs: <span id="plResult" style="color:var(--cream)">session, CSRF, headers</span></p>
+    </figure>
+    <p class="take">Name the work, not the repetition. A pipeline is the difference between &ldquo;every action
+      remembers to check auth&rdquo; and &ldquo;these routes go through <code class="inl">:require_auth</code>&rdquo;
+      &mdash; the second cannot be forgotten.</p>
+  </section>
+
+  <section id="scopes">
+    <h2>Scopes route through pipelines</h2>
+    <div class="prose">
+      <p>A scope is a group of routes with a shared path prefix and a <code class="inl">pipe_through</code>. Public
+        pages run through <code class="inl">:browser</code>; a protected dashboard stacks
+        <code class="inl">:browser</code> and <code class="inl">:require_auth</code>; the API runs through
+        <code class="inl">:api</code>. Same routes, different plugs in front.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="plScopeTitle">
+      <h4 id="plScopeTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Three scopes, three pipe_through choices</h4>
+      <svg viewBox="0 0 720 196" role="img" aria-label="Three scopes: the root scope pipes through browser, the dashboard scope pipes through browser and require_auth, and the api scope pipes through api.">
+        <rect x="20" y="24" width="220" height="150" rx="11" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="36" y="44" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#9aa3c0">scope "/"</text>
+        <rect x="36" y="56" width="188" height="26" rx="7" fill="#11203a" stroke="#5a87c4" stroke-width="1.4"></rect>
+        <text x="48" y="73" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#9fc0ea">pipe_through :browser</text>
+        <text x="48" y="104" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">get /courses</text>
+        <text x="48" y="122" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">get /courses/:id</text>
+        <text x="48" y="140" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">post /enroll</text>
+
+        <rect x="256" y="24" width="220" height="150" rx="11" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="272" y="44" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#9aa3c0">scope "/dashboard"</text>
+        <rect x="272" y="56" width="188" height="26" rx="7" fill="#11203a" stroke="#5a87c4" stroke-width="1.4"></rect>
+        <text x="284" y="73" font-family="JetBrains Mono, monospace" font-size="8" fill="#9fc0ea">:browser, :require_auth</text>
+        <text x="284" y="104" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">live / DashboardLive</text>
+        <text x="284" y="122" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">user loaded &amp; checked</text>
+        <text x="284" y="140" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">before any route</text>
+
+        <rect x="492" y="24" width="208" height="150" rx="11" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="508" y="44" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#9aa3c0">scope "/api"</text>
+        <rect x="508" y="56" width="176" height="26" rx="7" fill="#11203a" stroke="#5a87c4" stroke-width="1.4"></rect>
+        <text x="520" y="73" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#9fc0ea">pipe_through :api</text>
+        <text x="520" y="104" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">get /courses/:id</text>
+        <text x="520" y="122" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">JSON in / JSON out</text>
+        <text x="520" y="140" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">no session</text>
+      </svg>
+    </figure>
+    <p class="take">Scopes are how one app serves a browser and an API without tangling them: the routes can even share
+      a path, because the pipeline in front decides what kind of request each scope expects.</p>
+  </section>
+
+  <section id="code">
+    <h2>The router</h2>
+    <div class="prose">
+      <p>Pipelines are declared once at the top; scopes pipe groups of routes through them. Stacking
+        <code class="inl">[:browser, :require_auth]</code> runs the browser plugs and then the auth plug before the
+        dashboard&rsquo;s routes &mdash; the <code class="inl">RequireUser</code> plug is the one we write next.</p>
+    </div>
+    <pre class="code"><span class="op">pipeline</span> <span class="res">:browser</span> <span class="op">do</span>
+  <span class="op">plug</span> <span class="res">:fetch_session</span>
+  <span class="op">plug</span> <span class="res">:fetch_live_flash</span>
+  <span class="op">plug</span> <span class="res">:protect_from_forgery</span>
+  <span class="op">plug</span> <span class="res">:put_secure_browser_headers</span>
+<span class="op">end</span>
+
+<span class="op">pipeline</span> <span class="res">:require_auth</span> <span class="op">do</span>
+  <span class="op">plug</span> <span class="fn blue">PortalWeb.RequireUser</span>         <span class="cmt"># a plug we write in F6.02.3</span>
+<span class="op">end</span>
+
+<span class="op">scope</span> <span class="str">"/"</span>, <span class="fn blue">PortalWeb</span> <span class="op">do</span>
+  <span class="fn">pipe_through</span> <span class="res">:browser</span>
+  <span class="fn">get</span> <span class="str">"/courses/:id"</span>, <span class="fn blue">CourseController</span>, <span class="res">:show</span>
+<span class="op">end</span>
+
+<span class="op">scope</span> <span class="str">"/dashboard"</span>, <span class="fn blue">PortalWeb</span> <span class="op">do</span>
+  <span class="fn">pipe_through</span> [<span class="res">:browser</span>, <span class="res">:require_auth</span>]   <span class="cmt"># stack pipelines</span>
+  <span class="fn blue">live</span> <span class="str">"/"</span>, <span class="fn blue">DashboardLive</span>
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">name the work</p>
+        <p>A pipeline is an ordered stack of plugs with a name &mdash; declared once.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">route groups through it</p>
+        <p><code class="inl">pipe_through</code> runs a scope&rsquo;s routes through the chosen pipelines.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/phoenix/routing/plugs"><strong>writing a plug</strong></a> &mdash; the
+      <code class="inl">RequireUser</code> plug the <code class="inl">:require_auth</code> pipeline runs, and the
+      contract every plug shares.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/phoenix/routing.html">Routing &mdash; Phoenix documentation</a> &mdash; verbs, paths, and scopes.</li>
+        <li><a href="https://hexdocs.pm/phoenix/controllers.html">Controllers &mdash; Phoenix documentation</a> &mdash; actions and rendering.</li>
+        <li><a href="https://hexdocs.pm/plug/readme.html"><code>Plug</code> &mdash; the composable middleware spec</a> &mdash; the contract a pipeline stacks.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/phoenix/routing">F6.02 &middot; Routing, controllers &amp; plugs</a></li>
+        <li><a href="/elixir/phoenix/routing/routes">F6.02.1 &middot; Routes &amp; verbs</a></li>
+        <li><a href="/elixir/phoenix/routing/plugs">F6.02.3 &middot; Writing a plug</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/routing/routes"><span aria-hidden="true">&larr;</span>&nbsp; F6.02.1 &middot; routes &amp; verbs</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/routing/plugs">Next &middot; writing a plug <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var PIPES = {
+    browser: { name: ':browser', runs: 'session, CSRF, headers', row: 'plRow_browser',
+      desc: 'The pipeline for HTML pages: fetch_session, fetch_live_flash, protect_from_forgery, and secure browser headers. Almost every user-facing route pipes through it.' },
+    api:     { name: ':api', runs: 'accepts JSON', row: 'plRow_api',
+      desc: 'The pipeline for machine clients: plug :accepts, ["json"]. No session and no CSRF \u2014 a token-authenticated JSON API does not need them.' },
+    auth:    { name: ':require_auth', runs: 'require a logged-in user', row: 'plRow_auth',
+      desc: 'A pipeline whose plug loads the current user from the session and halts with a redirect if none is present. Stacked after :browser on protected scopes. The plug itself is written in F6.02.3.' }
+  };
+  var ORDER = ['browser', 'api', 'auth'];
+  function pick(k) {
+    var P = PIPES[k]; if (!P) return;
+    document.querySelectorAll('#plSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(PIPES[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('plRole'); if (rEl) rEl.textContent = P.name;
+    var dEl = document.getElementById('plResult'); if (dEl) dEl.textContent = P.runs;
+    var oEl = document.getElementById('plOut'); if (oEl) oEl.innerHTML = 'The <b style="color:' + BLUE + '">' + P.name + '</b> pipeline \u2014 ' + P.runs + '. ' + P.desc;
+  }
+  document.querySelectorAll('#plSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('browser');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

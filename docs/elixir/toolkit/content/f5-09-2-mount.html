@@ -1,0 +1,429 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/pragmatic">pragmatic</a><span class="rsep">/</span><a href="/elixir/pragmatic/engine-lab">engine-lab</a><span class="rsep">/</span><span class="rcur">mount</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/pragmatic">F5</a>
+      <span class="sep">/</span>
+      <a href="/elixir/pragmatic/engine-lab">F5.09</a>
+      <span class="sep">/</span>
+      <span class="here">mount</span>
+    </div>
+    <p class="eyebrow">F5.09 &middot; part 2 of 3</p>
+    <h1>A LiveView mount sketch</h1>
+    <p class="lede">The facade was built to be called by a UI, and a LiveView is that UI. This is a sketch &mdash; F6
+      builds the real thing &mdash; but it shows the discipline the boundary buys: the LiveView touches only
+      <code class="inl">Portal</code> and <code class="inl">%Portal.Error{}</code>, never the engine or the store.
+      <code class="inl">mount/3</code> loads the starting state with a facade query and puts it in
+      <code class="inl">assigns</code>. <code class="inl">handle_event/3</code> turns a click into a facade command and
+      branches on the closed error contract from F5.08.3. <code class="inl">render/1</code> draws from
+      <code class="inl">assigns</code> and knows nothing about how progress is computed. The loop &mdash; event,
+      command, re-assign, re-render &mdash; is the whole of how a LiveView and the engine talk.</p>
+    <p class="kicker">Three callbacks, one boundary. Select a callback to see what it does and which facade function it
+      calls.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#callbacks">Three callbacks at the edge</a>
+      <a href="#code">Mount and handle_event</a>
+      <a href="#render">Render from assigns</a>
+      <a href="#loop">The event loop</a>
+    </div>
+  </section>
+
+  <section id="callbacks">
+    <h2>Three callbacks at the edge</h2>
+    <div class="prose">
+      <p>A LiveView is three callbacks. <code class="inl">mount/3</code> runs once to set the initial
+        <code class="inl">assigns</code>; <code class="inl">handle_event/3</code> runs on each user action;
+        <code class="inl">render/1</code> turns the current <code class="inl">assigns</code> into markup. Each one that
+        reaches the engine does so through the facade and nowhere else. Select a callback.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="mtTitle">
+      <h4 id="mtTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">LiveView callbacks &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="mtSel" role="group" aria-label="LiveView callback">
+          <button type="button" data-k="mount" class="active">mount/3</button>
+          <button type="button" data-k="event">handle_event/3</button>
+          <button type="button" data-k="render">render/1</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 200" role="img" aria-label="The three LiveView callbacks: mount loads state via a facade query, handle_event calls a facade command and branches on the result, and render shows assigns without engine details.">
+        <rect id="mtRow_mount" x="40" y="24" width="640" height="48" rx="11" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="44" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">MOUNT/3 &middot; once</text>
+        <text x="60" y="62" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">Portal.progress_of(id) &rarr; assign(socket, progress: ...)</text>
+        <text x="660" y="52" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#86a7d8">query</text>
+
+        <rect id="mtRow_event" x="40" y="80" width="640" height="48" rx="11" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="100" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">HANDLE_EVENT/3 &middot; per action</text>
+        <text x="60" y="118" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">Portal.deliver_lesson(...) &rarr; case :ok / {:error, %Error{}}</text>
+        <text x="660" y="108" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">command</text>
+
+        <rect id="mtRow_render" x="40" y="136" width="640" height="48" rx="11" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="156" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">RENDER/1 &middot; on change</text>
+        <text x="60" y="174" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">~H from @progress, @error &mdash; no engine details</text>
+        <text x="660" y="164" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">assigns</text>
+      </svg>
+
+      <div class="geo-readout" id="mtOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">callback: <span id="mtRole" style="color:#9fc0ea">mount/3</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">it does: <span id="mtResult" style="color:var(--cream)">loads state via a query</span></p>
+    </figure>
+    <p class="take">A LiveView that only ever names facade functions can be read without knowing the engine exists. That
+      is the boundary doing its job: the UI author thinks in enrollments and progress, not in processes and logs.</p>
+  </section>
+
+  <section id="code">
+    <h2>Mount and handle_event</h2>
+    <div class="prose">
+      <p><code class="inl">mount/3</code> asks the facade for the current progress and stores it in
+        <code class="inl">assigns</code>; if the query fails, it assigns the error message instead.
+        <code class="inl">handle_event/3</code> issues a command, and on success re-queries and re-assigns; on a typed
+        error it assigns the message. The same closed error contract handles both reads and writes.</p>
+    </div>
+    <pre class="code"><span class="op">defmodule</span> <span class="fn blue">PortalWeb.EnrollmentLive</span> <span class="op">do</span>
+  <span class="op">use</span> <span class="fn blue">PortalWeb</span>, <span class="res">:live_view</span>
+  <span class="op">alias</span> <span class="fn blue">Portal.Error</span>
+
+  <span class="cmt"># mount loads initial state through a facade query — no engine, no store</span>
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">mount</span>(%{<span class="str">"id"</span> => enrollment_id}, _session, socket) <span class="op">do</span>
+    <span class="op">case</span> <span class="fn blue">Portal</span>.<span class="fn">progress_of</span>(enrollment_id) <span class="op">do</span>
+      {<span class="res">:ok</span>, percent} ->
+        {<span class="res">:ok</span>, <span class="fn">assign</span>(socket, enrollment_id: enrollment_id, progress: percent, error: <span class="res">nil</span>)}
+
+      {<span class="res">:error</span>, %<span class="fn blue">Error</span>{message: msg}} ->
+        {<span class="res">:ok</span>, <span class="fn">assign</span>(socket, progress: <span class="res">nil</span>, error: msg)}
+    <span class="op">end</span>
+  <span class="op">end</span>
+
+  <span class="cmt"># an action becomes a command, branched on the closed error contract (F5.08.3)</span>
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">handle_event</span>(<span class="str">"deliver_lesson"</span>, %{<span class="str">"lesson"</span> => lesson_id}, socket) <span class="op">do</span>
+    <span class="op">case</span> <span class="fn blue">Portal</span>.<span class="fn">deliver_lesson</span>(socket.assigns.enrollment_id, lesson_id) <span class="op">do</span>
+      <span class="res">:ok</span> ->
+        {<span class="res">:ok</span>, percent} = <span class="fn blue">Portal</span>.<span class="fn">progress_of</span>(socket.assigns.enrollment_id)
+        {<span class="res">:noreply</span>, <span class="fn">assign</span>(socket, progress: percent, error: <span class="res">nil</span>)}
+
+      {<span class="res">:error</span>, %<span class="fn blue">Error</span>{message: msg}} ->
+        {<span class="res">:noreply</span>, <span class="fn">assign</span>(socket, error: msg)}
+    <span class="op">end</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+  </section>
+
+  <section id="render">
+    <h2>Render from assigns</h2>
+    <div class="prose">
+      <p>The template reads only from <code class="inl">assigns</code>. It shows the error if one is set and the
+        progress if one is loaded, and a click sends the <code class="inl">deliver_lesson</code> event back to the
+        callback above. There is no mention of the engine, the log, or how progress is derived &mdash; the render is a
+        function of state the facade handed over.</p>
+    </div>
+    <pre class="code"><span class="op">@impl</span> <span class="res">true</span>
+<span class="op">def</span> <span class="fn">render</span>(assigns) <span class="op">do</span>
+  <span class="op">~H</span><span class="str">"""</span>
+  <span class="str">&lt;section class="enrollment"&gt;</span>
+    <span class="str">&lt;h1&gt;Your progress&lt;/h1&gt;</span>
+    <span class="str">&lt;p :if={@error} class="flash"&gt;{@error}&lt;/p&gt;</span>
+    <span class="str">&lt;progress :if={@progress} value={@progress} max="100"&gt;{@progress}%&lt;/progress&gt;</span>
+    <span class="str">&lt;button phx-click="deliver_lesson" phx-value-lesson={@next_lesson}&gt;</span>
+      <span class="str">Mark lesson done</span>
+    <span class="str">&lt;/button&gt;</span>
+  <span class="str">&lt;/section&gt;</span>
+  <span class="str">"""</span>
+<span class="op">end</span></pre>
+    <p class="take">Render is total too: <code class="inl">@error</code> is either a string or nil, and the
+      <code class="inl">:if</code> guards make both cases draw something sensible. The closed error contract reaches
+      all the way to the markup.</p>
+  </section>
+
+  <section id="loop">
+    <h2>The event loop</h2>
+    <div class="prose">
+      <p>Put together, the LiveView and the engine talk in a loop. A click sends an event; the callback calls a facade
+        command; the facade runs the engine; the result re-assigns; the changed assigns re-render. The cycle never
+        reaches past the facade, so the engine can change underneath without the template noticing.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="mtLoopTitle">
+      <h4 id="mtLoopTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">event &rarr; command &rarr; re-render</h4>
+      <svg viewBox="0 0 720 170" role="img" aria-label="The LiveView loop: render emits a phx-click event to handle_event, which calls the Portal facade; the facade returns a result that re-assigns and re-renders.">
+        <rect x="40" y="30" width="150" height="52" rx="11" fill="#10162b" stroke="#5a6688" stroke-width="1.4"></rect>
+        <text x="115" y="52" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">RENDER</text>
+        <text x="115" y="68" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#7c86a6">assigns &rarr; DOM</text>
+
+        <line x1="190" y1="56" x2="283" y2="56" stroke="#6b7494" stroke-width="1.6"></line>
+        <polygon points="285,56 277,52 277,60" fill="#6b7494"></polygon>
+        <text x="237" y="46" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">phx-click</text>
+
+        <rect x="285" y="30" width="150" height="52" rx="11" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="360" y="52" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#86a7d8">HANDLE_EVENT</text>
+        <text x="360" y="68" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#9fc0ea">Portal.deliver_lesson</text>
+
+        <line x1="435" y1="56" x2="528" y2="56" stroke="#6b7494" stroke-width="1.6"></line>
+        <polygon points="530,56 522,52 522,60" fill="#6b7494"></polygon>
+        <text x="482" y="46" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">command</text>
+
+        <rect x="530" y="30" width="150" height="52" rx="11" fill="#10162b" stroke="#5a6688" stroke-width="1.4"></rect>
+        <text x="605" y="52" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">FACADE</text>
+        <text x="605" y="68" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#7c86a6">:ok | {:error}</text>
+
+        <path d="M605 82 L605 128 L115 128 L115 82" fill="none" stroke="#6b7494" stroke-width="1.6"></path>
+        <polygon points="115,82 111,90 119,90" fill="#6b7494"></polygon>
+        <text x="360" y="144" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">re-assign &middot; re-render &mdash; the loop never reaches past the facade</text>
+      </svg>
+    </figure>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">the UI thinks in domain terms</p>
+        <p>mount, event, render all speak enroll and progress, not process and log.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">only the facade, ever</p>
+        <p>Every callback that reaches the engine does so through <code class="inl">Portal</code> and the error contract.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/pragmatic/engine-lab/handoff"><strong>what ships in F6</strong></a> &mdash;
+      what F6 inherits from this lab unchanged, and what it replaces.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="compTitle">
+    <h2 id="compTitle">A function component for engine state</h2>
+    <div class="prose">
+      <p>The <code class="inl">render/1</code> above inlines its markup. A second technique factors that markup out into a
+        named <strong>function component</strong>: a plain function from <code class="inl">assigns</code> to HEEx, declared
+        with <code class="inl">Phoenix.Component</code> (Phoenix &mdash; Phoenix.Component). Each input the component reads
+        is announced with an <code class="inl">attr</code>, so a missing or misspelled assign is a compile-time error
+        rather than a blank in the page. The function returns markup through the <code class="inl">~H</code> sigil and is
+        invoked from a template as <code class="inl">&lt;.progress_card .../&gt;</code>.</p>
+      <p>This is where the boundary pays off in the view layer. The engine&rsquo;s state &mdash; a progress percent from the
+        facade query <code class="inl">Portal.progress_of/1</code> and the next lesson from a second facade query,
+        <code class="inl">Portal.next_lesson_for/1</code> &mdash; becomes a small
+        set of <code class="inl">assigns</code>, and the function component turns those assigns into server-rendered
+        markup. The component reads <code class="inl">@progress</code>, <code class="inl">@error</code>, and
+        <code class="inl">@next_lesson</code> only; it never names <code class="inl">Portal</code>, the engine, or
+        <code class="inl">%Portal.Error{}</code>. Mapping engine state to assigns, then assigns to markup, keeps each step
+        a pure function of its input.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="compMapTitle">
+      <h4 id="compMapTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">engine state &rarr; assigns &rarr; markup</h4>
+      <svg viewBox="0 0 720 150" role="img" aria-label="Two facade queries: Portal.progress_of returns the percent for the progress assign, and Portal.next_lesson_for returns the next lesson for the next_lesson assign; with error they become the assigns progress, error, and next_lesson; the progress_card function component, with its attr declarations, turns the assigns into HEEx markup.">
+        <rect x="34" y="34" width="176" height="82" rx="12" fill="#10162b" stroke="#5a6688" stroke-width="1.4"></rect>
+        <text x="122" y="54" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">ENGINE STATE</text>
+        <text x="122" y="72" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#7c86a6">progress_of/1 &rarr; {:ok, percent}</text>
+        <text x="122" y="86" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#7c86a6">next_lesson_for/1 &rarr; {:ok, id}</text>
+        <text x="122" y="104" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7.5" fill="#6b7494">@progress &middot; @next_lesson</text>
+
+        <line x1="210" y1="75" x2="263" y2="75" stroke="#6b7494" stroke-width="1.6"></line>
+        <polygon points="265,75 257,71 257,79" fill="#6b7494"></polygon>
+
+        <rect x="265" y="42" width="176" height="66" rx="12" fill="#13231c" stroke="#7ba387" stroke-width="2"></rect>
+        <text x="353" y="66" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#a7c9b1">ASSIGNS</text>
+        <text x="353" y="84" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a7c9b1">@progress, @error,</text>
+        <text x="353" y="98" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a7c9b1">@next_lesson</text>
+
+        <line x1="441" y1="75" x2="494" y2="75" stroke="#6b7494" stroke-width="1.6"></line>
+        <polygon points="496,75 488,71 488,79" fill="#6b7494"></polygon>
+
+        <rect x="496" y="42" width="190" height="66" rx="12" fill="#10162b" stroke="#5a6688" stroke-width="1.4"></rect>
+        <text x="591" y="66" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">MARKUP</text>
+        <text x="591" y="84" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#7c86a6">&lt;.progress_card&gt;</text>
+        <text x="591" y="98" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#6b7494">~H via attr</text>
+
+        <text x="237" y="26" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">two queries hand over</text>
+        <text x="468" y="26" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#7ba387">attr-checked</text>
+      </svg>
+    </figure>
+
+    <pre class="code"><span class="op">defmodule</span> <span class="fn blue">PortalWeb.EnrollmentComponents</span> <span class="op">do</span>
+  <span class="op">use</span> <span class="fn blue">Phoenix.Component</span>
+
+  <span class="cmt"># each assign the component reads is declared — a missing one fails at compile time</span>
+  <span class="op">attr</span> <span class="res">:progress</span>, <span class="res">:integer</span>, default: <span class="res">nil</span>
+  <span class="op">attr</span> <span class="res">:error</span>, <span class="res">:string</span>, default: <span class="res">nil</span>
+  <span class="op">attr</span> <span class="res">:next_lesson</span>, <span class="res">:string</span>, required: <span class="res">true</span>
+
+  <span class="cmt"># a pure function from assigns to markup — no Portal, no engine, no %Error{}</span>
+  <span class="op">def</span> <span class="fn sage">progress_card</span>(assigns) <span class="op">do</span>
+    <span class="op">~H</span><span class="str">"""</span>
+    <span class="str">&lt;section class="enrollment"&gt;</span>
+      <span class="str">&lt;h1&gt;Your progress&lt;/h1&gt;</span>
+      <span class="str">&lt;p :if={@error} class="flash"&gt;{@error}&lt;/p&gt;</span>
+      <span class="str">&lt;progress :if={@progress} value={@progress} max="100"&gt;{@progress}%&lt;/progress&gt;</span>
+      <span class="str">&lt;button phx-click="deliver_lesson" phx-value-lesson={@next_lesson}&gt;</span>
+        <span class="str">Mark lesson done</span>
+      <span class="str">&lt;/button&gt;</span>
+    <span class="str">&lt;/section&gt;</span>
+    <span class="str">"""</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose" style="margin-top:1.1rem">
+      <p>The <code class="inl">render/1</code> of <code class="inl">PortalWeb.EnrollmentLive</code> then calls the component
+        and passes the assigns the facade queries produced. The engine state arrived as <code class="inl">@progress</code>
+        from <code class="inl">progress_of/1</code> and <code class="inl">@next_lesson</code> from
+        <code class="inl">next_lesson_for/1</code>; the call wires them straight through.</p>
+    </div>
+    <pre class="code"><span class="op">import</span> <span class="fn blue">PortalWeb.EnrollmentComponents</span>
+
+<span class="op">@impl</span> <span class="res">true</span>
+<span class="op">def</span> <span class="fn">render</span>(assigns) <span class="op">do</span>
+  <span class="op">~H</span><span class="str">"""</span>
+  <span class="str">&lt;.progress_card</span>
+    <span class="str">progress={@progress}</span>
+    <span class="str">error={@error}</span>
+    <span class="str">next_lesson={@next_lesson}</span>
+  <span class="str">/&gt;</span>
+  <span class="str">"""</span>
+<span class="op">end</span>
+
+<span class="cmt"># with @progress = 60, @error = nil, @next_lesson = "m3-evolve" the component renders:</span>
+<span class="cmt">#   &lt;section class="enrollment"&gt;</span>
+<span class="cmt">#     &lt;h1&gt;Your progress&lt;/h1&gt;</span>
+<span class="cmt">#     &lt;progress value="60" max="100"&gt;60%&lt;/progress&gt;</span>
+<span class="cmt">#     &lt;button phx-click="deliver_lesson" phx-value-lesson="m3-evolve"&gt;Mark lesson done&lt;/button&gt;</span>
+<span class="cmt">#   &lt;/section&gt;</span>
+<span class="cmt"># => server-rendered markup, never naming Portal or %Portal.Error{}</span></pre>
+
+    <p class="take">Engine state maps to assigns, and a function component maps assigns to markup; with each input declared
+      by an <code class="inl">attr</code>, the boundary that began at the facade reaches all the way into the rendered
+      page, checked at compile time.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html">Phoenix &mdash; Phoenix.LiveView</a> &mdash; server-rendered, stateful UI over the engine.</li>
+        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.Component.html">Phoenix &mdash; Phoenix.Component (HEEx)</a> &mdash; function components and the HEEx template.</li>
+        <li><a href="https://hexdocs.pm/elixir/Supervisor.html">Elixir &mdash; Supervisor</a> &mdash; the engine runs under a supervision tree.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/pragmatic/engine-lab">F5.09 &middot; the Portal engine lab</a></li>
+        <li><a href="/elixir/pragmatic/boundaries/facade">F5.08 &middot; the facade boundary</a></li>
+        <li><a href="/elixir/pragmatic/engine-lab/end-to-end">F5.09.1 &middot; end to end</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/pragmatic/engine-lab/end-to-end"><span aria-hidden="true">&larr;</span>&nbsp; F5.09.1 &middot; end to end</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/pragmatic/engine-lab/handoff">Next &middot; what ships in F6 <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var CBS = {
+    mount:  { name: 'mount/3', detail: 'loads state via a query',
+      desc: 'Runs once when the LiveView connects. It calls Portal.progress_of \u2014 a facade query \u2014 and puts the result in assigns, or assigns the error message if the query returns a typed error. No engine, no store.' },
+    event:  { name: 'handle_event', detail: 'calls a command, branches on the result',
+      desc: 'Runs on each user action. It turns a click into Portal.deliver_lesson \u2014 a facade command \u2014 and branches on the closed error contract: on :ok it re-queries and re-assigns, on {:error, %Error{}} it assigns the message.' },
+    render: { name: 'render/1', detail: 'shows assigns, no engine details',
+      desc: 'Runs whenever assigns change. It draws from @progress and @error only, with :if guards so both the loaded and the error cases render something. It never names the engine, the log, or how progress is computed.' }
+  };
+  var ORDER = ['mount', 'event', 'render'];
+  function pick(k) {
+    var C = CBS[k]; if (!C) return;
+    document.querySelectorAll('#mtSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById('mtRow_' + id), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('mtRole'); if (rEl) rEl.textContent = C.name;
+    var dEl = document.getElementById('mtResult'); if (dEl) dEl.textContent = C.detail;
+    var oEl = document.getElementById('mtOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + C.name + '</b> \u2014 ' + C.detail + '. ' + C.desc;
+  }
+  document.querySelectorAll('#mtSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('mount');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

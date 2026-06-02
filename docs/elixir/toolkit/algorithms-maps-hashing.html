@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hashing &amp; collisions — F4.04.3 · jonnify</title>
+<meta name="description" content="Maps and sets reach O(1) by hashing: phash2 turns a key into an integer, which picks a slot, and collisions resolve in place. Elixir stores entries in a 32-way HAMT, so depth is about log32 n — the door into F4.05. Branded Snowflake ids hash like any other key.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(179,157,219,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--elixir-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--sans);color:var(--cream-dim);font-size:.95rem;max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--elixir-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="elixir"]{background:var(--elixir-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;overflow-x:auto;white-space:nowrap}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--elixir-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- arc svg ---- */
+.arc-node rect{transition:fill .2s ease, stroke .2s ease}
+.arc-node{cursor:pointer}
+.arc-node .num{font-family:var(--serif-display);font-weight:600;fill:var(--cream)}
+.arc-node .nm{font-family:var(--sans);font-weight:600;fill:var(--cream-dim);letter-spacing:.02em}
+.arc-node:hover rect{stroke:var(--cream-dim)}
+.arc-node.active rect{fill:var(--ink-3);stroke:var(--elixir-bright)}
+.arc-node.active .num{fill:var(--gold-bright)}
+.arc-node.active .nm{fill:var(--elixir-bright)}
+.arc-node:focus{outline:none}
+.arc-node:focus-visible rect{stroke:var(--gold-bright)}
+.arc-flow{stroke:var(--line);stroke-width:2;fill:none;stroke-dasharray:6 9}
+.arc-arrow{fill:var(--cream-dim)}
+@media (prefers-reduced-motion: no-preference){
+  .arc-flow{animation:flow 1.6s linear infinite}
+}
+@keyframes flow{to{stroke-dashoffset:-30}}
+.arc-readout{margin-top:1.1rem}
+.arc-readout .nm{font-family:var(--serif-display);font-size:1.5rem;color:var(--cream);font-weight:600}
+.arc-readout .one{font-family:var(--serif);color:var(--cream-soft);margin:.25rem 0 .5rem;max-width:60ch}
+.arc-readout .meta{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;align-items:center}
+.arc-readout .meta b{color:var(--gold)}
+.arc-open{margin-top:.7rem;font-family:var(--sans);font-size:.9rem}
+.arc-open .muted{color:var(--cream-dim)}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--elixir-bright);border-color:var(--elixir)}
+.chap{padding-top:2.2rem}
+.chap:first-of-type{padding-top:.4rem}
+.chap-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem 1rem;
+  padding-bottom:.6rem;border-bottom:1px solid var(--line);margin-bottom:1.1rem}
+.chap-head .cid{font-family:var(--mono);font-size:.95rem;color:var(--gold)}
+.chap-head h3{margin:0}
+.chap-head .c-one{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);
+  flex-basis:100%;margin-top:.1rem}
+.chap-head .chap-link{font-family:var(--sans);font-size:.82rem;margin-left:auto}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+.mod.is-quiet{opacity:.66;border-style:dashed}
+.mod.is-quiet .t{color:var(--cream-soft)}
+.mod.lab{border-left:2px solid var(--elixir)}
+.mod.lab .num::after{content:" · lab";color:var(--elixir-bright)}
+.dives{list-style:none;margin:.6rem 0 0;padding:.6rem 0 0;border-top:1px dashed var(--line);
+  font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);display:grid;gap:.3rem}
+.dives li{display:flex;gap:.5rem}
+.dives .dn{font-family:var(--mono);color:var(--gold);min-width:3.6rem}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--elixir-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--elixir-bright);
+  border:1px solid var(--elixir);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+pre.code .rdx{background:rgba(179,157,219,.18);border-radius:4px;padding:0 .18em;color:var(--elixir-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/algorithms">algorithms</a><span class="rsep">/</span><a href="/elixir/algorithms/maps">maps</a><span class="rsep">/</span><span class="rcur">hashing</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/algorithms">F4</a>
+      <span class="sep">/</span>
+      <a href="/elixir/algorithms/maps">F4.04</a>
+      <span class="sep">/</span>
+      <span class="here">hashing</span>
+    </div>
+    <p class="eyebrow">F4.04 &middot; part 3 of 3</p>
+    <h1>Hashing &amp; <span class="ex">collisions</span></h1>
+    <p class="lede">Both a map lookup and a set membership test rest on the same trick: a <strong>hash function</strong>
+      turns a key into an integer, the integer picks a <strong>slot</strong>, and the value lives there &mdash; no
+      scanning, so the cost does not grow with the collection. When two keys pick the same slot, that is a
+      <strong>collision</strong>, resolved in place. Elixir&rsquo;s term hash is <code class="inl">:erlang.phash2</code>.</p>
+    <p class="kicker">Hashing the route <code class="inl">"/elixir/algorithms/maps"</code> to a slot, and watching a
+      second key collide with it. Select a step.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#hash">Key, hash, slot</a>
+      <a href="#advanced">Advanced: the 32-way HAMT</a>
+    </div>
+  </section>
+
+  <section id="hash">
+    <h2>Key, hash, slot</h2>
+    <div class="prose">
+      <p>The key is hashed to a large integer; reducing that modulo the number of slots gives an index. Lookups
+        repeat the computation and go straight to the slot. Two distinct keys can land together &mdash; both are
+        kept and the slot is searched, which stays cheap as long as collisions are rare. Step through it.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="hsTitle">
+      <h4 id="hsTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The step &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="hsSel" role="group" aria-label="The hashing step">
+          <button type="button" data-k="hash" data-c="sage" class="active">hash</button>
+          <button type="button" data-k="bucket" data-c="blue">bucket</button>
+          <button type="button" data-k="collision" data-c="gold">collision</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 214" role="img" aria-label="A route key is hashed by phash2 to an integer, reduced modulo 8 to slot 7; a second key collides into the same slot.">
+        <rect id="hsKey1" x="16" y="40" width="176" height="38" rx="10" fill="#1a2230" stroke="#a7c9b1" stroke-width="2"></rect>
+        <text x="104" y="64" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#cdb8f0">"/elixir/algorithms/maps"</text>
+
+        <rect id="hsKey2" x="16" y="128" width="176" height="38" rx="10" fill="#241c14" stroke="#f0cd7f" stroke-width="2" opacity="0"></rect>
+        <text id="hsKey2T" x="104" y="152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#f0cd7f" opacity="0">"/elixir/algorithms/sorting"</text>
+
+        <text x="214" y="92" font-family="JetBrains Mono, monospace" font-size="13" fill="#5a6688">&rarr;</text>
+        <rect x="240" y="62" width="118" height="38" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.6"></rect>
+        <text x="299" y="80" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#8b93b0">phash2</text>
+        <text x="299" y="94" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#6b7494">term hash</text>
+
+        <text x="372" y="92" font-family="JetBrains Mono, monospace" font-size="13" fill="#5a6688">&rarr;</text>
+        <rect id="hsInt" x="398" y="62" width="132" height="38" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.6"></rect>
+        <text id="hsIntT" x="464" y="86" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#a7c9b1">48721903</text>
+
+        <text x="544" y="92" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#6b7494">rem 8</text>
+
+        <text x="592" y="26" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.12em" fill="#6b7494">BUCKETS</text>
+        <rect id="hsSlot0" x="588" y="30" width="116" height="20" rx="5" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+        <text x="598" y="44" font-family="JetBrains Mono, monospace" font-size="10" fill="#5a6688">[0]</text>
+        <rect id="hsSlot1" x="588" y="52" width="116" height="20" rx="5" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+        <text x="598" y="66" font-family="JetBrains Mono, monospace" font-size="10" fill="#5a6688">[1]</text>
+        <rect id="hsSlot2" x="588" y="74" width="116" height="20" rx="5" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+        <text x="598" y="88" font-family="JetBrains Mono, monospace" font-size="10" fill="#5a6688">[2]</text>
+        <rect id="hsSlot3" x="588" y="96" width="116" height="20" rx="5" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+        <text x="598" y="110" font-family="JetBrains Mono, monospace" font-size="10" fill="#5a6688">[3]</text>
+        <rect id="hsSlot4" x="588" y="118" width="116" height="20" rx="5" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+        <text x="598" y="132" font-family="JetBrains Mono, monospace" font-size="10" fill="#5a6688">[4]</text>
+        <rect id="hsSlot5" x="588" y="140" width="116" height="20" rx="5" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+        <text x="598" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#5a6688">[5]</text>
+        <rect id="hsSlot6" x="588" y="162" width="116" height="20" rx="5" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+        <text x="598" y="176" font-family="JetBrains Mono, monospace" font-size="10" fill="#5a6688">[6]</text>
+        <rect id="hsSlot7" x="588" y="184" width="116" height="20" rx="5" fill="#1a2230" stroke="#a7c9b1" stroke-width="2.4"></rect>
+        <text x="598" y="198" font-family="JetBrains Mono, monospace" font-size="10" fill="#cdb8f0">[7]</text>
+
+        <text id="hsCaption" x="300" y="190" text-anchor="middle" font-family="Manrope, sans-serif" font-size="10.5" fill="#a7c9b1">phash2 maps the key to an integer</text>
+      </svg>
+
+      <pre class="code" id="hsCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="hsOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">role: <span id="hsRole" style="color:var(--sage-bright)">any term to an integer</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">result: <span id="hsResult" style="color:var(--cream)">48721903</span></p>
+    </figure>
+    <p class="take">Hash, reduce, place: the same three steps on every read and write, independent of how many keys
+      exist. Collisions are inevitable once there are more keys than slots, so a real implementation grows the table
+      and keeps the average bucket short &mdash; which is where the HAMT comes in.</p>
+  </section>
+
+  <section id="advanced">
+    <h2>Advanced: the 32-way HAMT</h2>
+    <div class="prose">
+      <p>A single modulo table would need resizing and could degrade if many keys collide. Elixir instead stores a
+        large map as a <strong>hash array mapped trie</strong>: a tree that consumes the key&rsquo;s hash a few bits
+        at a time, branching up to 32 ways at each level. Five bits choose one of 32 children, the next five choose
+        the next, and so on, so the depth is about <code class="inl">log&#8323;&#8322;&nbsp;n</code> &mdash; roughly
+        four levels for millions of keys, which is why lookup is treated as O(1). Small maps skip the tree and stay a
+        flat sorted array until they outgrow 32 keys.</p>
+      <p>Any term can be a key, so the course&rsquo;s branded Snowflake ids work directly: a 64-bit integer rendered
+        as base62 with a namespace prefix, it hashes like any other key, and it stays stable as a pivot across the
+        BEAM, Node, and Go runtimes that share the queue. That persistent 32-way trie is the whole of F4.05.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="hsHamtTitle">
+      <h4 id="hsHamtTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A map as a 32-way trie on the key&rsquo;s hash</h4>
+      <svg viewBox="0 0 720 220" role="img" aria-label="A root node with 32 slots branches on five-bit chunks of the hash to a child node, then to a leaf holding the page entry; depth is about log base 32 of n.">
+        <text x="40" y="30" font-family="Manrope, sans-serif" font-size="10" letter-spacing="0.12em" fill="#6b7494">ROOT &middot; 32 slots</text>
+        <g>
+          <rect x="40" y="38" width="34" height="30" rx="6" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+          <rect x="78" y="38" width="34" height="30" rx="6" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+          <rect x="116" y="38" width="34" height="30" rx="6" fill="#1a2230" stroke="#a7c9b1" stroke-width="2.4"></rect>
+          <rect x="154" y="38" width="34" height="30" rx="6" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+          <text x="206" y="58" font-family="JetBrains Mono, monospace" font-size="13" fill="#5a6688">&hellip; (32)</text>
+        </g>
+        <text x="133" y="58" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#cdb8f0">5</text>
+        <path d="M133 68 L133 96" stroke="#a7c9b1" stroke-width="1.6" fill="none"></path>
+        <path d="M133 96 l-4 -7 h8 z" fill="#a7c9b1"></path>
+        <text x="150" y="90" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b7494">bits 0&ndash;4 of hash</text>
+
+        <text x="40" y="116" font-family="Manrope, sans-serif" font-size="10" letter-spacing="0.12em" fill="#6b7494">NODE &middot; 32 slots</text>
+        <g>
+          <rect x="40" y="122" width="34" height="30" rx="6" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+          <rect x="78" y="122" width="34" height="30" rx="6" fill="#1a2230" stroke="#a7c9b1" stroke-width="2.4"></rect>
+          <rect x="116" y="122" width="34" height="30" rx="6" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+          <text x="168" y="142" font-family="JetBrains Mono, monospace" font-size="13" fill="#5a6688">&hellip; (32)</text>
+        </g>
+        <text x="95" y="142" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#cdb8f0">9</text>
+        <path d="M95 152 L95 180" stroke="#a7c9b1" stroke-width="1.6" fill="none"></path>
+        <path d="M95 180 l-4 -7 h8 z" fill="#a7c9b1"></path>
+        <text x="112" y="174" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b7494">bits 5&ndash;9 of hash</text>
+
+        <rect x="40" y="184" width="280" height="30" rx="8" fill="#161f17" stroke="#a7c9b1" stroke-width="2"></rect>
+        <text x="54" y="204" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#a7c9b1">leaf: "/elixir/algorithms/maps" =&gt; %Page{}</text>
+
+        <line x1="420" y1="40" x2="420" y2="200" stroke="#2a3252" stroke-width="1.2" stroke-dasharray="4 4"></line>
+        <text x="452" y="58" font-family="Manrope, sans-serif" font-size="12" fill="#e8e2d0">depth &#8776; log&#8323;&#8322; n</text>
+        <text x="452" y="84" font-family="Manrope, sans-serif" font-size="11" fill="#8b93b0">5 hash bits per level</text>
+        <text x="452" y="104" font-family="Manrope, sans-serif" font-size="11" fill="#8b93b0">32 = 2&#8309; children per node</text>
+        <text x="452" y="130" font-family="Manrope, sans-serif" font-size="11" fill="#a7c9b1">~4 levels for millions of keys</text>
+        <text x="452" y="150" font-family="Manrope, sans-serif" font-size="11" fill="#a7c9b1">so lookup is treated as O(1)</text>
+        <text x="452" y="176" font-family="Manrope, sans-serif" font-size="10.5" fill="#6b7494">small map (&#8804;32): flat array</text>
+        <text x="452" y="194" font-family="Manrope, sans-serif" font-size="10.5" fill="#cdb8f0">F4.05 builds this trie</text>
+      </svg>
+    </figure>
+
+    <pre class="code"><span class="fn elixir">:erlang</span>.<span class="fn">phash2</span>(<span class="str">"/elixir/algorithms/maps"</span>)     <span class="cmt"># =&gt; 48721903   (a term hash)</span>
+<span class="fn elixir">:erlang</span>.<span class="fn">phash2</span>(<span class="str">"/elixir/algorithms/maps"</span>, <span class="res">8</span>)  <span class="cmt"># =&gt; 7          (bounded to one of 8 slots)</span>
+
+<span class="cmt"># a branded Snowflake id is a term like any other — it hashes and keys the same</span>
+%{} |&gt; <span class="fn sage">Map</span>.<span class="fn">put</span>(<span class="str">"PGE0NbWMtkolM0"</span>, page)  <span class="cmt"># PGE = page namespace</span>
+
+<span class="cmt"># small map (&lt;= 32 keys): flat sorted array</span>
+<span class="cmt"># large map: a 32-way HAMT keyed by chunks of the hash, depth ~ log32 n</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">F4.04 &middot; a good hash spreads keys across slots</p>
+        <p>The hash sends each key to a slot; collisions stay rare.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">F4.05 &middot; the 32-way HAMT</p>
+        <p>Elixir stores the entries in a persistent hash array mapped trie &mdash; the chapter spine.</p>
+      </div>
+    </div>
+    <p class="note">That completes F4.04: a map looks up a value by key, a set tests membership, and a hash makes
+      both constant-time. Next module: <strong>F4.05 &mdash; Hash Array Mapped Tries (HAMT)</strong>,
+      which builds the 32-way trie sketched above &mdash; the start of the persistent-map spine that leads to CHAMP
+      and the branded-CHAMP map.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://en.wikipedia.org/wiki/Hash_table">Hash table &mdash; Wikipedia</a> &mdash; hashing and collisions.</li>
+        <li><a href="https://hexdocs.pm/elixir/Map.html"><code>Map</code> / <code>MapSet</code> &mdash; Elixir documentation</a> &mdash; maps and sets in Elixir.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/maps">F4.04 &middot; Maps, sets &amp; hashing</a></li>
+        <li><a href="/elixir/algorithms/sorting">F4.03 &middot; Sorting &amp; searching</a></li>
+        <li><a href="/elixir/language/structs">F3.05 &middot; Structs, maps &amp; keyword lists</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/maps/sets"><span aria-hidden="true">&larr;</span>&nbsp; F4.04.2 &middot; sets</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/algorithms">Back to F4 &middot; Algorithms &amp; Data Structures <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NeZupQXdRY</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-02 14:52:27 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var SAGE = '#a7c9b1', BLUE = '#9fc0ea', GOLD = '#f0cd7f', DIMSTK = '#2a3252', DIMINK = '#10162b', SAGEINK = '#1a2230', BLUEINK = '#16203a', GOLDINK = '#241c14';
+  function set(id, attr, v) { var e = document.getElementById(id); if (e) e.setAttribute(attr, String(v)); }
+  function slot(id, fill, stroke, w) { var e = document.getElementById(id); if (e) { e.setAttribute('fill', fill); e.setAttribute('stroke', stroke); e.setAttribute('stroke-width', w); } }
+  var CASES = {
+    hash: {
+      key2: 0, intFill: SAGEINK, intStroke: SAGE, intW: '2.4', intText: '48721903', intTextFill: SAGE,
+      slot7: [DIMINK, DIMSTK, '1.3'],
+      caption: 'phash2 maps the key to an integer', captionFill: SAGE,
+      role: 'any term to an integer', roleFill: SAGE,
+      result: '48721903', resultFill: '#e8e2d0',
+      code: '<span class="fn elixir">:erlang</span>.<span class="fn">phash2</span>(<span class="str">"/elixir/algorithms/maps"</span>)\n<span class="cmt"># => 48721903  · a 27-bit term hash, same for the same term every time</span>',
+      out: '<b style="color:var(--sage-bright)">phash2</b> turns any term &mdash; a string, a tuple, a branded id &mdash; into an integer. The same key always hashes to the same number, which is what lets a lookup find its slot again.'
+    },
+    bucket: {
+      key2: 0, intFill: DIMINK, intStroke: DIMSTK, intW: '1.6', intText: '48721903', intTextFill: '#a7c9b1',
+      slot7: [SAGEINK, SAGE, '2.4'],
+      caption: 'rem 8 reduces the hash to slot 7', captionFill: BLUE,
+      role: 'an integer to a slot index', roleFill: BLUE,
+      result: 'slot 7', resultFill: '#e8e2d0',
+      code: '<span class="fn elixir">:erlang</span>.<span class="fn">phash2</span>(<span class="str">"/elixir/algorithms/maps"</span>, <span class="res">8</span>)\n<span class="cmt"># => 7  · 48721903 rem 8 = 7, so the value lives in slot [7]</span>',
+      out: '<b style="color:var(--blue-bright)">Reducing</b> the hash modulo the number of slots gives an index &mdash; <code class="inl">48721903 rem 8 = 7</code>. A lookup recomputes the same index and goes straight to slot 7; no other slot is touched.'
+    },
+    collision: {
+      key2: 1, intFill: DIMINK, intStroke: DIMSTK, intW: '1.6', intText: '48721903', intTextFill: '#a7c9b1',
+      slot7: [GOLDINK, GOLD, '2.6'],
+      caption: 'a second key also reduces to slot 7 — a collision', captionFill: GOLD,
+      role: 'same slot — both kept', roleFill: GOLD,
+      result: 'two keys, slot 7', resultFill: '#e8e2d0',
+      code: '<span class="fn elixir">:erlang</span>.<span class="fn">phash2</span>(<span class="str">"/elixir/algorithms/sorting"</span>, <span class="res">8</span>)\n<span class="cmt"># => 7  · a different key, same slot as maps — a collision</span>\n<span class="cmt"># both entries are kept in slot 7 and the slot is searched on lookup</span>',
+      out: '<b style="color:var(--gold-bright)">A collision:</b> two distinct keys reduce to the same slot. Both are kept there and the slot is checked on lookup, so it stays cheap while collisions are few. Too many in one slot is what a resize &mdash; or a HAMT &mdash; prevents.'
+    }
+  };
+  function pick(k) {
+    var c = CASES[k]; if (!c) return;
+    document.querySelectorAll('#hsSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    set('hsKey2', 'opacity', c.key2); set('hsKey2T', 'opacity', c.key2);
+    set('hsInt', 'fill', c.intFill); set('hsInt', 'stroke', c.intStroke); set('hsInt', 'stroke-width', c.intW);
+    var it = document.getElementById('hsIntT'); if (it) { it.textContent = c.intText; it.setAttribute('fill', c.intTextFill); }
+    slot('hsSlot7', c.slot7[0], c.slot7[1], c.slot7[2]);
+    var t;
+    t = document.getElementById('hsCaption'); if (t) { t.textContent = c.caption; t.setAttribute('fill', c.captionFill); }
+    t = document.getElementById('hsRole'); if (t) { t.textContent = c.role; t.style.color = c.roleFill; }
+    t = document.getElementById('hsResult'); if (t) { t.textContent = c.result; t.style.color = c.resultFill; }
+    t = document.getElementById('hsCode'); if (t) t.innerHTML = c.code;
+    t = document.getElementById('hsOut'); if (t) t.innerHTML = c.out;
+  }
+  document.querySelectorAll('#hsSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('hash');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

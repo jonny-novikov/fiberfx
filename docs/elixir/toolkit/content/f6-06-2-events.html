@@ -1,0 +1,457 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/liveview">liveview</a><span class="rsep">/</span><span class="rcur">events</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/liveview">F6.06</a>
+      <span class="sep">/</span>
+      <span class="here">events</span>
+    </div>
+    <p class="eyebrow">F6.06 &middot; part 2 of 3</p>
+    <h1>handle_event &amp; <span class="ex">state</span></h1>
+    <p class="lede">Interaction in LiveView is a message, not a request. A binding names the event; the socket carries
+      it; <code class="inl">handle_event/3</code> returns new state.</p>
+    <p class="kicker">A page element is annotated with a <strong>binding</strong> &mdash;
+      <code class="inl">phx-click</code>, <code class="inl">phx-change</code>, <code class="inl">phx-submit</code> &mdash;
+      that names an event. The client sends that name and a map of params over the socket, and
+      <code class="inl">handle_event/3</code> receives the three: the name, the params, and the socket. It transforms the
+      assigns and returns <code class="inl">{:noreply, assign(socket, ...)}</code>; the changed state re-renders the view
+      and the diff travels back, with no DOM code on either side. The discipline is the F5 one exactly &mdash; a message
+      arrives, new state is computed, the new state is returned &mdash; so a search box that filters the catalog, a
+      button that toggles a panel, and a form that creates a record are each one <code class="inl">handle_event</code>
+      clause over the <strong>same</strong> <code class="inl">Portal</code> context from F6.04 and the
+      <strong>same</strong> changeset from F6.03. The domain does not change; it is reached over a socket, and the result
+      is a live UI without a page reload.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#bindings">Three bindings</a>
+      <a href="#flow">The event loop</a>
+      <a href="#search">A live search box</a>
+      <a href="#code">The handler in Elixir</a>
+      <a href="#downstream">Why it matters</a>
+    </div>
+  </section>
+
+  <section id="bindings">
+    <h2>Three bindings, one callback</h2>
+    <div class="prose">
+      <p>A binding ties a DOM event to a named server event. <code class="inl">phx-click</code> fires on a click;
+        <code class="inl">phx-change</code> fires when an input changes, on every keystroke;
+        <code class="inl">phx-submit</code> fires when a form is submitted. All three deliver to the same place &mdash;
+        <code class="inl">handle_event/3</code>, matched on the event name &mdash; and the markup declares only
+        <em>that</em> an event happens, never <em>what</em> it does. Select one.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="evTitle">
+      <h4 id="evTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Event bindings &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="evSel" role="group" aria-label="Event binding">
+          <button type="button" data-k="click" class="active">phx-click</button>
+          <button type="button" data-k="change">phx-change</button>
+          <button type="button" data-k="submit">phx-submit</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three event bindings: phx-click sends an event on click, phx-change on each input change, and phx-submit on form submission. All three deliver to handle_event slash 3.">
+        <rect id="evRow_click" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">phx-click</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">phx-click="toggle" &mdash; a click sends the "toggle" event</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">on click</text>
+
+        <rect id="evRow_change" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">phx-change</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">phx-change="search" &mdash; each keystroke sends "search"</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">on input</text>
+
+        <rect id="evRow_submit" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">phx-submit</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">phx-submit="create" &mdash; form submit sends "create"</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">on submit</text>
+      </svg>
+
+      <div class="geo-readout" id="evOut" aria-live="polite">A click on a bound element sends the named "toggle" event to <b style="color:#9fc0ea">handle_event/3</b>, which updates assigns and re-renders &mdash; no onclick handler in JavaScript.</div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">binding: <span id="evRole" style="color:#9fc0ea">phx-click</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">fires: <span id="evResult" style="color:var(--cream)">a click sends an event</span></p>
+    </figure>
+    <p class="take">The event is only a name and a map of params. The server decides what it means, which keeps all the
+      behaviour in Elixir &mdash; the same place the F6.04 contexts already live.</p>
+  </section>
+
+  <section id="flow">
+    <h2>The event loop</h2>
+    <div class="prose">
+      <p>One turn of the loop: the browser sends a named event over the socket;
+        <code class="inl">handle_event/3</code> matches it, calls a context if needed, and writes new assigns;
+        returning <code class="inl">{:noreply, socket}</code> re-renders; the diff travels back. The process stays put
+        the whole time &mdash; only its assigns change, which is what makes the turn cheap.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="evFlowTitle">
+      <h4 id="evFlowTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">event &rarr; handle_event &rarr; assign &rarr; diff</h4>
+      <svg viewBox="0 0 720 188" role="img" aria-label="The event loop: a browser event travels the socket to handle_event, which calls a context and updates assigns, returns noreply to re-render, and the diff travels back to the browser. The process persists across the loop.">
+        <rect x="20" y="74" width="120" height="40" rx="9" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="80" y="90" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">BROWSER</text>
+        <text x="80" y="104" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">phx-change</text>
+        <line x1="140" y1="84" x2="196" y2="84" stroke="#5a87c4" stroke-width="1.6"></line>
+        <text x="168" y="76" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#86a7d8">event</text>
+
+        <rect x="196" y="62" width="180" height="64" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="286" y="82" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#9fc0ea">handle_event/3</text>
+        <text x="286" y="98" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#86a7d8">call a context, build assigns</text>
+        <text x="286" y="112" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#9fc0ea">{:noreply, socket}</text>
+        <line x1="376" y1="84" x2="432" y2="84" stroke="#3a4263" stroke-width="1.6"></line>
+        <text x="404" y="76" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7c86a6">assign</text>
+
+        <rect x="432" y="62" width="150" height="64" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="507" y="86" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#cfd6e6">render/1</text>
+        <text x="507" y="102" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#7c86a6">recompute the markup</text>
+        <line x1="582" y1="84" x2="620" y2="84" stroke="#3a4263" stroke-width="1.6"></line>
+
+        <rect x="620" y="64" width="84" height="40" rx="9" fill="#13201a" stroke="#7ba387" stroke-width="1.4"></rect>
+        <text x="662" y="80" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#a7c9b1">diff to</text>
+        <text x="662" y="93" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#a7c9b1">browser</text>
+        <line x1="662" y1="104" x2="662" y2="150" stroke="#7ba387" stroke-width="1.4"></line>
+        <line x1="662" y1="150" x2="80" y2="150" stroke="#7ba387" stroke-width="1.4"></line>
+        <line x1="80" y1="150" x2="80" y2="114" stroke="#7ba387" stroke-width="1.4" stroke-dasharray="4 3"></line>
+        <text x="360" y="166" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">the process persists across the loop &mdash; only its assigns change</text>
+      </svg>
+    </figure>
+    <p class="take"><code class="inl">{:noreply, socket}</code> is the usual return: handle the event, keep the
+      connection. <code class="inl">{:reply, map, socket}</code> exists for when a client JavaScript hook needs a direct
+      answer, but most events only update state and re-render.</p>
+  </section>
+
+  <section id="search">
+    <h2>A live search box, computed</h2>
+    <div class="prose">
+      <p>The worked detail is a search field bound with <code class="inl">phx-change="search"</code>. Each keystroke
+        sends the <code class="inl">"search"</code> event with the field value; the handler calls the catalog and
+        re-assigns <code class="inl">@courses</code>; the list re-renders with the matches. The filter below runs the
+        <em>same</em> rule the server uses &mdash; a case-insensitive substring match of the query against each course
+        title &mdash; over a fixed seed of <code class="inl">Portal.list_courses/0</code> data, so the count and the
+        rows it produces are the rows <code class="inl">handle_event/3</code> would assign. Type a query.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="lsTitle">
+      <h4 id="lsTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">phx-change="search" &middot; live filter over the catalog</h4>
+      <div class="live-search">
+        <div class="ls-form">
+          <span class="ls-binding" aria-hidden="true">phx-change="search"</span>
+          <input id="lsInput" class="ls-input" type="text" name="q" value="" placeholder="Search course titles&hellip;"
+            autocomplete="off" spellcheck="false" aria-label="Search course titles" aria-controls="lsList lsOut">
+        </div>
+        <ul id="lsList" class="ls-list" aria-label="Matching courses">
+          <li class="ls-card"><span class="ls-title">Functional Foundations</span><span class="ls-badge">Published</span></li>
+          <li class="ls-card"><span class="ls-title">Processes &amp; OTP</span><span class="ls-badge">Published</span></li>
+          <li class="ls-card"><span class="ls-title">Phoenix in Practice</span><span class="ls-badge">Published</span></li>
+          <li class="ls-card"><span class="ls-title">Ecto &amp; Persistence</span></li>
+          <li class="ls-card"><span class="ls-title">LiveView Patterns</span></li>
+          <li class="ls-card"><span class="ls-title">Pattern Matching Deep Dive</span><span class="ls-badge">Published</span></li>
+        </ul>
+        <div class="geo-readout" id="lsOut" aria-live="polite">query <span class="dim">""</span> &middot; <b>6</b> of 6 courses match &mdash; the full catalog, before any keystroke</div>
+        <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.2rem 0 0">handler: <span style="color:#9fc0ea">handle_event("search", %{"q" =&gt; q}, socket)</span> &rarr; <span style="color:var(--gold-bright)">assign(socket, courses: Portal.search_courses(q), query: q)</span></p>
+      </div>
+    </figure>
+    <p class="take">The value comes back in the params map keyed by the input&rsquo;s <code class="inl">name</code> (here
+      <code class="inl">"q"</code>), and <code class="inl">value={@query}</code> keeps the box in sync with the assign.
+      Filtering itself lives in the context; the LiveView only wires the event to it.</p>
+  </section>
+
+  <section id="code">
+    <h2>The handler in Elixir</h2>
+    <div class="prose">
+      <p>The search clause is two lines: pattern-match the event name and the param map, then return
+        <code class="inl">{:noreply, ...}</code> with the filtered list re-assigned. The markup binds the form with
+        <code class="inl">phx-change</code> and renders the <code class="inl">course_card</code> from F6.05.2 over
+        <code class="inl">@courses</code> &mdash; the same card, now with fewer items as the query narrows.</p>
+    </div>
+    <pre class="code"><span class="cmt"># one clause per event name; the search clause filters and re-assigns</span>
+<span class="op">@impl</span> <span class="res">true</span>
+<span class="op">def</span> <span class="fn">handle_event</span>(<span class="str">"search"</span>, %{<span class="str">"q"</span> => q}, socket) <span class="op">do</span>
+  {<span class="res">:noreply</span>, <span class="fn">assign</span>(socket, courses: <span class="fn blue">Portal</span>.<span class="fn">search_courses</span>(q), query: q)}
+<span class="op">end</span>
+
+<span class="cmt"># Portal.search_courses/1 &mdash; the one UI-only catalog reader, delegated to the context</span>
+<span class="op">defdelegate</span> <span class="fn">search_courses</span>(query), <span class="res">to</span>: <span class="fn blue">Portal.Catalog</span>, <span class="res">as</span>: <span class="res">:search</span>
+
+<span class="cmt"># Portal.Catalog.search/1 &mdash; a case-insensitive substring match on the title</span>
+<span class="op">def</span> <span class="fn">search</span>(query) <span class="op">do</span>
+  q = <span class="fn blue">String</span>.<span class="fn">downcase</span>(<span class="fn blue">String</span>.<span class="fn">trim</span>(query))
+  <span class="fn">list_courses</span>() |> <span class="fn blue">Enum</span>.<span class="fn">filter</span>(<span class="op">fn</span> c -> <span class="fn blue">String</span>.<span class="fn">contains?</span>(<span class="fn blue">String</span>.<span class="fn">downcase</span>(c.title), q) <span class="op">end</span>)
+<span class="op">end</span>
+<span class="cmt"># Portal.Catalog.search("live")  # => [%Course{title: "LiveView Patterns"}]</span>
+<span class="cmt"># Portal.Catalog.search("")      # => all courses (an empty query matches every title)</span></pre>
+    <div class="prose">
+      <p>The template binds the form once and lets the assign drive the list:</p>
+    </div>
+    <pre class="code"><span class="cmt">&lt;%!-- the search box sends "search" on every keystroke --%&gt;</span>
+<span class="op">&lt;form</span> <span class="res">phx-change</span>=<span class="str">"search"</span><span class="op">&gt;</span>
+  <span class="op">&lt;input</span> type=<span class="str">"text"</span> name=<span class="str">"q"</span> value={<span class="inl">@query</span>} placeholder=<span class="str">"Search courses"</span> <span class="op">/&gt;</span>
+<span class="op">&lt;/form&gt;</span>
+<span class="op">&lt;.course_card</span> <span class="res">:for</span>={course &lt;- <span class="inl">@courses</span>} course={course} <span class="op">/&gt;</span></pre>
+    <p class="take">It reads like a GenServer with a view: a message in, new state out, the projection re-rendered. The
+      <code class="inl">handle_event/3</code> clause and the context call are the entire behaviour; nothing reaches the
+      DOM by hand.</p>
+  </section>
+
+  <section id="form">
+    <h2>A live create form</h2>
+    <div class="prose">
+      <p>A second clause handles a form bound with <code class="inl">phx-submit="create"</code>. It calls the
+        <strong>same</strong> <code class="inl">Portal.create_course/1</code> from F6.04 and branches on its closed
+        result: on <code class="inl">{:ok, _course}</code> it flashes and reloads the list; on
+        <code class="inl">{:error, %Ecto.Changeset{}}</code> it re-assigns <code class="inl">to_form(changeset)</code>
+        so the F6.05 inputs show the errors &mdash; now in place, without a full request.</p>
+    </div>
+    <pre class="code"><span class="op">@impl</span> <span class="res">true</span>
+<span class="op">def</span> <span class="fn">handle_event</span>(<span class="str">"create"</span>, %{<span class="str">"course"</span> => params}, socket) <span class="op">do</span>
+  <span class="op">case</span> <span class="fn blue">Portal</span>.<span class="fn">create_course</span>(params) <span class="op">do</span>
+    {<span class="res">:ok</span>, _course} ->
+      {<span class="res">:noreply</span>,
+       socket
+       |> <span class="fn">put_flash</span>(<span class="res">:info</span>, <span class="str">"Course created"</span>)
+       |> <span class="fn">assign</span>(courses: <span class="fn blue">Portal</span>.<span class="fn">list_courses</span>(), query: <span class="str">""</span>)}
+
+    {<span class="res">:error</span>, %<span class="fn blue">Ecto.Changeset</span>{} = changeset} ->
+      {<span class="res">:noreply</span>, <span class="fn">assign</span>(socket, form: <span class="fn">to_form</span>(changeset))}
+  <span class="op">end</span>
+<span class="op">end</span>
+<span class="cmt"># valid params   # => {:noreply, socket}  (flash set, @courses reloaded, @query cleared)</span>
+<span class="cmt"># invalid params # => {:noreply, socket}  (@form carries the changeset, inputs show errors)</span></pre>
+    <p class="take">Both outcomes return <code class="inl">{:noreply, socket}</code>: success and validation failure are
+      two different new states. The page never reloads, and the error path is the ordinary changeset contract from
+      F6.03, reached over the socket.</p>
+  </section>
+
+  <section id="downstream">
+    <h2>Why it matters downstream</h2>
+    <div class="prose">
+      <p>This callback is the seam the rest of the chapter builds on. Because every interaction is a message that returns
+        new state, the next dive &mdash; <a href="/elixir/phoenix/liveview/render">render &amp; diffs</a> &mdash; can
+        send only the assigns a clause changed, never the whole page. And because a clause is an ordinary process
+        message, the same <code class="inl">handle_*</code> family that F5 used for
+        <code class="inl">handle_call</code> and <code class="inl">handle_cast</code> also receives PubSub broadcasts in
+        F6.07: a <code class="inl">handle_info/2</code> clause updates the very same assigns a
+        <code class="inl">handle_event/3</code> clause does, so a change made by one learner can re-render every open
+        page. The discipline established here &mdash; message in, new assigns out, <code class="inl">{:noreply,
+        socket}</code> &mdash; is what carries forward.</p>
+    </div>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">F5 gave the rule</p>
+        <p>A <code class="inl">handle_call</code>/<code class="inl">handle_cast</code> takes a message and returns new
+          state &mdash; the GenServer contract.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">handle_event is that</p>
+        <p>A browser event in, new assigns out, <code class="inl">{:noreply, socket}</code> &mdash; the same shape, now
+          with a view re-rendered from the result.</p>
+      </div>
+    </div>
+    <p class="note">The bridge is exact: <code class="inl">handle_event/3</code> is the LiveView analogue of a
+      GenServer&rsquo;s <code class="inl">handle_call</code> and <code class="inl">handle_cast</code> &mdash; the same
+      message-in, state-out actor from F5, with HEEx as the projection of the state.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap</h2>
+    <div class="prose">
+      <p>The bindings name events; the callback turns them into state; the contexts do the work.</p>
+    </div>
+    <dl class="deflist">
+      <dt>phx-click</dt><dd>Sends a named event on click &mdash; <code class="inl">phx-click="toggle"</code>.</dd>
+      <dt>phx-change</dt><dd>Sends a named event on every input change, with the field values as params &mdash; the live-filter binding.</dd>
+      <dt>phx-submit</dt><dd>Sends a named event on form submit, with all field values &mdash; the live-create binding.</dd>
+      <dt>handle_event/3</dt><dd>Receives <code class="inl">(name, params, socket)</code>, transforms the assigns, returns <code class="inl">{:noreply, assign(socket, ...)}</code>; the state change re-renders.</dd>
+      <dt>search</dt><dd><code class="inl">Portal.search_courses/1</code> filters the catalog; the clause only re-assigns <code class="inl">@courses</code> and <code class="inl">@query</code>.</dd>
+      <dt>create</dt><dd><code class="inl">Portal.create_course/1</code> from F6.04; <code class="inl">{:ok, _}</code> reloads the list, <code class="inl">{:error, changeset}</code> assigns <code class="inl">to_form/1</code>.</dd>
+    </dl>
+    <p class="note">Next: <a href="/elixir/phoenix/liveview/render"><strong>render &amp; diffs</strong></a> &mdash; when
+      these clauses re-assign state, only the changed values travel the socket. How that diff is computed is the last
+      piece of the loop.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for the bindings and the event callback, and where this dive connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/phoenix_live_view/bindings.html">Phoenix LiveView &mdash; Bindings</a> &mdash; <code class="inl">phx-click</code>, <code class="inl">phx-change</code>, <code class="inl">phx-submit</code>.</li>
+        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#c:handle_event/3"><code class="inl">handle_event/3</code> &mdash; Phoenix.LiveView</a> &mdash; the callback contract and return values.</li>
+        <li><a href="https://hexdocs.pm/phoenix_live_view/form-bindings.html">Phoenix LiveView &mdash; Form bindings</a> &mdash; live validation and submission with <code class="inl">to_form/1</code>.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/phoenix/liveview">F6.06 &middot; Phoenix LiveView fundamentals</a></li>
+        <li><a href="/elixir/phoenix/liveview/mount">F6.06.1 &middot; mount &amp; assigns</a> &mdash; where <code class="inl">@courses</code> and <code class="inl">@query</code> are first set.</li>
+        <li><a href="/elixir/phoenix/liveview/render">F6.06.3 &middot; render &amp; diffs</a> &mdash; how a re-assign becomes a diff.</li>
+        <li><a href="/elixir/phoenix/contexts">F6.04 &middot; Contexts</a> &mdash; the catalog the handler calls.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/liveview/mount"><span aria-hidden="true">&larr;</span>&nbsp; F6.06.1 &middot; mount &amp; assigns</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/liveview/render">Next &middot; render &amp; diffs <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+
+  /* ---------- binding selector ---------- */
+  var B = {
+    click:  { name: 'phx-click', fires: 'a click sends an event', row: 'evRow_click',
+      desc: 'A click on a bound element sends the named "toggle" event to handle_event/3, which updates assigns and re-renders — no onclick handler in JavaScript.' },
+    change: { name: 'phx-change', fires: 'input change sends an event', row: 'evRow_change',
+      desc: 'phx-change="search" on a form sends the "search" event on every input change, with the field values as params. It is the binding behind live filtering and validation as the query is typed.' },
+    submit: { name: 'phx-submit', fires: 'form submit sends an event', row: 'evRow_submit',
+      desc: 'phx-submit="create" sends the "create" event when the form is submitted, with all field values. The handler calls the context and re-renders with the result or the changeset errors.' }
+  };
+  var ORDER = ['click', 'change', 'submit'];
+  function pick(k) {
+    var x = B[k]; if (!x) return;
+    document.querySelectorAll('#evSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(B[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('evRole'); if (rEl) rEl.textContent = x.name;
+    var dEl = document.getElementById('evResult'); if (dEl) dEl.textContent = x.fires;
+    var oEl = document.getElementById('evOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + x.name + '</b> — ' + x.fires + '. ' + x.desc;
+  }
+  document.querySelectorAll('#evSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('click');
+
+  /* ---------- live search box: the same filter the context runs ---------- */
+  /* Seed mirrors Portal.list_courses/0; `published` drives the F6.05.2 course_card badge. */
+  var COURSES = [
+    { title: 'Functional Foundations',     published: true },
+    { title: 'Processes & OTP',            published: true },
+    { title: 'Phoenix in Practice',        published: true },
+    { title: 'Ecto & Persistence',         published: false },
+    { title: 'LiveView Patterns',          published: false },
+    { title: 'Pattern Matching Deep Dive', published: true }
+  ];
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (ch) {
+      return ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : '&quot;';
+    });
+  }
+  /* Portal.Catalog.search/1 in JavaScript: case-insensitive substring on the title. */
+  function searchCourses(query) {
+    var q = String(query).trim().toLowerCase();
+    return COURSES.filter(function (c) { return c.title.toLowerCase().indexOf(q) !== -1; });
+  }
+  function renderSearch(query) {
+    var listEl = document.getElementById('lsList');
+    var outEl = document.getElementById('lsOut');
+    if (!listEl || !outEl) return;
+    var hits = searchCourses(query);
+    var raw = String(query);
+    if (hits.length === 0) {
+      listEl.innerHTML = '<li class="ls-empty">no course title contains ' +
+        '“' + esc(raw) + '” — handle_event re-assigns an empty @courses</li>';
+    } else {
+      listEl.innerHTML = hits.map(function (c) {
+        var badge = c.published ? '<span class="ls-badge">Published</span>' : '';
+        return '<li class="ls-card ls-hit"><span class="ls-title">' + esc(c.title) + '</span>' + badge + '</li>';
+      }).join('');
+    }
+    var shown = raw.length ? '“' + esc(raw) + '”' : '""';
+    var tail = raw.length ? ' match the typed query' : ' match — the full catalog, before any keystroke';
+    outEl.innerHTML = 'query <span class="dim">' + shown + '</span> &middot; <b>' + hits.length +
+      '</b> of ' + COURSES.length + ' courses' + tail;
+  }
+  var lsInput = document.getElementById('lsInput');
+  if (lsInput) {
+    lsInput.addEventListener('input', function () { renderSearch(lsInput.value); });
+    renderSearch(lsInput.value); /* sync to the markup's static initial state */
+  }
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

@@ -1,0 +1,251 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/algorithms">algorithms</a><span class="rsep">/</span><a href="/elixir/algorithms/recipes">recipes</a><span class="rsep">/</span><span class="rcur">profiling</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/algorithms">F4</a>
+      <span class="sep">/</span>
+      <a href="/elixir/algorithms/recipes">F4.10</a>
+      <span class="sep">/</span>
+      <span class="here">profiling</span>
+    </div>
+    <p class="eyebrow">F4.10 &middot; part 3 of 3 &middot; choosing a lookup</p>
+    <h1>Profiling &amp; <span class="ex">complexity</span></h1>
+    <p class="lede">Every active session has to be found on every request. Keep sessions in a list and a lookup scans
+      it &mdash; <code class="inl">O(n)</code>, growing with the user base. Keep them in the branded-CHAMP store of
+      F4.09 and a lookup descends a few trie levels &mdash; <code class="inl">O(log&#8323;&#8322; n)</code>, effectively
+      flat. The right structure is not a matter of taste here; you can read the difference straight from the code and
+      watch it widen as the Portal grows.</p>
+    <p class="kicker">The same lookup, the two structures, at three user-base sizes. Pick a size and compare the work
+      each one does.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#cost">Read the cost from the shape</a>
+      <a href="#advanced">Advanced: measure, but reason first</a>
+    </div>
+  </section>
+
+  <section id="cost">
+    <h2>Read the cost from the shape</h2>
+    <div class="prose">
+      <p>A list scan touches up to one element per entry; a CHAMP lookup touches one node per five bits of the hash,
+        so its depth grows with the logarithm of the count, base thirty-two. Pick a size to see both as operation
+        counts.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="pfTitle">
+      <h4 id="pfTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Active sessions &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="pfSel" role="group" aria-label="Dataset size">
+          <button type="button" data-k="k" data-c="sage" class="active">1,000</button>
+          <button type="button" data-k="h" data-c="blue">100,000</button>
+          <button type="button" data-k="m" data-c="gold">10,000,000</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 200" role="img" aria-label="Two bars on a logarithmic scale: a list scan grows with the number of sessions, while a CHAMP map lookup stays a few node hops regardless of size.">
+        <text x="40" y="34" font-family="JetBrains Mono, monospace" font-size="11" fill="#f0cd7f">List.keyfind/3 &middot; O(n)</text>
+        <rect x="40" y="44" width="600" height="30" rx="7" fill="#10162b" stroke="#2a3252" stroke-width="1"></rect>
+        <rect id="pfBarList" x="44" y="48" width="240" height="22" rx="5" fill="#f0cd7f" fill-opacity="0.8"></rect>
+        <text id="pfListN" x="300" y="64" font-family="JetBrains Mono, monospace" font-size="12" fill="#f0cd7f">1,000 comparisons</text>
+
+        <text x="40" y="108" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">Champ.get/2 &middot; O(log&#8323;&#8322; n)</text>
+        <rect x="40" y="118" width="600" height="30" rx="7" fill="#10162b" stroke="#2a3252" stroke-width="1"></rect>
+        <rect id="pfBarMap" x="44" y="122" width="40" height="22" rx="5" fill="#a7c9b1" fill-opacity="0.85"></rect>
+        <text id="pfMapN" x="100" y="138" font-family="JetBrains Mono, monospace" font-size="12" fill="#a7c9b1">2 node hops</text>
+
+        <text x="40" y="176" font-family="Manrope, sans-serif" font-size="9.5" fill="#6b7494">bars are on a logarithmic scale; labels are the actual operation counts</text>
+        <text id="pfCaption" x="680" y="176" text-anchor="end" font-family="Manrope, sans-serif" font-size="10.5" fill="#a7c9b1">about 500&times; fewer operations</text>
+      </svg>
+
+      <pre class="code" id="pfCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="pfOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">list scan: <span id="pfRole" style="color:var(--gold-bright)">1,000 ops</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">map lookup: <span id="pfResult" style="color:var(--cream)">2 hops</span></p>
+    </figure>
+    <p class="take">The list and the map agree at small sizes and diverge without bound. At ten million sessions the
+      scan is millions of comparisons and the map is five hops &mdash; the reason the Portal&rsquo;s store is a CHAMP.</p>
+  </section>
+
+  <section id="advanced">
+    <h2>Advanced: measure, but reason first</h2>
+    <div class="prose">
+      <p>Reasoning about complexity tells you how a cost <em>scales</em>; measuring with
+        <code class="inl">:timer.tc/1</code> tells you what it is at one size on one machine. You want both, in that
+        order. Big-O picks the structure &mdash; a lookup that must stay cheap as the user base grows cannot be a list
+        &mdash; and a measurement confirms the constant factors are sane once it is built. Reaching for the profiler
+        first tends to optimise a fast operation while an <code class="inl">O(n)</code> one waits to dominate at scale.</p>
+      <p>Two honest caveats. <code class="inl">O(log&#8323;&#8322; n)</code> is not literally
+        <code class="inl">O(1)</code>: it is at most about six hops for any count up to a billion, so it is flat in
+        practice but still grows. And constant factors cut the other way at small sizes &mdash; a list of ten entries
+        is contiguous and needs no hashing, so it beats a trie there. The point is not that maps are always faster;
+        it is that the Portal&rsquo;s collections grow, and a structure whose lookup is logarithmic stays usable where
+        a linear one does not.</p>
+    </div>
+    <pre class="code"><span class="cmt"># reason: which scales? then measure to confirm the constant factor</span>
+{t_list, _} = <span class="fn sage">:timer</span>.<span class="fn">tc</span>(<span class="op">fn</span> -&gt; <span class="fn sage">List</span>.<span class="fn">keyfind</span>(sessions, sid, <span class="res">0</span>) <span class="op">end</span>)  <span class="cmt"># O(n)</span>
+{t_map,  _} = <span class="fn sage">:timer</span>.<span class="fn">tc</span>(<span class="op">fn</span> -&gt; <span class="fn sage">Champ</span>.<span class="fn">get</span>(store, sid) <span class="op">end</span>)            <span class="cmt"># O(log&#8323;&#8322; n)</span>
+
+<span class="cmt"># at 10_000_000 sessions: ~10_000_000 comparisons vs ~5 node hops</span>
+<span class="cmt"># the list keeps growing; the map barely moves — so the store is a CHAMP</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">a structure choice</p>
+        <p>List or map for the session store.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">a complexity</p>
+        <p><code class="inl">O(n)</code> that grows with users, or <code class="inl">O(log&#8323;&#8322; n)</code> that stays flat.</p>
+      </div>
+    </div>
+    <p class="note">That completes F4.10: the request validates with a <code class="inl">with</code> chain, reports
+      stream lazily, and lookups ride a structure chosen for how it scales. Next module: <strong>F4.11 &mdash;
+      Dynamic programming in Elixir</strong>.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://www.erlang.org/doc/efficiency_guide/listhandling.html">Erlang &mdash; Efficiency Guide: list handling</a> &mdash; the cost of scanning a list.</li>
+        <li><a href="https://www.erlang.org/doc/man/timer.html#tc-1">Erlang &mdash; <code>:timer.tc/1</code></a> &mdash; measuring a call's wall-clock time.</li>
+        <li><a href="https://en.wikipedia.org/wiki/Big_O_notation">Big O notation &mdash; Wikipedia</a> &mdash; reasoning about how cost scales.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/maps">F4.04 &middot; Maps, sets &amp; hashing</a> &mdash; the map whose lookup is logarithmic.</li>
+        <li><a href="/elixir/algorithms/branded-champ">F4.09 &middot; Branded CHAMP maps &amp; GenServer</a> &mdash; the store this lookup runs against.</li>
+        <li><a href="/elixir/algorithms/recipes">F4.10 &middot; Practical recipes in Elixir</a> &mdash; the module hub.</li>
+        <li><a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/recipes/pipelines"><span aria-hidden="true">&larr;</span>&nbsp; F4.10.2 &middot; pipelines</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var SAGE = '#a7c9b1', BLUE = '#9fc0ea', GOLD = '#f0cd7f';
+  function set(id, attr, v) { var e = document.getElementById(id); if (e) e.setAttribute(attr, String(v)); }
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
+  function commas(n) { return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  /* real complexity: list scan = n comparisons; CHAMP depth = ceil(log32 n) */
+  function hops(n) { return Math.max(1, Math.ceil(Math.log(n) / Math.log(32))); }
+
+  var SIZES = {
+    k: { n: 1000, fill: SAGE },
+    h: { n: 100000, fill: BLUE },
+    m: { n: 10000000, fill: GOLD }
+  };
+  var MAXW = 596, MAXLOG = Math.log10(10000000); /* scale both bars to the 10M case */
+
+  function pick(k) {
+    var s = SIZES[k]; if (!s) return;
+    document.querySelectorAll('#pfSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var n = s.n, h = hops(n), speed = Math.round(n / h);
+    var wList = Math.max(10, Math.round(Math.log10(n) / MAXLOG * MAXW));
+    var wMap = Math.max(10, Math.round(Math.log10(h) / MAXLOG * MAXW));
+    set('pfBarList', 'width', wList);
+    set('pfBarMap', 'width', wMap); set('pfBarMap', 'fill', s.fill);
+    var lN = document.getElementById('pfListN'); if (lN) lN.textContent = commas(n) + ' comparisons';
+    var mN = document.getElementById('pfMapN'); if (mN) { mN.textContent = h + ' node hops'; mN.setAttribute('x', 54 + wMap); mN.setAttribute('fill', s.fill); }
+    var cap = document.getElementById('pfCaption'); if (cap) { cap.textContent = 'about ' + commas(speed) + '\u00d7 fewer operations'; cap.setAttribute('fill', s.fill); }
+    var rEl = document.getElementById('pfRole'); if (rEl) rEl.textContent = commas(n) + ' ops';
+    txt('pfResult', h + ' hops');
+    var code = '<span class="cmt"># ' + commas(n) + ' active sessions</span>\n<span class="fn sage">List</span>.<span class="fn">keyfind</span>(sessions, sid, <span class="res">0</span>)   <span class="cmt"># O(n)  ->  up to ' + commas(n) + ' comparisons</span>\n<span class="fn sage">Champ</span>.<span class="fn">get</span>(store, sid)            <span class="cmt"># O(log\u2083\u2082 n)  ->  ' + h + ' node hops</span>\n<span class="cmt"># the map does about ' + commas(speed) + '\u00d7 fewer operations to find the session</span>';
+    var cEl = document.getElementById('pfCode'); if (cEl) cEl.innerHTML = code;
+    var out = 'At <b style="color:' + s.fill + '">' + commas(n) + '</b> sessions, the list scan does up to <b style="color:var(--gold-bright)">' + commas(n) + '</b> comparisons while the CHAMP lookup does <b style="color:var(--sage-bright)">' + h + '</b> node hops &mdash; about <b>' + commas(speed) + '&times;</b> fewer. The list cost rises with every size; the map cost barely moves.';
+    var oEl = document.getElementById('pfOut'); if (oEl) oEl.innerHTML = out;
+  }
+  document.querySelectorAll('#pfSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('k');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

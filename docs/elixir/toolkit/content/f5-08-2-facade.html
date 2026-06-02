@@ -1,0 +1,323 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/pragmatic">pragmatic</a><span class="rsep">/</span><a href="/elixir/pragmatic/boundaries">boundaries</a><span class="rsep">/</span><span class="rcur">facade</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/pragmatic">F5</a>
+      <span class="sep">/</span>
+      <a href="/elixir/pragmatic/boundaries">F5.08</a>
+      <span class="sep">/</span>
+      <span class="here">facade</span>
+    </div>
+    <p class="eyebrow">F5.08 &middot; part 2 of 3</p>
+    <h1>The engine facade</h1>
+    <p class="lede">If ports are how the engine reaches the outside, the facade is how the outside reaches the engine
+      &mdash; the <strong>driving port</strong>. It is a single context module, <code class="inl">Portal</code>, whose
+      functions read like the domain rather than the runtime: <code class="inl">enroll/2</code>,
+      <code class="inl">deliver_lesson/2</code>, <code class="inl">progress_of/1</code>. A caller never writes
+      <code class="inl">GenServer.call(Portal.Engine, {:command, {:enroll, &hellip;}})</code>; it writes
+      <code class="inl">Portal.enroll(user_id, course_id)</code>. Everything behind that door &mdash; the GenServer
+      from F5.06, the event log, the reducer &mdash; is free to change without touching a caller. The facade also keeps
+      the command/query split from F5.05 visible in its signatures: commands return <code class="inl">:ok</code> or a
+      typed error, queries return data. It is small on purpose; a boundary earns its keep by being narrow.</p>
+    <p class="kicker">Three functions, one door. Select one to see its signature and the call it makes underneath.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#door">One small surface</a>
+      <a href="#code">The facade in code</a>
+      <a href="#flow">An enroll, end to end</a>
+      <a href="#why">Why a facade, not the GenServer</a>
+    </div>
+  </section>
+
+  <section id="door">
+    <h2>One small surface</h2>
+    <div class="prose">
+      <p>A facade function names an intention and hides a mechanism. <code class="inl">enroll/2</code> says what the
+        caller wants; it does not reveal that a message is sent to a process, matched in a
+        <code class="inl">handle_call</code>, run through <code class="inl">decide</code> and
+        <code class="inl">evolve</code>, and answered. The surface stays the same shape whether the engine is one
+        process or a pool. Select a function.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="fcTitle">
+      <h4 id="fcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The facade surface &middot; select a function</h4>
+      <div class="controls">
+        <div class="solid-select" id="fcSel" role="group" aria-label="Facade function">
+          <button type="button" data-k="enroll" class="active">enroll/2</button>
+          <button type="button" data-k="deliver">deliver_lesson/2</button>
+          <button type="button" data-k="progress">progress_of/1</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 200" role="img" aria-label="The Portal facade surface. enroll and deliver_lesson are commands that return :ok or a typed error; progress_of is a query that returns the percent.">
+        <rect id="fcRow_enroll" x="40" y="24" width="640" height="48" rx="11" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="44" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">ENROLL/2 &middot; command</text>
+        <text x="60" y="62" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">Portal.enroll(user_id, course_id) &rarr; Engine.command(...)</text>
+        <text x="660" y="52" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#86a7d8">:ok | {:error}</text>
+
+        <rect id="fcRow_deliver" x="40" y="80" width="640" height="48" rx="11" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="100" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">DELIVER_LESSON/2 &middot; command</text>
+        <text x="60" y="118" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">Portal.deliver_lesson(enrollment_id, lesson_id)</text>
+        <text x="660" y="108" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">:ok | {:error}</text>
+
+        <rect id="fcRow_progress" x="40" y="136" width="640" height="48" rx="11" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="156" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">PROGRESS_OF/1 &middot; query</text>
+        <text x="60" y="174" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">Portal.progress_of(enrollment_id) &rarr; Engine.query(...)</text>
+        <text x="660" y="164" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">{:ok, percent}</text>
+      </svg>
+
+      <div class="geo-readout" id="fcOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">function: <span id="fcRole" style="color:#9fc0ea">enroll/2</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">it is: <span id="fcResult" style="color:var(--cream)">a command that returns :ok or an error</span></p>
+    </figure>
+    <p class="take">A good facade is boring to read and stable to depend on. The interesting machinery lives behind it,
+      which is exactly where the UI should not have to look.</p>
+  </section>
+
+  <section id="code">
+    <h2>The facade in code</h2>
+    <div class="prose">
+      <p>The <code class="inl">Portal</code> module is a handful of typed functions. Commands delegate to
+        <code class="inl">Engine.command/1</code> and return <code class="inl">:ok</code> or a typed error; the query
+        delegates to <code class="inl">Engine.query/1</code> and returns data. The specs make the command/query split
+        from F5.05 part of the public type, so a caller can see which functions change the world.</p>
+    </div>
+    <pre class="code"><span class="op">defmodule</span> <span class="fn blue">Portal</span> <span class="op">do</span>
+  <span class="op">@moduledoc</span> <span class="str">"The driving port: the only surface the web layer calls."</span>
+  <span class="op">alias</span> <span class="fn blue">Portal.{Engine, Error}</span>
+
+  <span class="cmt"># commands change state and return :ok or a typed error (CQS, F5.05)</span>
+  <span class="op">@spec</span> <span class="fn">enroll</span>(<span class="fn blue">String</span>.t(), <span class="fn blue">String</span>.t()) :: <span class="res">:ok</span> | {<span class="res">:error</span>, <span class="fn blue">Error</span>.t()}
+  <span class="op">def</span> <span class="fn">enroll</span>(user_id, course_id),
+    <span class="op">do:</span> <span class="fn blue">Engine</span>.<span class="fn">command</span>({<span class="res">:enroll</span>, user_id, course_id})
+
+  <span class="op">@spec</span> <span class="fn">deliver_lesson</span>(<span class="fn blue">String</span>.t(), <span class="fn blue">String</span>.t()) :: <span class="res">:ok</span> | {<span class="res">:error</span>, <span class="fn blue">Error</span>.t()}
+  <span class="op">def</span> <span class="fn">deliver_lesson</span>(enrollment_id, lesson_id),
+    <span class="op">do:</span> <span class="fn blue">Engine</span>.<span class="fn">command</span>({<span class="res">:deliver</span>, enrollment_id, lesson_id})
+
+  <span class="cmt"># a query returns data and changes nothing</span>
+  <span class="op">@spec</span> <span class="fn">progress_of</span>(<span class="fn blue">String</span>.t()) :: {<span class="res">:ok</span>, <span class="res">0</span>..<span class="res">100</span>} | {<span class="res">:error</span>, <span class="fn blue">Error</span>.t()}
+  <span class="op">def</span> <span class="fn">progress_of</span>(enrollment_id),
+    <span class="op">do:</span> <span class="fn blue">Engine</span>.<span class="fn">query</span>({<span class="res">:progress_of</span>, enrollment_id})
+<span class="op">end</span></pre>
+    <div class="prose">
+      <p>The two helpers the facade leans on are the only place <code class="inl">GenServer.call</code> appears. They
+        send the message, then funnel the reply through one translation step &mdash; the error contract of F5.08.3 &mdash;
+        so the facade always returns the boundary's shapes and never a raw internal reason.</p>
+    </div>
+    <pre class="code"><span class="op">defmodule</span> <span class="fn blue">Portal.Engine</span> <span class="op">do</span>
+  <span class="cmt"># the facade calls these; they are the only callers of GenServer.call</span>
+  <span class="op">def</span> <span class="fn">command</span>(cmd), <span class="op">do:</span> <span class="fn blue">GenServer</span>.<span class="fn">call</span>(<span class="fn blue">__MODULE__</span>, {<span class="res">:command</span>, cmd}) |> <span class="fn">to_contract</span>()
+  <span class="op">def</span> <span class="fn">query</span>(q),     <span class="op">do:</span> <span class="fn blue">GenServer</span>.<span class="fn">call</span>(<span class="fn blue">__MODULE__</span>, {<span class="res">:query</span>, q})   |> <span class="fn">to_contract</span>()
+
+  <span class="cmt"># internal replies become the boundary contract (built in F5.08.3)</span>
+  <span class="op">defp</span> <span class="fn">to_contract</span>(<span class="res">:ok</span>), <span class="op">do:</span> <span class="res">:ok</span>
+  <span class="op">defp</span> <span class="fn">to_contract</span>({<span class="res">:ok</span>, _data} = ok), <span class="op">do:</span> ok
+  <span class="op">defp</span> <span class="fn">to_contract</span>({<span class="res">:error</span>, reason}), <span class="op">do:</span> {<span class="res">:error</span>, <span class="fn blue">Portal.Error</span>.<span class="fn">from</span>(reason)}
+<span class="op">end</span></pre>
+  </section>
+
+  <section id="flow">
+    <h2>An enroll, end to end</h2>
+    <div class="prose">
+      <p>One call crosses the boundary, runs the engine, and comes back as a result the caller can branch on. The UI
+        issues a single synchronous call and waits for either <code class="inl">:ok</code> or a typed error; it never
+        learns that a process, a contract, and a fold were involved.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="fcFlowTitle">
+      <h4 id="fcFlowTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">enroll, across the boundary</h4>
+      <svg viewBox="0 0 720 160" role="img" aria-label="An enroll call: the UI calls Portal.enroll, the facade calls Engine.command which sends GenServer.call, the engine process runs decide and evolve and replies, and the facade returns :ok or a typed error.">
+        <rect x="20" y="44" width="140" height="56" rx="11" fill="#10162b" stroke="#5a6688" stroke-width="1.4"></rect>
+        <text x="90" y="66" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">UI &middot; LiveView</text>
+        <text x="90" y="82" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#7c86a6">Portal.enroll(u, c)</text>
+
+        <line x1="160" y1="72" x2="178" y2="72" stroke="#6b7494" stroke-width="1.6"></line>
+        <polygon points="180,72 172,68 172,76" fill="#6b7494"></polygon>
+
+        <rect x="182" y="44" width="140" height="56" rx="11" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="252" y="66" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#86a7d8">FACADE</text>
+        <text x="252" y="82" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#9fc0ea">Engine.command(...)</text>
+
+        <line x1="322" y1="72" x2="340" y2="72" stroke="#6b7494" stroke-width="1.6"></line>
+        <polygon points="342,72 334,68 334,76" fill="#6b7494"></polygon>
+
+        <rect x="344" y="44" width="150" height="56" rx="11" fill="#10162b" stroke="#5a6688" stroke-width="1.4"></rect>
+        <text x="419" y="66" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">ENGINE &middot; call</text>
+        <text x="419" y="82" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#7c86a6">decide &middot; evolve &middot; reply</text>
+
+        <line x1="494" y1="72" x2="512" y2="72" stroke="#6b7494" stroke-width="1.6"></line>
+        <polygon points="514,72 506,68 506,76" fill="#6b7494"></polygon>
+
+        <rect x="516" y="44" width="184" height="56" rx="11" fill="#10162b" stroke="#5a6688" stroke-width="1.4"></rect>
+        <text x="608" y="66" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">RESULT</text>
+        <text x="608" y="82" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#7c86a6">:ok | {:error, %Error{}}</text>
+
+        <text x="360" y="132" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">one synchronous call; the UI waits for :ok or a typed error, nothing else</text>
+      </svg>
+    </figure>
+
+    <p class="take">The flow is four hops, but the caller sees one: a function in, a result out. The boundary collapses
+      the runtime into a value.</p>
+  </section>
+
+  <section id="why">
+    <h2>Why a facade, not the GenServer</h2>
+    <div class="prose">
+      <p>Calling the GenServer directly would work and cost less code today, but it pins every caller to three things
+        that should stay private: that the engine <em>is</em> a process, the exact message tuples it accepts, and the
+        raw shape of its replies. A facade buys back all three. The message shape can change without touching the UI.
+        The runtime can become a partitioned pool or move to another node and the signature <code class="inl">Portal.enroll/2</code>
+        is unchanged. And because the store is a port (F5.08.1), a facade-level test runs against the in-memory
+        adapter with no process tricks. The cost is one thin module; the return is a UI that depends on intentions, not
+        on internals.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">name the intent</p>
+        <p>The UI calls <code class="inl">Portal.enroll/2</code>, not a message tuple aimed at a process.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">hide the runtime</p>
+        <p>The GenServer, log, and reducer can change while the signature stays put.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/pragmatic/boundaries/errors"><strong>error contracts for the UI</strong></a>
+      &mdash; the <code class="inl">to_contract/1</code> step above, made into a closed vocabulary the UI can render.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://alistair.cockburn.us/hexagonal-architecture/">Alistair Cockburn &mdash; Hexagonal architecture</a> &mdash; ports and adapters around a core.</li>
+        <li><a href="https://hexdocs.pm/elixir/typespecs.html">Elixir &mdash; Typespecs and behaviours</a> &mdash; @callback defines the port contract.</li>
+        <li><a href="https://dashbit.co/blog/mocks-and-explicit-contracts">José Valim &mdash; Mocks and explicit contracts</a> &mdash; test seams without mutating globals.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/pragmatic/boundaries">F5.08 &middot; Boundaries &amp; integration seams</a></li>
+        <li><a href="/elixir/pragmatic/boundaries/ports">Ports &mdash; the driven seam</a></li>
+        <li><a href="/elixir/pragmatic/boundaries/errors">Error contracts for the UI</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/pragmatic/boundaries/ports"><span aria-hidden="true">&larr;</span>&nbsp; F5.08.1 &middot; ports</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/pragmatic/boundaries/errors">Next &middot; error contracts <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var FCNS = {
+    enroll:   { name: 'enroll/2', kind: 'a command that returns :ok or an error',
+      desc: 'A command. It names the intent to put a learner on a course and delegates to Engine.command, which runs the F5.04 contract and the F5.05 fold behind the door. The caller sees :ok or a typed error, never a read model.' },
+    deliver:  { name: 'deliver_lesson/2', kind: 'a command that returns :ok or an error',
+      desc: 'A command. It records that a lesson was delivered for an enrollment. Same shape as enroll: it changes state and reports only success or a typed error, keeping the command side of CQS honest at the boundary.' },
+    progress: { name: 'progress_of/1', kind: 'a query that returns the percent',
+      desc: 'A query. It reads an enrollment\u2019s progress and returns {:ok, percent} without changing anything. Because it is a read, it is safe to call repeatedly \u2014 the query half of CQS, surfaced on the facade.' }
+  };
+  var ORDER = ['enroll', 'deliver', 'progress'];
+  function pick(k) {
+    var F = FCNS[k]; if (!F) return;
+    document.querySelectorAll('#fcSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById('fcRow_' + id), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('fcRole'); if (rEl) rEl.textContent = F.name;
+    var kEl = document.getElementById('fcResult'); if (kEl) kEl.textContent = F.kind;
+    var oEl = document.getElementById('fcOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + F.name + '</b> \u2014 ' + F.kind + '. ' + F.desc;
+  }
+  document.querySelectorAll('#fcSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('enroll');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

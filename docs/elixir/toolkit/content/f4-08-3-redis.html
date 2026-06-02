@@ -1,0 +1,302 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/algorithms">algorithms</a><span class="rsep">/</span><a href="/elixir/algorithms/persistence">persistence</a><span class="rsep">/</span><span class="rcur">redis</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/algorithms">F4</a>
+      <span class="sep">/</span>
+      <a href="/elixir/algorithms/persistence">F4.08</a>
+      <span class="sep">/</span>
+      <span class="here">redis</span>
+    </div>
+    <p class="eyebrow">F4.08 &middot; part 3 of 3</p>
+    <h1>Redis <span class="ex">keys</span></h1>
+    <p class="lede">In Redis the id is a string key, namespaced with a colon: <code class="inl">user:USR0NbWMtkosp8</code>.
+      The namespace keeps key spaces apart and makes a scan or an eviction policy easy to scope. The same
+      self-validating id pays off harder here than anywhere: a cache exists to absorb load, so the cheapest win is to
+      reject the load that should never reach it. A malformed or impossible id is a <code class="inl">404</code> at the
+      edge &mdash; no <code class="inl">GET</code>, no fallback query.</p>
+    <p class="kicker">A burst of eight requests, some real and some the kind a scanner sends. Compare an edge that
+      validates first with one that forwards everything. Select a mode.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#shed">Validate, then reach the cache</a>
+      <a href="#advanced">Advanced: the keyspace and the honest limit</a>
+    </div>
+  </section>
+
+  <section id="shed">
+    <h2>Validate, then reach the cache</h2>
+    <div class="prose">
+      <p>The same eight requests, two edges. With validation, only well-formed, plausibly-timed
+        <code class="inl">USR</code> ids become a cache lookup; the rest are shed for the cost of a decode. Without it,
+        every request becomes a <code class="inl">GET</code>, and the ones that cannot exist miss the cache and fall
+        through to the database. Select a mode.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="reTitle">
+      <h4 id="reTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Edge mode &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="reSel" role="group" aria-label="Edge mode">
+          <button type="button" data-k="validate" data-c="sage" class="active">validate at edge</button>
+          <button type="button" data-k="passthrough" data-c="gold">forward everything</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 248" role="img" aria-label="Eight incoming requests are each routed: with edge validation, valid ids reach the Redis cache and invalid ids are answered 404 with no I/O; forwarding everything sends all eight to the cache, where the impossible ids miss and fall through to a database query.">
+        <text x="180" y="26" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.08em" fill="#6b7494">request id (expects USR)</text>
+        <text x="560" y="26" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.08em" fill="#6b7494">outcome</text>
+
+        <g id="reRows"></g>
+
+        <rect x="40" y="214" width="640" height="26" rx="7" fill="#161d38" stroke="#3a4263" stroke-width="1.2"></rect>
+        <text id="reSummary" x="360" y="231" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">3 of 8 reach the cache · 5 shed at the edge (0 I/O)</text>
+      </svg>
+
+      <pre class="code" id="reCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="reOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">edge: <span id="reRole" style="color:var(--sage-bright)">validates before the cache</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">load on store: <span id="reResult" style="color:var(--cream)">3 lookups</span></p>
+    </figure>
+    <p class="take">A cache absorbs load best when it never sees the load it should not. Validating the id at the edge
+      turns a scanner&rsquo;s flood into constant-time 404s and leaves the cache for requests that could be real.</p>
+  </section>
+
+  <section id="advanced">
+    <h2>Advanced: the keyspace and the honest limit</h2>
+    <div class="prose">
+      <p>The key is the branded id under a type namespace &mdash; <code class="inl">user:USR0NbWMtkosp8</code>,
+        <code class="inl">session:SES&hellip;</code> &mdash; so one Redis instance holds several record kinds without
+        collision, and a colon prefix scopes a <code class="inl">SCAN</code> or a per-type eviction. The validating
+        plug runs before the Redix call, so a rejected id never becomes a network round-trip to the cache, let alone a
+        database read.</p>
+      <p>The honest limit, the same as the hub&rsquo;s: validation proves an id is <em>well-formed and
+        plausibly-timed</em>, not that it <em>exists</em>. A correctly-shaped <code class="inl">USR</code> id that was
+        never issued still costs one cache lookup, and a miss still falls through to one query &mdash; that path
+        cannot be skipped without knowing the keyspace. What the edge removes is the high-volume, zero-effort probe:
+        wrong length, non-base62, out of range, wrong namespace, future timestamp. Those are most of a scan, and they
+        now cost the attacker a <code class="inl">404</code> and the store nothing.</p>
+    </div>
+    <pre class="code"><span class="cmt"># validate at the edge; only then touch Redis, only then the DB</span>
+<span class="op">def</span> <span class="fn">profile</span>(conn, %{<span class="str">"id"</span> =&gt; id}) <span class="op">do</span>
+  <span class="op">with</span> {<span class="res">:ok</span>, _snow} &lt;- <span class="fn sage">Portal.Id</span>.<span class="fn">validate</span>(id, <span class="res">:USR</span>),         <span class="cmt"># no I/O</span>
+       {<span class="res">:ok</span>, json} &lt;- <span class="fn sage">Redix</span>.<span class="fn">command</span>([<span class="str">"GET"</span>, <span class="str">"user:"</span> &lt;&gt; id]) <span class="op">do</span>
+    <span class="fn">json</span>(conn, json)                                          <span class="cmt"># cache hit</span>
+  <span class="op">else</span>
+    {<span class="res">:error</span>, _} -&gt; <span class="fn">send_resp</span>(conn, <span class="res">404</span>, <span class="str">""</span>)              <span class="cmt"># malformed id: shed</span>
+    {<span class="res">:ok</span>, <span class="res">nil</span>}    -&gt; <span class="fn">load_from_db_and_cache</span>(conn, id)        <span class="cmt"># well-formed miss</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">a self-describing id</p>
+        <p>The edge can judge its shape and time with no lookup.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">a protected cache</p>
+        <p>Bogus traffic is 404&rsquo;d before Redis; only plausible ids reach the keyspace.</p>
+      </div>
+    </div>
+    <p class="note">That completes F4.08: the branded id is a bigint key, a time-range bound, and a namespaced cache
+      key &mdash; and a gate that sheds what cannot exist. Next module: <strong>F4.09 &mdash; Branded CHAMP maps &amp;
+      GenServer</strong>, which keys an in-memory CHAMP on the same id, partitioned by namespace.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://redis.io/docs/latest/develop/use/keyspace/">Redis &mdash; Keys &amp; key space</a> &mdash; namespaced string keys and key conventions.</li>
+        <li><a href="https://hexdocs.pm/redix/Redix.html">Redix</a> &mdash; the Elixir Redis client used at the edge.</li>
+        <li><a href="https://owasp.org/www-project-top-ten/2017/A5_2017-Broken_Access_Control">OWASP &mdash; Broken Access Control (IDOR)</a> &mdash; the enumeration class this shedding narrows.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/persistence">F4.08 &middot; Branded ids &amp; persistence</a> &mdash; the module hub and its request validator.</li>
+        <li><a href="/elixir/algorithms/identifiers">F4.07 &middot; Identifiers, Snowflake &amp; branded ids</a> &mdash; why the id is self-describing.</li>
+        <li><a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/persistence/sql"><span aria-hidden="true">&larr;</span>&nbsp; F4.08.2 &middot; sql</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var SAGE = '#a7c9b1', GOLD = '#f0cd7f', BURG = '#e08f8b', BLUE = '#9fc0ea';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  var MAX64 = 18446744073709551615n;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+
+  /* the same validator as the hub: structure + range + namespace + time */
+  function validate(pathId, expectedNs) {
+    if (pathId.length !== 14) return { ok: false, why: 'length' };
+    var ns = pathId.slice(0, 3), payload = pathId.slice(3);
+    for (var i = 0; i < payload.length; i++) { if (B62.indexOf(payload.charAt(i)) < 0) return { ok: false, why: 'base62' }; }
+    var snow = b62decode(payload);
+    if (snow > MAX64) return { ok: false, why: 'range' };
+    if (ns !== expectedNs) return { ok: false, why: 'type' };
+    if (Number(snow >> 22n) + EPOCH_MS > Date.now() + 60000) return { ok: false, why: 'future' };
+    return { ok: true, snow: snow };
+  }
+
+  /* a burst: three real USR ids, five the shape a scanner sends */
+  var REQ = [
+    "USR0NbWMtkosp8",
+    "USR0NbLeJJpTmr",
+    "USR0NXh7MFjxT6",
+    "TSK0KHTOWnGLuC",
+    "USR0NbWM",
+    "USRzzzzzzzzzzz",
+    "USR0NbWM*kosp8",
+    "usr0NbWMtkosp8"
+  ];
+  var RES = REQ.map(function (id) { return validate(id, 'USR'); });
+  var nValid = RES.filter(function (r) { return r.ok; }).length;
+  var nShed = REQ.length - nValid;
+
+  /* build the eight rows once */
+  var g = document.getElementById('reRows');
+  function mk(tag, attrs, text) {
+    var el = document.createElementNS(SVGNS, tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    if (text != null) el.textContent = text;
+    return el;
+  }
+  if (g) {
+    for (var i = 0; i < REQ.length; i++) {
+      var y = 40 + i * 21;
+      g.appendChild(mk('rect', { id: 'reBox' + i, x: 40, y: y, width: 640, height: 18, rx: 5, fill: '#10162b', stroke: '#3a4263', 'stroke-width': '1' }));
+      g.appendChild(mk('text', { x: 52, y: y + 13, 'font-family': 'JetBrains Mono, monospace', 'font-size': '10.5', fill: '#d7cfb9' }, REQ[i]));
+      g.appendChild(mk('text', { id: 'reTag' + i, 'text-anchor': 'end', x: 668, y: y + 13, 'font-family': 'JetBrains Mono, monospace', 'font-size': '10' }, ''));
+    }
+  }
+
+  var WHY = { length: 'malformed length', base62: 'not base62', range: 'out of range', type: 'wrong type', future: 'future' };
+
+  function pick(k) {
+    document.querySelectorAll('#reSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    for (var i = 0; i < REQ.length; i++) {
+      var r = RES[i], boxEl = document.getElementById('reBox' + i), tagEl = document.getElementById('reTag' + i);
+      var stroke, tag, fill;
+      if (k === 'validate') {
+        if (r.ok) { stroke = SAGE; fill = SAGE; tag = '\u2192 cache GET'; }
+        else { stroke = BURG; fill = BURG; tag = '404 \u00b7 ' + WHY[r.why] + ' (no I/O)'; }
+      } else {
+        if (r.ok) { stroke = SAGE; fill = SAGE; tag = '\u2192 cache hit'; }
+        else { stroke = GOLD; fill = GOLD; tag = '\u2192 cache miss \u2192 DB query'; }
+      }
+      if (boxEl) { boxEl.setAttribute('stroke', stroke); boxEl.setAttribute('stroke-width', '1.4'); }
+      if (tagEl) { tagEl.textContent = tag; tagEl.setAttribute('fill', fill); }
+    }
+    var sEl = document.getElementById('reSummary');
+    var rEl = document.getElementById('reRole'), resEl = document.getElementById('reResult');
+    var code, out;
+    if (k === 'validate') {
+      if (sEl) { sEl.textContent = nValid + ' of ' + REQ.length + ' reach the cache \u00b7 ' + nShed + ' shed at the edge (0 I/O)'; sEl.setAttribute('fill', SAGE); }
+      if (rEl) { rEl.textContent = 'validates before the cache'; rEl.style.color = SAGE; }
+      if (resEl) resEl.textContent = nValid + ' cache lookups';
+      code = '<span class="cmt"># validate first — ' + nShed + ' of ' + REQ.length + ' rejected with no I/O</span>\n<span class="op">with</span> {<span class="res">:ok</span>, _} &lt;- <span class="fn sage">Portal.Id</span>.<span class="fn">validate</span>(id, <span class="res">:USR</span>),\n     {<span class="res">:ok</span>, v} &lt;- <span class="fn sage">Redix</span>.<span class="fn">command</span>([<span class="str">"GET"</span>, <span class="str">"user:"</span> &lt;&gt; id])\n<span class="cmt"># only ' + nValid + ' well-formed ids ever become a cache GET</span>';
+      out = 'With validation, <b style="color:var(--sage-bright)">' + nValid + ' of ' + REQ.length + '</b> requests reach Redis; the other <b style="color:#e08f8b">' + nShed + '</b> are answered <code class="inl">404</code> for the cost of a decode. The cache and the database see none of the scanner traffic.';
+    } else {
+      if (sEl) { sEl.textContent = REQ.length + ' cache lookups \u00b7 ' + nShed + ' DB queries for ids that cannot exist'; sEl.setAttribute('fill', GOLD); }
+      if (rEl) { rEl.textContent = 'forwards everything'; rEl.style.color = GOLD; }
+      if (resEl) resEl.textContent = REQ.length + ' lookups + ' + nShed + ' DB reads';
+      code = '<span class="cmt"># no validation — every request is a cache GET</span>\n{<span class="res">:ok</span>, v} = <span class="fn sage">Redix</span>.<span class="fn">command</span>([<span class="str">"GET"</span>, <span class="str">"user:"</span> &lt;&gt; id])\n<span class="op">if</span> v == <span class="res">nil</span>, <span class="op">do:</span> <span class="fn">load_from_db</span>(id)\n<span class="cmt"># ' + nShed + ' impossible ids miss the cache and hit the database anyway</span>';
+      out = 'Forwarding everything, all <b style="color:var(--sage-bright)">' + REQ.length + '</b> become a cache <code class="inl">GET</code>; the <b style="color:var(--gold-bright)">' + nShed + '</b> that cannot exist miss and fall through to a database query. The store pays for traffic an edge check would have shed.';
+    }
+    var cEl = document.getElementById('reCode'); if (cEl) cEl.innerHTML = code;
+    var oEl = document.getElementById('reOut'); if (oEl) oEl.innerHTML = out;
+  }
+  document.querySelectorAll('#reSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('validate');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), sidEl = document.getElementById('stampId');
+  if (stamp && sidEl) {
+    var info = decodeBranded(sidEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

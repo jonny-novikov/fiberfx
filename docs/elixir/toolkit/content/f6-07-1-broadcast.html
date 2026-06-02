@@ -1,0 +1,295 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/pubsub">pubsub</a><span class="rsep">/</span><span class="rcur">broadcast</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/pubsub">F6.07</a>
+      <span class="sep">/</span>
+      <span class="here">broadcast</span>
+    </div>
+    <p class="eyebrow">F6.07 &middot; part 1 of 3</p>
+    <h1>Broadcasting engine <span class="ex">events</span></h1>
+    <p class="lede"><code class="inl">Phoenix.PubSub</code> is a publish/subscribe registry running as a named
+      process tree in your application. You publish with
+      <code class="inl">broadcast(server, topic, message)</code> and it delivers that message to every process
+      subscribed to the <strong>topic</strong> &mdash; a plain string like <code class="inl">"courses"</code>. The
+      message is any term; the convention is a tagged tuple naming a domain event,
+      <code class="inl">{:course_created, course}</code>, so a handler can pattern-match it. The design question is
+      not how to call broadcast &mdash; it is one line &mdash; but <strong>where</strong>. The answer follows the F6.04
+      boundary: the <strong>context</strong> broadcasts, right after a successful write, because creating a course is a
+      domain fact and the rest of the system should hear about it regardless of who triggered it. The web layer never
+      broadcasts; it would couple the domain&rsquo;s events to one delivery path. A small piece of plumbing keeps this
+      clean: a <code class="inl">broadcast/2</code> helper that fires only on <code class="inl">{:ok, _}</code> and
+      passes errors through untouched, and a facade wrapper so the <strong>server name</strong> and the topics live in
+      one place rather than scattered through the codebase.</p>
+    <p class="kicker">Four parts: the three pieces of a broadcast, where it belongs in the layers, broadcasting from a
+      context in code, and the facade wrapper plus supervision setup.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#what">Server, topic, message</a>
+      <a href="#where">Where the broadcast belongs</a>
+      <a href="#code">Broadcasting from a context</a>
+      <a href="#wrap">The facade wrapper</a>
+    </div>
+  </section>
+
+  <section id="what">
+    <h2>Server, topic, message</h2>
+    <div class="prose">
+      <p>A broadcast names three things. The <strong>PubSub server</strong> is the named registry process that routes
+        messages. The <strong>topic</strong> is the string channel a message travels on. <code class="inl">
+        broadcast/3</code> is the call that sends a message to everyone subscribed. Select one.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="bcTitle">
+      <h4 id="bcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A broadcast &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="bcSel" role="group" aria-label="Broadcast piece">
+          <button type="button" data-k="broadcast" class="active">broadcast/3</button>
+          <button type="button" data-k="topic">a topic</button>
+          <button type="button" data-k="server">the PubSub server</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three pieces of a broadcast: broadcast/3 sends a message to all subscribers, a topic is the string channel, and the PubSub server is the named routing process.">
+        <rect id="bcRow_broadcast" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">broadcast/3</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">broadcast(server, topic, msg) &mdash; deliver to every subscriber</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">the call</text>
+
+        <rect id="bcRow_topic" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">a topic</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">"courses" &mdash; a string name that messages travel on</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">the channel</text>
+
+        <rect id="bcRow_server" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">the PubSub server</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">Portal.PubSub &mdash; the named registry, started in the tree</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">the router</text>
+      </svg>
+
+      <div class="geo-readout" id="bcOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">piece: <span id="bcRole" style="color:#9fc0ea">broadcast/3</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">does: <span id="bcResult" style="color:var(--cream)">send a message to all subscribers</span></p>
+    </figure>
+    <p class="take">A topic is only an agreed string, so naming it is a design choice. Per-resource topics like
+      <code class="inl">"course:" &lt;&gt; id</code> let a subscriber listen to one record; a broad
+      <code class="inl">"courses"</code> topic carries every change to the collection.</p>
+  </section>
+
+  <section id="where">
+    <h2>Where the broadcast belongs</h2>
+    <div class="prose">
+      <p>The broadcast lives in the <strong>context</strong>, immediately after the write, for the same reason the
+        context owns the write at all: it is the domain&rsquo;s job to say what happened. A controller or LiveView
+        that broadcast directly would tie the event to one caller and one transport. Put it in
+        <code class="inl">create_course/1</code> and every path &mdash; web form, live form, an import script &mdash;
+        emits the same event for free.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="bcWhereTitle">
+      <h4 id="bcWhereTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">caller &rarr; context (writes &amp; broadcasts) &rarr; PubSub</h4>
+      <svg viewBox="0 0 720 178" role="img" aria-label="Any caller invokes the context, which writes through the Repo and then broadcasts the event; the broadcast originates inside the domain, not in the web layer.">
+        <rect x="20" y="40" width="150" height="96" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="95" y="60" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">ANY CALLER</text>
+        <text x="95" y="80" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">web form</text>
+        <text x="95" y="96" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">live form</text>
+        <text x="95" y="112" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">import script</text>
+        <line x1="170" y1="88" x2="214" y2="88" stroke="#5a6688" stroke-width="1.6"></line>
+
+        <rect x="214" y="34" width="240" height="108" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="334" y="54" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.05em" fill="#86a7d8">CONTEXT &middot; create_course/1</text>
+        <rect x="234" y="64" width="200" height="26" rx="7" fill="#0d1322" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="334" y="81" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">Repo.insert() &rarr; {:ok, course}</text>
+        <rect x="234" y="96" width="200" height="26" rx="7" fill="#13201a" stroke="#7ba387" stroke-width="1.3"></rect>
+        <text x="334" y="113" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#a7c9b1">broadcast {:course_created, course}</text>
+        <line x1="454" y1="88" x2="498" y2="88" stroke="#5a87c4" stroke-width="1.8"></line>
+
+        <rect x="498" y="64" width="206" height="48" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="601" y="84" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#cfd6e6">PubSub "courses"</text>
+        <text x="601" y="99" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7c86a6">on to every subscriber</text>
+
+        <text x="360" y="166" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">the event is emitted inside the domain &mdash; the web layer only subscribes, never broadcasts</text>
+      </svg>
+    </figure>
+    <p class="take">This mirrors F5 exactly: the engine recorded an event when a fact occurred, independent of any
+      caller. PubSub is the live delivery of that same idea &mdash; the event is born in the domain and travels
+      outward.</p>
+  </section>
+
+  <section id="code">
+    <h2>Broadcasting from a context</h2>
+    <div class="prose">
+      <p><code class="inl">create_course/1</code> pipes the insert result into a private
+        <code class="inl">broadcast/2</code> helper. The helper fires the broadcast only on success and returns the
+        result unchanged, so the function&rsquo;s contract &mdash; <code class="inl">{:ok, course}</code> or
+        <code class="inl">{:error, changeset}</code> &mdash; is exactly what callers already expect from F6.03. An
+        error pattern passes straight through, broadcasting nothing.</p>
+    </div>
+    <pre class="code"><span class="cmt"># Portal.Catalog — broadcast a domain event after the write</span>
+<span class="op">def</span> <span class="fn">create_course</span>(attrs) <span class="op">do</span>
+  %<span class="fn blue">Course</span>{}
+  |> <span class="fn blue">Course</span>.<span class="fn">changeset</span>(attrs)
+  |> <span class="fn blue">Repo</span>.<span class="fn">insert</span>()
+  |> <span class="fn">broadcast</span>(<span class="res">:course_created</span>)
+<span class="op">end</span>
+
+<span class="op">defp</span> <span class="fn">broadcast</span>({<span class="res">:ok</span>, course} = result, event) <span class="op">do</span>
+  <span class="fn blue">Portal</span>.<span class="fn">broadcast</span>(<span class="str">"courses"</span>, {event, course})
+  result
+<span class="op">end</span>
+
+<span class="op">defp</span> <span class="fn">broadcast</span>({<span class="res">:error</span>, _changeset} = error, _event), <span class="op">do:</span> error</pre>
+    <p class="take">Threading the broadcast through the pipeline keeps the happy path readable and the error path
+      honest. Nothing is broadcast for a failed write, so subscribers never hear about a course that does not exist.</p>
+  </section>
+
+  <section id="wrap">
+    <h2>The facade wrapper</h2>
+    <div class="prose">
+      <p>The <code class="inl">Portal</code> facade wraps <code class="inl">subscribe</code> and
+        <code class="inl">broadcast</code> so the server name <code class="inl">Portal.PubSub</code> appears once, not
+        in every context and LiveView. The server itself is started in the application&rsquo;s supervision tree &mdash;
+        a single child spec &mdash; so it is supervised like any other process from F5.</p>
+    </div>
+    <pre class="code"><span class="cmt"># Portal facade — one home for the PubSub server name and topics</span>
+<span class="op">def</span> <span class="fn">subscribe</span>(topic) <span class="op">do</span>
+  <span class="fn blue">Phoenix.PubSub</span>.<span class="fn">subscribe</span>(<span class="fn blue">Portal.PubSub</span>, topic)
+<span class="op">end</span>
+
+<span class="op">def</span> <span class="fn">broadcast</span>(topic, message) <span class="op">do</span>
+  <span class="fn blue">Phoenix.PubSub</span>.<span class="fn">broadcast</span>(<span class="fn blue">Portal.PubSub</span>, topic, message)
+<span class="op">end</span>
+
+<span class="cmt"># started once, supervised, in Portal.Application:</span>
+<span class="cmt">#   children = [{Phoenix.PubSub, name: Portal.PubSub}, ...]</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">domain emits</p>
+        <p>The context broadcasts the event after a successful write.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">facade hides the server</p>
+        <p>One wrapper holds <code class="inl">Portal.PubSub</code>; topics stay domain concepts.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/phoenix/pubsub/subscribe"><strong>subscribing a LiveView</strong></a> &mdash;
+      the broadcast is out on the topic; now a LiveView joins and reacts to it.</p>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/pubsub"><span aria-hidden="true">&larr;</span>&nbsp; F6.07 &middot; overview</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/pubsub/subscribe">Next &middot; subscribing a LiveView <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var P = {
+    broadcast: { name: 'broadcast/3', does: 'send a message to all subscribers', row: 'bcRow_broadcast',
+      desc: 'broadcast(server, topic, message) delivers the message to every process subscribed to the topic. The message is any term \u2014 by convention a tagged tuple like {:course_created, course}.' },
+    topic:     { name: 'a topic', does: 'the string a message is sent on', row: 'bcRow_topic',
+      desc: 'A topic is an agreed string such as "courses". Subscribers join it by name; you can scope per resource with "course:" <> id, or use a broad topic for the whole collection.' },
+    server:    { name: 'the PubSub server', does: 'the named process that routes', row: 'bcRow_server',
+      desc: 'Portal.PubSub is the named registry process that routes messages between publishers and subscribers. It is started once in the application supervision tree and shared app-wide.' }
+  };
+  var ORDER = ['broadcast', 'topic', 'server'];
+  function pick(k) {
+    var x = P[k]; if (!x) return;
+    document.querySelectorAll('#bcSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(P[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('bcRole'); if (rEl) rEl.textContent = x.name;
+    var dEl = document.getElementById('bcResult'); if (dEl) dEl.textContent = x.does;
+    var oEl = document.getElementById('bcOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + x.name + '</b> \u2014 ' + x.does + '. ' + x.desc.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  document.querySelectorAll('#bcSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('broadcast');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

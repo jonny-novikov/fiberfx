@@ -1,0 +1,273 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/ecto">ecto</a><span class="rsep">/</span><span class="rcur">changesets</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/ecto">F6.03</a>
+      <span class="sep">/</span>
+      <span class="here">changesets</span>
+    </div>
+    <p class="eyebrow">F6.03 &middot; part 2 of 3</p>
+    <h1>Changesets &amp; <span class="ex">validation</span></h1>
+    <p class="lede">A changeset is the gate every write passes through, and it is a <strong>pure pipeline</strong> &mdash;
+      data in, a changeset struct out, no side effects. You <code class="inl">cast</code> an untrusted map to permit and
+      coerce only the fields you name; you <code class="inl">validate</code> the rules &mdash; required, length, format,
+      number; and you declare <strong>constraints</strong> that the database enforces, like uniqueness. The result is a
+      <code class="inl">%Ecto.Changeset{}</code> carrying <code class="inl">valid?</code> and a list of
+      <code class="inl">errors</code>, computed before anything touches the database. Because it is pure, you can test a
+      changeset without a repo and reuse it for both inserts and updates. And the engine&rsquo;s boundary stays clean:
+      a failed changeset becomes the closed <code class="inl">%Portal.Error{}</code> from F5.08, so the web layer sees
+      one error shape, never raw Ecto internals.</p>
+    <p class="kicker">See the three stages of the pipeline, follow a map through to a valid-or-invalid changeset, then
+      read a real changeset and how the engine wraps its errors.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#pipeline">The changeset pipeline</a>
+      <a href="#flow">Valid or invalid</a>
+      <a href="#code">A real changeset</a>
+    </div>
+  </section>
+
+  <section id="pipeline">
+    <h2>The changeset pipeline</h2>
+    <div class="prose">
+      <p>Three stages, each a function that takes a changeset and returns one. <code class="inl">cast</code> decides
+        which fields are even allowed; <code class="inl">validate_*</code> functions check values in Elixir; a
+        constraint defers a check the database is best at, like uniqueness, and turns its error into a changeset error.
+        Select a stage.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="csTitle">
+      <h4 id="csTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The pipeline &middot; select a stage</h4>
+      <div class="controls">
+        <div class="solid-select" id="csSel" role="group" aria-label="Changeset stage">
+          <button type="button" data-k="cast" class="active">cast</button>
+          <button type="button" data-k="validate">validate</button>
+          <button type="button" data-k="constraint">constraint</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three changeset stages: cast permits and coerces fields, validate checks the rules in Elixir, and a constraint defers a check to the database.">
+        <rect id="csRow_cast" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">cast</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">cast(attrs, [:title, :published]) &mdash; permit &amp; coerce fields</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">allow-list</text>
+
+        <rect id="csRow_validate" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">validate</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">validate_required / validate_length &mdash; check the rules</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">in Elixir</text>
+
+        <rect id="csRow_constraint" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">constraint</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">unique_constraint(:title) &mdash; defer to the database</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">on insert</text>
+      </svg>
+
+      <div class="geo-readout" id="csOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">stage: <span id="csRole" style="color:#9fc0ea">cast</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">does: <span id="csResult" style="color:var(--cream)">permit &amp; coerce fields</span></p>
+    </figure>
+    <p class="take"><code class="inl">cast</code> is your security boundary: a field not in its allow-list is dropped, so
+      a client cannot set <code class="inl">:published</code> or an internal flag by smuggling it into the params.</p>
+  </section>
+
+  <section id="flow">
+    <h2>Valid or invalid</h2>
+    <div class="prose">
+      <p>The pipeline always returns a changeset; what differs is its <code class="inl">valid?</code> flag. A valid
+        changeset is what you hand to <code class="inl">Repo.insert</code>; an invalid one carries
+        <code class="inl">errors</code> and never reaches the database, so the same value drives both the write and the
+        error message a form shows.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="csFlowTitle">
+      <h4 id="csFlowTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">params &rarr; cast &rarr; validate &rarr; %Changeset{valid?}</h4>
+      <svg viewBox="0 0 720 188" role="img" aria-label="A params map flows through cast and validate into a changeset; a valid changeset goes to Repo.insert, an invalid one returns errors that become a Portal.Error.">
+        <rect x="20" y="58" width="120" height="40" rx="9" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="80" y="74" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#d7cfb9">params</text>
+        <text x="80" y="88" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#6b7494">untrusted map</text>
+        <line x1="140" y1="78" x2="168" y2="78" stroke="#3a4263" stroke-width="1.6"></line>
+
+        <rect x="168" y="58" width="120" height="40" rx="9" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="228" y="74" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#d7cfb9">cast + validate</text>
+        <text x="228" y="88" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#6b7494">pure pipeline</text>
+        <line x1="288" y1="78" x2="316" y2="78" stroke="#3a4263" stroke-width="1.6"></line>
+
+        <rect x="316" y="58" width="130" height="40" rx="9" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="381" y="74" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#9fc0ea">%Changeset{}</text>
+        <text x="381" y="88" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#86a7d8">valid? + errors</text>
+
+        <line x1="446" y1="68" x2="540" y2="40" stroke="#7ba387" stroke-width="1.6"></line>
+        <text x="470" y="48" font-family="Manrope, sans-serif" font-size="7.5" fill="#a7c9b1">valid?</text>
+        <rect x="540" y="22" width="160" height="38" rx="9" fill="#13201a" stroke="#7ba387" stroke-width="1.6"></rect>
+        <text x="620" y="39" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a7c9b1">Repo.insert(cs)</text>
+        <text x="620" y="52" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7ba387">{:ok, %Course{}}</text>
+
+        <line x1="446" y1="88" x2="540" y2="120" stroke="#c4504c" stroke-width="1.6"></line>
+        <text x="470" y="116" font-family="Manrope, sans-serif" font-size="7.5" fill="#e08f8b">invalid</text>
+        <rect x="540" y="118" width="160" height="38" rx="9" fill="#1d1320" stroke="#c4504c" stroke-width="1.6"></rect>
+        <text x="620" y="135" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#e08f8b">errors</text>
+        <text x="620" y="148" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#a87f7c">&rarr; %Portal.Error{}</text>
+
+        <text x="300" y="178" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">the pipeline is pure; only Repo.insert touches the database, and only for a valid changeset</text>
+      </svg>
+    </figure>
+    <p class="take">One value, two destinations. The valid changeset is the write; the invalid one is the error report
+      &mdash; and the engine maps it to the closed error set so the controller branches on
+      <code class="inl">%Portal.Error{}</code>, not on Ecto.</p>
+  </section>
+
+  <section id="code">
+    <h2>A real changeset</h2>
+    <div class="prose">
+      <p>A changeset function takes a struct and the attributes and pipes through the stages. At the engine boundary,
+        <code class="inl">Repo.insert</code> returns <code class="inl">{:ok, struct}</code> or
+        <code class="inl">{:error, changeset}</code>, and the engine translates the error case into the closed
+        contract &mdash; the same <code class="inl">Portal.Error</code> the F5.08 facade already speaks.</p>
+    </div>
+    <pre class="code"><span class="op">import</span> <span class="fn blue">Ecto.Changeset</span>
+
+<span class="op">def</span> <span class="fn">changeset</span>(course, attrs) <span class="op">do</span>
+  course
+  |> <span class="fn">cast</span>(attrs, [<span class="res">:title</span>, <span class="res">:published</span>])      <span class="cmt"># permit only these fields</span>
+  |> <span class="fn">validate_required</span>([<span class="res">:title</span>])
+  |> <span class="fn">validate_length</span>(<span class="res">:title</span>, min: <span class="res">3</span>, max: <span class="res">120</span>)
+  |> <span class="fn">unique_constraint</span>(<span class="res">:title</span>)             <span class="cmt"># enforced by the database on insert</span>
+<span class="op">end</span>
+
+<span class="cmt"># at the engine boundary: a failed changeset becomes the closed contract (F5.08)</span>
+<span class="op">case</span> <span class="fn blue">Repo</span>.<span class="fn">insert</span>(<span class="fn">changeset</span>(%<span class="fn blue">Course</span>{}, attrs)) <span class="op">do</span>
+  {<span class="res">:ok</span>, course}       -> {<span class="res">:ok</span>, course}
+  {<span class="res">:error</span>, changeset} -> {<span class="res">:error</span>, <span class="fn blue">Portal.Error</span>.<span class="fn">from_changeset</span>(changeset)}
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">cast &amp; validate</p>
+        <p>A pure pipeline produces a changeset with <code class="inl">valid?</code> and <code class="inl">errors</code>.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">one error shape</p>
+        <p>The engine maps a failed changeset to <code class="inl">%Portal.Error{}</code> &mdash; never raw Ecto.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/phoenix/ecto/repo"><strong>queries &amp; the repo</strong></a> &mdash; the
+      <code class="inl">Repo.insert</code> above is one repo call, and the repo lives behind the engine&rsquo;s port.</p>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/ecto/schemas"><span aria-hidden="true">&larr;</span>&nbsp; F6.03.1 &middot; schemas &amp; migrations</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/ecto/repo">Next &middot; queries &amp; the repo <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var STAGES = {
+    cast:       { name: 'cast', does: 'permit & coerce fields', row: 'csRow_cast',
+      desc: 'cast(struct, attrs, [:title, :published]) takes an untrusted map and keeps only the named fields, coercing each to its declared type. A field outside the allow-list is silently dropped.' },
+    validate:   { name: 'validate', does: 'check the rules', row: 'csRow_validate',
+      desc: 'validate_required, validate_length, validate_format, validate_number and friends check values in Elixir and add an error when a rule fails. Pure functions \u2014 no database needed to test them.' },
+    constraint: { name: 'constraint', does: 'defer to the database', row: 'csRow_constraint',
+      desc: 'unique_constraint and foreign_key_constraint let the database enforce what only it can know \u2014 uniqueness, references \u2014 and translate its error into a changeset error on insert, so no exception escapes.' }
+  };
+  var ORDER = ['cast', 'validate', 'constraint'];
+  function pick(k) {
+    var S = STAGES[k]; if (!S) return;
+    document.querySelectorAll('#csSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(STAGES[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('csRole'); if (rEl) rEl.textContent = S.name;
+    var dEl = document.getElementById('csResult'); if (dEl) dEl.textContent = S.does;
+    var oEl = document.getElementById('csOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + S.name + '</b> \u2014 ' + S.does + '. ' + S.desc;
+  }
+  document.querySelectorAll('#csSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('cast');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

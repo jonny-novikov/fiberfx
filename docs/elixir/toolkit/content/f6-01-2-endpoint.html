@@ -1,0 +1,287 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/lifecycle">lifecycle</a><span class="rsep">/</span><span class="rcur">endpoint</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/lifecycle">F6.01</a>
+      <span class="sep">/</span>
+      <span class="here">endpoint</span>
+    </div>
+    <p class="eyebrow">F6.01 &middot; part 2 of 3</p>
+    <h1>The endpoint, <span class="ex">supervised</span></h1>
+    <p class="lede">The endpoint wears two hats, and seeing both is what connects Phoenix to everything F5 built. As a
+      <strong>plug</strong>, <code class="inl">PortalWeb.Endpoint</code> is the outermost layer of the request
+      lifecycle &mdash; the fixed stack of static files, parsers, and session that every request passes through before
+      the router. As a <strong>process</strong>, it is a supervised child of the OTP tree: when the application boots,
+      the endpoint starts listening, and if it crashes its supervisor restarts it, exactly like the engine and the
+      store from F5. That second hat is the whole structural change F6 makes &mdash; one more child added to the tree
+      the F5.09 lab assembled, sitting beside the engine rather than wrapping it.</p>
+    <p class="kicker">See the endpoint&rsquo;s two roles, where it sits in the supervision tree, and the code for both
+      &mdash; the plug stack and the one-line addition to the tree.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#roles">Two roles, one module</a>
+      <a href="#tree">Where it sits in the tree</a>
+      <a href="#code">The endpoint in code</a>
+    </div>
+  </section>
+
+  <section id="roles">
+    <h2>Two roles, one module</h2>
+    <div class="prose">
+      <p>The same module is configured two ways. Its <code class="inl">plug</code> declarations make it the head of the
+        request pipeline; its place in <code class="inl">Application.start/2</code> makes it a supervised process that
+        owns the listening socket. Select a role to see what it covers.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="epTitle">
+      <h4 id="epTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The endpoint&rsquo;s roles &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="epSel" role="group" aria-label="Endpoint role">
+          <button type="button" data-k="stack" class="active">plug stack</button>
+          <button type="button" data-k="socket">socket</button>
+          <button type="button" data-k="tree">tree child</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 180" role="img" aria-label="The endpoint's three facets: the plug stack at the head of the request pipeline, the socket entry for LiveView and channels, and its place as a supervised child of the OTP tree.">
+        <rect id="epRow_stack" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">PLUG STACK</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">static &middot; request id &middot; parsers &middot; session &middot; router</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">the lifecycle head</text>
+
+        <rect id="epRow_socket" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">SOCKET</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">socket "/live", Phoenix.LiveView.Socket</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">LiveView &middot; F6.06</text>
+
+        <rect id="epRow_tree" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">TREE CHILD</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">supervised beside Portal.Engine in F5&rsquo;s tree</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">OTP</text>
+      </svg>
+
+      <div class="geo-readout" id="epOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">role: <span id="epRole" style="color:#9fc0ea">Plug stack</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">is: <span id="epResult" style="color:var(--cream)">static files, parsers, session, router</span></p>
+    </figure>
+    <p class="take">One module, two contracts: a plug for the request path and a child spec for the supervisor. The
+      first makes it part of the lifecycle; the second makes it part of OTP &mdash; the bridge between HTTP and the
+      BEAM.</p>
+  </section>
+
+  <section id="tree">
+    <h2>Where it sits in the tree</h2>
+    <div class="prose">
+      <p>The endpoint is added to the supervision tree the F5.09 lab assembled, under the same
+        <code class="inl">:one_for_one</code> strategy. The store and the engine entries do not move; the endpoint is
+        one more child, started alongside them. A request the endpoint accepts is handled by calling the engine that
+        is its sibling, never by reaching around the supervisor.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="epTreeTitle">
+      <h4 id="epTreeTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Portal.Supervisor &middot; one new child</h4>
+      <svg viewBox="0 0 720 200" role="img" aria-label="The Portal supervisor with three children: the EventStore and the engine from F5, and the Phoenix endpoint added by F6.">
+        <rect x="260" y="20" width="200" height="46" rx="11" fill="#10162b" stroke="#5a6688" stroke-width="1.4"></rect>
+        <text x="360" y="40" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">PORTAL.SUPERVISOR</text>
+        <text x="360" y="56" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#7c86a6">:one_for_one</text>
+
+        <line x1="360" y1="66" x2="130" y2="120" stroke="#3a4263" stroke-width="1.3"></line>
+        <line x1="360" y1="66" x2="360" y2="120" stroke="#3a4263" stroke-width="1.3"></line>
+        <line x1="360" y1="66" x2="590" y2="120" stroke="#5a87c4" stroke-width="1.6"></line>
+
+        <rect x="40" y="120" width="180" height="48" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="130" y="140" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">EVENTSTORE</text>
+        <text x="130" y="156" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#7c86a6">F5 &middot; store</text>
+
+        <rect x="270" y="120" width="180" height="48" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="360" y="140" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#9aa3c0">ENGINE</text>
+        <text x="360" y="156" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#7c86a6">F5 &middot; GenServer</text>
+
+        <rect x="500" y="120" width="180" height="48" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="590" y="140" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#86a7d8">PORTALWEB.ENDPOINT</text>
+        <text x="590" y="156" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#9fc0ea">F6 &middot; web (new)</text>
+
+        <text x="360" y="190" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">the endpoint owns the listening socket; the engine and store are unchanged siblings</text>
+      </svg>
+    </figure>
+    <p class="take">A web server that is a supervised process is a BEAM idea, not a Phoenix one. The endpoint inherits
+      the same fault tolerance as the engine: if it falls over, the supervisor brings it back, and the engine beside it
+      never noticed.</p>
+  </section>
+
+  <section id="code">
+    <h2>The endpoint in code</h2>
+    <div class="prose">
+      <p>The endpoint module is mostly an ordered list of plugs ending in the router; both roles are visible in it.
+        Adding it to the tree is a single line in <code class="inl">Application.start/2</code> &mdash; the same list
+        the F5.09 lab built, with one entry appended.</p>
+    </div>
+    <pre class="code"><span class="cmt"># the endpoint: the head of the request pipeline (a plug) ...</span>
+<span class="op">defmodule</span> <span class="fn blue">PortalWeb.Endpoint</span> <span class="op">do</span>
+  <span class="op">use</span> <span class="fn blue">Phoenix.Endpoint</span>, otp_app: <span class="res">:portal</span>
+
+  <span class="op">socket</span> <span class="str">"/live"</span>, <span class="fn blue">Phoenix.LiveView.Socket</span>     <span class="cmt"># LiveView entry (F6.06)</span>
+
+  <span class="op">plug</span> <span class="fn blue">Plug.Static</span>, at: <span class="str">"/"</span>, from: <span class="res">:portal</span>
+  <span class="op">plug</span> <span class="fn blue">Plug.RequestId</span>
+  <span class="op">plug</span> <span class="fn blue">Plug.Parsers</span>, parsers: [<span class="res">:urlencoded</span>, <span class="res">:multipart</span>, <span class="res">:json</span>], json_decoder: <span class="fn blue">Jason</span>
+  <span class="op">plug</span> <span class="fn blue">Plug.Session</span>, store: <span class="res">:cookie</span>, key: <span class="str">"_portal_key"</span>
+  <span class="op">plug</span> <span class="fn blue">PortalWeb.Router</span>                       <span class="cmt"># the last plug: match → controller</span>
+<span class="op">end</span>
+
+<span class="cmt"># ... and a supervised child of the F5.09 tree (one line added)</span>
+children = [
+  <span class="fn blue">Portal.EventStore</span>.<span class="fn">adapter</span>(),   <span class="cmt"># F5 — unchanged</span>
+  {<span class="fn blue">Portal.Engine</span>, []},            <span class="cmt"># F5 — unchanged</span>
+  <span class="fn blue">PortalWeb.Endpoint</span>             <span class="cmt"># F6 — supervised alongside</span>
+]
+<span class="fn blue">Supervisor</span>.<span class="fn">start_link</span>(children, strategy: <span class="res">:one_for_one</span>, name: <span class="fn blue">Portal.Supervisor</span>)</pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">a plug</p>
+        <p>The outermost layer of the lifecycle &mdash; the stack every request passes through.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">a process</p>
+        <p>A supervised child beside the engine &mdash; the one structural change F6 makes.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/phoenix/lifecycle/controllers"><strong>controllers, views &amp; the facade
+      seam</strong></a> &mdash; once a request reaches the router, where does your code call the engine?</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/phoenix/overview.html">Overview &mdash; Phoenix documentation</a> &mdash; the framework at a glance.</li>
+        <li><a href="https://hexdocs.pm/phoenix/request_lifecycle.html">Request life-cycle &mdash; Phoenix documentation</a> &mdash; endpoint to view.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/phoenix/lifecycle">F6.01 &middot; Architecture &amp; the request lifecycle</a></li>
+        <li><a href="/elixir/phoenix/lifecycle/request-path">The request path through the lifecycle</a></li>
+        <li><a href="/elixir/pragmatic/engine-lab">F5.09 &middot; The Portal engine, supervised</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/lifecycle/request-path"><span aria-hidden="true">&larr;</span>&nbsp; F6.01.1 &middot; request lifecycle</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/lifecycle/controllers">Next &middot; controllers &amp; the facade seam <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var ROLES = {
+    stack:  { name: 'Plug stack', is: 'static files, parsers, session, router', row: 'epRow_stack',
+      desc: 'As a plug, the endpoint runs a fixed, ordered stack and ends by calling the router. This is the head of the request lifecycle \u2014 the first code every request touches.' },
+    socket: { name: 'Socket', is: 'LiveView & channel entry', row: 'epRow_socket',
+      desc: 'The endpoint also declares sockets: socket "/live" is the WebSocket entry LiveView uses in F6.06, and channels use the same mechanism in F6.07. HTTP and the live connection share one front door.' },
+    tree:   { name: 'Tree child', is: 'supervised in F5\u2019s tree', row: 'epRow_tree',
+      desc: 'In Application.start/2 the endpoint is a child spec, started and supervised beside Portal.Engine and the store under :one_for_one. A crash is restarted by the supervisor \u2014 the same fault tolerance the engine has.' }
+  };
+  var ORDER = ['stack', 'socket', 'tree'];
+  function pick(k) {
+    var R = ROLES[k]; if (!R) return;
+    document.querySelectorAll('#epSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(ROLES[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('epRole'); if (rEl) rEl.textContent = R.name;
+    var dEl = document.getElementById('epResult'); if (dEl) dEl.textContent = R.is;
+    var oEl = document.getElementById('epOut'); if (oEl) oEl.innerHTML = 'The <b style="color:' + BLUE + '">' + R.name + '</b> role \u2014 ' + R.is + '. ' + R.desc;
+  }
+  document.querySelectorAll('#epSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('stack');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

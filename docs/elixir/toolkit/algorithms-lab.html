@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab: build a branded CHAMP store — F4.12 · jonnify</title>
+<meta name="description" content="The capstone lab assembles the chapter into one Portal.Store: a GenServer over a map from namespace to that namespace&#x27;s CHAMP. A put is validated, routed to a partition by its three-letter prefix, stored in that partition&#x27;s CHAMP, and dated for free from the Snowflake embedded in its id. The hub traces one write through those four layers — each an earlier lesson — and three dives build the store: insert and watch it grow, resolve ids as a registry, and query by time range.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(179,157,219,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--elixir-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--sans);color:var(--cream-dim);font-size:.95rem;max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--elixir-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="elixir"]{background:var(--elixir-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;overflow-x:auto;white-space:nowrap}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--elixir-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- arc svg ---- */
+.arc-node rect{transition:fill .2s ease, stroke .2s ease}
+.arc-node{cursor:pointer}
+.arc-node .num{font-family:var(--serif-display);font-weight:600;fill:var(--cream)}
+.arc-node .nm{font-family:var(--sans);font-weight:600;fill:var(--cream-dim);letter-spacing:.02em}
+.arc-node:hover rect{stroke:var(--cream-dim)}
+.arc-node.active rect{fill:var(--ink-3);stroke:var(--elixir-bright)}
+.arc-node.active .num{fill:var(--gold-bright)}
+.arc-node.active .nm{fill:var(--elixir-bright)}
+.arc-node:focus{outline:none}
+.arc-node:focus-visible rect{stroke:var(--gold-bright)}
+.arc-flow{stroke:var(--line);stroke-width:2;fill:none;stroke-dasharray:6 9}
+.arc-arrow{fill:var(--cream-dim)}
+@media (prefers-reduced-motion: no-preference){
+  .arc-flow{animation:flow 1.6s linear infinite}
+}
+@keyframes flow{to{stroke-dashoffset:-30}}
+.arc-readout{margin-top:1.1rem}
+.arc-readout .nm{font-family:var(--serif-display);font-size:1.5rem;color:var(--cream);font-weight:600}
+.arc-readout .one{font-family:var(--serif);color:var(--cream-soft);margin:.25rem 0 .5rem;max-width:60ch}
+.arc-readout .meta{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;align-items:center}
+.arc-readout .meta b{color:var(--gold)}
+.arc-open{margin-top:.7rem;font-family:var(--sans);font-size:.9rem}
+.arc-open .muted{color:var(--cream-dim)}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--elixir-bright);border-color:var(--elixir)}
+.chap{padding-top:2.2rem}
+.chap:first-of-type{padding-top:.4rem}
+.chap-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem 1rem;
+  padding-bottom:.6rem;border-bottom:1px solid var(--line);margin-bottom:1.1rem}
+.chap-head .cid{font-family:var(--mono);font-size:.95rem;color:var(--gold)}
+.chap-head h3{margin:0}
+.chap-head .c-one{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);
+  flex-basis:100%;margin-top:.1rem}
+.chap-head .chap-link{font-family:var(--sans);font-size:.82rem;margin-left:auto}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+.mod.is-quiet{opacity:.66;border-style:dashed}
+.mod.is-quiet .t{color:var(--cream-soft)}
+.mod.lab{border-left:2px solid var(--elixir)}
+.mod.lab .num::after{content:" · lab";color:var(--elixir-bright)}
+.dives{list-style:none;margin:.6rem 0 0;padding:.6rem 0 0;border-top:1px dashed var(--line);
+  font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);display:grid;gap:.3rem}
+.dives li{display:flex;gap:.5rem}
+.dives .dn{font-family:var(--mono);color:var(--gold);min-width:3.6rem}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--elixir-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--elixir-bright);
+  border:1px solid var(--elixir);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+pre.code .rdx{background:rgba(179,157,219,.18);border-radius:4px;padding:0 .18em;color:var(--elixir-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/algorithms">algorithms</a><span class="rsep">/</span><span class="rcur">lab</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="hero-copy">
+      <div class="crumbs">
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <span class="sep">/</span>
+        <span class="here">F4.12 &middot; lab</span>
+      </div>
+      <p class="eyebrow">F4 &middot; Lab &middot; module 12</p>
+      <h1>Lab: build a branded CHAMP <span class="ex">store</span></h1>
+      
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#stack">Trace the stack</a>
+        <a href="#build">Build it &middot; three dives</a>
+        <a href="#advanced">Advanced: the assembled module</a>
+      </div>
+    </div>
+
+    <div class="hero-lede">
+      <p class="lede">This chapter built the parts in isolation &mdash; branded ids that validate and decode
+        (F4.07&ndash;F4.08), the CHAMP node that holds them cheaply (F4.06), the partitioned store behind a GenServer
+        (F4.09), the recipes that read it (F4.10). The lab assembles them into one <code class="inl">Portal.Store</code>
+        you can keep as a reference. A <code class="inl">put</code> is validated, routed to a partition by its
+        namespace, stored in that partition&rsquo;s CHAMP, and its Snowflake gives the creation time at no extra cost.
+        Three dives build it, register entities, and query by time.</p>
+      <p class="kicker">Start with the whole stack at once: trace a single entity from <code class="inl">put</code> to
+        stored, through the four layers the dives assemble. Pick an entity.</p>
+    </div>
+
+    <div class="hero-art">
+      <figure class="hero-fig" aria-labelledby="hsTitle">
+        <figcaption>
+          <p class="fc-lbl" id="hsTitle">The store &middot; namespace &rarr; CHAMP</p>
+        </figcaption>
+        <svg viewBox="0 0 320 300" role="img" aria-label="A branded CHAMP store: a map from three-letter namespace to that namespace's CHAMP partition. Three lanes — USR for users, LSN for lessons, PGE for pages — each hold the branded ids routed to them by prefix. One USR entry is already stored. A put inserts a branded id into its namespace lane; a get highlights a lookup; a range marks the time-ordered slice of one lane.">
+          <!-- store frame -->
+          <rect x="14" y="14" width="292" height="272" rx="14" fill="none" stroke="#2a3252" stroke-width="1.5"></rect>
+          <text x="30" y="38" font-family="JetBrains Mono, monospace" font-size="11" fill="#a39c89">Portal.Store</text>
+          <text x="290" y="38" text-anchor="end" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.08em" fill="#6b7494">%{ns =&gt; champ}</text>
+
+          <g id="hsLanes">
+            <!-- static initial state: USR lane holds one entry; LSN and PGE empty (visible without JS) -->
+            <!-- USR lane (users) -->
+            <g class="hs-lane" data-ns="USR">
+              <rect x="30" y="56" width="260" height="56" rx="10" fill="#10162b" stroke="#a7c9b1" stroke-width="2"></rect>
+              <text x="46" y="78" font-family="JetBrains Mono, monospace" font-size="13" fill="#a7c9b1">USR</text>
+              <text x="46" y="94" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.06em" fill="#6b7494">users</text>
+              <g class="hs-entry">
+                <rect x="96" y="68" width="118" height="32" rx="7" fill="#161d38" stroke="#7ba387" stroke-width="1.3"></rect>
+                <text x="155" y="88" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#ece4d0">USR0NbAb1xcFCy</text>
+              </g>
+              <text x="270" y="92" text-anchor="end" font-family="Manrope, sans-serif" font-size="9" fill="#a39c89">1</text>
+            </g>
+            <!-- LSN lane (lessons) -->
+            <g class="hs-lane" data-ns="LSN">
+              <rect x="30" y="124" width="260" height="56" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.5"></rect>
+              <text x="46" y="146" font-family="JetBrains Mono, monospace" font-size="13" fill="#9fc0ea">LSN</text>
+              <text x="46" y="162" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.06em" fill="#6b7494">lessons</text>
+              <text x="180" y="158" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#6b7494">empty CHAMP</text>
+              <text x="270" y="160" text-anchor="end" font-family="Manrope, sans-serif" font-size="9" fill="#6b7494">0</text>
+            </g>
+            <!-- PGE lane (pages) -->
+            <g class="hs-lane" data-ns="PGE">
+              <rect x="30" y="192" width="260" height="56" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.5"></rect>
+              <text x="46" y="214" font-family="JetBrains Mono, monospace" font-size="13" fill="#f0cd7f">PGE</text>
+              <text x="46" y="230" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.06em" fill="#6b7494">pages</text>
+              <text x="180" y="226" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#6b7494">empty CHAMP</text>
+              <text x="270" y="228" text-anchor="end" font-family="Manrope, sans-serif" font-size="9" fill="#6b7494">0</text>
+            </g>
+          </g>
+
+          <!-- routing note -->
+          <text id="hsRoute" x="160" y="270" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.04em" fill="#a39c89">prefix routes each id to its lane</text>
+        </svg>
+        <div class="hp-ctrls">
+          <button type="button" class="hp-btn" id="hsPut">&#9656; put</button>
+          <button type="button" class="hp-btn" id="hsGet">get</button>
+          <button type="button" class="hp-btn ghost" id="hsRange">range</button>
+          <button type="button" class="hp-btn ghost" id="hsReset">reset</button>
+        </div>
+        <p class="hp-cap" id="hsCap" aria-live="polite">
+          <span class="lst">store: USR&#8594;1, LSN&#8594;0, PGE&#8594;0</span><br>
+          <span class="ohint">put routes by the 3-letter prefix; get and range read one lane.</span>
+        </p>
+      </figure>
+    </div>
+  </section>
+
+  <section id="stack">
+    <h2>Trace the stack</h2>
+    <div class="prose">
+      <p>Every write passes through the same four layers, each one a piece built earlier in the chapter. The id is
+        checked, its three-letter namespace routes it to a partition, the entry lands in that partition&rsquo;s CHAMP,
+        and the Snowflake embedded in the id is its timestamp. Pick an entity to trace.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="lbTitle">
+      <h4 id="lbTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Entity &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="lbSel" role="group" aria-label="Entity to trace">
+          <button type="button" data-k="usr" data-c="sage" class="active">a user</button>
+          <button type="button" data-k="lsn" data-c="blue">a lesson</button>
+          <button type="button" data-k="pge" data-c="gold">a page</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 234" role="img" aria-label="Four stacked layers — validate, route by namespace, store in the partition's CHAMP, decode the Snowflake — with the selected entity traced through each.">
+        <text id="lbId" x="40" y="22" font-family="JetBrains Mono, monospace" font-size="12" fill="#d7cfb9">put  USR0NbAb1xcFCy</text>
+
+        <rect x="40" y="32" width="640" height="38" rx="9" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="56" y="50" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.06em" fill="#6b7494">1 · validate</text>
+        <text id="lbValidate" x="56" y="64" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">well-formed USR id</text>
+
+        <rect x="40" y="82" width="640" height="38" rx="9" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="56" y="100" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.06em" fill="#6b7494">2 · route by namespace</text>
+        <text id="lbRoute" x="56" y="114" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">USR &#8594; users partition</text>
+
+        <rect x="40" y="132" width="640" height="38" rx="9" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="56" y="150" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.06em" fill="#6b7494">3 · store in partition CHAMP</text>
+        <text id="lbChamp" x="56" y="164" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">users CHAMP &middot; 3 entries &middot; 1 level</text>
+
+        <rect x="40" y="182" width="640" height="38" rx="9" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="56" y="200" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.06em" fill="#6b7494">4 · Snowflake &#8594; created_at</text>
+        <text id="lbStamp" x="56" y="214" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">created 2026-05-31 13:35:19 UTC</text>
+      </svg>
+
+      <pre class="code" id="lbCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="lbOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">partition: <span id="lbRole" style="color:var(--sage-bright)">users</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">created: <span id="lbResult" style="color:var(--cream)">2026-05-31 13:35:19</span></p>
+    </figure>
+    <p class="take">One id carries everything the store needs: it validates itself, names its own partition, and dates
+      itself. The four layers are the four earlier lessons, stacked into one write path.</p>
+  </section>
+
+  <section id="build">
+    <h2>Build it &middot; three dives</h2>
+    <div class="prose">
+      <p>Each dive assembles and exercises one capability of the store, with the code to keep.</p>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:1rem;margin-top:1.4rem">
+      <a href="/elixir/algorithms/lab/grow" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--sage);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--sage-bright)">F4.12.1 &middot; put &amp; partition</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Watch a branded CHAMP grow <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">Insert branded keys one by one and watch the store take shape &mdash; each key routed to its partition by namespace, each partition&rsquo;s CHAMP filling, new partitions appearing on first use.</div>
+      </a>
+      <a href="/elixir/algorithms/lab/registry" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--blue-bright)">F4.12.2 &middot; get &amp; resolve</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">A Snowflake registry <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">Resolve any branded id in one call: route it to its partition, look it up in O(log&#8323;&#8322; n) hops, and read its creation time straight out of the Snowflake &mdash; or reject it if the namespace is wrong.</div>
+      </a>
+      <a href="/elixir/algorithms/lab/range" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--gold-bright)">F4.12.3 &middot; range by time</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Query by time range <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">Because Snowflake ids are time-ordered, a time window becomes an id range: compute the bounds, scan one partition, and return the entries created inside it &mdash; no separate timestamp column.</div>
+      </a>
+    </div>
+  </section>
+
+  <section id="advanced">
+    <h2>Advanced: the assembled module</h2>
+    <div class="prose">
+      <p>The whole store is a GenServer holding one map from namespace to that namespace&rsquo;s CHAMP &mdash;
+        <code class="inl">%{"USR" =&gt; champ, "LSN" =&gt; champ, ...}</code>. A write routes on the three-letter
+        prefix and updates only that partition; because the partition is an immutable CHAMP, the update returns a new
+        map that shares everything it did not touch, so a snapshot of the whole store is a single cheap reference. The
+        GenServer serialises writes through its mailbox while reads run lock-free against the last published map &mdash;
+        the split from F4.09. Nothing here is new; it is the chapter&rsquo;s parts named once and wired together.</p>
+      <p>The three operations below are the public surface. <code class="inl">put/2</code> validates and routes;
+        <code class="inl">get/1</code> resolves an id to its entry and its embedded timestamp;
+        <code class="inl">range/2</code> turns a time window into id bounds and scans a partition. The dives build
+        each one in turn.</p>
+    </div>
+    <pre class="code"><span class="cmt"># the assembled store — a GenServer over %{namespace => CHAMP}</span>
+<span class="op">defmodule</span> <span class="fn sage">Portal.Store</span> <span class="op">do</span>
+  <span class="op">use</span> <span class="fn sage">GenServer</span>
+
+  <span class="op">def</span> <span class="fn">start_link</span>(_), <span class="op">do:</span> <span class="fn sage">GenServer</span>.<span class="fn">start_link</span>(__MODULE__, %{}, name: __MODULE__)
+
+  <span class="op">def</span> <span class="fn">put</span>(id, value), <span class="op">do:</span> <span class="fn sage">GenServer</span>.<span class="fn">call</span>(__MODULE__, {<span class="res">:put</span>, id, value})  <span class="cmt"># write — serialised</span>
+  <span class="op">def</span> <span class="fn">get</span>(id), <span class="op">do:</span> <span class="fn sage">GenServer</span>.<span class="fn">call</span>(__MODULE__, {<span class="res">:get</span>, id})              <span class="cmt"># resolve by id</span>
+  <span class="op">def</span> <span class="fn">range</span>(ns, {from, to}), <span class="op">do:</span> <span class="fn sage">GenServer</span>.<span class="fn">call</span>(__MODULE__, {<span class="res">:range</span>, ns, from, to})
+
+  <span class="op">def</span> <span class="fn">init</span>(state), <span class="op">do:</span> {<span class="res">:ok</span>, state}            <span class="cmt"># state = %{ns => champ}; built by the dives</span>
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">the parts (F4.05&ndash;F4.11)</p>
+        <p>HAMT, CHAMP, branded ids, persistence, the store, the recipes, the algorithms.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">one Portal.Store</p>
+        <p>A partitioned, branded-CHAMP, GenServer-owned store you can read as a reference.</p>
+      </div>
+    </div>
+    <p class="note">Build it across <a href="/elixir/algorithms/lab/grow">watch a branded CHAMP grow</a>,
+      <a href="/elixir/algorithms/lab/registry">a Snowflake registry</a>, and
+      <a href="/elixir/algorithms/lab/range">query by time range</a>. Predecessor:
+      <a href="/elixir/algorithms/dynamic-programming"><strong>F4.11 &mdash; Dynamic programming &amp; advanced
+      problems</strong></a>. This is the final module of the chapter.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lab, and the lessons it assembles.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/elixir/GenServer.html">Elixir &mdash; GenServer</a> &mdash; the process that owns the store.</li>
+        <li><a href="https://hexdocs.pm/elixir/Kernel.html#update_in/3">Elixir &mdash; <code>update_in/3</code></a> &mdash; updating one partition in the map.</li>
+        <li><a href="https://hexdocs.pm/elixir/Map.html">Elixir &mdash; Map</a> &mdash; the namespace-to-CHAMP map at the top.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/branded-champ">F4.09 &middot; Branded CHAMP maps &amp; GenServer</a> &mdash; the store this lab builds.</li>
+        <li><a href="/elixir/algorithms/champ">F4.06 &middot; CHAMP</a> &mdash; the node inside each partition.</li>
+        <li><a href="/elixir/algorithms/persistence">F4.08 &middot; Branded ids &amp; persistence</a> &mdash; validation and time-range queries.</li>
+        <li><a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/dynamic-programming"><span aria-hidden="true">&larr;</span>&nbsp; F4.11 &middot; dynamic-programming</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/algorithms/lab/grow">Start &middot; watch it grow <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NeZsgZ8MjI</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-02 14:51:58 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var SAGE = '#a7c9b1', BLUE = '#9fc0ea', GOLD = '#f0cd7f';
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
+  /* three sample entities; partition sizes are the assembled 10-entity store */
+  var ENT = {
+    usr: { id: 'USR0NbAb1xcFCy', ns: 'USR', part: 'users',   size: 3, ts: '2026-05-31 13:35:19', fill: SAGE },
+    lsn: { id: 'LSN0NbCMKoAopE', ns: 'LSN', part: 'lessons', size: 5, ts: '2026-05-31 14:00:00', fill: BLUE },
+    pge: { id: 'PGE0NbWMtkolM0', ns: 'PGE', part: 'pages',   size: 1, ts: '2026-05-31 18:40:00', fill: GOLD }
+  };
+  function hops(n) { return Math.max(1, Math.ceil(Math.log(n) / Math.log(32))); }
+
+  function pick(k) {
+    var e = ENT[k]; if (!e) return;
+    document.querySelectorAll('#lbSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var h = hops(e.size);
+    txt('lbId', 'put  ' + e.id);
+    txt('lbValidate', 'well-formed ' + e.ns + ' id');
+    txt('lbRoute', e.ns + ' \u2192 ' + e.part + ' partition');
+    txt('lbChamp', e.part + ' CHAMP \u00b7 ' + e.size + ' entries \u00b7 ' + h + ' level' + (h === 1 ? '' : 's'));
+    txt('lbStamp', 'created ' + e.ts + ' UTC');
+    ['lbValidate', 'lbRoute', 'lbChamp', 'lbStamp'].forEach(function (id) { var el = document.getElementById(id); if (el) el.setAttribute('fill', e.fill); });
+    var rEl = document.getElementById('lbRole'); if (rEl) { rEl.textContent = e.part; rEl.style.color = e.fill; }
+    txt('lbResult', e.ts);
+    var code = '<span class="cmt"># one write through the assembled store</span>\n<span class="fn sage">Portal.Store</span>.<span class="fn">put</span>(<span class="str">"' + e.id + '"</span>, value)\n<span class="cmt"># validate -> route ' + e.ns + ' to :' + e.part + ' -> CHAMP put -> id dates itself</span>\n<span class="cmt"># created_at = ' + e.ts + ' UTC (from the Snowflake)</span>';
+    var cEl = document.getElementById('lbCode'); if (cEl) cEl.innerHTML = code;
+    var out = 'The id <code class="inl">' + e.id + '</code> validates as a <b>' + e.ns + '</b>, routes to the <b style="color:' + e.fill + '">' + e.part + '</b> partition, lands in a CHAMP of <b>' + e.size + '</b> entries (<b>' + h + '</b> level), and carries its own creation time <b>' + e.ts + ' UTC</b> &mdash; four layers, four earlier lessons, one write.';
+    var oEl = document.getElementById('lbOut'); if (oEl) oEl.innerHTML = out;
+  }
+  document.querySelectorAll('#lbSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('usr');
+
+  /* ---------- hero: a branded CHAMP store (put / get / range) ---------- */
+  (function () {
+    var SVGNS = 'http://www.w3.org/2000/svg';
+    /* three lanes, keyed by three-letter namespace, in render order */
+    var LANES = [
+      { ns: 'USR', label: 'users',   y: 56,  accent: '#a7c9b1', entryStroke: '#7ba387' },
+      { ns: 'LSN', label: 'lessons', y: 124, accent: '#9fc0ea', entryStroke: '#5a87c4' },
+      { ns: 'PGE', label: 'pages',   y: 192, accent: '#f0cd7f', entryStroke: '#d4a85a' }
+    ];
+    var INDEX = { USR: 0, LSN: 1, PGE: 2 };
+    /* the store starts with one stored user; a put draws the next id from POOL */
+    var INITIAL = { USR: ['USR0NbAb1xcFCy'], LSN: [], PGE: [] };
+    /* ids are time-ordered Snowflakes; each routes to its lane by its prefix.
+       distinct per lane, so no id is ever stored twice in one CHAMP */
+    var POOL = ['LSN0NbCMKoAopE', 'PGE0NbWMtkolM0', 'USR0NbZ7q2bvKm',
+                'LSN0Nc1pX4rDtA', 'PGE0Nc7vQ9mEhB', 'USR0NcFw3pLnTd'];
+    var CAP = 3; /* most entries any one lane shows */
+
+    var lanesG = document.getElementById('hsLanes');
+    var routeEl = document.getElementById('hsRoute');
+    var capEl = document.getElementById('hsCap');
+    var putBtn = document.getElementById('hsPut');
+    var getBtn = document.getElementById('hsGet');
+    var rangeBtn = document.getElementById('hsRange');
+    var resetBtn = document.getElementById('hsReset');
+    if (!lanesG || !routeEl || !capEl || !putBtn || !getBtn || !rangeBtn || !resetBtn) return;
+
+    var store = clone(INITIAL); /* logical state mirrors the static markup */
+    var poolAt = 0;             /* next POOL id to put */
+    var lookup = null;          /* {ns, idx} highlighted by get */
+    var ranged = null;          /* ns whose slice range marks */
+    var newJustPut = null;      /* ns that received the most recent put, for the slide-in */
+    var capLine = '<span class="ohint">put routes by the 3-letter prefix; get and range read one lane.</span>';
+
+    function clone(s) { return { USR: s.USR.slice(), LSN: s.LSN.slice(), PGE: s.PGE.slice() }; }
+    function el(name, attrs) {
+      var n = document.createElementNS(SVGNS, name), k;
+      for (k in attrs) { if (Object.prototype.hasOwnProperty.call(attrs, k)) n.setAttribute(k, attrs[k]); }
+      return n;
+    }
+    function txt(x, y, s, attrs) {
+      var t = el('text', Object.assign({ x: x, y: y }, attrs || {}));
+      t.textContent = s; return t;
+    }
+    function shortId(id) { return id.length > 13 ? id.slice(0, 11) + '…' : id; }
+
+    function renderLane(lane) {
+      var ids = store[lane.ns];
+      var rangeOn = ranged === lane.ns;
+      var hasEntry = ids.length > 0;
+      var g = el('g', { 'class': 'hs-lane', 'data-ns': lane.ns });
+      g.appendChild(el('rect', {
+        x: 30, y: lane.y, width: 260, height: 56, rx: 10, fill: '#10162b',
+        stroke: hasEntry ? lane.accent : (rangeOn ? '#f0cd7f' : '#3a4263'),
+        'stroke-width': hasEntry ? 2 : 1.5
+      }));
+      g.appendChild(txt(46, lane.y + 22, lane.ns, { 'font-family': 'JetBrains Mono, monospace', 'font-size': 13, fill: lane.accent }));
+      g.appendChild(txt(46, lane.y + 38, lane.label, { 'font-family': 'Manrope, sans-serif', 'font-size': 8.5, 'letter-spacing': '0.06em', fill: '#6b7494' }));
+
+      if (!hasEntry) {
+        g.appendChild(txt(180, lane.y + 34, 'empty CHAMP', { 'text-anchor': 'middle', 'font-family': 'Manrope, sans-serif', 'font-size': 9.5, fill: '#6b7494' }));
+      } else {
+        /* up to two entry chips side by side, newest at the front */
+        var maxChips = Math.min(ids.length, 2);
+        var cw = maxChips === 1 ? 118 : 86;
+        var x0 = 96;
+        for (var i = 0; i < maxChips; i++) {
+          var id = ids[i];
+          var x = x0 + i * (cw + 6);
+          var isLook = lookup && lookup.ns === lane.ns && lookup.idx === i;
+          var isNew = i === 0 && newJustPut === lane.ns;
+          var chip = el('g', { 'class': 'hs-entry' + (isNew ? ' hp-new' : '') });
+          chip.appendChild(el('rect', {
+            x: x, y: lane.y + 12, width: cw, height: 32, rx: 7,
+            fill: (isLook || rangeOn) ? '#1d2748' : '#161d38',
+            stroke: isLook ? '#f0cd7f' : (rangeOn ? '#f0cd7f' : lane.entryStroke),
+            'stroke-width': isLook ? 2 : 1.3
+          }));
+          chip.appendChild(txt(x + cw / 2, lane.y + 32, maxChips === 1 ? id : shortId(id), {
+            'text-anchor': 'middle', 'font-family': 'JetBrains Mono, monospace',
+            'font-size': maxChips === 1 ? 11 : 9.5, fill: isLook ? '#f0cd7f' : '#ece4d0'
+          }));
+          g.appendChild(chip);
+        }
+      }
+      g.appendChild(txt(270, lane.y + 36, String(ids.length), { 'text-anchor': 'end', 'font-family': 'Manrope, sans-serif', 'font-size': 9, fill: hasEntry ? '#a39c89' : '#6b7494' }));
+      return g;
+    }
+
+    function render() {
+      while (lanesG.firstChild) { lanesG.removeChild(lanesG.firstChild); }
+      LANES.forEach(function (lane) { lanesG.appendChild(renderLane(lane)); });
+      var counts = LANES.map(function (l) { return l.ns + '→' + store[l.ns].length; }).join(', ');
+      capEl.innerHTML = '<span class="lst">store: ' + counts + '</span><br>' + capLine;
+    }
+
+    function putNext() {
+      /* draw the next unused POOL id whose lane still has room; each id is put at most once */
+      var id = null, ns = null;
+      while (poolAt < POOL.length) {
+        var cand = POOL[poolAt]; poolAt++;
+        var cns = cand.slice(0, 3);
+        if (store[cns] && store[cns].length < CAP) { id = cand; ns = cns; break; }
+      }
+      if (!id) return;
+      store[ns].unshift(id);  /* newest at the front, like a CHAMP put returning a new node */
+      newJustPut = ns; lookup = null; ranged = null;
+      capLine = '<span class="ohint">put <b style="color:var(--cream)">' + shortId(id) + '</b> &mdash; prefix <b style="color:var(--sage-bright)">' + ns + '</b> routed it to the <b style="color:var(--sage-bright)">' + LANES[INDEX[ns]].label + '</b> lane.</span>';
+      render();
+      newJustPut = null;
+      syncDisabled();
+    }
+
+    function getOne() {
+      /* look up the front entry of the first non-empty lane */
+      var lane = LANES.filter(function (l) { return store[l.ns].length > 0; })[0];
+      if (!lane) return;
+      lookup = { ns: lane.ns, idx: 0 }; ranged = null;
+      var id = store[lane.ns][0];
+      capLine = '<span class="ohint">get <b style="color:var(--gold-bright)">' + shortId(id) + '</b> &mdash; routed to <b style="color:var(--sage-bright)">' + lane.label + '</b>, found in O(log₃₂ n) hops.</span>';
+      render();
+    }
+
+    function rangeOne() {
+      /* mark the busiest lane's slice — ids are time-ordered, so a window is an id range */
+      var busiest = LANES.slice().sort(function (a, b) { return store[b.ns].length - store[a.ns].length; })[0];
+      if (!busiest || store[busiest.ns].length === 0) return;
+      ranged = busiest.ns; lookup = null;
+      capLine = '<span class="ohint">range over <b style="color:var(--sage-bright)">' + busiest.label + '</b> &mdash; ' + store[busiest.ns].length + ' time-ordered id' + (store[busiest.ns].length === 1 ? '' : 's') + ' inside the window.</span>';
+      render();
+    }
+
+    function syncDisabled() {
+      /* nothing left to draw, or every lane is at its cap */
+      var done = poolExhausted() || LANES.every(function (l) { return store[l.ns].length >= CAP; });
+      putBtn.disabled = done;
+      putBtn.style.opacity = done ? '.5' : '';
+      putBtn.style.cursor = done ? 'default' : '';
+    }
+    function poolExhausted() {
+      /* every remaining POOL id targets a lane already at its cap */
+      for (var i = poolAt; i < POOL.length; i++) {
+        var ns = POOL[i].slice(0, 3);
+        if (store[ns] && store[ns].length < CAP) { return false; }
+      }
+      return true;
+    }
+
+    putBtn.addEventListener('click', putNext);
+    getBtn.addEventListener('click', getOne);
+    rangeBtn.addEventListener('click', rangeOne);
+    resetBtn.addEventListener('click', function () {
+      store = clone(INITIAL); poolAt = 0; lookup = null; ranged = null; newJustPut = null;
+      capLine = '<span class="ohint">put routes by the 3-letter prefix; get and range read one lane.</span>';
+      render(); syncDisabled();
+    });
+    /* No render on load: the static SVG already shows the store with one USR entry. */
+    syncDisabled();
+  })();
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

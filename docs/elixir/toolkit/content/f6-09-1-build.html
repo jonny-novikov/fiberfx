@@ -1,0 +1,294 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/live-dashboard">live-dashboard</a><span class="rsep">/</span><span class="rcur">build</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/live-dashboard">F6.09</a>
+      <span class="sep">/</span>
+      <span class="here">build</span>
+    </div>
+    <p class="eyebrow">F6.09 &middot; part 1 of 3</p>
+    <h1>Build the <span class="ex">dashboard</span></h1>
+    <p class="lede">Before anything is live, the dashboard is an ordinary LiveView with a carefully chosen
+      <strong>read model</strong> on its socket. A read model is derived state &mdash; numbers and a list you compute
+      from the domain, not a new place data lives. Here it is three things: the metric <strong>counts</strong> (how
+      many courses, how many enrollments), a <strong>viewers</strong> number, and a capped <strong>feed</strong> of
+      recent activity. <code class="inl">mount/3</code> seeds the counts by asking the F6.04 contexts &mdash;
+      <code class="inl">Catalog.count_courses/0</code>, <code class="inl">Enrollment.count/0</code> &mdash; so the page
+      is correct the instant it loads, and it initialises a <strong>stream</strong> for the feed, which keeps a long,
+      append-only list out of socket memory exactly as in F6.06.3. <code class="inl">render/1</code> then draws metric
+      cards from the assigns and the feed from the stream. There is deliberately no event handling yet: this dive
+      builds a dashboard that is accurate on load but static, so the live part in F6.09.2 has a clean shape to plug
+      into. The discipline to hold is that the dashboard <em>reads</em> &mdash; every number traces back to the
+      contexts, and the socket is a cache of derived values, never a source of truth.</p>
+    <p class="kicker">Four parts: the three pieces of the read model, the dashboard as a projection, seeding it in
+      <code class="inl">mount/3</code>, and rendering cards and a feed in HEEx.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#what">Metrics, feed, assigns</a>
+      <a href="#shape">A read model, not a store</a>
+      <a href="#mount">Seeding it at mount</a>
+      <a href="#render">Rendering cards and a feed</a>
+    </div>
+  </section>
+
+  <section id="what">
+    <h2>Metrics, feed, assigns</h2>
+    <div class="prose">
+      <p>The read model is three pieces. The <strong>metrics</strong> are counts seeded from the contexts. The
+        <strong>feed</strong> is a capped stream of recent events. The <strong>assigns</strong> are where the socket
+        holds it all &mdash; derived, never stored. Select one.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="dbTitle">
+      <h4 id="dbTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The read model &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="dbSel" role="group" aria-label="Read model piece">
+          <button type="button" data-k="metrics" class="active">metrics</button>
+          <button type="button" data-k="feed">the feed</button>
+          <button type="button" data-k="assigns">assigns</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three pieces of the read model: metrics are counts seeded from contexts, the feed is a capped stream of recent events, and assigns are where the socket holds the derived state.">
+        <rect id="dbRow_metrics" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">METRICS</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">counts seeded from contexts &mdash; courses, enrollments</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">numbers</text>
+
+        <rect id="dbRow_feed" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">THE FEED</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">a capped stream of recent events &mdash; phx-update stream</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">a list</text>
+
+        <rect id="dbRow_assigns" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">ASSIGNS</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">the socket holds the read model &mdash; derived, not stored</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">the state</text>
+      </svg>
+
+      <div class="geo-readout" id="dbOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">piece: <span id="dbRole" style="color:#9fc0ea">metrics</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">is: <span id="dbResult" style="color:var(--cream)">counts seeded from contexts</span></p>
+    </figure>
+    <p class="take">Keeping the feed in a stream rather than an assign matters as much here as in F6.06.3: a busy
+      dashboard could see thousands of events, and a stream holds them in the DOM, not in the process&rsquo;s memory.</p>
+  </section>
+
+  <section id="shape">
+    <h2>A read model, not a store</h2>
+    <div class="prose">
+      <p>The dashboard is a <strong>projection</strong>: a view computed from the domain. On mount it reads the
+        current counts from the contexts &mdash; the same read functions any page would call &mdash; and holds them in
+        assigns. The feed stream starts empty and fills from broadcasts later. Nothing here is authoritative; if the
+        process restarts, it re-seeds from the contexts and carries on.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="dbShapeTitle">
+      <h4 id="dbShapeTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">contexts (read side) &rarr; mount seeds &rarr; the socket</h4>
+      <svg viewBox="0 0 720 188" role="img" aria-label="At mount the dashboard reads counts from the Catalog and Enrollment contexts into socket assigns and starts an empty feed stream; the socket holds a derived read model, not a source of truth.">
+        <rect x="24" y="44" width="170" height="100" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="109" y="64" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.05em" fill="#7c86a6">CONTEXTS (READ)</text>
+        <rect x="40" y="74" width="138" height="24" rx="6" fill="#0d1322" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="109" y="90" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">Catalog.count_courses()</text>
+        <rect x="40" y="104" width="138" height="24" rx="6" fill="#0d1322" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="109" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">Enrollment.count()</text>
+        <line x1="194" y1="94" x2="238" y2="94" stroke="#5a87c4" stroke-width="1.8"></line>
+        <text x="216" y="86" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#86a7d8">mount</text>
+
+        <rect x="238" y="40" width="220" height="108" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="348" y="60" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.05em" fill="#86a7d8">SOCKET ASSIGNS (READ MODEL)</text>
+        <rect x="256" y="70" width="184" height="22" rx="6" fill="#0d1322" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="348" y="85" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#9fc0ea">courses_count &middot; enrollments_count</text>
+        <rect x="256" y="96" width="184" height="22" rx="6" fill="#0d1322" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="348" y="111" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#9fc0ea">viewers</text>
+        <rect x="256" y="122" width="184" height="22" rx="6" fill="#13201a" stroke="#7ba387" stroke-width="1.2"></rect>
+        <text x="348" y="137" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#a7c9b1">stream(:events) &mdash; starts empty</text>
+        <line x1="458" y1="94" x2="502" y2="94" stroke="#3a4263" stroke-width="1.6"></line>
+
+        <rect x="502" y="64" width="196" height="60" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="600" y="88" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">render/1</text>
+        <text x="600" y="103" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#7c86a6">metric cards + feed</text>
+
+        <text x="360" y="174" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">a projection over the domain &mdash; if the process restarts, it re-seeds from the contexts</text>
+      </svg>
+    </figure>
+    <p class="take">Because the read model is derived, it is disposable, and that is a feature: there is no migration,
+      no separate store to keep consistent. The contexts remain the single source of truth, and the dashboard is one
+      view of them.</p>
+  </section>
+
+  <section id="mount">
+    <h2>Seeding it at mount</h2>
+    <div class="prose">
+      <p><code class="inl">mount/3</code> pipes the socket through a few <code class="inl">assign/3</code> calls to set
+        the counts and a starting <code class="inl">viewers</code> of zero, then <code class="inl">stream/3</code> to
+        initialise an empty feed. The counts come straight from context read functions, so the first paint already
+        shows real numbers &mdash; no loading state, no placeholder.</p>
+    </div>
+    <pre class="code"><span class="op">def</span> <span class="fn">mount</span>(_params, _session, socket) <span class="op">do</span>
+  socket =
+    socket
+    |> <span class="fn">assign</span>(<span class="res">:courses_count</span>, <span class="fn blue">Catalog</span>.<span class="fn">count_courses</span>())
+    |> <span class="fn">assign</span>(<span class="res">:enrollments_count</span>, <span class="fn blue">Enrollment</span>.<span class="fn">count</span>())
+    |> <span class="fn">assign</span>(<span class="res">:viewers</span>, <span class="res">0</span>)
+    |> <span class="fn">stream</span>(<span class="res">:events</span>, [])      <span class="cmt"># filled by broadcasts in F6.09.2</span>
+
+  {<span class="res">:ok</span>, socket}
+<span class="op">end</span></pre>
+    <p class="take">Seeding from the contexts is what separates an accurate dashboard from a misleading one. The numbers
+      are not guesses kept in sync by hand &mdash; they are read from the domain at mount and then maintained by the
+      events that change them.</p>
+  </section>
+
+  <section id="render">
+    <h2>Rendering cards and a feed</h2>
+    <div class="prose">
+      <p>The template is plain HEEx (F6.05): metric cards interpolate the count assigns, and the feed iterates the
+        stream under a <code class="inl">phx-update="stream"</code> container with a <code class="inl">:for</code>
+        comprehension. The <code class="inl">dom_id</code> the stream provides becomes each row&rsquo;s
+        <code class="inl">id</code>, so LiveView can insert and update rows efficiently.</p>
+    </div>
+    <pre class="code"><span class="op">&lt;div</span> <span class="fn">class</span>=<span class="str">"dashboard"</span><span class="op">&gt;</span>
+  <span class="op">&lt;section</span> <span class="fn">class</span>=<span class="str">"metrics"</span><span class="op">&gt;</span>
+    <span class="op">&lt;article&gt;&lt;h3&gt;</span>Courses<span class="op">&lt;/h3&gt;&lt;p&gt;</span>{@courses_count}<span class="op">&lt;/p&gt;&lt;/article&gt;</span>
+    <span class="op">&lt;article&gt;&lt;h3&gt;</span>Enrollments<span class="op">&lt;/h3&gt;&lt;p&gt;</span>{@enrollments_count}<span class="op">&lt;/p&gt;&lt;/article&gt;</span>
+    <span class="op">&lt;article&gt;&lt;h3&gt;</span>Watching<span class="op">&lt;/h3&gt;&lt;p&gt;</span>{@viewers}<span class="op">&lt;/p&gt;&lt;/article&gt;</span>
+  <span class="op">&lt;/section&gt;</span>
+
+  <span class="op">&lt;ul</span> <span class="fn">id</span>=<span class="str">"feed"</span> <span class="fn">phx-update</span>=<span class="str">"stream"</span><span class="op">&gt;</span>
+    <span class="op">&lt;li</span> <span class="fn">:for</span>={{dom_id, event} &lt;- @streams.events} <span class="fn">id</span>={dom_id}<span class="op">&gt;</span>
+      {event.label}
+    <span class="op">&lt;/li&gt;</span>
+  <span class="op">&lt;/ul&gt;</span>
+<span class="op">&lt;/div&gt;</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">seed from contexts</p>
+        <p><code class="inl">mount/3</code> reads counts; the feed stream starts empty.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">render the read model</p>
+        <p>Cards from assigns, feed rows from the stream &mdash; accurate, but still static.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/phoenix/live-dashboard/stream"><strong>broadcast engine events</strong></a>
+      &mdash; the shape is ready; now subscribe to the domain and fold each event into these counts and this feed.</p>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/live-dashboard"><span aria-hidden="true">&larr;</span>&nbsp; F6.09 &middot; overview</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/live-dashboard/stream">Next &middot; broadcast engine events <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var P = {
+    metrics: { name: 'metrics', is: 'counts seeded from contexts', row: 'dbRow_metrics',
+      desc: 'The metric counts \u2014 courses, enrollments \u2014 are read from the F6.04 contexts at mount, so the first paint shows real numbers with no loading state.' },
+    feed:    { name: 'the feed', is: 'a capped stream of recent events', row: 'dbRow_feed',
+      desc: 'The activity feed is a stream under a phx-update="stream" container, which keeps a long append-only list in the DOM rather than in socket memory \u2014 the F6.06.3 pattern.' },
+    assigns: { name: 'assigns', is: 'the socket holds the read model', row: 'dbRow_assigns',
+      desc: 'The socket assigns hold the derived state: the counts, the viewer number, and the feed stream. It is a cache computed from the domain, never a source of truth.' }
+  };
+  var ORDER = ['metrics', 'feed', 'assigns'];
+  function pick(k) {
+    var x = P[k]; if (!x) return;
+    document.querySelectorAll('#dbSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(P[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('dbRole'); if (rEl) rEl.textContent = x.name;
+    var dEl = document.getElementById('dbResult'); if (dEl) dEl.textContent = x.is;
+    var oEl = document.getElementById('dbOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + x.name + '</b> \u2014 ' + x.is + '. ' + x.desc.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  document.querySelectorAll('#dbSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('metrics');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

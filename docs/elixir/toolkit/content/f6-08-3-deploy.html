@@ -1,0 +1,290 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/deployment">deployment</a><span class="rsep">/</span><span class="rcur">deploy</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/deployment">F6.08</a>
+      <span class="sep">/</span>
+      <span class="here">deploy</span>
+    </div>
+    <p class="eyebrow">F6.08 &middot; part 3 of 3</p>
+    <h1>Deploying to <span class="ex">production</span></h1>
+    <p class="lede">With auth in place and a release configured, deploying is three steps in order: <strong>build</strong>
+      the release, <strong>migrate</strong> the database, <strong>boot</strong> the system. Building runs
+      <code class="inl">mix release</code> to produce the artifact from F6.08.2. Migrating runs the
+      <code class="inl">Portal.Release</code> command against the live database before the new code serves traffic, so
+      the schema is ready. Booting starts <code class="inl">bin/portal</code>, which evaluates
+      <code class="inl">runtime.exs</code> to read the environment and then starts the application&rsquo;s
+      <strong>supervision tree</strong> &mdash; and this is the moment the whole course pays off. The tree is the same
+      one from F5: it starts the Repo, the Endpoint, PubSub, Presence, and the engine in order, and if any child
+      crashes it restarts under the supervisor&rsquo;s strategy. You do not start processes by hand or write health
+      checks to revive them; the tree is the health model. The last production concern is scale: running more than one
+      node means <strong>clustering</strong> them so the F6.07 broadcasts and Presence reach across machines, which a
+      library like libcluster handles by connecting the nodes &mdash; after which the exact same broadcast code spans
+      the cluster. Build, migrate, boot, and the platform is live.</p>
+    <p class="kicker">Four parts: the three deploy steps, the supervision tree in production, clustering for PubSub and
+      Presence, and the deploy as a sequence of commands.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#steps">Build, migrate, boot</a>
+      <a href="#tree">The tree in production</a>
+      <a href="#cluster">Clustering the nodes</a>
+      <a href="#checklist">The deploy, end to end</a>
+    </div>
+  </section>
+
+  <section id="steps">
+    <h2>Build, migrate, boot</h2>
+    <div class="prose">
+      <p>A deploy is three ordered steps. <strong>Build</strong> compiles the release artifact.
+        <strong>Migrate</strong> applies pending migrations to the database. <strong>Boot</strong> starts the
+        supervision tree so the endpoint serves. Select one.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="dyTitle">
+      <h4 id="dyTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The deploy &middot; select a step</h4>
+      <div class="controls">
+        <div class="solid-select" id="dySel" role="group" aria-label="Deploy step">
+          <button type="button" data-k="build" class="active">build</button>
+          <button type="button" data-k="migrate">migrate</button>
+          <button type="button" data-k="boot">boot</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three deploy steps: build compiles the release artifact, migrate runs pending migrations, and boot starts the supervision tree to serve.">
+        <rect id="dyRow_build" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">BUILD</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">MIX_ENV=prod mix release &mdash; compile app + the BEAM</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">step 1</text>
+
+        <rect id="dyRow_migrate" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">MIGRATE</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">bin/portal eval "Portal.Release.migrate()" &mdash; schema ready</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">step 2</text>
+
+        <rect id="dyRow_boot" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">BOOT</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">bin/portal start &mdash; runtime.exs reads env, the tree serves</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">step 3</text>
+      </svg>
+
+      <div class="geo-readout" id="dyOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">step: <span id="dyRole" style="color:#9fc0ea">build</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">does: <span id="dyResult" style="color:var(--cream)">compile the release artifact</span></p>
+    </figure>
+    <p class="take">Order matters: migrate before boot, so the new code never meets an old schema. Run the migration
+      against the live database as its own step, then start the release that expects the new shape.</p>
+  </section>
+
+  <section id="tree">
+    <h2>The tree in production</h2>
+    <div class="prose">
+      <p>Booting the release starts the application&rsquo;s supervision tree &mdash; the same structure you designed in
+        F5. The supervisor starts the Repo, the Endpoint, PubSub, Presence, and the engine, in order, and watches
+        them. A crash in any child is isolated and restarted under the supervisor&rsquo;s strategy, so the system
+        self-heals without a process manager outside the BEAM. The deploy starts one thing: the tree.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="dyTreeTitle">
+      <h4 id="dyTreeTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">one supervisor &rarr; supervised children, restarted on crash</h4>
+      <svg viewBox="0 0 720 196" role="img" aria-label="The application supervisor starts the Repo, Endpoint, PubSub, Presence, and engine as supervised children; a crash is isolated and the child is restarted.">
+        <rect x="270" y="24" width="180" height="40" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="360" y="42" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#9fc0ea">Portal.Supervisor</text>
+        <text x="360" y="56" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#86a7d8">one_for_one &middot; starts in order</text>
+
+        <line x1="360" y1="64" x2="360" y2="80" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="110" y1="80" x2="610" y2="80" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="110" y1="80" x2="110" y2="96" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="235" y1="80" x2="235" y2="96" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="360" y1="80" x2="360" y2="96" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="485" y1="80" x2="485" y2="96" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="610" y1="80" x2="610" y2="96" stroke="#3a4263" stroke-width="1.4"></line>
+
+        <rect x="50" y="96" width="120" height="40" rx="8" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="110" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">Repo</text>
+        <rect x="175" y="96" width="120" height="40" rx="8" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="235" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">Endpoint</text>
+        <rect x="300" y="96" width="120" height="40" rx="8" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="360" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">PubSub</text>
+        <rect x="425" y="96" width="120" height="40" rx="8" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="485" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">Presence</text>
+        <rect x="550" y="96" width="120" height="40" rx="8" fill="#13201a" stroke="#7ba387" stroke-width="1.3"></rect>
+        <text x="610" y="116" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#a7c9b1">Portal.Engine</text>
+        <text x="610" y="128" text-anchor="middle" font-family="Manrope, sans-serif" font-size="6.5" fill="#7ba387">the F5 core</text>
+
+        <text x="360" y="166" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">a child crash is isolated and restarted &mdash; the tree is the health model, no external babysitter</text>
+        <text x="360" y="184" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#4a5478">the deploy starts the supervisor; the supervisor starts everything else</text>
+      </svg>
+    </figure>
+    <p class="take">Everything in this chapter became a child of this tree: the Endpoint from F6.01, the Repo from
+      F6.03, PubSub and Presence from F6.07, all beside the F5 engine. Deployment is starting that tree on a
+      server.</p>
+  </section>
+
+  <section id="cluster">
+    <h2>Clustering the nodes</h2>
+    <div class="prose">
+      <p>One node needs no clustering; more than one does, because PubSub and Presence coordinate over the Erlang
+        distribution between connected nodes. A library like <code class="inl">libcluster</code> joins them
+        automatically by a strategy &mdash; here, discovering peers in a Kubernetes service. Once the nodes are
+        connected, a broadcast on <code class="inl">"courses"</code> reaches subscribers on every node with no change
+        to the publishing code from F6.07.</p>
+    </div>
+    <pre class="code"><span class="cmt"># config/runtime.exs — connect the nodes so PubSub &amp; Presence span them</span>
+<span class="op">config</span> <span class="res">:libcluster</span>,
+  topologies: [
+    portal: [
+      strategy: <span class="fn blue">Cluster.Strategy.Kubernetes</span>,
+      config: [service: <span class="str">"portal-headless"</span>, application_name: <span class="str">"portal"</span>]
+    ]
+  ]
+
+<span class="cmt"># once clustered, a broadcast on "courses" reaches subscribers on every node</span></pre>
+    <p class="take">This is the BEAM&rsquo;s distribution doing the work: clustering is a connection concern, not an
+      application rewrite. The real-time code you wrote for one node is already the code that runs across many.</p>
+  </section>
+
+  <section id="checklist">
+    <h2>The deploy, end to end</h2>
+    <div class="prose">
+      <p>The whole deploy is three commands in order. Build the artifact, run the migrations through the release
+        command, then start the system &mdash; at which point <code class="inl">runtime.exs</code> reads the
+        environment and the supervision tree comes up serving. Roll forward by repeating it with new code; roll back
+        by booting the previous artifact.</p>
+    </div>
+    <pre class="code"><span class="cmt"># the deploy, start to finish</span>
+MIX_ENV=prod mix release                      <span class="cmt"># 1. build the self-contained artifact</span>
+bin/portal eval <span class="str">"Portal.Release.migrate()"</span>    <span class="cmt"># 2. run migrations (no mix on the server)</span>
+bin/portal start                              <span class="cmt"># 3. boot: runtime.exs reads env, the tree serves</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">three steps</p>
+        <p>Build the release, migrate the database, boot the system.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">one running tree</p>
+        <p>The F5 supervision tree serves, clustered for real-time across nodes.</p>
+      </div>
+    </div>
+    <p class="note">That completes F6.08, and with it the application is deployable: authenticated, packaged as a
+      release, and booted as a supervised, clustered tree. The chapter closes with <strong>F6.09</strong>, which
+      assembles the live dashboard on everything built across F5 and F6. Back to
+      <a href="/elixir/phoenix/deployment">the module overview</a> or the <a href="/elixir/phoenix">F6 chapter</a>.</p>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/deployment/releases"><span aria-hidden="true">&larr;</span>&nbsp; F6.08.2 &middot; releases &amp; config</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/deployment">Back to F6.08 &middot; overview <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var P = {
+    build:   { name: 'build', does: 'compile the release artifact', row: 'dyRow_build',
+      desc: 'MIX_ENV=prod mix release compiles your code and the BEAM into the self-contained artifact from F6.08.2 \u2014 the thing you ship to the server.' },
+    migrate: { name: 'migrate', does: 'run pending migrations on deploy', row: 'dyRow_migrate',
+      desc: 'bin/portal eval "Portal.Release.migrate()" applies pending migrations against the live database before the new code serves traffic, so the schema is ready first.' },
+    boot:    { name: 'boot', does: 'start the supervision tree and serve', row: 'dyRow_boot',
+      desc: 'bin/portal start evaluates runtime.exs to read the environment and then starts the application supervision tree \u2014 Repo, Endpoint, PubSub, Presence, engine \u2014 which serves and self-heals.' }
+  };
+  var ORDER = ['build', 'migrate', 'boot'];
+  function pick(k) {
+    var x = P[k]; if (!x) return;
+    document.querySelectorAll('#dySel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(P[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('dyRole'); if (rEl) rEl.textContent = x.name;
+    var dEl = document.getElementById('dyResult'); if (dEl) dEl.textContent = x.does;
+    var oEl = document.getElementById('dyOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + x.name + '</b> \u2014 ' + x.does + '. ' + x.desc;
+  }
+  document.querySelectorAll('#dySel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('build');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

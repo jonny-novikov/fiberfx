@@ -1,0 +1,381 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/pragmatic">pragmatic</a><span class="rsep">/</span><span class="rcur">boundaries</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="hero-copy">
+    <div class="crumbs">
+      <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+      <span class="sep">/</span>
+      <span class="here">F5.08 &middot; boundaries</span>
+    </div>
+    <p class="eyebrow">F5 &middot; the engine &middot; module 8</p>
+    <h1>Boundaries &amp; integration <span class="ex">seams</span></h1>
+    
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#hexagon">The shape of the boundary</a>
+      <a href="#seams">Three seams in code</a>
+      <a href="#dives">Three deep dives</a>
+    </div>
+    </div>
+
+    <div class="hero-lede">
+      <p class="lede">Seven modules in, the engine works: a pure core of <code class="inl">decide</code> and
+      <code class="inl">evolve</code>, a supervised GenServer that holds the fold, and a test suite that pins it down.
+      What it does not yet have is a <strong>boundary</strong>. Right now a caller would have to know the engine is a
+      process, know the message shapes it accepts, and know how state is stored. That is three kinds of coupling the
+      web layer in F6 should never carry. This module draws the boundary the way Alistair Cockburn frames
+      <strong>ports and adapters</strong> &mdash; the application core defines its edges as interfaces and the outside
+      world plugs into them &mdash; rendered in Elixir as <strong>behaviours</strong>. The core states what it needs
+      (a <strong>driven port</strong> such as an event store) and how it is invoked (a <strong>driving port</strong>,
+      the facade the UI calls); adapters supply the implementations; and every failure that crosses the line does so
+      as a typed <strong>error contract</strong> the UI can render.</p>
+      <p class="kicker">One core, two kinds of port, one error vocabulary. Select a seam to see what it is and which dive
+      builds it.</p>
+    </div>
+
+    <div class="hero-art">
+      <figure class="hero-fig" aria-labelledby="bhTitle">
+        <figcaption>
+          <p class="fc-lbl" id="bhTitle">What the caller must know</p>
+        </figcaption>
+        <svg viewBox="0 0 320 300" role="img" aria-label="The caller sits above the engine core. Without a boundary, three rows between them list what the caller must know: that the engine is a process, its message shapes, and its store. Drawing the boundary collapses those three couplings into one row — a single facade call — and hides the rest.">
+          <rect x="66" y="16" width="188" height="42" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.4"></rect>
+          <text x="160" y="34" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.06em" fill="#9aa3c0">THE CALLER</text>
+          <text x="160" y="48" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#d7cfb9">the UI &middot; F6 LiveView</text>
+          <g id="bhChain">
+            <!-- static initial state: coupled — three things the caller must know (visible without JS) -->
+            <line x1="160" y1="58" x2="160" y2="212" stroke="#3a4263" stroke-width="1.6" stroke-dasharray="3 4"></line>
+            <g class="hp-row"><rect x="40" y="76" width="240" height="30" rx="8" fill="#1d1320" stroke="#c4504c" stroke-width="1.8"></rect><text x="160" y="95" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#d7cfb9">knows it&#x2019;s a process</text></g>
+            <g class="hp-row"><rect x="40" y="114" width="240" height="30" rx="8" fill="#1d1320" stroke="#c4504c" stroke-width="1.8"></rect><text x="160" y="133" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#d7cfb9">knows the message shapes</text></g>
+            <g class="hp-row"><rect x="40" y="152" width="240" height="30" rx="8" fill="#1d1320" stroke="#c4504c" stroke-width="1.8"></rect><text x="160" y="171" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#d7cfb9">knows the store</text></g>
+          </g>
+          <rect x="66" y="212" width="188" height="46" rx="10" fill="#14182c" stroke="#5a6688" stroke-width="1.4"></rect>
+          <text x="160" y="232" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.06em" fill="#9aa3c0">ENGINE CORE</text>
+          <text x="160" y="246" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#7c86a6">decide &middot; evolve &middot; state</text>
+        </svg>
+        <div class="hp-ctrls">
+          <button type="button" class="hp-btn" id="bhBtn">&#9656; draw the boundary</button>
+          <button type="button" class="hp-btn ghost" id="bhReset">reset</button>
+        </div>
+        <p class="hp-cap" id="bhCap" aria-live="polite">
+          <span class="lst">[ process &middot; messages &middot; store ]</span><br>
+          <span class="ohint">Three couplings the caller must carry.</span>
+        </p>
+      </figure>
+    </div>
+  </section>
+
+  <section id="hexagon">
+    <h2>The shape of the boundary</h2>
+    <div class="prose">
+      <p>The hexagon is Cockburn's picture: the application core sits inside, ignorant of what is outside it, and each
+        edge is a <em>port</em> &mdash; a named interface. Things that <strong>drive</strong> the application (a web
+        request, a test, a CLI) come in through a driving port; things the application <strong>drives</strong> (a
+        database, a clock, a message bus) sit behind driven ports. The crucial rule is the direction of dependency:
+        the core depends on its own ports, never on the adapters that implement them. Select a seam to see where it
+        sits and what it carries.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="bdTitle">
+      <h4 id="bdTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The hexagon &middot; select a seam</h4>
+      <div class="controls">
+        <div class="solid-select" id="bdSel" role="group" aria-label="Boundary seam">
+          <button type="button" data-k="ports" class="active">driven ports</button>
+          <button type="button" data-k="facade">driving port</button>
+          <button type="button" data-k="errors">error contract</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 260" role="img" aria-label="A hexagonal architecture. The engine core sits in the centre. On the left, driven ports (EventStore, Clock) the core needs, implemented by adapters. On the right, the driving port (the Portal facade) the UI calls. Below, the error contract that crosses the boundary to the UI.">
+        <polygon points="300,78 420,78 468,140 420,202 300,202 252,140" fill="#14182c" stroke="#5a6688" stroke-width="1.6"></polygon>
+        <text x="360" y="134" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.06em" fill="#9aa3c0">ENGINE CORE</text>
+        <text x="360" y="150" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#7c86a6">decide &middot; evolve &middot; state</text>
+
+        <text x="34" y="64" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">adapters: InMemory &middot; Postgres</text>
+        <rect id="bdPart_ports" x="34" y="72" width="170" height="50" rx="10" fill="#1d1320" stroke="#c4504c" stroke-width="2"></rect>
+        <text x="119" y="93" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#b07572">DRIVEN PORTS</text>
+        <text x="119" y="108" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#e08f8b">EventStore &middot; Clock</text>
+        <line x1="204" y1="100" x2="252" y2="124" stroke="#3a4263" stroke-width="1.4"></line>
+
+        <text x="686" y="64" text-anchor="end" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">caller: LiveView (F6)</text>
+        <rect id="bdPart_facade" x="516" y="72" width="170" height="50" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="601" y="93" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">DRIVING PORT</text>
+        <text x="601" y="108" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#d7cfb9">the Portal facade</text>
+        <line x1="468" y1="124" x2="516" y2="100" stroke="#3a4263" stroke-width="1.4"></line>
+
+        <line x1="360" y1="202" x2="360" y2="222" stroke="#2a3252" stroke-width="1.3" stroke-dasharray="3 3"></line>
+        <rect id="bdPart_errors" x="255" y="222" width="210" height="34" rx="9" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="360" y="238" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.05em" fill="#8b93b0">ERROR CONTRACT</text>
+        <text x="360" y="250" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#6b7494">%Portal.Error{} &rarr; UI</text>
+      </svg>
+
+      <div class="geo-readout" id="bdOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">seam: <span id="bdRole" style="color:#e08f8b">Driven ports</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">in the Portal: <span id="bdResult" style="color:var(--cream)">behaviours the core needs</span></p>
+    </figure>
+    <p class="take">A boundary is not a folder layout; it is a set of named interfaces with the dependency arrow pointing
+      inward. Get the arrow right and the database, the web, and the clock all become details.</p>
+  </section>
+
+  <section id="seams">
+    <h2>Three seams in code</h2>
+    <div class="prose">
+      <p>Each seam is one small Elixir construct. A driven port is a <code class="inl">@behaviour</code> the core calls
+        and config resolves to an adapter; the driving port is a context module of intention-revealing functions; the
+        error contract is a struct with a closed set of codes. Seen together before the dives unpack them:</p>
+    </div>
+    <pre class="code"><span class="cmt"># 1. a driven port — the core depends on this behaviour, not on any adapter</span>
+<span class="op">defmodule</span> <span class="fn burg">Portal.EventStore</span> <span class="op">do</span>
+  <span class="op">@callback</span> <span class="fn">append</span>(stream :: <span class="fn burg">String</span>.t(), [struct]) :: <span class="res">:ok</span> | {<span class="res">:error</span>, term}
+  <span class="op">@callback</span> <span class="fn">read_stream</span>(stream :: <span class="fn burg">String</span>.t()) :: {<span class="res">:ok</span>, [struct]} | {<span class="res">:error</span>, term}
+<span class="op">end</span>
+
+<span class="cmt"># 2. the driving port — the only surface the UI in F6 will call</span>
+<span class="op">defmodule</span> <span class="fn burg">Portal</span> <span class="op">do</span>
+  <span class="op">def</span> <span class="fn">enroll</span>(user_id, course_id), <span class="op">do:</span> <span class="fn burg">Engine</span>.<span class="fn">command</span>({<span class="res">:enroll</span>, user_id, course_id})
+<span class="op">end</span>
+
+<span class="cmt"># 3. the error contract — a closed vocabulary the UI can render</span>
+<span class="op">defmodule</span> <span class="fn burg">Portal.Error</span> <span class="op">do</span>
+  <span class="op">@type</span> code :: <span class="res">:already_enrolled</span> | <span class="res">:course_not_found</span> | <span class="res">:invalid_progress</span>
+  <span class="op">defstruct</span> [<span class="res">:code</span>, <span class="res">:message</span>, <span class="res">:field</span>]
+<span class="op">end</span></pre>
+    <p class="note">The config line that picks an adapter &mdash;
+      <code class="inl">config :portal, :event_store, Portal.EventStore.Postgres</code> &mdash; is the whole of the
+      wiring; tests set it to <code class="inl">Portal.EventStore.InMemory</code> and nothing in the core changes.</p>
+  </section>
+
+  <section id="dives">
+    <h2>Three deep dives</h2>
+    <div class="prose">
+      <p>In order: ports as behaviours and adapters as their implementations, with the dependency arrow pointing
+        inward; the facade as the one stable door the UI calls; and the error contract that turns internal failures
+        into a finite set of outcomes the UI can render.</p>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:1rem;margin-top:1.4rem">
+      <a href="/elixir/pragmatic/boundaries/ports" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--burgundy);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:#e08f8b">F5.08.1</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Ports &amp; adapters <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">A port is a <code class="inl">@behaviour</code>; adapters implement it; config swaps them. One event-store contract, an in-memory adapter and a Postgres adapter, and a core that never names either.</div>
+      </a>
+      <a href="/elixir/pragmatic/boundaries/facade" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--blue-bright)">F5.08.2</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">The engine facade <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">A small, intention-revealing context &mdash; <code class="inl">enroll/2</code>, <code class="inl">deliver_lesson/2</code>, <code class="inl">progress_of/1</code> &mdash; that hides the GenServer, the log, and the reducer behind one door.</div>
+      </a>
+      <a href="/elixir/pragmatic/boundaries/errors" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--gold-bright)">F5.08.3</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Error contracts for the UI <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">A closed set of <code class="inl">%Portal.Error{}</code> codes, mapped at the boundary, so the UI renders a finite set of outcomes and never sees a raw exception or an internal struct.</div>
+      </a>
+    </div>
+
+    <div class="bridge" style="margin-top:1.8rem">
+      <div class="cell idea">
+        <p class="lbl">F5.07 &middot; a tested engine</p>
+        <p>The core is pure and pinned by tests, but its callers still have to know it is a process with message shapes.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">F5.08 &middot; a usable boundary</p>
+        <p>Ports invert the dependencies, a facade hides the runtime, and errors cross the line in a shape the UI knows.</p>
+      </div>
+    </div>
+    <p class="note">Start with <a href="/elixir/pragmatic/boundaries/ports">ports &amp; adapters</a>, then
+      <a href="/elixir/pragmatic/boundaries/facade">the engine facade</a>, then
+      <a href="/elixir/pragmatic/boundaries/errors">error contracts for the UI</a>. The next module, F5.09 &mdash; the
+      engine lab, assembles the facade end to end and mounts it behind a LiveView sketch for F6. The engine behind this
+      boundary is <a href="/elixir/pragmatic/state">F5.06 &middot; where engine state lives</a>, and the runtime path
+      is the design brief <a href="/elixir/pragmatic/flow">the command &amp; event flow</a>.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Ports and adapters, behaviours as the port mechanism, and adapters chosen by configuration.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://alistair.cockburn.us/hexagonal-architecture/">Alistair Cockburn &mdash; Hexagonal architecture</a> &mdash; the ports-and-adapters pattern.</li>
+        <li><a href="https://hexdocs.pm/elixir/typespecs.html">Elixir &mdash; Typespecs &amp; behaviours</a> &mdash; defining a port as a behaviour.</li>
+        <li><a href="https://dashbit.co/blog/mocks-and-explicit-contracts">Jos&eacute; Valim &mdash; Mocks and explicit contracts</a> &mdash; adapters behind a behaviour, chosen in config.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/pragmatic/boundaries/ports">F5.08.1 &middot; Ports &amp; adapters</a></li>
+        <li><a href="/elixir/pragmatic/boundaries/facade">F5.08.2 &middot; The engine facade</a></li>
+        <li><a href="/elixir/pragmatic/boundaries/errors">F5.08.3 &middot; Error contracts for the UI</a></li>
+        <li><a href="/elixir/pragmatic/state">F5.06 &middot; Where engine state lives</a> &mdash; the engine behind the boundary.</li>
+        <li><a href="/elixir/pragmatic/contracts">F5.04 &middot; Design by contract</a> &mdash; where the error vocabulary begins.</li>
+        <li><a href="/elixir/pragmatic/testing">F5.07 &middot; Pragmatic testing</a> &mdash; the seams are also test seams.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/pragmatic"><span aria-hidden="true">&larr;</span>&nbsp; F5 &middot; overview</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/pragmatic/boundaries/ports">Start &middot; ports &amp; adapters <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BURG = '#e08f8b', BURG_MUTE = '#c4504c';
+  var SEAMS = {
+    ports:  { name: 'Driven ports', detail: 'behaviours the core needs', part: 'bdPart_ports',
+      desc: 'The seam of F5.08.1. The core states what it needs \u2014 an event store, a clock \u2014 as a behaviour, and adapters implement it. The core depends on the behaviour, never the adapter, and config picks which adapter runs.' },
+    facade: { name: 'Driving port', detail: 'the API the UI calls', part: 'bdPart_facade',
+      desc: 'The seam of F5.08.2. A small context of intention-revealing functions \u2014 enroll, deliver_lesson, progress_of \u2014 is the only surface the UI knows. Behind it the GenServer, the event log, and the reducer can change freely.' },
+    errors: { name: 'Error contract', detail: 'a closed set the UI renders', part: 'bdPart_errors',
+      desc: 'The seam of F5.08.3. Every failure that crosses the boundary becomes a %Portal.Error{} with a code from a closed set, so the UI renders a finite list of outcomes \u2014 never a raw exception, never an internal struct.' }
+  };
+  var ORDER = ['ports', 'facade', 'errors'];
+  function pick(k) {
+    var S = SEAMS[k]; if (!S) return;
+    document.querySelectorAll('#bdSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var part = document.getElementById(SEAMS[id].part), on = id === k;
+      if (part) { part.setAttribute('stroke', on ? BURG_MUTE : '#3a4263'); part.setAttribute('stroke-width', on ? '2' : '1.3'); part.setAttribute('fill', on ? '#1d1320' : '#10162b'); }
+    });
+    var rEl = document.getElementById('bdRole'); if (rEl) rEl.textContent = S.name;
+    var dEl = document.getElementById('bdResult'); if (dEl) dEl.textContent = S.detail;
+    var oEl = document.getElementById('bdOut'); if (oEl) oEl.innerHTML = 'The <b style="color:' + BURG + '">' + S.name + '</b> seam \u2014 <code class="inl">' + S.detail + '</code>. ' + S.desc;
+  }
+  document.querySelectorAll('#bdSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('ports');
+
+  /* ---------- hero concept: couplings collapse to one seam ---------- */
+  (function () {
+    var SVGNS = 'http://www.w3.org/2000/svg';
+    var chain = document.getElementById('bhChain');
+    var btn = document.getElementById('bhBtn');
+    var reset = document.getElementById('bhReset');
+    var cap = document.getElementById('bhCap');
+    if (!chain || !btn || !reset || !cap) return;
+    var bounded = false;
+    function el(name, attrs) {
+      var n = document.createElementNS(SVGNS, name), k;
+      for (k in attrs) { if (Object.prototype.hasOwnProperty.call(attrs, k)) n.setAttribute(k, attrs[k]); }
+      return n;
+    }
+    function rail() {
+      return el('line', { x1: 160, y1: 58, x2: 160, y2: 212, stroke: '#3a4263', 'stroke-width': 1.6, 'stroke-dasharray': '3 4' });
+    }
+    function row(y, h, stroke, fill, label, sub, isNew) {
+      var g = el('g', { 'class': 'hp-row' + (isNew ? ' hp-new' : '') });
+      g.appendChild(el('rect', { x: 40, y: y, width: 240, height: h, rx: 8, fill: fill, stroke: stroke, 'stroke-width': 1.8 }));
+      var t = el('text', { x: 160, y: y + (sub ? h / 2 - 1 : h / 2 + 4), 'text-anchor': 'middle', 'font-family': 'JetBrains Mono, monospace', 'font-size': 11, fill: '#d7cfb9' });
+      t.textContent = label; g.appendChild(t);
+      if (sub) {
+        var s = el('text', { x: 160, y: y + h - 8, 'text-anchor': 'middle', 'font-family': 'Manrope, sans-serif', 'font-size': 8, 'letter-spacing': '0.04em', fill: '#8b93b0' });
+        s.textContent = sub; g.appendChild(s);
+      }
+      return g;
+    }
+    var COUPLED = [
+      { y: 76, label: 'knows it’s a process' },
+      { y: 114, label: 'knows the message shapes' },
+      { y: 152, label: 'knows the store' }
+    ];
+    function render() {
+      while (chain.firstChild) { chain.removeChild(chain.firstChild); }
+      chain.appendChild(rail());
+      if (!bounded) {
+        COUPLED.forEach(function (r) { chain.appendChild(row(r.y, 30, '#c4504c', '#1d1320', r.label, null, false)); });
+        cap.innerHTML = '<span class="lst">[ process &middot; messages &middot; store ]</span><br>' +
+          '<span class="ohint">Three couplings the caller must carry.</span>';
+        btn.innerHTML = '&#9656; draw the boundary';
+      } else {
+        chain.appendChild(row(114, 34, '#a7c9b1', '#14211c', 'Portal.enroll(user, course)', 'the facade — one call', true));
+        cap.innerHTML = '<span class="lst">[ one call &middot; Portal.enroll/2 ]</span><br>' +
+          '<span class="ohint">One seam. The process, messages, and store are hidden behind it.</span>';
+        btn.innerHTML = '&#9656; show the coupling';
+      }
+    }
+    btn.addEventListener('click', function () { bounded = !bounded; render(); });
+    reset.addEventListener('click', function () { bounded = false; render(); });
+    render();
+  })();
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

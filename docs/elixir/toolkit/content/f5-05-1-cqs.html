@@ -1,0 +1,228 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/pragmatic">pragmatic</a><span class="rsep">/</span><a href="/elixir/pragmatic/cqrs">cqrs</a><span class="rsep">/</span><span class="rcur">cqs</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/pragmatic">F5</a>
+      <span class="sep">/</span>
+      <a href="/elixir/pragmatic/cqrs">F5.05</a>
+      <span class="sep">/</span>
+      <span class="here">cqs</span>
+    </div>
+    <p class="eyebrow">F5.05 &middot; part 1 of 3</p>
+    <h1>Command/query separation</h1>
+    <p class="lede">Command/query separation is one rule, due to Bertrand Meyer: a function either <strong>changes
+      state and returns whether it worked</strong>, or <strong>returns data and changes nothing</strong> &mdash; never
+      both. A command does work and reports success or failure; a query answers a question and leaves the world
+      untouched. <code class="inl">enroll</code> is a command; <code class="inl">courses_of</code> is a query. The
+      payoff is reasoning: a query can be called twice, cached, or run in parallel because it has no effect, and a
+      command is honest about the fact that it changes things. It also nudges <code class="inl">enroll</code> away
+      from returning a read model &mdash; on success it reports <code class="inl">:ok</code>, and the caller queries
+      for the result.</p>
+    <p class="kicker">Two kinds of function, one job each. Select one to see what it returns and what it touches.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#two">Change or read, not both</a>
+      <a href="#code">In code</a>
+    </div>
+  </section>
+
+  <section id="two">
+    <h2>Change or read, not both</h2>
+    <div class="prose">
+      <p>The trouble with a function that both changes state and returns data is that you can never call it safely
+        only to look &mdash; every read risks a write. Separating the two means a query is a free,
+        repeatable observation, and a command is the only thing that can move the engine. Select a kind.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="csTitle">
+      <h4 id="csTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Command or query &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="csSel" role="group" aria-label="Function kind">
+          <button type="button" data-k="command" class="active">command</button>
+          <button type="button" data-k="query">query</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 180" role="img" aria-label="Two kinds of function. A command changes state and returns success or failure. A query returns data and changes nothing.">
+        <rect id="csRow_command" x="40" y="36" width="640" height="52" rx="11" fill="#1d1320" stroke="#c4504c" stroke-width="2"></rect>
+        <text x="60" y="57" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#b07572">COMMAND</text>
+        <text x="60" y="76" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#d7cfb9">changes state &middot; returns :ok | {:error, _}</text>
+        <text x="660" y="66" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#a87f7c">writes</text>
+
+        <rect id="csRow_query" x="40" y="104" width="640" height="52" rx="11" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="125" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">QUERY</text>
+        <text x="60" y="144" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#d7cfb9">returns data &middot; changes nothing</text>
+        <text x="660" y="134" text-anchor="end" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">reads</text>
+      </svg>
+
+      <div class="geo-readout" id="csOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">kind: <span id="csRole" style="color:#e08f8b">Command</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">returns: <span id="csResult" style="color:var(--cream)">:ok | {:error, _}</span></p>
+    </figure>
+    <p class="take">If a function returns data, it must be safe to call again. The only way to promise that is to keep
+      it from changing anything &mdash; which is the whole rule.</p>
+  </section>
+
+  <section id="code">
+    <h2>In code</h2>
+    <div class="prose">
+      <p>Two functions, two shapes. <code class="inl">enroll</code> changes state and returns only a tag;
+        <code class="inl">courses_of</code> returns data and runs no effect. After a successful command, the route
+        renders by issuing a query &mdash; the write path and the read path stay separate.</p>
+    </div>
+    <pre class="code"><span class="cmt"># command — changes state; returns success or failure, not a read model</span>
+<span class="op">@spec</span> <span class="fn">enroll</span>(<span class="fn burg">String</span>.t(), <span class="fn burg">String</span>.t()) :: <span class="res">:ok</span> | {<span class="res">:error</span>, atom}
+<span class="op">def</span> <span class="fn">enroll</span>(user_id, course_id) <span class="op">do</span>
+  <span class="op">with</span> <span class="res">:ok</span> &lt;- <span class="fn">check_precondition</span>(user_id, course_id) <span class="op">do</span>
+    <span class="fn">emit</span>(%<span class="fn burg">LearnerEnrolled</span>{user_id: user_id, course_id: course_id})   <span class="cmt"># record the change</span>
+  <span class="op">end</span>
+<span class="op">end</span>
+
+<span class="cmt"># query — returns data; changes nothing, safe to repeat or run in parallel</span>
+<span class="op">@spec</span> <span class="fn">courses_of</span>(<span class="fn burg">String</span>.t()) :: [<span class="fn burg">Enrollment</span>.t()]
+<span class="op">def</span> <span class="fn">courses_of</span>(user_id), <span class="op">do:</span> <span class="fn burg">State</span>.<span class="fn">enrollments_for</span>(user_id)</pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">ask or act</p>
+        <p>A query observes for free; a command is the only thing that moves the engine.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">enroll, then query</p>
+        <p>The command reports <code class="inl">:ok</code>; the caller reads back the result.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/pragmatic/cqrs/events"><strong>domain events</strong></a> &mdash; the
+      past-tense facts a command emits when it changes state.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://martinfowler.com/bliki/CQRS.html">Martin Fowler &mdash; CQRS</a> &mdash; separate the write model from the read model.</li>
+        <li><a href="https://martinfowler.com/eaaDev/EventSourcing.html">Martin Fowler &mdash; Event Sourcing</a> &mdash; state as a log of events to fold over.</li>
+        <li><a href="https://hexdocs.pm/commanded/Commanded.html">Commanded</a> &mdash; CQRS/ES building blocks in Elixir.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/pragmatic/cqrs">F5.05 &middot; Commands, queries &amp; events</a></li>
+        <li><a href="/elixir/pragmatic/cqrs/events">Domain events</a></li>
+        <li><a href="/elixir/pragmatic/cqrs/reducer">The reducer</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/pragmatic/cqrs"><span aria-hidden="true">&larr;</span>&nbsp; F5.05 &middot; cqrs</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/pragmatic/cqrs/events">Next &middot; domain events <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BURG = '#e08f8b', BURG_MUTE = '#c4504c';
+  var KINDS = {
+    command: { name: 'Command', ret: ':ok | {:error, _}',
+      desc: 'It changes state and reports only whether it worked. No read model comes back \u2014 the caller re-queries if it wants the result. enroll is a command.' },
+    query:   { name: 'Query', ret: 'data, no change',
+      desc: 'It answers a question and leaves the engine untouched. Idempotent and side-effect-free, so it is safe to repeat or run in parallel. courses_of is a query.' }
+  };
+  function pick(k) {
+    var K = KINDS[k]; if (!K) return;
+    document.querySelectorAll('#csSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ['command', 'query'].forEach(function (id) {
+      var row = document.getElementById('csRow_' + id), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BURG_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#1d1320' : '#10162b'); }
+    });
+    var rEl = document.getElementById('csRole'); if (rEl) rEl.textContent = K.name;
+    var tEl = document.getElementById('csResult'); if (tEl) tEl.textContent = K.ret;
+    var oEl = document.getElementById('csOut'); if (oEl) oEl.innerHTML = 'A <b style="color:' + BURG + '">' + K.name + '</b> returns <b>' + K.ret + '</b>. ' + K.desc;
+  }
+  document.querySelectorAll('#csSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('command');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

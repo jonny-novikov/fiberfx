@@ -1,0 +1,293 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/pubsub">pubsub</a><span class="rsep">/</span><span class="rcur">subscribe</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/pubsub">F6.07</a>
+      <span class="sep">/</span>
+      <span class="here">subscribe</span>
+    </div>
+    <p class="eyebrow">F6.07 &middot; part 2 of 3</p>
+    <h1>Subscribing a <span class="ex">LiveView</span></h1>
+    <p class="lede">A LiveView receives broadcasts the same way a GenServer receives any message: in
+      <code class="inl">handle_info/2</code>. The two halves are <strong>subscribe</strong> and
+      <strong>handle</strong>. You subscribe on the <strong>connected mount</strong> &mdash; behind the
+      <code class="inl">connected?/1</code> guard from F6.06.1, so the throwaway first paint does not join &mdash; with
+      one call to the facade&rsquo;s <code class="inl">Portal.subscribe("courses")</code>. From then on, any message
+      broadcast on that topic lands in the LiveView process&rsquo;s mailbox and is delivered to
+      <code class="inl">handle_info/2</code>, which pattern-matches the event tuple, updates the socket assigns, and
+      returns <code class="inl">{:noreply, socket}</code> &mdash; triggering the usual re-render and diff. This is the
+      distinction worth holding onto: <code class="inl">handle_event/3</code> handles messages from the
+      <em>browser</em> (a click, a keystroke), while <code class="inl">handle_info/2</code> handles messages from
+      <em>other processes</em> (a PubSub broadcast, a timer, a task result). Both end the same way &mdash; new assigns,
+      a re-render &mdash; but they are different doorways into the LiveView, and keeping them straight is most of
+      understanding real-time updates. Paired with streams from F6.06.3, a single broadcast inserts one row into every
+      connected client.</p>
+    <p class="kicker">Four parts: subscribe versus the two handlers, the path a broadcast takes into the LiveView, the
+      mount-and-handle code, and driving a stream from a broadcast.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#two">Two doorways</a>
+      <a href="#flow">A broadcast arrives</a>
+      <a href="#code">Subscribe and handle</a>
+      <a href="#stream">Updating a stream</a>
+    </div>
+  </section>
+
+  <section id="two">
+    <h2>Two doorways</h2>
+    <div class="prose">
+      <p>A LiveView reacts to two kinds of message. <code class="inl">subscribe</code> opts it into a topic.
+        <code class="inl">handle_info/2</code> receives <em>process</em> messages &mdash; PubSub broadcasts, timers.
+        <code class="inl">handle_event/3</code> receives <em>browser</em> events &mdash; clicks, input. Select one.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="sbTitle">
+      <h4 id="sbTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Subscribe and handlers &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="sbSel" role="group" aria-label="Subscribe or handler">
+          <button type="button" data-k="subscribe" class="active">subscribe</button>
+          <button type="button" data-k="info">handle_info/2</button>
+          <button type="button" data-k="event">handle_event/3</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Subscribe joins a topic, handle_info receives process messages like PubSub broadcasts, and handle_event receives browser events.">
+        <rect id="sbRow_subscribe" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">subscribe</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">Portal.subscribe("courses") &mdash; join on the connected mount</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">opt in</text>
+
+        <rect id="sbRow_info" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">handle_info/2</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">handle_info({event, course}, socket) &mdash; a process message</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">from PubSub</text>
+
+        <rect id="sbRow_event" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">handle_event/3</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">handle_event("create", params, socket) &mdash; a browser event</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">from the page</text>
+      </svg>
+
+      <div class="geo-readout" id="sbOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">callback: <span id="sbRole" style="color:#9fc0ea">subscribe</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">handles: <span id="sbResult" style="color:var(--cream)">join a topic on connected mount</span></p>
+    </figure>
+    <p class="take">Mixing the two up is the classic beginner bug: trying to catch a broadcast in
+      <code class="inl">handle_event</code>, or a click in <code class="inl">handle_info</code>. The cure is the one
+      question &mdash; did this come from a browser or a process?</p>
+  </section>
+
+  <section id="flow">
+    <h2>A broadcast arrives</h2>
+    <div class="prose">
+      <p>The broadcast from F6.07.1 is sent on <code class="inl">"courses"</code>. Because this LiveView subscribed,
+        the message is placed in its mailbox and the runtime calls <code class="inl">handle_info/2</code> with it. The
+        handler updates assigns and returns <code class="inl">{:noreply, socket}</code>; render runs; the diff goes to
+        this client&rsquo;s browser. The same arc as a browser event, entered through the other door.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="sbFlowTitle">
+      <h4 id="sbFlowTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">PubSub &rarr; mailbox &rarr; handle_info &rarr; diff</h4>
+      <svg viewBox="0 0 720 188" role="img" aria-label="A PubSub broadcast lands in the LiveView mailbox, handle_info updates assigns and returns noreply, render runs, and the diff goes to the browser.">
+        <rect x="20" y="74" width="120" height="40" rx="9" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="80" y="90" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">PubSub</text>
+        <text x="80" y="104" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">"courses"</text>
+        <line x1="140" y1="84" x2="184" y2="84" stroke="#5a87c4" stroke-width="1.6"></line>
+        <text x="162" y="76" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#86a7d8">message</text>
+
+        <rect x="184" y="62" width="120" height="44" rx="9" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="244" y="80" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">MAILBOX</text>
+        <text x="244" y="95" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#7c86a6">this LiveView</text>
+        <line x1="304" y1="84" x2="348" y2="84" stroke="#3a4263" stroke-width="1.6"></line>
+
+        <rect x="348" y="60" width="180" height="64" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="438" y="80" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#9fc0ea">handle_info/2</text>
+        <text x="438" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#86a7d8">match event, update assigns</text>
+        <text x="438" y="110" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#9fc0ea">{:noreply, socket}</text>
+        <line x1="528" y1="84" x2="572" y2="84" stroke="#3a4263" stroke-width="1.6"></line>
+
+        <rect x="572" y="64" width="132" height="40" rx="9" fill="#13201a" stroke="#7ba387" stroke-width="1.4"></rect>
+        <text x="638" y="80" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#a7c9b1">render &rarr; diff</text>
+        <text x="638" y="93" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#a7c9b1">to this browser</text>
+
+        <text x="244" y="150" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#5a6688">a browser click instead enters at handle_event/3</text>
+        <line x1="244" y1="124" x2="244" y2="106" stroke="#5a6688" stroke-width="1" stroke-dasharray="3 3"></line>
+        <line x1="244" y1="138" x2="438" y2="138" stroke="#5a6688" stroke-width="1" stroke-dasharray="3 3"></line>
+        <line x1="438" y1="138" x2="438" y2="124" stroke="#5a6688" stroke-width="1" stroke-dasharray="3 3"></line>
+        <text x="555" y="150" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#5a6688">both paths end in a re-render</text>
+      </svg>
+    </figure>
+    <p class="take">Nothing in the broadcast knows or cares which LiveViews are listening. The publisher fires once;
+      the runtime fans the message out to every subscribed mailbox. Adding a tenth viewer changes nothing in the
+      publishing code.</p>
+  </section>
+
+  <section id="code">
+    <h2>Subscribe and handle</h2>
+    <div class="prose">
+      <p><code class="inl">mount/3</code> subscribes once, on the connected pass. <code class="inl">handle_info/2</code>
+        matches <code class="inl">{:course_created, course}</code> and prepends it to <code class="inl">@courses</code>
+        with <code class="inl">update/3</code>. A new course created anywhere &mdash; by this user or another &mdash;
+        now appears at the top of this list without a reload.</p>
+    </div>
+    <pre class="code"><span class="op">def</span> <span class="fn">mount</span>(_params, _session, socket) <span class="op">do</span>
+  <span class="op">if</span> <span class="fn">connected?</span>(socket), <span class="op">do:</span> <span class="fn blue">Portal</span>.<span class="fn">subscribe</span>(<span class="str">"courses"</span>)
+  {<span class="res">:ok</span>, <span class="fn">assign</span>(socket, courses: <span class="fn blue">Portal</span>.<span class="fn">list_courses</span>())}
+<span class="op">end</span>
+
+<span class="cmt"># a broadcast arrives as a process message, not a browser event</span>
+<span class="op">def</span> <span class="fn">handle_info</span>({<span class="res">:course_created</span>, course}, socket) <span class="op">do</span>
+  {<span class="res">:noreply</span>, <span class="fn">update</span>(socket, <span class="res">:courses</span>, <span class="op">fn</span> courses -> [course | courses] <span class="op">end</span>)}
+<span class="op">end</span></pre>
+    <p class="take"><code class="inl">update/3</code> transforms one assign from its current value, which is cleaner than
+      reading and re-assigning. It is also exactly how you would evolve a GenServer&rsquo;s state &mdash; the LiveView
+      is that pattern with a screen attached.</p>
+  </section>
+
+  <section id="stream">
+    <h2>Updating a stream</h2>
+    <div class="prose">
+      <p>With the stream from F6.06.3, the broadcast updates the DOM directly instead of a list in memory.
+        <code class="inl">stream_insert/3</code> with <code class="inl">at: 0</code> prepends the new row; a separate
+        <code class="inl">:course_updated</code> clause replaces a row in place by id. Every connected client runs
+        the same handler, so the feed updates for all of them at once.</p>
+    </div>
+    <pre class="code"><span class="cmt"># with streams (F6.06.3): insert one row in every client's DOM</span>
+<span class="op">def</span> <span class="fn">handle_info</span>({<span class="res">:course_created</span>, course}, socket) <span class="op">do</span>
+  {<span class="res">:noreply</span>, <span class="fn">stream_insert</span>(socket, <span class="res">:courses</span>, course, at: <span class="res">0</span>)}
+<span class="op">end</span>
+
+<span class="op">def</span> <span class="fn">handle_info</span>({<span class="res">:course_updated</span>, course}, socket) <span class="op">do</span>
+  {<span class="res">:noreply</span>, <span class="fn">stream_insert</span>(socket, <span class="res">:courses</span>, course)}   <span class="cmt"># replaces the row by id</span>
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">subscribe once</p>
+        <p>On the connected mount, behind <code class="inl">connected?/1</code>.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">handle every event</p>
+        <p><code class="inl">handle_info/2</code> updates a stream; all clients update together.</p>
+      </div>
+    </div>
+    <p class="note">Next: <a href="/elixir/phoenix/pubsub/presence"><strong>channels &amp; presence</strong></a> &mdash;
+      the primitive beneath LiveView, and tracking who is on a topic so you can show a live viewer count.</p>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/pubsub/broadcast"><span aria-hidden="true">&larr;</span>&nbsp; F6.07.1 &middot; broadcasting engine events</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/pubsub/presence">Next &middot; channels &amp; presence <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var P = {
+    subscribe: { name: 'subscribe', handles: 'join a topic on connected mount', row: 'sbRow_subscribe',
+      desc: 'Portal.subscribe("courses") opts the LiveView into a topic. Call it behind connected?/1 in mount so only the live process joins, not the disconnected first paint.' },
+    info:      { name: 'handle_info/2', handles: 'receive a broadcast message', row: 'sbRow_info',
+      desc: 'handle_info/2 receives process messages \u2014 a PubSub broadcast, a timer tick, a task result. It pattern-matches the message, updates assigns, and returns {:noreply, socket} to re-render.' },
+    event:     { name: 'handle_event/3', handles: 'receive a browser event', row: 'sbRow_event',
+      desc: 'handle_event/3 receives browser events from bindings like phx-click and phx-submit. Same ending as handle_info \u2014 new assigns and a re-render \u2014 but a different doorway, from the page rather than a process.' }
+  };
+  var ORDER = ['subscribe', 'info', 'event'];
+  function pick(k) {
+    var x = P[k]; if (!x) return;
+    document.querySelectorAll('#sbSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(P[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('sbRole'); if (rEl) rEl.textContent = x.name;
+    var dEl = document.getElementById('sbResult'); if (dEl) dEl.textContent = x.handles;
+    var oEl = document.getElementById('sbOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + x.name + '</b> \u2014 ' + x.handles + '. ' + x.desc;
+  }
+  document.querySelectorAll('#sbSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('subscribe');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

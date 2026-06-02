@@ -1,0 +1,299 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/pubsub">pubsub</a><span class="rsep">/</span><span class="rcur">presence</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/pubsub">F6.07</a>
+      <span class="sep">/</span>
+      <span class="here">presence</span>
+    </div>
+    <p class="eyebrow">F6.07 &middot; part 3 of 3</p>
+    <h1>Channels &amp; <span class="ex">presence</span></h1>
+    <p class="lede">Two real-time tools sit around PubSub, and it helps to know what each is for. A
+      <strong>channel</strong> is the lower-level primitive Phoenix has always had &mdash; a bidirectional topic a
+      client joins, with explicit <code class="inl">join/3</code> and <code class="inl">handle_in/3</code> callbacks
+      and the ability to push messages out. LiveView is built on top of channels; you reach for a channel directly
+      when you need a <strong>custom protocol</strong> over the socket &mdash; a native mobile client, a game, a
+      hardware feed &mdash; where you control the wire rather than rendering HTML. Most web UI uses LiveView, so
+      channels are the exception, not the default. <strong>Presence</strong> is the other tool: it answers &ldquo;who
+      is on this topic right now?&rdquo; You call <code class="inl">track/3</code> when a process joins, Presence keeps
+      the set of who is present, and &mdash; the part that makes it special &mdash; it <strong>syncs that set across
+      every node</strong> in a cluster using a CRDT, so the count is correct whether your users are connected to one
+      server or ten. A change in presence broadcasts a <code class="inl">"presence_diff"</code> you handle like any
+      other message, which is how a live &ldquo;<code class="inl">N</code> people viewing&rdquo; indicator stays
+      accurate as people come and go.</p>
+    <p class="kicker">Four parts: the three real-time tools, how Presence stays correct across a cluster, a minimal
+      channel in code, and tracking viewers to show a live count.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#tools">Channel, Presence, track</a>
+      <a href="#presence">Presence across a cluster</a>
+      <a href="#code">A minimal channel</a>
+      <a href="#track">A live viewer count</a>
+    </div>
+  </section>
+
+  <section id="tools">
+    <h2>Channel, Presence, track</h2>
+    <div class="prose">
+      <p>Three tools, three jobs. A <strong>channel</strong> is a bidirectional topic any client can join and speak on.
+        <strong>Presence</strong> reports who is subscribed to a topic, synced across nodes.
+        <code class="inl">track/3</code> registers the current process as present. Select one.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="prTitle">
+      <h4 id="prTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Real-time tools &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="prSel" role="group" aria-label="Real-time tool">
+          <button type="button" data-k="channel" class="active">a channel</button>
+          <button type="button" data-k="presence">Presence</button>
+          <button type="button" data-k="track">track/3</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three tools: a channel is a bidirectional topic for any client, Presence reports who is on a topic across nodes, and track registers the current process as present.">
+        <rect id="prRow_channel" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">A CHANNEL</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">join/3 + handle_in/3 &mdash; a topic any client can speak on</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">the primitive</text>
+
+        <rect id="prRow_presence" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">Presence</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">Presence.list(topic) &mdash; who is here, synced across nodes</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">who is on</text>
+
+        <rect id="prRow_track" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">track/3</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">Presence.track(self(), topic, key) &mdash; register this process</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">register</text>
+      </svg>
+
+      <div class="geo-readout" id="prOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">tool: <span id="prRole" style="color:#9fc0ea">a channel</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">is: <span id="prResult" style="color:var(--cream)">a bidirectional topic for any client</span></p>
+    </figure>
+    <p class="take">If you are rendering HTML, you almost certainly want LiveView, not a raw channel. Channels earn
+      their place when the other end is not a browser and you need to define the message protocol yourself.</p>
+  </section>
+
+  <section id="presence">
+    <h2>Presence across a cluster</h2>
+    <div class="prose">
+      <p>Presence is interesting because the answer to &ldquo;who is here?&rdquo; is distributed. Each node tracks the
+        processes connected to it; nodes exchange their views and merge them with a <strong>CRDT</strong> &mdash; a
+        data structure that converges to the same result regardless of message order. So
+        <code class="inl">Presence.list(topic)</code> on any node returns the full set, not only that node&rsquo;s
+        share. A viewer count is correct across the whole cluster, not per-server.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="prPresTitle">
+      <h4 id="prPresTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">two nodes &rarr; CRDT merge &rarr; one shared set</h4>
+      <svg viewBox="0 0 720 196" role="img" aria-label="Each node tracks its own viewers; the nodes merge their presence sets with a CRDT so a list call on either node returns every viewer across the cluster.">
+        <rect x="30" y="40" width="200" height="70" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="130" y="60" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.05em" fill="#7c86a6">NODE 1</text>
+        <text x="130" y="80" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">tracks: A, B</text>
+        <text x="130" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7c86a6">local viewers</text>
+
+        <rect x="490" y="40" width="200" height="70" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="590" y="60" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.05em" fill="#7c86a6">NODE 2</text>
+        <text x="590" y="80" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">tracks: C</text>
+        <text x="590" y="96" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7c86a6">local viewers</text>
+
+        <line x1="230" y1="75" x2="490" y2="75" stroke="#5a87c4" stroke-width="1.4" stroke-dasharray="5 3"></line>
+        <text x="360" y="68" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#86a7d8">CRDT sync (order-independent merge)</text>
+
+        <rect x="250" y="128" width="220" height="44" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="360" y="148" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#9fc0ea">list("courses") = A, B, C</text>
+        <text x="360" y="163" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#86a7d8">same answer on either node</text>
+        <line x1="130" y1="110" x2="320" y2="128" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="590" y1="110" x2="400" y2="128" stroke="#3a4263" stroke-width="1.4"></line>
+
+        <text x="360" y="190" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">presence is cluster-wide &mdash; a viewer count does not depend on which server you hit</text>
+      </svg>
+    </figure>
+    <p class="take">This is the BEAM&rsquo;s distribution story showing through again: the same code that works on one
+      node works on a cluster, because presence merges rather than coordinates. You write
+      <code class="inl">track</code> and <code class="inl">list</code>; the convergence is handled.</p>
+  </section>
+
+  <section id="code">
+    <h2>A minimal channel</h2>
+    <div class="prose">
+      <p>A channel is a module with <code class="inl">join/3</code> &mdash; deciding who may join a topic &mdash; and
+        <code class="inl">handle_in/3</code> for messages the client sends. This one accepts a join on
+        <code class="inl">"catalog:lobby"</code> and replies to a <code class="inl">"ping"</code>. It is the shape
+        LiveView uses internally; you would write one directly only for a non-LiveView client.</p>
+    </div>
+    <pre class="code"><span class="op">defmodule</span> <span class="fn blue">PortalWeb.CatalogChannel</span> <span class="op">do</span>
+  <span class="op">use</span> <span class="fn blue">PortalWeb</span>, <span class="res">:channel</span>
+
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">join</span>(<span class="str">"catalog:lobby"</span>, _payload, socket) <span class="op">do</span>
+    {<span class="res">:ok</span>, socket}
+  <span class="op">end</span>
+
+  <span class="op">@impl</span> <span class="res">true</span>
+  <span class="op">def</span> <span class="fn">handle_in</span>(<span class="str">"ping"</span>, _payload, socket) <span class="op">do</span>
+    {<span class="res">:reply</span>, {<span class="res">:ok</span>, %{pong: <span class="res">true</span>}}, socket}
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+    <p class="take">Notice <code class="inl">handle_in/3</code> is the channel&rsquo;s version of
+      <code class="inl">handle_event</code>, and a channel can <code class="inl">push</code> to its client the way a
+      LiveView diffs to a browser. LiveView is a refinement of this primitive, not a separate system.</p>
+  </section>
+
+  <section id="track">
+    <h2>A live viewer count</h2>
+    <div class="prose">
+      <p>In a LiveView, <code class="inl">track/3</code> on the connected mount registers this viewer on the topic.
+        Presence broadcasts a <code class="inl">"presence_diff"</code> whenever anyone joins or leaves, which arrives
+        in <code class="inl">handle_info/2</code> like a PubSub event; counting
+        <code class="inl">Presence.list/1</code> gives the current number. The displayed count rises and falls live,
+        correctly, across every server.</p>
+    </div>
+    <pre class="code"><span class="op">def</span> <span class="fn">mount</span>(_params, _session, socket) <span class="op">do</span>
+  <span class="op">if</span> <span class="fn">connected?</span>(socket) <span class="op">do</span>
+    <span class="fn blue">Portal</span>.<span class="fn">subscribe</span>(<span class="str">"courses"</span>)
+    <span class="fn blue">PortalWeb.Presence</span>.<span class="fn">track</span>(<span class="fn">self</span>(), <span class="str">"courses"</span>, socket.id, %{})
+  <span class="op">end</span>
+
+  {<span class="res">:ok</span>, <span class="fn">assign</span>(socket, courses: <span class="fn blue">Portal</span>.<span class="fn">list_courses</span>(), viewers: <span class="res">0</span>)}
+<span class="op">end</span>
+
+<span class="cmt"># Presence broadcasts a diff whenever anyone joins or leaves</span>
+<span class="op">def</span> <span class="fn">handle_info</span>(%{event: <span class="str">"presence_diff"</span>}, socket) <span class="op">do</span>
+  count = <span class="fn">map_size</span>(<span class="fn blue">PortalWeb.Presence</span>.<span class="fn">list</span>(<span class="str">"courses"</span>))
+  {<span class="res">:noreply</span>, <span class="fn">assign</span>(socket, viewers: count)}
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">track on join</p>
+        <p><code class="inl">track/3</code> registers this viewer; Presence syncs the set.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">count on diff</p>
+        <p>A <code class="inl">presence_diff</code> updates the live count, correct cluster-wide.</p>
+      </div>
+    </div>
+    <p class="note">That completes F6.07. The domain broadcasts events, LiveViews subscribe and react, and Presence
+      tracks who is watching &mdash; real-time on the BEAM&rsquo;s own message passing. The next module,
+      <strong>F6.08 &mdash; deployment</strong>, takes the whole application to production. Back to
+      <a href="/elixir/phoenix/pubsub">the module overview</a> or the <a href="/elixir/phoenix">F6 chapter</a>.</p>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/pubsub/subscribe"><span aria-hidden="true">&larr;</span>&nbsp; F6.07.2 &middot; subscribing a LiveView</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/pubsub">Back to F6.07 &middot; overview <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var P = {
+    channel:  { name: 'a channel', is: 'a bidirectional topic for any client', row: 'prRow_channel',
+      desc: 'A channel is the lower-level primitive with join/3 and handle_in/3 callbacks. LiveView is built on it; reach for a channel directly when the client is not a browser and you control the message protocol.' },
+    presence: { name: 'Presence', is: 'who is subscribed, synced across nodes', row: 'prRow_presence',
+      desc: 'Presence reports the set of processes on a topic and merges that set across the cluster with a CRDT, so Presence.list(topic) returns everyone, not only the local node\u2019s viewers.' },
+    track:    { name: 'track/3', is: 'register this process on a topic', row: 'prRow_track',
+      desc: 'Presence.track(self(), topic, key, meta) registers the current process as present. Joining or leaving broadcasts a presence_diff you handle in handle_info to update a count.' }
+  };
+  var ORDER = ['channel', 'presence', 'track'];
+  function pick(k) {
+    var x = P[k]; if (!x) return;
+    document.querySelectorAll('#prSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(P[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('prRole'); if (rEl) rEl.textContent = x.name;
+    var dEl = document.getElementById('prResult'); if (dEl) dEl.textContent = x.is;
+    var oEl = document.getElementById('prOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + x.name + '</b> \u2014 ' + x.is + '. ' + x.desc;
+  }
+  document.querySelectorAll('#prSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('channel');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

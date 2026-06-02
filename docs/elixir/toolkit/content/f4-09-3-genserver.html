@@ -1,0 +1,294 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/algorithms">algorithms</a><span class="rsep">/</span><a href="/elixir/algorithms/branded-champ">branded-champ</a><span class="rsep">/</span><span class="rcur">genserver</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/algorithms">F4</a>
+      <span class="sep">/</span>
+      <a href="/elixir/algorithms/branded-champ">F4.09</a>
+      <span class="sep">/</span>
+      <span class="here">genserver</span>
+    </div>
+    <p class="eyebrow">F4.09 &middot; part 3 of 3 &middot; the session store</p>
+    <h1>Own it with a <span class="ex">GenServer</span></h1>
+    <p class="lede">The Portal&rsquo;s session store is one of these CHAMPs behind a <strong>GenServer</strong>.
+      <code class="inl">Portal.Auth.current_user/1</code> runs on every request, so reads must not queue;
+      <code class="inl">start_session/1</code> and logout must not race. The split is clean because the map is
+      immutable: the GenServer serializes <em>writes</em> through its mailbox and publishes each new snapshot, while
+      <em>reads</em> traverse the published snapshot with no lock at all.</p>
+    <p class="kicker">A burst of six operations against the store. Compare owning writes with a GenServer (reads stay
+      concurrent) against routing everything through one mailbox. Select a mode.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#own">Reads run free, writes take a number</a>
+      <a href="#advanced">Advanced: publishing the snapshot</a>
+    </div>
+  </section>
+
+  <section id="own">
+    <h2>Reads run free, writes take a number</h2>
+    <div class="prose">
+      <p>Each write goes through the GenServer one at a time and bumps the snapshot version; each read sees the latest
+        published version without queuing. Routing reads through the mailbox too would make the process a bottleneck.
+        Select a mode to see where each operation runs.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="gsTitle">
+      <h4 id="gsTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Edge mode &middot; select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="gsSel" role="group" aria-label="Store mode">
+          <button type="button" data-k="genserver" data-c="sage" class="active">GenServer owns writes</button>
+          <button type="button" data-k="naive" data-c="gold">everything serialized</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 232" role="img" aria-label="Six operations against the store; with a GenServer the two writes are serialized through the mailbox and the four reads run concurrently, each seeing the latest published snapshot version; serializing everything routes all six through one mailbox.">
+        <text x="200" y="26" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.08em" fill="#6b7494">operation</text>
+        <text x="560" y="26" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.08em" fill="#6b7494">where it runs</text>
+
+        <g id="gsRows"></g>
+
+        <rect x="40" y="200" width="640" height="26" rx="7" fill="#161d38" stroke="#3a4263" stroke-width="1.2"></rect>
+        <text id="gsSummary" x="360" y="217" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">2 writes serialized · 4 reads lock-free</text>
+      </svg>
+
+      <pre class="code" id="gsCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="gsOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">writes: <span id="gsRole" style="color:var(--sage-bright)">2, serialized</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">reads: <span id="gsResult" style="color:var(--cream)">4, lock-free</span></p>
+    </figure>
+    <p class="take">A GenServer is the right owner for writes because its mailbox serializes them; it is the wrong path
+      for reads, and immutability means reads do not need it &mdash; they walk a snapshot that no writer can disturb.</p>
+  </section>
+
+  <section id="advanced">
+    <h2>Advanced: publishing the snapshot</h2>
+    <div class="prose">
+      <p>The mechanism is a single published reference to the current root &mdash; in
+        <code class="inl">:persistent_term</code> or an ETS cell. A read fetches that reference and traverses the
+        CHAMP; because the structure is never mutated in place, the read needs no lock and cannot see a half-finished
+        write. A write is a <code class="inl">GenServer.call</code>: the process computes the new root with the
+        structural sharing of the previous dive, publishes it, and replies. Writes are serialized, so there is no lost
+        update; reads are concurrent, so <code class="inl">current_user/1</code> scales with the request load.</p>
+      <p>This is why the immutable, partitioned CHAMP and the GenServer fit together. A mutable map behind a lock would
+        force readers to wait for writers; an immutable map lets the writer build the next snapshot off to the side
+        and swap it in atomically, with readers continuing on the old one until they next fetch the reference. The
+        GenServer&rsquo;s job shrinks to owning the write path and publishing roots.</p>
+    </div>
+    <pre class="code"><span class="op">defmodule</span> <span class="fn sage">Portal.Auth</span> <span class="op">do</span>
+  <span class="op">use</span> <span class="fn sage">GenServer</span>
+
+  <span class="cmt"># read: lock-free, off the published snapshot — runs on every request</span>
+  <span class="op">def</span> <span class="fn">current_user</span>(<span class="str">"SES"</span> &lt;&gt; _ = sid) <span class="op">do</span>
+    <span class="fn sage">:persistent_term</span>.<span class="fn">get</span>(<span class="res">:sessions</span>) |&gt; <span class="fn sage">Champ</span>.<span class="fn">get</span>(sid)
+  <span class="op">end</span>
+
+  <span class="cmt"># write: serialized through the mailbox, publishes a new snapshot</span>
+  <span class="op">def</span> <span class="fn">handle_call</span>({<span class="res">:start</span>, sid, user}, _from, champ) <span class="op">do</span>
+    champ = <span class="fn sage">Champ</span>.<span class="fn">put</span>(champ, sid, user)
+    <span class="fn sage">:persistent_term</span>.<span class="fn">put</span>(<span class="res">:sessions</span>, champ)
+    {<span class="res">:reply</span>, <span class="res">:ok</span>, champ}
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">an immutable snapshot</p>
+        <p>A root no writer mutates in place.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">lock-free reads, owned writes</p>
+        <p>Readers walk the published root; the GenServer serializes writes and swaps in the next one.</p>
+      </div>
+    </div>
+    <p class="note">That completes F4.09: a partitioned, immutable CHAMP keyed by branded ids, owned by a GenServer
+      &mdash; the Portal&rsquo;s session store, entity registry, and progress tracker in one shape. Next module:
+      <strong>F4.10 &mdash; Practical recipes in Elixir</strong>, which turns these structures into
+      everyday patterns.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Primary sources for this lesson, and where it connects in the course.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/elixir/GenServer.html">Elixir &mdash; GenServer</a> &mdash; the mailbox that serializes writes.</li>
+        <li><a href="https://www.erlang.org/doc/man/persistent_term.html">Erlang &mdash; persistent_term</a> &mdash; publishing an immutable root for lock-free reads.</li>
+        <li><a href="https://hexdocs.pm/elixir/Agent.html">Elixir &mdash; Agent</a> &mdash; the simpler state-owner this pattern generalizes.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/algorithms/branded-champ/trie">F4.09.2 &middot; Structural sharing</a> &mdash; why a new snapshot is cheap to publish.</li>
+        <li><a href="/elixir/algorithms/persistence">F4.08 &middot; Branded ids &amp; persistence</a> &mdash; the same id on disk and at the edge.</li>
+        <li><a href="/elixir/algorithms/branded-champ">F4.09 &middot; Branded CHAMP maps &amp; GenServer</a> &mdash; the module hub.</li>
+        <li><a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/algorithms/branded-champ/trie"><span aria-hidden="true">&larr;</span>&nbsp; F4.09.2 &middot; trie</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var SAGE = '#a7c9b1', GOLD = '#f0cd7f';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
+  /* a fixed burst; writes bump the published snapshot version, reads observe the latest */
+  var OPS = [
+    { op: 'current_user/1', kind: 'read' },
+    { op: 'start_session/1', kind: 'write' },
+    { op: 'current_user/1', kind: 'read' },
+    { op: 'current_user/1', kind: 'read' },
+    { op: 'delete_session/1', kind: 'write' },
+    { op: 'current_user/1', kind: 'read' }
+  ];
+  /* compute the version each op observes / produces */
+  var ver = 0;
+  OPS.forEach(function (o) {
+    if (o.kind === 'write') { ver += 1; o.ver = '-> v' + ver; } else { o.ver = 'v' + ver; }
+  });
+  var nWrite = OPS.filter(function (o) { return o.kind === 'write'; }).length;
+  var nRead = OPS.length - nWrite;
+
+  /* build six rows once */
+  var g = document.getElementById('gsRows');
+  function mk(tag, attrs, text) {
+    var el = document.createElementNS(SVGNS, tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    if (text != null) el.textContent = text;
+    return el;
+  }
+  if (g) {
+    for (var i = 0; i < OPS.length; i++) {
+      var y = 40 + i * 25;
+      g.appendChild(mk('rect', { id: 'gsBox' + i, x: 40, y: y, width: 640, height: 21, rx: 5, fill: '#10162b', stroke: '#3a4263', 'stroke-width': '1' }));
+      g.appendChild(mk('text', { x: 52, y: y + 15, 'font-family': 'JetBrains Mono, monospace', 'font-size': '10.5', fill: '#d7cfb9' }, OPS[i].op));
+      g.appendChild(mk('text', { x: 250, y: y + 15, 'font-family': 'JetBrains Mono, monospace', 'font-size': '9.5', fill: '#8b93b0' }, OPS[i].kind + '  ' + OPS[i].ver));
+      g.appendChild(mk('text', { id: 'gsLane' + i, 'text-anchor': 'end', x: 668, y: y + 15, 'font-family': 'JetBrains Mono, monospace', 'font-size': '10' }, ''));
+    }
+  }
+
+  function pick(k) {
+    document.querySelectorAll('#gsSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    for (var i = 0; i < OPS.length; i++) {
+      var o = OPS[i], boxEl = document.getElementById('gsBox' + i), laneEl = document.getElementById('gsLane' + i);
+      var stroke, lane, fill;
+      if (o.kind === 'write') {
+        stroke = GOLD; fill = GOLD; lane = 'mailbox \u00b7 serialized';
+      } else if (k === 'genserver') {
+        stroke = SAGE; fill = SAGE; lane = 'concurrent \u00b7 lock-free';
+      } else {
+        stroke = GOLD; fill = GOLD; lane = 'mailbox \u00b7 serialized';
+      }
+      if (boxEl) { boxEl.setAttribute('stroke', stroke); boxEl.setAttribute('stroke-width', '1.4'); }
+      if (laneEl) { laneEl.textContent = lane; laneEl.setAttribute('fill', fill); }
+    }
+    var sEl = document.getElementById('gsSummary');
+    var rEl = document.getElementById('gsRole'), resEl = document.getElementById('gsResult');
+    var code, out;
+    if (k === 'genserver') {
+      if (sEl) { sEl.textContent = nWrite + ' writes serialized \u00b7 ' + nRead + ' reads lock-free'; sEl.setAttribute('fill', SAGE); }
+      if (rEl) { rEl.textContent = nWrite + ', serialized'; rEl.style.color = SAGE; }
+      if (resEl) resEl.textContent = nRead + ', lock-free';
+      code = '<span class="cmt"># reads bypass the mailbox; only writes serialize</span>\n<span class="fn">current_user</span>(sid)            <span class="cmt"># :persistent_term.get -> Champ.get  (no queue)</span>\n<span class="fn">GenServer.call</span>(__MODULE__, {<span class="res">:start</span>, sid, user})  <span class="cmt"># serialized, -> new snapshot</span>\n<span class="cmt"># ' + nRead + ' reads run concurrently, ' + nWrite + ' writes one at a time</span>';
+      out = 'With the GenServer owning writes, the <b style="color:var(--sage-bright)">' + nRead + ' reads</b> run concurrently off the published snapshot, and only the <b style="color:var(--gold-bright)">' + nWrite + ' writes</b> serialize through the mailbox &mdash; each bumping the version the next reads observe.';
+    } else {
+      if (sEl) { sEl.textContent = 'all ' + OPS.length + ' serialized through one mailbox'; sEl.setAttribute('fill', GOLD); }
+      if (rEl) { rEl.textContent = nWrite + ', serialized'; rEl.style.color = GOLD; }
+      if (resEl) resEl.textContent = nRead + ', also queued';
+      code = '<span class="cmt"># every op through the GenServer — reads queue behind writes</span>\n<span class="fn">GenServer.call</span>(__MODULE__, {<span class="res">:get</span>, sid})   <span class="cmt"># a read, but still serialized</span>\n<span class="cmt"># all ' + OPS.length + ' operations share one mailbox -> the process is the bottleneck</span>';
+      out = 'Routing everything through the GenServer serializes all <b style="color:var(--gold-bright)">' + OPS.length + '</b> operations, so <code class="inl">current_user/1</code> queues behind every write. Correct, but the process becomes the bottleneck &mdash; the cost immutability lets you avoid.';
+    }
+    var cEl = document.getElementById('gsCode'); if (cEl) cEl.innerHTML = code;
+    var oEl = document.getElementById('gsOut'); if (oEl) oEl.innerHTML = out;
+  }
+  document.querySelectorAll('#gsSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('genserver');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>

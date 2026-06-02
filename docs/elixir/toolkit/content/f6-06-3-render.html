@@ -1,0 +1,374 @@
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">elixir</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/elixir">elixir</a><span class="rsep">/</span><a href="/elixir/phoenix">phoenix</a><span class="rsep">/</span><a href="/elixir/phoenix/liveview">liveview</a><span class="rsep">/</span><span class="rcur">render</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/elixir/phoenix">F6</a>
+      <span class="sep">/</span>
+      <a href="/elixir/phoenix/liveview">F6.06</a>
+      <span class="sep">/</span>
+      <span class="here">render</span>
+    </div>
+    <p class="eyebrow">F6.06 &middot; part 3 of 3</p>
+    <h1>render &amp; <span class="ex">diffs</span></h1>
+    <p class="lede">A LiveView re-renders on every change, yet stays cheap, because a HEEx template is split in two:
+      fixed <strong>static</strong> markup and interpolated <strong>dynamic</strong> holes. Only the dynamic values
+      that actually changed travel the socket &mdash; the diff is the minimal delta of the rendered state since the
+      last render.</p>
+    <p class="kicker">First the split that makes change tracking possible, then a worked diff computed for real, then
+      <code class="inl">render/1</code> in Elixir with its diffs annotated, and finally streams &mdash; for collections
+      too large to keep in socket assigns.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#split">The static / dynamic split</a>
+      <a href="#diff">A diff, computed</a>
+      <a href="#code">render/1 in Elixir</a>
+      <a href="#streams">Streams for big lists</a>
+      <a href="#recap">What this lands</a>
+    </div>
+  </section>
+
+  <section id="split">
+    <h2>The static / dynamic split</h2>
+    <div class="prose">
+      <p>The <code class="inl">~H</code> sigil does not produce a string. It compiles the template into two interleaved
+        parts that <code class="inl">render/1</code> returns as rendered structure: the <strong>static</strong> segments
+        and the <strong>dynamic</strong> holes between them. That separation is the whole mechanism &mdash; it is what
+        lets the framework track each interpolated value on its own and re-send only the ones that moved.</p>
+      <dl class="deflist">
+        <dt>static</dt><dd>The fixed markup &mdash; tags, attributes, and the literal text around the holes. Sent on the
+          first render, cached on the client, and never transmitted again.</dd>
+        <dt>dynamic</dt><dd>Each interpolated expression, one numbered hole per <code class="inl">{...}</code>. The hole
+          is tied to the assigns it reads, so its value is tracked across renders.</dd>
+        <dt>change tracking</dt><dd>Comparing each hole&rsquo;s current value with its previous one. An unchanged assign
+          is skipped even when <code class="inl">render/1</code> ran again.</dd>
+        <dt>diff</dt><dd>The map of changed holes, keyed by position &mdash; the minimal delta of the rendered state
+          since the last render, and all that goes over the wire.</dd>
+      </dl>
+      <p>Reading the template, a hole is anything in curly braces: <code class="inl">{@count}</code> is hole
+        <code class="inl">0</code>, the title inside the list comprehension is hole <code class="inl">1</code>. Everything
+        else &mdash; <code class="inl">&lt;h1&gt;</code>, <code class="inl">&lt;ul&gt;</code>, the spaces and angle
+        brackets &mdash; is static, fixed at compile time. The reader can split a template by hand the same way the
+        compiler does.</p>
+    </div>
+    <p class="take">HEEx asks for assigns in the holes rather than strings built in code for exactly this reason: a value
+      the compiler can see as a distinct hole can be tracked and diffed; a value hidden inside a concatenation cannot.</p>
+  </section>
+
+  <section id="diff">
+    <h2>A diff, computed</h2>
+    <div class="prose">
+      <p>Take a catalog view with two holes: <code class="inl">{@count}</code> at position <code class="inl">0</code>
+        and <code class="inl">{course.title}</code> at position <code class="inl">1</code>. The first render sends the
+        static shell once, plus both hole values. After that, every event re-runs <code class="inl">render/1</code>, and
+        the diff carries only the holes whose values differ from the previous render &mdash; addressed by position, not
+        by markup.</p>
+      <p>Choose what an event changes. The figure recomputes the real payload: which holes re-send, and the exact map
+        the socket carries.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="dfTitle">
+      <h4 id="dfTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The diff over the socket &middot; choose what changed</h4>
+      <div class="controls">
+        <div class="solid-select" id="dfSel" role="group" aria-label="What the event changes">
+          <button type="button" data-k="count" data-c="sage" class="active">@count ticks</button>
+          <button type="button" data-k="courses" data-c="sage">@courses changes</button>
+          <button type="button" data-k="both" data-c="sage">both change</button>
+          <button type="button" data-k="none" data-c="sage">nothing changes</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 196" role="img" aria-label="A LiveView render with a static shell and two dynamic holes; the diagram highlights which holes re-send for the chosen change and shows the resulting payload.">
+        <text x="360" y="20" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">RENDERED STATE &mdash; one static shell, two dynamic holes</text>
+
+        <rect x="40" y="32" width="640" height="30" rx="8" fill="#0d1322" stroke="#2a3252" stroke-width="1.2" stroke-dasharray="4 3"></rect>
+        <text id="dfShell" x="360" y="51" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">static shell &middot; sent once on first render, then never again</text>
+
+        <rect id="dfBox0" x="40" y="74" width="312" height="48" rx="9" fill="#11203a" stroke="#7ba387" stroke-width="1.8"></rect>
+        <text x="58" y="93" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.04em" fill="#86a7d8">HOLE [0]</text>
+        <text id="df0val" x="58" y="110" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#9fc0ea">{@count} = 42</text>
+        <text id="df0tag" x="334" y="102" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#a7c9b1">re-sent</text>
+
+        <rect id="dfBox1" x="368" y="74" width="312" height="48" rx="9" fill="#11203a" stroke="#5a87c4" stroke-width="1.4"></rect>
+        <text x="386" y="93" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.04em" fill="#86a7d8">HOLE [1]</text>
+        <text id="df1val" x="386" y="110" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#9fc0ea">{course.title} list</text>
+        <text id="df1tag" x="662" y="102" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">unchanged</text>
+
+        <text x="40" y="150" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.04em" fill="#8b93b0">PAYLOAD ON THE SOCKET</text>
+        <text id="dfPayload" x="40" y="170" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">%{"0" =&gt; "42"}</text>
+        <text id="dfNote" x="40" y="186" font-family="Manrope, sans-serif" font-size="7.5" fill="#5a6688">only changed holes are sent; the shell and unchanged holes are skipped</text>
+      </svg>
+
+      <pre class="code" id="dfCode" aria-live="polite"><span class="cmt"># @count 41 -&gt; 42, @courses unchanged</span>
+<span class="cmt"># diff over the socket:</span>
+%{<span class="str">"0"</span> => <span class="str">"42"</span>}</pre>
+      <div class="geo-readout" id="dfOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">holes re-sent: <span id="dfCount" style="color:var(--sage-bright)">1 of 2</span></p>
+    </figure>
+    <p class="take">The cost of a re-render is proportional to what changed, not to the size of the page &mdash; the exact
+      inverse of a full request, which re-sends everything every time. When nothing changed, the diff is empty and the
+      socket stays silent.</p>
+  </section>
+
+  <section id="code">
+    <h2>render/1 in Elixir</h2>
+    <div class="prose">
+      <p>A LiveView&rsquo;s <code class="inl">render/1</code> takes <code class="inl">assigns</code> and returns HEEx from
+        the <code class="inl">~H</code> sigil &mdash; the same template language compiled in F6.05, now the projection of
+        a process&rsquo;s state. The data still arrives through the <code class="inl">Portal</code> facade in
+        <code class="inl">mount/3</code>; <code class="inl">render/1</code> only reads <code class="inl">@count</code> and
+        <code class="inl">@courses</code> from the socket. The two annotated cases below are the figure&rsquo;s two
+        holes, in code.</p>
+    </div>
+    <pre class="code"><span class="op">def</span> <span class="fn">render</span>(assigns) <span class="op">do</span>
+  <span class="fn">~H</span><span class="str">"""</span>
+  <span class="op">&lt;h1&gt;</span>Courses (<span class="rdx">{@count}</span>)<span class="op">&lt;/h1&gt;</span>          <span class="cmt">&lt;%!-- hole [0] --%&gt;</span>
+  <span class="op">&lt;ul&gt;</span>
+    <span class="op">&lt;li</span> <span class="res">:for</span>={course &lt;- <span class="inl">@courses</span>}<span class="op">&gt;</span><span class="rdx">{course.title}</span><span class="op">&lt;/li&gt;</span>  <span class="cmt">&lt;%!-- hole [1] --%&gt;</span>
+  <span class="op">&lt;/ul&gt;</span>
+  <span class="str">"""</span>
+<span class="op">end</span>
+
+<span class="cmt"># an event re-runs render/1; the diff is the changed holes only:</span>
+<span class="cmt"># @count 41 -&gt; 42, @courses same  # => %{"0" =&gt; "42"}</span>
+<span class="cmt"># @courses gains a row, @count same # => %{"1" =&gt; [...]}   (shell never re-sent)</span></pre>
+    <p class="take">Nothing here manages the wire. <code class="inl">render/1</code> is a plain function of assigns;
+      breaking a view into smaller function components from F6.05 sharpens tracking further, since a component whose
+      assigns did not change is skipped whole.</p>
+  </section>
+
+  <section id="streams">
+    <h2>Streams for big lists</h2>
+    <div class="prose">
+      <p>Change tracking keeps the diff small, but a large collection in assigns is still a cost of its own: the process
+        holds every row in memory and re-checks the list on each render. <code class="inl">stream/3</code> removes that.
+        The rows live in the DOM, the server tracks only their ids, and <code class="inl">stream_insert/3</code> appends
+        or updates one row without the LiveView retaining the list. The template marks the container
+        <code class="inl">phx-update="stream"</code> and iterates <code class="inl">@streams.courses</code>.</p>
+    </div>
+    <pre class="code"><span class="op">def</span> <span class="fn">mount</span>(_params, _session, socket) <span class="op">do</span>
+  {<span class="res">:ok</span>, <span class="fn">stream</span>(socket, <span class="res">:courses</span>, <span class="fn blue">Portal</span>.<span class="fn">list_courses</span>())}
+<span class="op">end</span>
+
+<span class="op">def</span> <span class="fn">handle_event</span>(<span class="str">"add"</span>, %{<span class="str">"course"</span> => params}, socket) <span class="op">do</span>
+  {<span class="res">:ok</span>, course} = <span class="fn blue">Portal</span>.<span class="fn">create_course</span>(params)
+  {<span class="res">:noreply</span>, <span class="fn">stream_insert</span>(socket, <span class="res">:courses</span>, course)}   <span class="cmt"># one row, not the whole list</span>
+<span class="op">end</span>
+
+<span class="cmt">&lt;%!-- the rows live in the DOM, not in socket memory --%&gt;</span>
+<span class="op">&lt;ul</span> id=<span class="str">"courses"</span> <span class="res">phx-update</span>=<span class="str">"stream"</span><span class="op">&gt;</span>
+  <span class="op">&lt;li</span> <span class="res">:for</span>={{dom_id, course} &lt;- <span class="inl">@streams</span>.courses} id={dom_id}<span class="op">&gt;</span>{course.title}<span class="op">&lt;/li&gt;</span>
+<span class="op">&lt;/ul&gt;</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">F5 OTP</p>
+        <p>A GenServer answers a message by returning only its new state &mdash; never the whole history.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">a diff is</p>
+        <p>that same minimal delta over a socket: <code class="inl">render/1</code> projects state, and only the
+          changed holes are sent.</p>
+      </div>
+    </div>
+    <p class="note">Streams are how a feed or the F6.09 live dashboard scales to many rows and many connected clients
+      without the server holding each list. The reduction is the recurring shape of F5/F6: a long-lived process, a
+      function from its state to a view, and a minimal delta on every change.</p>
+  </section>
+
+  <section id="recap">
+    <h2>What this lands</h2>
+    <div class="prose">
+      <ul>
+        <li><code class="inl">render/1</code> returns HEEx from the <code class="inl">~H</code> sigil &mdash; a function
+          of assigns, not a string.</li>
+        <li>A template compiles into <strong>static</strong> segments and <strong>dynamic</strong> holes; the static
+          shell is sent once and cached.</li>
+        <li>Change tracking compares each hole to its previous value, so only changed assigns produce a diff.</li>
+        <li>The <strong>diff</strong> travels the socket, keyed by hole position &mdash; the minimal delta of the
+          rendered state, not the whole document.</li>
+        <li><code class="inl">stream/3</code> keeps large or append-only collections in the DOM, so the server holds
+          ids, not the list.</li>
+      </ul>
+    </div>
+    <p class="note">That completes F6.06. A LiveView is an OTP process holding socket assigns, rendering HEEx, and
+      shipping minimal diffs &mdash; interactive UI with the domain untouched below the facade. Next, the chapter adds
+      <strong>F6.07 &mdash; PubSub, channels &amp; real-time</strong> so a change broadcasts to every connected
+      LiveView at once. Back to <a href="/elixir/phoenix/liveview">the F6.06 overview</a> or the
+      <a href="/elixir/phoenix">F6 chapter</a>.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">How render, change tracking, and streams are specified.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/phoenix_live_view/assigns-eex.html">Phoenix LiveView &mdash; Assigns &amp; change tracking</a> &mdash; the static / dynamic split and how diffs are computed.</li>
+        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.Component.html#sigil_H/2">Phoenix.Component &mdash; <code class="inl">~H</code></a> &mdash; the HEEx sigil that <code class="inl">render/1</code> returns.</li>
+        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#stream/4">Phoenix.LiveView &mdash; <code class="inl">stream/3</code></a> &mdash; collections held in the DOM, not in assigns.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/phoenix/liveview/mount">F6.06.1 &middot; mount &amp; assigns</a></li>
+        <li><a href="/elixir/phoenix/liveview/events">F6.06.2 &middot; handle_event &amp; state</a></li>
+        <li><a href="/elixir/phoenix/heex">F6.05 &middot; Templates, components &amp; HEEx</a> &mdash; the template this renders.</li>
+        <li><a href="/elixir/phoenix/liveview">F6.06 &middot; Phoenix LiveView fundamentals</a></li>
+        <li><a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/liveview/events"><span aria-hidden="true">&larr;</span>&nbsp; F6.06.2 &middot; handle_event &amp; state</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix">F6 &middot; Phoenix Framework <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Functional Programming in Elixir — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">Functional Programming in Elixir &mdash; functional thinking taught twice: first as mathematics, then as idiomatic Elixir.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/elixir/algebra">F1 &middot; Algebra</a>
+        <a href="/elixir/functional">F2 &middot; Functional Programming</a>
+        <a href="/elixir/language">F3 &middot; The Elixir Language</a>
+        <a href="/elixir/algorithms">F4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/elixir/pragmatic">F5 &middot; Pragmatic Programming</a>
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/elixir">Course home</a>
+        <a href="/elixir/course">Contents &amp; history</a>
+        <a href="/elixir/algebra/functions">Start &middot; F1.01</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">{{BUILD_ID}}</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">{{BUILD_TS}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4', SAGE = '#a7c9b1', SAGE_MUTE = '#7ba387', DIM = '#6b7494';
+  /* the two real holes and their old/new values; the widget computes which re-send */
+  var H0 = { old: '41', neu: '42', label: '{@count}', short: '"42"' };
+  var H1 = { old: 'list', neu: 'list + 1 row', label: '{course.title} list', short: '[...]' };
+  var CASES = {
+    count:   { h0: true,  h1: false, title: '@count 41 -> 42, @courses unchanged' },
+    courses: { h0: false, h1: true,  title: '@courses gains a row, @count unchanged' },
+    both:    { h0: true,  h1: true,  title: '@count ticks and @courses gains a row' },
+    none:    { h0: false, h1: false, title: 'an event fires but no assign changed' }
+  };
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function payloadMap(c) {
+    var parts = [];
+    if (c.h0) parts.push('"0" => "' + H0.neu + '"');
+    if (c.h1) parts.push('"1" => ' + H1.short);
+    return parts.length ? '%{' + parts.join(', ') + '}' : '%{}';
+  }
+  function setText(id, t){ var el = document.getElementById(id); if (el) el.textContent = t; }
+  function setAttr(id, a, v){ var el = document.getElementById(id); if (el) el.setAttribute(a, v); }
+  function render(k) {
+    var c = CASES[k]; if (!c) return;
+    document.querySelectorAll('#dfSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    /* hole 0 */
+    setText('df0val', H0.label + ' = ' + (c.h0 ? H0.neu : H0.old));
+    setText('df0tag', c.h0 ? 're-sent' : 'unchanged');
+    setAttr('df0tag', 'fill', c.h0 ? SAGE : DIM);
+    setAttr('dfBox0', 'stroke', c.h0 ? SAGE_MUTE : BLUE_MUTE);
+    setAttr('dfBox0', 'stroke-width', c.h0 ? '1.8' : '1.4');
+    setAttr('dfBox0', 'fill', c.h0 ? '#13201a' : '#11203a');
+    setAttr('df0val', 'fill', c.h0 ? SAGE : BLUE);
+    /* hole 1 */
+    setText('df1val', c.h1 ? H1.label + ' +1' : H1.label);
+    setText('df1tag', c.h1 ? 're-sent' : 'unchanged');
+    setAttr('df1tag', 'fill', c.h1 ? SAGE : DIM);
+    setAttr('dfBox1', 'stroke', c.h1 ? SAGE_MUTE : BLUE_MUTE);
+    setAttr('dfBox1', 'stroke-width', c.h1 ? '1.8' : '1.4');
+    setAttr('dfBox1', 'fill', c.h1 ? '#13201a' : '#11203a');
+    setAttr('df1val', 'fill', c.h1 ? SAGE : BLUE);
+    /* payload + readout */
+    var map = payloadMap(c);
+    var n = (c.h0 ? 1 : 0) + (c.h1 ? 1 : 0);
+    setText('dfPayload', map);
+    setAttr('dfPayload', 'fill', n ? SAGE : DIM);
+    setText('dfNote', n ? 'only changed holes are sent; the shell and unchanged holes are skipped'
+                        : 'no hole changed; the diff is empty and nothing is sent');
+    setText('dfCount', n + ' of 2');
+    var code = document.getElementById('dfCode');
+    if (code) {
+      code.innerHTML = '<span class="cmt"># ' + esc(c.title) + '</span>\n' +
+                       '<span class="cmt"># diff over the socket:</span>\n' +
+                       (n ? esc(map) : esc(map) + '   <span class="cmt"># empty: socket stays silent</span>');
+    }
+    var out = document.getElementById('dfOut');
+    if (out) {
+      out.innerHTML = '<b style="color:' + SAGE + '">' + esc(c.title) + '</b> <span class="dim">&middot;</span> ' +
+        n + ' of 2 holes re-send <span class="dim">&middot;</span> payload ' +
+        '<b style="color:' + SAGE + '">' + esc(map) + '</b>';
+    }
+  }
+  document.querySelectorAll('#dfSel button').forEach(function (b) {
+    b.addEventListener('click', function () { render(b.getAttribute('data-k')); });
+  });
+  render('count'); /* correct static state is in the markup; this confirms it at load */
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
