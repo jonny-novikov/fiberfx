@@ -16,12 +16,12 @@ import (
 type Class string
 
 const (
-	Ready        Class = "READY"        // declared linkable, exists, passes
+	Ready        Class = "READY"         // declared linkable, exists, passes
 	DriftPromote Class = "DRIFT-PROMOTE" // declared planned/soon, but exists and passes -> promote
-	InProgress   Class = "IN-PROGRESS"  // declared planned, exists, not yet passing
-	Regression   Class = "REGRESSION"   // declared linkable, exists, but a gate fails
-	Broken       Class = "BROKEN"       // declared linkable, but no file resolves
-	Planned      Class = "PLANNED"      // declared planned, no file (expected)
+	InProgress   Class = "IN-PROGRESS"   // declared planned, exists, not yet passing
+	Regression   Class = "REGRESSION"    // declared linkable, exists, but a gate fails
+	Broken       Class = "BROKEN"        // declared linkable, but no file resolves
+	Planned      Class = "PLANNED"       // declared planned, no file (expected)
 )
 
 // Row is one module's reconciliation.
