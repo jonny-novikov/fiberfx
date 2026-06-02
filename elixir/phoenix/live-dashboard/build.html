@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>render &amp; diffs — F6.06.3 · jonnify</title>
-<meta name="description" content="render/1 returns HEEx from the assigns, and LiveView tracks which assigns changed to send only those values over the socket. A HEEx template compiles into static segments and dynamic holes, so the diff is the minimal delta of the rendered state since the last render; streams keep large, append-only collections out of socket memory.">
+<title>Build the dashboard — F6.09.1 · jonnify</title>
+<meta name="description" content="The dashboard is a LiveView that holds a read model on its socket: metric counts seeded from the F6.04 contexts at mount, plus a capped stream for a live activity feed. render/1 draws metric cards and the feed, and the socket holds derived state rather than anything stored.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -312,7 +312,7 @@ pre.code .step{color:var(--cream-dim)}
     <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
     <nav>
       <a href="/elixir/course">Contents</a>
-      <span class="route-tag">/elixir/phoenix/liveview/render</span>
+      <span class="route-tag">/elixir/phoenix/live-dashboard/build</span>
     </nav>
   </div>
 </header>
@@ -323,224 +323,184 @@ pre.code .step{color:var(--cream-dim)}
     <div class="crumbs">
       <a href="/elixir/phoenix">F6</a>
       <span class="sep">/</span>
-      <a href="/elixir/phoenix/liveview">F6.06</a>
+      <a href="/elixir/phoenix/live-dashboard">F6.09</a>
       <span class="sep">/</span>
-      <span class="here">render</span>
+      <span class="here">build</span>
     </div>
-    <p class="eyebrow">F6.06 &middot; part 3 of 3</p>
-    <h1>render &amp; <span class="ex">diffs</span></h1>
-    <p class="lede">A LiveView re-renders on every change, yet stays cheap, because a HEEx template is split in two:
-      fixed <strong>static</strong> markup and interpolated <strong>dynamic</strong> holes. Only the dynamic values
-      that actually changed travel the socket &mdash; the diff is the minimal delta of the rendered state since the
-      last render.</p>
-    <p class="kicker">First the split that makes change tracking possible, then a worked diff computed for real, then
-      <code class="inl">render/1</code> in Elixir with its diffs annotated, and finally streams &mdash; for collections
-      too large to keep in socket assigns.</p>
+    <p class="eyebrow">F6.09 &middot; part 1 of 3</p>
+    <h1>Build the <span class="ex">dashboard</span></h1>
+    <p class="lede">Before anything is live, the dashboard is an ordinary LiveView with a carefully chosen
+      <strong>read model</strong> on its socket. A read model is derived state &mdash; numbers and a list you compute
+      from the domain, not a new place data lives. Here it is three things: the metric <strong>counts</strong> (how
+      many courses, how many enrollments), a <strong>viewers</strong> number, and a capped <strong>feed</strong> of
+      recent activity. <code class="inl">mount/3</code> seeds the counts by asking the F6.04 contexts &mdash;
+      <code class="inl">Catalog.count_courses/0</code>, <code class="inl">Enrollment.count/0</code> &mdash; so the page
+      is correct the instant it loads, and it initialises a <strong>stream</strong> for the feed, which keeps a long,
+      append-only list out of socket memory exactly as in F6.06.3. <code class="inl">render/1</code> then draws metric
+      cards from the assigns and the feed from the stream. There is deliberately no event handling yet: this dive
+      builds a dashboard that is accurate on load but static, so the live part in F6.09.2 has a clean shape to plug
+      into. The discipline to hold is that the dashboard <em>reads</em> &mdash; every number traces back to the
+      contexts, and the socket is a cache of derived values, never a source of truth.</p>
+    <p class="kicker">Four parts: the three pieces of the read model, the dashboard as a projection, seeding it in
+      <code class="inl">mount/3</code>, and rendering cards and a feed in HEEx.</p>
     <div class="toc-mini" aria-label="On this page">
-      <a href="#split">The static / dynamic split</a>
-      <a href="#diff">A diff, computed</a>
-      <a href="#code">render/1 in Elixir</a>
-      <a href="#streams">Streams for big lists</a>
-      <a href="#recap">What this lands</a>
+      <a href="#what">Metrics, feed, assigns</a>
+      <a href="#shape">A read model, not a store</a>
+      <a href="#mount">Seeding it at mount</a>
+      <a href="#render">Rendering cards and a feed</a>
     </div>
   </section>
 
-  <section id="split">
-    <h2>The static / dynamic split</h2>
+  <section id="what">
+    <h2>Metrics, feed, assigns</h2>
     <div class="prose">
-      <p>The <code class="inl">~H</code> sigil does not produce a string. It compiles the template into two interleaved
-        parts that <code class="inl">render/1</code> returns as rendered structure: the <strong>static</strong> segments
-        and the <strong>dynamic</strong> holes between them. That separation is the whole mechanism &mdash; it is what
-        lets the framework track each interpolated value on its own and re-send only the ones that moved.</p>
-      <dl class="deflist">
-        <dt>static</dt><dd>The fixed markup &mdash; tags, attributes, and the literal text around the holes. Sent on the
-          first render, cached on the client, and never transmitted again.</dd>
-        <dt>dynamic</dt><dd>Each interpolated expression, one numbered hole per <code class="inl">{...}</code>. The hole
-          is tied to the assigns it reads, so its value is tracked across renders.</dd>
-        <dt>change tracking</dt><dd>Comparing each hole&rsquo;s current value with its previous one. An unchanged assign
-          is skipped even when <code class="inl">render/1</code> ran again.</dd>
-        <dt>diff</dt><dd>The map of changed holes, keyed by position &mdash; the minimal delta of the rendered state
-          since the last render, and all that goes over the wire.</dd>
-      </dl>
-      <p>Reading the template, a hole is anything in curly braces: <code class="inl">{@count}</code> is hole
-        <code class="inl">0</code>, the title inside the list comprehension is hole <code class="inl">1</code>. Everything
-        else &mdash; <code class="inl">&lt;h1&gt;</code>, <code class="inl">&lt;ul&gt;</code>, the spaces and angle
-        brackets &mdash; is static, fixed at compile time. The reader can split a template by hand the same way the
-        compiler does.</p>
-    </div>
-    <p class="take">HEEx asks for assigns in the holes rather than strings built in code for exactly this reason: a value
-      the compiler can see as a distinct hole can be tracked and diffed; a value hidden inside a concatenation cannot.</p>
-  </section>
-
-  <section id="diff">
-    <h2>A diff, computed</h2>
-    <div class="prose">
-      <p>Take a catalog view with two holes: <code class="inl">{@count}</code> at position <code class="inl">0</code>
-        and <code class="inl">{course.title}</code> at position <code class="inl">1</code>. The first render sends the
-        static shell once, plus both hole values. After that, every event re-runs <code class="inl">render/1</code>, and
-        the diff carries only the holes whose values differ from the previous render &mdash; addressed by position, not
-        by markup.</p>
-      <p>Choose what an event changes. The figure recomputes the real payload: which holes re-send, and the exact map
-        the socket carries.</p>
+      <p>The read model is three pieces. The <strong>metrics</strong> are counts seeded from the contexts. The
+        <strong>feed</strong> is a capped stream of recent events. The <strong>assigns</strong> are where the socket
+        holds it all &mdash; derived, never stored. Select one.</p>
     </div>
 
-    <figure class="fig" aria-labelledby="dfTitle">
-      <h4 id="dfTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The diff over the socket &middot; choose what changed</h4>
+    <figure class="fig" aria-labelledby="dbTitle">
+      <h4 id="dbTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The read model &middot; select one</h4>
       <div class="controls">
-        <div class="solid-select" id="dfSel" role="group" aria-label="What the event changes">
-          <button type="button" data-k="count" data-c="sage" class="active">@count ticks</button>
-          <button type="button" data-k="courses" data-c="sage">@courses changes</button>
-          <button type="button" data-k="both" data-c="sage">both change</button>
-          <button type="button" data-k="none" data-c="sage">nothing changes</button>
+        <div class="solid-select" id="dbSel" role="group" aria-label="Read model piece">
+          <button type="button" data-k="metrics" class="active">metrics</button>
+          <button type="button" data-k="feed">the feed</button>
+          <button type="button" data-k="assigns">assigns</button>
         </div>
       </div>
 
-      <svg viewBox="0 0 720 196" role="img" aria-label="A LiveView render with a static shell and two dynamic holes; the diagram highlights which holes re-send for the chosen change and shows the resulting payload.">
-        <text x="360" y="20" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">RENDERED STATE &mdash; one static shell, two dynamic holes</text>
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three pieces of the read model: metrics are counts seeded from contexts, the feed is a capped stream of recent events, and assigns are where the socket holds the derived state.">
+        <rect id="dbRow_metrics" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">METRICS</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">counts seeded from contexts &mdash; courses, enrollments</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">numbers</text>
 
-        <rect x="40" y="32" width="640" height="30" rx="8" fill="#0d1322" stroke="#2a3252" stroke-width="1.2" stroke-dasharray="4 3"></rect>
-        <text id="dfShell" x="360" y="51" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">static shell &middot; sent once on first render, then never again</text>
+        <rect id="dbRow_feed" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">THE FEED</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">a capped stream of recent events &mdash; phx-update stream</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">a list</text>
 
-        <rect id="dfBox0" x="40" y="74" width="312" height="48" rx="9" fill="#11203a" stroke="#7ba387" stroke-width="1.8"></rect>
-        <text x="58" y="93" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.04em" fill="#86a7d8">HOLE [0]</text>
-        <text id="df0val" x="58" y="110" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#9fc0ea">{@count} = 42</text>
-        <text id="df0tag" x="334" y="102" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#a7c9b1">re-sent</text>
-
-        <rect id="dfBox1" x="368" y="74" width="312" height="48" rx="9" fill="#11203a" stroke="#5a87c4" stroke-width="1.4"></rect>
-        <text x="386" y="93" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.04em" fill="#86a7d8">HOLE [1]</text>
-        <text id="df1val" x="386" y="110" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#9fc0ea">{course.title} list</text>
-        <text id="df1tag" x="662" y="102" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">unchanged</text>
-
-        <text x="40" y="150" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.04em" fill="#8b93b0">PAYLOAD ON THE SOCKET</text>
-        <text id="dfPayload" x="40" y="170" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">%{"0" =&gt; "42"}</text>
-        <text id="dfNote" x="40" y="186" font-family="Manrope, sans-serif" font-size="7.5" fill="#5a6688">only changed holes are sent; the shell and unchanged holes are skipped</text>
+        <rect id="dbRow_assigns" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">ASSIGNS</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">the socket holds the read model &mdash; derived, not stored</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">the state</text>
       </svg>
 
-      <pre class="code" id="dfCode" aria-live="polite"><span class="cmt"># @count 41 -&gt; 42, @courses unchanged</span>
-<span class="cmt"># diff over the socket:</span>
-%{<span class="str">"0"</span> => <span class="str">"42"</span>}</pre>
-      <div class="geo-readout" id="dfOut" aria-live="polite"></div>
-      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">holes re-sent: <span id="dfCount" style="color:var(--sage-bright)">1 of 2</span></p>
+      <div class="geo-readout" id="dbOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">piece: <span id="dbRole" style="color:#9fc0ea">metrics</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">is: <span id="dbResult" style="color:var(--cream)">counts seeded from contexts</span></p>
     </figure>
-    <p class="take">The cost of a re-render is proportional to what changed, not to the size of the page &mdash; the exact
-      inverse of a full request, which re-sends everything every time. When nothing changed, the diff is empty and the
-      socket stays silent.</p>
+    <p class="take">Keeping the feed in a stream rather than an assign matters as much here as in F6.06.3: a busy
+      dashboard could see thousands of events, and a stream holds them in the DOM, not in the process&rsquo;s memory.</p>
   </section>
 
-  <section id="code">
-    <h2>render/1 in Elixir</h2>
+  <section id="shape">
+    <h2>A read model, not a store</h2>
     <div class="prose">
-      <p>A LiveView&rsquo;s <code class="inl">render/1</code> takes <code class="inl">assigns</code> and returns HEEx from
-        the <code class="inl">~H</code> sigil &mdash; the same template language compiled in F6.05, now the projection of
-        a process&rsquo;s state. The data still arrives through the <code class="inl">Portal</code> facade in
-        <code class="inl">mount/3</code>; <code class="inl">render/1</code> only reads <code class="inl">@count</code> and
-        <code class="inl">@courses</code> from the socket. The two annotated cases below are the figure&rsquo;s two
-        holes, in code.</p>
+      <p>The dashboard is a <strong>projection</strong>: a view computed from the domain. On mount it reads the
+        current counts from the contexts &mdash; the same read functions any page would call &mdash; and holds them in
+        assigns. The feed stream starts empty and fills from broadcasts later. Nothing here is authoritative; if the
+        process restarts, it re-seeds from the contexts and carries on.</p>
     </div>
-    <pre class="code"><span class="op">def</span> <span class="fn">render</span>(assigns) <span class="op">do</span>
-  <span class="fn">~H</span><span class="str">"""</span>
-  <span class="op">&lt;h1&gt;</span>Courses (<span class="rdx">{@count}</span>)<span class="op">&lt;/h1&gt;</span>          <span class="cmt">&lt;%!-- hole [0] --%&gt;</span>
-  <span class="op">&lt;ul&gt;</span>
-    <span class="op">&lt;li</span> <span class="res">:for</span>={course &lt;- <span class="inl">@courses</span>}<span class="op">&gt;</span><span class="rdx">{course.title}</span><span class="op">&lt;/li&gt;</span>  <span class="cmt">&lt;%!-- hole [1] --%&gt;</span>
-  <span class="op">&lt;/ul&gt;</span>
-  <span class="str">"""</span>
-<span class="op">end</span>
 
-<span class="cmt"># an event re-runs render/1; the diff is the changed holes only:</span>
-<span class="cmt"># @count 41 -&gt; 42, @courses same  # => %{"0" =&gt; "42"}</span>
-<span class="cmt"># @courses gains a row, @count same # => %{"1" =&gt; [...]}   (shell never re-sent)</span></pre>
-    <p class="take">Nothing here manages the wire. <code class="inl">render/1</code> is a plain function of assigns;
-      breaking a view into smaller function components from F6.05 sharpens tracking further, since a component whose
-      assigns did not change is skipped whole.</p>
+    <figure class="fig" aria-labelledby="dbShapeTitle">
+      <h4 id="dbShapeTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">contexts (read side) &rarr; mount seeds &rarr; the socket</h4>
+      <svg viewBox="0 0 720 188" role="img" aria-label="At mount the dashboard reads counts from the Catalog and Enrollment contexts into socket assigns and starts an empty feed stream; the socket holds a derived read model, not a source of truth.">
+        <rect x="24" y="44" width="170" height="100" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="109" y="64" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.05em" fill="#7c86a6">CONTEXTS (READ)</text>
+        <rect x="40" y="74" width="138" height="24" rx="6" fill="#0d1322" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="109" y="90" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">Catalog.count_courses()</text>
+        <rect x="40" y="104" width="138" height="24" rx="6" fill="#0d1322" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="109" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">Enrollment.count()</text>
+        <line x1="194" y1="94" x2="238" y2="94" stroke="#5a87c4" stroke-width="1.8"></line>
+        <text x="216" y="86" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#86a7d8">mount</text>
+
+        <rect x="238" y="40" width="220" height="108" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="348" y="60" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.05em" fill="#86a7d8">SOCKET ASSIGNS (READ MODEL)</text>
+        <rect x="256" y="70" width="184" height="22" rx="6" fill="#0d1322" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="348" y="85" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#9fc0ea">courses_count &middot; enrollments_count</text>
+        <rect x="256" y="96" width="184" height="22" rx="6" fill="#0d1322" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="348" y="111" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#9fc0ea">viewers</text>
+        <rect x="256" y="122" width="184" height="22" rx="6" fill="#13201a" stroke="#7ba387" stroke-width="1.2"></rect>
+        <text x="348" y="137" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#a7c9b1">stream(:events) &mdash; starts empty</text>
+        <line x1="458" y1="94" x2="502" y2="94" stroke="#3a4263" stroke-width="1.6"></line>
+
+        <rect x="502" y="64" width="196" height="60" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="600" y="88" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">render/1</text>
+        <text x="600" y="103" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#7c86a6">metric cards + feed</text>
+
+        <text x="360" y="174" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">a projection over the domain &mdash; if the process restarts, it re-seeds from the contexts</text>
+      </svg>
+    </figure>
+    <p class="take">Because the read model is derived, it is disposable, and that is a feature: there is no migration,
+      no separate store to keep consistent. The contexts remain the single source of truth, and the dashboard is one
+      view of them.</p>
   </section>
 
-  <section id="streams">
-    <h2>Streams for big lists</h2>
+  <section id="mount">
+    <h2>Seeding it at mount</h2>
     <div class="prose">
-      <p>Change tracking keeps the diff small, but a large collection in assigns is still a cost of its own: the process
-        holds every row in memory and re-checks the list on each render. <code class="inl">stream/3</code> removes that.
-        The rows live in the DOM, the server tracks only their ids, and <code class="inl">stream_insert/3</code> appends
-        or updates one row without the LiveView retaining the list. The template marks the container
-        <code class="inl">phx-update="stream"</code> and iterates <code class="inl">@streams.courses</code>.</p>
+      <p><code class="inl">mount/3</code> pipes the socket through a few <code class="inl">assign/3</code> calls to set
+        the counts and a starting <code class="inl">viewers</code> of zero, then <code class="inl">stream/3</code> to
+        initialise an empty feed. The counts come straight from context read functions, so the first paint already
+        shows real numbers &mdash; no loading state, no placeholder.</p>
     </div>
     <pre class="code"><span class="op">def</span> <span class="fn">mount</span>(_params, _session, socket) <span class="op">do</span>
-  {<span class="res">:ok</span>, <span class="fn">stream</span>(socket, <span class="res">:courses</span>, <span class="fn blue">Portal</span>.<span class="fn">list_courses</span>())}
-<span class="op">end</span>
+  socket =
+    socket
+    |> <span class="fn">assign</span>(<span class="res">:courses_count</span>, <span class="fn blue">Catalog</span>.<span class="fn">count_courses</span>())
+    |> <span class="fn">assign</span>(<span class="res">:enrollments_count</span>, <span class="fn blue">Enrollment</span>.<span class="fn">count</span>())
+    |> <span class="fn">assign</span>(<span class="res">:viewers</span>, <span class="res">0</span>)
+    |> <span class="fn">stream</span>(<span class="res">:events</span>, [])      <span class="cmt"># filled by broadcasts in F6.09.2</span>
 
-<span class="op">def</span> <span class="fn">handle_event</span>(<span class="str">"add"</span>, %{<span class="str">"course"</span> => params}, socket) <span class="op">do</span>
-  {<span class="res">:ok</span>, course} = <span class="fn blue">Portal</span>.<span class="fn">create_course</span>(params)
-  {<span class="res">:noreply</span>, <span class="fn">stream_insert</span>(socket, <span class="res">:courses</span>, course)}   <span class="cmt"># one row, not the whole list</span>
-<span class="op">end</span>
+  {<span class="res">:ok</span>, socket}
+<span class="op">end</span></pre>
+    <p class="take">Seeding from the contexts is what separates an accurate dashboard from a misleading one. The numbers
+      are not guesses kept in sync by hand &mdash; they are read from the domain at mount and then maintained by the
+      events that change them.</p>
+  </section>
 
-<span class="cmt">&lt;%!-- the rows live in the DOM, not in socket memory --%&gt;</span>
-<span class="op">&lt;ul</span> id=<span class="str">"courses"</span> <span class="res">phx-update</span>=<span class="str">"stream"</span><span class="op">&gt;</span>
-  <span class="op">&lt;li</span> <span class="res">:for</span>={{dom_id, course} &lt;- <span class="inl">@streams</span>.courses} id={dom_id}<span class="op">&gt;</span>{course.title}<span class="op">&lt;/li&gt;</span>
-<span class="op">&lt;/ul&gt;</span></pre>
+  <section id="render">
+    <h2>Rendering cards and a feed</h2>
+    <div class="prose">
+      <p>The template is plain HEEx (F6.05): metric cards interpolate the count assigns, and the feed iterates the
+        stream under a <code class="inl">phx-update="stream"</code> container with a <code class="inl">:for</code>
+        comprehension. The <code class="inl">dom_id</code> the stream provides becomes each row&rsquo;s
+        <code class="inl">id</code>, so LiveView can insert and update rows efficiently.</p>
+    </div>
+    <pre class="code"><span class="op">&lt;div</span> <span class="fn">class</span>=<span class="str">"dashboard"</span><span class="op">&gt;</span>
+  <span class="op">&lt;section</span> <span class="fn">class</span>=<span class="str">"metrics"</span><span class="op">&gt;</span>
+    <span class="op">&lt;article&gt;&lt;h3&gt;</span>Courses<span class="op">&lt;/h3&gt;&lt;p&gt;</span>{@courses_count}<span class="op">&lt;/p&gt;&lt;/article&gt;</span>
+    <span class="op">&lt;article&gt;&lt;h3&gt;</span>Enrollments<span class="op">&lt;/h3&gt;&lt;p&gt;</span>{@enrollments_count}<span class="op">&lt;/p&gt;&lt;/article&gt;</span>
+    <span class="op">&lt;article&gt;&lt;h3&gt;</span>Watching<span class="op">&lt;/h3&gt;&lt;p&gt;</span>{@viewers}<span class="op">&lt;/p&gt;&lt;/article&gt;</span>
+  <span class="op">&lt;/section&gt;</span>
+
+  <span class="op">&lt;ul</span> <span class="fn">id</span>=<span class="str">"feed"</span> <span class="fn">phx-update</span>=<span class="str">"stream"</span><span class="op">&gt;</span>
+    <span class="op">&lt;li</span> <span class="fn">:for</span>={{dom_id, event} &lt;- @streams.events} <span class="fn">id</span>={dom_id}<span class="op">&gt;</span>
+      {event.label}
+    <span class="op">&lt;/li&gt;</span>
+  <span class="op">&lt;/ul&gt;</span>
+<span class="op">&lt;/div&gt;</span></pre>
     <div class="bridge">
       <div class="cell idea">
-        <p class="lbl">F5 OTP</p>
-        <p>A GenServer answers a message by returning only its new state &mdash; never the whole history.</p>
+        <p class="lbl">seed from contexts</p>
+        <p><code class="inl">mount/3</code> reads counts; the feed stream starts empty.</p>
       </div>
       <div class="arrow" aria-hidden="true">&rarr;</div>
       <div class="cell elix">
-        <p class="lbl">a diff is</p>
-        <p>that same minimal delta over a socket: <code class="inl">render/1</code> projects state, and only the
-          changed holes are sent.</p>
+        <p class="lbl">render the read model</p>
+        <p>Cards from assigns, feed rows from the stream &mdash; accurate, but still static.</p>
       </div>
     </div>
-    <p class="note">Streams are how a feed or the F6.09 live dashboard scales to many rows and many connected clients
-      without the server holding each list. The reduction is the recurring shape of F5/F6: a long-lived process, a
-      function from its state to a view, and a minimal delta on every change.</p>
-  </section>
-
-  <section id="recap">
-    <h2>What this lands</h2>
-    <div class="prose">
-      <ul>
-        <li><code class="inl">render/1</code> returns HEEx from the <code class="inl">~H</code> sigil &mdash; a function
-          of assigns, not a string.</li>
-        <li>A template compiles into <strong>static</strong> segments and <strong>dynamic</strong> holes; the static
-          shell is sent once and cached.</li>
-        <li>Change tracking compares each hole to its previous value, so only changed assigns produce a diff.</li>
-        <li>The <strong>diff</strong> travels the socket, keyed by hole position &mdash; the minimal delta of the
-          rendered state, not the whole document.</li>
-        <li><code class="inl">stream/3</code> keeps large or append-only collections in the DOM, so the server holds
-          ids, not the list.</li>
-      </ul>
-    </div>
-    <p class="note">That completes F6.06. A LiveView is an OTP process holding socket assigns, rendering HEEx, and
-      shipping minimal diffs &mdash; interactive UI with the domain untouched below the facade. Next, the chapter adds
-      <strong>F6.07 &mdash; PubSub, channels &amp; real-time</strong> so a change broadcasts to every connected
-      LiveView at once. Back to <a href="/elixir/phoenix/liveview">the F6.06 overview</a> or the
-      <a href="/elixir/phoenix">F6 chapter</a>.</p>
-  </section>
-
-  <section class="reveal" aria-labelledby="refsTitle">
-    <h2 id="refsTitle">References</h2>
-    <p class="prose">How render, change tracking, and streams are specified.</p>
-    <div class="refs">
-      <h3>Sources</h3>
-      <ul>
-        <li><a href="https://hexdocs.pm/phoenix_live_view/assigns-eex.html">Phoenix LiveView &mdash; Assigns &amp; change tracking</a> &mdash; the static / dynamic split and how diffs are computed.</li>
-        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.Component.html#sigil_H/2">Phoenix.Component &mdash; <code class="inl">~H</code></a> &mdash; the HEEx sigil that <code class="inl">render/1</code> returns.</li>
-        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#stream/4">Phoenix.LiveView &mdash; <code class="inl">stream/3</code></a> &mdash; collections held in the DOM, not in assigns.</li>
-      </ul>
-      <h3>Related in this course</h3>
-      <ul>
-        <li><a href="/elixir/phoenix/liveview/mount">F6.06.1 &middot; mount &amp; assigns</a></li>
-        <li><a href="/elixir/phoenix/liveview/events">F6.06.2 &middot; handle_event &amp; state</a></li>
-        <li><a href="/elixir/phoenix/heex">F6.05 &middot; Templates, components &amp; HEEx</a> &mdash; the template this renders.</li>
-        <li><a href="/elixir/phoenix/liveview">F6.06 &middot; Phoenix LiveView fundamentals</a></li>
-        <li><a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a></li>
-      </ul>
-    </div>
+    <p class="note">Next: <a href="/elixir/phoenix/live-dashboard/stream"><strong>broadcast engine events</strong></a>
+      &mdash; the shape is ready; now subscribe to the domain and fold each event into these counts and this feed.</p>
   </section>
 
   <section>
     <nav class="pager" aria-label="Lesson navigation">
-      <a class="btn ghost" href="/elixir/phoenix/liveview/events"><span aria-hidden="true">&larr;</span>&nbsp; F6.06.2 &middot; handle_event &amp; state</a>
+      <a class="btn ghost" href="/elixir/phoenix/live-dashboard"><span aria-hidden="true">&larr;</span>&nbsp; F6.09 &middot; overview</a>
       <span class="spacer"></span>
-      <a class="btn" href="/elixir/phoenix">F6 &middot; Phoenix Framework <span aria-hidden="true">&rarr;</span></a>
+      <a class="btn" href="/elixir/phoenix/live-dashboard/stream">Next &middot; broadcast engine events <span aria-hidden="true">&rarr;</span></a>
     </nav>
   </section>
 
@@ -552,13 +512,13 @@ pre.code .step{color:var(--cream-dim)}
       <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
       It is the same id convention the Portal engine uses as a pivot key across its contexts.</p>
     <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
-      build <span class="id" id="stampId">TSK0NdUKuboO3c</span>
+      build <span class="id" id="stampId">TSK0NdeUSQStYe</span>
       <dl class="panel">
         <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
         <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
         <dt>node</dt><dd id="st-node">&mdash;</dd>
         <dt>seq</dt><dd id="st-seq">&mdash;</dd>
-        <dt>timestamp</dt><dd id="st-ts">2026-06-01 23:06:46 UTC</dd>
+        <dt>timestamp</dt><dd id="st-ts">2026-06-02 01:28:51 UTC</dd>
       </dl>
     </div>
   </div>
@@ -567,71 +527,31 @@ pre.code .step{color:var(--cream-dim)}
 <script>
 (function () {
   "use strict";
-  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4', SAGE = '#a7c9b1', SAGE_MUTE = '#7ba387', DIM = '#6b7494';
-  /* the two real holes and their old/new values; the widget computes which re-send */
-  var H0 = { old: '41', neu: '42', label: '{@count}', short: '"42"' };
-  var H1 = { old: 'list', neu: 'list + 1 row', label: '{course.title} list', short: '[...]' };
-  var CASES = {
-    count:   { h0: true,  h1: false, title: '@count 41 -> 42, @courses unchanged' },
-    courses: { h0: false, h1: true,  title: '@courses gains a row, @count unchanged' },
-    both:    { h0: true,  h1: true,  title: '@count ticks and @courses gains a row' },
-    none:    { h0: false, h1: false, title: 'an event fires but no assign changed' }
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var P = {
+    metrics: { name: 'metrics', is: 'counts seeded from contexts', row: 'dbRow_metrics',
+      desc: 'The metric counts \u2014 courses, enrollments \u2014 are read from the F6.04 contexts at mount, so the first paint shows real numbers with no loading state.' },
+    feed:    { name: 'the feed', is: 'a capped stream of recent events', row: 'dbRow_feed',
+      desc: 'The activity feed is a stream under a phx-update="stream" container, which keeps a long append-only list in the DOM rather than in socket memory \u2014 the F6.06.3 pattern.' },
+    assigns: { name: 'assigns', is: 'the socket holds the read model', row: 'dbRow_assigns',
+      desc: 'The socket assigns hold the derived state: the counts, the viewer number, and the feed stream. It is a cache computed from the domain, never a source of truth.' }
   };
-  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function payloadMap(c) {
-    var parts = [];
-    if (c.h0) parts.push('"0" => "' + H0.neu + '"');
-    if (c.h1) parts.push('"1" => ' + H1.short);
-    return parts.length ? '%{' + parts.join(', ') + '}' : '%{}';
-  }
-  function setText(id, t){ var el = document.getElementById(id); if (el) el.textContent = t; }
-  function setAttr(id, a, v){ var el = document.getElementById(id); if (el) el.setAttribute(a, v); }
-  function render(k) {
-    var c = CASES[k]; if (!c) return;
-    document.querySelectorAll('#dfSel button').forEach(function (b) {
+  var ORDER = ['metrics', 'feed', 'assigns'];
+  function pick(k) {
+    var x = P[k]; if (!x) return;
+    document.querySelectorAll('#dbSel button').forEach(function (b) {
       var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
-    /* hole 0 */
-    setText('df0val', H0.label + ' = ' + (c.h0 ? H0.neu : H0.old));
-    setText('df0tag', c.h0 ? 're-sent' : 'unchanged');
-    setAttr('df0tag', 'fill', c.h0 ? SAGE : DIM);
-    setAttr('dfBox0', 'stroke', c.h0 ? SAGE_MUTE : BLUE_MUTE);
-    setAttr('dfBox0', 'stroke-width', c.h0 ? '1.8' : '1.4');
-    setAttr('dfBox0', 'fill', c.h0 ? '#13201a' : '#11203a');
-    setAttr('df0val', 'fill', c.h0 ? SAGE : BLUE);
-    /* hole 1 */
-    setText('df1val', c.h1 ? H1.label + ' +1' : H1.label);
-    setText('df1tag', c.h1 ? 're-sent' : 'unchanged');
-    setAttr('df1tag', 'fill', c.h1 ? SAGE : DIM);
-    setAttr('dfBox1', 'stroke', c.h1 ? SAGE_MUTE : BLUE_MUTE);
-    setAttr('dfBox1', 'stroke-width', c.h1 ? '1.8' : '1.4');
-    setAttr('dfBox1', 'fill', c.h1 ? '#13201a' : '#11203a');
-    setAttr('df1val', 'fill', c.h1 ? SAGE : BLUE);
-    /* payload + readout */
-    var map = payloadMap(c);
-    var n = (c.h0 ? 1 : 0) + (c.h1 ? 1 : 0);
-    setText('dfPayload', map);
-    setAttr('dfPayload', 'fill', n ? SAGE : DIM);
-    setText('dfNote', n ? 'only changed holes are sent; the shell and unchanged holes are skipped'
-                        : 'no hole changed; the diff is empty and nothing is sent');
-    setText('dfCount', n + ' of 2');
-    var code = document.getElementById('dfCode');
-    if (code) {
-      code.innerHTML = '<span class="cmt"># ' + esc(c.title) + '</span>\n' +
-                       '<span class="cmt"># diff over the socket:</span>\n' +
-                       (n ? esc(map) : esc(map) + '   <span class="cmt"># empty: socket stays silent</span>');
-    }
-    var out = document.getElementById('dfOut');
-    if (out) {
-      out.innerHTML = '<b style="color:' + SAGE + '">' + esc(c.title) + '</b> <span class="dim">&middot;</span> ' +
-        n + ' of 2 holes re-send <span class="dim">&middot;</span> payload ' +
-        '<b style="color:' + SAGE + '">' + esc(map) + '</b>';
-    }
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(P[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('dbRole'); if (rEl) rEl.textContent = x.name;
+    var dEl = document.getElementById('dbResult'); if (dEl) dEl.textContent = x.is;
+    var oEl = document.getElementById('dbOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + x.name + '</b> \u2014 ' + x.is + '. ' + x.desc.replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
-  document.querySelectorAll('#dfSel button').forEach(function (b) {
-    b.addEventListener('click', function () { render(b.getAttribute('data-k')); });
-  });
-  render('count'); /* correct static state is in the markup; this confirms it at load */
+  document.querySelectorAll('#dbSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('metrics');
 
   /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";

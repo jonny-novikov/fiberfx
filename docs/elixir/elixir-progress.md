@@ -1121,6 +1121,112 @@ facade behind a LiveView sketch and hand a UI-ready boundary to F6, the Phoenix 
   `ONLY="F6"` now reports **291 desktop + 64 mobile = 355 PASS, 0 FAIL, 0 images** (32 F6 pages). Docs regenerated:
   course-md **voice CLEAN, 4 mermaid** (F6.07 sub-rows now ●); refs **59 / 59**, voice CLEAN.
 
+## F6.08 — eighth module built at the deeper standard (auth & deployment)
+
+- **F6.08 &middot; Auth, deployment &amp; going live** is built to the deeper standard (four sections per dive, two
+  SVGs + two `pre.code` each, reference-grounded prose, real-world code, a contrast pair). `MODULES["F6"]` F6.08 + its
+  three dives flipped to `built`; `SUBPAGES["F6.08"]` added; four PAGES entries (`deployment.html`,
+  `deployment-auth.html`, `deployment-releases.html`, `deployment-deploy.html`). Routes 196 &rarr; **200**, PAGES 195
+  &rarr; **199**, module tally **56 built / 1 planned** (only F6.09, the `lab=True` dashboard capstone, remains).
+  - **Hub** (`content/f6-08-deployment.html`, prefix `dp`): an auth/release/deploy selector + a **production-boot
+    diagram** (a self-contained release artifact &rarr; boot &rarr; `runtime.exs` reads env DATABASE_URL/SECRET/PHX_HOST
+    &rarr; the F5 supervision tree starts Repo/Endpoint/PubSub+Presence/Portal.Engine &rarr; serves HTTPS, clustered) +
+    three dive cards + an F5-supervised-it &harr; F6.08-ships-it bridge + **hub References** (mix phx.gen.auth,
+    Deploying with releases, mix release, Deployment). Framing: everything built so far runs as one supervised system
+    in production; auth is a context, a release packages the same tree, the deploy boots it.
+  - **F6.08.1 &middot; Sessions &amp; authentication** (`au`): a session / plug / on_mount selector + a **login-flow
+    diagram** (submit email+password &rarr; Accounts verifies with bcrypt &rarr; token in the session cookie &rarr;
+    every later request: `fetch_current_user` plug reads the cookie &rarr; `current_user` in `conn.assigns`) + a router
+    pipeline (`:fetch_current_user` in `:browser`, a protected scope through `[:browser, :require_authenticated_user]`)
+    + LiveView `on_mount` enforcement (`live_session :authenticated`, `on_mount` returns `{:cont, socket}` or
+    `{:halt, redirect(~p"/users/log_in")}`). Frames auth as a generated context (F6.04 shape) plus standard plugs; the
+    session stores a token, not the password; plug per-request, `on_mount` per-socket.
+  - **F6.08.2 &middot; Releases &amp; config** (`rl`): a `mix release` / `runtime.exs` / release-command selector + a
+    **compile-time-vs-boot-time diagram** (config.exs+prod.exs baked into the artifact at build; runtime.exs evaluated
+    at boot reading env) + `config/runtime.exs` (guarded by `config_env() == :prod`, `System.fetch_env!` for the Repo
+    URL + Endpoint host/secret) + a `Portal.Release` migrate module (the `for repo &lt;- repos()` comprehension escaped,
+    `Ecto.Migrator.with_repo` + `run :up`; run via `bin/portal eval`). Frames the release as bundling the BEAM and the
+    config-timing split as most of release config; `fetch_env!` fails loud on a missing var; no `mix` in a release.
+  - **F6.08.3 &middot; Deploying to production** (`dy`): a build / migrate / boot selector + a
+    **production-supervision-tree diagram** (`Portal.Supervisor` one_for_one &rarr; Repo/Endpoint/PubSub/Presence/
+    Portal.Engine[the F5 core] children, a crash isolated and restarted) + a libcluster topology (Kubernetes strategy;
+    once clustered a broadcast on `"courses"` spans nodes) + the deploy command sequence (`MIX_ENV=prod mix release`;
+    `bin/portal eval "Portal.Release.migrate()"`; `bin/portal start`). Completes the module &rarr; F6.09. Frames the
+    deploy as build/migrate/boot, migrate before boot, the tree as the health model, clustering as a connection
+    concern. Dives carry no References; two SVGs + two `pre.code` each. (Seven voice hits &mdash; &ldquo;just&rdquo;
+    &times;6 + &ldquo;simply&rdquo; &mdash; were caught and replaced with &ldquo;only&rdquo;/removed/&ldquo;easy&rdquo;;
+    in-code raw-`&lt;` sweep is 0 after escaping the `&lt;-` in the migrate comprehension.)
+- **Landing**: the F6.08 tile is now a linkable `<a class="mod" href="/elixir/phoenix/deployment">` with a `built`
+  pill; intro/arc prose updated to &ldquo;F6.01&ndash;F6.08 are built&rdquo;.
+- **Build guide**: `build-guide/f6-08-deployment.md` is deep &mdash; Concepts, Specs tables, Build it (with `elixir`
+  and `text` fences), and **six robust copy-paste prompts** (generate auth with phx.gen.auth, protect routes, enforce
+  auth in LiveView with on_mount, runtime configuration, migrate without mix via a release command, cluster and
+  deploy), plus Definition of done and Next&rarr;F6.09. `build-guide/phoenix.md` updated: F6.08 entry links the guide
+  and the global sequence step 8 lists the F6.08 sub-topics (numbering 1&ndash;9 contiguous). All guides voice-clean.
+- **All five pages Apollo A+** (hub + 3 dives + landing); `node --check` clean on each; REF URLs `200` (the Elixir
+  `config.html` ref was 404, so `mix release` / `Mix.Tasks.Release` covers runtime config instead). **Validator**: an
+  `F6.08` desktop block (hub concern&rarr;role, and one per dive) + 390px mobile entries for all four pages.
+  `ONLY="F6"` now reports **327 desktop + 72 mobile = 399 PASS, 0 FAIL, 0 images** (36 F6 pages). Docs regenerated:
+  course-md **voice CLEAN, 4 mermaid** (F6.08 sub-rows now ●); refs **59 / 59**, voice CLEAN.
+
+## F6.09 — ninth module built at the deeper standard (the live dashboard capstone) — F6 chapter & course COMPLETE
+
+- **F6.09 &middot; The live dashboard** (the `lab=True` capstone) is built to the deeper standard (four sections per
+  dive, two SVGs + two `pre.code` each, reference-grounded prose, real-world code, a contrast pair). `MODULES["F6"]`
+  F6.09 + its three dives flipped to `built`; `SUBPAGES["F6.09"]` added; four PAGES entries (`live-dashboard.html`,
+  `live-dashboard-build.html`, `live-dashboard-stream.html`, `live-dashboard-multi-client.html`). Routes 200 &rarr;
+  **204**, PAGES 199 &rarr; **203**, module tally **57 built / 0 planned** &mdash; **the F6 chapter and the whole
+  course are complete.**
+  - **Hub** (`content/f6-09-live-dashboard.html`, prefix `ld`): a build/broadcast/clients selector + the signature
+    **course-convergence diagram** (F5 engine emits an event &rarr; context broadcasts `"events"` &rarr; PubSub fan-out
+    &rarr; dashboards A/B/C each fold &amp; diff to a browser; Presence counts viewers; captioned &ldquo;F5 emits &middot;
+    F6.07 broadcasts &middot; F6.06 folds &amp; renders &middot; F6.08 protects &amp; clusters&rdquo;) + three dive
+    cards + an &ldquo;eight modules of parts &rarr; one live screen&rdquo; bridge + **hub References** (Phoenix.LiveView,
+    handle_info/2, stream/3, and Phoenix LiveDashboard as a real-world example). Framing: the capstone where the whole
+    course converges; the dashboard is a read-only projection.
+  - **F6.09.1 &middot; Build the dashboard** (`db`): a metrics / feed / assigns selector + a **read-model diagram**
+    (contexts read side &rarr; `mount/3` seeds &rarr; socket assigns `{courses_count, enrollments_count, viewers}` +
+    `stream(:events)` &rarr; render) + a mount-seed `pre.code` (assign counts from `Catalog.count_courses/0` /
+    `Enrollment.count/0`, `stream(:events, [])`) + a **HEEx render `pre.code` with every `&lt;`/`&gt;` escaped**,
+    including `:for={{dom_id, event} &lt;- @streams.events}` &mdash; metric cards + a feed under
+    `phx-update="stream"`. Frames the dashboard as a projection / read model: derived state, disposable, re-seeds on
+    restart; the feed is a stream (F6.06.3), not an assign.
+  - **F6.09.2 &middot; Broadcast engine events** (`bs`): a subscribe / handle_info / projection selector + an
+    **event-fold diagram** (broadcast `{:enrolled, _}` &rarr; mailbox &rarr; `handle_info/2` bumps the count +
+    `stream_insert` at `:0` &rarr; diff) + a subscribe `pre.code` (`mount` subscribes to `"events"` behind
+    `connected?/1`, then `seed/1`; a comment shows the domain already emits the events) + a fold `pre.code`
+    (`handle_info/2` clauses bumping a count via `update(:x, fn n -> n + 1 end)` and `stream_insert` a row &mdash; no
+    `&amp;` capture). Frames the fold as the F5 event-sourcing intuition, live: incremental, never recomputed or
+    re-queried; the dashboard adds no broadcasting, it is one more subscriber.
+  - **F6.09.3 &middot; Many clients, live** (`mc`): a fan-out / Presence / read-only selector + a **clustered fan-out
+    diagram** (one publish &rarr; PubSub &rarr; dashboards A,B on node 1 + C on node 2, each folds &amp; diffs; same
+    event, same result) + a Presence `pre.code` (`mount` `track`s on `"dashboard"`, `handle_info(%{event:
+    "presence_diff"})` recomputes `map_size(Presence.list(...))` into `viewers`) + a route + read-only-recap `pre.code`
+    (`live_session :authenticated` `on_mount` + a comment recap: seeds contexts / folds broadcasts / Presence /
+    clustered / never writes). Course-complete celebratory close. Frames multi-client as the F6.07 fan-out for
+    dashboards, Presence as one more event kind, read-only as the safety discipline, and clustering as a connection
+    concern that needs no code change. Dives carry no References; two SVGs + two `pre.code` each. (Three voice hits
+    &mdash; &ldquo;just&rdquo; &times;1 + &ldquo;simply&rdquo; &times;2 &mdash; were caught and reworded; the HEEx
+    render block&rsquo;s raw-`&lt;` sweep is 0 after escaping, including the `&lt;-` in the `:for` comprehension.)
+- **Landing**: the F6.09 lab tile is now a linkable `<a class="mod lab" href="/elixir/phoenix/live-dashboard">` with a
+  `built` pill; the intro and module-navigation prose were rewritten from &ldquo;under construction / F6.01&ndash;F6.08
+  built&rdquo; to **&ldquo;the chapter is complete &mdash; all nine modules, F6.01&ndash;F6.09, are built&rdquo;**.
+- **Build guide**: `build-guide/f6-09-live-dashboard.md` is deep &mdash; Concepts, Specs tables (read model, event
+  handling, topics), Build it (with `elixir` fences), and **six robust copy-paste prompts** (the dashboard read model
+  + render, subscribe to engine events, fold events in handle_info, Presence viewer count, route under auth read-only,
+  verify multi-client + clustering), plus Definition of done and Next&rarr;&ldquo;course complete&rdquo;.
+  `build-guide/phoenix.md` updated: the F6.09 entry links the guide and the global sequence step 9 lists the F6.09
+  sub-topics (numbering 1&ndash;9 contiguous). All guides voice-clean.
+- **All five pages Apollo A+** (hub + 3 dives + landing); `node --check` clean on each; REF URLs `200`. **Validator**:
+  an `F6.09` desktop block (hub move&rarr;role, and one per dive) + 390px mobile entries for all four pages; the F6
+  landing block&rsquo;s stale &ldquo;planned pill&rdquo; assertion was replaced with a
+  `'.mod.lab .pill' == built` chapter-complete check. `ONLY="F6"` now reports **363 desktop + 80 mobile = 443 PASS, 0
+  FAIL, 0 images** (40 F6 pages). Docs regenerated: course-md **voice CLEAN, 4 mermaid** (F6.09 sub-rows now ●); refs
+  **59 / 59**, voice CLEAN.
+- **The course is finished**: F0&ndash;F6 with F6.01&ndash;F6.09 all built. The only remaining optional follow-up is
+  deepening the F6.01&ndash;F6.03 **HTML** dives to the two-SVG / four-section bar (their build guides are already
+  enriched).
+
 
 
 **Deployment (not authoring), unchanged and now slightly larger:** the site-wide `/elixir` home and the
@@ -1153,18 +1259,18 @@ What a resuming agent should know, condensed:
    `build-guide/f5-09-engine-lab.md`, a spec whose copy-paste build prompts generate the Portal logic). **The F5
    chapter is now module-complete: all nine modules + three design subpages + the landing are built**, with REFS and
    `A`-map abstracts keyed by module `n`. **F6 (Phoenix) is under construction**: the chapter is `live` with a landing
-   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01 through F6.07 are
-   built** &mdash; each a hub + three dives (`/elixir/phoenix/lifecycle`, `/routing`, `/ecto`, `/contexts`, `/heex`,
-   `/liveview`, and `/pubsub` + their three dive slugs) with `build-guide/f6-01-lifecycle.md` through
-   `f6-07-pubsub.md` prompts. **F6.04 onward follows a deeper standard** (four sections per dive, two SVGs + two code
-   blocks, reference-grounded prose, real-world examples; HEEx code blocks fully escape every `&lt;`/`&gt;`); the
+   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01 through F6.09 are all
+   built &mdash; the F6 chapter and the whole course are complete** &mdash; each a hub + three dives
+   (`/elixir/phoenix/lifecycle`, `/routing`, `/ecto`, `/contexts`, `/heex`, `/liveview`, `/pubsub`, `/deployment`, and
+   `/live-dashboard` + their three dive slugs) with `build-guide/f6-01-lifecycle.md` through
+   `f6-09-live-dashboard.md` prompts. **F6.04 onward follows a deeper standard** (four sections per dive, two SVGs + two
+   code blocks, reference-grounded prose, real-world examples; HEEx/Elixir code blocks fully escape every `&lt;`); the
    F6.01&ndash;F6.03 build guides were enriched with real-world examples and extra robust prompts, and their HTML dives
-   remain available to deepen to the same bar as a follow-up. Every F6 module carries its three dives in the manifest,
-   so the landing tiles and course-md show the whole chapter plan; F6.08 (auth, deployment &amp; going live) is the
-   next module. `allowed_routes()` returns **196** link routes; only built/live routes are linkable
-   (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter subpages, and F6.01&ndash;F6.07
-   with their dives are; **the planned F6.08&ndash;F6.09 module and dive routes are not**), external `https://` links
-   are exempt.
+   remain available to deepen to the same bar as the one remaining optional follow-up. Every F6 module carries its three
+   dives in the manifest, so the landing tiles and course-md show the whole chapter; **there are no planned modules
+   left** (F6.09, the live-dashboard lab, was the last). `allowed_routes()` returns **204** link routes; all
+   built/live routes are linkable (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter
+   subpages, and F6.01&ndash;F6.09 with their dives), external `https://` links are exempt.
 2. Rebuild any page with `python3 build_page.py build --page KEY`, grade with `check OUT.html` (nine gates + A+),
    regenerate `_head.html` with `extract-head` after editing `HEAD_CSS`. The voice gate scans all visible text
    including `<pre class="code">` comments (only `<script>`/`<style>`/`<svg>` are stripped); `expectText` in the

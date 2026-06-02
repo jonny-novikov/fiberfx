@@ -250,8 +250,8 @@ MODULES = {
         dict(n="F6.05", title="Templates, components & HEEx", one="Server-rendered markup.", slug="heex", status="built", lab=False),
         dict(n="F6.06", title="Phoenix LiveView fundamentals", one="Interactive UIs without hand-written JS.", slug="liveview", status="built", lab=False),
         dict(n="F6.07", title="PubSub, channels & real-time", one="Live updates over WebSockets.", slug="pubsub", status="built", lab=False),
-        dict(n="F6.08", title="Auth, deployment & going live", one="Sessions, releases, production.", slug="deployment", status="planned", lab=False),
-        dict(n="F6.09", title="The live dashboard", one="Real-time LiveView state over a socket; multi-client via PubSub.", slug="live-dashboard", status="planned", lab=True),
+        dict(n="F6.08", title="Auth, deployment & going live", one="Sessions, releases, production.", slug="deployment", status="built", lab=False),
+        dict(n="F6.09", title="The live dashboard", one="Real-time LiveView state over a socket; multi-client via PubSub.", slug="live-dashboard", status="built", lab=True),
     ],
 }
 
@@ -461,6 +461,16 @@ SUBPAGES = {
         dict(slug='broadcast', title='Broadcasting engine events', one='Phoenix.PubSub is process-to-process publish/subscribe over a string topic.'),
         dict(slug='presence', title='Channels & presence', one='Channels are the lower-level real-time primitive LiveView is built on, with explicit join and ha'),
         dict(slug='subscribe', title='Subscribing a LiveView', one='A LiveView subscribes to a topic on its connected mount and receives broadcasts in handle_info/2'),
+    ],
+    "F6.08": [
+        dict(slug='auth', title='Sessions & authentication', one='mix phx.gen.auth generates an Accounts context, a User schema, and the session plumbing.'),
+        dict(slug='releases', title='Releases & config', one='mix release packages the app, its dependencies, and the BEAM into one self-contained artifact.'),
+        dict(slug='deploy', title='Deploying to production', one='The deploy is build, migrate, boot: compile the release, run pending migrations with a release c'),
+    ],
+    "F6.09": [
+        dict(slug='build', title='Build the dashboard', one='The dashboard is a LiveView that holds a read model on its socket: metric counts seeded from the'),
+        dict(slug='multi-client', title='Many clients, live', one='One broadcast reaches every connected dashboard at once, so all viewers update together, and Pre'),
+        dict(slug='stream', title='Broadcast engine events', one='The domain emits events after a write (F6.07) and the dashboard subscribes to the topic on its c'),
     ],
 }
 

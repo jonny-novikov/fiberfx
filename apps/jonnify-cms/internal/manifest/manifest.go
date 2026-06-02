@@ -145,8 +145,8 @@ var Modules = map[string][]Module{
 		{N: "F6.05", Title: "Templates, components & HEEx", One: "Server-rendered markup.", Slug: "heex", Status: "built"},
 		{N: "F6.06", Title: "Phoenix LiveView fundamentals", One: "Interactive UIs without hand-written JS.", Slug: "liveview", Status: "built"},
 		{N: "F6.07", Title: "PubSub, channels & real-time", One: "Live updates over WebSockets.", Slug: "pubsub", Status: "built"},
-		{N: "F6.08", Title: "Auth, deployment & going live", One: "Sessions, releases, production.", Slug: "deployment", Status: "planned"},
-		{N: "F6.09", Title: "The live dashboard", One: "Real-time LiveView state over a socket.", Slug: "live-dashboard", Status: "planned", Lab: true},
+		{N: "F6.08", Title: "Auth, deployment & going live", One: "Sessions, releases, production.", Slug: "deployment", Status: "built"},
+		{N: "F6.09", Title: "The live dashboard", One: "Real-time LiveView state over a socket.", Slug: "live-dashboard", Status: "built", Lab: true},
 	},
 }
 
@@ -353,6 +353,16 @@ var Subpages = map[string][]Subpage{
 		{"broadcast", "Broadcasting engine events", "Phoenix.PubSub is process-to-process publish/subscribe over a string topic."},
 		{"presence", "Channels & presence", "Channels are the lower-level real-time primitive LiveView is built on, with explicit join and ha"},
 		{"subscribe", "Subscribing a LiveView", "A LiveView subscribes to a topic on its connected mount and receives broadcasts in handle_info/2"},
+	},
+	"F6.08": {
+		{"auth", "Sessions & authentication", "mix phx.gen.auth generates an Accounts context, a User schema, and the session plumbing."},
+		{"releases", "Releases & config", "mix release packages the app, its dependencies, and the BEAM into one self-contained artifact."},
+		{"deploy", "Deploying to production", "The deploy is build, migrate, boot: compile the release, run pending migrations with a release c"},
+	},
+	"F6.09": {
+		{"build", "Build the dashboard", "The dashboard is a LiveView that holds a read model on its socket: metric counts seeded from the"},
+		{"multi-client", "Many clients, live", "One broadcast reaches every connected dashboard at once, so all viewers update together, and Pre"},
+		{"stream", "Broadcast engine events", "The domain emits events after a write (F6.07) and the dashboard subscribes to the topic on its c"},
 	},
 }
 

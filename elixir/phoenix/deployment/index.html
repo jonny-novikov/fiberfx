@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auth, deployment &amp; going live — F6.08 · jonnify</title>
+<meta name="description" content="Taking the whole application to production: sessions and authentication so the app knows who the user is, releases and runtime config that package it to run, and the deploy itself — build, migrate, boot — with clustering so the F6.07 PubSub and Presence span every node. Three dives over the same supervised system from F5, now live in production.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem+0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(179,157,219,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem+4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--elixir-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem+1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem+.6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem+1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--sans);color:var(--cream-dim);font-size:.95rem;max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--elixir-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem);
+  display:grid;grid-template-columns:minmax(0,1.04fr) minmax(0,.96fr);
+  gap:clamp(2rem,4vw,3.2rem);align-items:start}
+.hero-copy{min-width:0}
+.hero-art{min-width:0}
+@media (max-width:900px){.hero{grid-template-columns:1fr}}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+
+/* ---- hero concept figure (build -> migrate -> boot to production) ---- */
+.hero-fig{margin:0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.4rem)}
+.hero-fig figcaption{margin:0 0 .9rem}
+.hero-fig .fc-lbl{font-family:var(--sans);font-size:.72rem;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--cream-dim);margin:0}
+.hero-fig svg{display:block;width:100%;height:auto}
+.hp-ctrls{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-top:1rem}
+.hp-btn{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;
+  display:inline-flex;align-items:center;gap:.4rem;padding:.5rem .95rem;border-radius:10px;
+  color:var(--blue-bright);background:var(--ink-2);border:1px solid var(--blue-bright);
+  transition:background .16s ease, color .16s ease, transform .16s ease}
+.hp-btn:hover{background:var(--blue-bright);color:var(--ink);transform:translateY(-2px)}
+.hp-btn.ghost{color:var(--cream-dim);border-color:var(--line)}
+.hp-btn.ghost:hover{background:var(--ink);color:var(--cream);border-color:var(--cream-dim);transform:none}
+.hp-cap{font-family:var(--mono);font-size:.82rem;color:var(--cream-dim);
+  margin:.95rem 0 0;line-height:1.5}
+.hp-cap .stg{color:var(--blue-bright)}
+.hp-cap .art{color:var(--gold-bright)}
+.hp-tok{transition:none}
+@media (prefers-reduced-motion: no-preference){
+  .hp-tok{transition:cy .42s cubic-bezier(.4,0,.2,1)}
+}
+@media (prefers-reduced-motion: reduce){
+  .hp-tok{transition:none}
+}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="elixir"]{background:var(--elixir-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--elixir-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- arc svg ---- */
+.arc-node rect{transition:fill .2s ease, stroke .2s ease}
+.arc-node{cursor:pointer}
+.arc-node .num{font-family:var(--serif-display);font-weight:600;fill:var(--cream)}
+.arc-node .nm{font-family:var(--sans);font-weight:600;fill:var(--cream-dim);letter-spacing:.02em}
+.arc-node:hover rect{stroke:var(--cream-dim)}
+.arc-node.active rect{fill:var(--ink-3);stroke:var(--elixir-bright)}
+.arc-node.active .num{fill:var(--gold-bright)}
+.arc-node.active .nm{fill:var(--elixir-bright)}
+.arc-node:focus{outline:none}
+.arc-node:focus-visible rect{stroke:var(--gold-bright)}
+.arc-flow{stroke:var(--line);stroke-width:2;fill:none;stroke-dasharray:6 9}
+.arc-arrow{fill:var(--cream-dim)}
+@media (prefers-reduced-motion: no-preference){
+  .arc-flow{animation:flow 1.6s linear infinite}
+}
+@keyframes flow{to{stroke-dashoffset:-30}}
+.arc-readout{margin-top:1.1rem}
+.arc-readout .nm{font-family:var(--serif-display);font-size:1.5rem;color:var(--cream);font-weight:600}
+.arc-readout .one{font-family:var(--serif);color:var(--cream-soft);margin:.25rem 0 .5rem;max-width:60ch}
+.arc-readout .meta{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;align-items:center}
+.arc-readout .meta b{color:var(--gold)}
+.arc-open{margin-top:.7rem;font-family:var(--sans);font-size:.9rem}
+.arc-open .muted{color:var(--cream-dim)}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--elixir-bright);border-color:var(--elixir)}
+.chap{padding-top:2.2rem}
+.chap:first-of-type{padding-top:.4rem}
+.chap-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem 1rem;
+  padding-bottom:.6rem;border-bottom:1px solid var(--line);margin-bottom:1.1rem}
+.chap-head .cid{font-family:var(--mono);font-size:.95rem;color:var(--gold)}
+.chap-head h3{margin:0}
+.chap-head .c-one{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);
+  flex-basis:100%;margin-top:.1rem}
+.chap-head .chap-link{font-family:var(--sans);font-size:.82rem;margin-left:auto}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+.mod.is-quiet{opacity:.66;border-style:dashed}
+.mod.is-quiet .t{color:var(--cream-soft)}
+.mod.lab{border-left:2px solid var(--elixir)}
+.mod.lab .num::after{content:" · lab";color:var(--elixir-bright)}
+.dives{list-style:none;margin:.6rem 0 0;padding:.6rem 0 0;border-top:1px dashed var(--line);
+  font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);display:grid;gap:.3rem}
+.dives li{display:flex;gap:.5rem}
+.dives .dn{font-family:var(--mono);color:var(--gold);min-width:3.6rem}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--elixir-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--elixir-bright);
+  border:1px solid var(--elixir);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+pre.code .rdx{background:rgba(179,157,219,.18);border-radius:4px;padding:0 .18em;color:var(--elixir-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
+    <nav>
+      <a href="/elixir/course">Contents</a>
+      <span class="route-tag">/elixir/phoenix/deployment</span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="hero-copy">
+      <div class="crumbs">
+        <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
+        <span class="sep">/</span>
+        <span class="here">F6.08 &middot; deployment</span>
+      </div>
+      <p class="eyebrow">F6 &middot; the architecture &middot; module 8</p>
+      <h1>Auth, deployment &amp; <span class="ex">going live</span></h1>
+      <p class="lede">Everything built so far &mdash; the F5 engine, the contexts, the controllers, LiveView, PubSub and
+        Presence &mdash; now has to run as one supervised system in production, and three concerns stand between a
+        working app and a live one. First, the app must know <strong>who the user is</strong>: sessions and
+        authentication, which in Phoenix is a generated <em>context</em> plus a signed-cookie session and a plug, not a
+        special subsystem. Second, the app must be <strong>packaged to run</strong> on a server with no Elixir toolchain
+        present: a <code class="inl">mix release</code> bundles your code, its dependencies, and the BEAM itself into one
+        self-contained artifact, with secrets supplied at boot through <code class="inl">runtime.exs</code> rather than
+        baked in at compile time. Third, it must actually <strong>go live</strong>: build the release, run pending
+        migrations through a release command (there is no <code class="inl">mix</code> on the server), and boot the
+        supervision tree so the endpoint serves &mdash; with the nodes clustered so the F6.07 broadcasts and presence
+        span every machine. None of this replaces what you built; it wraps the same tree from F5 in the operational
+        concerns that make it a real, running platform.</p>
+      <p class="kicker">Three dives: sessions and authentication, releases and runtime config, and the deploy itself
+        &mdash; the same supervised system from F5, now in production.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#pieces">Three concerns of going live</a>
+        <a href="#prod">What runs in production</a>
+        <a href="#dives">Three deep dives</a>
+      </div>
+    </div>
+
+    <div class="hero-art">
+      <figure class="hero-fig" aria-labelledby="hpTitle">
+        <figcaption>
+          <p class="fc-lbl" id="hpTitle">Going live &middot; build, migrate, boot</p>
+        </figcaption>
+        <svg viewBox="0 0 320 280" role="img" aria-label="The path to production for the Portal app. A mix release packages the app, its dependencies, and the BEAM into one self-contained artifact. From there a marker advances down three production stages: build the release, run pending migrations through a release command, and boot the supervised app so the endpoint serves. The marker starts at the build stage.">
+          <!-- static initial state: the deploy sits at stage 0, BUILD (visible without JS) -->
+          <!-- the self-contained release artifact mix release produced -->
+          <rect x="60" y="14" width="232" height="36" rx="9" fill="#1a1530" stroke="#d4a85a" stroke-width="1.6"></rect>
+          <text x="76" y="31" font-family="JetBrains Mono, monospace" font-size="11" fill="#f0cd7f">mix release</text>
+          <text x="76" y="44" font-family="Manrope, sans-serif" font-size="7.5" fill="#caa258">app + deps + BEAM &mdash; one artifact</text>
+          <text x="284" y="36" text-anchor="end" font-family="Manrope, sans-serif" font-size="13" fill="#caa258">&#9679;</text>
+
+          <!-- the production track the marker walks -->
+          <line x1="60" y1="58" x2="60" y2="262" stroke="#2a3252" stroke-width="2"></line>
+          <!-- marker entering at the build stage -->
+          <text x="60" y="72" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.08em" fill="#9fc0ea">deploy</text>
+          <circle id="hpTok" class="hp-tok" cx="60" cy="102" r="9" fill="#9fc0ea" stroke="#0a0e1a" stroke-width="1.5"></circle>
+
+          <!-- stage 0: build (current at load) -->
+          <g id="hpStage_build">
+            <rect x="60" y="86" width="232" height="34" rx="8" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+            <text x="76" y="103" font-family="JetBrains Mono, monospace" font-size="11" fill="#9fc0ea">build</text>
+            <text x="76" y="115" font-family="Manrope, sans-serif" font-size="7.5" fill="#86a7d8">compile the release</text>
+            <text x="284" y="107" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">1 of 3</text>
+          </g>
+          <line x1="60" y1="120" x2="60" y2="132" stroke="#3a4263" stroke-width="1.6"></line>
+          <path d="M56 128 l4 5 l4 -5 z" fill="#3a4263"></path>
+
+          <!-- stage 1: migrate -->
+          <g id="hpStage_migrate">
+            <rect x="60" y="134" width="232" height="34" rx="8" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+            <text x="76" y="151" font-family="JetBrains Mono, monospace" font-size="11" fill="#d7cfb9">migrate</text>
+            <text x="76" y="163" font-family="Manrope, sans-serif" font-size="7.5" fill="#8b93b0">run pending migrations &mdash; a release command</text>
+            <text x="284" y="155" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">2 of 3</text>
+          </g>
+          <line x1="60" y1="168" x2="60" y2="180" stroke="#3a4263" stroke-width="1.6"></line>
+          <path d="M56 176 l4 5 l4 -5 z" fill="#3a4263"></path>
+
+          <!-- stage 2: boot -->
+          <g id="hpStage_boot">
+            <rect x="60" y="182" width="232" height="34" rx="8" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+            <text x="76" y="199" font-family="JetBrains Mono, monospace" font-size="11" fill="#d7cfb9">boot</text>
+            <text x="76" y="211" font-family="Manrope, sans-serif" font-size="7.5" fill="#8b93b0">start the supervision tree</text>
+            <text x="284" y="203" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">3 of 3</text>
+          </g>
+          <line x1="60" y1="216" x2="60" y2="228" stroke="#3a4263" stroke-width="1.6"></line>
+          <path d="M56 224 l4 5 l4 -5 z" fill="#3a4263"></path>
+
+          <!-- terminal: the endpoint serves (reached only after boot) -->
+          <g id="hpServe">
+            <rect x="60" y="230" width="232" height="32" rx="8" fill="#0d1322" stroke="#3a4263" stroke-width="1.3"></rect>
+            <text x="76" y="250" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.04em" fill="#7c86a6">the endpoint serves &mdash; live</text>
+            <text x="284" y="250" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">HTTPS</text>
+          </g>
+        </svg>
+        <div class="hp-ctrls">
+          <button type="button" class="hp-btn" id="hpAdv">&#9656; advance</button>
+          <button type="button" class="hp-btn ghost" id="hpReset">reset</button>
+        </div>
+        <p class="hp-cap" id="hpCap" aria-live="polite">
+          <span class="stg">build</span> &mdash; compile the release into a runnable image.<br>
+          <span class="art">mix release packages the app, its deps, and the BEAM into one artifact.</span>
+        </p>
+      </figure>
+    </div>
+  </section>
+
+  <section id="pieces">
+    <h2>Three concerns of going live</h2>
+    <div class="prose">
+      <p>Production splits into three questions, and this module takes each in turn. <strong>Authentication</strong>
+        answers who the user is. <strong>A release</strong> packages the app to run anywhere. <strong>Deployment</strong>
+        boots it and keeps it serving. Select a concern.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="dpTitle">
+      <h4 id="dpTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Going live &middot; select a concern</h4>
+      <div class="controls">
+        <div class="solid-select" id="dpSel" role="group" aria-label="Production concern">
+          <button type="button" data-k="auth" class="active">auth</button>
+          <button type="button" data-k="release">release</button>
+          <button type="button" data-k="deploy">deploy</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three concerns of going live: authentication knows who the user is, a release packages the app to run, and deployment boots it in production.">
+        <rect id="dpRow_auth" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">AUTHENTICATION</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">know who the user is &mdash; a context, a session, a plug</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">F6.08.1</text>
+
+        <rect id="dpRow_release" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">A RELEASE</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">package the app + the BEAM to run &mdash; config at boot</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">F6.08.2</text>
+
+        <rect id="dpRow_deploy" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">DEPLOYMENT</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">build, migrate, boot &mdash; the supervision tree serves</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">F6.08.3</text>
+      </svg>
+
+      <div class="geo-readout" id="dpOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">concern: <span id="dpRole" style="color:#9fc0ea">authentication</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">does: <span id="dpResult" style="color:var(--cream)">know who the user is</span></p>
+    </figure>
+    <p class="take">All three lean on the foundations rather than replacing them: auth is a context, a release packages
+      the same supervision tree, and the deploy boots that tree. Production is the F5 system wearing operational
+      clothes.</p>
+  </section>
+
+  <section id="prod">
+    <h2>What runs in production</h2>
+    <div class="prose">
+      <p>A release boots on a server with no Elixir installed, because the BEAM is bundled inside it. At boot,
+        <code class="inl">runtime.exs</code> reads the environment &mdash; the database URL, the secret key base, the
+        host &mdash; and the application&rsquo;s supervision tree starts: the Repo, the Endpoint, PubSub, Presence, and
+        the F5 engine, each a supervised child. Migrations run on deploy through a release command. From there the
+        endpoint serves, and if the app is clustered, PubSub and Presence reach across every node.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="dpProdTitle">
+      <h4 id="dpProdTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">release artifact &rarr; boot &rarr; supervised, serving</h4>
+      <svg viewBox="0 0 720 210" role="img" aria-label="A self-contained release boots, runtime config reads environment variables, the supervision tree starts the Repo, Endpoint, PubSub, Presence, and engine, and the app serves users across clustered nodes.">
+        <rect x="20" y="78" width="150" height="54" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="95" y="98" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#7c86a6">RELEASE ARTIFACT</text>
+        <text x="95" y="114" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">app + deps + BEAM</text>
+        <text x="95" y="127" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7c86a6">no toolchain needed</text>
+        <line x1="170" y1="105" x2="206" y2="105" stroke="#5a87c4" stroke-width="1.6"></line>
+        <text x="188" y="98" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#86a7d8">boot</text>
+
+        <rect x="206" y="74" width="150" height="62" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="281" y="92" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#9fc0ea">runtime.exs</text>
+        <text x="281" y="107" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#86a7d8">reads env at boot:</text>
+        <text x="281" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#86a7d8">DATABASE_URL, SECRET,</text>
+        <text x="281" y="130" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#86a7d8">PHX_HOST</text>
+        <line x1="356" y1="105" x2="392" y2="105" stroke="#3a4263" stroke-width="1.6"></line>
+
+        <rect x="392" y="34" width="200" height="142" rx="10" fill="#0d1322" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="492" y="52" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.05em" fill="#7c86a6">SUPERVISION TREE (F5)</text>
+        <rect x="408" y="60" width="168" height="20" rx="6" fill="#11203a" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="492" y="74" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">Repo</text>
+        <rect x="408" y="84" width="168" height="20" rx="6" fill="#11203a" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="492" y="98" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">Endpoint</text>
+        <rect x="408" y="108" width="168" height="20" rx="6" fill="#11203a" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="492" y="122" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">PubSub + Presence</text>
+        <rect x="408" y="132" width="168" height="20" rx="6" fill="#11203a" stroke="#3a4263" stroke-width="1"></rect>
+        <text x="492" y="146" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#cfd6e6">Portal.Engine</text>
+        <text x="492" y="167" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7c86a6">each supervised &middot; restarts on crash</text>
+        <line x1="592" y1="105" x2="628" y2="105" stroke="#7ba387" stroke-width="1.6"></line>
+
+        <rect x="628" y="80" width="74" height="50" rx="9" fill="#13201a" stroke="#7ba387" stroke-width="1.4"></rect>
+        <text x="665" y="100" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#a7c9b1">serves</text>
+        <text x="665" y="113" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#a7c9b1">users</text>
+        <text x="665" y="124" text-anchor="middle" font-family="Manrope, sans-serif" font-size="6.5" fill="#7ba387">HTTPS</text>
+
+        <text x="360" y="198" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">clustered across nodes, PubSub and Presence span every machine &mdash; the same code as one node</text>
+      </svg>
+    </figure>
+    <p class="take">The deploy does not start your processes by hand &mdash; it boots the supervision tree, and the
+      tree starts everything in order and keeps it alive. The reliability you designed in F5 is exactly what carries
+      into production.</p>
+  </section>
+
+  <section id="dives">
+    <h2>Three deep dives</h2>
+    <div class="prose">
+      <p>In order: sessions and authentication as a generated context; releases and the compile-time-versus-runtime
+        config split; and the build-migrate-boot deploy with clustering.</p>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:1rem;margin-top:1.4rem">
+      <a href="/elixir/phoenix/deployment/auth" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--blue-bright)">F6.08.1</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Sessions &amp; authentication <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)"><code class="inl">mix phx.gen.auth</code>, the signed-cookie session, a <code class="inl">fetch_current_user</code> plug, and <code class="inl">on_mount</code> for LiveView.</div>
+      </a>
+      <a href="/elixir/phoenix/deployment/releases" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--gold-bright)">F6.08.2</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Releases &amp; config <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)"><code class="inl">mix release</code>, compile-time versus <code class="inl">runtime.exs</code>, and running migrations without <code class="inl">mix</code>.</div>
+      </a>
+      <a href="/elixir/phoenix/deployment/deploy" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--sage);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--sage-bright)">F6.08.3</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Deploying to production <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">The build-migrate-boot sequence, the supervision tree in production, and clustering so PubSub and Presence span nodes.</div>
+      </a>
+    </div>
+
+    <div class="bridge" style="margin-top:1.8rem">
+      <div class="cell idea">
+        <p class="lbl">F5 supervised it</p>
+        <p>a tree of processes designed to start in order and restart on failure.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">F6.08 ships it</p>
+        <p>the same tree, packaged in a release and booted in production.</p>
+      </div>
+    </div>
+    <p class="note">Start with <a href="/elixir/phoenix/deployment/auth">sessions and authentication</a>, then
+      <a href="/elixir/phoenix/deployment/releases">releases and config</a>, then
+      <a href="/elixir/phoenix/deployment/deploy">deploying to production</a>. This module follows F6.07 &mdash;
+      <a href="/elixir/phoenix/pubsub">PubSub</a> &mdash; and the chapter closes with F6.09, which assembles the live
+      dashboard on everything built here.</p>
+  </section>
+
+  <section class="reveal" aria-labelledby="refsTitle">
+    <h2 id="refsTitle">References</h2>
+    <p class="prose">Generated authentication, releases, runtime config, and going to production.</p>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://hexdocs.pm/phoenix/mix_phx_gen_auth.html">Phoenix &mdash; mix phx.gen.auth</a> &mdash; the generated authentication system.</li>
+        <li><a href="https://hexdocs.pm/phoenix/releases.html">Phoenix &mdash; Deploying with releases</a> &mdash; release-based deployment.</li>
+        <li><a href="https://hexdocs.pm/mix/Mix.Tasks.Release.html">Mix &mdash; mix release</a> &mdash; assembling a release and runtime config.</li>
+        <li><a href="https://hexdocs.pm/phoenix/deployment.html">Phoenix &mdash; Deployment</a> &mdash; going to production.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/elixir/phoenix/deployment/auth">F6.08.1 &middot; Sessions &amp; authentication</a></li>
+        <li><a href="/elixir/phoenix/deployment/releases">F6.08.2 &middot; Releases &amp; config</a></li>
+        <li><a href="/elixir/phoenix/deployment/deploy">F6.08.3 &middot; Deploying to production</a></li>
+        <li><a href="/elixir/phoenix/pubsub">F6.07 &middot; PubSub</a> &mdash; clustered across nodes in production.</li>
+        <li><a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/elixir/phoenix/pubsub"><span aria-hidden="true">&larr;</span>&nbsp; F6.07 &middot; PubSub</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/elixir/phoenix/deployment/auth">Start &middot; sessions &amp; authentication <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <p class="colophon">Built with the jonnify dark-editorial design system. Every page carries a branded
+      <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
+      It is the same id convention the Portal engine uses as a pivot key across its contexts.</p>
+    <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+      build <span class="id" id="stampId">TSK0NdZT0vdn8q</span>
+      <dl class="panel">
+        <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+        <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+        <dt>node</dt><dd id="st-node">&mdash;</dd>
+        <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+        <dt>timestamp</dt><dd id="st-ts">2026-06-02 00:18:34 UTC</dd>
+      </dl>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var PARTS = {
+    auth:    { name: 'authentication', does: 'know who the user is', row: 'dpRow_auth',
+      desc: 'Authentication is a generated Accounts context plus a signed-cookie session and a plug that loads the current user into conn.assigns. It is ordinary domain code, not a separate subsystem.' },
+    release: { name: 'a release', does: 'package the app to run', row: 'dpRow_release',
+      desc: 'mix release bundles your app, its dependencies, and the BEAM into one self-contained artifact that runs on a server with no Elixir installed, with secrets supplied at boot by runtime.exs.' },
+    deploy:  { name: 'deployment', does: 'boot it in production', row: 'dpRow_deploy',
+      desc: 'Deployment is build, migrate, boot: compile the release, run pending migrations through a release command, and start the supervision tree so the endpoint serves \u2014 clustered across nodes.' }
+  };
+  var ORDER = ['auth', 'release', 'deploy'];
+  function pick(k) {
+    var P = PARTS[k]; if (!P) return;
+    document.querySelectorAll('#dpSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(PARTS[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('dpRole'); if (rEl) rEl.textContent = P.name;
+    var dEl = document.getElementById('dpResult'); if (dEl) dEl.textContent = P.does;
+    var oEl = document.getElementById('dpOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + P.name + '</b> \u2014 ' + P.does + '. ' + P.desc;
+  }
+  document.querySelectorAll('#dpSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('auth');
+
+  /* ---------- hero: build -> migrate -> boot to production ---------- */
+  (function () {
+    var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4', LINE = '#3a4263', INK2 = '#10162b', ACTIVE_FILL = '#11203a';
+    // stage order = the deploy sequence; cy = the row centre on the vertical track
+    var PATH = [
+      { id: 'build',   cy: 102, cap: '<span class="stg">build</span> &mdash; compile the release into a runnable image.' },
+      { id: 'migrate', cy: 150, cap: '<span class="stg">migrate</span> &mdash; run pending migrations through a release command, with no mix on the server.' },
+      { id: 'boot',    cy: 198, cap: '<span class="stg">boot</span> &mdash; start the supervision tree from F5; the endpoint serves and the app is live.' }
+    ];
+    var ART = '<br><span class="art">mix release packages the app, its deps, and the BEAM into one artifact.</span>';
+    var tok = document.getElementById('hpTok');
+    var advBtn = document.getElementById('hpAdv');
+    var resetBtn = document.getElementById('hpReset');
+    var cap = document.getElementById('hpCap');
+    if (!tok || !advBtn || !resetBtn || !cap) return;
+
+    var at = 0; // index into PATH; the static markup already shows stage 0 (build)
+
+    function paint() {
+      var step = PATH[at]; if (!step) return;
+      tok.setAttribute('cy', String(step.cy));
+      PATH.forEach(function (s) {
+        var g = document.getElementById('hpStage_' + s.id); if (!g) return;
+        var rect = g.querySelector('rect'); if (!rect) return;
+        var on = s.id === step.id;
+        rect.setAttribute('stroke', on ? BLUE_MUTE : LINE);
+        rect.setAttribute('stroke-width', on ? '2' : '1.3');
+        rect.setAttribute('fill', on ? ACTIVE_FILL : INK2);
+        var label = g.querySelector('text'); // the stage name (first text in the group)
+        if (label) label.setAttribute('fill', on ? BLUE : '#d7cfb9');
+      });
+      // the endpoint serves only once boot is reached (the final stage)
+      var live = step.id === 'boot';
+      var serve = document.getElementById('hpServe');
+      if (serve) {
+        var sRect = serve.querySelector('rect');
+        if (sRect) { sRect.setAttribute('stroke', live ? '#7ba387' : LINE); sRect.setAttribute('stroke-width', live ? '1.6' : '1.3'); sRect.setAttribute('fill', live ? '#13201a' : '#0d1322'); }
+        var sTxt = serve.querySelector('text');
+        if (sTxt) sTxt.setAttribute('fill', live ? '#a7c9b1' : '#7c86a6');
+      }
+      cap.innerHTML = step.cap + ART;
+    }
+    advBtn.addEventListener('click', function () {
+      at = (at + 1) % PATH.length; // advance one stage; wrap back to build after boot
+      paint();
+    });
+    resetBtn.addEventListener('click', function () {
+      at = 0;
+      paint(); // returns the deploy to the build stage over the JS-painted track
+    });
+    // No paint on load: the static SVG already shows the deploy at the build stage.
+  })();
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

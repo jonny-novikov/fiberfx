@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>render &amp; diffs — F6.06.3 · jonnify</title>
-<meta name="description" content="render/1 returns HEEx from the assigns, and LiveView tracks which assigns changed to send only those values over the socket. A HEEx template compiles into static segments and dynamic holes, so the diff is the minimal delta of the rendered state since the last render; streams keep large, append-only collections out of socket memory.">
+<title>Deploying to production — F6.08.3 · jonnify</title>
+<meta name="description" content="The deploy is build, migrate, boot: compile the release, run pending migrations with a release command, then start the supervision tree so the endpoint serves over HTTPS. Clustering connects the nodes so the F6.07 PubSub and Presence span the whole cluster, and the F5 supervision tree keeps it alive.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -312,7 +312,7 @@ pre.code .step{color:var(--cream-dim)}
     <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
     <nav>
       <a href="/elixir/course">Contents</a>
-      <span class="route-tag">/elixir/phoenix/liveview/render</span>
+      <span class="route-tag">/elixir/phoenix/deployment/deploy</span>
     </nav>
   </div>
 </header>
@@ -323,224 +323,180 @@ pre.code .step{color:var(--cream-dim)}
     <div class="crumbs">
       <a href="/elixir/phoenix">F6</a>
       <span class="sep">/</span>
-      <a href="/elixir/phoenix/liveview">F6.06</a>
+      <a href="/elixir/phoenix/deployment">F6.08</a>
       <span class="sep">/</span>
-      <span class="here">render</span>
+      <span class="here">deploy</span>
     </div>
-    <p class="eyebrow">F6.06 &middot; part 3 of 3</p>
-    <h1>render &amp; <span class="ex">diffs</span></h1>
-    <p class="lede">A LiveView re-renders on every change, yet stays cheap, because a HEEx template is split in two:
-      fixed <strong>static</strong> markup and interpolated <strong>dynamic</strong> holes. Only the dynamic values
-      that actually changed travel the socket &mdash; the diff is the minimal delta of the rendered state since the
-      last render.</p>
-    <p class="kicker">First the split that makes change tracking possible, then a worked diff computed for real, then
-      <code class="inl">render/1</code> in Elixir with its diffs annotated, and finally streams &mdash; for collections
-      too large to keep in socket assigns.</p>
+    <p class="eyebrow">F6.08 &middot; part 3 of 3</p>
+    <h1>Deploying to <span class="ex">production</span></h1>
+    <p class="lede">With auth in place and a release configured, deploying is three steps in order: <strong>build</strong>
+      the release, <strong>migrate</strong> the database, <strong>boot</strong> the system. Building runs
+      <code class="inl">mix release</code> to produce the artifact from F6.08.2. Migrating runs the
+      <code class="inl">Portal.Release</code> command against the live database before the new code serves traffic, so
+      the schema is ready. Booting starts <code class="inl">bin/portal</code>, which evaluates
+      <code class="inl">runtime.exs</code> to read the environment and then starts the application&rsquo;s
+      <strong>supervision tree</strong> &mdash; and this is the moment the whole course pays off. The tree is the same
+      one from F5: it starts the Repo, the Endpoint, PubSub, Presence, and the engine in order, and if any child
+      crashes it restarts under the supervisor&rsquo;s strategy. You do not start processes by hand or write health
+      checks to revive them; the tree is the health model. The last production concern is scale: running more than one
+      node means <strong>clustering</strong> them so the F6.07 broadcasts and Presence reach across machines, which a
+      library like libcluster handles by connecting the nodes &mdash; after which the exact same broadcast code spans
+      the cluster. Build, migrate, boot, and the platform is live.</p>
+    <p class="kicker">Four parts: the three deploy steps, the supervision tree in production, clustering for PubSub and
+      Presence, and the deploy as a sequence of commands.</p>
     <div class="toc-mini" aria-label="On this page">
-      <a href="#split">The static / dynamic split</a>
-      <a href="#diff">A diff, computed</a>
-      <a href="#code">render/1 in Elixir</a>
-      <a href="#streams">Streams for big lists</a>
-      <a href="#recap">What this lands</a>
+      <a href="#steps">Build, migrate, boot</a>
+      <a href="#tree">The tree in production</a>
+      <a href="#cluster">Clustering the nodes</a>
+      <a href="#checklist">The deploy, end to end</a>
     </div>
   </section>
 
-  <section id="split">
-    <h2>The static / dynamic split</h2>
+  <section id="steps">
+    <h2>Build, migrate, boot</h2>
     <div class="prose">
-      <p>The <code class="inl">~H</code> sigil does not produce a string. It compiles the template into two interleaved
-        parts that <code class="inl">render/1</code> returns as rendered structure: the <strong>static</strong> segments
-        and the <strong>dynamic</strong> holes between them. That separation is the whole mechanism &mdash; it is what
-        lets the framework track each interpolated value on its own and re-send only the ones that moved.</p>
-      <dl class="deflist">
-        <dt>static</dt><dd>The fixed markup &mdash; tags, attributes, and the literal text around the holes. Sent on the
-          first render, cached on the client, and never transmitted again.</dd>
-        <dt>dynamic</dt><dd>Each interpolated expression, one numbered hole per <code class="inl">{...}</code>. The hole
-          is tied to the assigns it reads, so its value is tracked across renders.</dd>
-        <dt>change tracking</dt><dd>Comparing each hole&rsquo;s current value with its previous one. An unchanged assign
-          is skipped even when <code class="inl">render/1</code> ran again.</dd>
-        <dt>diff</dt><dd>The map of changed holes, keyed by position &mdash; the minimal delta of the rendered state
-          since the last render, and all that goes over the wire.</dd>
-      </dl>
-      <p>Reading the template, a hole is anything in curly braces: <code class="inl">{@count}</code> is hole
-        <code class="inl">0</code>, the title inside the list comprehension is hole <code class="inl">1</code>. Everything
-        else &mdash; <code class="inl">&lt;h1&gt;</code>, <code class="inl">&lt;ul&gt;</code>, the spaces and angle
-        brackets &mdash; is static, fixed at compile time. The reader can split a template by hand the same way the
-        compiler does.</p>
-    </div>
-    <p class="take">HEEx asks for assigns in the holes rather than strings built in code for exactly this reason: a value
-      the compiler can see as a distinct hole can be tracked and diffed; a value hidden inside a concatenation cannot.</p>
-  </section>
-
-  <section id="diff">
-    <h2>A diff, computed</h2>
-    <div class="prose">
-      <p>Take a catalog view with two holes: <code class="inl">{@count}</code> at position <code class="inl">0</code>
-        and <code class="inl">{course.title}</code> at position <code class="inl">1</code>. The first render sends the
-        static shell once, plus both hole values. After that, every event re-runs <code class="inl">render/1</code>, and
-        the diff carries only the holes whose values differ from the previous render &mdash; addressed by position, not
-        by markup.</p>
-      <p>Choose what an event changes. The figure recomputes the real payload: which holes re-send, and the exact map
-        the socket carries.</p>
+      <p>A deploy is three ordered steps. <strong>Build</strong> compiles the release artifact.
+        <strong>Migrate</strong> applies pending migrations to the database. <strong>Boot</strong> starts the
+        supervision tree so the endpoint serves. Select one.</p>
     </div>
 
-    <figure class="fig" aria-labelledby="dfTitle">
-      <h4 id="dfTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The diff over the socket &middot; choose what changed</h4>
+    <figure class="fig" aria-labelledby="dyTitle">
+      <h4 id="dyTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The deploy &middot; select a step</h4>
       <div class="controls">
-        <div class="solid-select" id="dfSel" role="group" aria-label="What the event changes">
-          <button type="button" data-k="count" data-c="sage" class="active">@count ticks</button>
-          <button type="button" data-k="courses" data-c="sage">@courses changes</button>
-          <button type="button" data-k="both" data-c="sage">both change</button>
-          <button type="button" data-k="none" data-c="sage">nothing changes</button>
+        <div class="solid-select" id="dySel" role="group" aria-label="Deploy step">
+          <button type="button" data-k="build" class="active">build</button>
+          <button type="button" data-k="migrate">migrate</button>
+          <button type="button" data-k="boot">boot</button>
         </div>
       </div>
 
-      <svg viewBox="0 0 720 196" role="img" aria-label="A LiveView render with a static shell and two dynamic holes; the diagram highlights which holes re-send for the chosen change and shows the resulting payload.">
-        <text x="360" y="20" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">RENDERED STATE &mdash; one static shell, two dynamic holes</text>
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three deploy steps: build compiles the release artifact, migrate runs pending migrations, and boot starts the supervision tree to serve.">
+        <rect id="dyRow_build" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">BUILD</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">MIX_ENV=prod mix release &mdash; compile app + the BEAM</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">step 1</text>
 
-        <rect x="40" y="32" width="640" height="30" rx="8" fill="#0d1322" stroke="#2a3252" stroke-width="1.2" stroke-dasharray="4 3"></rect>
-        <text id="dfShell" x="360" y="51" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">static shell &middot; sent once on first render, then never again</text>
+        <rect id="dyRow_migrate" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">MIGRATE</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">bin/portal eval "Portal.Release.migrate()" &mdash; schema ready</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">step 2</text>
 
-        <rect id="dfBox0" x="40" y="74" width="312" height="48" rx="9" fill="#11203a" stroke="#7ba387" stroke-width="1.8"></rect>
-        <text x="58" y="93" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.04em" fill="#86a7d8">HOLE [0]</text>
-        <text id="df0val" x="58" y="110" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#9fc0ea">{@count} = 42</text>
-        <text id="df0tag" x="334" y="102" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#a7c9b1">re-sent</text>
-
-        <rect id="dfBox1" x="368" y="74" width="312" height="48" rx="9" fill="#11203a" stroke="#5a87c4" stroke-width="1.4"></rect>
-        <text x="386" y="93" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.04em" fill="#86a7d8">HOLE [1]</text>
-        <text id="df1val" x="386" y="110" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#9fc0ea">{course.title} list</text>
-        <text id="df1tag" x="662" y="102" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">unchanged</text>
-
-        <text x="40" y="150" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.04em" fill="#8b93b0">PAYLOAD ON THE SOCKET</text>
-        <text id="dfPayload" x="40" y="170" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">%{"0" =&gt; "42"}</text>
-        <text id="dfNote" x="40" y="186" font-family="Manrope, sans-serif" font-size="7.5" fill="#5a6688">only changed holes are sent; the shell and unchanged holes are skipped</text>
+        <rect id="dyRow_boot" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">BOOT</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">bin/portal start &mdash; runtime.exs reads env, the tree serves</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">step 3</text>
       </svg>
 
-      <pre class="code" id="dfCode" aria-live="polite"><span class="cmt"># @count 41 -&gt; 42, @courses unchanged</span>
-<span class="cmt"># diff over the socket:</span>
-%{<span class="str">"0"</span> => <span class="str">"42"</span>}</pre>
-      <div class="geo-readout" id="dfOut" aria-live="polite"></div>
-      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">holes re-sent: <span id="dfCount" style="color:var(--sage-bright)">1 of 2</span></p>
+      <div class="geo-readout" id="dyOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">step: <span id="dyRole" style="color:#9fc0ea">build</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">does: <span id="dyResult" style="color:var(--cream)">compile the release artifact</span></p>
     </figure>
-    <p class="take">The cost of a re-render is proportional to what changed, not to the size of the page &mdash; the exact
-      inverse of a full request, which re-sends everything every time. When nothing changed, the diff is empty and the
-      socket stays silent.</p>
+    <p class="take">Order matters: migrate before boot, so the new code never meets an old schema. Run the migration
+      against the live database as its own step, then start the release that expects the new shape.</p>
   </section>
 
-  <section id="code">
-    <h2>render/1 in Elixir</h2>
+  <section id="tree">
+    <h2>The tree in production</h2>
     <div class="prose">
-      <p>A LiveView&rsquo;s <code class="inl">render/1</code> takes <code class="inl">assigns</code> and returns HEEx from
-        the <code class="inl">~H</code> sigil &mdash; the same template language compiled in F6.05, now the projection of
-        a process&rsquo;s state. The data still arrives through the <code class="inl">Portal</code> facade in
-        <code class="inl">mount/3</code>; <code class="inl">render/1</code> only reads <code class="inl">@count</code> and
-        <code class="inl">@courses</code> from the socket. The two annotated cases below are the figure&rsquo;s two
-        holes, in code.</p>
+      <p>Booting the release starts the application&rsquo;s supervision tree &mdash; the same structure you designed in
+        F5. The supervisor starts the Repo, the Endpoint, PubSub, Presence, and the engine, in order, and watches
+        them. A crash in any child is isolated and restarted under the supervisor&rsquo;s strategy, so the system
+        self-heals without a process manager outside the BEAM. The deploy starts one thing: the tree.</p>
     </div>
-    <pre class="code"><span class="op">def</span> <span class="fn">render</span>(assigns) <span class="op">do</span>
-  <span class="fn">~H</span><span class="str">"""</span>
-  <span class="op">&lt;h1&gt;</span>Courses (<span class="rdx">{@count}</span>)<span class="op">&lt;/h1&gt;</span>          <span class="cmt">&lt;%!-- hole [0] --%&gt;</span>
-  <span class="op">&lt;ul&gt;</span>
-    <span class="op">&lt;li</span> <span class="res">:for</span>={course &lt;- <span class="inl">@courses</span>}<span class="op">&gt;</span><span class="rdx">{course.title}</span><span class="op">&lt;/li&gt;</span>  <span class="cmt">&lt;%!-- hole [1] --%&gt;</span>
-  <span class="op">&lt;/ul&gt;</span>
-  <span class="str">"""</span>
-<span class="op">end</span>
 
-<span class="cmt"># an event re-runs render/1; the diff is the changed holes only:</span>
-<span class="cmt"># @count 41 -&gt; 42, @courses same  # => %{"0" =&gt; "42"}</span>
-<span class="cmt"># @courses gains a row, @count same # => %{"1" =&gt; [...]}   (shell never re-sent)</span></pre>
-    <p class="take">Nothing here manages the wire. <code class="inl">render/1</code> is a plain function of assigns;
-      breaking a view into smaller function components from F6.05 sharpens tracking further, since a component whose
-      assigns did not change is skipped whole.</p>
+    <figure class="fig" aria-labelledby="dyTreeTitle">
+      <h4 id="dyTreeTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">one supervisor &rarr; supervised children, restarted on crash</h4>
+      <svg viewBox="0 0 720 196" role="img" aria-label="The application supervisor starts the Repo, Endpoint, PubSub, Presence, and engine as supervised children; a crash is isolated and the child is restarted.">
+        <rect x="270" y="24" width="180" height="40" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="360" y="42" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#9fc0ea">Portal.Supervisor</text>
+        <text x="360" y="56" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#86a7d8">one_for_one &middot; starts in order</text>
+
+        <line x1="360" y1="64" x2="360" y2="80" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="110" y1="80" x2="610" y2="80" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="110" y1="80" x2="110" y2="96" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="235" y1="80" x2="235" y2="96" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="360" y1="80" x2="360" y2="96" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="485" y1="80" x2="485" y2="96" stroke="#3a4263" stroke-width="1.4"></line>
+        <line x1="610" y1="80" x2="610" y2="96" stroke="#3a4263" stroke-width="1.4"></line>
+
+        <rect x="50" y="96" width="120" height="40" rx="8" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="110" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">Repo</text>
+        <rect x="175" y="96" width="120" height="40" rx="8" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="235" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">Endpoint</text>
+        <rect x="300" y="96" width="120" height="40" rx="8" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="360" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">PubSub</text>
+        <rect x="425" y="96" width="120" height="40" rx="8" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="485" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">Presence</text>
+        <rect x="550" y="96" width="120" height="40" rx="8" fill="#13201a" stroke="#7ba387" stroke-width="1.3"></rect>
+        <text x="610" y="116" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#a7c9b1">Portal.Engine</text>
+        <text x="610" y="128" text-anchor="middle" font-family="Manrope, sans-serif" font-size="6.5" fill="#7ba387">the F5 core</text>
+
+        <text x="360" y="166" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">a child crash is isolated and restarted &mdash; the tree is the health model, no external babysitter</text>
+        <text x="360" y="184" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#4a5478">the deploy starts the supervisor; the supervisor starts everything else</text>
+      </svg>
+    </figure>
+    <p class="take">Everything in this chapter became a child of this tree: the Endpoint from F6.01, the Repo from
+      F6.03, PubSub and Presence from F6.07, all beside the F5 engine. Deployment is starting that tree on a
+      server.</p>
   </section>
 
-  <section id="streams">
-    <h2>Streams for big lists</h2>
+  <section id="cluster">
+    <h2>Clustering the nodes</h2>
     <div class="prose">
-      <p>Change tracking keeps the diff small, but a large collection in assigns is still a cost of its own: the process
-        holds every row in memory and re-checks the list on each render. <code class="inl">stream/3</code> removes that.
-        The rows live in the DOM, the server tracks only their ids, and <code class="inl">stream_insert/3</code> appends
-        or updates one row without the LiveView retaining the list. The template marks the container
-        <code class="inl">phx-update="stream"</code> and iterates <code class="inl">@streams.courses</code>.</p>
+      <p>One node needs no clustering; more than one does, because PubSub and Presence coordinate over the Erlang
+        distribution between connected nodes. A library like <code class="inl">libcluster</code> joins them
+        automatically by a strategy &mdash; here, discovering peers in a Kubernetes service. Once the nodes are
+        connected, a broadcast on <code class="inl">"courses"</code> reaches subscribers on every node with no change
+        to the publishing code from F6.07.</p>
     </div>
-    <pre class="code"><span class="op">def</span> <span class="fn">mount</span>(_params, _session, socket) <span class="op">do</span>
-  {<span class="res">:ok</span>, <span class="fn">stream</span>(socket, <span class="res">:courses</span>, <span class="fn blue">Portal</span>.<span class="fn">list_courses</span>())}
-<span class="op">end</span>
+    <pre class="code"><span class="cmt"># config/runtime.exs — connect the nodes so PubSub &amp; Presence span them</span>
+<span class="op">config</span> <span class="res">:libcluster</span>,
+  topologies: [
+    portal: [
+      strategy: <span class="fn blue">Cluster.Strategy.Kubernetes</span>,
+      config: [service: <span class="str">"portal-headless"</span>, application_name: <span class="str">"portal"</span>]
+    ]
+  ]
 
-<span class="op">def</span> <span class="fn">handle_event</span>(<span class="str">"add"</span>, %{<span class="str">"course"</span> => params}, socket) <span class="op">do</span>
-  {<span class="res">:ok</span>, course} = <span class="fn blue">Portal</span>.<span class="fn">create_course</span>(params)
-  {<span class="res">:noreply</span>, <span class="fn">stream_insert</span>(socket, <span class="res">:courses</span>, course)}   <span class="cmt"># one row, not the whole list</span>
-<span class="op">end</span>
+<span class="cmt"># once clustered, a broadcast on "courses" reaches subscribers on every node</span></pre>
+    <p class="take">This is the BEAM&rsquo;s distribution doing the work: clustering is a connection concern, not an
+      application rewrite. The real-time code you wrote for one node is already the code that runs across many.</p>
+  </section>
 
-<span class="cmt">&lt;%!-- the rows live in the DOM, not in socket memory --%&gt;</span>
-<span class="op">&lt;ul</span> id=<span class="str">"courses"</span> <span class="res">phx-update</span>=<span class="str">"stream"</span><span class="op">&gt;</span>
-  <span class="op">&lt;li</span> <span class="res">:for</span>={{dom_id, course} &lt;- <span class="inl">@streams</span>.courses} id={dom_id}<span class="op">&gt;</span>{course.title}<span class="op">&lt;/li&gt;</span>
-<span class="op">&lt;/ul&gt;</span></pre>
+  <section id="checklist">
+    <h2>The deploy, end to end</h2>
+    <div class="prose">
+      <p>The whole deploy is three commands in order. Build the artifact, run the migrations through the release
+        command, then start the system &mdash; at which point <code class="inl">runtime.exs</code> reads the
+        environment and the supervision tree comes up serving. Roll forward by repeating it with new code; roll back
+        by booting the previous artifact.</p>
+    </div>
+    <pre class="code"><span class="cmt"># the deploy, start to finish</span>
+MIX_ENV=prod mix release                      <span class="cmt"># 1. build the self-contained artifact</span>
+bin/portal eval <span class="str">"Portal.Release.migrate()"</span>    <span class="cmt"># 2. run migrations (no mix on the server)</span>
+bin/portal start                              <span class="cmt"># 3. boot: runtime.exs reads env, the tree serves</span></pre>
     <div class="bridge">
       <div class="cell idea">
-        <p class="lbl">F5 OTP</p>
-        <p>A GenServer answers a message by returning only its new state &mdash; never the whole history.</p>
+        <p class="lbl">three steps</p>
+        <p>Build the release, migrate the database, boot the system.</p>
       </div>
       <div class="arrow" aria-hidden="true">&rarr;</div>
       <div class="cell elix">
-        <p class="lbl">a diff is</p>
-        <p>that same minimal delta over a socket: <code class="inl">render/1</code> projects state, and only the
-          changed holes are sent.</p>
+        <p class="lbl">one running tree</p>
+        <p>The F5 supervision tree serves, clustered for real-time across nodes.</p>
       </div>
     </div>
-    <p class="note">Streams are how a feed or the F6.09 live dashboard scales to many rows and many connected clients
-      without the server holding each list. The reduction is the recurring shape of F5/F6: a long-lived process, a
-      function from its state to a view, and a minimal delta on every change.</p>
-  </section>
-
-  <section id="recap">
-    <h2>What this lands</h2>
-    <div class="prose">
-      <ul>
-        <li><code class="inl">render/1</code> returns HEEx from the <code class="inl">~H</code> sigil &mdash; a function
-          of assigns, not a string.</li>
-        <li>A template compiles into <strong>static</strong> segments and <strong>dynamic</strong> holes; the static
-          shell is sent once and cached.</li>
-        <li>Change tracking compares each hole to its previous value, so only changed assigns produce a diff.</li>
-        <li>The <strong>diff</strong> travels the socket, keyed by hole position &mdash; the minimal delta of the
-          rendered state, not the whole document.</li>
-        <li><code class="inl">stream/3</code> keeps large or append-only collections in the DOM, so the server holds
-          ids, not the list.</li>
-      </ul>
-    </div>
-    <p class="note">That completes F6.06. A LiveView is an OTP process holding socket assigns, rendering HEEx, and
-      shipping minimal diffs &mdash; interactive UI with the domain untouched below the facade. Next, the chapter adds
-      <strong>F6.07 &mdash; PubSub, channels &amp; real-time</strong> so a change broadcasts to every connected
-      LiveView at once. Back to <a href="/elixir/phoenix/liveview">the F6.06 overview</a> or the
-      <a href="/elixir/phoenix">F6 chapter</a>.</p>
-  </section>
-
-  <section class="reveal" aria-labelledby="refsTitle">
-    <h2 id="refsTitle">References</h2>
-    <p class="prose">How render, change tracking, and streams are specified.</p>
-    <div class="refs">
-      <h3>Sources</h3>
-      <ul>
-        <li><a href="https://hexdocs.pm/phoenix_live_view/assigns-eex.html">Phoenix LiveView &mdash; Assigns &amp; change tracking</a> &mdash; the static / dynamic split and how diffs are computed.</li>
-        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.Component.html#sigil_H/2">Phoenix.Component &mdash; <code class="inl">~H</code></a> &mdash; the HEEx sigil that <code class="inl">render/1</code> returns.</li>
-        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#stream/4">Phoenix.LiveView &mdash; <code class="inl">stream/3</code></a> &mdash; collections held in the DOM, not in assigns.</li>
-      </ul>
-      <h3>Related in this course</h3>
-      <ul>
-        <li><a href="/elixir/phoenix/liveview/mount">F6.06.1 &middot; mount &amp; assigns</a></li>
-        <li><a href="/elixir/phoenix/liveview/events">F6.06.2 &middot; handle_event &amp; state</a></li>
-        <li><a href="/elixir/phoenix/heex">F6.05 &middot; Templates, components &amp; HEEx</a> &mdash; the template this renders.</li>
-        <li><a href="/elixir/phoenix/liveview">F6.06 &middot; Phoenix LiveView fundamentals</a></li>
-        <li><a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a></li>
-      </ul>
-    </div>
+    <p class="note">That completes F6.08, and with it the application is deployable: authenticated, packaged as a
+      release, and booted as a supervised, clustered tree. The chapter closes with <strong>F6.09</strong>, which
+      assembles the live dashboard on everything built across F5 and F6. Back to
+      <a href="/elixir/phoenix/deployment">the module overview</a> or the <a href="/elixir/phoenix">F6 chapter</a>.</p>
   </section>
 
   <section>
     <nav class="pager" aria-label="Lesson navigation">
-      <a class="btn ghost" href="/elixir/phoenix/liveview/events"><span aria-hidden="true">&larr;</span>&nbsp; F6.06.2 &middot; handle_event &amp; state</a>
+      <a class="btn ghost" href="/elixir/phoenix/deployment/releases"><span aria-hidden="true">&larr;</span>&nbsp; F6.08.2 &middot; releases &amp; config</a>
       <span class="spacer"></span>
-      <a class="btn" href="/elixir/phoenix">F6 &middot; Phoenix Framework <span aria-hidden="true">&rarr;</span></a>
+      <a class="btn" href="/elixir/phoenix/deployment">Back to F6.08 &middot; overview <span aria-hidden="true">&rarr;</span></a>
     </nav>
   </section>
 
@@ -552,13 +508,13 @@ pre.code .step{color:var(--cream-dim)}
       <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
       It is the same id convention the Portal engine uses as a pivot key across its contexts.</p>
     <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
-      build <span class="id" id="stampId">TSK0NdUKuboO3c</span>
+      build <span class="id" id="stampId">TSK0NdZT1s79w8</span>
       <dl class="panel">
         <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
         <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
         <dt>node</dt><dd id="st-node">&mdash;</dd>
         <dt>seq</dt><dd id="st-seq">&mdash;</dd>
-        <dt>timestamp</dt><dd id="st-ts">2026-06-01 23:06:46 UTC</dd>
+        <dt>timestamp</dt><dd id="st-ts">2026-06-02 00:18:34 UTC</dd>
       </dl>
     </div>
   </div>
@@ -567,71 +523,31 @@ pre.code .step{color:var(--cream-dim)}
 <script>
 (function () {
   "use strict";
-  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4', SAGE = '#a7c9b1', SAGE_MUTE = '#7ba387', DIM = '#6b7494';
-  /* the two real holes and their old/new values; the widget computes which re-send */
-  var H0 = { old: '41', neu: '42', label: '{@count}', short: '"42"' };
-  var H1 = { old: 'list', neu: 'list + 1 row', label: '{course.title} list', short: '[...]' };
-  var CASES = {
-    count:   { h0: true,  h1: false, title: '@count 41 -> 42, @courses unchanged' },
-    courses: { h0: false, h1: true,  title: '@courses gains a row, @count unchanged' },
-    both:    { h0: true,  h1: true,  title: '@count ticks and @courses gains a row' },
-    none:    { h0: false, h1: false, title: 'an event fires but no assign changed' }
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var P = {
+    build:   { name: 'build', does: 'compile the release artifact', row: 'dyRow_build',
+      desc: 'MIX_ENV=prod mix release compiles your code and the BEAM into the self-contained artifact from F6.08.2 \u2014 the thing you ship to the server.' },
+    migrate: { name: 'migrate', does: 'run pending migrations on deploy', row: 'dyRow_migrate',
+      desc: 'bin/portal eval "Portal.Release.migrate()" applies pending migrations against the live database before the new code serves traffic, so the schema is ready first.' },
+    boot:    { name: 'boot', does: 'start the supervision tree and serve', row: 'dyRow_boot',
+      desc: 'bin/portal start evaluates runtime.exs to read the environment and then starts the application supervision tree \u2014 Repo, Endpoint, PubSub, Presence, engine \u2014 which serves and self-heals.' }
   };
-  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function payloadMap(c) {
-    var parts = [];
-    if (c.h0) parts.push('"0" => "' + H0.neu + '"');
-    if (c.h1) parts.push('"1" => ' + H1.short);
-    return parts.length ? '%{' + parts.join(', ') + '}' : '%{}';
-  }
-  function setText(id, t){ var el = document.getElementById(id); if (el) el.textContent = t; }
-  function setAttr(id, a, v){ var el = document.getElementById(id); if (el) el.setAttribute(a, v); }
-  function render(k) {
-    var c = CASES[k]; if (!c) return;
-    document.querySelectorAll('#dfSel button').forEach(function (b) {
+  var ORDER = ['build', 'migrate', 'boot'];
+  function pick(k) {
+    var x = P[k]; if (!x) return;
+    document.querySelectorAll('#dySel button').forEach(function (b) {
       var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
-    /* hole 0 */
-    setText('df0val', H0.label + ' = ' + (c.h0 ? H0.neu : H0.old));
-    setText('df0tag', c.h0 ? 're-sent' : 'unchanged');
-    setAttr('df0tag', 'fill', c.h0 ? SAGE : DIM);
-    setAttr('dfBox0', 'stroke', c.h0 ? SAGE_MUTE : BLUE_MUTE);
-    setAttr('dfBox0', 'stroke-width', c.h0 ? '1.8' : '1.4');
-    setAttr('dfBox0', 'fill', c.h0 ? '#13201a' : '#11203a');
-    setAttr('df0val', 'fill', c.h0 ? SAGE : BLUE);
-    /* hole 1 */
-    setText('df1val', c.h1 ? H1.label + ' +1' : H1.label);
-    setText('df1tag', c.h1 ? 're-sent' : 'unchanged');
-    setAttr('df1tag', 'fill', c.h1 ? SAGE : DIM);
-    setAttr('dfBox1', 'stroke', c.h1 ? SAGE_MUTE : BLUE_MUTE);
-    setAttr('dfBox1', 'stroke-width', c.h1 ? '1.8' : '1.4');
-    setAttr('dfBox1', 'fill', c.h1 ? '#13201a' : '#11203a');
-    setAttr('df1val', 'fill', c.h1 ? SAGE : BLUE);
-    /* payload + readout */
-    var map = payloadMap(c);
-    var n = (c.h0 ? 1 : 0) + (c.h1 ? 1 : 0);
-    setText('dfPayload', map);
-    setAttr('dfPayload', 'fill', n ? SAGE : DIM);
-    setText('dfNote', n ? 'only changed holes are sent; the shell and unchanged holes are skipped'
-                        : 'no hole changed; the diff is empty and nothing is sent');
-    setText('dfCount', n + ' of 2');
-    var code = document.getElementById('dfCode');
-    if (code) {
-      code.innerHTML = '<span class="cmt"># ' + esc(c.title) + '</span>\n' +
-                       '<span class="cmt"># diff over the socket:</span>\n' +
-                       (n ? esc(map) : esc(map) + '   <span class="cmt"># empty: socket stays silent</span>');
-    }
-    var out = document.getElementById('dfOut');
-    if (out) {
-      out.innerHTML = '<b style="color:' + SAGE + '">' + esc(c.title) + '</b> <span class="dim">&middot;</span> ' +
-        n + ' of 2 holes re-send <span class="dim">&middot;</span> payload ' +
-        '<b style="color:' + SAGE + '">' + esc(map) + '</b>';
-    }
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(P[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('dyRole'); if (rEl) rEl.textContent = x.name;
+    var dEl = document.getElementById('dyResult'); if (dEl) dEl.textContent = x.does;
+    var oEl = document.getElementById('dyOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + x.name + '</b> \u2014 ' + x.does + '. ' + x.desc;
   }
-  document.querySelectorAll('#dfSel button').forEach(function (b) {
-    b.addEventListener('click', function () { render(b.getAttribute('data-k')); });
-  });
-  render('count'); /* correct static state is in the markup; this confirms it at load */
+  document.querySelectorAll('#dySel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('build');
 
   /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";

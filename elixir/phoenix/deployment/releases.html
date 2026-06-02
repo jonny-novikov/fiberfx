@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>render &amp; diffs — F6.06.3 · jonnify</title>
-<meta name="description" content="render/1 returns HEEx from the assigns, and LiveView tracks which assigns changed to send only those values over the socket. A HEEx template compiles into static segments and dynamic holes, so the diff is the minimal delta of the rendered state since the last render; streams keep large, append-only collections out of socket memory.">
+<title>Releases &amp; config — F6.08.2 · jonnify</title>
+<meta name="description" content="mix release packages the app, its dependencies, and the BEAM into one self-contained artifact. config/runtime.exs is evaluated at boot and reads env vars for secrets and the database URL, distinct from compile-time config, and a release has no mix, so migrations run through a small release command module.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -312,7 +312,7 @@ pre.code .step{color:var(--cream-dim)}
     <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
     <nav>
       <a href="/elixir/course">Contents</a>
-      <span class="route-tag">/elixir/phoenix/liveview/render</span>
+      <span class="route-tag">/elixir/phoenix/deployment/releases</span>
     </nav>
   </div>
 </header>
@@ -323,224 +323,189 @@ pre.code .step{color:var(--cream-dim)}
     <div class="crumbs">
       <a href="/elixir/phoenix">F6</a>
       <span class="sep">/</span>
-      <a href="/elixir/phoenix/liveview">F6.06</a>
+      <a href="/elixir/phoenix/deployment">F6.08</a>
       <span class="sep">/</span>
-      <span class="here">render</span>
+      <span class="here">releases</span>
     </div>
-    <p class="eyebrow">F6.06 &middot; part 3 of 3</p>
-    <h1>render &amp; <span class="ex">diffs</span></h1>
-    <p class="lede">A LiveView re-renders on every change, yet stays cheap, because a HEEx template is split in two:
-      fixed <strong>static</strong> markup and interpolated <strong>dynamic</strong> holes. Only the dynamic values
-      that actually changed travel the socket &mdash; the diff is the minimal delta of the rendered state since the
-      last render.</p>
-    <p class="kicker">First the split that makes change tracking possible, then a worked diff computed for real, then
-      <code class="inl">render/1</code> in Elixir with its diffs annotated, and finally streams &mdash; for collections
-      too large to keep in socket assigns.</p>
+    <p class="eyebrow">F6.08 &middot; part 2 of 3</p>
+    <h1>Releases &amp; <span class="ex">config</span></h1>
+    <p class="lede">A <strong>release</strong> is how an Elixir app ships. <code class="inl">mix release</code> assembles
+      your compiled code, every dependency, and the <strong>ERTS</strong> &mdash; the Erlang runtime, the BEAM itself
+      &mdash; into one self-contained directory that runs on a server with no Elixir or Erlang installed. It comes with
+      a launcher, <code class="inl">bin/portal</code>, that can <code class="inl">start</code> the system, open a remote
+      console, or run a one-off command. The subtlety that trips people is <strong>configuration timing</strong>.
+      <code class="inl">config/config.exs</code> and <code class="inl">config/prod.exs</code> are read at
+      <em>compile</em> time and baked into the artifact &mdash; good for fixed settings, wrong for secrets, which would
+      then live in your build. <code class="inl">config/runtime.exs</code> is different: it is evaluated <em>every time
+      the release boots</em>, on the server, so it can read environment variables for the database URL, the secret key
+      base, and the host. That single distinction is most of release config. The last wrinkle is migrations: a release
+      has no <code class="inl">mix</code>, so <code class="inl">mix ecto.migrate</code> is unavailable. Instead you add
+      a tiny <code class="inl">Portal.Release</code> module and invoke it with
+      <code class="inl">bin/portal eval</code>, which boots only enough of the app to run the migrator.</p>
+    <p class="kicker">Four parts: what a release is, the compile-time-versus-runtime config split, reading the
+      environment in <code class="inl">runtime.exs</code>, and running migrations without <code class="inl">mix</code>.</p>
     <div class="toc-mini" aria-label="On this page">
-      <a href="#split">The static / dynamic split</a>
-      <a href="#diff">A diff, computed</a>
-      <a href="#code">render/1 in Elixir</a>
-      <a href="#streams">Streams for big lists</a>
-      <a href="#recap">What this lands</a>
+      <a href="#what">Release, runtime, command</a>
+      <a href="#config">Compile time vs boot time</a>
+      <a href="#runtime">Reading the environment</a>
+      <a href="#migrate">Migrating without mix</a>
     </div>
   </section>
 
-  <section id="split">
-    <h2>The static / dynamic split</h2>
+  <section id="what">
+    <h2>Release, runtime, command</h2>
     <div class="prose">
-      <p>The <code class="inl">~H</code> sigil does not produce a string. It compiles the template into two interleaved
-        parts that <code class="inl">render/1</code> returns as rendered structure: the <strong>static</strong> segments
-        and the <strong>dynamic</strong> holes between them. That separation is the whole mechanism &mdash; it is what
-        lets the framework track each interpolated value on its own and re-send only the ones that moved.</p>
-      <dl class="deflist">
-        <dt>static</dt><dd>The fixed markup &mdash; tags, attributes, and the literal text around the holes. Sent on the
-          first render, cached on the client, and never transmitted again.</dd>
-        <dt>dynamic</dt><dd>Each interpolated expression, one numbered hole per <code class="inl">{...}</code>. The hole
-          is tied to the assigns it reads, so its value is tracked across renders.</dd>
-        <dt>change tracking</dt><dd>Comparing each hole&rsquo;s current value with its previous one. An unchanged assign
-          is skipped even when <code class="inl">render/1</code> ran again.</dd>
-        <dt>diff</dt><dd>The map of changed holes, keyed by position &mdash; the minimal delta of the rendered state
-          since the last render, and all that goes over the wire.</dd>
-      </dl>
-      <p>Reading the template, a hole is anything in curly braces: <code class="inl">{@count}</code> is hole
-        <code class="inl">0</code>, the title inside the list comprehension is hole <code class="inl">1</code>. Everything
-        else &mdash; <code class="inl">&lt;h1&gt;</code>, <code class="inl">&lt;ul&gt;</code>, the spaces and angle
-        brackets &mdash; is static, fixed at compile time. The reader can split a template by hand the same way the
-        compiler does.</p>
-    </div>
-    <p class="take">HEEx asks for assigns in the holes rather than strings built in code for exactly this reason: a value
-      the compiler can see as a distinct hole can be tracked and diffed; a value hidden inside a concatenation cannot.</p>
-  </section>
-
-  <section id="diff">
-    <h2>A diff, computed</h2>
-    <div class="prose">
-      <p>Take a catalog view with two holes: <code class="inl">{@count}</code> at position <code class="inl">0</code>
-        and <code class="inl">{course.title}</code> at position <code class="inl">1</code>. The first render sends the
-        static shell once, plus both hole values. After that, every event re-runs <code class="inl">render/1</code>, and
-        the diff carries only the holes whose values differ from the previous render &mdash; addressed by position, not
-        by markup.</p>
-      <p>Choose what an event changes. The figure recomputes the real payload: which holes re-send, and the exact map
-        the socket carries.</p>
+      <p>Three ideas. A <strong>release</strong> is the self-contained artifact. <code class="inl">runtime.exs</code>
+        is the config evaluated at boot. A <strong>release command</strong> runs code on the server without
+        <code class="inl">mix</code>. Select one.</p>
     </div>
 
-    <figure class="fig" aria-labelledby="dfTitle">
-      <h4 id="dfTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The diff over the socket &middot; choose what changed</h4>
+    <figure class="fig" aria-labelledby="rlTitle">
+      <h4 id="rlTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Releases &middot; select one</h4>
       <div class="controls">
-        <div class="solid-select" id="dfSel" role="group" aria-label="What the event changes">
-          <button type="button" data-k="count" data-c="sage" class="active">@count ticks</button>
-          <button type="button" data-k="courses" data-c="sage">@courses changes</button>
-          <button type="button" data-k="both" data-c="sage">both change</button>
-          <button type="button" data-k="none" data-c="sage">nothing changes</button>
+        <div class="solid-select" id="rlSel" role="group" aria-label="Release concept">
+          <button type="button" data-k="release" class="active">mix release</button>
+          <button type="button" data-k="runtime">runtime.exs</button>
+          <button type="button" data-k="command">a release command</button>
         </div>
       </div>
 
-      <svg viewBox="0 0 720 196" role="img" aria-label="A LiveView render with a static shell and two dynamic holes; the diagram highlights which holes re-send for the chosen change and shows the resulting payload.">
-        <text x="360" y="20" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">RENDERED STATE &mdash; one static shell, two dynamic holes</text>
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three release ideas: mix release builds a self-contained artifact, runtime.exs is config read at boot, and a release command runs code without mix.">
+        <rect id="rlRow_release" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">mix release</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">app + deps + the BEAM &mdash; one artifact, no Elixir to run</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">the artifact</text>
 
-        <rect x="40" y="32" width="640" height="30" rx="8" fill="#0d1322" stroke="#2a3252" stroke-width="1.2" stroke-dasharray="4 3"></rect>
-        <text id="dfShell" x="360" y="51" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" fill="#6b7494">static shell &middot; sent once on first render, then never again</text>
+        <rect id="rlRow_runtime" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">runtime.exs</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">reads env vars at boot &mdash; System.fetch_env!("...")</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">boot config</text>
 
-        <rect id="dfBox0" x="40" y="74" width="312" height="48" rx="9" fill="#11203a" stroke="#7ba387" stroke-width="1.8"></rect>
-        <text x="58" y="93" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.04em" fill="#86a7d8">HOLE [0]</text>
-        <text id="df0val" x="58" y="110" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#9fc0ea">{@count} = 42</text>
-        <text id="df0tag" x="334" y="102" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#a7c9b1">re-sent</text>
-
-        <rect id="dfBox1" x="368" y="74" width="312" height="48" rx="9" fill="#11203a" stroke="#5a87c4" stroke-width="1.4"></rect>
-        <text x="386" y="93" font-family="Manrope, sans-serif" font-size="8" letter-spacing="0.04em" fill="#86a7d8">HOLE [1]</text>
-        <text id="df1val" x="386" y="110" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#9fc0ea">{course.title} list</text>
-        <text id="df1tag" x="662" y="102" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">unchanged</text>
-
-        <text x="40" y="150" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.04em" fill="#8b93b0">PAYLOAD ON THE SOCKET</text>
-        <text id="dfPayload" x="40" y="170" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">%{"0" =&gt; "42"}</text>
-        <text id="dfNote" x="40" y="186" font-family="Manrope, sans-serif" font-size="7.5" fill="#5a6688">only changed holes are sent; the shell and unchanged holes are skipped</text>
+        <rect id="rlRow_command" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">a release command</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">bin/portal eval &mdash; run code without mix (e.g. migrate)</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">on the server</text>
       </svg>
 
-      <pre class="code" id="dfCode" aria-live="polite"><span class="cmt"># @count 41 -&gt; 42, @courses unchanged</span>
-<span class="cmt"># diff over the socket:</span>
-%{<span class="str">"0"</span> => <span class="str">"42"</span>}</pre>
-      <div class="geo-readout" id="dfOut" aria-live="polite"></div>
-      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">holes re-sent: <span id="dfCount" style="color:var(--sage-bright)">1 of 2</span></p>
+      <div class="geo-readout" id="rlOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">idea: <span id="rlRole" style="color:#9fc0ea">mix release</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">is: <span id="rlResult" style="color:var(--cream)">a self-contained artifact</span></p>
     </figure>
-    <p class="take">The cost of a re-render is proportional to what changed, not to the size of the page &mdash; the exact
-      inverse of a full request, which re-sends everything every time. When nothing changed, the diff is empty and the
-      socket stays silent.</p>
+    <p class="take">Because the BEAM ships inside the release, the production image needs no language runtime &mdash;
+      only the operating system. That is what makes Elixir releases small to deploy and easy to roll back: one
+      directory, one launcher.</p>
   </section>
 
-  <section id="code">
-    <h2>render/1 in Elixir</h2>
+  <section id="config">
+    <h2>Compile time vs boot time</h2>
     <div class="prose">
-      <p>A LiveView&rsquo;s <code class="inl">render/1</code> takes <code class="inl">assigns</code> and returns HEEx from
-        the <code class="inl">~H</code> sigil &mdash; the same template language compiled in F6.05, now the projection of
-        a process&rsquo;s state. The data still arrives through the <code class="inl">Portal</code> facade in
-        <code class="inl">mount/3</code>; <code class="inl">render/1</code> only reads <code class="inl">@count</code> and
-        <code class="inl">@courses</code> from the socket. The two annotated cases below are the figure&rsquo;s two
-        holes, in code.</p>
+      <p>Config comes in two flavours separated by <em>when</em> it runs. <code class="inl">config.exs</code> and
+        <code class="inl">prod.exs</code> are evaluated while you build and are frozen into the artifact &mdash; fine
+        for things that never change, unsafe for secrets. <code class="inl">runtime.exs</code> is evaluated when the
+        release boots on the server, so it sees the real environment and can pull secrets from it. Same syntax,
+        different moment.</p>
     </div>
-    <pre class="code"><span class="op">def</span> <span class="fn">render</span>(assigns) <span class="op">do</span>
-  <span class="fn">~H</span><span class="str">"""</span>
-  <span class="op">&lt;h1&gt;</span>Courses (<span class="rdx">{@count}</span>)<span class="op">&lt;/h1&gt;</span>          <span class="cmt">&lt;%!-- hole [0] --%&gt;</span>
-  <span class="op">&lt;ul&gt;</span>
-    <span class="op">&lt;li</span> <span class="res">:for</span>={course &lt;- <span class="inl">@courses</span>}<span class="op">&gt;</span><span class="rdx">{course.title}</span><span class="op">&lt;/li&gt;</span>  <span class="cmt">&lt;%!-- hole [1] --%&gt;</span>
-  <span class="op">&lt;/ul&gt;</span>
-  <span class="str">"""</span>
-<span class="op">end</span>
 
-<span class="cmt"># an event re-runs render/1; the diff is the changed holes only:</span>
-<span class="cmt"># @count 41 -&gt; 42, @courses same  # => %{"0" =&gt; "42"}</span>
-<span class="cmt"># @courses gains a row, @count same # => %{"1" =&gt; [...]}   (shell never re-sent)</span></pre>
-    <p class="take">Nothing here manages the wire. <code class="inl">render/1</code> is a plain function of assigns;
-      breaking a view into smaller function components from F6.05 sharpens tracking further, since a component whose
-      assigns did not change is skipped whole.</p>
+    <figure class="fig" aria-labelledby="rlConfigTitle">
+      <h4 id="rlConfigTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">build (baked in) &rarr; artifact &rarr; boot (reads env)</h4>
+      <svg viewBox="0 0 720 188" role="img" aria-label="At build time config.exs and prod.exs are compiled into the artifact; at boot time runtime.exs is evaluated on the server and reads environment variables for secrets.">
+        <text x="130" y="22" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#8b93b0">BUILD TIME</text>
+        <rect x="20" y="34" width="220" height="48" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="130" y="53" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">config.exs + prod.exs</text>
+        <text x="130" y="68" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#7c86a6">compiled in &middot; fixed settings only</text>
+        <line x1="240" y1="58" x2="284" y2="58" stroke="#5a87c4" stroke-width="1.6"></line>
+
+        <rect x="284" y="34" width="150" height="48" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="359" y="54" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#9fc0ea">the release</text>
+        <text x="359" y="69" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#86a7d8">artifact, shipped</text>
+
+        <text x="590" y="22" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8.5" letter-spacing="0.05em" fill="#a7c9b1">BOOT TIME (server)</text>
+        <line x1="434" y1="58" x2="478" y2="58" stroke="#7ba387" stroke-width="1.6"></line>
+        <rect x="478" y="34" width="226" height="48" rx="10" fill="#13201a" stroke="#7ba387" stroke-width="1.4"></rect>
+        <text x="591" y="53" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#a7c9b1">runtime.exs evaluated</text>
+        <text x="591" y="68" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#7ba387">reads env for secrets &amp; URLs</text>
+
+        <rect x="180" y="116" width="360" height="40" rx="9" fill="#0d1322" stroke="#3a4263" stroke-width="1.2"></rect>
+        <text x="360" y="133" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#c8d6ee">DATABASE_URL &middot; SECRET_KEY_BASE &middot; PHX_HOST</text>
+        <text x="360" y="148" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#7c86a6">supplied by the environment, never in the build</text>
+        <line x1="540" y1="82" x2="430" y2="116" stroke="#7ba387" stroke-width="1.2" stroke-dasharray="4 3"></line>
+
+        <text x="360" y="180" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">secrets enter at boot, so the same artifact runs in any environment</text>
+      </svg>
+    </figure>
+    <p class="take">The rule of thumb is simple: if a value differs between environments or must stay secret, it
+      belongs in <code class="inl">runtime.exs</code> read from the environment; if it is the same everywhere and safe
+      to commit, compile-time config is fine.</p>
   </section>
 
-  <section id="streams">
-    <h2>Streams for big lists</h2>
+  <section id="runtime">
+    <h2>Reading the environment</h2>
     <div class="prose">
-      <p>Change tracking keeps the diff small, but a large collection in assigns is still a cost of its own: the process
-        holds every row in memory and re-checks the list on each render. <code class="inl">stream/3</code> removes that.
-        The rows live in the DOM, the server tracks only their ids, and <code class="inl">stream_insert/3</code> appends
-        or updates one row without the LiveView retaining the list. The template marks the container
-        <code class="inl">phx-update="stream"</code> and iterates <code class="inl">@streams.courses</code>.</p>
+      <p><code class="inl">runtime.exs</code> guards production settings with <code class="inl">config_env()</code>
+        and reads each secret with <code class="inl">System.fetch_env!/1</code>, which raises if the variable is
+        missing &mdash; so a misconfigured deploy fails loudly at boot rather than limping along. The Repo gets its
+        URL, the Endpoint its host and secret key base.</p>
     </div>
-    <pre class="code"><span class="op">def</span> <span class="fn">mount</span>(_params, _session, socket) <span class="op">do</span>
-  {<span class="res">:ok</span>, <span class="fn">stream</span>(socket, <span class="res">:courses</span>, <span class="fn blue">Portal</span>.<span class="fn">list_courses</span>())}
+    <pre class="code"><span class="cmt"># config/runtime.exs — evaluated when the release boots, on the server</span>
+<span class="op">import</span> <span class="fn blue">Config</span>
+
+<span class="op">if</span> <span class="fn">config_env</span>() == <span class="res">:prod</span> <span class="op">do</span>
+  database_url = <span class="fn blue">System</span>.<span class="fn">fetch_env!</span>(<span class="str">"DATABASE_URL"</span>)
+  <span class="op">config</span> <span class="res">:portal</span>, <span class="fn blue">Portal.Repo</span>, url: database_url, pool_size: <span class="res">10</span>
+
+  <span class="op">config</span> <span class="res">:portal</span>, <span class="fn blue">PortalWeb.Endpoint</span>,
+    url: [host: <span class="fn blue">System</span>.<span class="fn">fetch_env!</span>(<span class="str">"PHX_HOST"</span>), port: <span class="res">443</span>, scheme: <span class="str">"https"</span>],
+    secret_key_base: <span class="fn blue">System</span>.<span class="fn">fetch_env!</span>(<span class="str">"SECRET_KEY_BASE"</span>)
+<span class="op">end</span></pre>
+    <p class="take">Failing hard on a missing variable is the point of <code class="inl">fetch_env!</code> over
+      <code class="inl">get_env</code>: you would rather the release refuse to start than serve traffic without a
+      database URL or with a blank secret.</p>
+  </section>
+
+  <section id="migrate">
+    <h2>Migrating without mix</h2>
+    <div class="prose">
+      <p>Migrations are a build-tool task, but a release has no <code class="inl">mix</code>. The standard answer is a
+        small <code class="inl">Portal.Release</code> module that loads the app and runs the Ecto migrator for each
+        repo. You invoke it with <code class="inl">bin/portal eval</code>, which starts only enough of the system to
+        execute the function &mdash; the same migrations from F6.03, run on the server.</p>
+    </div>
+    <pre class="code"><span class="op">defmodule</span> <span class="fn blue">Portal.Release</span> <span class="op">do</span>
+  <span class="op">@app</span> <span class="res">:portal</span>
+
+  <span class="op">def</span> <span class="fn">migrate</span> <span class="op">do</span>
+    <span class="fn">load_app</span>()
+
+    <span class="op">for</span> repo &lt;- <span class="fn">repos</span>() <span class="op">do</span>
+      {<span class="res">:ok</span>, _, _} = <span class="fn blue">Ecto.Migrator</span>.<span class="fn">with_repo</span>(repo, <span class="op">fn</span> repo -> <span class="fn blue">Ecto.Migrator</span>.<span class="fn">run</span>(repo, <span class="res">:up</span>, all: <span class="res">true</span>) <span class="op">end</span>)
+    <span class="op">end</span>
+  <span class="op">end</span>
+
+  <span class="op">defp</span> <span class="fn">repos</span>, <span class="op">do:</span> <span class="fn blue">Application</span>.<span class="fn">fetch_env!</span>(<span class="op">@app</span>, <span class="res">:ecto_repos</span>)
+  <span class="op">defp</span> <span class="fn">load_app</span>, <span class="op">do:</span> <span class="fn blue">Application</span>.<span class="fn">load</span>(<span class="op">@app</span>)
 <span class="op">end</span>
 
-<span class="op">def</span> <span class="fn">handle_event</span>(<span class="str">"add"</span>, %{<span class="str">"course"</span> => params}, socket) <span class="op">do</span>
-  {<span class="res">:ok</span>, course} = <span class="fn blue">Portal</span>.<span class="fn">create_course</span>(params)
-  {<span class="res">:noreply</span>, <span class="fn">stream_insert</span>(socket, <span class="res">:courses</span>, course)}   <span class="cmt"># one row, not the whole list</span>
-<span class="op">end</span>
-
-<span class="cmt">&lt;%!-- the rows live in the DOM, not in socket memory --%&gt;</span>
-<span class="op">&lt;ul</span> id=<span class="str">"courses"</span> <span class="res">phx-update</span>=<span class="str">"stream"</span><span class="op">&gt;</span>
-  <span class="op">&lt;li</span> <span class="res">:for</span>={{dom_id, course} &lt;- <span class="inl">@streams</span>.courses} id={dom_id}<span class="op">&gt;</span>{course.title}<span class="op">&lt;/li&gt;</span>
-<span class="op">&lt;/ul&gt;</span></pre>
+<span class="cmt"># on the server, with no mix:  bin/portal eval "Portal.Release.migrate()"</span></pre>
     <div class="bridge">
       <div class="cell idea">
-        <p class="lbl">F5 OTP</p>
-        <p>A GenServer answers a message by returning only its new state &mdash; never the whole history.</p>
+        <p class="lbl">fixed config</p>
+        <p>Compiled into the artifact at build time from <code class="inl">prod.exs</code>.</p>
       </div>
       <div class="arrow" aria-hidden="true">&rarr;</div>
       <div class="cell elix">
-        <p class="lbl">a diff is</p>
-        <p>that same minimal delta over a socket: <code class="inl">render/1</code> projects state, and only the
-          changed holes are sent.</p>
+        <p class="lbl">secrets &amp; migrations</p>
+        <p><code class="inl">runtime.exs</code> reads env at boot; a release command migrates.</p>
       </div>
     </div>
-    <p class="note">Streams are how a feed or the F6.09 live dashboard scales to many rows and many connected clients
-      without the server holding each list. The reduction is the recurring shape of F5/F6: a long-lived process, a
-      function from its state to a view, and a minimal delta on every change.</p>
-  </section>
-
-  <section id="recap">
-    <h2>What this lands</h2>
-    <div class="prose">
-      <ul>
-        <li><code class="inl">render/1</code> returns HEEx from the <code class="inl">~H</code> sigil &mdash; a function
-          of assigns, not a string.</li>
-        <li>A template compiles into <strong>static</strong> segments and <strong>dynamic</strong> holes; the static
-          shell is sent once and cached.</li>
-        <li>Change tracking compares each hole to its previous value, so only changed assigns produce a diff.</li>
-        <li>The <strong>diff</strong> travels the socket, keyed by hole position &mdash; the minimal delta of the
-          rendered state, not the whole document.</li>
-        <li><code class="inl">stream/3</code> keeps large or append-only collections in the DOM, so the server holds
-          ids, not the list.</li>
-      </ul>
-    </div>
-    <p class="note">That completes F6.06. A LiveView is an OTP process holding socket assigns, rendering HEEx, and
-      shipping minimal diffs &mdash; interactive UI with the domain untouched below the facade. Next, the chapter adds
-      <strong>F6.07 &mdash; PubSub, channels &amp; real-time</strong> so a change broadcasts to every connected
-      LiveView at once. Back to <a href="/elixir/phoenix/liveview">the F6.06 overview</a> or the
-      <a href="/elixir/phoenix">F6 chapter</a>.</p>
-  </section>
-
-  <section class="reveal" aria-labelledby="refsTitle">
-    <h2 id="refsTitle">References</h2>
-    <p class="prose">How render, change tracking, and streams are specified.</p>
-    <div class="refs">
-      <h3>Sources</h3>
-      <ul>
-        <li><a href="https://hexdocs.pm/phoenix_live_view/assigns-eex.html">Phoenix LiveView &mdash; Assigns &amp; change tracking</a> &mdash; the static / dynamic split and how diffs are computed.</li>
-        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.Component.html#sigil_H/2">Phoenix.Component &mdash; <code class="inl">~H</code></a> &mdash; the HEEx sigil that <code class="inl">render/1</code> returns.</li>
-        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#stream/4">Phoenix.LiveView &mdash; <code class="inl">stream/3</code></a> &mdash; collections held in the DOM, not in assigns.</li>
-      </ul>
-      <h3>Related in this course</h3>
-      <ul>
-        <li><a href="/elixir/phoenix/liveview/mount">F6.06.1 &middot; mount &amp; assigns</a></li>
-        <li><a href="/elixir/phoenix/liveview/events">F6.06.2 &middot; handle_event &amp; state</a></li>
-        <li><a href="/elixir/phoenix/heex">F6.05 &middot; Templates, components &amp; HEEx</a> &mdash; the template this renders.</li>
-        <li><a href="/elixir/phoenix/liveview">F6.06 &middot; Phoenix LiveView fundamentals</a></li>
-        <li><a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a></li>
-      </ul>
-    </div>
+    <p class="note">Next: <a href="/elixir/phoenix/deployment/deploy"><strong>deploying to production</strong></a>
+      &mdash; the release is built and configured; now build, migrate, and boot it, clustered across nodes.</p>
   </section>
 
   <section>
     <nav class="pager" aria-label="Lesson navigation">
-      <a class="btn ghost" href="/elixir/phoenix/liveview/events"><span aria-hidden="true">&larr;</span>&nbsp; F6.06.2 &middot; handle_event &amp; state</a>
+      <a class="btn ghost" href="/elixir/phoenix/deployment/auth"><span aria-hidden="true">&larr;</span>&nbsp; F6.08.1 &middot; sessions &amp; authentication</a>
       <span class="spacer"></span>
-      <a class="btn" href="/elixir/phoenix">F6 &middot; Phoenix Framework <span aria-hidden="true">&rarr;</span></a>
+      <a class="btn" href="/elixir/phoenix/deployment/deploy">Next &middot; deploying to production <span aria-hidden="true">&rarr;</span></a>
     </nav>
   </section>
 
@@ -552,13 +517,13 @@ pre.code .step{color:var(--cream-dim)}
       <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
       It is the same id convention the Portal engine uses as a pivot key across its contexts.</p>
     <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
-      build <span class="id" id="stampId">TSK0NdUKuboO3c</span>
+      build <span class="id" id="stampId">TSK0NdZT1YoR5k</span>
       <dl class="panel">
         <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
         <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
         <dt>node</dt><dd id="st-node">&mdash;</dd>
         <dt>seq</dt><dd id="st-seq">&mdash;</dd>
-        <dt>timestamp</dt><dd id="st-ts">2026-06-01 23:06:46 UTC</dd>
+        <dt>timestamp</dt><dd id="st-ts">2026-06-02 00:18:34 UTC</dd>
       </dl>
     </div>
   </div>
@@ -567,71 +532,31 @@ pre.code .step{color:var(--cream-dim)}
 <script>
 (function () {
   "use strict";
-  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4', SAGE = '#a7c9b1', SAGE_MUTE = '#7ba387', DIM = '#6b7494';
-  /* the two real holes and their old/new values; the widget computes which re-send */
-  var H0 = { old: '41', neu: '42', label: '{@count}', short: '"42"' };
-  var H1 = { old: 'list', neu: 'list + 1 row', label: '{course.title} list', short: '[...]' };
-  var CASES = {
-    count:   { h0: true,  h1: false, title: '@count 41 -> 42, @courses unchanged' },
-    courses: { h0: false, h1: true,  title: '@courses gains a row, @count unchanged' },
-    both:    { h0: true,  h1: true,  title: '@count ticks and @courses gains a row' },
-    none:    { h0: false, h1: false, title: 'an event fires but no assign changed' }
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var P = {
+    release: { name: 'mix release', is: 'a self-contained artifact', row: 'rlRow_release',
+      desc: 'mix release assembles your code, every dependency, and the BEAM into one directory that runs with no Elixir or Erlang installed, with a bin/portal launcher to start it or run commands.' },
+    runtime: { name: 'runtime.exs', is: 'config read at boot, not compile', row: 'rlRow_runtime',
+      desc: 'config/runtime.exs is evaluated every time the release boots on the server, so it can read environment variables \u2014 the database URL, secret key base, host \u2014 that must not be baked into the build.' },
+    command: { name: 'a release command', is: 'run code without mix', row: 'rlRow_command',
+      desc: 'A release has no mix, so one-off tasks run via bin/portal eval, which boots only enough of the app to execute a function \u2014 used to run migrations with a small Portal.Release module.' }
   };
-  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function payloadMap(c) {
-    var parts = [];
-    if (c.h0) parts.push('"0" => "' + H0.neu + '"');
-    if (c.h1) parts.push('"1" => ' + H1.short);
-    return parts.length ? '%{' + parts.join(', ') + '}' : '%{}';
-  }
-  function setText(id, t){ var el = document.getElementById(id); if (el) el.textContent = t; }
-  function setAttr(id, a, v){ var el = document.getElementById(id); if (el) el.setAttribute(a, v); }
-  function render(k) {
-    var c = CASES[k]; if (!c) return;
-    document.querySelectorAll('#dfSel button').forEach(function (b) {
+  var ORDER = ['release', 'runtime', 'command'];
+  function pick(k) {
+    var x = P[k]; if (!x) return;
+    document.querySelectorAll('#rlSel button').forEach(function (b) {
       var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
-    /* hole 0 */
-    setText('df0val', H0.label + ' = ' + (c.h0 ? H0.neu : H0.old));
-    setText('df0tag', c.h0 ? 're-sent' : 'unchanged');
-    setAttr('df0tag', 'fill', c.h0 ? SAGE : DIM);
-    setAttr('dfBox0', 'stroke', c.h0 ? SAGE_MUTE : BLUE_MUTE);
-    setAttr('dfBox0', 'stroke-width', c.h0 ? '1.8' : '1.4');
-    setAttr('dfBox0', 'fill', c.h0 ? '#13201a' : '#11203a');
-    setAttr('df0val', 'fill', c.h0 ? SAGE : BLUE);
-    /* hole 1 */
-    setText('df1val', c.h1 ? H1.label + ' +1' : H1.label);
-    setText('df1tag', c.h1 ? 're-sent' : 'unchanged');
-    setAttr('df1tag', 'fill', c.h1 ? SAGE : DIM);
-    setAttr('dfBox1', 'stroke', c.h1 ? SAGE_MUTE : BLUE_MUTE);
-    setAttr('dfBox1', 'stroke-width', c.h1 ? '1.8' : '1.4');
-    setAttr('dfBox1', 'fill', c.h1 ? '#13201a' : '#11203a');
-    setAttr('df1val', 'fill', c.h1 ? SAGE : BLUE);
-    /* payload + readout */
-    var map = payloadMap(c);
-    var n = (c.h0 ? 1 : 0) + (c.h1 ? 1 : 0);
-    setText('dfPayload', map);
-    setAttr('dfPayload', 'fill', n ? SAGE : DIM);
-    setText('dfNote', n ? 'only changed holes are sent; the shell and unchanged holes are skipped'
-                        : 'no hole changed; the diff is empty and nothing is sent');
-    setText('dfCount', n + ' of 2');
-    var code = document.getElementById('dfCode');
-    if (code) {
-      code.innerHTML = '<span class="cmt"># ' + esc(c.title) + '</span>\n' +
-                       '<span class="cmt"># diff over the socket:</span>\n' +
-                       (n ? esc(map) : esc(map) + '   <span class="cmt"># empty: socket stays silent</span>');
-    }
-    var out = document.getElementById('dfOut');
-    if (out) {
-      out.innerHTML = '<b style="color:' + SAGE + '">' + esc(c.title) + '</b> <span class="dim">&middot;</span> ' +
-        n + ' of 2 holes re-send <span class="dim">&middot;</span> payload ' +
-        '<b style="color:' + SAGE + '">' + esc(map) + '</b>';
-    }
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(P[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('rlRole'); if (rEl) rEl.textContent = x.name;
+    var dEl = document.getElementById('rlResult'); if (dEl) dEl.textContent = x.is;
+    var oEl = document.getElementById('rlOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + x.name + '</b> \u2014 ' + x.is + '. ' + x.desc;
   }
-  document.querySelectorAll('#dfSel button').forEach(function (b) {
-    b.addEventListener('click', function () { render(b.getAttribute('data-k')); });
-  });
-  render('count'); /* correct static state is in the markup; this confirms it at load */
+  document.querySelectorAll('#rlSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('release');
 
   /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
