@@ -94,16 +94,33 @@ acceptance check or an invariant, and no gate that is merely asserted rather tha
 - **Acceptance criteria** — the conditions that make a story demonstrably satisfied, written as Given/When/Then
   (Gherkin) scenarios so they read the same to product, QA, and an agent.
 - **Claude agent story** — see above: the executable counterpart of a user story.
-- **Invariant** — a property that must hold before and after every operation in the increment, in the spirit of
-  design by contract (preconditions, postconditions, invariants). Invariants are the rules a refactor may never break;
-  in this project the master invariant is *the web layer calls only the `Portal` facade and renders only the closed
-  `%Portal.Error{}` set.*
+- **Invariant** — a property that must hold for every value the increment produces, enforced the functional way:
+  encode it in the type/struct so illegal states cannot be built (*make illegal states unrepresentable*), parse
+  untrusted input into that type once at the boundary (*parse, don't validate*), and pin the residual with a
+  property-based test. This is the functional analogue of a design-by-contract invariant — established by construction
+  and by `StreamData`, not by scattered runtime assertions. The master invariant of this project is *the web layer
+  calls only the `Portal` facade and renders only the closed `%Portal.Error{}` set.*
 - **Execution topology** — the runtime shape (processes, supervision, request flow) and the build-order graph (task
   dependencies) of the increment.
 - **Definition of Done (DoD)** — the checklist that closes the spec: deliverables present, invariants tested,
   acceptance criteria green, platform runnable.
 - **Correct by definition** — the completion rule above: completion is a closure over traced, executed checks, not a
   judgment call.
+
+## Control flow & error handling
+
+Specs use one FP-native control-flow discipline so agents implement errors the same way every time — railway-oriented:
+a pipeline either reaches `:ok`/`{:ok, value}` or short-circuits to a typed `{:error, %Portal.Error{}}`.
+
+| Approach | Use it for | Why |
+| --- | --- | --- |
+| `with` + tagged tuples | the default — sequential context/business steps that each return `{:ok, _} / {:error, _}` | linear, composable, pure, pattern-matchable; the Elixir form of railway-oriented programming |
+| `Ecto.Multi` / `Repo.transaction` | any operation that writes more than one row or must be atomic (e.g. record answer → bump streak → enqueue notification) | all-or-nothing; named steps; introspectable without running |
+| changeset → `Portal.Error.from_changeset/1` | parsing untrusted input at a boundary (forms, params, Telegram `initData`) | parse-don't-validate: one typed result, or a field-level closed error |
+| exceptions (`raise`, bang funcs) | truly exceptional faults and programmer errors only — *let it crash* under supervision | keeps the value channel clean; OTP restarts the process |
+
+Avoid result-monad libraries unless `with` ergonomics genuinely break down, and never use exceptions for an expected
+domain failure. Full sourcing is in [References](#references).
 
 ## The workflow
 
@@ -213,14 +230,28 @@ Acceptance gate: <the check that closes it>
 - Gojko Adzic, *Specification by Example* — examples as the shared, executable spec:
   <https://gojko.net/books/specification-by-example/>.
 
-**Invariants, contracts, and tests**
+**Functional correctness — invariants, control flow, and tests**
 
-- Bertrand Meyer, design by contract (preconditions, postconditions, invariants) — overview:
-  <https://en.wikipedia.org/wiki/Design_by_contract>. Applied in this course in F5.04.
-- Property-based testing with `StreamData` (state an invariant, generate cases):
+- Scott Wlaschin, *Railway Oriented Programming* — compose `{:ok, _} | {:error, _}` steps that short-circuit on
+  failure; the model behind Elixir's `with`: <https://fsharpforfunandprofit.com/rop/>. Counterweight (do not overuse
+  `Result`): *Against Railway-Oriented Programming*,
+  <https://fsharpforfunandprofit.com/posts/against-railway-oriented-programming/>.
+- Elixir `with` and tagged tuples — the idiomatic control flow for happy-path composition and error short-circuiting:
+  <https://hexdocs.pm/elixir/lists-and-tuples.html>.
+- Alexis King, *Parse, don't validate* — turn untrusted input into a constrained type once, at the edge, and trust it
+  downstream: <https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/>.
+- Yaron Minsky, *Effective ML* (make illegal states unrepresentable) — model so impossible states cannot be
+  constructed: <https://vimeo.com/14313378>.
+- Gary Bernhardt, *Boundaries* (functional core, imperative shell) — a pure core with effects pushed to the edges:
+  <https://www.destroyallsoftware.com/talks/boundaries>.
+- Property-based testing with `StreamData` — state an invariant, generate cases, shrink to a minimal counterexample:
   <https://hexdocs.pm/stream_data/StreamData.html>.
+- Elixir's set-theoretic type system (warnings today; user signatures a later milestone) — Castagna, Duboc & Valim,
+  *The Design Principles of the Elixir Type System*: <https://arxiv.org/abs/2306.06391>.
 - Hunt & Thomas, *The Pragmatic Programmer* (tracer bullets, walking skeletons) — the value-ladder discipline:
   <https://pragprog.com/titles/tpp20/the-pragmatic-programmer-20th-anniversary-edition/>.
+- Lineage, not the backbone: design by contract (pre/postconditions, invariants), re-expressed here functionally as
+  types + boundary parsing + properties: <https://en.wikipedia.org/wiki/Design_by_contract> (applied in F5.04).
 
 **Agent and implementation workflow**
 
