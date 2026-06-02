@@ -35,8 +35,8 @@ touching anything below the facade.
 | --- | --- | --- | --- | --- |
 | [F5.1](f5.1.md) | Start thin: a running Portal | a supervised app answering real HTTP from day one, behind a replaceable web layer; branded Snowflake ids | Operator, Developer, Architect | **specced** |
 | [F5.2](f5.2.md) | Model the Portal domain | the domain as structs in bounded contexts (Accounts/Catalog/Learning) with small public APIs | Developer, Architect, Learner | **specced** |
-| F5.3 | Tracer bullets: a walking skeleton | one use case (enroll) wired end to end through every layer; the architecture proven runnable | Developer, Operator | planned |
-| F5.4 | Design by contract | the enroll command guarded by precondition/postcondition/invariant, failing fast at the boundary | Developer, Learner | planned |
+| [F5.3](f5.3.md) | Tracer bullets: a walking skeleton | one use case (enroll) wired end to end through every layer; the architecture proven runnable | Developer, Operator | **specced** |
+| [F5.4](f5.4.md) | The enroll contract | the enroll command parsed at the boundary into a typed result; postcondition and invariant pinned by property tests | Developer, Learner | **specced** |
 | F5.5 | Commands, queries & events | writes/reads separated; changes recorded as events; the engine collapses to `decide`/`evolve` over a log | Developer, Architect | planned |
 | F5.6 | Where engine state lives | the folded state kept alive in a supervised GenServer; crash recovery by replay | Operator, Developer | planned |
 | F5.7 | Pragmatic testing | the pure core pinned by example, property, and contract tests; a fast, deterministic suite | Developer | planned |
