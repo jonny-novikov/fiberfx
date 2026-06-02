@@ -26,4 +26,12 @@ defmodule Portal.IDTest do
     ids = for _ <- 1..100, do: Portal.ID.new("ENR")
     assert length(Enum.uniq(ids)) == 100
   end
+
+  test ~S(valid?/1 accepts minted ids and rejects malformed placeholders like "USR1") do
+    assert Portal.ID.valid?(Portal.ID.new("ENR"))
+    refute Portal.ID.valid?("USR1")
+    refute Portal.ID.valid?("ENR")
+    refute Portal.ID.valid?("usr0NepbCmCG3d")
+    refute Portal.ID.valid?(42)
+  end
 end

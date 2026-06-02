@@ -13,8 +13,9 @@ defmodule Portal.SupervisionTest do
     new_pid = wait_for_restart(pid)
     assert is_pid(new_pid) and new_pid != pid
 
-    # The supervised boundary serves again (still stubbed in F5.1).
-    assert {:error, :not_implemented} = Portal.Engine.dispatch(%{type: :enroll})
+    # The supervised boundary answers again after the restart (an incomplete
+    # command is rejected with a tagged tuple — the point is that it replies).
+    assert {:error, _} = Portal.Engine.dispatch(%{type: :enroll})
   end
 
   defp wait_for_restart(old_pid, tries \\ 50)

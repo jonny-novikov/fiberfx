@@ -36,4 +36,20 @@ defmodule Portal.ID do
   def at(branded_id) when is_binary(branded_id) do
     EchoData.Snowflake.timestamp(snowflake(branded_id))
   end
+
+  @doc ~S'''
+  True only for a well-formed branded id: a 3-letter uppercase namespace followed
+  by an 11-character Base62 snowflake (14 bytes total). Placeholders like `"USR1"`
+  are **not** valid — a branded id always carries a full encoded snowflake.
+  '''
+  @spec valid?(term()) :: boolean()
+  def valid?(<<ns::binary-size(3), encoded::binary-size(11)>>) do
+    uppercase_namespace?(ns) and EchoData.Base62.valid?(encoded)
+  end
+
+  def valid?(_), do: false
+
+  defp uppercase_namespace?(<<a, b, c>>) do
+    a in ?A..?Z and b in ?A..?Z and c in ?A..?Z
+  end
 end
