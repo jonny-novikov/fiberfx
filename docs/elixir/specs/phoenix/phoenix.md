@@ -37,8 +37,8 @@ features require them.
 | [F6.1](f6.1.md) | Bootstrap the Phoenix Portal | the engine is served as a real web app; a request reaches the facade and renders | Operator, Visitor, Developer | **specced** |
 | [F6.2](f6.2.md) | Routing & the access surface | a navigable, protectable surface: read/write/REST/live routes, pipelines, plugs | Visitor, Learner, Developer, Operator | **specced** |
 | [F6.3](f6.3.md) | Persistence with Ecto | durable catalog & enrollments via a Postgres adapter behind the F5 port | Operator, Developer, Learner | **specced** |
-| F6.4 | Contexts & domain on the web | the web reads and writes real domain through the facade and bounded contexts | Developer, Learner | planned |
-| F6.5 | Views with HEEx | a rendered UI: templates, function components, forms with inline errors | Visitor, Learner | planned |
+| [F6.4](f6.4.md) | Contexts & domain on the web | the web reads and writes real domain through the facade and bounded contexts | Developer, Learner | **specced** |
+| [F6.5](f6.5.md) | Views with HEEx | a rendered UI: templates, function components, forms with inline errors | Visitor, Learner | **specced** |
 | F6.6 | LiveView | interactive pages — live search and live create — without full reloads | Learner | planned |
 | F6.7 | Real-time (PubSub & Presence) | multi-client live updates and a live viewer count | Learner, Instructor | planned |
 | F6.8 | Auth & deployment | real users, protected areas, and a deployed, clustered release | Learner, Operator | planned |
