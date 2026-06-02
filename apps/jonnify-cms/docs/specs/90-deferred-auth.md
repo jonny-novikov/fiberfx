@@ -7,6 +7,15 @@ intended shape so that a later cycle can pick it up without re-deciding the seam
 the static jonnify site and `cms` remain exactly as the other specs describe: stateless,
 read-mostly, no accounts, no learner state.
 
+> **Forward reference (scope update).** SQLite has since been adopted in this module for a
+> separate, already-implemented purpose — the filesystem-mirrored **content store**
+> (`docs/specs/07-content-store.md`), which holds the decomposed `/elixir` pages for
+> byte-parity rebuilds. `go.mod` therefore already carries `modernc.org/sqlite` (the same
+> CGO-free driver this section names below), and §4's "`go.mod` is **not** to gain
+> `modernc.org/sqlite` in this cycle" no longer holds. The **progress/auth** store sketched
+> here remains deferred and unimplemented; the two stores are unrelated (content vs. learner
+> state).
+
 ## 1. What is deferred and why
 
 The course is a tree of static pages. A natural future feature is **per-learner progress**:
