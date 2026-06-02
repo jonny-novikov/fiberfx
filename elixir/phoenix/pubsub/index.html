@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mount &amp; assigns — F6.06.1 · jonnify</title>
-<meta name="description" content="A LiveView is a stateful process connected to the browser over a socket. mount/3 returns its initial state, and it runs twice — once for the disconnected HTTP first paint, once for the connected socket — so connected?(socket) guards the one-time side effects, exactly as a GenServer init/1 sets up a process once.">
+<title>PubSub, channels &amp; real-time — F6.07 · jonnify</title>
+<meta name="description" content="PubSub turns one LiveView into many that update together: the domain broadcasts an event on a topic after a write, every subscribed LiveView receives it in handle_info and re-renders, and one user&#x27;s change becomes everyone&#x27;s live update. Three dives: broadcasting engine events, subscribing a LiveView, and channels and presence — real-time built on the same OTP message passing as the F5 engine.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -125,14 +125,14 @@ strong{color:var(--cream);font-weight:700}
   cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
   background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
 .solid-select button:hover{border-color:var(--cream-dim)}
-.solid-select button.active{color:var(--ink);background:var(--blue-bright);border-color:transparent;font-weight:700}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
 .solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
 .solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
 .solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
 .solid-select button.active[data-c="elixir"]{background:var(--elixir-bright)}
 .fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
 .fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
-.fold-ctrl input[type=range]{flex:1;accent-color:var(--blue);height:2px}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
 .fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
 .geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
   background:var(--ink);border:1px solid var(--line);border-radius:10px;
@@ -312,7 +312,7 @@ pre.code .step{color:var(--cream-dim)}
     <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">knowledge map</span></a>
     <nav>
       <a href="/elixir/course">Contents</a>
-      <span class="route-tag">/elixir/phoenix/liveview/mount</span>
+      <span class="route-tag">/elixir/phoenix/pubsub</span>
     </nav>
   </div>
 </header>
@@ -321,239 +321,200 @@ pre.code .step{color:var(--cream-dim)}
 
   <section class="hero">
     <div class="crumbs">
-      <a href="/elixir/phoenix">F6</a>
+      <a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a>
       <span class="sep">/</span>
-      <a href="/elixir/phoenix/liveview">F6.06</a>
-      <span class="sep">/</span>
-      <span class="here">mount</span>
+      <span class="here">F6.07 &middot; pubsub</span>
     </div>
-    <p class="eyebrow">F6.06 &middot; part 1 of 3</p>
-    <h1>mount &amp; <span class="ex">assigns</span></h1>
-    <p class="lede">A LiveView is a stateful process connected to the browser over a socket, and
-      <code class="inl">mount/3</code> is the one callback that gives it its first state.</p>
-    <p class="kicker">The <code class="inl">socket</code> is the process state. <code class="inl">mount/3</code> receives
-      the route params, the session, and that socket, and returns <code class="inl">{:ok, socket}</code> &mdash; the
-      LiveView analogue of a GenServer <code class="inl">init/1</code> from F5. It runs in two stages: a disconnected
-      HTTP render for the first paint, then a connected render once the socket is established, so
-      <code class="inl">connected?/1</code> guards the side effects that must happen exactly once. Assigns go on with
-      <code class="inl">assign/3</code>, or with <code class="inl">assign_new/4</code> when a value should be computed
-      only if it is not already present.</p>
+    <p class="eyebrow">F6 &middot; the architecture &middot; module 7</p>
+    <h1>PubSub, channels &amp; <span class="ex">real-time</span></h1>
+    <p class="lede">F6.06 made one LiveView live: its own socket, its own state, its own diffs. But a catalog has many
+      viewers, and when one of them creates a course the others should see it without refreshing. That fan-out is
+      <strong>Phoenix.PubSub</strong> &mdash; publish/subscribe between processes over a named <strong>topic</strong>.
+      The shape is the OTP message passing the F5 engine already ran on: a process broadcasts a message, and every
+      process subscribed to that topic receives it in its mailbox. The discipline that matters is <em>where</em> the
+      broadcast comes from: the <strong>domain</strong> emits the event, in the context, right after a successful
+      write &mdash; not the web layer. Each LiveView subscribes on its connected mount (the
+      <code class="inl">connected?/1</code> guard from F6.06.1) and handles the message in
+      <code class="inl">handle_info/2</code>, the callback for process messages as opposed to
+      <code class="inl">handle_event/3</code> for browser clicks. Underneath LiveView sit <strong>channels</strong>,
+      the raw real-time primitive for custom client protocols, and alongside them <strong>Presence</strong>, which
+      tracks who is on a topic and stays correct across a whole cluster. One write becomes everyone&rsquo;s live
+      update, and the domain never learns the web exists.</p>
+    <p class="kicker">Three dives: broadcasting domain events from the context, subscribing a LiveView and handling
+      the message, and the channels and presence beneath and beside it &mdash; real-time on the same message passing
+      as F5.</p>
     <div class="toc-mini" aria-label="On this page">
-      <a href="#socket">The socket is the state</a>
-      <a href="#twostage">The two-stage connect</a>
-      <a href="#assigns">assign and assign_new</a>
-      <a href="#code">mount, on the Portal</a>
-      <a href="#downstream">Why it matters</a>
+      <a href="#pieces">Three parts of real-time</a>
+      <a href="#fanout">One write, many clients</a>
+      <a href="#dives">Three deep dives</a>
     </div>
   </section>
 
-  <section id="socket">
-    <h2>The socket is the state</h2>
+  <section id="pieces">
+    <h2>Three parts of real-time</h2>
     <div class="prose">
-      <p>A LiveView is an OTP process &mdash; the same long-lived, message-driven actor F5 built the Portal engine
-        from. Its state is held in one value, the <code class="inl">socket</code>, and the part of the socket an author
-        writes to is <code class="inl">socket.assigns</code>: a plain map from atom keys to values. Everything the view
-        renders is read from <code class="inl">assigns</code>; everything an event changes is written back to
-        <code class="inl">assigns</code>. The rest of the socket carries connection bookkeeping that the framework owns.</p>
-      <dl class="deflist">
-        <dt>socket</dt><dd>The LiveView process state: a <code class="inl">%Phoenix.LiveView.Socket{}</code> struct that holds the assigns plus connection metadata.</dd>
-        <dt>assigns</dt><dd>The map inside the socket an author reads and writes &mdash; the data the render is a function of.</dd>
-        <dt>mount/3</dt><dd>The first callback: it receives <code class="inl">params</code>, <code class="inl">session</code>, and <code class="inl">socket</code>, and returns <code class="inl">{:ok, socket}</code> with the initial assigns set.</dd>
-        <dt>connected?/1</dt><dd>A predicate on the socket: <code class="inl">false</code> during the disconnected first paint, <code class="inl">true</code> once the socket is live.</dd>
-      </dl>
-      <p>Naming a function <code class="inl">mount/3</code> states two facts at once: a callback named
-        <code class="inl">mount</code>, taking three arguments &mdash; <code class="inl">params</code>,
-        <code class="inl">session</code>, <code class="inl">socket</code>. The first two are inputs from the request;
-        the third is the state to be initialised and returned.</p>
-    </div>
-  </section>
-
-  <section id="twostage">
-    <h2>The two-stage connect</h2>
-    <div class="prose">
-      <p>A LiveView is reached twice. The first request is ordinary HTTP: the router runs
-        <code class="inl">mount/3</code>, renders the markup once, and sends static HTML &mdash; fast to paint and
-        indexable by a crawler, with no socket open yet. The browser then opens a WebSocket and the LiveView mounts a
-        <strong>second</strong> time, now connected; from that point the process stays alive and exchanges diffs. Both
-        stages run the same <code class="inl">mount/3</code>, so the difference between them is exactly what
-        <code class="inl">connected?(socket)</code> reports. Move the control through the connect.</p>
+      <p>Live updates are three moves, and this module takes each in turn. <strong>broadcast</strong> publishes a
+        domain event to a topic. <strong>subscribe</strong> joins a topic so a LiveView receives those events.
+        <strong>presence</strong> tracks who is on a topic, across nodes. Select a part.</p>
     </div>
 
-    <figure class="fig" aria-labelledby="mtTitle">
-      <h4 id="mtTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The two-stage connect &middot; drag through it</h4>
+    <figure class="fig" aria-labelledby="psTitle">
+      <h4 id="psTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Real-time &middot; select a part</h4>
       <div class="controls">
-        <div class="fold-ctrl" style="width:100%;max-width:30rem">
-          <label for="stageRange">stage</label>
-          <input id="stageRange" type="range" min="0" max="1" step="1" value="0" aria-describedby="mtOut">
-          <span class="val" id="stageVal">1 / 2</span>
+        <div class="solid-select" id="psSel" role="group" aria-label="Real-time part">
+          <button type="button" data-k="broadcast" class="active">broadcast</button>
+          <button type="button" data-k="subscribe">subscribe</button>
+          <button type="button" data-k="presence">presence</button>
         </div>
       </div>
 
-      <svg viewBox="0 0 720 200" role="img" aria-label="The two-stage connect. Stage one is a disconnected HTTP render that produces static HTML, where connected? is false and side effects are skipped. Stage two is the connected socket render, where the process stays alive, connected? is true, and one-time side effects such as subscriptions and timers start.">
-        <!-- stage 1: disconnected HTTP -->
-        <rect id="stg1" x="36" y="28" width="300" height="146" rx="13" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
-        <text x="186" y="52" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.06em" fill="#9fc0ea">STAGE 1 &middot; DISCONNECTED HTTP</text>
-        <text x="186" y="76" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#cfd6e6">mount/3 runs &middot; renders once</text>
-        <text x="186" y="94" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#cfd6e6">static HTML &rarr; first paint</text>
-        <text id="c1" x="186" y="122" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9fc0ea">connected?(socket) == false</text>
-        <text x="186" y="144" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">no socket yet &middot; side effects skipped</text>
-        <text x="186" y="162" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#6b7494">fast, indexable, stateless paint</text>
+      <svg viewBox="0 0 720 170" role="img" aria-label="Three parts of real-time: broadcast publishes an event to a topic, subscribe joins a topic to receive events, and presence tracks who is on a topic across nodes.">
+        <rect id="psRow_broadcast" x="40" y="24" width="640" height="42" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="60" y="42" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#86a7d8">BROADCAST</text>
+        <text x="60" y="58" font-family="JetBrains Mono, monospace" font-size="10" fill="#9fc0ea">the context publishes an event to a topic &mdash; after a write</text>
+        <text x="660" y="49" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#86a7d8">F6.07.1</text>
 
-        <!-- arrow -->
-        <line x1="336" y1="101" x2="384" y2="101" stroke="#5a87c4" stroke-width="1.6"></line>
-        <polygon points="386,101 378,97 378,105" fill="#5a87c4"></polygon>
-        <text x="360" y="92" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#86a7d8">WebSocket opens</text>
+        <rect id="psRow_subscribe" x="40" y="72" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="90" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">SUBSCRIBE</text>
+        <text x="60" y="106" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">a LiveView joins a topic &mdash; handle_info/2 receives events</text>
+        <text x="660" y="97" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">F6.07.2</text>
 
-        <!-- stage 2: connected socket -->
-        <rect id="stg2" x="384" y="28" width="300" height="146" rx="13" fill="#10162b" stroke="#3a4263" stroke-width="1.4"></rect>
-        <text id="s2lab" x="534" y="52" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" letter-spacing="0.06em" fill="#8b93b0">STAGE 2 &middot; CONNECTED SOCKET</text>
-        <text x="534" y="76" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#d7cfb9">mount/3 runs again &middot; live</text>
-        <text x="534" y="94" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#d7cfb9">process stays alive &middot; diffs</text>
-        <text id="c2" x="534" y="122" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#7c86a6">connected?(socket) == true</text>
-        <text id="s2note" x="534" y="144" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">subscriptions &amp; timers start here, once</text>
-        <text x="534" y="162" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#5a6688">stateful &middot; until the socket drops</text>
+        <rect id="psRow_presence" x="40" y="120" width="640" height="42" rx="10" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="60" y="138" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.05em" fill="#8b93b0">PRESENCE</text>
+        <text x="60" y="154" font-family="JetBrains Mono, monospace" font-size="10" fill="#d7cfb9">track who is on a topic &mdash; synced across the cluster</text>
+        <text x="660" y="145" text-anchor="end" font-family="Manrope, sans-serif" font-size="8" fill="#6b7494">F6.07.3</text>
       </svg>
 
-      <div class="geo-readout" id="mtOut" aria-live="polite"></div>
-      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">stage: <span id="mtRole" style="color:#9fc0ea">disconnected HTTP</span></p>
-      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">connected?(socket): <span id="mtFlag" style="color:var(--cream)">false</span></p>
+      <div class="geo-readout" id="psOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">part: <span id="psRole" style="color:#9fc0ea">broadcast</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">does: <span id="psResult" style="color:var(--cream)">publish an event to a topic</span></p>
     </figure>
-    <p class="take">One <code class="inl">mount/3</code>, two arrivals. The first paints HTML and skips anything with an
-      effect; the second is the live process, and it is the only place a subscription or a timer should start &mdash;
-      which is exactly the question <code class="inl">connected?/1</code> answers.</p>
+    <p class="take">PubSub is not a web feature bolted on &mdash; it is the BEAM&rsquo;s native message passing exposed
+      over a topic. The same broadcast reaches a LiveView, a background worker, or a process on another node, with no
+      change to the caller.</p>
   </section>
 
-  <section id="assigns">
-    <h2>assign and assign_new</h2>
+  <section id="fanout">
+    <h2>One write, many clients</h2>
     <div class="prose">
-      <p>State is written with <code class="inl">assign/3</code>: <code class="inl">assign(socket, :key, value)</code>
-        returns a new socket with that key set, in the immutable style of every F2 update &mdash; the old socket is
-        unchanged. <code class="inl">assign_new/4</code> is the conditional form:
-        <code class="inl">assign_new(socket, :key, fun)</code> runs <code class="inl">fun</code> and sets the key only
-        when the key is absent, and otherwise keeps the existing value and never calls <code class="inl">fun</code>.
-        That guard matters across the two-stage connect: a value the disconnected stage already placed (a current user
-        handed down from a plug, say) is reused on the connected mount instead of being recomputed.</p>
+      <p>Trace a single create. A user submits the form; the LiveView calls the context; the context writes through
+        the Repo and, on success, broadcasts <code class="inl">{:course_created, course}</code> on the
+        <code class="inl">"courses"</code> topic. PubSub delivers that one message to every subscribed LiveView &mdash;
+        including the author&rsquo;s and everyone else&rsquo;s &mdash; and each updates its assigns and pushes a diff
+        to its own browser. One write, one broadcast, many live screens.</p>
     </div>
-    <pre class="code"><span class="cmt"># assign/3 — set a key unconditionally, returning a new socket</span>
-socket = <span class="fn">assign</span>(socket, <span class="res">:progress</span>, <span class="res">42</span>)
-socket.assigns.progress
-<span class="cmt"># => 42</span>
 
-<span class="cmt"># assign_new/4 — compute and set only if the key is absent</span>
-socket = <span class="fn">assign_new</span>(socket, <span class="res">:progress</span>, <span class="op">fn</span> -> <span class="res">99</span> <span class="op">end</span>)
-socket.assigns.progress
-<span class="cmt"># => 42  (kept; the fun is not called)</span></pre>
-    <p class="note"><code class="inl">assign/3</code> also takes a keyword list &mdash;
-      <code class="inl">assign(socket, progress: 42, error: nil)</code> sets several keys at once, the form the Portal
-      mount below uses.</p>
+    <figure class="fig" aria-labelledby="psFanTitle">
+      <h4 id="psFanTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">write &rarr; broadcast &rarr; every subscriber</h4>
+      <svg viewBox="0 0 720 220" role="img" aria-label="A write in the context broadcasts one event on a topic; PubSub delivers it to several subscribed LiveViews, each of which pushes a diff to its own browser.">
+        <rect x="20" y="92" width="150" height="48" rx="10" fill="#10162b" stroke="#5a6688" stroke-width="1.3"></rect>
+        <text x="95" y="112" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#cfd6e6">context write</text>
+        <text x="95" y="127" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7c86a6">create_course/1 &middot; {:ok}</text>
+        <line x1="170" y1="116" x2="214" y2="116" stroke="#5a87c4" stroke-width="1.8"></line>
+        <text x="192" y="108" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#86a7d8">broadcast</text>
+
+        <rect x="214" y="92" width="150" height="48" rx="10" fill="#11203a" stroke="#5a87c4" stroke-width="2"></rect>
+        <text x="289" y="112" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#9fc0ea">PubSub topic</text>
+        <text x="289" y="127" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7.5" fill="#86a7d8">"courses"</text>
+
+        <line x1="364" y1="108" x2="430" y2="56" stroke="#3a4263" stroke-width="1.6"></line>
+        <line x1="364" y1="116" x2="430" y2="116" stroke="#3a4263" stroke-width="1.6"></line>
+        <line x1="364" y1="124" x2="430" y2="176" stroke="#3a4263" stroke-width="1.6"></line>
+
+        <rect x="430" y="36" width="150" height="40" rx="9" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="505" y="52" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">LiveView A</text>
+        <text x="505" y="65" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7c86a6">handle_info &rarr; diff</text>
+        <rect x="430" y="96" width="150" height="40" rx="9" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="505" y="112" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">LiveView B</text>
+        <text x="505" y="125" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7c86a6">handle_info &rarr; diff</text>
+        <rect x="430" y="156" width="150" height="40" rx="9" fill="#10162b" stroke="#5a6688" stroke-width="1.2"></rect>
+        <text x="505" y="172" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#cfd6e6">LiveView C</text>
+        <text x="505" y="185" text-anchor="middle" font-family="Manrope, sans-serif" font-size="7" fill="#7c86a6">handle_info &rarr; diff</text>
+
+        <line x1="580" y1="56" x2="618" y2="56" stroke="#7ba387" stroke-width="1.4"></line>
+        <line x1="580" y1="116" x2="618" y2="116" stroke="#7ba387" stroke-width="1.4"></line>
+        <line x1="580" y1="176" x2="618" y2="176" stroke="#7ba387" stroke-width="1.4"></line>
+        <rect x="618" y="40" width="84" height="152" rx="9" fill="#13201a" stroke="#7ba387" stroke-width="1.3"></rect>
+        <text x="660" y="112" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#a7c9b1">3 browsers,</text>
+        <text x="660" y="125" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#a7c9b1">all live</text>
+
+        <text x="360" y="212" text-anchor="middle" font-family="Manrope, sans-serif" font-size="8" fill="#5a6688">one broadcast reaches every subscriber &mdash; the domain emits it once, the web fans it out</text>
+      </svg>
+    </figure>
+    <p class="take">The author&rsquo;s own screen updates the same way as everyone else&rsquo;s &mdash; through the
+      broadcast, not a special case in the create handler. That uniformity is what keeps real-time code small: there is
+      one path, and every client is on it.</p>
   </section>
 
-  <section id="code">
-    <h2>mount, on the Portal</h2>
+  <section id="dives">
+    <h2>Three deep dives</h2>
     <div class="prose">
-      <p>A LiveView for one enrollment loads its state in <code class="inl">mount/3</code> through the
-        <code class="inl">Portal</code> facade and nothing deeper. <code class="inl">Portal.progress_of/1</code> takes
-        the enrollment id and returns <code class="inl">{:ok, 0..100}</code> or a typed
-        <code class="inl">{:error, %Portal.Error{}}</code>; each outcome maps to assigns. The one-time work &mdash; here
-        a periodic refresh timer &mdash; is wrapped in <code class="inl">connected?(socket)</code>, so it starts on the
-        live mount and never on the disconnected first paint.</p>
-    </div>
-    <pre class="code"><span class="op">defmodule</span> <span class="fn blue">PortalWeb.EnrollmentLive</span> <span class="op">do</span>
-  <span class="op">use</span> <span class="fn blue">PortalWeb</span>, <span class="res">:live_view</span>
-  <span class="op">alias</span> <span class="fn blue">Portal.Error</span>
-
-  <span class="cmt"># mount/3 is the init/1 of a LiveView: set the socket's initial state</span>
-  <span class="op">@impl</span> <span class="res">true</span>
-  <span class="op">def</span> <span class="fn">mount</span>(%{<span class="str">"id"</span> => enrollment_id}, _session, socket) <span class="op">do</span>
-    <span class="cmt"># one-time side effects belong behind connected?/1 — live mount only</span>
-    <span class="op">if</span> <span class="fn">connected?</span>(socket), <span class="op">do:</span> <span class="fn blue">Process</span>.<span class="fn">send_after</span>(<span class="fn">self</span>(), <span class="res">:refresh</span>, <span class="res">30_000</span>)
-
-    <span class="op">case</span> <span class="fn blue">Portal</span>.<span class="fn">progress_of</span>(enrollment_id) <span class="op">do</span>
-      {<span class="res">:ok</span>, percent} -><span class="cmt">                  # percent :: 0..100</span>
-        {<span class="res">:ok</span>, <span class="fn">assign</span>(socket, enrollment_id: enrollment_id, progress: percent, error: <span class="res">nil</span>)}
-
-      {<span class="res">:error</span>, %<span class="fn blue">Error</span>{message: msg}} -><span class="cmt">    # the closed error contract</span>
-        {<span class="res">:ok</span>, <span class="fn">assign</span>(socket, enrollment_id: enrollment_id, progress: <span class="res">nil</span>, error: msg)}
-    <span class="op">end</span>
-  <span class="op">end</span>
-<span class="op">end</span>
-
-<span class="cmt"># iex&gt; {:ok, socket} = EnrollmentLive.mount(%{"id" =&gt; "enr_42"}, %{}, socket)</span>
-<span class="cmt"># socket.assigns.progress</span>
-<span class="cmt"># => 42</span></pre>
-    <p class="take">The body of <code class="inl">mount/3</code> names only <code class="inl">Portal</code> and
-      <code class="inl">%Portal.Error{}</code> &mdash; the same facade a controller called in F6.01. The transport is a
-      socket instead of a request; the boundary below it is the one F5 sealed.</p>
-  </section>
-
-  <section id="downstream">
-    <h2>Why it matters</h2>
-    <div class="prose">
-      <p>Every later callback reads the state <code class="inl">mount/3</code> set here.
-        <a href="/elixir/phoenix/liveview/events">F6.06.2</a> turns a browser event into new assigns with
-        <code class="inl">handle_event/3</code>; <a href="/elixir/phoenix/liveview/render">F6.06.3</a> renders those
-        assigns and ships only the diff. A subscription opened under <code class="inl">connected?/1</code> here is what
-        the next module, <strong>F6.07 &mdash; PubSub</strong>, uses so a
-        <code class="inl">%Portal.Events.LearnerEnrolled{}</code> broadcast can update many live views at once. An
-        initial state set wrong here is inherited by every downstream callback, which is why mount is taken first.</p>
+      <p>In order: broadcasting domain events from the context; subscribing a LiveView and handling the message; and
+        the channels and presence that sit beneath and beside PubSub.</p>
     </div>
 
-    <div class="bridge">
+    <div style="display:flex;flex-direction:column;gap:1rem;margin-top:1.4rem">
+      <a href="/elixir/phoenix/pubsub/broadcast" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--blue-bright)">F6.07.1</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Broadcasting engine events <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)"><code class="inl">Phoenix.PubSub</code>, topics, and broadcasting from the context after a write &mdash; with a facade wrapper for the server name.</div>
+      </a>
+      <a href="/elixir/phoenix/pubsub/subscribe" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--gold-bright)">F6.07.2</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Subscribing a LiveView <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">Subscribe on the connected mount, then <code class="inl">handle_info/2</code> &mdash; process messages, not browser events &mdash; updating a stream.</div>
+      </a>
+      <a href="/elixir/phoenix/pubsub/presence" style="display:block;text-decoration:none;border:1px solid var(--line);border-left:3px solid var(--sage);border-radius:16px;padding:1.3rem 1.5rem;background:var(--ink-2)">
+        <div style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--sage-bright)">F6.07.3</div>
+        <div style="font-family:var(--serif-display);font-size:1.35rem;color:var(--cream);margin:.2rem 0 .3rem">Channels &amp; presence <span aria-hidden="true" style="color:var(--gold)">&rarr;</span></div>
+        <div style="font-family:var(--serif);color:var(--cream-soft)">The channel primitive beneath LiveView, and <code class="inl">Presence</code> for who is on a topic, synced across a cluster.</div>
+      </a>
+    </div>
+
+    <div class="bridge" style="margin-top:1.8rem">
       <div class="cell idea">
-        <p class="lbl">F5 &middot; GenServer init/1</p>
-        <p><code class="inl">init(arg)</code> runs once and returns <code class="inl">{:ok, state}</code> &mdash; the process&rsquo;s first state.</p>
+        <p class="lbl">F5 emitted events</p>
+        <p>the engine recorded domain events to its EventStore as the source of truth.</p>
       </div>
       <div class="arrow" aria-hidden="true">&rarr;</div>
       <div class="cell elix">
-        <p class="lbl">F6 &middot; LiveView mount/3</p>
-        <p><code class="inl">mount(params, session, socket)</code> returns <code class="inl">{:ok, socket}</code> &mdash; the same move, with a browser attached.</p>
+        <p class="lbl">F6.07 broadcasts them</p>
+        <p>the same kind of event, published on a topic, drives every live screen.</p>
       </div>
     </div>
-    <p class="take">A LiveView is a GenServer with a browser on the other end. <code class="inl">init/1</code> and
-      <code class="inl">mount/3</code> are the same idea: run once, return the initial state, then let messages drive
-      the rest.</p>
-
-    <h3 style="margin-top:2rem">Recap</h3>
-    <div class="prose">
-      <ul>
-        <li>The <code class="inl">socket</code> is the LiveView&rsquo;s process state; <code class="inl">socket.assigns</code> is the map the render reads.</li>
-        <li><code class="inl">mount/3</code> receives <code class="inl">params</code>, <code class="inl">session</code>, and <code class="inl">socket</code>, and returns <code class="inl">{:ok, socket}</code> with the initial assigns.</li>
-        <li>It runs twice: a disconnected HTTP render for the first paint, then a connected render over the socket.</li>
-        <li><code class="inl">connected?(socket)</code> is <code class="inl">false</code> on the first run and <code class="inl">true</code> on the second &mdash; the guard for one-time side effects such as subscriptions and timers.</li>
-        <li><code class="inl">assign/3</code> sets keys unconditionally; <code class="inl">assign_new/4</code> sets a key only when it is absent.</li>
-      </ul>
-    </div>
-    <p class="note">Next: <a href="/elixir/phoenix/liveview/events"><strong>handle_event &amp; state</strong></a> &mdash;
-      with the initial assigns in place, a browser event becomes a message that computes the next assigns. Back to
-      <a href="/elixir/phoenix/liveview">the F6.06 overview</a>.</p>
+    <p class="note">Start with <a href="/elixir/phoenix/pubsub/broadcast">broadcasting engine events</a>, then
+      <a href="/elixir/phoenix/pubsub/subscribe">subscribing a LiveView</a>, then
+      <a href="/elixir/phoenix/pubsub/presence">channels and presence</a>. This module follows F6.06 &mdash;
+      <a href="/elixir/phoenix/liveview">LiveView</a> &mdash; and the next, F6.08, takes the whole app to production.</p>
   </section>
 
   <section class="reveal" aria-labelledby="refsTitle">
     <h2 id="refsTitle">References</h2>
-    <p class="prose">The mount callback, the socket, and the assign helpers.</p>
+    <p class="prose">PubSub, channels, the <code class="inl">handle_info/2</code> callback, and Presence.</p>
     <div class="refs">
       <h3>Sources</h3>
       <ul>
-        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#c:mount/3"><code>mount/3</code> &mdash; Phoenix.LiveView</a> &mdash; params, session, socket, and the two-stage connect.</li>
-        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#connected?/1"><code>connected?/1</code> &mdash; Phoenix.LiveView</a> &mdash; guarding one-time side effects.</li>
-        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.Component.html#assign/3"><code>assign/3</code> &amp; <code>assign_new/4</code> &mdash; Phoenix.Component</a> &mdash; writing the socket assigns.</li>
+        <li><a href="https://hexdocs.pm/phoenix_pubsub/Phoenix.PubSub.html">Phoenix.PubSub</a> &mdash; distributed publish/subscribe over topics.</li>
+        <li><a href="https://hexdocs.pm/phoenix/channels.html">Phoenix &mdash; Channels</a> &mdash; the real-time primitive over WebSockets.</li>
+        <li><a href="https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#c:handle_info/2">Phoenix.LiveView &mdash; handle_info/2</a> &mdash; handling process messages in a LiveView.</li>
+        <li><a href="https://hexdocs.pm/phoenix/Phoenix.Presence.html">Phoenix.Presence</a> &mdash; cluster-wide presence tracking.</li>
       </ul>
       <h3>Related in this course</h3>
       <ul>
-        <li><a href="/elixir/phoenix/liveview">F6.06 &middot; Phoenix LiveView fundamentals</a></li>
-        <li><a href="/elixir/phoenix/liveview/events">F6.06.2 &middot; handle_event &amp; state</a></li>
-        <li><a href="/elixir/phoenix/liveview/render">F6.06.3 &middot; render &amp; diffs</a></li>
-        <li><a href="/elixir/language/otp/genserver">F5 &middot; GenServer &mdash; <code class="inl">init/1</code> and the callback loop</a></li>
-        <li><a href="/elixir/phoenix/lifecycle/controllers">F6.01.3 &middot; the facade seam the mount reuses</a></li>
+        <li><a href="/elixir/phoenix/pubsub/broadcast">F6.07.1 &middot; Broadcasting engine events</a></li>
+        <li><a href="/elixir/phoenix/pubsub/subscribe">F6.07.2 &middot; Subscribing a LiveView</a></li>
+        <li><a href="/elixir/phoenix/pubsub/presence">F6.07.3 &middot; Channels &amp; presence</a></li>
+        <li><a href="/elixir/phoenix/liveview/mount">F6.06.1 &middot; mount &amp; assigns</a> &mdash; where the subscribe goes.</li>
+        <li><a href="/elixir/phoenix">F6 &middot; Phoenix Framework</a></li>
       </ul>
     </div>
   </section>
 
   <section>
     <nav class="pager" aria-label="Lesson navigation">
-      <a class="btn ghost" href="/elixir/phoenix/liveview"><span aria-hidden="true">&larr;</span>&nbsp; F6.06 &middot; liveview</a>
+      <a class="btn ghost" href="/elixir/phoenix/liveview"><span aria-hidden="true">&larr;</span>&nbsp; F6.06 &middot; LiveView</a>
       <span class="spacer"></span>
-      <a class="btn" href="/elixir/phoenix/liveview/events">Next &middot; handle_event &amp; state <span aria-hidden="true">&rarr;</span></a>
+      <a class="btn" href="/elixir/phoenix/pubsub/broadcast">Start &middot; broadcasting engine events <span aria-hidden="true">&rarr;</span></a>
     </nav>
   </section>
 
@@ -565,13 +526,13 @@ socket.assigns.progress
       <b>Snowflake</b> build stamp &mdash; a namespaced, base62-encoded id that decodes to a millisecond timestamp.
       It is the same id convention the Portal engine uses as a pivot key across its contexts.</p>
     <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
-      build <span class="id" id="stampId">TSK0NdUKtdLpLs</span>
+      build <span class="id" id="stampId">TSK0NdYA6ex9MW</span>
       <dl class="panel">
         <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
         <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
         <dt>node</dt><dd id="st-node">&mdash;</dd>
         <dt>seq</dt><dd id="st-seq">&mdash;</dd>
-        <dt>timestamp</dt><dd id="st-ts">2026-06-01 23:06:46 UTC</dd>
+        <dt>timestamp</dt><dd id="st-ts">2026-06-02 00:00:18 UTC</dd>
       </dl>
     </div>
   </div>
@@ -580,32 +541,31 @@ socket.assigns.progress
 <script>
 (function () {
   "use strict";
-  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4', DIM = '#3a4263';
-  var STAGES = [
-    { role: 'disconnected HTTP', flag: 'false',
-      desc: 'Stage 1 — the first request is plain HTTP. mount/3 runs, renders the markup once, and sends static HTML for a fast, indexable first paint. No socket is open, so connected?(socket) is false and any side effect guarded by it is skipped.' },
-    { role: 'connected socket', flag: 'true',
-      desc: 'Stage 2 — the browser opens a WebSocket and mount/3 runs again, now live. The process stays alive and exchanges diffs. connected?(socket) is true, so this is the run where one-time work — subscriptions, timers — starts, exactly once.' }
-  ];
-  function paint(i) {
-    var S = STAGES[i]; if (!S) return;
-    var stg1 = document.getElementById('stg1'), stg2 = document.getElementById('stg2');
-    var on1 = i === 0;
-    if (stg1) { stg1.setAttribute('stroke', on1 ? BLUE_MUTE : DIM); stg1.setAttribute('stroke-width', on1 ? '2' : '1.4'); stg1.setAttribute('fill', on1 ? '#11203a' : '#10162b'); }
-    if (stg2) { stg2.setAttribute('stroke', on1 ? DIM : BLUE_MUTE); stg2.setAttribute('stroke-width', on1 ? '1.4' : '2'); stg2.setAttribute('fill', on1 ? '#10162b' : '#11203a'); }
-    var c1 = document.getElementById('c1'); if (c1) c1.setAttribute('fill', on1 ? BLUE : '#6b7494');
-    var c2 = document.getElementById('c2'); if (c2) c2.setAttribute('fill', on1 ? '#6b7494' : BLUE);
-    var s2lab = document.getElementById('s2lab'); if (s2lab) s2lab.setAttribute('fill', on1 ? '#8b93b0' : BLUE);
-    var s2note = document.getElementById('s2note'); if (s2note) s2note.setAttribute('fill', on1 ? '#6b7494' : '#86a7d8');
-    var vEl = document.getElementById('stageVal'); if (vEl) vEl.textContent = (i + 1) + ' / 2';
-    var rEl = document.getElementById('mtRole'); if (rEl) rEl.textContent = S.role;
-    var fEl = document.getElementById('mtFlag'); if (fEl) fEl.textContent = S.flag;
-    var oEl = document.getElementById('mtOut');
-    if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">connected?(socket) == ' + S.flag + '</b> — ' + S.desc;
+  var BLUE = '#9fc0ea', BLUE_MUTE = '#5a87c4';
+  var PARTS = {
+    broadcast: { name: 'broadcast', does: 'publish an event to a topic', row: 'psRow_broadcast',
+      desc: 'The context publishes a domain event \u2014 {:course_created, course} \u2014 on a topic after a successful write. PubSub delivers it to every subscribed process; the web layer never originates it.' },
+    subscribe: { name: 'subscribe', does: 'receive a topic\u2019s events', row: 'psRow_subscribe',
+      desc: 'A LiveView joins a topic on its connected mount and receives each broadcast in handle_info/2, the callback for process messages. It updates assigns or a stream and re-renders.' },
+    presence:  { name: 'presence', does: 'track who is on a topic', row: 'psRow_presence',
+      desc: 'Presence registers each viewer on a topic and syncs the set across nodes with a CRDT, so a live viewer count or "who is online" list stays correct across the whole cluster.' }
+  };
+  var ORDER = ['broadcast', 'subscribe', 'presence'];
+  function pick(k) {
+    var P = PARTS[k]; if (!P) return;
+    document.querySelectorAll('#psSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ORDER.forEach(function (id) {
+      var row = document.getElementById(PARTS[id].row), on = id === k;
+      if (row) { row.setAttribute('stroke', on ? BLUE_MUTE : '#3a4263'); row.setAttribute('stroke-width', on ? '2' : '1.3'); row.setAttribute('fill', on ? '#11203a' : '#10162b'); }
+    });
+    var rEl = document.getElementById('psRole'); if (rEl) rEl.textContent = P.name;
+    var dEl = document.getElementById('psResult'); if (dEl) dEl.textContent = P.does;
+    var oEl = document.getElementById('psOut'); if (oEl) oEl.innerHTML = '<b style="color:' + BLUE + '">' + P.name + '</b> \u2014 ' + P.does + '. ' + P.desc;
   }
-  var range = document.getElementById('stageRange');
-  if (range) { range.addEventListener('input', function () { paint(parseInt(range.value, 10) || 0); }); }
-  paint(0);
+  document.querySelectorAll('#psSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('broadcast');
 
   /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";

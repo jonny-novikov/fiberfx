@@ -144,7 +144,7 @@ var Modules = map[string][]Module{
 		{N: "F6.04", Title: "Contexts & domain design", One: "Boundaries that scale.", Slug: "contexts", Status: "built"},
 		{N: "F6.05", Title: "Templates, components & HEEx", One: "Server-rendered markup.", Slug: "heex", Status: "built"},
 		{N: "F6.06", Title: "Phoenix LiveView fundamentals", One: "Interactive UIs without hand-written JS.", Slug: "liveview", Status: "built"},
-		{N: "F6.07", Title: "PubSub, channels & real-time", One: "Live updates over WebSockets.", Slug: "pubsub", Status: "planned"},
+		{N: "F6.07", Title: "PubSub, channels & real-time", One: "Live updates over WebSockets.", Slug: "pubsub", Status: "built"},
 		{N: "F6.08", Title: "Auth, deployment & going live", One: "Sessions, releases, production.", Slug: "deployment", Status: "planned"},
 		{N: "F6.09", Title: "The live dashboard", One: "Real-time LiveView state over a socket.", Slug: "live-dashboard", Status: "planned", Lab: true},
 	},
@@ -348,6 +348,11 @@ var Subpages = map[string][]Subpage{
 		{"mount", "mount & assigns", "A LiveView is a stateful process connected to the browser over a socket."},
 		{"events", "handle_event & state", "Bindings like phx-click, phx-change, and phx-submit send events to handle_event/3, which transfo"},
 		{"render", "render & diffs", "render/1 returns HEEx from the assigns, and LiveView tracks which assigns changed to send only t"},
+	},
+	"F6.07": {
+		{"broadcast", "Broadcasting engine events", "Phoenix.PubSub is process-to-process publish/subscribe over a string topic."},
+		{"presence", "Channels & presence", "Channels are the lower-level real-time primitive LiveView is built on, with explicit join and ha"},
+		{"subscribe", "Subscribing a LiveView", "A LiveView subscribes to a topic on its connected mount and receives broadcasts in handle_info/2"},
 	},
 }
 

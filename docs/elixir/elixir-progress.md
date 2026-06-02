@@ -1075,6 +1075,52 @@ facade behind a LiveView sketch and hand a UI-ready boundary to F6, the Phoenix 
   `ONLY="F6"` now reports **255 desktop + 56 mobile = 311 PASS, 0 FAIL, 0 images** (28 F6 pages). Docs regenerated:
   course-md **voice CLEAN, 4 mermaid** (F6.06 sub-rows now ●); refs **59 / 59**, voice CLEAN.
 
+## F6.07 — seventh module built at the deeper standard (PubSub & real-time)
+
+- **F6.07 &middot; PubSub, channels &amp; real-time** is built to the deeper standard (four sections per dive, two SVGs
+  + two `pre.code` each, reference-grounded prose, real-world code, a contrast pair). `MODULES["F6"]` F6.07 + its three
+  dives flipped to `built`; `SUBPAGES["F6.07"]` added; four PAGES entries (`pubsub.html`, `pubsub-broadcast.html`,
+  `pubsub-subscribe.html`, `pubsub-presence.html`). Routes 192 &rarr; **196**, PAGES 191 &rarr; **195**, module tally
+  **55 built / 2 planned**.
+  - **Hub** (`content/f6-07-pubsub.html`, prefix `ps`): a broadcast/subscribe/presence selector + a **one-to-many
+    fan-out diagram** (a context write broadcasts one event on `"courses"` &rarr; PubSub &rarr; LiveView A/B/C each
+    `handle_info` &rarr; diff to three live browsers) + three dive cards + an F5-emitted-events &harr;
+    F6.07-broadcasts-them bridge + **hub References** (Phoenix.PubSub, Channels, `handle_info/2`, Phoenix.Presence).
+    Framing: PubSub is the BEAM&rsquo;s message passing over a topic; the domain (context) broadcasts after a write,
+    not the web layer; a LiveView subscribes on its connected mount; `handle_info` is for process messages,
+    `handle_event` for browser events.
+  - **F6.07.1 &middot; Broadcasting engine events** (`bc`): a `broadcast/3` / topic / PubSub-server selector + a
+    **broadcast-lives-in-the-domain diagram** (any caller &rarr; context writes &amp; broadcasts &rarr; PubSub) + a
+    context `create_course/1` piping the insert into a private `broadcast/2` helper (fires only on `{:ok}`, passes
+    `{:error}` through) + a facade `subscribe/1` + `broadcast/2` wrapper hiding `Portal.PubSub`, with the
+    `{Phoenix.PubSub, name: Portal.PubSub}` supervision note. The per-resource `"course:" <> id` topic appears in a
+    take (escaped `&lt;&gt;`).
+  - **F6.07.2 &middot; Subscribing a LiveView** (`sb`): a subscribe / `handle_info/2` / `handle_event/3` selector + a
+    **broadcast-into-handle_info diagram** (PubSub &rarr; mailbox &rarr; `handle_info` &rarr; diff, with a dashed note
+    that a browser click instead enters at `handle_event`) + a `mount` subscribing behind `connected?/1` plus a
+    `handle_info` using `update/3` to prepend + a streams variant (`stream_insert at: 0` on create, replace on update)
+    tying to F6.06.3. Frames the handle_info-vs-handle_event distinction as the core idea.
+  - **F6.07.3 &middot; Channels &amp; presence** (`pr`): a channel / Presence / `track/3` selector + a
+    **Presence-across-a-cluster diagram** (Node 1 tracks A,B + Node 2 tracks C &rarr; CRDT merge &rarr;
+    `list("courses")` returns A,B,C on either node) + a minimal channel (`join/3` + `handle_in/3` ping/pong) +
+    `Presence.track` on the connected mount plus a `%{event: "presence_diff"}` handler recomputing a live viewer count
+    via `map_size(Presence.list/1)`. Completes the module &rarr; F6.08. Dives carry no References; two SVGs + two
+    `pre.code` each. (Four voice hits &mdash; &ldquo;just&rdquo;&times;4, incl. one in an svg-adjacent take and one in a
+    JS readout &mdash; were caught and replaced with &ldquo;only&rdquo;/removed; in-code raw-`&lt;` sweep is 0; the
+    `&lt;&gt;` operator in a JS readout is escaped via `.replace`.)
+- **Landing**: the F6.07 tile is now a linkable `<a class="mod" href="/elixir/phoenix/pubsub">` with a `built` pill;
+  intro/arc prose updated to &ldquo;F6.01&ndash;F6.07 are built&rdquo;.
+- **Build guide**: `build-guide/f6-07-pubsub.md` is deep &mdash; Concepts, Specs tables, Build it (with `elixir`
+  fences), and **six robust copy-paste prompts** (the facade PubSub wrapper + supervision, broadcast domain events from
+  the context, subscribe the LiveView + handle into a stream, verify multi-client live updates, Presence + a viewer
+  count, an optional raw channel), plus Definition of done and Next&rarr;F6.08. `build-guide/phoenix.md` updated: F6.07
+  entry links the guide and the global sequence lists `f6-07`, `f6-08`, `f6-09` separately (numbering 1&ndash;9
+  contiguous). All guides voice-clean.
+- **All five pages Apollo A+** (hub + 3 dives + landing); `node --check` clean on each; REF URLs `200`. **Validator**:
+  an `F6.07` desktop block (hub part&rarr;role, and one per dive) + 390px mobile entries for all four pages.
+  `ONLY="F6"` now reports **291 desktop + 64 mobile = 355 PASS, 0 FAIL, 0 images** (32 F6 pages). Docs regenerated:
+  course-md **voice CLEAN, 4 mermaid** (F6.07 sub-rows now ●); refs **59 / 59**, voice CLEAN.
+
 
 
 **Deployment (not authoring), unchanged and now slightly larger:** the site-wide `/elixir` home and the
@@ -1107,17 +1153,17 @@ What a resuming agent should know, condensed:
    `build-guide/f5-09-engine-lab.md`, a spec whose copy-paste build prompts generate the Portal logic). **The F5
    chapter is now module-complete: all nine modules + three design subpages + the landing are built**, with REFS and
    `A`-map abstracts keyed by module `n`. **F6 (Phoenix) is under construction**: the chapter is `live` with a landing
-   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01 through F6.06 are
-   built** &mdash; each a hub + three dives (`/elixir/phoenix/lifecycle`, `/routing`, `/ecto`, `/contexts`, `/heex`, and
-   `/liveview` + their three dive slugs) with `build-guide/f6-01-lifecycle.md` through `f6-06-liveview.md` prompts.
-   **F6.04 onward follows a deeper standard** (four sections per dive, two SVGs + two code blocks, reference-grounded
-   prose, real-world examples; HEEx code blocks fully escape every `&lt;`/`&gt;`); the F6.01&ndash;F6.03 build guides
-   were enriched with real-world examples and extra robust prompts, and their HTML dives remain available to deepen to
-   the same bar as a follow-up. Every F6 module carries its three dives in the manifest, so the landing tiles and
-   course-md show the whole chapter plan; F6.07 (PubSub &amp; real-time) is the next module.
-   `allowed_routes()` returns **192** link routes; only built/live routes are linkable
-   (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter subpages, and F6.01&ndash;F6.06
-   with their dives are; **the planned F6.07&ndash;F6.09 module and dive routes are not**), external `https://` links
+   + three design subpages (`/elixir/phoenix` + `/journey`, `/blueprint`, `/wiring`), and **F6.01 through F6.07 are
+   built** &mdash; each a hub + three dives (`/elixir/phoenix/lifecycle`, `/routing`, `/ecto`, `/contexts`, `/heex`,
+   `/liveview`, and `/pubsub` + their three dive slugs) with `build-guide/f6-01-lifecycle.md` through
+   `f6-07-pubsub.md` prompts. **F6.04 onward follows a deeper standard** (four sections per dive, two SVGs + two code
+   blocks, reference-grounded prose, real-world examples; HEEx code blocks fully escape every `&lt;`/`&gt;`); the
+   F6.01&ndash;F6.03 build guides were enriched with real-world examples and extra robust prompts, and their HTML dives
+   remain available to deepen to the same bar as a follow-up. Every F6 module carries its three dives in the manifest,
+   so the landing tiles and course-md show the whole chapter plan; F6.08 (auth, deployment &amp; going live) is the
+   next module. `allowed_routes()` returns **196** link routes; only built/live routes are linkable
+   (F5.01&ndash;F5.09, the F5 design subpages, the F6 chapter + its three front-matter subpages, and F6.01&ndash;F6.07
+   with their dives are; **the planned F6.08&ndash;F6.09 module and dive routes are not**), external `https://` links
    are exempt.
 2. Rebuild any page with `python3 build_page.py build --page KEY`, grade with `check OUT.html` (nine gates + A+),
    regenerate `_head.html` with `extract-head` after editing `HEAD_CSS`. The voice gate scans all visible text
