@@ -612,7 +612,9 @@ h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
 .lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
   font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
   max-width:46ch;margin:0 0 1.6rem}
-.kicker{font-family:var(--sans);color:var(--cream-dim);font-size:.95rem;max-width:var(--measure)}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+/* lesson heroes carry long, code-dense intros — render the lede as a readable upright lead paragraph, not a large-italic display deck (landings keep the italic deck) */
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
 .math{font-family:var(--serif);font-style:italic;color:var(--elixir-bright);white-space:nowrap}
 strong{color:var(--cream);font-weight:700}
 
