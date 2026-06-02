@@ -206,7 +206,25 @@ Start the app with `iex -S mix`. Confirm Bandit is listening on 4000, POST /enro
 GET /nope returns 404, and the supervisor restarts Portal.Engine if it is killed. Report the observed responses.
 ```
 
-## Definition of done
+```text
+PROMPT 5 — Build the web layer for replacement
+Isolate the thin web server behind a narrow boundary so it can be swapped for Phoenix later without touching the
+domain: the router/handler should only parse a request, call a domain function, and format a response — no business
+logic. Keep all decisions in the contexts, so the web layer is a thin, replaceable adapter.
+Acceptance: the web layer contains no domain logic; it only translates between HTTP and domain calls; the domain has no
+dependency on the web layer; replacing the server with Phoenix would not change the contexts.
+```
+
+```text
+PROMPT 6 — Write the development roadmap
+Document the path from this thin server to Phoenix: what exists now (a minimal server over the domain), what F6 will
+replace (the web layer, with Phoenix endpoint/router/LiveView), and what stays unchanged (the domain, ids, contexts).
+Make explicit that starting thin is a deliberate step toward Phoenix, not a detour.
+Acceptance: the roadmap states the current state, the F6 target, and what is preserved across the change; it identifies
+the web layer as the replaceable part; it frames the thin server as the first step on the Phoenix path; the domain is
+listed as stable.
+```
+
 
 - [ ] `mix compile` is clean; the app boots under its supervisor.
 - [ ] `Bandit` listens on port 4000.

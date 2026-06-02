@@ -95,17 +95,64 @@ and an invariant always true of the state — asserted with guards, a `with` cha
 failing fast at the boundary. **Build target:** invalid input is rejected at the door with the right status, and
 nothing downstream is corrupted.
 
+### F5.05 · Commands, queries & events → [guide](f5-05-cqrs.md)
+
+Separate writes from reads and record every change as a past-tense event, collapsing the engine to two pure
+functions: `decide` turns a command into events, `evolve` folds one event into state, and `replay` derives the current
+state from the log. **Build target:** commands return `:ok`/`{:error, _}`, queries return data, and state is the fold
+of an event log.
+
+### F5.06 · Where engine state lives → [guide](f5-06-state.md)
+
+Keep the folded state alive between requests in a process: `Portal.Engine`, a GenServer whose `init/1` replays the log
+once, with a command `handle_call` that runs `decide`/`evolve` and a query `handle_call` that reads — supervised so a
+crash restarts and re-folds. **Build target:** a supervised engine that holds state and rebuilds it from the log on
+restart.
+
+### F5.07 · Pragmatic testing → [guide](f5-07-testing.md)
+
+Test the pure core with plain example tests (no processes, no mocks), state invariants as StreamData properties, turn
+the F5.04 contract into contract tests, and keep docs honest with doctests — one thin process smoke test at the tip.
+**Build target:** a fast suite weighted to the pure base, with a single command→query process test.
+
+### F5.08 · Boundaries & integration seams → [guide](f5-08-boundaries.md)
+
+Draw the engine's edges: a driven `Portal.EventStore` port with interchangeable in-memory and Postgres adapters chosen
+by config, the driving `Portal` facade as the only surface the web calls, and a closed `Portal.Error` vocabulary
+consumed exhaustively by the UI. **Build target:** the core depends only on ports, callers only on the facade, and
+failures cross as typed errors.
+
+### F5.09 · Lab: assemble the Portal engine, LiveView-ready → [guide](f5-09-engine-lab.md)
+
+Wire the parts into one running system: the `EventStore` port and its in-memory and Postgres adapters, the `Portal`
+facade over the engine, the closed `%Portal.Error{}` contract, the supervision tree whose engine replays its log on
+boot, and a LiveView mount sketch that touches only the facade. Then state the F6 handoff. **Build target:**
+`mix run` boots the app, an enroll persists an event, and a restart of the engine replays to the same state.
+
 ## Global build sequence
 
-To go from zero to the F5.04 state in one pass, run the build prompts in this order. Each lives in its module guide.
+To build the Portal end to end, run each module's build prompts in order. Each lives in its module guide.
 
-1. `f5-01` — Scaffold the app · the thin router · `Portal.ID` · run & verify.
-2. `f5-02` — Entity structs · bounded contexts · public APIs.
-3. `f5-03` — Wire the walking skeleton (enroll end to end) · add the second slice.
-4. `f5-04` — Add the enroll contract · enforce fail-fast and status mapping.
+1. `f5-01` — Scaffold the app · the thin router · `Portal.ID` · a replaceable web layer · the roadmap · run & verify.
+2. `f5-02` — Entity structs · bounded contexts · public APIs · typespecs · enforced boundaries · cross-context
+   composition.
+3. `f5-03` — Tracer bullet vs prototype · the walking skeleton (enroll end to end) · keep every layer thin · a second
+   slice · grow by adding slices.
+4. `f5-04` — The enroll contract (precondition/postcondition/invariant) · named checks · a second contracted command ·
+   fail-fast: what crashes vs what returns a typed error.
+5. `f5-05` — Command/query separation · past-tense domain events · `decide/2` (contract + emit) · `evolve/2` +
+   `replay/1` · a second use case · state is derived from the log.
+6. `f5-06` — Choose where state lives · the engine GenServer folding at `init` · command and query `handle_call`s ·
+   supervise the engine · verify a restart re-folds.
+7. `f5-07` — Example-test the pure core · test the fold · a StreamData property · contract tests from F5.04 · doctests ·
+   one process smoke test.
+8. `f5-08` — The driven `EventStore` port · two adapters by config · core calls the port only · the `Portal` facade ·
+   the closed `Portal.Error` contract · exhaustive consumption (the F6 seam).
+9. `f5-09` — Assemble the engine: the port + adapters, the facade, the error contract, the supervised tree, and the
+   LiveView mount sketch · verify boot, a command, and a restart that replays.
 
-After F5.04 the Portal runs, enrolls a learner through a contract-checked slice, and is ready for F5.05 (commands,
-queries & events).
+After the lab the Portal runs as a supervised engine behind a stable facade, mounted under a LiveView sketch, and is
+ready for F6 (replace the thin server with Phoenix + LiveView).
 
 ---
 

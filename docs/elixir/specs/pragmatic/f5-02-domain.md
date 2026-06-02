@@ -172,7 +172,34 @@ Acceptance: from iex, Learning.enroll("USR1", "CRS1") returns {:ok, %Enrollment{
 is retrievable; the public surface matches the signatures above and nothing else is exported.
 ```
 
-## Definition of done
+```text
+PROMPT 4 — Typespecs on the entities
+Add @type t to each entity struct (User, Course, Enrollment) describing its fields and their types, and @spec to each
+public function in the contexts. Use the branded-id string type for id fields. The types should make the shape of the
+domain legible and let Dialyzer check callers.
+Acceptance: each entity has a @type t covering its fields; public context functions have @spec; id fields are typed as
+branded-id strings; the typespecs match the actual struct definitions.
+```
+
+```text
+PROMPT 5 — Enforce context boundaries
+Make the bounded contexts real boundaries: one context must never read another context's structs or storage directly —
+only call its public API. Keep each context's schema/struct internals private to that context. Audit for and remove any
+cross-context reach-through.
+Acceptance: no context references another's internal struct or store; cross-context needs go through public APIs;
+each context owns its entities; the boundaries are enforced in code, not only described.
+```
+
+```text
+PROMPT 6 — A cross-context use case through public APIs
+Implement a use case that spans contexts — enrolling a learner needs Accounts (the user exists) and Catalog (the
+course exists) before Learning records the enrollment — composed only through the contexts' public APIs. Return one
+closed result.
+Acceptance: the use case calls Accounts and Catalog through their public APIs, not their internals; Learning owns the
+enrollment; the composition returns a single {:ok, _} | {:error, _}; no context boundary is crossed by reaching into
+another's data.
+```
+
 
 - [ ] Every entity has a struct with `@enforce_keys`, `defstruct`, and a `@type t`.
 - [ ] Building a struct with all enforced keys succeeds; omitting one raises.
