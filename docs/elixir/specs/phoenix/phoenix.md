@@ -41,8 +41,8 @@ features require them.
 | [F6.5](f6.5.md) | Views with HEEx | a rendered UI: templates, function components, forms with inline errors | Visitor, Learner | **specced** |
 | [F6.6](f6.6.md) | LiveView | interactive pages — live search and live create — without full reloads | Learner | **specced** |
 | [F6.7](f6.7.md) | Real-time (PubSub & Presence) | multi-client live updates and a live viewer count | Learner, Instructor | **specced** |
-| F6.8 | Auth & deployment | real users, protected areas, and a deployed, clustered release | Learner, Operator | planned |
-| F6.9 | The live dashboard (capstone) | an operations/learning dashboard folding live events, under auth, clustered | Instructor, Operator | planned |
+| [F6.8](f6.8.md) | Auth & deployment | real users, protected areas, and a deployed, clustered release | Learner, Operator | **specced** |
+| [F6.9](f6.9.md) | The live dashboard (capstone) | an operations/learning dashboard folding live events, under auth, clustered | Instructor, Operator | **specced** |
 
 The rungs depend only downward: F6.2 assumes F6.1's endpoint and pipeline; F6.5 renders what F6.3/F6.4 make
 queryable; F6.6 makes F6.5's pages live; F6.7 pushes F6.6's state across clients; F6.9 composes all of it.
