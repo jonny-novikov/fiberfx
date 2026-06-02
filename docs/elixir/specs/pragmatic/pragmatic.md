@@ -56,9 +56,9 @@ user stories (`f5.N.stories.md`) for the acceptance criteria. Then the agent bri
 to implement: its references, requirements, execution topology, and the comprehensive prompt an agent runs to build
 and self-check the increment.
 
-This index pairs with the teaching guide [`build-guide/pragmatic.md`](../../build-guide/pragmatic.md): the guide
-explains the pragmatic-programming concepts module by module; these specs frame the same work as value increments with
-stories and proof gates. The build-guide modules `f5-01`…`f5-09` are the conceptual companions to specs `F5.1`…`F5.9`.
+This index pairs with the design-system foundation [`F0 · The Design System`](../design/f0.md): F0 specifies the
+tokens, page anatomy, build pipeline, and quality gates every page renders in; these specs frame the engine work as
+value increments with stories and proof gates that build on that foundation.
 The web chapter that builds on this engine is [`../phoenix/phoenix.md`](../phoenix/phoenix.md).
 
 ## Conventions

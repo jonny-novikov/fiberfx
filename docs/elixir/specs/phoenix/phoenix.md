@@ -57,9 +57,9 @@ user stories (`f6.N.stories.md`) for the acceptance criteria. Then the agent bri
 to implement: its references, requirements, execution topology, and the comprehensive prompt that an agent runs to
 build and self-check the increment.
 
-This index pairs with the teaching guide [`build-guide/phoenix.md`](../../build-guide/phoenix.md): the guide explains
-the framework concepts module by module; these specs frame the same work as value increments with stories and proof
-gates. The build-guide modules `f6-01`…`f6-09` are the conceptual companions to specs `F6.1`…`F6.9`.
+This index pairs with the design-system foundation [`F0 · The Design System`](../design/f0.md): F0 specifies the
+tokens, page anatomy, build pipeline, and quality gates every page renders in; these specs frame the web work as
+value increments with stories and proof gates that build on that foundation.
 
 ## Conventions
 
