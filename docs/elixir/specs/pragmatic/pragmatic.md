@@ -8,7 +8,9 @@
 
 This index is the map. Each rung links to its three artifacts: the spec (`f5.N.md`), the user stories
 (`f5.N.stories.md`), and the agent brief (`f5.N.llms.md`). The near-term delivery plan for the first five rungs —
-shipped to production as Agile iterations — is in [`pragmatic.roadmap.md`](pragmatic.roadmap.md).
+shipped to production as Agile iterations — is in [`pragmatic.roadmap.md`](pragmatic.roadmap.md). The engine's core
+pattern, `decide`/`evolve`, is explained in depth — with benefits, killers, alternatives, and a decision matrix — in
+[`decider-pattern.md`](decider-pattern.md).
 
 ## Where F5 starts and ends
 
