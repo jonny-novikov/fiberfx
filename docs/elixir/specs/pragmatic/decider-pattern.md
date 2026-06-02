@@ -51,13 +51,9 @@ The pattern is spread across three F5 rungs, each owning one concern:
 In Portal terms, the write path for an enrollment is:
 
 ```elixir
-# F5.5 — the pure core (Portal.Engine.Core)
-def decide(state, {:enroll, user_id, course_id}) do
-  if already_enrolled?(state, user_id, course_id) do
-    {:error, :already_enrolled}                                   # see §2.1 on this return
-  else
-    [%Portal.Learning.Events.LearnerEnrolled{user_id: user_id, course_id: course_id, at: now()}]
-  end
+# F5.5 — the pure core (Portal.Engine.Core): decide returns events only
+def decide(_state, {:enroll, user_id, course_id}) do
+  [%Portal.Learning.Events.LearnerEnrolled{user_id: user_id, course_id: course_id, at: now()}]
 end
 
 def evolve(%Portal.Learning.Events.LearnerEnrolled{} = e, state) do
@@ -65,6 +61,18 @@ def evolve(%Portal.Learning.Events.LearnerEnrolled{} = e, state) do
 end
 
 def replay(log), do: Enum.reduce(log, initial_state(), &evolve/2) # state is the fold of the log
+```
+
+```elixir
+# F5.4 — the contract guards the boundary and owns the rejection (tagged tuples)
+def authorize_enroll(state, user_id, course_id) do
+  with :ok            <- valid_ref(user_id, "USR"),
+       :ok            <- valid_ref(course_id, "CRS"),
+       {:ok, _course} <- Portal.Catalog.course(course_id),        # reference data, at the boundary
+       :ok            <- refute_enrolled(state, user_id, course_id) do
+    :ok
+  end                                                             # else: {:error, :course_not_found | :already_enrolled}
+end
 ```
 
 ```elixir
@@ -91,21 +99,24 @@ Three Portal-specific choices are worth calling out:
   event)`) so the function drops straight into `Enum.reduce(events, initial_state(), &evolve/2)`, whose reducer is
   `(element, accumulator)`. `decide(state, command)` is likewise a local style choice. Both are reversed from the F#
   original and that is fine.
-- **Reference existence is resolved at the boundary.** Whether a course exists is reference data living in the F4
-  store, not in the event-folded state. The `:course_not_found` check runs in the shell (a `Portal.Catalog.course/1`
-  read) before `decide`, so the core takes no I/O. The catalog stays CRUD; only enrollment/progress is event-sourced.
+- **Rejection is resolved at the boundary.** Whether a course exists is reference data in the F4 store, and whether a
+  learner is already enrolled is read from the folded state; both checks run in the F5.4 contract guard at the command
+  boundary, which returns the closed reasons as tagged tuples before `decide` is reached. `decide` returns events
+  only, so the pure core takes no I/O and carries no error channel. The catalog stays CRUD; only enrollment/progress is
+  event-sourced.
 - **The durable log is a port.** In [F5.6](f5.6.md) `load_events()`/`append` are good enough to survive a process
   crash; F5.8 formalizes them as the `Portal.EventStore` behaviour with swappable in-memory and Postgres adapters, and
   F6.3 makes the Postgres adapter durable across deploys. The web layer never sees any of this — it calls only the
   `Portal` boundary (the master invariant).
 
-### 2.1 A note on Portal's `decide` return type
+### 2.1 Portal's `decide` return type (resolved)
 
-[F5.5](f5.5.md) currently types `decide/2 :: (state, command) -> [event] | {:error, reason}` — the **railway
-variant**, where `decide` owns the rejection. The canonical Decider returns `[event]` and rejects elsewhere. The
-variant is a legitimate, common adaptation (it keeps the closed reason set in one place and composes with `with`), but
-it diverges from the pattern and is flagged for review in the spec. The two readings appear as separate rows in the
-decision matrix in §8.
+Portal opts in to the **canonical Decider**: `decide/2 :: (state, command) -> [event]` returns events only. The
+expected rejections (`:course_not_found`, `:already_enrolled`) are returned as tagged tuples by the F5.4 contract
+guarding the command boundary, *before* `decide` runs (see the second code block above). This keeps F5.4's "expected
+failures are tagged tuples, never raised" rule intact and the pure core free of an error channel — `decide` proposes
+facts, the boundary decides admissibility. The railway-pipeline alternative (where the validation flow itself is the
+write path) remains a distinct option, listed as pattern (c) in the decision matrix in §8.
 
 ## 3. Why it fits the Portal (benefits)
 

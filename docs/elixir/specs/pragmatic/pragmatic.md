@@ -42,9 +42,9 @@ touching anything below the facade.
 | [F5.4](f5.4.md) | The enroll contract | the enroll command parsed at the boundary into a typed result; postcondition and invariant pinned by property tests | Developer, Learner | **specced** |
 | [F5.5](f5.5.md) | Commands, queries & events | writes/reads separated; changes recorded as events; the engine collapses to `decide`/`evolve` over a log | Developer, Architect | **specced** |
 | [F5.6](f5.6.md) | Where engine state lives | the folded state kept alive in a supervised GenServer; crash recovery by replay | Operator, Developer | **specced** |
-| F5.7 | Pragmatic testing | the pure core pinned by example, property, and contract tests; a fast, deterministic suite | Developer | planned |
-| F5.8 | Boundaries & integration seams | the `EventStore` port + adapters, the `Portal` facade, and the closed `%Portal.Error{}` contract | Architect, Developer | planned |
-| F5.9 | The engine, LiveView-ready (lab) | the whole engine assembled and supervised, a LiveView mount sketch, the F6 handoff | Developer, Operator | planned |
+| [F5.7](f5.7.md) | Pragmatic testing | the pure core pinned by example, property, and contract tests; a fast, deterministic suite | Developer | **specced** |
+| [F5.8](f5.8.md) | Boundaries & integration seams | the `EventStore` port + adapters, the `Portal` facade, and the closed `%Portal.Error{}` contract | Architect, Developer | **specced** |
+| [F5.9](f5.9.md) | The engine, LiveView-ready (lab) | the whole engine assembled and supervised, a LiveView mount sketch, the F6 handoff | Developer, Operator | **specced** |
 
 The rungs depend only downward: F5.3 wires the F5.2 domain end to end; F5.4 hardens that use case; F5.5 reframes it as
 events; F5.6 gives the fold a home; F5.7 pins it; F5.8 draws its edges; F5.9 assembles all of it.
