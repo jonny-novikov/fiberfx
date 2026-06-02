@@ -39,13 +39,16 @@ features require them.
 | [F6.3](f6.3.md) | Persistence with Ecto | durable catalog & enrollments via a Postgres adapter behind the F5 port | Operator, Developer, Learner | **specced** |
 | [F6.4](f6.4.md) | Contexts & domain on the web | the web reads and writes real domain through the facade and bounded contexts | Developer, Learner | **specced** |
 | [F6.5](f6.5.md) | Views with HEEx | a rendered UI: templates, function components, forms with inline errors | Visitor, Learner | **specced** |
-| F6.6 | LiveView | interactive pages — live search and live create — without full reloads | Learner | planned |
-| F6.7 | Real-time (PubSub & Presence) | multi-client live updates and a live viewer count | Learner, Instructor | planned |
+| [F6.6](f6.6.md) | LiveView | interactive pages — live search and live create — without full reloads | Learner | **specced** |
+| [F6.7](f6.7.md) | Real-time (PubSub & Presence) | multi-client live updates and a live viewer count | Learner, Instructor | **specced** |
 | F6.8 | Auth & deployment | real users, protected areas, and a deployed, clustered release | Learner, Operator | planned |
 | F6.9 | The live dashboard (capstone) | an operations/learning dashboard folding live events, under auth, clustered | Instructor, Operator | planned |
 
 The rungs depend only downward: F6.2 assumes F6.1's endpoint and pipeline; F6.5 renders what F6.3/F6.4 make
 queryable; F6.6 makes F6.5's pages live; F6.7 pushes F6.6's state across clients; F6.9 composes all of it.
+
+The delivery plan — the milestones, the build order, and the per-rung shipping iterations — is in
+[`phoenix.roadmap.md`](phoenix.roadmap.md).
 
 ## How to read a rung
 
