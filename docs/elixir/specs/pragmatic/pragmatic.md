@@ -7,7 +7,8 @@
 > [the specs approach](../specs.approach.md). F6 then puts a web platform on top without reaching into the core.
 
 This index is the map. Each rung links to its three artifacts: the spec (`f5.N.md`), the user stories
-(`f5.N.stories.md`), and the agent brief (`f5.N.llms.md`).
+(`f5.N.stories.md`), and the agent brief (`f5.N.llms.md`). The near-term delivery plan for the first five rungs —
+shipped to production as Agile iterations — is in [`pragmatic.roadmap.md`](pragmatic.roadmap.md).
 
 ## Where F5 starts and ends
 
@@ -37,8 +38,8 @@ touching anything below the facade.
 | [F5.2](f5.2.md) | Model the Portal domain | the domain as structs in bounded contexts (Accounts/Catalog/Learning) with small public APIs | Developer, Architect, Learner | **specced** |
 | [F5.3](f5.3.md) | Tracer bullets: a walking skeleton | one use case (enroll) wired end to end through every layer; the architecture proven runnable | Developer, Operator | **specced** |
 | [F5.4](f5.4.md) | The enroll contract | the enroll command parsed at the boundary into a typed result; postcondition and invariant pinned by property tests | Developer, Learner | **specced** |
-| F5.5 | Commands, queries & events | writes/reads separated; changes recorded as events; the engine collapses to `decide`/`evolve` over a log | Developer, Architect | planned |
-| F5.6 | Where engine state lives | the folded state kept alive in a supervised GenServer; crash recovery by replay | Operator, Developer | planned |
+| [F5.5](f5.5.md) | Commands, queries & events | writes/reads separated; changes recorded as events; the engine collapses to `decide`/`evolve` over a log | Developer, Architect | **specced** |
+| [F5.6](f5.6.md) | Where engine state lives | the folded state kept alive in a supervised GenServer; crash recovery by replay | Operator, Developer | **specced** |
 | F5.7 | Pragmatic testing | the pure core pinned by example, property, and contract tests; a fast, deterministic suite | Developer | planned |
 | F5.8 | Boundaries & integration seams | the `EventStore` port + adapters, the `Portal` facade, and the closed `%Portal.Error{}` contract | Architect, Developer | planned |
 | F5.9 | The engine, LiveView-ready (lab) | the whole engine assembled and supervised, a LiveView mount sketch, the F6 handoff | Developer, Operator | planned |

@@ -1,7 +1,5 @@
 # Continue the jonnify "Functional Programming in Elixir" course — paste this into a new chat
 
-> Attach `jonnify-elixir-toolkit.zip` to the new conversation, then paste everything below.
-
 ---
 
 I'm continuing my **"Functional Programming in Elixir"** course, built on the **jonnify dark-editorial design
