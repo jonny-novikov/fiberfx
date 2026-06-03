@@ -7,6 +7,7 @@
 package site
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +45,41 @@ func Resolve(root, route string) (file string, ok bool, note string) {
 	default:
 		return base, true, ""
 	}
+}
+
+// SectionRoutes walks a folder-routed section on disk and returns the set of
+// clean URLs the server would actually serve for it — mirroring serveDirTree
+// (and cmd/sitemap): a directory holding index.html maps to the directory URL
+// (the bare mount for the root, mount/<sub> below it); any other <name>.html
+// maps to its clean leaf URL. mount is the section's URL prefix (for example
+// "/agile-agent-workflow"); a leading slash is added if absent. This is what
+// makes the link/pager gates aware of a section the elixir manifest never
+// declares: routes are derived from the filesystem, exactly as the server does.
+func SectionRoutes(root, mount string) (map[string]bool, error) {
+	mount = "/" + strings.Trim(mount, "/")
+	out := map[string]bool{}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".html") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		if d.Name() == "index.html" {
+			sub := strings.Trim(strings.TrimSuffix(rel, "index.html"), "/")
+			if sub == "" {
+				out[mount] = true
+			} else {
+				out[mount+"/"+sub] = true
+			}
+		} else {
+			out[mount+"/"+strings.TrimSuffix(rel, ".html")] = true
+		}
+		return nil
+	})
+	return out, err
 }
 
 // CanonicalFile is the filename a route SHOULD resolve to: a directory of that

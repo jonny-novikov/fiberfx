@@ -51,8 +51,10 @@ var (
 	// inside them), so the URL tree mirrors the filesystem. AI_RABOTA_DIR env-overridable.
 	aiRabotaDir = "/app/html/ai-rabota"
 	// Agile Agent Workflow course («Agile Agent Workflow in Elixir») — FOLDER-routed
-	// like the other courses (chapters are dirs, modules are files inside them), so the
-	// URL tree mirrors the filesystem. AGILE_AGENT_WORKFLOW_DIR env-overridable.
+	// like the other courses (chapters are dirs, modules are files inside them), but
+	// mounted under /course/ so its canonical URL is /course/agile-agent-workflow
+	// (the chapter/module tree below it mirrors the filesystem).
+	// AGILE_AGENT_WORKFLOW_DIR env-overridable.
 	agileAgentWorkflowDir = "/app/html/agile-agent-workflow"
 	gameHTML              = "/app/html/game.html"
 	// On-disk dir for files served at the /vendor/* URL. Named "assets" (NOT
@@ -437,8 +439,14 @@ func main() {
 	app.Get("/physics/*", func(c *fiber.Ctx) error { return serveDirTree(c, physicsDir, c.Params("*"), "physics") })
 	app.Get("/ai-rabota", func(c *fiber.Ctx) error { return serveDirTree(c, aiRabotaDir, "", "ai-rabota") })
 	app.Get("/ai-rabota/*", func(c *fiber.Ctx) error { return serveDirTree(c, aiRabotaDir, c.Params("*"), "ai-rabota") })
-	app.Get("/agile-agent-workflow", func(c *fiber.Ctx) error { return serveDirTree(c, agileAgentWorkflowDir, "", "agile-agent-workflow") })
-	app.Get("/agile-agent-workflow/*", func(c *fiber.Ctx) error {
+	// The Agile Agent Workflow course is mounted under /course/ (its canonical
+	// URL is /course/agile-agent-workflow), unlike the other folder-routed
+	// sections which sit at the root. The on-disk dir is unchanged; only the
+	// URL mount differs.
+	app.Get("/course/agile-agent-workflow", func(c *fiber.Ctx) error {
+		return serveDirTree(c, agileAgentWorkflowDir, "", "agile-agent-workflow")
+	})
+	app.Get("/course/agile-agent-workflow/*", func(c *fiber.Ctx) error {
 		return serveDirTree(c, agileAgentWorkflowDir, c.Params("*"), "agile-agent-workflow")
 	})
 

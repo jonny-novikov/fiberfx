@@ -116,14 +116,17 @@ func main() {
 	// Folder-routed sections (elixir, health, logic, law, physics, ai-rabota): recurse
 	// — the on-disk tree mirrors the URL tree. A dir with index.html -> the directory
 	// URL; any other <name>.html -> the clean leaf URL.
-	folderRouted := []struct{ sec, base string }{
-		{"elixir", *root},
-		{"health", htmlRoot}, {"logic", htmlRoot}, {"law", htmlRoot},
-		{"physics", htmlRoot}, {"ai-rabota", htmlRoot}, {"agile-agent-workflow", htmlRoot},
+	// urlp is the URL prefix; it equals "/"+sec for the root-mounted courses, but
+	// the agile course is mounted under /course/ so its prefix differs from its dir.
+	folderRouted := []struct{ sec, base, urlp string }{
+		{"elixir", *root, "/elixir"},
+		{"health", htmlRoot, "/health"}, {"logic", htmlRoot, "/logic"}, {"law", htmlRoot, "/law"},
+		{"physics", htmlRoot, "/physics"}, {"ai-rabota", htmlRoot, "/ai-rabota"},
+		{"agile-agent-workflow", htmlRoot, "/course/agile-agent-workflow"},
 	}
 	for _, fr := range folderRouted {
-		sec := fr.sec
-		secRoot := filepath.Join(fr.base, sec)
+		secRoot := filepath.Join(fr.base, fr.sec)
+		urlp := fr.urlp
 		_ = filepath.WalkDir(secRoot, func(p string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".html") {
 				return nil
@@ -135,13 +138,13 @@ func main() {
 			rel = filepath.ToSlash(rel)
 			if d.Name() == "index.html" {
 				sub := strings.Trim(strings.TrimSuffix(rel, "index.html"), "/")
-				loc, prio := "/"+sec, "0.8"
+				loc, prio := urlp, "0.8"
 				if sub != "" {
-					loc, prio = "/"+sec+"/"+sub, "0.7"
+					loc, prio = urlp+"/"+sub, "0.7"
 				}
 				add(p, loc, "monthly", prio)
 			} else {
-				add(p, "/"+sec+"/"+strings.TrimSuffix(rel, ".html"), "monthly", "0.6")
+				add(p, urlp+"/"+strings.TrimSuffix(rel, ".html"), "monthly", "0.6")
 			}
 			return nil
 		})
