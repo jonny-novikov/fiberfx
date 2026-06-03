@@ -48,7 +48,7 @@ iex -S mix                         # boots the app; Bandit answers HTTP on :4000
 mix run --no-halt                  # same, without the shell
 ```
 
-A green suite today is **echo_data: 2 tests**, **portal: 3 properties + 37 tests**, 0 failures; a live node answers on `:4000`. The supervision tree starts **data → compute → web**: `Portal.Store`, then `Portal.Engine`, then `{Bandit, plug: Portal.Web.Router, port: …}`, under `:one_for_one` (`apps/portal/lib/portal/application.ex`).
+A green suite today is **echo_data: 2 tests**, **portal: 5 doctests, 4 properties, 45 tests**, 0 failures; a live node answers on `:4000`. The supervision tree starts **data → compute → web**: `Portal.Store`, then `Portal.Engine`, then `{Bandit, plug: Portal.Web.Router, port: …}`, under `:one_for_one` (`apps/portal/lib/portal/application.ex`).
 
 ## 4. The latent id-collision constraint (test-only hazard)
 
