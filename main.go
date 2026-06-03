@@ -50,7 +50,11 @@ var (
 	// FOLDER-routed like the other courses (chapters are dirs, modules are files
 	// inside them), so the URL tree mirrors the filesystem. AI_RABOTA_DIR env-overridable.
 	aiRabotaDir = "/app/html/ai-rabota"
-	gameHTML    = "/app/html/game.html"
+	// Agile Agent Workflow course («Agile Agent Workflow in Elixir») — FOLDER-routed
+	// like the other courses (chapters are dirs, modules are files inside them), so the
+	// URL tree mirrors the filesystem. AGILE_AGENT_WORKFLOW_DIR env-overridable.
+	agileAgentWorkflowDir = "/app/html/agile-agent-workflow"
+	gameHTML              = "/app/html/game.html"
 	// On-disk dir for files served at the /vendor/* URL. Named "assets" (NOT
 	// "vendor") because a vendor/ dir at the Go module root is reserved by the
 	// toolchain (it forces vendor-mode builds).
@@ -119,6 +123,9 @@ func main() {
 	}
 	if dir := os.Getenv("AI_RABOTA_DIR"); dir != "" {
 		aiRabotaDir = dir
+	}
+	if dir := os.Getenv("AGILE_AGENT_WORKFLOW_DIR"); dir != "" {
+		agileAgentWorkflowDir = dir
 	}
 	if dir := os.Getenv("VENDOR_DIR"); dir != "" {
 		vendorDir = dir
@@ -430,6 +437,10 @@ func main() {
 	app.Get("/physics/*", func(c *fiber.Ctx) error { return serveDirTree(c, physicsDir, c.Params("*"), "physics") })
 	app.Get("/ai-rabota", func(c *fiber.Ctx) error { return serveDirTree(c, aiRabotaDir, "", "ai-rabota") })
 	app.Get("/ai-rabota/*", func(c *fiber.Ctx) error { return serveDirTree(c, aiRabotaDir, c.Params("*"), "ai-rabota") })
+	app.Get("/agile-agent-workflow", func(c *fiber.Ctx) error { return serveDirTree(c, agileAgentWorkflowDir, "", "agile-agent-workflow") })
+	app.Get("/agile-agent-workflow/*", func(c *fiber.Ctx) error {
+		return serveDirTree(c, agileAgentWorkflowDir, c.Params("*"), "agile-agent-workflow")
+	})
 
 	// Serve distribution files with proper headers
 	app.Get("/distr/*", func(c *fiber.Ctx) error {
@@ -458,7 +469,7 @@ func main() {
 		return c.SendFile(cleanPath)
 	})
 
-	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, elixir: %s, game: %s, health: %s, logic: %s, law: %s, physics: %s, ai-rabota: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, elixirDir, gameHTML, healthDir, logicDir, lawDir, physicsDir, aiRabotaDir, errorDir, len(errorPages))
+	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, elixir: %s, game: %s, health: %s, logic: %s, law: %s, physics: %s, ai-rabota: %s, agile-agent-workflow: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, elixirDir, gameHTML, healthDir, logicDir, lawDir, physicsDir, aiRabotaDir, agileAgentWorkflowDir, errorDir, len(errorPages))
 	log.Fatal(app.Listen(":" + port))
 }
 

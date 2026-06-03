@@ -33,6 +33,7 @@ LOGIC_DIR  ?= $(REPO_DIR)/html/logic
 LAW_DIR    ?= $(REPO_DIR)/html/law
 PHYSICS_DIR ?= $(REPO_DIR)/html/physics
 AI_RABOTA_DIR ?= $(REPO_DIR)/html/ai-rabota
+AGILE_AGENT_WORKFLOW_DIR ?= $(REPO_DIR)/html/agile-agent-workflow
 SITEMAP_XML ?= $(REPO_DIR)/html/sitemap.xml
 ROBOTS_TXT  ?= $(REPO_DIR)/html/robots.txt
 LLMS_TXT    ?= $(REPO_DIR)/html/llms.txt
@@ -69,6 +70,7 @@ help:
 	@echo "  /law, /law/**        → $(LAW_DIR)/ (folder tree → index.html / <module>.html)"
 	@echo "  /physics, /physics/**→ $(PHYSICS_DIR)/ (folder tree → index.html / <module>.html)"
 	@echo "  /ai-rabota, /ai-rabota/** → $(AI_RABOTA_DIR)/ (folder tree → index.html / <module>.html)"
+	@echo "  /agile-agent-workflow, /agile-agent-workflow/** → $(AGILE_AGENT_WORKFLOW_DIR)/ (folder tree → index.html / <module>.html)"
 	@echo "  /sitemap.xml         → $(SITEMAP_XML)"
 	@echo "  /robots.txt          → $(ROBOTS_TXT)"
 	@echo "  /llms.txt            → $(LLMS_TXT)"
@@ -119,6 +121,7 @@ start: build
 	 LAW_DIR=$(LAW_DIR) \
 	 PHYSICS_DIR=$(PHYSICS_DIR) \
 	 AI_RABOTA_DIR=$(AI_RABOTA_DIR) \
+	 AGILE_AGENT_WORKFLOW_DIR=$(AGILE_AGENT_WORKFLOW_DIR) \
 	 VENDOR_DIR=$(VENDOR_DIR) \
 	 ERROR_DIR=$(ERROR_DIR) \
 	 nohup $(BINARY) > $(LOG_FILE) 2>&1 & echo $$! > $(PID_FILE)
@@ -173,6 +176,7 @@ run: build
 	 LAW_DIR=$(LAW_DIR) \
 	 PHYSICS_DIR=$(PHYSICS_DIR) \
 	 AI_RABOTA_DIR=$(AI_RABOTA_DIR) \
+	 AGILE_AGENT_WORKFLOW_DIR=$(AGILE_AGENT_WORKFLOW_DIR) \
 	 VENDOR_DIR=$(VENDOR_DIR) \
 	 ERROR_DIR=$(ERROR_DIR) \
 	 $(BINARY)

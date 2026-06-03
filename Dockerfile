@@ -113,6 +113,9 @@ COPY html/physics/ /app/html/physics/
 # Copy the AI-at-work course (folder tree → /ai-rabota/<chapter>/<module>) served under /ai-rabota/*
 COPY html/ai-rabota/ /app/html/ai-rabota/
 
+# Copy the Agile Agent Workflow course (folder tree) served under /agile-agent-workflow/*
+COPY html/agile-agent-workflow/ /app/html/agile-agent-workflow/
+
 # Copy the 3D orbital knowledge map (three.js WebGL node-graph) served under /map
 COPY html/map/ /app/html/map/
 

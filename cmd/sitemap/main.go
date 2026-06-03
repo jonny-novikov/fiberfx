@@ -119,7 +119,7 @@ func main() {
 	folderRouted := []struct{ sec, base string }{
 		{"elixir", *root},
 		{"health", htmlRoot}, {"logic", htmlRoot}, {"law", htmlRoot},
-		{"physics", htmlRoot}, {"ai-rabota", htmlRoot},
+		{"physics", htmlRoot}, {"ai-rabota", htmlRoot}, {"agile-agent-workflow", htmlRoot},
 	}
 	for _, fr := range folderRouted {
 		sec := fr.sec
