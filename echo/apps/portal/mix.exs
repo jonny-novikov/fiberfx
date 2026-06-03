@@ -24,11 +24,14 @@ defmodule Portal.MixProject do
   end
 
   # Run "mix help deps" to learn about dependencies.
+  # The core app stays Phoenix-free AND, since F6.1, web-server-free: the F5 Bandit
+  # front door + Plug.Router moved to the new `:portal_web` app, so `bandit` and
+  # `plug` are dropped here (Plug was used only by the deleted Portal.Web.Router).
+  # This keeps the master invariant compiler-enforced at the app level — the core
+  # cannot name a web framework it does not depend on (F6.1-INV1, RK-2).
   defp deps do
     [
       {:echo_data, in_umbrella: true},
-      {:bandit, "~> 1.5"},
-      {:plug, "~> 1.16"},
       {:jason, "~> 1.4"},
       {:stream_data, "~> 1.0", only: :test}
     ]

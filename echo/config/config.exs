@@ -16,5 +16,23 @@ import Config
 # config-only and changes no caller (F5.8-INV4).
 config :portal, :event_store, Portal.EventStore.InMemory
 
+# The Phoenix web app (F6.1). The endpoint is keyed to `:portal_web` (its otp_app),
+# runs through Bandit (Bandit.PhoenixAdapter), and renders expected errors via
+# PortalWeb.ErrorHTML. `pubsub_server: Portal.PubSub` is declared for a later rung
+# but NOT started at F6.1 — the endpoint boots without it. The HTTP port and
+# secret_key_base resolve at runtime (config/runtime.exs).
+config :portal_web, PortalWeb.Endpoint,
+  adapter: Bandit.PhoenixAdapter,
+  url: [host: "localhost"],
+  render_errors: [
+    formats: [html: PortalWeb.ErrorHTML],
+    layout: false
+  ],
+  pubsub_server: Portal.PubSub,
+  live_view: [signing_salt: "5tFp7nQe"]
+
+# Use Jason for JSON parsing in Phoenix.
+config :phoenix, :json_library, Jason
+
 # Per-environment overrides — load the matching env file last so its values win.
 import_config "#{config_env()}.exs"
