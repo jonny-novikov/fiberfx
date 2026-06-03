@@ -45,6 +45,10 @@ defmodule Portal.EngineTest do
   end
 
   describe "command → query round-trip (D2/D3/D8)" do
+    # The F5.7-D5/US6 process-tier SMOKE test: the single command-then-query through
+    # the live Portal.Engine boundary. The other engine tests are the F5.6 behavioural
+    # + crash-recovery gates, retained as the engine's DoD (F5.7 keeps a thin tip, it
+    # does not collapse to a literal one process test).
     test "a valid enroll returns {:ok, %Enrollment{}} and :courses_of then lists it" do
       user_id = Portal.ID.new("USR")
       course_id = seed_course()

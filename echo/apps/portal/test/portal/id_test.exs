@@ -1,6 +1,8 @@
 defmodule Portal.IDTest do
   use ExUnit.Case, async: true
 
+  doctest Portal.ID
+
   test "new/1 mints a 3-letter namespace + 11-char Base62 (14 chars total)" do
     id = Portal.ID.new("ENR")
     assert String.starts_with?(id, "ENR")

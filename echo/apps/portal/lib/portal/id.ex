@@ -27,7 +27,12 @@ defmodule Portal.ID do
     EchoData.Base62.decode!(encoded)
   end
 
-  @doc "Returns the 3-letter namespace prefix of a branded id."
+  @doc ~S'''
+  Returns the 3-letter namespace prefix of a branded id.
+
+      iex> Portal.ID.namespace("ENR0KHTOWnGLuC")
+      "ENR"
+  '''
   @spec namespace(t()) :: binary()
   def namespace(<<namespace::binary-size(3), _::binary>>), do: namespace
 
@@ -41,6 +46,11 @@ defmodule Portal.ID do
   True only for a well-formed branded id: a 3-letter uppercase namespace followed
   by an 11-character Base62 snowflake (14 bytes total). Placeholders like `"USR1"`
   are **not** valid — a branded id always carries a full encoded snowflake.
+
+      iex> Portal.ID.valid?("ENR0KHTOWnGLuC")
+      true
+      iex> Portal.ID.valid?("USR1")
+      false
   '''
   @spec valid?(term()) :: boolean()
   def valid?(<<ns::binary-size(3), encoded::binary-size(11)>>) do

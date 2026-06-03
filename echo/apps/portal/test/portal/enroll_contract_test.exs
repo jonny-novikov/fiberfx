@@ -8,6 +8,8 @@ defmodule Portal.EnrollContractTest do
   alias Portal.Learning
   alias Portal.Learning.Enrollment
 
+  doctest Portal.Error
+
   # Start every test from an empty store. The branded snowflake sequence resets
   # per process (EchoData.Snowflake keeps it in the process dictionary), so two
   # tests minting in the same millisecond can produce the SAME id; clearing the

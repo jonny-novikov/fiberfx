@@ -38,7 +38,12 @@ defmodule Portal.Engine.Core do
 
   ## State + fold (F5.5-D4/D5)
 
-  @doc "The empty state: no enrollments, no delivered lessons."
+  @doc ~S'''
+  The empty state: no enrollments, no delivered lessons.
+
+      iex> Portal.Engine.Core.initial_state()
+      %{enrollments: %{}, delivered: %{}}
+  '''
   @spec initial_state() :: state()
   def initial_state, do: %{enrollments: %{}, delivered: %{}}
 
@@ -149,6 +154,12 @@ defmodule Portal.Engine.Core do
   This pure read against folded state is DISTINCT from the live
   `Portal.Engine.query/2` GenServer call (which today routes `:courses_of` to the
   Store); F5.6 reroutes the live query to read this folded state.
+
+      iex> alias Portal.Learning.Events.LearnerEnrolled
+      iex> ev = %LearnerEnrolled{user_id: "USRaaaaaaaaaaa", course_id: "CRSaaaaaaaaaaa", at: ~U[2026-01-01 00:00:00Z]}
+      iex> state = Portal.Engine.Core.evolve(ev, Portal.Engine.Core.initial_state())
+      iex> Portal.Engine.Core.query(state, {:enrollments, "USRaaaaaaaaaaa"})
+      ["CRSaaaaaaaaaaa"]
   """
   @spec query(state(), {:enrollments, String.t()}) :: [String.t()]
   def query(state, {:enrollments, user_id}) do

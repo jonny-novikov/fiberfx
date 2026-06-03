@@ -11,6 +11,12 @@ defmodule Portal.Error do
   @type code :: :course_not_found | :already_enrolled
   @type t :: %__MODULE__{code: code(), message: String.t()}
 
+  @doc ~S'''
+  Builds a closed-vocabulary error from its code, attaching the human-readable message.
+
+      iex> Portal.Error.new(:already_enrolled)
+      %Portal.Error{code: :already_enrolled, message: "already enrolled in this course"}
+  '''
   @spec new(code()) :: t()
   def new(code), do: %__MODULE__{code: code, message: message(code)}
 

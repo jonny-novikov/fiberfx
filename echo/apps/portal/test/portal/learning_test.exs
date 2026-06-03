@@ -5,6 +5,18 @@ defmodule Portal.LearningTest do
   alias Portal.Learning
   alias Portal.Learning.Enrollment
 
+  # Start from an empty Store so a leftover ENR from a prior test cannot collide:
+  # `Learning.enroll/2` is the F5.4 Store path (not the engine fold), and its
+  # not-already-enrolled check reads the Store via `courses_of/1`. The branded
+  # snowflake sequence resets per process (CLAUDE.md §4), so two tests minting in
+  # the same millisecond can produce the same (user, course) pair — a stale row for
+  # that pair would flip this enroll's `{:ok, _}` to `:already_enrolled`. Store.reset
+  # alone suffices (no fold here, so no EventLog/Engine reset needed).
+  setup do
+    Portal.Store.reset()
+    :ok
+  end
+
   test "enroll/2 mints an ENR id, persists progress 0, and lists it" do
     user_id = Portal.ID.new("USR")
     course_id = Portal.ID.new("CRS")
