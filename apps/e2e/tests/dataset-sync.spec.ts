@@ -15,7 +15,7 @@ import { allNodes, growth } from "../fixtures/mindmap";
  */
 
 const MAP_HTML = fileURLToPath(
-  new URL("../../../map/index.html", import.meta.url),
+  new URL("../../../html/map/index.html", import.meta.url),
 );
 
 /** Extracts a `const <name> = [ ... ];` array literal and evaluates it. */

@@ -53,6 +53,9 @@ func main() {
 	flag.Parse()
 
 	b := strings.TrimRight(*base, "/")
+	// After the html/ migration the static site lives under <root>/html, while the
+	// elixir course stays at <root>/elixir (its own build tooling resolves it there).
+	htmlRoot := filepath.Join(*root, "html")
 
 	var entries []urlEntry
 	seen := map[string]bool{}
@@ -76,8 +79,8 @@ func main() {
 	}
 
 	// Singletons.
-	add(filepath.Join(*root, "index.html"), "/", "weekly", "1.0")
-	add(filepath.Join(*root, "game.html"), "/game", "yearly", "0.3")
+	add(filepath.Join(htmlRoot, "index.html"), "/", "weekly", "1.0")
+	add(filepath.Join(htmlRoot, "game.html"), "/game", "yearly", "0.3")
 
 	// Flat sections: bare "/<section>" = default page; "/<section>/<name>" for
 	// every other top-level *.html (the :name route only serves one level deep).
@@ -89,7 +92,7 @@ func main() {
 		{"map", "index"},
 	}
 	for _, s := range flat {
-		dirPath := filepath.Join(*root, s.dir)
+		dirPath := filepath.Join(htmlRoot, s.dir)
 		ents, err := os.ReadDir(dirPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warn: skip section %q: %v\n", s.dir, err)
@@ -113,8 +116,14 @@ func main() {
 	// Folder-routed sections (elixir, health, logic, law, physics, ai-rabota): recurse
 	// — the on-disk tree mirrors the URL tree. A dir with index.html -> the directory
 	// URL; any other <name>.html -> the clean leaf URL.
-	for _, sec := range []string{"elixir", "health", "logic", "law", "physics", "ai-rabota"} {
-		secRoot := filepath.Join(*root, sec)
+	folderRouted := []struct{ sec, base string }{
+		{"elixir", *root},
+		{"health", htmlRoot}, {"logic", htmlRoot}, {"law", htmlRoot},
+		{"physics", htmlRoot}, {"ai-rabota", htmlRoot},
+	}
+	for _, fr := range folderRouted {
+		sec := fr.sec
+		secRoot := filepath.Join(fr.base, sec)
 		_ = filepath.WalkDir(secRoot, func(p string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".html") {
 				return nil
