@@ -9,10 +9,12 @@
 # move said applications out of the umbrella.
 import Config
 
-# Sample configuration:
-#
-#     config :logger, :console,
-#       level: :info,
-#       format: "$date $time [$level] $metadata$message\n",
-#       metadata: [:user_id]
-#
+# The driven event-store adapter (F5.8). The base default is the in-memory Agent
+# so dev, test, and a bare `mix run` boot with no running database; `prod.exs`
+# overrides to Postgres. `Portal.EventStore.adapter/0` resolves this value, and the
+# engine + supervision tree name only that resolver — swapping the adapter is
+# config-only and changes no caller (F5.8-INV4).
+config :portal, :event_store, Portal.EventStore.InMemory
+
+# Per-environment overrides — load the matching env file last so its values win.
+import_config "#{config_env()}.exs"

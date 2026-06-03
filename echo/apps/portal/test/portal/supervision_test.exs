@@ -15,7 +15,7 @@ defmodule Portal.SupervisionTest do
 
     # The supervised boundary answers again after the restart (an incomplete
     # command is rejected with a tagged tuple — the point is that it replies).
-    assert {:error, _} = Portal.Engine.dispatch(%{type: :enroll})
+    assert {:error, _} = Portal.Engine.command(%{type: :enroll})
   end
 
   defp wait_for_restart(old_pid, tries \\ 50)

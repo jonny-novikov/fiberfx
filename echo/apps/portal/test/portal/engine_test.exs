@@ -28,12 +28,14 @@ defmodule Portal.EngineTest do
     :ok
   end
 
-  # Clear the persisted rows + log, then re-fold the Engine from the now-empty log
-  # (Engine.reset/0 mirrors Store/EventLog reset; re-folding, not killing, keeps
-  # this off the supervisor's restart-intensity budget).
+  # Clear the persisted rows + the event stream (the configured InMemory adapter the
+  # engine reads through since F5.8), then re-fold the Engine from the now-empty
+  # stream. Empty the stream BEFORE re-folding (data → compute), so Engine.reset/0
+  # re-folds an empty stream. Engine.reset/0 mirrors Store/adapter reset; re-folding,
+  # not killing, keeps this off the supervisor's restart-intensity budget.
   defp reset_shared_state do
     Portal.Store.reset()
-    Portal.EventLog.reset()
+    Portal.EventStore.InMemory.reset()
     Portal.Engine.reset()
   end
 
@@ -54,13 +56,13 @@ defmodule Portal.EngineTest do
       course_id = seed_course()
 
       assert {:ok, %Enrollment{} = enrollment} =
-               Portal.Engine.dispatch(%{type: :enroll, user_id: user_id, course_id: course_id})
+               Portal.Engine.command(%{type: :enroll, user_id: user_id, course_id: course_id})
 
       assert Portal.ID.valid?(enrollment.id) and Portal.ID.namespace(enrollment.id) == "ENR"
       assert enrollment.user_id == user_id and enrollment.course_id == course_id
       assert enrollment.progress == 0
 
-      listed = Portal.Engine.query(:courses_of, user_id)
+      listed = Portal.Engine.query({:courses_of, user_id})
       assert Enum.any?(listed, &(&1.id == enrollment.id and &1.course_id == course_id))
     end
   end
@@ -71,13 +73,13 @@ defmodule Portal.EngineTest do
       course_id = seed_course()
 
       assert {:ok, %Enrollment{}} =
-               Portal.Engine.dispatch(%{type: :enroll, user_id: user_id, course_id: course_id})
+               Portal.Engine.command(%{type: :enroll, user_id: user_id, course_id: course_id})
 
       assert {:error, %Portal.Error{code: :already_enrolled}} =
-               Portal.Engine.dispatch(%{type: :enroll, user_id: user_id, course_id: course_id})
+               Portal.Engine.command(%{type: :enroll, user_id: user_id, course_id: course_id})
 
       # Exactly one enrollment for the pair survives the rejection.
-      listed = Portal.Engine.query(:courses_of, user_id)
+      listed = Portal.Engine.query({:courses_of, user_id})
       assert Enum.count(listed, &(&1.course_id == course_id)) == 1
     end
 
@@ -85,7 +87,7 @@ defmodule Portal.EngineTest do
       course_id = seed_course()
 
       assert {:error, %Portal.Error{code: :course_not_found}} =
-               Portal.Engine.dispatch(%{type: :enroll, user_id: "USR1", course_id: course_id})
+               Portal.Engine.command(%{type: :enroll, user_id: "USR1", course_id: course_id})
     end
   end
 
@@ -95,20 +97,20 @@ defmodule Portal.EngineTest do
       _course_id = seed_course()
 
       before = :sys.get_state(Portal.Engine)
-      _ = Portal.Engine.query(:courses_of, user_id)
+      _ = Portal.Engine.query({:courses_of, user_id})
       assert :sys.get_state(Portal.Engine) == before
     end
   end
 
   describe "unknown command / query tuples (D5)" do
     test "an unrecognised command maps to {:error, :unknown_command}" do
-      assert {:error, :unknown_command} = Portal.Engine.dispatch(%{type: :nope})
+      assert {:error, :unknown_command} = Portal.Engine.command(%{type: :nope})
       # An incomplete enroll map (the supervision test's shape) also folds to unknown.
-      assert {:error, :unknown_command} = Portal.Engine.dispatch(%{type: :enroll})
+      assert {:error, :unknown_command} = Portal.Engine.command(%{type: :enroll})
     end
 
     test "an unrecognised query maps to {:error, :unknown_query}" do
-      assert {:error, :unknown_query} = Portal.Engine.query(:bogus, "x")
+      assert {:error, :unknown_query} = Portal.Engine.query({:bogus, "x"})
     end
   end
 
@@ -118,8 +120,8 @@ defmodule Portal.EngineTest do
       lesson = %Lesson{id: Portal.ID.new("LSN"), course_id: course_id, title: "Intro"}
       :ok = Portal.Store.put(lesson)
 
-      assert {:ok, %Lesson{title: "Intro"}} = Portal.Engine.query(:lesson, lesson.id)
-      assert :error = Portal.Engine.query(:lesson, Portal.ID.new("LSN"))
+      assert {:ok, %Lesson{title: "Intro"}} = Portal.Engine.query({:lesson, lesson.id})
+      assert :error = Portal.Engine.query({:lesson, Portal.ID.new("LSN")})
     end
   end
 
@@ -129,9 +131,9 @@ defmodule Portal.EngineTest do
       course_id = seed_course()
 
       assert {:ok, %Enrollment{}} =
-               Portal.Engine.dispatch(%{type: :enroll, user_id: user_id, course_id: course_id})
+               Portal.Engine.command(%{type: :enroll, user_id: user_id, course_id: course_id})
 
-      before = Portal.Engine.query(:courses_of, user_id)
+      before = Portal.Engine.query({:courses_of, user_id})
       assert Enum.any?(before, &(&1.course_id == course_id))
 
       pid = Process.whereis(Portal.Engine)
@@ -144,7 +146,7 @@ defmodule Portal.EngineTest do
 
       # The EventLog survived the kill; init/1 re-folded it and reproject_enrollments/1
       # re-established the Store rows, so the query returns the SAME list.
-      after_restart = Portal.Engine.query(:courses_of, user_id)
+      after_restart = Portal.Engine.query({:courses_of, user_id})
       assert MapSet.new(before, & &1.course_id) == MapSet.new(after_restart, & &1.course_id)
       assert after_restart != []
     end
