@@ -111,7 +111,7 @@ L1 Director  — coordinates; does NOT implement / grade / architect
 L2 peers (flat, all opus):
    ├── Venus  [Architect]                — authors architecture/*.md + spec.yaml
    ├── Mars   [Implementor + Remediator] — writes code; owns REMEDIATE loop (MAX=3)
-   ├── Apollo [Evaluator + Docs-Maintainer] — grades output; reconciles docs atomically
+   ├── Apollo [Evaluator + Docs-Maintainer] — grades output; reconciles docs atomically (charter §11)
    └── Pluto  [Relay]                    — operates EchoMQ queues; runs language tooling
 ```
 
@@ -230,6 +230,8 @@ Every non-trivial inference, decision, alternative analysis, learning, and phase
 - [ ] LAW-4: if Z-n written this turn, dedicated Director commit is staged (or explicitly deferred to user with reason)
 - [ ] All cited tools verified to exist in `mcp__cclin__*` (use `ToolSearch` if uncertain)
 - [ ] Audit-log signals reviewed (`tail .claude/audit.log`) — no unexplained FAKE-N / V-SOLO / TRIVIAL-OVERRUN warnings
+- [ ] `/reconcile <rung>` run (Venus pre / Apollo post) — build-grade, no unmarked STALE/INVENTED (§11.1)
+- [ ] Evaluator verdict carries the §11.2 charter (un-prompted finding + attack-that-held + mutation kill-rate); risk-tier rungs got perspective-diverse verify (§11.3)
 
 ---
 
@@ -304,3 +306,30 @@ Report: Y-1
 3. Working tree contains only changes attributable to this task — review **both** `git status --short` (unstaged) **and `git diff --cached --name-only` (already-staged)**
 4. Commit message body references real audit artifacts (no fabricated D-n / L-n / Y-n IDs)
 5. **Nothing pre-staged sneaks in.** `git diff --cached --name-only` shows ONLY this task's files. In a shared tree the operator may stage unrelated batches out-of-band, and `git commit` commits the whole **index**, not just what you `git add`-ed — so a bare commit can bundle foreign staged files (real incident: an F5.9 commit swept 313 pre-staged `html/` renames → 316 files instead of 3). If foreign files are staged, commit only your paths with a **pathspec commit** (`git commit -F msg -- <exact paths>`); recover a botched bundle with `git reset --soft HEAD~1` then the pathspec commit (this preserves the operator's staging).
+
+---
+
+## 11. Evaluator rigor — defeating the drift and the rubber-stamp
+
+Two recurring failure modes the F5/F6 ladder exposed, with the practices that close them. The verification value is **front-loaded**: most novel catches happen at reconcile/review, *before* the Evaluator runs — so the Evaluator's job is to *license confidence that none remain*, which is harder than finding bugs and is where a rubber-stamp hides.
+
+### 11.1 `/reconcile` — the spec↔code differ (kills surface drift)
+
+The #1 unguarded defect is spec-vs-code drift: a brief claims a surface the code lacks (INVENTED) or the code drifts from the spec (STALE) — gates check presence, not *correspondence*, so it ships (F5.8/F5.9 14-delta; the F6.1 unreachable-422, caught only by a manual `@spec` read). The **`/reconcile <rung>`** skill mechanizes the catch: extract every `Module.fun/arity`, return shape, struct field, tree child, "Touched files" path, and code-asserting invariant from the spec triad; probe the code (grep/AST/`mix xref`/`@spec`); emit a delta table (MATCH/STALE/INVENTED/MISSING/DEFERRED); a rung is build-grade iff every claim is MATCH or DEFERRED.
+- **Wire-in:** in Flat-L2, **Venus runs `/reconcile <rung>` as step 1** (pre-build → catches INVENTED) and **Apollo runs `/reconcile <rung> post`** at close (→ catches as-built drift). The lag-1 discipline becomes an executable gate, not a remembered practice.
+
+### 11.2 Evaluator charter (kills the rubber-stamp)
+
+An all-PASS verdict is indistinguishable from a lazy-PASS, and a green suite that stays green under mutation is decorative. Every Evaluator (Apollo) verdict MUST report:
+1. **the prompted-checks table** — the Director's listed probes, each PASS/FAIL with `file:line` evidence;
+2. **≥1 un-prompted finding** — or an explicit "swept dimensions X, Y, Z; clean" — because the Director's checklist encodes the *Director's* blind spots, and the highest-value finding is the one nobody asked for;
+3. **≥1 attack that held** — a concrete refutation attempt that *failed* (proof the stance was adversarial, not confirmatory);
+4. **a mutation kill-rate**, not pass/fail — N mutants introduced, M killed; the **survivors are the to-do list** (a green test that survives its mutation is named and FAILED).
+
+### 11.3 Risk-tiered, perspective-diverse verify
+
+One Evaluator covers correctness well and other lenses thinly. Tier the rung:
+- **Standard rung** → one Apollo (correctness lens) + the §11.2 charter.
+- **Web / auth / data / deploy rung** (e.g. F6.1, F6.3, F6.8) → **perspective-diverse verify**: a correctness-Apollo AND a security/ops-Apollo (session secrets, CSRF, secure headers, secret handling, runtime config), each a distinct context. A front door verified only for correctness ships its security gaps.
+
+Boundary claims ("the web names only the facade") are proven by **`mix xref`/call-graph**, not string-grep alone — an alias can dodge a grep, not a compile-time edge.
