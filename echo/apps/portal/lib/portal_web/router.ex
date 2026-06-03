@@ -9,9 +9,9 @@ defmodule Portal.Web.Router do
   """
   use Plug.Router
 
-  plug :match
-  plug Plug.Parsers, parsers: [:urlencoded, :json], pass: ["*/*"], json_decoder: Jason
-  plug :dispatch
+  plug(:match)
+  plug(Plug.Parsers, parsers: [:urlencoded, :json], pass: ["*/*"], json_decoder: Jason)
+  plug(:dispatch)
 
   post "/enroll" do
     command = %{type: :enroll, user_id: conn.params["user"], course_id: conn.params["course"]}

@@ -14,7 +14,12 @@ defmodule Portal.EntitiesTest do
     assert %Course{slug: "elixir"} = %Course{id: id("CRS"), title: "Elixir", slug: "elixir"}
     assert %Lesson{title: "Intro"} = %Lesson{id: id("LSN"), course_id: id("CRS"), title: "Intro"}
     assert %Page{body: "..."} = %Page{id: id("PGE"), lesson_id: id("LSN"), body: "..."}
-    assert %Enrollment{progress: 0} = %Enrollment{id: id("ENR"), user_id: id("USR"), course_id: id("CRS")}
+
+    assert %Enrollment{progress: 0} = %Enrollment{
+             id: id("ENR"),
+             user_id: id("USR"),
+             course_id: id("CRS")
+           }
 
     assert %Progress{percent: 0} =
              %Progress{id: id("PRG"), enrollment_id: id("ENR"), lesson_id: id("LSN"), percent: 0}

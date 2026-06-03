@@ -18,14 +18,23 @@ defmodule Portal.Web.EnrollSliceTest do
     # Seed the live store with real minted ids — no mocks, no "USR1" placeholders.
     user = %Portal.Accounts.User{id: Portal.ID.new("USR"), email: "ada@example.com", name: "Ada"}
     course = %Portal.Catalog.Course{id: Portal.ID.new("CRS"), title: "Elixir", slug: "elixir"}
-    lesson = %Portal.Catalog.Lesson{id: Portal.ID.new("LSN"), course_id: course.id, title: "Intro"}
+
+    lesson = %Portal.Catalog.Lesson{
+      id: Portal.ID.new("LSN"),
+      course_id: course.id,
+      title: "Intro"
+    }
+
     Enum.each([user, course, lesson], &Portal.Store.put/1)
     %{user: user, course: course, lesson: lesson}
   end
 
   defp call(method, path), do: Portal.Web.Router.call(conn(method, path), [])
 
-  test "POST /enroll creates a persisted enrollment, 201 + a valid ENR id", %{user: user, course: course} do
+  test "POST /enroll creates a persisted enrollment, 201 + a valid ENR id", %{
+    user: user,
+    course: course
+  } do
     conn = call(:post, "/enroll?user=#{user.id}&course=#{course.id}")
 
     assert conn.status == 201

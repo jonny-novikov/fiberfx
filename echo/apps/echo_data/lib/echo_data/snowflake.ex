@@ -51,13 +51,18 @@ defmodule EchoData.Snowflake do
   @sequence_bits 12
 
   # Bit shifts
-  @timestamp_shift @worker_bits + @sequence_bits  # 22
-  @worker_shift @sequence_bits                     # 12
+  # 22
+  @timestamp_shift @worker_bits + @sequence_bits
+  # 12
+  @worker_shift @sequence_bits
 
   # Bit masks
-  @worker_mask (1 <<< @worker_bits) - 1            # 0x3FF (1023)
-  @sequence_mask (1 <<< @sequence_bits) - 1        # 0xFFF (4095)
-  @timestamp_mask (1 <<< @timestamp_bits) - 1      # Max timestamp value
+  # 0x3FF (1023)
+  @worker_mask (1 <<< @worker_bits) - 1
+  # 0xFFF (4095)
+  @sequence_mask (1 <<< @sequence_bits) - 1
+  # Max timestamp value
+  @timestamp_mask (1 <<< @timestamp_bits) - 1
 
   @type snowflake :: non_neg_integer()
   @type components :: %{
@@ -300,7 +305,9 @@ defmodule EchoData.Snowflake do
   def in_range?(snowflake, %DateTime{} = start_time, %DateTime{} = end_time)
       when is_integer(snowflake) and snowflake >= 0 do
     ts = timestamp(snowflake)
-    DateTime.compare(ts, start_time) in [:eq, :gt] and DateTime.compare(ts, end_time) in [:eq, :lt]
+
+    DateTime.compare(ts, start_time) in [:eq, :gt] and
+      DateTime.compare(ts, end_time) in [:eq, :lt]
   end
 
   @doc """

@@ -33,7 +33,7 @@ defmodule Portal.EnrollContractTest do
     property "a successful enroll always yields {:ok, %Enrollment{progress: 0}} and stores it" do
       course_id = seed_course()
 
-      check all _ <- StreamData.constant(:ok), max_runs: 50 do
+      check all(_ <- StreamData.constant(:ok), max_runs: 50) do
         user_id = Portal.ID.new("USR")
 
         assert {:ok, %Enrollment{} = enrollment} = Learning.enroll(user_id, course_id)
@@ -48,7 +48,7 @@ defmodule Portal.EnrollContractTest do
     property "0 <= progress <= 100 for every enrollment the system produces" do
       course_id = seed_course()
 
-      check all _ <- StreamData.constant(:ok), max_runs: 50 do
+      check all(_ <- StreamData.constant(:ok), max_runs: 50) do
         user_id = Portal.ID.new("USR")
         assert {:ok, enrollment} = Learning.enroll(user_id, course_id)
         assert assert_progress_in_range!(enrollment) == enrollment
