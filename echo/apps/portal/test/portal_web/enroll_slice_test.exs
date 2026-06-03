@@ -4,6 +4,17 @@ defmodule Portal.Web.EnrollSliceTest do
   import Plug.Test
 
   setup do
+    # Fold-touching test: enroll now folds into the shared Portal.Engine + EventLog
+    # (F5.6). Reset Store + EventLog + Engine BEFORE seeding so each test starts from
+    # an empty fold and store — otherwise a prior test's enrollment plus a
+    # same-millisecond id collision (the per-process snowflake hazard, CLAUDE.md §4)
+    # can wrongly reject a fresh enroll as :already_enrolled. EventLog before Engine
+    # so the Engine re-folds the now-empty log. The standard fold-isolation every
+    # fold-touching test uses (see Portal.EngineTest); seeds below survive it.
+    Portal.Store.reset()
+    Portal.EventLog.reset()
+    Portal.Engine.reset()
+
     # Seed the live store with real minted ids — no mocks, no "USR1" placeholders.
     user = %Portal.Accounts.User{id: Portal.ID.new("USR"), email: "ada@example.com", name: "Ada"}
     course = %Portal.Catalog.Course{id: Portal.ID.new("CRS"), title: "Elixir", slug: "elixir"}

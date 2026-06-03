@@ -8,6 +8,15 @@ defmodule Portal.Learning do
   `{:error, %Portal.Error{}}` with a code from a closed set; impossible states
   (progress outside `0..100`) crash rather than return a tuple. Owns its entities;
   references other contexts only by branded id.
+
+  Post-F5.6 the live write path runs through the `Portal.Engine` command shell,
+  which gates on the pure core's `authorize/2` (against the folded log), records a
+  `%LearnerEnrolled{}` event, and projects the Store `%Enrollment{}` the unchanged
+  web reads (the shell mints + stores the row inline, without re-running this
+  contract — a single admissibility gate, no torn write). `courses_of/1` is the
+  read projection behind the engine's `:courses_of` query. The contract here is
+  therefore the direct-call surface (kept for `Portal.LearningTest`) and the shape
+  the shell's projection mirrors — not dead code.
   """
   alias Portal.Error
   alias Portal.Learning.Enrollment

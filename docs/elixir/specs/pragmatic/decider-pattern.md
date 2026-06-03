@@ -79,16 +79,20 @@ end
 
 ```elixir
 # F5.6 — the imperative shell (Portal.Engine, a GenServer)
-def init(events), do: {:ok, Portal.Engine.Core.replay(events)}    # fold the log once at boot
+# init reads the CURRENT log live (from a separate Portal.EventLog process), not a
+# static child arg — a supervisor evaluates child args once, so a static arg would
+# re-fold a boot-time snapshot on restart.
+def init(:ok), do: {:ok, Portal.Engine.Core.replay(Portal.EventLog.all())}   # fold the live log once
 
 def handle_call({:command, cmd}, _from, state) do
-  case Portal.Engine.Core.decide(state, cmd) do
-    events when is_list(events) ->
+  case Portal.Engine.Core.authorize(state, cmd) do                # the contract; decide is events-only
+    :ok ->
+      events = Portal.Engine.Core.decide(state, cmd)
       new_state = Enum.reduce(events, state, &Portal.Engine.Core.evolve/2)
       :ok = append(events)                                        # persist the facts (F5.8 port)
       {:reply, :ok, new_state}
     {:error, reason} ->
-      {:reply, {:error, reason}, state}                           # state unchanged
+      {:reply, {:error, Portal.Error.new(reason)}, state}         # map atom → %Portal.Error{}; state unchanged
   end
 end
 
