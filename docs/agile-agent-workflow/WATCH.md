@@ -19,6 +19,15 @@ modelled on the elixir references watcher (`docs/elixir/references/`):
 - Chapter segment = the **on-disk directory name** (semantic, e.g. `why`), so the
   URL tree below the mount mirrors the filesystem. Author positional slugs
   (`a0`, `a1`) are swapped to the dir name only when that yields a real route.
+- The **course home page (`index.html`) is the route manifest.** Its chapter-tile
+  links *define* the chapter routes — including deliberate forward-links to
+  not-yet-built chapters (`/decomposition`, `/roadmap`, `/spec`, `/brief`,
+  `/reliability`, `/portal`). Those **fail the `links` gate by design** until the
+  chapter lands; that FAIL on the hub is expected, not actionable drift.
+- A0 splits in two: **`/intro`** is the A0 Foundations landing, and **`/what`** is
+  the A0.2 "What we are building" module hub holding the three foundation pages
+  (`two-layer-model`, `four-artifacts`, `author-operator-loop`, + the
+  `two-layer-model-roadmap-anatomy` deep-dive). Those pages migrated `intro/`→`what/`.
 
 ## The tools
 
@@ -31,11 +40,21 @@ The repairs live in the `jonnify-cms` validator (built binary
 - **`cms check --fix …`** — first apply the deterministic, **route-verified**
   repairs (clamp spacing + relink), writing the file, then check. A rewrite is
   applied only when its target is a real route — never invented.
+- **`--chapter-alias a0=intro,a1=why`** — during `--fix` relink, map an author's
+  positional chapter slug to its semantic dir before route-verifying. (A one-time
+  *namespace split* — e.g. `/a0` → `/intro` for the landing but `/a0/<module>` →
+  `/what/<module>` — is beyond a single alias and is done as an explicit migration,
+  not by the watcher.)
+- **`--require-refs`** — also run the tenth, opt-in **refs** gate: every page must
+  carry a References section (a `.refs` block). The agile course mandates one on
+  every page; the gate is off by default so it never retroactively fails an elixir
+  page that predates the convention.
 
 Canonical command (what `reconcile.sh` runs):
 
 ```
-cms check --fix --routes-from /course/agile-agent-workflow=html/agile-agent-workflow <files>
+cms check --fix --routes-from /course/agile-agent-workflow=html/agile-agent-workflow \
+  --chapter-alias a0=intro,a1=why --require-refs <files>
 ```
 
 ## Output contract (`watch.sh`)
