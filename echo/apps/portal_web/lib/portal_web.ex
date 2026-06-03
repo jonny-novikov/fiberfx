@@ -39,16 +39,13 @@ defmodule PortalWeb do
 
       import Phoenix.Controller, only: [get_csrf_token: 0]
 
-      # Core UI components and translation
       unquote(html_helpers())
     end
   end
 
   defp html_helpers do
     quote do
-      # HTML escaping functionality
       import Phoenix.HTML
-      # Shortcut for generating JS commands
       alias Phoenix.LiveView.JS
 
       unquote(verified_routes())

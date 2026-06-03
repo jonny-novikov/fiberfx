@@ -26,15 +26,10 @@ defmodule PortalWeb.CourseController do
     render_outcome(conn, Portal.courses_of(user_id))
   end
 
-  # The two railway arms of the closed `Portal` outcome (D-2, F6.1-R4). Split into a
-  # second-head function so each arm is its own clause: `Portal.courses_of/1` is
-  # success-only at F6.1, so a single inline `case` would let the 1.18 type checker
-  # prune the defensive `{:error, %Portal.Error{}}` branch as unreachable. As distinct
-  # function clauses each head is checked against the value actually passed, so the
-  # error head stays live code (F6.1-INV4/INV5) without naming a wider type or touching
-  # the facade. The error head goes request-reachable when the facade gains
-  # id-validation (a later F6 rung); today it is exercised by an injected-error unit
-  # test that calls `render_outcome/2` (and the `:error` render) directly.
+  # Split into a separate function so each outcome arm is its own clause. With a single
+  # inline `case`, the 1.18 type checker would prune the defensive `{:error, ...}` branch
+  # as unreachable (`Portal.courses_of/1` is success-only today); distinct heads keep the
+  # error path live for the injected-error unit test and the later id-validation rung.
   @spec render_outcome(Plug.Conn.t(), {:ok, [Portal.Learning.Enrollment.t()]}) :: Plug.Conn.t()
   @spec render_outcome(Plug.Conn.t(), {:error, Portal.Error.t()}) :: Plug.Conn.t()
   def render_outcome(conn, {:ok, courses}) do

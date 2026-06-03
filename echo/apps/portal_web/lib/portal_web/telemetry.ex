@@ -17,8 +17,6 @@ defmodule PortalWeb.Telemetry do
   @impl true
   def init(_arg) do
     children = [
-      # A periodic measurements poller. The empty measurement list is the F6.1
-      # baseline — domain measurements (VM, request rate) are wired in a later rung.
       {:telemetry_poller, measurements: periodic_measurements(), period: 10_000}
     ]
 
@@ -31,7 +29,6 @@ defmodule PortalWeb.Telemetry do
   """
   def metrics do
     [
-      # Phoenix Metrics
       summary("phoenix.endpoint.start.system_time",
         unit: {:native, :millisecond}
       ),
@@ -42,8 +39,6 @@ defmodule PortalWeb.Telemetry do
         tags: [:route],
         unit: {:native, :millisecond}
       ),
-
-      # VM Metrics
       summary("vm.memory.total", unit: {:byte, :kilobyte}),
       summary("vm.total_run_queue_lengths.total"),
       summary("vm.total_run_queue_lengths.cpu"),
@@ -52,10 +47,7 @@ defmodule PortalWeb.Telemetry do
   end
 
   defp periodic_measurements do
-    [
-      # A module, function and arguments to be invoked periodically.
-      # This measurement list is empty at F6.1; app-specific measurements arrive with
-      # the dashboard rung (F6.9).
-    ]
+    # Empty at F6.1; app-specific measurements arrive with the dashboard rung (F6.9).
+    []
   end
 end
