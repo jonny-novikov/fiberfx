@@ -301,5 +301,6 @@ Report: Y-1
 **Pre-commit invariants the Director must check:**
 1. Z-n complete entry exists (`grep -q "^## Z-${n}" dev/tasks/<slug>/complete.md`)
 2. At least one D-n decision is locked
-3. Working tree contains only changes attributable to this task (`git status --short` reviewed)
+3. Working tree contains only changes attributable to this task — review **both** `git status --short` (unstaged) **and `git diff --cached --name-only` (already-staged)**
 4. Commit message body references real audit artifacts (no fabricated D-n / L-n / Y-n IDs)
+5. **Nothing pre-staged sneaks in.** `git diff --cached --name-only` shows ONLY this task's files. In a shared tree the operator may stage unrelated batches out-of-band, and `git commit` commits the whole **index**, not just what you `git add`-ed — so a bare commit can bundle foreign staged files (real incident: an F5.9 commit swept 313 pre-staged `html/` renames → 316 files instead of 3). If foreign files are staged, commit only your paths with a **pathspec commit** (`git commit -F msg -- <exact paths>`); recover a botched bundle with `git reset --soft HEAD~1` then the pathspec commit (this preserves the operator's staging).
