@@ -9,7 +9,11 @@ defmodule Portal.Store do
   through the mailbox; a stored struct carries its own branded id, whose 3-letter
   prefix selects the partition.
 
-  In-memory ⇒ it empties on restart; durability arrives at F5.6/F5.8.
+  In-memory ⇒ it empties on restart, and stays that way by design: since F5.6 the
+  Store is the volatile dual-write `%Enrollment{}` read-model projection of the
+  held fold (rebuilt at `Portal.Engine.init/1`), not a source of truth. Durability
+  is the event log's concern — the separate `Portal.EventLog` process (F5.6); the
+  swappable durable `EventStore` port arrives at F5.8.
   """
   use GenServer
 
