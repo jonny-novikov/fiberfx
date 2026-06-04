@@ -140,7 +140,7 @@ through the "Domain core … behind the Portal facade" wording in the definition
   - Adzic, G. — *Specification by Example* — a single, living source of truth.
 - **Related in this course (as on the page):**
   - Deep dive · Anatomy of a roadmap.md — `/course/agile-agent-workflow/what/two-layer-model-roadmap-anatomy`
-  - A0 · Why an agile agent workflow — `/course/agile-agent-workflow/intro`
+  - A0 · Why an agile agent workflow — `/course/agile-agent-workflow/what`
   - A0.2.2 · The four artifacts — `/course/agile-agent-workflow/what/four-artifacts`
   - Course · the six modules — `/course/agile-agent-workflow`
 
@@ -148,14 +148,12 @@ through the "Domain core … behind the Portal facade" wording in the definition
 
 - **route-tag (on page):** `/course/agile-agent-workflow/what/two-layer-model`
 - **Crumbs (as-found):**
-  - `A0 · Why an Agile Agent Workflow` → `/course/agile-agent-workflow/intro` — **ANOMALY: this `/intro` route is
-    now a 404 (the A0 `/intro` landing was removed). Recorded as-is; do not fix.**
+  - `A0 · Why an Agile Agent Workflow` → `/course/agile-agent-workflow/what` (the A0 chapter landing)
   - `A0.2.1 · the two-layer model` (`.here`, current page, no link)
 - **Eyebrow:** `A0.2 · framework · design 1`
 - **toc-mini:** `#layers` (Roadmap over specs), `#truth` (Single source of truth), `#refs` (References)
 - **Pager:**
-  - prev (`.btn.ghost`) → `/course/agile-agent-workflow/intro` — "A0 · chapter overview" (also lands on the
-    removed `/intro` route — same anomaly as the breadcrumb)
+  - prev (`.btn.ghost`) → `/course/agile-agent-workflow/what` — "A0 · chapter overview"
   - next (`.btn`) → `/course/agile-agent-workflow/what/four-artifacts` — "Next · the four artifacts"
 - **Build stamp:** `#stampId` = `TSK0NgQDWuXRSK`; timestamp shown `2026-06-03 17:31:57 UTC`.
 - **Shell:** `.hero-split` (hero text left, the two-layer-stack `.fig` figure right; stacks on mobile). Head,

@@ -12,14 +12,15 @@ design on the home page only**; every lesson/hub page must keep all internal lin
 - **Module** `A[N].[M]` (two-digit M) → a hub, nested under the chapter dir (`/why/<module-slug>`).
 - **Subpage** `A[N].[M].[S]` (single-digit S) → a deep-dive lesson inside the module (`/why/<module-slug>/<slug>`).
 
-A0 is the historical exception: its landing is `/intro` and its one built module (A0.2) is the flat sibling
-`/what`. Every chapter from A1 on **nests** its modules (`/<chapter>/<module>/<subpage>`).
+A0 is the historical exception: its landing was consolidated from the retired `/intro` into `/what`, which doubles
+as the A0 chapter landing AND the A0.2 module hub. Every chapter from A1 on **nests** its modules
+(`/<chapter>/<module>/<subpage>`).
 
 ## The chapters
 
 | Chapter | Title | Landing route | Dir | Status |
 |---|---|---|---|---|
-| A0 | Foundations — why, what, who | `/course/agile-agent-workflow/intro` | `intro/` | **built** |
+| A0 | Foundations — why, what, who | `/course/agile-agent-workflow/what` | `what/` | **A0.2 built; A0.1, A0.3 planned** |
 | A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **landing + A1.01–A1.04 built; A1.05–A1.06 planned** |
 | A2 | Decomposition: from vision to user stories | `…/decomposition` | — | planned (manifest forward-link) |
 | A3 | The roadmap layer: Agile delivery & iteration | `…/roadmap` | — | planned |
@@ -30,8 +31,11 @@ A0 is the historical exception: its landing is `/intro` and its one built module
 
 ## A0 — built modules and subpages
 
-- **A0 landing** `/intro` (`intro/index.html`).
-- **A0.2 · What we are building** — module hub `/what` (`what/index.html`). Subpages:
+- **A0 landing** `/what` (`what/index.html`) — the A0 chapter overview (consolidated from the retired `/intro`); it
+  frames three modules — A0.1 Why it works (planned), **A0.2 What we are building (built)**, A0.3 Who does the work
+  (planned) — and doubles as the A0.2 module hub.
+- **A0.2 · What we are building** — hub `/what`. Subpages (md sources of record under
+  `docs/agile-agent-workflow/content/what/`):
   - A0.2.1 The two-layer model → `/what/two-layer-model` (+ deep-dive `/what/two-layer-model-roadmap-anatomy`).
   - A0.2.2 The four artifacts → `/what/four-artifacts`.
   - A0.2.3 The Author/Operator loop → `/what/author-operator-loop`.
@@ -97,7 +101,9 @@ with `--require-refs`.
 **A1.05 — "Correct by definition"** (`/why/correct`, slug suggested): what "done" means — a closure over traced,
 executed checks, and the quality gates that hold it. Author the module hub `why/correct/index.html` plus ≥3
 deep-dive subpages (md-first under `docs/agile-agent-workflow/content/why/correct/`), each with a hero-split
-interactive and a main interactive, then relink the A1.05 card on `/why` (div → a, soon → live). **Process
+interactive, a main interactive, and a References section whose `Sources` are real, vetted external links (reuse the
+course-home registry — Pragmatic Programmer/XP/Spec-by-Example/Continuous-Delivery/llms.txt/Anthropic; never
+fabricate a URL), then relink the A1.05 card on `/why` (div → a, soon → live). **Process
 (user-confirmed):** fan out one agile-course-writer-skilled agent per dive, in parallel; ground the definition of
 "done" and the gates in the established course material before authoring. The course thesis, restated each module:
 neither no-plan nor all-plan ships reliable software; the unit that does is a thin slice of value, specified only

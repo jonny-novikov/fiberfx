@@ -4,12 +4,9 @@
 - **File:** `html/agile-agent-workflow/what/index.html`
 - **Place in the chapter:** the A0 chapter landing — the "A0 · chapter overview". It frames the three
   foundational modules (A0.1 Why it works, A0.2 What we are building, A0.3 Who does the work) and routes the
-  reader to the one built module, A0.2. (A0 is the historical flat exception: its landing lives at `/intro`,
-  and the A0.2 module is the flat sibling `/what` — this page is that sibling, doubling as the chapter overview.)
+  reader to the one built module, A0.2. (A0's landing was consolidated from the former `/intro` page into
+  `/what`; the old `/intro` route is retired, and this page is now the A0 chapter landing.)
 - **Accent word (`.ex`):** "workflow" (`<span class="ex">workflow</span>` in `<h1>Why an agile agent workflow</h1>`).
-- **KNOWN ANOMALY (record as-is, do not fix):** the header `route-tag` on the page reads
-  `/course/agile-agent-workflow/intro`, but the page is **served at** `/course/agile-agent-workflow/what`.
-  The Route above is the served route; the stale `/intro` route-tag is recorded verbatim under Wiring.
 
 ## Lead
 
@@ -107,14 +104,13 @@ Intro prose: "Primary sources for the foundations, and where the chapter connect
 
 ## Wiring
 
-- **route-tag (AS-FOUND, STALE):** `/course/agile-agent-workflow/intro` — does NOT match the served route
-  `/course/agile-agent-workflow/what`. Recorded verbatim; not corrected.
+- **route-tag:** `/course/agile-agent-workflow/what` — matches the served route.
 - **crumbs:** `Agile Agent Workflow` → `/course/agile-agent-workflow` · sep `/` · here `A0 · Foundations` (no link).
 - **toc-mini:** `#modules` ("The three modules") · `#refs` ("References").
 - **pager:** prev → `/course/agile-agent-workflow` ("← Course · Agile Agent Workflow"); next →
   `/course/agile-agent-workflow/what/two-layer-model` ("Start · the two-layer model →"). No `.p-left` text used.
 - **footer (3-column "foot-cols", not the 2-script-only model):**
-  - Chapters column links: `/course/agile-agent-workflow/intro` ("A0 · Why an agile agent workflow"),
+  - Chapters column links: `/course/agile-agent-workflow/what` ("A0 · Why an agile agent workflow"),
     `/course/agile-agent-workflow/why` ("A1 · Decomposition"); plus non-linked `.it` spans A2–A6.
   - The course column links: `/course/agile-agent-workflow`, `/course/agile-agent-workflow/what/two-layer-model`,
     `/elixir/course`, `/elixir`.

@@ -30,7 +30,7 @@ The agile course has **no `build_page.py` and no content/fragment split**. Each 
 byte-for-byte by the jonnify Fiber server via `serveDirTree`. To author a page you write the whole file; to keep
 the design system identical you **copy the `<head>`…`</style>`, the `<header class="site">`, the
 `<footer class="site-foot">`, and the two trailing `<script>` blocks verbatim from an existing page** (a good model
-is `html/agile-agent-workflow/what/four-artifacts.html` for a lesson, `…/what/index.html` for a module hub), then
+is `html/agile-agent-workflow/what/four-artifacts.html` for a lesson, `…/why/two-layers/index.html` for a module hub), then
 change only the `<title>`, `<meta description>`, the header `route-tag`, and the `<main>` body.
 
 | Path | Role |
@@ -40,6 +40,7 @@ change only the `<title>`, `<meta description>`, the header `route-tag`, and the
 | `docs/agile-agent-workflow/{watch,reconcile}.sh` | The standing two-tier watcher + the deterministic `--fix` reconciler. |
 | `.claude/skills/elixir-technical-writer/references/` | The SHARED craft refs (design tokens, visualization, voice, anatomy). |
 | `references/course-map.md` (this skill) | The A0–A7 chapter/module/route/status map + the resume point. |
+| `docs/agile-agent-workflow/agile-agent-workflow.toc.md` | The living, writer-maintained course table of contents + per-chapter/module abstracts. Sync it whenever a module lands. |
 
 ## 2. The product and the running project
 
@@ -65,8 +66,9 @@ The course mirrors the elixir course's chapter→lesson nesting, one level deepe
 
 **Route convention (locked): modules nest under their chapter dir.** A chapter landing is `<chapter>/index.html`;
 a module hub is `<chapter>/<module-slug>/index.html`; a subpage is `<chapter>/<module-slug>/<sub-slug>.html`. The
-URL path mirrors the numbering. (A0 is the historical exception: its landing is `/intro` and its sole built module
-A0.2 is the flat sibling `/what` — do NOT copy that flatness for A1+.) `serveDirTree` resolves all of this with no
+URL path mirrors the numbering. (A0 is the historical exception: its landing was consolidated from the retired
+`/intro` into `/what`, which now doubles as the A0 chapter landing AND the A0.2 module hub — do NOT copy that
+flatness for A1+.) `serveDirTree` resolves all of this with no
 server change, and `cms --routes-from` derives the routes from the filesystem.
 
 **Numbering is two-digit for modules** (`A1.01`…`A1.06`) and single-digit for subpages (`A1.01.1`). A deep-dive of a
@@ -96,6 +98,14 @@ Identical to the shared anatomy (see `elixir-technical-writer/references/page-an
    A `.note` carries the forward pointer.
 4. **A References section** — `<section id="refs">` with `<h2>References</h2>` and a `<div class="refs">` holding an
    `<h3>Sources</h3>` list and an `<h3>Related in this course</h3>` list. **Mandatory on every page** (gate #10).
+   **Every `Sources` entry MUST be a real external link**, wrapping the citation:
+   `<li><a href="https://…">Author &mdash; <em>Title</em></a> &mdash; gloss.</li>`. Reuse a URL already vetted on an
+   existing page — the course home `html/agile-agent-workflow/index.html` is the canonical link registry (Pragmatic
+   Programmer → `pragprog.com`, Extreme Programming Explained → `oreilly.com`, Specification by Example → `gojko.net`,
+   User Stories Applied → `mountaingoatsoftware.com`, Continuous Delivery → `continuousdelivery.com`, the `llms.txt`
+   convention → `llmstxt.org`, Anthropic engineering → `anthropic.com/engineering/…`). **Never invent a URL**; if no
+   vetted link fits, cite a different real authoritative source that has one. (`Related in this course` entries are
+   internal course routes, not external links.)
 5. A `.pager` (`.btn.ghost` back, `.btn` forward, `.spacer`) — both links must resolve to real/built routes.
 6. The site footer with the `.stamp` + decoder script (copied verbatim; carries a minted `TSK…` Snowflake id).
 
@@ -119,7 +129,7 @@ agile-course mandate, opt-in via `--require-refs`). Run, and read the per-gate o
 ```bash
 apps/jonnify-cms/bin/cms check \
   --routes-from /course/agile-agent-workflow=html/agile-agent-workflow \
-  --chapter-alias a0=intro,a1=why --require-refs \
+  --chapter-alias a0=what,a1=why --require-refs \
   html/agile-agent-workflow/<path>.html
 ```
 
@@ -129,6 +139,10 @@ Ship only at **STATUS: PASS** (all ten). Two caveats the gates cannot see, so ch
   form is **spaced**: `1.9rem + 4.2vw`. `cms check --fix` repairs it deterministically.
 - **Right route, wrong route.** The `links` gate proves a route *resolves*, never that it is the *intended* one
   (a breadcrumb to `/why` vs `/what` passes either way). Read crumbs/pager to confirm the parent is correct.
+- **Sources need real links — `refs` cannot see this.** The `refs` gate only checks a `.refs` block is *present*; it
+  does not verify each `Sources` entry carries a real external `href`. Audit by reading, or assert it:
+  `awk '/<h3>Sources<\/h3>/{p=1}p{print}/<\/ul>/{if(p)exit}' <page> | sed 's#</li>#</li>\n#g' | grep -c 'href="http'`
+  must equal the Sources `<li>` count. Reuse vetted URLs from the course home; never fabricate one.
 
 ## 8. Voice (read the sweep, do not just run it)
 
@@ -166,8 +180,11 @@ an existing valid id is fine for a hand-authored page (the decoder just decodes 
 4. **Verify routes** — `cms check … --require-refs` every new page → all **STATUS: PASS**; then crawl the running
    server (`python3`/`curl` against `:8765`): every new route 200, every still-unbuilt sibling 404.
 5. **Adversarially read** the gate-invisible bits: clamp spacing applied, crumbs/pager parent correct, no invented
-   Portal API (cross-check function names/arities against the companion elixir course; do not invent), references
-   real (no fabricated sources).
+   Portal API (cross-check function names/arities against the companion elixir course; do not invent), **every
+   `Sources` entry a real, vetted external link** (audit per §7; reuse the course-home registry, never fabricate).
+6. **Sync the living TOC** — update `docs/agile-agent-workflow/agile-agent-workflow.toc.md` so it mirrors the built
+   course: mark the new module/chapter built and write/refresh its abstract. This doc is writer-maintained in real
+   time; treat it as part of "done" for any module that lands.
 
 > If the user re-sends an identical request mid-task, do not re-author — finish verification and summarise.
 
@@ -184,7 +201,8 @@ an existing valid id is fine for a hand-authored page (the decoder just decodes 
 ## 12. Course map and resume point
 
 See `references/course-map.md` for the full A0–A7 chapter/module/route/status table and the current resume point.
-In brief: A0 Foundations (`/intro` + the A0.2 module `/what`) is built; A1 "Why an Agile Agent Workflow" (`/why`)
-is the active chapter, its six modules A1.01–A1.06 listed on the landing. **Resume at A1.01 — "The two failure
-modes"** (`why/failure-modes/`): the module hub plus three deep-dive subpages — `vibe-coding` (the no-plan failure),
-`big-bang-specs` (the over-plan failure), and `thin-slices` (the thin, provable slice that resolves both).
+In brief: A0 Foundations is built — its landing is now `/what` (consolidated from the retired `/intro`; it doubles
+as the A0.2 module hub). A1 "Why an Agile Agent Workflow" (`/why`) is the active chapter: modules A1.01–A1.04 are
+built (failure-modes, pragmatic, loop, two-layers). **Resume at A1.05 — "Correct by definition"** (`/why/correct`):
+the module hub plus ≥3 deep-dive subpages, fanned out one agile-course-writer-skilled agent per dive (the
+user-confirmed process). See `references/course-map.md` for the full table and locked slugs.

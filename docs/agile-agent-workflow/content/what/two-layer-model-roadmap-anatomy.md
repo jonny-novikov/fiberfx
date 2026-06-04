@@ -126,7 +126,7 @@ The two interactives teach different moves: the hero names the *parts* of a road
 - **Related in this course (from `#refs` › Related, verbatim labels + hrefs):**
   - A0.2.1 · The two-layer model → `/course/agile-agent-workflow/what/two-layer-model`
   - A0.2.2 · The four artifacts → `/course/agile-agent-workflow/what/four-artifacts`
-  - A0 · chapter overview → `/course/agile-agent-workflow/intro`
+  - A0 · chapter overview → `/course/agile-agent-workflow/what`
 
 ## Wiring
 
@@ -138,14 +138,13 @@ The two interactives teach different moves: the hero names the *parts* of a road
 - **toc-mini:** `#parts` "The parts" · `#thin` "Thin but robust" · `#refs` "References"
 - **Pager:**
   - prev (`.btn ghost`): "A0.2.1 · the two-layer model" → `/course/agile-agent-workflow/what/two-layer-model`
-  - next (`.btn`): "A0 · chapter overview" → `/course/agile-agent-workflow/intro`
-- **Footer links (chapters/course columns):** A0 → `/course/agile-agent-workflow/intro`, A1 → `/course/agile-agent-workflow/why`,
+  - next (`.btn`): "A0 · chapter overview" → `/course/agile-agent-workflow/what`
+- **Footer links (chapters/course columns):** A0 → `/course/agile-agent-workflow/what`, A1 → `/course/agile-agent-workflow/why`,
   Course home → `/course/agile-agent-workflow`, A0.2.1 Two-layer model → `/course/agile-agent-workflow/what/two-layer-model`,
   Companion → `/elixir/course`, jonnify home → `/elixir`. Brand link → `/elixir`.
 - **Build stamp:** `#stampId` = `TSK0NgQDY05yPg`; static `#st-ts` = `2026-06-03 17:31:57 UTC`.
 
-### Known anomaly (record as-is — do NOT fix)
+### A0 landing consolidation (resolved)
 
-The pager "next" link and the `#refs` › Related "A0 · chapter overview" link both point at
-`/course/agile-agent-workflow/intro`, which is now a 404. The crumb parent (`/course/agile-agent-workflow/what/two-layer-model`)
-also assumes A0.2.1 lives at `…/what/two-layer-model`. These are preserved exactly as found; no correction applied.
+The A0 chapter landing was consolidated from the former `/intro` page into `/what`. The pager "next" link and the
+`#refs` › Related "A0 · chapter overview" link now resolve to `/course/agile-agent-workflow/what`.
