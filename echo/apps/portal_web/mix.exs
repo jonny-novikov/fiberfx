@@ -49,7 +49,11 @@ defmodule PortalWeb.MixProject do
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:jason, "~> 1.4"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+      # The DOM backend `Phoenix.LiveViewTest` parses against (LiveView 1.1 requires it
+      # explicitly). F6.6 is the first rung to drive a LiveView THROUGH `LiveViewTest`
+      # (F6.2's `EnrollmentLive` was compile-only), so this test-only dep is pulled here.
+      {:lazy_html, ">= 0.1.0", only: :test}
     ]
   end
 end

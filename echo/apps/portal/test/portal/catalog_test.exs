@@ -6,6 +6,13 @@ defmodule Portal.CatalogTest do
   """
   use Portal.DataCase, async: true
 
+  # Runs the three `Portal.Catalog` moduledoc doctests under the sandbox: `list_courses/0`,
+  # the F6.6 `search_courses("") == list_courses()` (the empty-query-returns-all property
+  # the live search box's initial paint relies on), and `change_course/0` (the actionless
+  # changeset). Before this they were inert prose — `Portal.Catalog` carried no `doctest`
+  # invocation, so F6.6-AS0's "a doctest shows the filter" promise was unexecuted.
+  doctest Portal.Catalog
+
   alias Portal.Catalog
   alias Portal.Catalog.Course
 
@@ -60,6 +67,22 @@ defmodule Portal.CatalogTest do
       ids = Catalog.list_courses() |> Enum.map(& &1.id)
       assert a.id in ids and b.id in ids
       assert Enum.all?(Catalog.list_courses(), &match?(%Course{}, &1))
+    end
+  end
+
+  describe "search_courses/1 (F6.6-R8, the one ratified read-only addition)" do
+    # The context-level guard for the narrowing filter the live search relies on (the
+    # web exercises it through `Portal.search_courses/1`; this proves it independent of
+    # the LiveView). The doctest above already pins the empty-query-returns-all property.
+    test "narrows to a case-insensitive title substring, returning [Course.t()]" do
+      {:ok, keep} = Catalog.create_course(%{title: "Elixir Patterns", slug: "elixir-patterns"})
+      {:ok, _drop} = Catalog.create_course(%{title: "Rust Internals", slug: "rust-internals"})
+
+      results = Catalog.search_courses("elixir")
+
+      assert Enum.all?(results, &match?(%Course{}, &1))
+      assert keep.id in Enum.map(results, & &1.id)
+      refute "Rust Internals" in Enum.map(results, & &1.title)
     end
   end
 end

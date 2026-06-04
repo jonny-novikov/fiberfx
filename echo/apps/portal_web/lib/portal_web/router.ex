@@ -1,6 +1,6 @@
 defmodule PortalWeb.Router do
   @moduledoc """
-  The router for the `:portal_web` app (F6.1 + F6.2 + F6.5).
+  The router for the `:portal_web` app (F6.1 + F6.2 + F6.5 + F6.6).
 
   Declares three pipelines (`:browser`, `:api`, `:require_auth`), a public scope, a
   protected scope, an `:api` scope, the retained domain-free liveness route, and a
@@ -9,14 +9,17 @@ defmodule PortalWeb.Router do
   LiveView, never a module below the boundary. Every internal URL is a verified `~p`
   path (F6.2-INV4). The router is the endpoint's last plug (F6.1-INV3).
 
-  ## One controller per context (F6.5-D0/INV7)
+  ## One controller per context (F6.5-D0/INV7), one live catalog URL (F6.6-D6)
 
-  Each URL is named after the resource it returns. `/courses*` is the **catalog**
-  (`resources "/courses", CourseController, only: [:index, :show, :new, :create]`,
-  `Portal.Catalog`); a learner's enrollments are `get "/my/courses",
-  EnrollmentController, :index` (`Portal.Enrollment`, protected). The pre-F6.5
-  `get "/courses/:user_id"` and the `/learn` scope both retired into `/my/courses`
-  (one honest name for "a learner's courses").
+  Each URL is named after the resource it returns. `/courses` is the **catalog**: as
+  of F6.6 the LIVE index is `live "/courses", CatalogLive` (`Portal.Catalog`, search +
+  inline create over the facade), superseding F6.5's static `GET /courses` index — one
+  catalog resource, one URL. The static `resources "/courses", CourseController` keeps
+  only `[:show, :new, :create]` (the `:index` action moved to `CatalogLive`). A
+  learner's enrollments are `get "/my/courses", EnrollmentController, :index`
+  (`Portal.Enrollment`, protected). The pre-F6.5 `get "/courses/:user_id"` and the
+  `/learn` scope both retired into `/my/courses` (one honest name for "a learner's
+  courses").
   """
   use PortalWeb, :router
 
@@ -45,16 +48,20 @@ defmodule PortalWeb.Router do
     plug(PortalWeb.RequireUser)
   end
 
-  # Public surface (F6.2-D1, F6.5-D0): the catalog `resources` plus `get`/`post`/
-  # `live` and the static landing. `resources "/courses"` is the catalog (`Catalog`);
-  # `:show` is included so the index link `~p"/courses/#{id}"` and the create redirect
-  # compile under Verified Routes. Routes are pinned in this order for determinism;
-  # there is no overlap among them, so order is not load-bearing for matching.
+  # Public surface (F6.2-D1, F6.5-D0, F6.6-D6): the landing, the LIVE catalog index,
+  # the static catalog `resources`, lessons, and `post`/`live` enroll. `live "/courses",
+  # CatalogLive` is the catalog index (search + inline create over the facade);
+  # `resources "/courses"` keeps `[:show, :new, :create]` so the row link
+  # `~p"/courses/#{id}"` and the create redirect compile under Verified Routes. The two
+  # `/courses` declarations do not overlap (`live` matches the bare `/courses`,
+  # `resources` matches `/courses/:id`, `/courses/new`), so order is not load-bearing
+  # for matching; they are pinned in this order for determinism.
   scope "/", PortalWeb do
     pipe_through(:browser)
 
     get("/", PageController, :home)
-    resources("/courses", CourseController, only: [:index, :show, :new, :create])
+    live("/courses", CatalogLive)
+    resources("/courses", CourseController, only: [:show, :new, :create])
     resources("/lessons", LessonController, only: [:show])
     post("/enroll", EnrollmentController, :create)
     live("/enroll/:id", EnrollmentLive)

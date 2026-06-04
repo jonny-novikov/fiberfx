@@ -39,6 +39,7 @@ defmodule Portal do
 
   # ── Catalog (Repo-backed Ecto context) ──────────────────────────────────────────
   defdelegate list_courses(), to: Portal.Catalog
+  defdelegate search_courses(query), to: Portal.Catalog
   defdelegate get_course!(id), to: Portal.Catalog
   defdelegate fetch_course(id), to: Portal.Catalog
   defdelegate change_course(), to: Portal.Catalog

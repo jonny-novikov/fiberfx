@@ -47,6 +47,28 @@ defmodule Portal.Catalog do
   def list_courses, do: Repo.all(Course)
 
   @doc """
+  Search courses by a case-insensitive title substring (F6.6-R8 — the one ratified
+  read-only addition for `CatalogLive`'s live search). Returns `[Course.t()]`, the
+  same shape as `list_courses/0`; an EMPTY query returns ALL courses, so the search
+  box's initial (empty) state shows the full catalog. The pattern is parameterized
+  (`^`), never concatenated, so the filter is injection-safe.
+
+      iex> Portal.Catalog.list_courses() == Portal.Catalog.search_courses("")
+      true
+  """
+  @spec search_courses(String.t()) :: [Course.t()]
+  def search_courses(query) when is_binary(query) do
+    case String.trim(query) do
+      "" ->
+        Repo.all(Course)
+
+      term ->
+        pattern = "%#{term}%"
+        Repo.all(from(c in Course, where: ilike(c.title, ^pattern)))
+    end
+  end
+
+  @doc """
   Fetch a course by branded id, raising `Ecto.NoResultsError` on a miss — the
   controller surface (a missing course is a 404 the router maps). The branded `"CRS"`
   string is cast/dumped to the `:bigint` column by `Portal.Catalog.CourseID`.
