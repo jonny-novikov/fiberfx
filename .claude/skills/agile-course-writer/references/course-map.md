@@ -20,7 +20,7 @@ A0 is the historical exception: its landing is `/intro` and its one built module
 | Chapter | Title | Landing route | Dir | Status |
 |---|---|---|---|---|
 | A0 | Foundations — why, what, who | `/course/agile-agent-workflow/intro` | `intro/` | **built** |
-| A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **landing built; modules building** |
+| A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **landing + A1.01–A1.02 built; A1.03–A1.06 planned** |
 | A2 | Decomposition: from vision to user stories | `…/decomposition` | — | planned (manifest forward-link) |
 | A3 | The roadmap layer: Agile delivery & iteration | `…/roadmap` | — | planned |
 | A4 | The spec layer: specifications & acceptance | `…/spec` | — | planned |
@@ -40,24 +40,37 @@ A0 is the historical exception: its landing is `/intro` and its one built module
 
 | Module | Title | One-line | Hub route (nested) | Status |
 |---|---|---|---|---|
-| A1.01 | The two failure modes | Why vibe coding and big-bang specs both fail; the case for thin, provable slices. | `/why/failure-modes` | **building** |
-| A1.02 | Pragmatic Programming, revisited for agents | The pragmatic canon re-read for a world where an agent writes the code. | `/why/pragmatic` | planned |
-| A1.03 | The Author/Operator loop | The two roles and the cycle that runs every rung end to end. | `/why/loop` | planned |
+| A1.01 | The two failure modes | Why vibe coding and big-bang specs both fail; the case for thin, provable slices. | `/why/failure-modes` | **built** |
+| A1.02 | Pragmatic Programming, revisited for agents | The pragmatic canon re-read for a world where an agent writes the code. | `/why/pragmatic` | **built** |
+| A1.03 | The Author/Operator loop | The two roles and the cycle that runs every rung end to end. | `/why/loop` | planned (next) |
 | A1.04 | Two layers: roadmap and specs | Separating how we deliver from what we build and prove. | `/why/two-layers` | planned |
 | A1.05 | Correct by definition | What "done" means: a closure over traced, executed checks. | `/why/correct` | planned |
 | A1.06 | Meet the project: Portal | The running project, zero to a deployed, multi-surface platform. | `/why/portal` | planned |
 
-(Module slugs A1.02–A1.06 above are suggested, not yet locked; lock each when its module is authored.)
+(A1.02 is built; its subpage slugs are locked — see below. Slugs A1.03–A1.06 remain suggested until each module is authored.)
+
+## A1.02 — built (the second module), slugs locked
+
+**A1.02 · Pragmatic Programming, revisited for agents** (`why/pragmatic/`) — module hub plus three deep-dive
+subpages, the arc *knowledge → specification → structure*. The running argument: when generation is cheap, three
+pragmatic principles re-weight upward. Each subpage carries two interactives (hero-split + main) and passes all
+ten gates with `--require-refs`. md sources of record under `docs/agile-agent-workflow/content/why/pragmatic/`.
+1. **A1.02.1 · `dry`** — DRY → the single source of truth: duplication is a drift surface the agent creates for
+   free and the human reconciles. Interactives: change-the-fact drift; the reconciliation-cost meter.
+2. **A1.02.2 · `contracts`** — Design by Contract → the contract is the spec: pre/post/invariant as the unit an
+   agent implements against and you accept against. Interactives: live contract eval; the acceptance gate.
+3. **A1.02.3 · `orthogonality`** — Orthogonality → decoupling for review: a bounded blast radius is a reviewable
+   diff. Interactives: orthogonal-vs-coupled graph; the 1+c blast-radius slider.
+Portal grounding: one id authority (`Portal.ID`), one id contract (the A1.01.3 slice's acceptance), surfaces
+behind facades.
 
 ## Resume point
 
-**A1.01 — "The two failure modes"** (`why/failure-modes/`): a module hub plus three deep-dive subpages —
-1. **A1.01.1 · `vibe-coding`** — the no-plan failure: prompting without a spec or acceptance; unreviewable diffs;
-   compounding entropy. Portal example: a "store" built by vibe coding drifts and cannot be accepted.
-2. **A1.01.2 · `big-bang-specs`** — the over-plan failure: the waterfall spec no one finishes; drift from reality;
-   cost of delay; no feedback until the end. Portal example: a 40-page Portal spec that ships nothing.
-3. **A1.01.3 · `thin-slices`** — the resolution: a thin, vertical, provable slice (INVEST, tracer bullets,
-   walking skeleton); correct by definition. Portal example: the first rung — one branded id, proven, shipped.
-
-The module's argument is the course thesis in miniature: neither no-plan nor all-plan ships reliable software; the
-unit that does is a thin slice of value, specified just enough, proven before the next begins.
+**A1.03 — "The Author/Operator loop"** (`/why/loop`, slug suggested): the two roles and the cycle that runs every
+rung end to end — sharpen → build → ship → demo → review → feedback, with feedback editing the spec. Author the
+module hub `why/loop/index.html` plus ≥3 deep-dive subpages (md-first under
+`docs/agile-agent-workflow/content/why/loop/`), each with a hero-split interactive and a main interactive, then
+relink the A1.03 card on `/why` (div → a, soon → live). A0.2.3 (`/what/author-operator-loop`) already sketches the
+loop in brief — A1.03 is its full treatment. The course thesis, restated each module: neither no-plan nor all-plan
+ships reliable software; the unit that does is a thin slice of value, specified only enough, proven before the
+next begins.
