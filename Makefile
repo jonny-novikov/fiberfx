@@ -41,7 +41,7 @@ SITE_BASE   ?= https://jonnify.fly.dev
 
 export GOWORK := off
 
-.PHONY: help build sitemap elixir-llms start stop restart run status clean
+.PHONY: help build sitemap elixir-llms start stop restart run status watch clean
 
 help:
 	@echo "jonnify static server — targets:"
@@ -49,6 +49,7 @@ help:
 	@echo "  make start      Build (if needed) and start server in background"
 	@echo "  make stop       Stop background server via PID file"
 	@echo "  make restart    Stop, rebuild, and start (fresh binary every time)"
+	@echo "  make watch      Auto-reload: .go changes rebuild+restart; html/ served live"
 	@echo "  make run        Run in foreground (logs to terminal)"
 	@echo "  make status     Show whether server is running"
 	@echo "  make clean      Remove binary, PID file, and log file"
@@ -155,6 +156,27 @@ stop:
 	fi
 
 restart: stop build start
+
+# Auto-reload for local dev — no extra tools required (no fswatch/entr). Polls
+# once a second with find(1). A root-package .go change (what 'make build'
+# compiles into the server binary) rebuilds + restarts; content under html/ and
+# elixir/ is served live by the running server (serveDirTree reads disk per
+# request, so an HTML edit shows up on the next request with no restart), so a
+# content edit is reported as already-live.
+# Starts from a fresh server via 'restart', then watches until Ctrl-C.
+watch: restart
+	@echo "▶ watching $(REPO_DIR) — .go → rebuild+restart, html/elixir → served live (Ctrl-C to stop)"
+	@touch $(BIN_DIR)/.watch-go $(BIN_DIR)/.watch-html
+	@while sleep 1; do \
+		if [ -n "$$(find $(REPO_DIR) -maxdepth 1 -name '*.go' -newer $(BIN_DIR)/.watch-go -print -quit 2>/dev/null)" ]; then \
+			echo "↻ .go changed → rebuild + restart"; \
+			$(MAKE) --no-print-directory restart; \
+			touch $(BIN_DIR)/.watch-go $(BIN_DIR)/.watch-html; \
+		elif [ -n "$$(find $(REPO_DIR)/html $(REPO_DIR)/elixir -type f -newer $(BIN_DIR)/.watch-html -print -quit 2>/dev/null)" ]; then \
+			echo "✓ content changed → served live (no restart needed)"; \
+			touch $(BIN_DIR)/.watch-html; \
+		fi; \
+	done
 
 run: build
 	@echo "→ Running jonnify in foreground on port $(PORT) (Ctrl-C to stop)"
