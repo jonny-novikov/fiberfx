@@ -1,37 +1,142 @@
 defmodule PortalWeb.EnrollmentControllerTest do
   @moduledoc """
-  ConnTest for the write route `post "/enroll"` (F6.2-US6, F6.2-D1).
+  ConnTest for the enrollment controller (F6.2-US6, F6.2-D1 + F6.5-D0).
 
-  Proves the POST reaches `EnrollmentController.create/2` and issues `Portal.enroll/2`:
-  a success redirects to the user's course list, and a non-existent course yields the
-  closed-set `:course_not_found` failure at `422`. The full enroll UI is F6.4.
+  Covers both actions `EnrollmentController` owns after the F6.5 reconcile:
+
+    * `create/2` — the write route `post "/enroll"`: a success redirects to the joined
+      course's catalog `:show`, and a non-existent course yields the closed-set
+      `:course_not_found` failure at `422`.
+    * `index/2` — the protected read `get "/my/courses"`: the enrolled-list read MOVED
+      here from `CourseController`, so the learner's-courses tests and the defensive
+      `422` error-render tests moved with it. The read targets the protected route
+      (session-injected `user_id`, no path param) — the pre-F6.5 public
+      `/courses/:user_id` is gone.
+
+  `async: false` plus the `Portal.Store`/stream/engine reset in `PortalWeb.ConnCase`
+  give per-test fold isolation against the branded-id collision hazard
+  (echo/CLAUDE.md §4). `portal_web` has no Ecto sandbox, so a `Portal.create_course/1`
+  insert COMMITS; each seed uses a strong-random title token so the
+  `unique_constraint(:title)` never collides with a prior run's committed row.
   """
   use PortalWeb.ConnCase, async: false
 
   alias Portal.Accounts.User
 
-  test "a valid enroll redirects to the user's course list (F6.2-US6)", %{conn: conn} do
-    user = %User{id: Portal.ID.new("USR"), email: "ada@example.com", name: "Ada"}
-    :ok = Portal.Store.put(user)
-    # Since F6.4 the Catalog is Repo-backed: seed the course through the facade
-    # (`Portal.create_course/1`) so the engine's enroll gate (`Catalog.fetch_course/1`
-    # -> Repo) sees it. The test still names only `Portal` (INV2), never a context/Repo.
-    # A strong-random title token: portal_web has no Ecto sandbox, so this insert
-    # COMMITS — a resettable counter would collide with a prior run's committed row.
-    tok = Base.encode16(:crypto.strong_rand_bytes(8))
-    {:ok, course} = Portal.create_course(%{title: "Elixir #{tok}", slug: "elixir-#{tok}"})
+  describe "POST /enroll (the write route)" do
+    test "a valid enroll redirects to the joined course's catalog page (F6.2-US6)", %{conn: conn} do
+      user = %User{id: Portal.ID.new("USR"), email: "ada@example.com", name: "Ada"}
+      :ok = Portal.Store.put(user)
+      # Since F6.4 the Catalog is Repo-backed: seed the course through the facade
+      # (`Portal.create_course/1`) so the engine's enroll gate (`Catalog.fetch_course/1`
+      # -> Repo) sees it. The test still names only `Portal` (INV2), never a context/Repo.
+      tok = Base.encode16(:crypto.strong_rand_bytes(8))
+      {:ok, course} = Portal.create_course(%{title: "Elixir #{tok}", slug: "elixir-#{tok}"})
 
-    conn = post(conn, ~p"/enroll", %{"user_id" => user.id, "course_id" => course.id})
+      conn = post(conn, ~p"/enroll", %{"user_id" => user.id, "course_id" => course.id})
 
-    assert redirected_to(conn) == ~p"/courses/#{user.id}"
+      # Since the F6.5 reconcile the redirect targets the joined course's catalog
+      # `:show` (`~p"/courses/#{course.id}"`), not a learner-courses path.
+      assert redirected_to(conn) == ~p"/courses/#{course.id}"
+    end
+
+    test "enrolling into a non-existent course renders the closed-set 422", %{conn: conn} do
+      user = %User{id: Portal.ID.new("USR"), email: "ada@example.com", name: "Ada"}
+      :ok = Portal.Store.put(user)
+
+      conn = post(conn, ~p"/enroll", %{"user_id" => user.id, "course_id" => Portal.ID.new("CRS")})
+
+      assert html_response(conn, 422) =~ "course not found"
+    end
   end
 
-  test "enrolling into a non-existent course renders the closed-set 422", %{conn: conn} do
-    user = %User{id: Portal.ID.new("USR"), email: "ada@example.com", name: "Ada"}
-    :ok = Portal.Store.put(user)
+  describe "GET /my/courses (the protected enrolled read, F6.5-D0)" do
+    # The read moved here from CourseController; the route is now the PROTECTED
+    # `/my/courses` (session `user_id`, no path param). RequireUser assigns
+    # `:current_user_id`, which EnrollmentController.index reads.
+    test "a known enrolled user renders that user's course row (F6.1-US2)", %{conn: conn} do
+      # Seed a real User (Store) + Course, then enroll through the facade so the
+      # dual-write %Enrolled{} read model has the row courses_of/1 reads. Since F6.4
+      # the Catalog is Repo-backed: the course is seeded via `Portal.create_course/1`
+      # (the engine's enroll gate reads it through the Repo). The test names only
+      # `Portal` (INV2), never a context/Repo.
+      user = %User{id: Portal.ID.new("USR"), email: "ada@example.com", name: "Ada"}
+      :ok = Portal.Store.put(user)
+      tok = Base.encode16(:crypto.strong_rand_bytes(8))
+      {:ok, course} = Portal.create_course(%{title: "Elixir #{tok}", slug: "elixir-#{tok}"})
+      {:ok, _enrollment} = Portal.enroll(user.id, course.id)
 
-    conn = post(conn, ~p"/enroll", %{"user_id" => user.id, "course_id" => Portal.ID.new("CRS")})
+      conn =
+        conn
+        |> Plug.Test.init_test_session(%{user_id: user.id})
+        |> get(~p"/my/courses")
 
-    assert html_response(conn, 422) =~ "course not found"
+      body = html_response(conn, 200)
+
+      # The rendered row carries the enrolled course id and its progress (0 at F6.1).
+      assert body =~ course.id
+      assert body =~ "0%"
+      refute body =~ "No courses yet."
+    end
+
+    test "an unknown user id renders the empty state at 200, never a 500 (F6.1-US5)", %{
+      conn: conn
+    } do
+      # courses_of/1 is total at F6.1: an unknown id yields {:ok, []} → empty state.
+      conn =
+        conn
+        |> Plug.Test.init_test_session(%{user_id: Portal.ID.new("USR")})
+        |> get(~p"/my/courses")
+
+      body = html_response(conn, 200)
+      assert body =~ "No courses yet."
+    end
+
+    test "a malformed user id still renders the empty state at 200 (F6.1-US5)", %{conn: conn} do
+      # "USR1" passes namespace/1 but fails valid?/1; the total facade returns no rows,
+      # so the page is a clean 200 empty state — not a 422 and not a 500.
+      conn =
+        conn
+        |> Plug.Test.init_test_session(%{user_id: "USR1"})
+        |> get(~p"/my/courses")
+
+      body = html_response(conn, 200)
+      assert body =~ "No courses yet."
+    end
+  end
+
+  describe "the defensive 422 error-render path (F6.1-INV4, D-2)" do
+    # courses_of/1 is success-only at F6.1, so the {:error, %Portal.Error{}} arm is
+    # not request-reachable; it is proven here by INJECTING a %Portal.Error{} straight
+    # into render_outcome/2 (the controller's error clause), exercising the 422 render
+    # of the :error template. The read + its error template moved to EnrollmentController
+    # / EnrollmentHTML in the F6.5 reconcile. This path goes live-reachable when the
+    # facade gains id-validation (a later F6 rung).
+    test "an injected %Portal.Error{} renders 422 with the closed-set message", %{conn: conn} do
+      error = %Portal.Error{code: :course_not_found, message: "course not found"}
+
+      # render/3 negotiates on the format and the controller's view; a real request
+      # gets both from the :browser pipeline (`plug :accepts`) and the controller
+      # action wiring, so set them directly for this unit-level call into the error
+      # clause.
+      conn =
+        conn
+        |> Phoenix.Controller.put_format("html")
+        |> Phoenix.Controller.put_view(html: PortalWeb.EnrollmentHTML)
+
+      conn = PortalWeb.EnrollmentController.render_outcome(conn, {:error, error})
+
+      assert conn.status == 422
+      assert html_response(conn, 422) =~ "course not found"
+    end
+
+    test "the :error template renders the message from assigns only (F6.1-R5)" do
+      error = %Portal.Error{code: :already_enrolled, message: "already enrolled in this course"}
+
+      rendered =
+        Phoenix.Template.render_to_string(PortalWeb.EnrollmentHTML, "error", "html", error: error)
+
+      assert rendered =~ "already enrolled in this course"
+    end
   end
 end

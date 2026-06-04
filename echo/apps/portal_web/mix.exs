@@ -33,12 +33,17 @@ defmodule PortalWeb.MixProject do
 
   # Phoenix lives ONLY here so apps/portal/mix.exs stays Phoenix-free and the master
   # invariant (the web calls only the Portal facade) remains compiler-enforced at the
-  # app level (F6.1-INV1, RK-2). No Ecto at F6.1 — persistence is F6.3. Bandit is the
-  # HTTP adapter Phoenix runs through (Bandit.PhoenixAdapter, set in config).
+  # app level (F6.1-INV1, RK-2). Bandit is the HTTP adapter Phoenix runs through
+  # (Bandit.PhoenixAdapter, set in config). `phoenix_ecto` is the web↔Ecto bridge: it
+  # ships the `Phoenix.HTML.FormData` impl for `Ecto.Changeset` that `to_form/1` needs
+  # to render the F6.5 catalog create form (`Portal.change_course/0` returns a
+  # changeset). It lives HERE, not in `apps/portal` — the engine owns the schema, the
+  # web owns the form bridge — so the layering stays intact (the bridge is a web concern).
   defp deps do
     [
       {:portal, in_umbrella: true},
       {:phoenix, "~> 1.7"},
+      {:phoenix_ecto, "~> 4.6"},
       {:phoenix_live_view, "~> 1.0"},
       {:phoenix_html, "~> 4.1"},
       {:telemetry_metrics, "~> 1.0"},

@@ -1,6 +1,6 @@
 defmodule PortalWeb.Router do
   @moduledoc """
-  The router for the `:portal_web` app (F6.1 + F6.2).
+  The router for the `:portal_web` app (F6.1 + F6.2 + F6.5).
 
   Declares three pipelines (`:browser`, `:api`, `:require_auth`), a public scope, a
   protected scope, an `:api` scope, the retained domain-free liveness route, and a
@@ -8,6 +8,15 @@ defmodule PortalWeb.Router do
   facade (F6.2-INV1) — the router itself names only controllers, plugs, and the
   LiveView, never a module below the boundary. Every internal URL is a verified `~p`
   path (F6.2-INV4). The router is the endpoint's last plug (F6.1-INV3).
+
+  ## One controller per context (F6.5-D0/INV7)
+
+  Each URL is named after the resource it returns. `/courses*` is the **catalog**
+  (`resources "/courses", CourseController, only: [:index, :show, :new, :create]`,
+  `Portal.Catalog`); a learner's enrollments are `get "/my/courses",
+  EnrollmentController, :index` (`Portal.Enrollment`, protected). The pre-F6.5
+  `get "/courses/:user_id"` and the `/learn` scope both retired into `/my/courses`
+  (one honest name for "a learner's courses").
   """
   use PortalWeb, :router
 
@@ -15,61 +24,64 @@ defmodule PortalWeb.Router do
   # function plug `stamp_request_marker` runs last (F6.2-D5) so both public and
   # protected browser routes pass through it.
   pipeline :browser do
-    plug :accepts, ["html"]
-    plug :fetch_session
-    plug :fetch_live_flash
-    plug :protect_from_forgery
-    plug :put_secure_browser_headers
-    plug :stamp_request_marker
+    plug(:accepts, ["html"])
+    plug(:fetch_session)
+    plug(:fetch_live_flash)
+    plug(:protect_from_forgery)
+    plug(:put_secure_browser_headers)
+    plug(:stamp_request_marker)
   end
 
   # JSON requests carry nothing browser-specific — no session, CSRF, or secure
   # headers (F6.2-D2). Only `accepts ["json"]`.
   pipeline :api do
-    plug :accepts, ["json"]
+    plug(:accepts, ["json"])
   end
 
   # The auth gate, declared once (F6.2-D3). `PortalWeb.RequireUser` loads the session
   # user or halts with a redirect; the protected scope stacks it AFTER `:browser`
   # (F6.2-INV5) so the session is fetched before this plug reads it.
   pipeline :require_auth do
-    plug PortalWeb.RequireUser
+    plug(PortalWeb.RequireUser)
   end
 
-  # Public surface (F6.2-D1): the four route kinds (`get`, `post`, `resources`,
-  # `live`) plus the static landing. Routes are pinned in this order for determinism;
+  # Public surface (F6.2-D1, F6.5-D0): the catalog `resources` plus `get`/`post`/
+  # `live` and the static landing. `resources "/courses"` is the catalog (`Catalog`);
+  # `:show` is included so the index link `~p"/courses/#{id}"` and the create redirect
+  # compile under Verified Routes. Routes are pinned in this order for determinism;
   # there is no overlap among them, so order is not load-bearing for matching.
   scope "/", PortalWeb do
-    pipe_through :browser
+    pipe_through(:browser)
 
-    get "/", PageController, :home
-    get "/courses/:user_id", CourseController, :index
-    resources "/lessons", LessonController, only: [:show]
-    post "/enroll", EnrollmentController, :create
-    live "/enroll/:id", EnrollmentLive
+    get("/", PageController, :home)
+    resources("/courses", CourseController, only: [:index, :show, :new, :create])
+    resources("/lessons", LessonController, only: [:show])
+    post("/enroll", EnrollmentController, :create)
+    live("/enroll/:id", EnrollmentLive)
   end
 
-  # Protected surface (F6.2-D3, F6.2-INV5): pipe order is LOAD-BEARING — `:browser`
-  # fetches the session before `:require_auth` reads it. `get "/learn"` reuses
-  # `CourseController.index/2` (facade-only over `Portal.courses_of/1`), reading the
-  # learner's own enrollments from the `:current_user_id` assign `RequireUser` set.
-  scope "/learn", PortalWeb do
-    pipe_through [:browser, :require_auth]
+  # Protected surface (F6.2-D3, F6.2-INV5, F6.5-D0): pipe order is LOAD-BEARING —
+  # `:browser` fetches the session before `:require_auth` reads it. `get "/my/courses"`
+  # is the learner's enrollments (`EnrollmentController.index/2`, facade-only over
+  # `Portal.courses_of/1`), reading the authenticated learner's id from the
+  # `:current_user_id` assign `RequireUser` set (no path param).
+  scope "/my", PortalWeb do
+    pipe_through([:browser, :require_auth])
 
-    get "/", CourseController, :index
+    get("/courses", EnrollmentController, :index)
   end
 
   # JSON surface (F6.2-D2/D7): `/api/lessons/:id` negotiates JSON via `accepts
   # ["json"]` and `LessonController.show_json/2` returns `json(conn, _)`.
   scope "/api", PortalWeb do
-    pipe_through :api
+    pipe_through(:api)
 
-    get "/lessons/:id", LessonController, :show_json
+    get("/lessons/:id", LessonController, :show_json)
   end
 
   # Liveness: returns 200 "ok" with no domain call (F6.1-R6, F6.1-D6). Outside the
   # :browser pipeline — the operator probe needs no session or CSRF token.
-  get "/health", PortalWeb.CourseController, :health
+  get("/health", PortalWeb.CourseController, :health)
 
   # A function plug (F6.2-D5): a one-line `(conn, _opts) -> conn` step that stamps a
   # request attribute and returns the conn, demonstrating the plug contract without a

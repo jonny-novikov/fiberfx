@@ -1,12 +1,14 @@
 defmodule PortalWeb.CourseHTML do
   @moduledoc """
-  Renders the course pages (F6.1-R5, F6.1-D5).
+  Renders the catalog pages (F6.5-D1/D8/D9).
 
-  Embeds `course_html/index.html.heex` and `course_html/error.html.heex`. Both
-  templates render purely from `assigns`; no engine, repo, or below-the-boundary
-  symbol appears in either (F6.1-INV1).
+  Embeds the catalog templates `course_html/index.html.heex` (the list),
+  `course_html/show.html.heex` (one course), and `course_html/new.html.heex` (the
+  create form). All three render purely from `assigns`; no engine, repo, or
+  below-the-boundary symbol appears (F6.5-INV1). The enrolled-list and `:error`
+  templates moved to `PortalWeb.EnrollmentHTML` in the F6.5 reconcile.
   """
   use PortalWeb, :html
 
-  embed_templates "course_html/*"
+  embed_templates("course_html/*")
 end

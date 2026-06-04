@@ -1,62 +1,62 @@
 defmodule PortalWeb.CourseController do
   @moduledoc """
-  The thin read controller for a user's courses (F6.1-R4, F6.1-D4).
+  The catalog resource controller (F6.5-D0/INV7).
 
-  `index/2` calls ONLY the `Portal` facade (`Portal.courses_of/1`) — it names no
-  module below the boundary, no persistence layer, and issues no direct process call
-  (F6.1-INV1) — and hands the closed outcome to `render_outcome/2`, which holds the
-  two railway arms: data renders `:index`, and a `%Portal.Error{}` renders `:error`
-  at status `422` (F6.1-INV4). `health/2` is the domain-free liveness action
-  (F6.1-R6).
-
-  ## Two routes, one action (F6.2)
-
-  `index/2` backs BOTH the public `get "/courses/:user_id"` and the protected
-  `get "/learn"`. The public route supplies `user_id` as a route param; the protected
-  `/learn` route has no path param and instead carries the authenticated learner's id
-  in the `:current_user_id` assign that `PortalWeb.RequireUser` set (F6.2-INV6).
-  `index/2` reads `params["user_id"]` first, falling back to
-  `conn.assigns.current_user_id`, then calls the same facade read. The fallback adds
-  no domain logic and touches only assigns/params, so the action stays facade-only
-  (F6.2-INV1) and carries no cross-cutting code (F6.2-INV2).
+  `CourseController` is the **pure catalog resource** — `index`/`show`/`new`/`create`
+  over the `Portal.Catalog` slice — after the F6.5 reconcile moved the enrolled read
+  to `EnrollmentController.index` (`/my/courses`). It calls ONLY the `Portal` facade
+  (`list_courses/0`, `get_course!/1`, `change_course/0`, `create_course/1`) — it
+  names no context, no `Repo`, no `%Course{}`, and issues no direct process call
+  (F6.5-INV1/INV7). The controller performs all data access; the templates render
+  only from assigns (F6.5-INV1). `health/2` is the domain-free liveness action
+  (F6.1-R6), the only action that does not reach the facade.
   """
   use PortalWeb, :controller
 
   @doc """
-  Render a user's enrolled courses.
-
-  `Portal.courses_of/1` is TOTAL at F6.1 (`portal.ex` lines 81-82,
-  `@spec {:ok, [%Enrollment{}]}`): an unknown or malformed `user_id` yields
-  `{:ok, []}`, so the empty list renders the empty state (a clean `200`), never a
-  `422`. The `{:error, %Portal.Error{}}` arm is defensive (railway-oriented,
-  F6.1-INV5): it satisfies the error-render contract structurally and becomes
-  request-reachable when the facade gains id-validation (a later F6 rung); at F6.1 it
-  is exercised by a controller/view unit test injecting a `%Portal.Error{}`.
-
-  The public `get "/courses/:user_id"` supplies `user_id` as a route param; the
-  protected `get "/learn"` (F6.2) has no path param and instead carries the
-  authenticated learner's id in the `:current_user_id` assign `PortalWeb.RequireUser`
-  set, so the param is read first with the assign as the fallback (F6.2-INV6).
+  The catalog list. `Portal.list_courses/0` returns `[%Course{}]`; the template
+  renders each with a `~p` link to `:show`, an escaped title, and an `:if` badge,
+  with no data access of its own (F6.5-D1/INV1).
   """
-  def index(conn, params) do
-    user_id = params["user_id"] || conn.assigns.current_user_id
-    render_outcome(conn, Portal.courses_of(user_id))
+  def index(conn, _params) do
+    render(conn, :index, courses: Portal.list_courses())
   end
 
-  # Split into a separate function so each outcome arm is its own clause. With a single
-  # inline `case`, the 1.18 type checker would prune the defensive `{:error, ...}` branch
-  # as unreachable (`Portal.courses_of/1` is success-only today); distinct heads keep the
-  # error path live for the injected-error unit test and the later id-validation rung.
-  @spec render_outcome(Plug.Conn.t(), {:ok, [Portal.Enrollment.Enrolled.t()]}) :: Plug.Conn.t()
-  @spec render_outcome(Plug.Conn.t(), {:error, Portal.Error.t()}) :: Plug.Conn.t()
-  def render_outcome(conn, {:ok, courses}) do
-    render(conn, :index, courses: courses)
+  @doc """
+  One catalog course. `Portal.get_course!/1` raises `Ecto.NoResultsError` on a miss,
+  which the router maps to a 404 (F6.5-D8). The template renders the escaped title
+  and an `:if` badge from the assign.
+  """
+  def show(conn, %{"id" => id}) do
+    render(conn, :show, course: Portal.get_course!(id))
   end
 
-  def render_outcome(conn, {:error, %Portal.Error{} = error}) do
-    conn
-    |> put_status(422)
-    |> render(:error, error: error)
+  @doc """
+  The create form. `Portal.change_course/0` returns an unsaved, actionless
+  `%Ecto.Changeset{}` (no `:action`), so `to_form/1` renders a blank form with no
+  premature errors (F6.5-D9). `<.form>`/`<.input>` are the locally-defined catalog
+  components.
+  """
+  def new(conn, _params) do
+    render(conn, :new, form: to_form(Portal.change_course()))
+  end
+
+  @doc """
+  Create a course from the form params. `to_form/1` of a `Course` changeset names the
+  form `course`, so the params arrive nested under `"course"`. On `{:ok, course}` it
+  redirects to the catalog `:show`; on `{:error, %Ecto.Changeset{}}` it re-renders
+  `:new` with `to_form(changeset)`, so the F6.3 changeset errors surface inline per
+  field (F6.5-D5/INV5). The view adds no validation — parsing stays in
+  `create_course/1`'s `changeset/2` (F6.5-INV6).
+  """
+  def create(conn, %{"course" => course_params}) do
+    case Portal.create_course(course_params) do
+      {:ok, course} ->
+        redirect(conn, to: ~p"/courses/#{course.id}")
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        render(conn, :new, form: to_form(changeset))
+    end
   end
 
   @doc """

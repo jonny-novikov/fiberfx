@@ -30,6 +30,10 @@ defmodule PortalWeb do
         layouts: []
 
       import Plug.Conn
+      # The controller builds `@form = to_form(changeset)` for the view to render
+      # (F6.5-D4/D9). Only the form-builder is imported — the rendering DSL stays in
+      # the `:html` macro.
+      import Phoenix.Component, only: [to_form: 1]
 
       unquote(verified_routes())
     end
@@ -56,6 +60,10 @@ defmodule PortalWeb do
   defp html_helpers do
     quote do
       import Phoenix.HTML
+      # The app's function components (the slot a generated app's CoreComponents import
+      # fills) — `<.course_card>`/`<.panel>`/`<.input>` resolve in every :html and
+      # :live_view module (F6.5-D2/D3/R9). `<.form>`/`<.link>` come from Phoenix.Component.
+      import PortalWeb.CatalogComponents
       alias Phoenix.LiveView.JS
 
       unquote(verified_routes())

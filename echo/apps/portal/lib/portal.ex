@@ -41,6 +41,7 @@ defmodule Portal do
   defdelegate list_courses(), to: Portal.Catalog
   defdelegate get_course!(id), to: Portal.Catalog
   defdelegate fetch_course(id), to: Portal.Catalog
+  defdelegate change_course(), to: Portal.Catalog
   defdelegate create_course(attrs), to: Portal.Catalog
   defdelegate lesson(id), to: Portal.Catalog
 

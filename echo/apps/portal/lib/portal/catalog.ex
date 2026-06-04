@@ -69,6 +69,22 @@ defmodule Portal.Catalog do
   end
 
   @doc """
+  Build a blank, unsaved changeset for the create form (F6.5-D4). Returns an
+  ACTIONLESS `%Ecto.Changeset{}` (no `:action`), so `Phoenix.Component.to_form/1`
+  renders the form with no premature errors. The base struct is built INSIDE the
+  context with `struct(Course, %{})` — mirroring `Course.changeset/2`'s own default
+  base (`course.ex`) — because `Course` declares `@enforce_keys [:id, :title, :slug]`,
+  so a bare `%Course{}` literal would not compile. `:id`/`:title`/`:slug` start nil and
+  are cast/required by the changeset, exactly as in `create_course/1`.
+
+      iex> %Ecto.Changeset{action: action} = Portal.Catalog.change_course()
+      iex> action
+      nil
+  """
+  @spec change_course() :: Ecto.Changeset.t()
+  def change_course, do: Course.changeset(struct(Course, %{}), %{})
+
+  @doc """
   Create a course from untrusted attrs. The branded `"CRS"` id is minted on the struct
   (never cast from attrs — `Course.changeset/2` excludes `:id`, F6.3-INV2); the branded
   id surfaces via `Portal.Catalog.CourseID.load/1` after insert. Returns
