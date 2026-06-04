@@ -57,6 +57,34 @@ alongside the course as a worked example you can read in full.
 - **Quality**: every artifact passes mechanical gates (voice, structure, traceability, fences, links) before it ships
   — the course's working definition of "A+".
 
+## Status — a living map, maintained by writers
+
+This table of contents is **kept in sync with the built course in real time**: when a module or chapter ships, its
+entry here is updated — status flipped, route linked, abstract refreshed — so this file always mirrors what is live.
+It is the human-readable companion to two machine-checkable records, and must never contradict them: the
+chapter/route/status table in `.claude/skills/agile-course-writer/references/course-map.md`, and the per-page sources
+of record under `docs/agile-agent-workflow/content/`.
+
+**Status legend:** `✓ built` (live, served under `/course/agile-agent-workflow/…`) · `◐ in progress` · `○ planned`.
+
+**Route mapping.** The seven teaching **Parts I–VII** below map to course chapters **A1–A7**. An additional
+**A0 · Foundations** on-ramp (built) previews the method in three questions before Part I develops them in depth.
+
+### A0 · Foundations — the on-ramp&nbsp; `✓ built` · [`/course/agile-agent-workflow/what`](/course/agile-agent-workflow/what)
+*A short foundations chapter that frames the whole method before Part I: **why** thin, provable slices beat both vibe
+coding and big-bang specs; **what** we are building — two layers, four artifacts, one loop; and **who** does the work —
+the Operator/Author pairing. Its built module, A0.2, is the framework in a single read; A0.1 and A0.3 preview Part I.*
+- **A0.2 · What we are building** `✓` — the framework's structure, vocabulary, and motion:
+  [the two-layer model](/course/agile-agent-workflow/what/two-layer-model)
+  (+ [anatomy of a `roadmap.md`](/course/agile-agent-workflow/what/two-layer-model-roadmap-anatomy)),
+  [the four artifacts](/course/agile-agent-workflow/what/four-artifacts),
+  and [the Author/Operator loop](/course/agile-agent-workflow/what/author-operator-loop).
+- A0.1 · Why it works `○` — the two failure modes and the case for thin slices (developed in depth at §1.1).
+- A0.3 · Who does the work `○` — the Operator, the Author, and the pairing in practice (developed at §1.3).
+
+**Current build front.** Part I is in progress — **§1.1–§1.4 are built** (chapter A1,
+[`/course/agile-agent-workflow/why`](/course/agile-agent-workflow/why)); §1.5–§1.6 and Parts II–VII are planned.
+
 ---
 
 # Part I — Why an Agile Agent Workflow
@@ -65,32 +93,32 @@ alongside the course as a worked example you can read in full.
 layers; what "done" means. This part frames the whole course: a tight human–agent loop over thin, provable
 increments.*
 
-### 1.1 · The two failure modes: vibe coding and big-bang specs
+### 1.1 · The two failure modes: vibe coding and big-bang specs&nbsp; `✓ built` → [`/why/failure-modes`](/course/agile-agent-workflow/why/failure-modes)
 Unstructured prompting produces code no one can trust; monolithic up-front specs produce documents no one can finish.
 Both fail for the same reason — they skip the unit that makes software tractable. This chapter makes the case for thin
 vertical slices with provable completion as the alternative.
 
-### 1.2 · Pragmatic Programming, revisited for agents
+### 1.2 · Pragmatic Programming, revisited for agents&nbsp; `✓ built` → [`/why/pragmatic`](/course/agile-agent-workflow/why/pragmatic)
 Tracer bullets, walking skeletons, orthogonality, "good-enough software" — the pragmatic canon re-read for a world
 where an agent writes much of the code. What the agent changes (throughput, tirelessness, breadth) and what it does not
 (the need for judgment, decomposition, and acceptance) — the first statement of the course's central value.
 
-### 1.3 · The Author/Operator loop
+### 1.3 · The Author/Operator loop&nbsp; `✓ built` → [`/why/loop`](/course/agile-agent-workflow/why/loop)
 The two roles at the heart of the method: the human **Operator** who sharpens intent and reviews outcomes, and the
 Claude **Author** who specifies and implements. The cycle — sharpen, build, ship, demo, review, feedback, adapt — and
 why it is an inspect-and-adapt loop, not a handoff.
 
-### 1.4 · Two layers: roadmap and specs
+### 1.4 · Two layers: roadmap and specs&nbsp; `✓ built` → [`/why/two-layers`](/course/agile-agent-workflow/why/two-layers)
 Separating *how we deliver* (the roadmap) from *what we build and prove* (the specs). The governing rule that keeps the
 pair honest: the spec is the single source of truth, and feedback from a shipped increment edits the spec rather than
 forking from it.
 
-### 1.5 · Correct by definition
+### 1.5 · Correct by definition&nbsp; `○ planned`
 What "done" means in this workflow: a closure over traced, executed checks — every deliverable realized by a story,
 every story accepted, every invariant proven. The mechanical quality gates that turn "A+" from an opinion into a
 repeatable result.
 
-### 1.6 · Meet the project: Portal
+### 1.6 · Meet the project: Portal&nbsp; `○ planned`
 The running project introduced: a learning platform built as a stack of chapters over one facade, from a branded store
 up to a student dashboard. What "zero" looks like, what "production" demands, and how the course will get there one
 rung at a time.

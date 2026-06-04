@@ -196,7 +196,8 @@ an existing valid id is fine for a hand-authored page (the decoder just decodes 
   home page; a lesson/hub page must not ship dangling internal links.
 - When fanning out subpage authoring to background agents, give each: this skill, a model page to copy the design
   system from, the exact route + numbering + topic, the gate command to self-verify, the no-invent guard (Portal
-  API + references), and an explicit **no git** constraint. Then adversarially verify their output yourself.
+  API + references — **every `Sources` entry must be a real, vetted URL from the course-home registry, never a
+  fabricated link**), and an explicit **no git** constraint. Then adversarially verify their output yourself.
 
 ## 12. Course map and resume point
 
