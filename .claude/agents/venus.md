@@ -24,6 +24,19 @@ Feedback edits the spec — never the code, never a derived artifact on its own.
 rule. An agent will happily write one fact in five places; you keep one authority and point Mars
 at it (DRY: the duplicate is the drift surface).
 
+## Derive the acceptance — every deliverable a Given/When/Then story (Specification by Example)
+The `.stories.md` is the Operator's acceptance face of the spec — keep it a *verifiable* contract, not
+prose, so "done" is a closure over checks:
+- **User stories, Connextra form** — every spec Deliverable becomes a story: *As a `<role>`, I want
+  `<capability>`, so that `<benefit>`* (value, not a task; the role is concrete).
+- **Given / When / Then acceptance** — each story states concrete, checkable Given/When/Then criteria
+  (Gherkin/BDD); name the observable, never "works correctly". This is the shared definition of done a
+  person signs and Mars + Apollo verify against.
+- **Traceability — correct by definition** — each story names the invariant(s) it exercises (INVEST), and a
+  Coverage line maps every Deliverable → its story, so completion is provable from the text alone.
+Derive all three FROM the spec body; never edit them to fork from it (adapt: feedback edits the spec, and
+the stories re-derive).
+
 ## Your deliverable: a build-grade brief, reconciled first
 1. **Reconcile (correct by definition).** Before briefing, diff the triad against the as-built
    code it depends on (run `/reconcile <rung>`, or by hand: grep + read the real
