@@ -60,10 +60,23 @@ defmodule Portal.EventStoreTest do
     end
   end
 
-  describe "Postgres adapter is a dependency-free stub (F5.8-D6, OPEN-Q2)" do
-    test "both callbacks return {:error, :not_implemented}" do
-      assert {:error, :not_implemented} = Portal.EventStore.Postgres.append("portal", [])
-      assert {:error, :not_implemented} = Portal.EventStore.Postgres.read_stream("portal")
+  describe "Postgres adapter satisfies the behaviour (F6.3-D7 fills the F5.8 stub)" do
+    # F5.8 shipped both callbacks as {:error, :not_implemented} stubs; F6.3 fills the
+    # body (Repo.insert_all + read_stream ordered by :seq). The filled adapter touches
+    # the DB, so its round-trip/ordering/rollback behaviour is tested in the Ecto
+    # sandbox by Portal.EventStore.PostgresTest (Portal.DataCase), not here in the
+    # engine suite (which runs InMemory with no DB ownership). This test pins only the
+    # static substitutability fact (F6.3-INV5): the module satisfies the port.
+    test "implements the Portal.EventStore behaviour (callbacks exported)" do
+      assert function_exported?(Portal.EventStore.Postgres, :append, 2)
+      assert function_exported?(Portal.EventStore.Postgres, :read_stream, 1)
+
+      behaviours =
+        Portal.EventStore.Postgres.module_info(:attributes)
+        |> Keyword.get_values(:behaviour)
+        |> List.flatten()
+
+      assert Portal.EventStore in behaviours
     end
   end
 

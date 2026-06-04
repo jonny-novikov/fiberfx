@@ -34,4 +34,26 @@ if config_env() != :test do
     http: [ip: {127, 0, 0, 1}, port: port],
     secret_key_base: secret_key_base,
     server: true
+
+  # Portal.Repo runtime config (F6.3). A production boot must supply DATABASE_URL
+  # (mirrors the SECRET_KEY_BASE raise above — no insecure default leaks to prod);
+  # under dev the static dev.exs creds apply, so DATABASE_URL is honoured only when
+  # set and never forced. The :test env returns above this block (sandbox uses the
+  # test.exs creds).
+  case {System.get_env("DATABASE_URL"), env} do
+    {nil, :prod} ->
+      raise """
+      environment variable DATABASE_URL is missing.
+      For example: ecto://USER:PASS@HOST/DATABASE
+      """
+
+    {nil, _} ->
+      # Dev/runtime: keep the dev.exs static creds; do not force DATABASE_URL.
+      :ok
+
+    {url, _} ->
+      config :portal, Portal.Repo,
+        url: url,
+        pool_size: String.to_integer(System.get_env("POOL_SIZE", "10"))
+  end
 end

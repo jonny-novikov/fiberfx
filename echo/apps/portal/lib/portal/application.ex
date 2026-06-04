@@ -21,7 +21,17 @@ defmodule Portal.Application do
     # the endpoint accepts traffic (F6.1-INV2). Portal.Store is RETAINED — it is the
     # dual-write %Enrollment{} read model `Portal.courses_of/1` reads, so omitting it
     # would crash every course render (F6.1-D2, RK-1).
+    #
+    # F6.3 inserts Portal.Repo as the FIRST child, so the start order is
+    # data → compute: Repo → Store → adapter → Engine. The Postgres event-store
+    # adapter and the engine's init/1 read THROUGH the Repo, so it must be up first
+    # (F6.3-D1, INV-order). BOOT NOTE: Repo as a child means the tree does NOT boot
+    # if Postgres is unreachable or the configured DB is missing — every `iex -S mix`,
+    # `mix run`, and the `:portal_web` app (which depends on `:portal`) now require a
+    # reachable DB. Run `mix ecto.create` (and `MIX_ENV=test mix ecto.create`) before
+    # first boot.
     children = [
+      Portal.Repo,
       Portal.Store,
       Portal.EventStore.adapter(),
       Portal.Engine

@@ -16,7 +16,13 @@ defmodule Portal.Error do
   """
   @enforce_keys [:code, :message]
   defstruct [:code, :message, :field]
-  @type code :: :already_enrolled | :course_not_found | :lesson_locked | :invalid_progress
+
+  @type code ::
+          :already_enrolled
+          | :course_not_found
+          | :lesson_locked
+          | :invalid_progress
+          | :invalid
   @type t :: %__MODULE__{code: code(), message: String.t(), field: atom() | nil}
 
   @doc ~S'''
@@ -44,9 +50,37 @@ defmodule Portal.Error do
   def from(:lesson_locked), do: new(:lesson_locked)
   def from(:invalid_progress), do: new(:invalid_progress)
 
+  @doc ~S'''
+  Bridges a failed `%Ecto.Changeset{}` into the closed `%Portal.Error{}` vocabulary
+  (F6.3-D5 / INV2), so a caller receives the closed contract — never a raw changeset.
+  A SEPARATE entry point from `from/1`: a changeset is not a `code`, so folding it
+  into `from/1` would breach that function's no-catch-all closedness (F5.8-INV3).
+  `code` is `:invalid`; `field` is the first errored field; `message` is the first
+  error with its `%{...}` placeholders interpolated.
+
+      iex> %{title: "ab", slug: "s"}
+      ...> |> Portal.Catalog.Course.changeset()
+      ...> |> Portal.Error.from_changeset()
+      ...> |> Map.take([:code, :field])
+      %{code: :invalid, field: :title}
+  '''
+  @spec from_changeset(Ecto.Changeset.t()) :: t()
+  def from_changeset(%Ecto.Changeset{} = changeset) do
+    errors =
+      Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
+        Regex.replace(~r"%{(\w+)}", msg, fn _, key ->
+          opts |> Keyword.get(String.to_existing_atom(key), key) |> to_string()
+        end)
+      end)
+
+    {field, [message | _]} = Enum.at(errors, 0)
+    %__MODULE__{code: :invalid, field: field, message: message}
+  end
+
   @spec message(code()) :: String.t()
   defp message(:already_enrolled), do: "already enrolled in this course"
   defp message(:course_not_found), do: "course not found"
   defp message(:lesson_locked), do: "lesson locked"
   defp message(:invalid_progress), do: "invalid progress"
+  defp message(:invalid), do: "invalid"
 end

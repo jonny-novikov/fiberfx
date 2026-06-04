@@ -16,6 +16,13 @@ import Config
 # config-only and changes no caller (F5.8-INV4).
 config :portal, :event_store, Portal.EventStore.InMemory
 
+# Ecto repos for the engine app (F6.3) — so `mix ecto.*` tasks find Portal.Repo.
+# The per-env connection settings live in dev.exs / test.exs / runtime.exs; the
+# :event_store selector above stays InMemory in dev/test (prod.exs flips it to
+# Postgres). Persistence is a driven edge: only the persistence layer names the
+# Repo, never the web (F6.3-INV1).
+config :portal, ecto_repos: [Portal.Repo]
+
 # The Phoenix web app (F6.1). The endpoint is keyed to `:portal_web` (its otp_app),
 # runs through Bandit (Bandit.PhoenixAdapter), and renders expected errors via
 # PortalWeb.ErrorHTML. `pubsub_server: Portal.PubSub` is declared for a later rung
