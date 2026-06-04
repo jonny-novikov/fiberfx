@@ -53,6 +53,11 @@ spec, not the code).
   `doctest <Module>` — wire the invocation when you add the doctest, or an acceptance like "a
   doctest shows the filter" ships unexecuted (F6.6: `search_courses/1`'s moduledoc doctest sat
   inert until `doctest Portal.Catalog` was added).
+- The suite is not the server. For any web-touching rung, run the **liveness check** before
+  reporting done: `mix test` runs the endpoint with `server: false` (`config/test.exs`), so a green
+  suite proves the plug pipeline, NOT that the dev node boots + binds. Boot (`mix phx.server`) and
+  `curl :4000/health` → 200 + the rung's route renders (F6.6 shipped green while `:4000` was never
+  bound — the same "a check counts only if it RUNS" class as the inert doctest above).
 - Do NOT `git commit` — the Director commits once, at the rung's close. Leave the work in the tree
   for ratification.
 

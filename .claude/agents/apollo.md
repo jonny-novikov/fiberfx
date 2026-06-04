@@ -66,8 +66,11 @@ Mars reports the gate green; you reproduce it. For this repo: `TMPDIR=/tmp mix c
 suites also the determinism loop at **≥100 iterations** — `for i in $(seq 1 100); do TMPDIR=/tmp mix test
 || break; done` — because one green run is not proof and 20 is too few to surface the rare
 same-millisecond branded-id mint collision; the arc hit that collision three times and EACH was caught
-only by the independent ≥100 loop, never by the implementer's single run (echo/CLAUDE.md §4). A gate you
-did not run is a gate you cannot vouch for.
+only by the independent ≥100 loop, never by the implementer's single run (echo/CLAUDE.md §4). **And re-run
+the LIVENESS check** — the standing criterion: boot the node (`mix phx.server` / `iex -S mix`) and `curl
+:4000/health` → 200 + the rung's route, because `mix test` runs `server: false` (`config/test.exs`) and never
+binds the port, so a green suite is NOT a live Portal (F6.6 shipped green while `:4000` was dead — the same "a
+check counts only if it RUNS" class as an inert doctest). A gate you did not run is a gate you cannot vouch for.
 
 ## Sync the spec to what shipped — record, do not redesign
 Pre-build the spec body is authoritative and Venus corrects the code-facing claims to it; **post-build the
