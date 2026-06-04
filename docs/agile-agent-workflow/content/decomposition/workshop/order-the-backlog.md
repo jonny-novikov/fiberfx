@@ -2,79 +2,127 @@
 
 - **Route:** `/course/agile-agent-workflow/decomposition/workshop/order-the-backlog`
 - **File:** `html/agile-agent-workflow/decomposition/workshop/order-the-backlog.html`
-- **Role:** dive 3 of the workshop, and the A2 capstone close. Apply the value ladder (A2.06) to order the
-  stories by dependency across the five surfaces; the runnable backlog carried into Part III.
+- **Role:** dive 3 of the workshop, and the A2 capstone close. The *when* of the decomposition: order the nine
+  real F6 rungs into three dependency-ordered milestones, runnable at each rung; then read the git history of
+  how the specs evolved over time (spec → build → reconcile).
 - **Accent:** elixir-purple.
+- **Grounding:** the Portal's REAL F6 web decomposition (the `/elixir/phoenix` chapter). All milestone rows,
+  the F6.5-US0 story, the dates, and the commit hashes are quoted **verbatim** from
+  `docs/elixir/content/phoenix/index.md` (§ "The three milestones" + § "The git evolution timeline") and
+  `docs/elixir/content/phoenix/rungs.md` (§ F6.5). No-invent is relaxed to the real F6 API as written in source.
 
 ## Lead
 
-The stories from dives 1 and 2 are ready but unordered. This dive applies the value ladder: order them so
-each rung depends only on rungs below it and the system is runnable after every one. The result is the
-backlog the course specifies, briefs, and builds for the rest of Part III onward.
+The nine F6 rungs are written and proven on the hub; a list of nine is not a plan. This dive supplies the two
+things that turn it into one — an **order** and a **history**. First the value ladder groups the rungs into three
+dependency-ordered milestones, each runnable at its end: **M1 ship the catalog (F6.1–F6.5) · M2 make it live
+(F6.6–F6.7) · M3 ship to users (F6.8–F6.9)**, with the shipped/specified frontier sitting after F6.6. Then the
+git timeline replays how the specs got there — written up front, built one rung at a time, and reconciled as each
+shipped rung fed the next. The cadence is **spec → build → reconcile**, and the spec is the moving source of truth.
 
-## Worked Portal example (the five surfaces, the canonical ladder)
+## The two ideas
 
-Order the stories by dependency across the five Portal surfaces — store, engine, web, bot, dashboard:
+1. **The value-ladder ORDER (the three milestones).** The nine rungs group into three milestones that depend only
+   downward and stay runnable at each end. Verbatim from `index.md` "The delivery arc":
 
-1. **browse the catalogue** (web, over the engine) — depends on nothing the learner sees. Foundation rung.
-2. **enrol in a course** (web → engine) — depends on rung 1: a learner can only enrol in a course they can see.
-3. **open a lesson** (web → engine) — depends on rung 2: a lesson belongs to an enrolled course.
-4. **track progress** (the split slices from A2.07.2: mark-complete, then dashboard) — depends on rung 3:
-   progress is recorded against opened lessons; the dashboard surface reads it.
+   | Milestone | Rungs | What you can do at the end |
+   |---|---|---|
+   | 1 · Ship the catalog | F6.1–F6.5 | browse a persistent catalog and add courses, server-rendered, with inline errors |
+   | 2 · Make it live | F6.6–F6.7 | search and create without reloads; every client updates live with a viewer count |
+   | 3 · Ship to users | F6.8–F6.9 | sign in, run behind auth on a deployed clustered release, watch an operations dashboard |
 
-The branded **store** and the event-sourced **engine** behind one facade underlie every rung; the **bot** is
-a parallel surface over the same facade that reuses rungs 1–3 without adding a dependency. The ladder is
-runnable at every rung: after rung 1 the catalogue is live; after rung 2 enrolment works; and so on. This is
-the canonical Portal ladder — browse → enrol → open a lesson → track progress — fixed for the rest of the
-course.
+   The downward dependency: F6.5 renders what F6.3/F6.4 make queryable; F6.6 makes F6.5's pages live; F6.9 composes
+   all of it. The arc is the first deployable product first, then layer interactivity, real-time, and operations on
+   top. Six rungs (F6.1–F6.6) are shipped; three (F6.7–F6.9) are specified — the frontier falls after F6.6.
 
-The mis-order to show: putting "enrol" below "browse" — a learner cannot enrol in a course they cannot see;
-the rung would have nothing runnable to demo. Dependency order is what keeps the ladder demoable.
+2. **The spec → build → reconcile CADENCE over git time.** Specs written 02 Jun; F6.1 shipped 03 Jun; F6.2–F6.5 +
+   the reconciles 04 Jun; F6.6 shipped 05 Jun; F6.7–F6.9 reconciled forward. Feedback edits the spec (the single
+   source of truth), not the code below the facade — the move A1.03.3 named. The clearest spec-edit is the F6.5
+   route reconcile `5a440fd`: `/courses` = catalog, `/my/courses` = enrollments, driven by **F6.5-US0** (the
+   architect story).
 
-## Hero interactive — the five surfaces over one facade
+## Verbatim facts (do not invent a date or a hash)
 
-**The runnable ladder.** Step up the rungs (1–4). The figure shows the four rungs stacked over the store and
-engine, with each rung tagged by its surface (web / dashboard) and the bot drawn as a parallel surface. The
-readout reports, for the selected rung, what is runnable, which surface it touches, and what it depends on.
+The git evolution timeline (verbatim from `index.md` § "The git evolution timeline"):
 
-- control ids: `#otbRung` (segmented, `data-rung` = 1|2|3|4)
-- pure function: `rungReadout(level) -> string` over the fixed four-rung ladder
-- sample readout: "Rung 2 of 4 — enrol in a course (web → engine). Depends on rung 1 (browse the catalogue). Runnable now: a learner can browse and enrol. The store and engine underlie every rung; the bot reuses rungs 1–3."
+| Date | Commit | What changed |
+|---|---|---|
+| 02 Jun | `d2f959d` | the nine f6.N specs written — the whole ladder specced up front |
+| 03 Jun | `470cd90` | **F6.1 built** |
+| 04 Jun | `c98dabe` | F6.2 reconciled to the as-built F6.1, F6.1 marked shipped (the lag-1 reconcile) |
+| 04 Jun | `98ef445` | F6.3 spec remediated to branded-string-surface / `:bigint`-column identity; F6.2 marked shipped |
+| 04 Jun | `5a440fd` | **F6.5 reconcile** — `/courses` = catalog, `/my/courses` = enrollments (resolves a route collision) |
+| 04 Jun | `47a15f1` | F6.6–F6.9 backlog groomed — the F6.5 direction folded forward into each downstream spec |
+| 04 Jun | `0911b4d` | Specification-by-Example applied to the F6.6–F6.9 stories |
+| 05 Jun | `3cf2480` | **F6.6 built** |
+| 05 Jun | `706df05` | F6.6 feedback loop: Stage 6 reconcile of F6.7–F6.9 (re-grounded against shipped F6.6) |
 
-## Main interactive — dependency order vs mis-order
+**F6.5-US0** (the architect story that drove the route reconcile — verbatim from `rungs.md` § F6.5):
 
-**Prove the order.** A control toggles between the dependency-correct order and a mis-order (enrol before
-browse). For each, the readout reports whether every rung has its dependency satisfied below it and whether
-the ladder is runnable at every step.
+> As an **architect**, I want each URL named after the resource it returns, so that the catalog and a learner's
+> enrollments stop colliding on `/courses`.
 
-- control ids: `#otbOrder` (segmented, `data-k` = correct|misordered)
-- pure function: `orderCheck(kind) -> { brokenRungs:int, firstBroken:string|null, runnable:bool }`
-- sample readout: "mis-ordered (enrol below browse) — 1 rung breaks: enrol sits below the browse it depends on, so it has no visible course to act on. The ladder is not runnable at every rung."
+## Hero interactive — the milestone ladder (ordering view)
+
+**Order the rungs into milestones.** Select a milestone (M1 / M2 / M3). The figure shows the nine rungs grouped
+into three bands; selecting one highlights its rungs and what a role can do at its end. The readout prints the
+verbatim milestone row from `index.md`, plus the factual shipped/specified count for that milestone and the
+downward dependency it rests on. This is the ORDER view — structure, not time.
+
+- control ids: `#otbMs` (segmented, `data-ms` = 1|2|3)
+- pure function: `milestoneReadout(m) -> string` over the fixed three-milestone dataset (the verbatim `can` rows)
+- sample readout (M1): "M1 · Ship the catalog — rungs F6.1–F6.5. At the end: browse a persistent catalog and add courses, server-rendered, with inline errors. Status: 5 of 5 shipped. Rests on: nothing above the F5 facade — the first deployable product. Runnable at the milestone's end."
+
+## Main interactive — the git timeline stepper (replay over time)
+
+**Replay the spec's evolution.** A slider advances through the nine dated F6 commits (02 Jun specs → 03 Jun F6.1
+→ the 04 Jun reconciles → 05 Jun F6.6 → 05 Jun reconcile). At each commit the readout reports the date, the hash,
+what changed, and how the ladder's status moved — a rung flipping `specified → shipped`, or a spec being
+`reconciled`. The point it proves: across every step the **spec** changes (remediated, reconciled, groomed,
+re-grounded) while nothing below the facade does — feedback edits the spec, the move A1.03.3 named. The F6.5
+reconcile step quotes F6.5-US0. Distinct from the hero: the hero orders rungs into milestones; this one replays
+how the specs got there over git time.
+
+- control ids: `#otbTl` (range slider, `min=0 max=8 step=1`, one stop per commit)
+- pure functions: `statusAt(i) -> {specified, shipped, reconciled}` (counts at commit i) and
+  `timelineReadout(i) -> string` over the fixed nine-commit dataset (verbatim dates/hashes/what)
+- sample readout (step 4, the F6.5 reconcile `5a440fd`): "04 Jun · 5a440fd — F6.5 reconcile: /courses = catalog, /my/courses = enrollments (resolves a route collision). The spec moved, not the engine: feedback edited F6.5's URL design. Driven by F6.5-US0 — As an architect, I want each URL named after the resource it returns, so that the catalog and a learner's enrollments stop colliding on /courses. Ladder now: 1 shipped · 1 reconciled · 7 specified."
 
 ## Principle ↔ practice bridge
 
-- principle: a backlog is a dependency-ordered ladder where each rung adds usable value, depends only on
-  rungs below it, and leaves the system runnable.
-- practice: the Portal stories order into browse → enrol → open a lesson → track progress over the store and
-  engine, with the bot a parallel surface — runnable at every rung, the backlog Part III builds.
-- take: ordering turns a set of ready stories into a ladder the loop can climb one provable rung at a time.
+- principle: a backlog is ordered into milestones that depend only downward and stay runnable; and the spec is the
+  single source of truth, edited by feedback over time — never the working code.
+- practice (on the Portal / F6): the nine rungs group into M1 ship the catalog (F6.1–F6.5) → M2 make it live
+  (F6.6–F6.7) → M3 ship to users (F6.8–F6.9); the git history shows the specs written 02 Jun, F6.1–F6.6 shipped by
+  05 Jun, and the F6.7–F6.9 specs reconciled forward — the F6.5 route reconcile (`5a440fd`) the clearest spec-edit.
+- take: a backlog has an order and a history — milestones say what rests on what, and the git trail shows the spec
+  moving under feedback while the engine below the facade holds still.
 
-## References (Sources — real, vetted)
+## Cross-links to /elixir
 
-- Humble & Farley — *Continuous Delivery* — https://continuousdelivery.com/ — keeping the system releasable
-  at every increment.
-- Cohn, M. — *User Stories Applied* — https://www.mountaingoatsoftware.com/books/user-stories-applied —
-  ordering a backlog by value and dependency.
-- Adzic, G. — *Specification by Example* — https://gojko.net/books/specification-by-example/ — the ordered,
-  testable backlog as the shared plan.
+- `/elixir/phoenix` — the F6 chapter where the nine rungs and three milestones are specified, built, and proven.
+- `/elixir/phoenix/deployment` — F6.8, the M3 frontier (auth + the deployed clustered release).
+
+Both in prose and in References → "Related in this course". (Folder-routed; resolve 200 against the live server.
+They are outside the `--routes-from` mount, so the `links` gate does not check them — crawl them live.)
+
+## References (Sources — real, vetted; reuse the registry)
+
+- Humble & Farley — *Continuous Delivery* — https://continuousdelivery.com/ — keeping the system releasable at
+  every milestone, and shipping the first deployable product first.
+- Cohn, M. — *User Stories Applied* — https://www.mountaingoatsoftware.com/books/user-stories-applied — ordering a
+  backlog into dependency-aware milestones.
+- Adzic, G. — *Specification by Example* — https://gojko.net/books/specification-by-example/ — the spec as the
+  living, shared source of truth that feedback edits.
 
 ## Related (internal — must resolve)
 
-- A2.01 value, A2.02 connextra, A2.03 invest; workshop hub; A2 landing; `/elixir/course`
-- A2.07.2 split-and-test (prev)
-- (A2.06 value-ladder named in prose only — not linked.)
+- A2.07 workshop hub; A2.07.2 split-and-test (prev); A2.07.1 vision-to-stories
+- A2.01 value (the ordering key); A2 landing
+- A1.03.3 adapt — "feedback edits the spec" (the cadence this dive replays)
+- `/elixir/phoenix`, `/elixir/phoenix/deployment` (the F6 chapter + the M3 frontier)
 
-## Pager
+## Pager (keep exact)
 
 - prev: `/course/agile-agent-workflow/decomposition/workshop/split-and-test`
-- next: workshop hub `/course/agile-agent-workflow/decomposition/workshop` (back to hub — module close)
+- next: workshop hub `/course/agile-agent-workflow/decomposition/workshop` (back to the hub — this is the last dive)

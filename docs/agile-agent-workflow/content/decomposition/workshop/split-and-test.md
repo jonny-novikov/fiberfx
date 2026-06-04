@@ -2,62 +2,105 @@
 
 - **Route:** `/course/agile-agent-workflow/decomposition/workshop/split-and-test`
 - **File:** `html/agile-agent-workflow/decomposition/workshop/split-and-test.html`
-- **Role:** dive 2 of the workshop. Apply splitting (A2.05) to the too-big stories; re-test each slice
-  against INVEST until rung-sized.
+- **Role:** dive 2 of the workshop, grounded in the Portal's REAL F6 (Phoenix) web decomposition. Show *how*
+  one vision is split into nine vertical rungs over the unchanged `Portal` facade, then zoom into ONE rung
+  (F6.6 · LiveView) as its four real artifacts and prove it with its verbatim Given/When/Then.
 - **Accent:** elixir-purple.
+- **Companion build:** `/elixir/phoenix/liveview` (where F6.6 is built).
 
 ## Lead
 
-The first story set left one story flagged too-big: "a learner tracks progress through a course." This dive
-applies splitting to it, then re-tests every slice against INVEST. A split is finished not when the story is
-smaller but when each slice passes the six tests on its own.
+The web vision — *serve the Portal to people* — is too big for one rung. The split cuts it into nine vertical
+slices (`f6.1`–`f6.9`), each shipping one capability over the unchanged `Portal` facade. Then the test: zoom
+into ONE rung, lay out its four artifacts, and prove the slice with Given/When/Then. A slice is ready not
+when it is small but when its acceptance can be run.
 
-## Worked Portal example
+## The master invariant (quote verbatim from `index.md`)
 
-The too-big story — "track progress through a course" — fails Small because it spans every lesson, the web
-surface, the bot, and the dashboard at once. Split it **vertically**, by workflow step, so each slice still
-delivers a usable change:
+> The web layer calls only the `Portal` facade and renders only the closed `%Portal.Error{}` set. No
+> controller, LiveView, plug, or template names `Portal.Engine`, a repo, or `GenServer.call`.
 
-- slice A — "mark one lesson complete" (a learner finishes a lesson; it is recorded). Passes all six.
-- slice B — "see a course's completion count" (a learner sees how many lessons are done). Passes all six.
-- slice C — "see completed courses on the dashboard" (the dashboard surface). Passes all six.
+This single rule is what makes the ladder cheap: every rung adds web surface without reaching below the
+facade, so nothing under the F5 engine ever changes. The rungs depend only downward — F6.6 makes F6.5's
+pages live.
 
-Each slice is a vertical cut — a change a role can demonstrate — not a horizontal layer like "add a progress
-table" that no one can demo. Re-tested against INVEST, the three slices each pass 6/6, where the parent
-passed 4/6. The split is done.
+## Worked Portal example — the nine-rung split, then one rung
 
-The contrast that must be shown: a **horizontal** split ("the schema", "the context function", "the
-LiveView") fails Valuable and Testable per slice — it slices the work, not the value. Splitting in this
-workflow always cuts vertically.
+The vision splits into nine vertical rungs, each a capability a real role can use:
 
-## Hero interactive — split the too-big story
+- F6.1 boot · F6.2 routing · F6.3 Ecto · F6.4 contexts · F6.5 HEEx views · F6.6 LiveView · F6.7 PubSub ·
+  F6.8 auth · F6.9 dashboard.
 
-**Cut the parent into slices.** A control toggles between the un-split parent and the three vertical slices.
-The figure shows the parent (INVEST 4/6, fails S) decomposing into three slices, each re-scored. The readout
-reports the parent's failing letters and each slice's pass count.
+Zoom into **F6.6 (LiveView)** only. Its delivers line: F6.5's catalog made interactive without reloads —
+`CatalogLive` streams from the facade, a two-stage mount, a live search box via `Portal.search_courses/1`, a
+live create form. F6.6 is carried by exactly four artifacts:
 
-- control ids: `#satView` (segmented, `data-k` = parent|sliceA|sliceB|sliceC)
-- pure function: `sliceScore(key) -> { label, pass:int, fail:[letters], vertical:bool }`
-- sample readout: "slice A — mark one lesson complete: a vertical slice, INVEST 6/6. The parent failed S (Small) and E (Estimable); this slice fits one rung."
+1. **The roadmap line** — a row in `phoenix.roadmap.md`: *"F6.6 | interactivity (live search, live create,
+   streams) | search as you type; create without a reload | `LiveViewTest` (`render_change`/`render_submit`)
+   | does the interaction feel right?"* — answers *how we deliver* (place in the order, demo, harness,
+   feedback asked).
+2. **The spec** — `f6.6.md` (Goal · Rationale (5W) · Scope · Deliverables · Invariants · Definition of Done)
+   — answers *what & prove*.
+3. **The stories** — `f6.6.stories.md` (`US0`…`US5`; Connextra + Given/When/Then, each tagged INVEST +
+   priority + size) — answers *acceptance*.
+4. **The agent brief** — `f6.6.llms.md` (references, requirements, execution topology, paste-ready prompt) —
+   answers *agent instructions*.
 
-## Main interactive — vertical vs horizontal split
+## The proof — F6.6-US1 (the full acceptance set, verbatim from `rungs.md`)
 
-**Choose the cut.** A control switches the same parent between a vertical split (three demoable slices) and a
-horizontal split (schema / context / view). For each, the readout scores the slices against Valuable and
-Testable and reports which cut yields rung-sized, demoable stories.
+Representative story — `F6.6-US1` (Search as I type):
 
-- control ids: `#satCut` (segmented, `data-k` = vertical|horizontal)
-- pure function: `cutResult(kind) -> { demoableSlices:int, totalSlices:int, note }`
-- sample readout: "horizontal cut — 0 of 3 slices are demoable on their own: a schema, a context function, and a view each fail Valuable and Testable. A horizontal cut slices the work, not the value."
+> As a **learner**, I want the course list to filter as I type, so that I find a course without submitting or
+> reloading.
+
+Verbatim Given/When/Then (`F6.6-US1`):
+
+> - Given the search box, when I type, then `phx-change="search"` fires `handle_event("search", params,
+>   socket)`.
+> - Given the event, when it runs, then it filters through the `Portal.search_courses/1` facade function (not
+>   the `Catalog` context directly, per `f6.6.md` `## [RECONCILE]`, facade-only) and re-streams `:courses`
+>   with `reset: true` (the list is `@streams.courses`, never an assign — INV4 — so the narrowing query drops
+>   non-matches).
+> - Given each keystroke, when handled, then the rendered list narrows without a reload, and the view names
+>   only `Portal`.
+
+Portal API kept EXACT (no-invent relaxed to the real F6 API): `Portal.search_courses/1`, `handle_event/3`,
+`@streams.courses` / `stream/3` with `reset: true`. The view names only `Portal`.
+
+## Hero interactive — the four-artifacts inspector for F6.6
+
+**Inspect one artifact at a time.** A segmented control selects roadmap / spec / stories / brief. The figure
+highlights the selected artifact; the readout names the file, its role, and the question that artifact
+answers. Pure function over the four-artifact dataset.
+
+- control ids: `#satArtifact` (segmented, `data-k` = roadmap|spec|stories|brief)
+- pure function: `artifactCard(key) -> { file, role, question, gives }`
+- sample readout: "stories — f6.6.stories.md · the acceptance · answers: what proves it. Gives: US0–US5,
+  each a Connextra story plus its Given/When/Then, tagged INVEST + priority + size. The proof A2.07.2 runs is
+  F6.6-US1."
+
+## Main interactive — the Given/When/Then acceptance runner
+
+**Step the F6.6-US1 scenario.** A segmented control steps Given → When → Then. Each step reports PASS against
+a fixed dataset modelling the search box, the fired event, and the re-stream — proving the slice is testable,
+not asserted. Distinct from the hero: the hero enumerates the artifacts; the runner executes the proof in one
+of them.
+
+- control ids: `#satRun` (segmented, `data-k` = given|when|then)
+- pure function: `runStep(step) -> { verdict:'PASS', label, detail }`
+- sample readout: "WHEN · PASS — the event runs: it filters through Portal.search_courses/1 (the facade, not
+  Catalog directly) and re-streams :courses with reset: true. The list is @streams.courses, never an assign
+  (INV4)."
 
 ## Principle ↔ practice bridge
 
-- principle: a split is finished when every slice passes INVEST on its own, and a slice is a vertical cut of
-  value, never a horizontal layer.
-- practice: "track progress" splits into mark-complete, completion-count, and dashboard — three vertical
-  slices, each INVEST 6/6; the horizontal alternative fails every slice.
-- take: splitting converges when the slices pass the same readiness gate the parent failed — and only a
-  vertical cut gets there.
+- principle: the contract is the spec — a slice is ready when its acceptance is written as Given/When/Then,
+  so it is proven, not asserted. Splitting yields slices; the test is whether each one can be run.
+- practice: F6.6-US1 — typing fires `phx-change="search"` → `handle_event("search", params, socket)` →
+  `Portal.search_courses/1` → re-streams `:courses` with `reset: true`; the view names only `Portal`. The
+  proof runs.
+- take: a slice converges when its acceptance can be run — and on the Portal that proof is the verbatim
+  Given/When/Then of the rung.
 
 ## References (Sources — real, vetted)
 
@@ -67,9 +110,9 @@ Testable and reports which cut yields rung-sized, demoable stories.
 
 ## Related (internal — must resolve)
 
-- A2.03 invest; workshop hub; A2 landing; `/elixir/course`
-- A2.07.1 vision-to-stories (prev), A2.07.3 order-the-backlog (next)
-- (A2.05 splitting and A2.04 acceptance named in prose only — not linked.)
+- workshop hub; A2.07.1 vision-to-stories (prev); A2.07.3 order-the-backlog (next); A2.03 invest; A2 landing
+- `/elixir/phoenix/liveview` — where F6.6 is built (in prose + Related)
+- `/elixir/course` — the Portal's internals
 
 ## Pager
 

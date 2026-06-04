@@ -2,65 +2,80 @@
 
 - **Route:** `/course/agile-agent-workflow/decomposition/workshop`
 - **File:** `html/agile-agent-workflow/decomposition/workshop/index.html`
-- **Role:** module hub — the A2 capstone. Runs the whole chapter sequence on the Portal vision.
+- **Role:** module hub — the A2 capstone. Teaches decomposition on the Portal's **real** web surface (the F6
+  Phoenix chapter in the companion `/elixir` course), decomposed into nine specified, built, and proven rungs.
 - **Accent:** elixir-purple (`.ex`), the course signature — consistent with the A2 module hubs.
 
 ## Lead
 
-A2.01–A2.06 each taught one move. This module runs them in order, on one input: the one-line Portal
-vision. The output is the backlog the rest of the course specifies, briefs, and builds — a runnable,
-demoable ladder of stories across the five Portal surfaces.
+A2.01–A2.06 each taught one move on toy stories. The capstone lands them where they were actually used: the
+Portal's **web surface**, built in the companion course as chapter **F6** (Phoenix). A one-line vision — *serve
+the Portal to people* — was decomposed into **nine vertical rungs** (`f6.1`–`f6.9`), each a real capability
+carried by four artifacts, built over the unchanged engine, and proven before the next began. The decomposition
+is not hypothetical: it already happened, rung by rung, in a repository the student can read.
 
 ## Precise definition
 
-The **workshop** is the chapter's synthesis: a single pass that takes the Portal vision and produces an
-ordered, tested backlog by applying every A2 technique in dependency order —
+The **workshop** is the chapter's synthesis, made concrete on F6. Instead of an abstract pipeline, it walks the
+real F6 roadmap: nine rungs, three milestones, the master invariant, and the git history that proves the
+spec→build→reconcile cadence. The five Portal surfaces are fixed (no-invent): a branded **store**, an
+event-sourced **engine** behind one facade, a Phoenix **web** app, a Telegram **bot**, a student **dashboard**.
+F6 is the web surface; the canonical value ladder within it climbs from a bootstrapped endpoint to a live
+operations dashboard.
 
-1. **value, not tasks** (A2.01) — a unit is a change in what a role can do, not a chore.
-2. **the Connextra form** (A2.02) — "as a `<role>`, I want `<capability>`, so that `<benefit>`."
-3. **INVEST** (A2.03) — the six yes/no readiness tests.
-4. **Given/When/Then acceptance** (A2.04) — the concrete, executable definition of done.
-5. **splitting** (A2.05) — cut the too-big stories into rung-sized vertical slices.
-6. **the value ladder** (A2.06) — order the slices so each rests on the ones below and the system stays runnable.
+The master invariant (verbatim from `phoenix.roadmap.md`): *"The web layer calls only the `Portal` facade and
+renders only the closed `%Portal.Error{}` set."* The four artifacts per rung: a line in `phoenix.roadmap.md`, the
+spec `f6.N.md`, stories + Given/When/Then in `f6.N.stories.md`, the agent brief `f6.N.llms.md`.
 
-The five surfaces are fixed (no-invent): a branded **store**, an event-sourced **engine** behind one
-facade, a Phoenix **web** app, a Telegram **bot**, a student **dashboard**. The canonical value ladder is
-fixed: browse the catalogue → enrol → open a lesson → track progress.
+## The framing interactive (hub) — the F6 roadmap slider
 
-## The framing interactive (hub)
+**The F6 web chapter, rung by rung.** An SVG of the nine rungs in a row, grouped into the three milestones (M1
+ship the catalog · M2 make it live · M3 ship to users), with a dashed frontier after F6.6 separating the six
+shipped rungs from the three still specified. A single range slider (`#f6Slider`, `min=1 max=9 step=1`) selects a
+rung; the readout reports the **four questions a decomposition has to settle for every rung** — *what* it
+delivers, *when* it was specified and shipped (from git history), *why* (which milestone it serves), and *how* it
+is proven (story count + one verbatim Given/When/Then). The data is a fixed nine-entry `RUNGS` array transcribed
+from the real `docs/elixir/specs/phoenix/` spec system; status + dates are derived from the git log. It frames the
+module: one vision, nine rungs, three milestones, every rung answered from the repository.
 
-**The A2 pipeline applied to one vision.** A horizontal pipeline of six stages (value · form · INVEST ·
-acceptance · splitting · ladder). Selecting a stage reports what that technique does to the work in transit
-and what the backlog looks like after it. Pure function `stageReadout(key)` over a fixed six-entry dataset;
-live `.geo-readout`. It frames the module: one input, six transforms, one backlog out.
+- control id: `#f6Slider` (range input; `#f6Val` shows `F6.N`; `#f6Out` is the live `.geo-readout`).
+- pure function: `paintRung(n)` — repaints the nine SVG rung cells (current = elixir-purple, shipped = sage,
+  specified = blue dashed) and rewrites `#f6Out` from `RUNGS[n-1]` (no side effects beyond the DOM it owns).
+- supporting data: `var RUNGS` (9 entries: `n`, `title`, `ms`, `status`, `stories`, `what`, `when`, `gwt`),
+  `MS` (milestone labels), and the `SHIP`/`SPEC`/`CUR` palettes.
+- sample readout (F6.1): "F6.1 · Bootstrap the Phoenix Portal — what: the headless F5 engine stands up as a
+  Phoenix app… when: specced 02 Jun, shipped 03 Jun. why: milestone 1, ship the catalog. how: 5 stories in
+  f6.1.stories.md; proven by — Given the running app, when I request GET /health, then I receive 200 with body ok."
+- take: "A decomposition answers why, what, when, and how for every rung — and a good one leaves that trail in the
+  repository, not only in a plan."
 
-- control ids: `#wsPipe` (segmented buttons, `data-k` = value|form|invest|accept|split|ladder)
-- pure function: `stageReadout(stageKey) -> string`
-- sample readout: "Stage 2 of 6 — the Connextra form: each kept story is rewritten as role, want, reason, so the value is on the card before it is built. Backlog so far: 4 candidate stories, all in role-want-reason form."
+The interactive degrades: the slider, SVG, and a correct F6.1 readout are present in static markup; JS only
+enhances. It honours `prefers-reduced-motion` (no animation; transitions are CSS-only on fill/stroke) and uses no
+browser storage.
 
-## The three dives (arc: write → slice → order)
+## The three dives (arc: write → slice → order, i.e. what & why → how → when)
 
-1. **A2.07.1 · `vision-to-stories`** — take the vision; apply value-not-tasks, Connextra, INVEST, and
-   Given/When/Then to produce a first story set. Some stories are still too big — that is the input to dive 2.
-2. **A2.07.2 · `split-and-test`** — apply splitting to the too-big stories; re-test each slice against
-   INVEST; converge on rung-sized stories.
-3. **A2.07.3 · `order-the-backlog`** — apply the value ladder to order the stories by dependency across the
-   five surfaces; the runnable, demoable backlog carried into Part III (A3 roadmap).
+1. **A2.07.1 · `vision-to-stories`** — read the F6 web vision into its nine-rung value ladder; each rung a real
+   capability and the actual user story quoted from its `f6.N.stories.md`. *(what & why)*
+2. **A2.07.2 · `split-and-test`** — one vision split into nine vertical rungs; one rung (F6.6 LiveView) shown as
+   its four real artifacts and proven by its Given/When/Then. *(how)*
+3. **A2.07.3 · `order-the-backlog`** — the roadmap lens: nine rungs in three milestones, dependency-ordered and
+   runnable, plus the git history of how the specs evolved (specified → shipped → reconciled). *(when)*
 
 ## Principle ↔ practice bridge
 
-- principle: a method is only proven when it is run end to end on a real input, not demonstrated one move at
-  a time.
-- practice: the six A2 techniques, applied in order to the Portal vision, yield the ordered, tested backlog
-  the course builds from.
-- take: the workshop is where the chapter stops being six techniques and becomes one backlog.
+- principle: a decomposition is only proven when it is run end to end on a real input and leaves a readable trail
+  — what, why, when, and how for every increment — not demonstrated one move at a time on a toy.
+- practice: the F6 chapter — one vision, nine rungs, four artifacts each, three milestones, one unchanged facade —
+  is that trail; the slider and the three dives read it straight from the repository.
+- take: the workshop is where the chapter stops being six techniques and becomes one real, ordered, proven backlog.
 
 ## References (Sources — real, vetted)
 
-- Cohn, M. — *User Stories Applied* — https://www.mountaingoatsoftware.com/books/user-stories-applied — the
-  end-to-end practice of turning a vision into a story backlog.
-- Adzic, G. — *Specification by Example* — https://gojko.net/books/specification-by-example/ — deriving a
-  shared, testable backlog from a goal.
+- Cohn, M. — *User Stories Applied* — https://www.mountaingoatsoftware.com/books/user-stories-applied — turning a
+  product vision into a story backlog, end to end.
+- Adzic, G. — *Specification by Example* — https://gojko.net/books/specification-by-example/ — deriving a shared,
+  testable backlog from a goal.
 - Humble & Farley — *Continuous Delivery* — https://continuousdelivery.com/ — a backlog ordered so the system
   stays releasable at every rung.
 
@@ -68,8 +83,10 @@ live `.geo-readout`. It frames the module: one input, six transforms, one backlo
 
 - A2.07.1 vision-to-stories, A2.07.2 split-and-test, A2.07.3 order-the-backlog (own dives)
 - A2.01 `/decomposition/value`, A2.02 `/decomposition/connextra`, A2.03 `/decomposition/invest`
-- A2 landing `/decomposition`; `/elixir/course`
-- (A2.04 acceptance, A2.05 splitting, A2.06 value-ladder named in prose only — built in parallel, NOT linked.)
+- A2 landing `/decomposition`
+- Companion `/elixir` cross-links (the rungs, built): `/elixir/phoenix` (the F6 chapter),
+  `/elixir/phoenix/contexts` (F6.4), `/elixir/phoenix/liveview` (F6.6), `/elixir/phoenix/deployment` (F6.8);
+  `/elixir/course`.
 
 ## Pager
 
