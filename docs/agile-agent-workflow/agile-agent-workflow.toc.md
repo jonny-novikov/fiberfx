@@ -82,11 +82,10 @@ the Operator/Author pairing. Its built module, A0.2, is the framework in a singl
 - A0.1 · Why it works `○` — the two failure modes and the case for thin slices (developed in depth at §1.1).
 - A0.3 · Who does the work `○` — the Operator, the Author, and the pairing in practice (developed at §1.3).
 
-**Current build front.** Part I is nearly complete — **§1.1–§1.4 and §1.6 are built** (chapter A1,
-[`/course/agile-agent-workflow/why`](/course/agile-agent-workflow/why)); only §1.5 remains. **Part II is complete —
-its landing and all seven modules §2.1–§2.7 are built**
-([`/course/agile-agent-workflow/decomposition`](/course/agile-agent-workflow/decomposition)); Parts III–VII are
-planned.
+**Current build front.** **Parts I and II are complete** — chapter A1 (§1.1–§1.6,
+[`/course/agile-agent-workflow/why`](/course/agile-agent-workflow/why)) and chapter A2 (§2.1–§2.7,
+[`/course/agile-agent-workflow/decomposition`](/course/agile-agent-workflow/decomposition)) are fully built. The
+frontier is **Part III / chapter A3** ("The roadmap layer", `/roadmap`); Parts III–VII are planned.
 
 ---
 
@@ -116,10 +115,10 @@ Separating *how we deliver* (the roadmap) from *what we build and prove* (the sp
 pair honest: the spec is the single source of truth, and feedback from a shipped increment edits the spec rather than
 forking from it.
 
-### 1.5 · Correct by definition&nbsp; `○ planned`
+### 1.5 · Correct by definition&nbsp; `✓ built` → [`/why/correct`](/course/agile-agent-workflow/why/correct)
 What "done" means in this workflow: a closure over traced, executed checks — every deliverable realized by a story,
 every story accepted, every invariant proven. The mechanical quality gates that turn "A+" from an opinion into a
-repeatable result.
+repeatable result. Dives: `the-closure` · `proven-not-asserted` · `gates`.
 
 ### 1.6 · Meet the project: Portal&nbsp; `✓ built` → [`/why/portal`](/course/agile-agent-workflow/why/portal)
 The running project introduced: a learning platform built as a stack of chapters over one facade, from a branded store

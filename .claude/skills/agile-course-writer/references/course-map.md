@@ -21,7 +21,7 @@ as the A0 chapter landing AND the A0.2 module hub. Every chapter from A1 on **ne
 | Chapter | Title | Landing route | Dir | Status |
 |---|---|---|---|---|
 | A0 | Foundations — why, what, who | `/course/agile-agent-workflow/what` | `what/` | **A0.2 built; A0.1, A0.3 planned** |
-| A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **landing + A1.01–A1.04, A1.06 built; A1.05 planned** |
+| A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **complete — landing + A1.01–A1.06 built** |
 | A2 | Decomposition: from vision to user stories | `/course/agile-agent-workflow/decomposition` | `decomposition/` | **complete — landing + A2.01–A2.07 built** |
 | A3 | The roadmap layer: Agile delivery & iteration | `…/roadmap` | — | planned |
 | A4 | The spec layer: specifications & acceptance | `…/spec` | — | planned |
@@ -48,10 +48,10 @@ as the A0 chapter landing AND the A0.2 module hub. Every chapter from A1 on **ne
 | A1.02 | Pragmatic Programming, revisited for agents | The pragmatic canon re-read for a world where an agent writes the code. | `/why/pragmatic` | **built** |
 | A1.03 | The Author/Operator loop | The two roles and the cycle that runs every rung end to end. | `/why/loop` | **built** |
 | A1.04 | Two layers: roadmap and specs | Separating how we deliver from what we build and prove. | `/why/two-layers` | **built** |
-| A1.05 | Correct by definition | What "done" means: a closure over traced, executed checks. | `/why/correct` | planned (next) |
+| A1.05 | Correct by definition | What "done" means: a closure over traced, executed checks. | `/why/correct` | **built** |
 | A1.06 | Meet the project: Portal | The running project, zero to a deployed, multi-surface platform. | `/why/portal` | **built** |
 
-(A1.02–A1.04 and A1.06 are built; their subpage slugs are locked — see below. A1.06's dives: `domain`, `zero-to-production`, `one-rung`. The A1.05 slug remains suggested until that module is authored.)
+(All six A1 modules are built; subpage slugs are locked. A1.05's dives: `the-closure`, `proven-not-asserted`, `gates`. A1.06's dives: `domain`, `zero-to-production`, `one-rung`.)
 
 ## A1.02 — built (the second module), slugs locked
 
@@ -122,18 +122,15 @@ sequence on Portal's five surfaces (store, engine, web, bot, dashboard) to produ
 
 ## Resume point
 
-Built since last resume: **A2.04–A2.07** (`/decomposition/{acceptance,splitting,value-ladder,workshop}`, hub + three
-dives each, all A+) — which **completes chapter A2** (landing + all seven modules A2.01–A2.07). The remaining gaps are
-now **A1.05** ("Correct by definition", `/why/correct` — the lone gap inside the otherwise-complete chapter A1) and the
-**start of Part III / chapter A3** ("The roadmap layer", `/roadmap` — landing not yet built).
+Built since last resume: **A1.05 "Correct by definition"** (`/why/correct` + dives `the-closure`,
+`proven-not-asserted`, `gates`, all A+) — which **completes chapter A1**. With A2 also complete, **Parts I and II are
+fully built**; the frontier is now **Part III / chapter A3** ("The roadmap layer", `/roadmap`).
 
-**A1.05 — "Correct by definition"** (`/why/correct`, slug suggested): what "done" means — a closure over traced,
-executed checks, and the quality gates that hold it. Author the module hub `why/correct/index.html` plus ≥3
-deep-dive subpages (md-first under `docs/agile-agent-workflow/content/why/correct/`), each with a hero-split
-interactive, a main interactive, and a References section whose `Sources` are real, vetted external links (reuse the
-course-home registry — Pragmatic Programmer/XP/Spec-by-Example/Continuous-Delivery/llms.txt/Anthropic; never
-fabricate a URL), then relink the A1.05 card on `/why` (div → a, soon → live). **Process
-(user-confirmed):** fan out one agile-course-writer-skilled agent per dive, in parallel; ground the definition of
-"done" and the gates in the established course material before authoring. The course thesis, restated each module:
-neither no-plan nor all-plan ships reliable software; the unit that does is a thin slice of value, specified only
-enough, proven before the next begins.
+**A3 — "The roadmap layer: Agile delivery & iteration"** (`/roadmap`, Part III) is the next frontier — but its
+**chapter landing is not yet built**, so `/agile-write roadmap …` cannot fan out modules yet. First author the A3
+landing `html/agile-agent-workflow/roadmap/index.html` (model: the A2 landing `decomposition/index.html` — hero + a
+framing interactive + a `.mods` grid of the planned modules + References + pager), then fan out its modules. TOC
+Part III lists eight: §3.1 Agile distilled · §3.2 XP for small batches · §3.3 Anatomy of a roadmap.md · §3.4 Thin but
+robust · §3.5 Milestones and iterations · §3.6 The program roadmap · §3.7 Tracer bullets and walking skeletons ·
+§3.8 Workshop — roadmapping Portal. The course thesis, restated each module: neither no-plan nor all-plan ships
+reliable software; the unit that does is a thin slice of value, specified only enough, proven before the next begins.

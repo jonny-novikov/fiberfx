@@ -27,8 +27,9 @@ The method in three questions (why / what / who), previewing Part I. The landing
   the rung cycle they run end to end.
 - `○` A0.1 Why it works · `○` A0.3 Who does the work — previews of §1.1 and §1.3.
 
-### A1 · Why an Agile Agent Workflow `◐` · [/course/agile-agent-workflow/why](/course/agile-agent-workflow/why)
-The thesis chapter: why thin, provable slices beat both vibe coding and big-bang specs. Modules A1.01–A1.04 built.
+### A1 · Why an Agile Agent Workflow `✓` · [/course/agile-agent-workflow/why](/course/agile-agent-workflow/why)
+The thesis chapter: why thin, provable slices beat both vibe coding and big-bang specs. **Complete — all six modules
+A1.01–A1.06 built.**
 
 - A1.01 `✓` · [The two failure modes](/course/agile-agent-workflow/why/failure-modes) — the no-plan and over-plan
   failures, and the slice that resolves both.
@@ -49,11 +50,16 @@ The thesis chapter: why thin, provable slices beat both vibe coding and big-bang
   - [roadmap](/course/agile-agent-workflow/why/two-layers/roadmap) — the coarse, re-orderable delivery plan.
   - [spec](/course/agile-agent-workflow/why/two-layers/spec) — the single source of truth the rest derives from.
   - [source](/course/agile-agent-workflow/why/two-layers/source) — only feedback edits the spec; the two cadences.
+- A1.05 `✓` · [Correct by definition](/course/agile-agent-workflow/why/correct) — "done" as a closure over traced,
+  executed checks.
+  - [the-closure](/course/agile-agent-workflow/why/correct/the-closure) — done is a closed set, not a feeling.
+  - [proven-not-asserted](/course/agile-agent-workflow/why/correct/proven-not-asserted) — the check ran, not someone's
+    say-so; the traceability spine.
+  - [gates](/course/agile-agent-workflow/why/correct/gates) — the mechanical gates that make "A+" repeatable.
 - A1.06 `✓` · [Meet the project: Portal](/course/agile-agent-workflow/why/portal) — the running project, zero to production.
   - [domain](/course/agile-agent-workflow/why/portal/domain) — Portal as surfaces over one facade.
   - [zero-to-production](/course/agile-agent-workflow/why/portal/zero-to-production) — what "zero" is and what "production" demands.
   - [one-rung](/course/agile-agent-workflow/why/portal/one-rung) — climbing from zero, thin provable rung by rung.
-- `○` A1.05 Correct by definition (`/why/correct`) — the one remaining A1 gap.
 
 ### A2 · Decomposition `✓` · [/course/agile-agent-workflow/decomposition](/course/agile-agent-workflow/decomposition)
 Turning a product vision into a dependency-ordered value ladder of small, valuable, testable user stories. **Complete —
