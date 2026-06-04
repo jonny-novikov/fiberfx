@@ -45,9 +45,14 @@ spec, not the code).
 ## Done is a closure over checks, not a feeling
 - Run the gate BEFORE you report: stories pass, invariants hold, quality gates green. For this
   repo: `TMPDIR=/tmp mix compile --warnings-as-errors` clean, then `TMPDIR=/tmp mix test` green;
-  for Store / engine / process-touching suites also the determinism loop —
-  `for i in $(seq 1 20); do TMPDIR=/tmp mix test || break; done` — because one green run is NOT
-  proof (a same-millisecond branded-id mint collision flakes only across runs, not within one).
+  for Store / engine / process-touching suites also the determinism loop at **≥100 iterations** —
+  `for i in $(seq 1 100); do TMPDIR=/tmp mix test || break; done` — because one green run is NOT
+  proof and 20 is too few: a same-millisecond branded-id mint collision flakes only across runs,
+  and the arc hit it three times, each caught only by the ≥100 loop (echo/CLAUDE.md §4).
+- A check counts only if it RUNS. A doctest in a moduledoc is INERT until a test file invokes
+  `doctest <Module>` — wire the invocation when you add the doctest, or an acceptance like "a
+  doctest shows the filter" ships unexecuted (F6.6: `search_courses/1`'s moduledoc doctest sat
+  inert until `doctest Portal.Catalog` was added).
 - Do NOT `git commit` — the Director commits once, at the rung's close. Leave the work in the tree
   for ratification.
 

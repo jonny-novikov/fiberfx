@@ -77,6 +77,10 @@ Each rung is a narrow vertical slice built to production quality, not a prototyp
 - **Honest real-time.** Broadcasts fire only after a successful write, so clients only ever learn of facts.
 - **Supervised.** New runtime pieces (the endpoint, PubSub, Presence) are supervised children; the engine's crash
   isolation is untouched.
+- **Always live.** Every rung leaves the dev node booting clean and serving on `:4000` — `GET /health` answers `200`
+  and the rung's route renders, checked after the gate is green (the liveness criterion). The Portal is kept *hot*
+  across rungs by a long-lived `iex -S mix` + `recompile()` (this umbrella has no `phoenix_live_reload`; "hot" means
+  BEAM code-load, not browser reload). Runbook: [`phoenix.operator.md`](phoenix.operator.md).
 
 Every rung ships behind the same Definition-of-Done gates the Portal specs use, and the table below names the demo and
 the harness for each.
@@ -147,4 +151,4 @@ Chapter index & feature abstracts: [`phoenix.md`](phoenix.md). Rungs: [`f6.1.md`
 [`f6.8.md`](f6.8.md) · [`f6.9.md`](f6.9.md).
 Sibling roadmaps: [`../pragmatic/pragmatic.roadmap.md`](../pragmatic/pragmatic.roadmap.md) ·
 [`../bot/f10.roadmap.md`](../bot/f10.roadmap.md). Engine handoff: [`../pragmatic/f5.9.md`](../pragmatic/f5.9.md).
-Approach: [`../specs.approach.md`](../specs.approach.md).
+Operator's guide: [`phoenix.operator.md`](phoenix.operator.md). Approach: [`../specs.approach.md`](../specs.approach.md).

@@ -1,0 +1,207 @@
+# F6 · Operator's guide — supervising Claude's Agile Portal development
+
+> A field manual for the **Human L0 Operator**: the person in the conversation who owns intent and priorities,
+> reviews each spec and each shipped increment, and gives the go/no-go. Claude runs the rest — Author, Director, and
+> the specialized lead-team — turning each rung into specs, building it, verifying it, and shipping it over the
+> unchanged `Portal` facade. The workload is one pipeline, **roadmap → specs → user-stories → llms → teams → agents →
+> ship**, and it holds two standing promises every rung: the [master invariant](phoenix.md) (the web calls only the
+> facade) and the [liveness criterion](phoenix.md) (every rung leaves the Portal **live and hot in dev**).
+
+This guide is the *process* view. The *what-to-build* lives in the spec triads (`f6.N.{md,stories.md,llms.md}`); the
+*delivery plan* lives in [`phoenix.roadmap.md`](phoenix.roadmap.md); the *map* lives in [`phoenix.md`](phoenix.md);
+the *build conventions and footguns* live in [`echo/CLAUDE.md`](../../../../echo/CLAUDE.md). When this guide and a spec
+disagree about what to build, the spec wins.
+
+---
+
+## 1. Two roles, and what each decides
+
+The loop has exactly two parties, mirroring the F5 roadmap's Author/Operator pattern.
+
+- **L0 — the Operator (the human).** Owns the *why* and the *what-next*: priorities, milestone order, the acceptance
+  of a shipped rung, and every architecture / API-contract / new-dependency decision. Reviews the spec **body** (it is
+  authoritative) and the shipped increment, then returns feedback. Feedback edits the spec, because the spec is the
+  single source of truth and the build follows it.
+- **L1+L2 — Claude (the Author + Director + lead-team).** Turns a rung into a spec triad at the F5 quality bar, then
+  runs the build as a Director coordinating three specialized peers (Venus, Mars, Apollo). Claude decides
+  implementation details with one obvious answer and proceeds; Claude **stops and asks** the Operator on anything that
+  changes a contract.
+
+The decision split is the load-bearing rule:
+
+| Decision | Owner | Mechanism |
+| --- | --- | --- |
+| Architecture change · API contract · new dependency | **Operator** | Claude STOPs and ASKs before proceeding |
+| Priorities, milestone order, "ship or iterate" | **Operator** | review + feedback at the rung's close |
+| Which of two reasonable implementations | Claude (Director/Mars) | logged as a decision, surfaced for veto |
+| An implementation detail with one answer | Claude (Mars) | proceeds; cited to the spec line |
+
+The per-rung loop the Operator drives is **sharpen → build → ship → demo → review → feedback → adapt**.
+
+---
+
+## 2. The workload, end to end
+
+Seven artifacts, each feeding the next. The Operator reads the left two columns; Claude owns the authoring; the right
+column is what the Operator reviews at that stage.
+
+| # | Stage | Artifact & home | Authored by | What the Operator reviews |
+| --- | --- | --- | --- | --- |
+| 1 | **Roadmap** | [`phoenix.roadmap.md`](phoenix.roadmap.md) — milestones, build order, the per-rung iteration table, the status board | Author | priorities and milestone order; is the next rung the right next slice? |
+| 2 | **Spec body** | `f6.N.md` — Goal · Rationale (5W) · Scope · Deliverables · Invariants · Definition of Done · the `[RECONCILE]` callout | Author (Venus refreshes) | the body is authoritative — read it first; is the goal and scope right? |
+| 3 | **User stories** | `f6.N.stories.md` — Connextra (`As a … I want … so that …`) + **Given/When/Then** acceptance + INVEST/coverage traceability | Author (Venus) | the acceptance criteria — is "done" defined the way the role needs it? |
+| 4 | **Agent brief (llms)** | `f6.N.llms.md` — references · requirements · execution topology (a task DAG) · the paste-ready prompt Mars builds from | Author (Venus) | usually skim-only; it lags the body by ≤1 rung and is reconciled before build |
+| 5 | **Teams** | `TeamCreate` + the flat lead-team (Director + Venus/Mars/Apollo), **real** `Agent` spawns (LAW-1), coordinated by `SendMessage` | Director | nothing to review — this is mechanism; visible in the conversation as spawns |
+| 6 | **Agents** | the specialized roles in `.claude/agents/{venus,mars,apollo}.md` — the discipline lives *in the definitions*, so spawn prompts carry only the rung delta | Director | nothing to review per rung; the agent defs are the durable process asset |
+| 7 | **Ship** | the gate (compile `--warnings-as-errors` + tests + the determinism loop) + the **liveness check** + one LAW-4 Director commit | Director ratifies | the demo + Apollo's verdict; accept, or return feedback that edits the spec |
+
+The compounding idea: **author the cheap artifacts (stories, brief) before the expensive one (code), and let the
+stories be the acceptance.** A rung is done when every story's Given/When/Then is a passing test and the gate is green
+across the determinism loop — nothing softer.
+
+---
+
+## 3. The per-rung pipeline — the six stages the Director runs
+
+Each rung gets a Director brief, `f6.N.prompt.md`, that names the stages and carries only what is *new about this
+rung* (the discipline is in the agent definitions). [`f6.6.prompt.md`](f6.6.prompt.md) is the worked template. The
+stages, and the Operator's touch-point at each:
+
+1. **Venus · reconcile + brief.** Runs `/reconcile f6.N` *pre-build* (the lag-1 reconcile: does the spec's claimed
+   surface exist in the code it depends on?), corrects any drift in the body, pins the one or two contracts the rung
+   adds, and refreshes the brief. Reports a delta table + a BUILD-GRADE/BLOCKED verdict. *Operator: ratifies any new
+   public contract Venus pins (surfaced for veto).*
+2. **Mars-1 · build.** Builds the increment to the brief, citing the spec line for every public call, inventing
+   nothing, keeping the diff inside the facade. Compiles clean. *Operator: none.*
+3. **Mars-2 · harden.** Adds the `LiveViewTest` / `ConnTest` coverage for every Given/When/Then, audits idiom, runs
+   the determinism loop. *Operator: none.*
+4. **Apollo · verify.** Runs `/reconcile f6.N post` (does the as-built code satisfy the spec's promises?), re-runs the
+   gate independently, adversarially greps the master invariant, rules on any open realization, syncs the spec body to
+   what shipped, and renders **BUILD-GRADE** or **BLOCKED (n deltas)**. *Operator: reads the verdict.*
+5. **Director · ratify + commit (LAW-4).** On BUILD-GRADE, one scoped commit (explicit pathspec, never `git add -A`,
+   excluding the operator's out-of-band work). *Operator: the demo + the accept/iterate call.*
+6. **Director · feedback loop.** Folds the rung's findings forward into the downstream specs as `[RECONCILE]` markers —
+   making knowns explicit so the next rung reconciles against truth, not drift. *Operator: none; visible in the
+   downstream spec diffs.*
+
+If Apollo returns **BLOCKED**, the needed code change routes back through the Director to a fresh Mars spawn — Apollo
+never edits production code, never commits. That separation is what keeps the verifier adversarial.
+
+---
+
+## 4. The standing gates — what "shipped" means
+
+Two invariants hold at *every* rung, plus the build gate and the acceptance rule:
+
+- **Master invariant.** The web layer calls only the `Portal` facade and renders only the closed `%Portal.Error{}`
+  set — no controller, LiveView, plug, or template names `Portal.Engine`, a repo, or `GenServer.call`. Apollo proves
+  it by grep on the new web module; a boundary leak is a defect even when every test is green.
+- **Liveness criterion.** Every rung leaves the Portal **running and serving** in dev: the umbrella boots clean, the
+  endpoint binds `:4000`, `GET /health` answers `200`, and the rung's own route renders. The runbook is §5.
+- **The build gate** (Mars runs it; Apollo reproduces it; the Operator can too):
+  `TMPDIR=/tmp mix compile --warnings-as-errors` clean → `TMPDIR=/tmp mix test` green → for any id- or
+  process-touching rung, the **≥100-iteration determinism loop** (a single green run is not proof — the
+  same-millisecond branded-id collision flakes only across runs; see [`echo/CLAUDE.md`](../../../../echo/CLAUDE.md) §4).
+- **Acceptance.** A rung is done iff every story's Given/When/Then is a passing test and the gate is green across the
+  loop — and the `/reconcile` gate is build-grade (every spec claim is `MATCH` or an explicit `[RECONCILE]`-DEFERRED).
+
+The `[RECONCILE]` discipline is how a spec written *rungs ahead of its build* stays honest: each downstream body opens
+with a callout making its known-deferred dependencies explicit, with a `*(Why: …)*` clause. The reconcile gate
+*allows* a `[RECONCILE]`-marked claim while *blocking* an unmarked stale or invented one.
+
+---
+
+## 5. The runbook — keep the Portal live & hot, and check after each rung
+
+All commands run from the umbrella root `/Users/jonny/dev/jonnify/echo`.
+
+**"Hot" here is BEAM hot-code-load, not Phoenix live-reload.** This umbrella is hand-built without `mix phx.gen.*`, so
+it carries no `phoenix_live_reload` dependency and no `CodeReloader`/`LiveReloader` plug. The dev loop that keeps the
+Portal hot is a long-lived `iex -S mix`: after each edit, `recompile()` in that same shell loads the changed modules
+into the running node — the warm node keeps its bound `:4000` socket and its in-memory engine/event-store state across
+rungs, so a catalog built up interactively survives the next rung's code change.
+
+```bash
+# ── Preconditions (once per machine) ─────────────────────────────────────
+cd /Users/jonny/dev/jonnify/echo
+mix deps.get
+mix ecto.create        # creates `portal_dev` — Portal.Repo (F6.3) is a supervision child,
+                       # so the DB MUST exist or the node will not boot (config/dev.exs:
+                       # localhost:5432, user `jonny`, no password)
+
+# ── Boot live, kept hot (the session you leave running) ──────────────────
+iex -S mix             # binds http://localhost:4000 — server: true in runtime.exs (every env but :test)
+# …after editing code for the next rung, in the SAME iex shell:
+#   iex> recompile()   # BEAM hot-code-load: new modules into the warm node; :4000 + state survive
+
+# Foreground alternative without the shell (no recompile() hot loop — restart to pick up edits):
+mix phx.server
+
+# ── The per-rung liveness check (run AFTER the gate is green) ─────────────
+curl -fsS localhost:4000/health        # operator probe → 200 (no session or CSRF)
+curl -fsS localhost:4000/courses | head  # the rung's own route renders (F6.6: the live catalog)
+#   `curl -fsS` exits non-zero on any non-2xx, so its exit code IS the gate — wire it into a script if you like:
+#   curl -fsS localhost:4000/health >/dev/null && echo "PORTAL LIVE" || echo "PORTAL DOWN"
+
+# ── The build gate (reproduce what Mars/Apollo run) ──────────────────────
+TMPDIR=/tmp mix compile --warnings-as-errors
+TMPDIR=/tmp mix test
+for i in $(seq 1 100); do TMPDIR=/tmp mix test || break; done   # determinism loop (id/process-touching rungs)
+```
+
+The minimal "is the Portal still live?" check after any rung is two lines: boot (or `recompile()` the warm node), then
+`curl -fsS localhost:4000/health` → `200`. If that fails, the rung is not shippable, regardless of a green suite.
+
+---
+
+## 6. How to read a verdict
+
+What the Operator sees at a rung's close, and what each part means:
+
+- **Apollo's BUILD-GRADE / BLOCKED verdict + delta table** — each spec promise mapped to an as-built `file:line` and a
+  verdict (`MATCH` / `STALE` / `INVENTED` / `MISSING` / `DEFERRED`). BUILD-GRADE iff all are `MATCH` or
+  `[RECONCILE]`-DEFERRED. A BLOCKED verdict names the blocking deltas; the Director routes the fix to Mars and
+  re-verifies — it does not ship.
+- **The gate result Apollo reproduced** — compile clean, the test pass-count, and the determinism-loop result
+  (e.g. `100/100`). Apollo re-runs the gate; the build's own report is evidence, not proof.
+- **The `[RECONCILE]` markers planted forward** — the findings this rung folds into the downstream specs, each with a
+  why. These are the Operator's preview of what the next rungs must reconcile.
+- **When the Operator is asked** — Claude STOPs and ASKs only for an architecture / API-contract / new-dependency
+  decision. A pinned read-only contract that the reconcile already ratified in principle is surfaced for veto, not
+  asked as a blocking fork.
+
+---
+
+## 7. The LAWS, for the Operator
+
+Five rules govern how Claude runs the rung; they explain behaviours the Operator will observe:
+
+- **LAW-1 — real multi-agent spawns.** Each named peer (Venus/Mars/Apollo) is a *real* spawned subagent with its own
+  context, not role-play. The Operator sees genuine `Agent` spawns and `SendMessage` reports.
+- **LAW-1a — the Director does not edit code.** Once the team is spawned, the Director coordinates and ratifies but
+  must not `Edit`/`Write` implementation files — peers write the code. This is why the Director reads and reviews by
+  eye but hands every code change to Mars.
+- **LAW-2 — Opus.** All peers run on Opus.
+- **LAW-3 — framing.** Emitted prose (prompts, comments, specs) carries no gendered pronouns for agents, no
+  perceptual or interior-state verbs, no first-person narration — and propagates that rule downstream.
+- **LAW-4 — one scoped commit at the rung's close.** Exactly one Director commit per rung, with a contextualized
+  message, using an **explicit pathspec** — never `git add -A`. The commit **excludes the Operator's out-of-band
+  work**: `.claude/skills/agile-course-writer/*`, `html/agile-agent-workflow/*`, `html/logic/*`,
+  `docs/agile-agent-workflow/*`, `*.zip`. The Operator commits course/operator work separately; the rung commit
+  fences it off.
+
+---
+
+## 8. Map
+
+- Chapter index & the two standing invariants: [`phoenix.md`](phoenix.md)
+- Delivery plan, milestones, status board: [`phoenix.roadmap.md`](phoenix.roadmap.md)
+- A worked Director brief (the six-stage template): [`f6.6.prompt.md`](f6.6.prompt.md)
+- The rung triads: `f6.N.md` (body) · `f6.N.stories.md` (stories) · `f6.N.llms.md` (brief)
+- The specs approach & completion rule: [`../specs.approach.md`](../specs.approach.md)
+- Build conventions, the master invariant in code, the determinism footgun: [`echo/CLAUDE.md`](../../../../echo/CLAUDE.md)
+- The specialized agent definitions: `.claude/agents/{venus,mars,apollo}.md`
+
+---
+
+> Part of the jonnify toolkit. The Portal is served live in dev on `:4000`; every rung leaves it that way.

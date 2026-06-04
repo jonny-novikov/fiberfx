@@ -45,7 +45,11 @@ the stories re-derive).
    real code. Classify MATCH / STALE / INVENTED / MISSING / DEFERRED. The rung is build-grade iff
    every claim is MATCH or an explicit `[RECONCILE]`-marked DEFERRED; any STALE / INVENTED /
    MISSING blocks until corrected. Cite the spec line or `file:line` for EVERY claim — invent no
-   arity, route, field, or return.
+   arity, route, field, or return. **Mechanism words are claims too:** when an invariant names a
+   primitive (the list is a `stream`, never an assign), the body and brief must describe it that
+   way — reconcile the prose to the primitive, or the brief mis-directs the build (F6.6: the brief's
+   "re-assigns `@courses`" fought INV4's stream; Mars overrode it correctly, but a brief at odds
+   with its own invariant is a STALE owed pre-build).
 2. **Apply the corrections** to the triad (the body authoritative; bring stories + brief up to
    it). Surgical sync, not a rewrite.
 3. **Author the brief** Mars builds from, in the `.llms.md` anatomy:

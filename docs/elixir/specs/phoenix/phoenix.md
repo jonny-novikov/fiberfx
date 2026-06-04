@@ -30,6 +30,32 @@ so nothing under F5.08 ever changes. The only structural change to the F5 superv
 addition of `PortalWeb.Endpoint` (F6.1); later rungs add `Phoenix.PubSub` and `Phoenix.Presence` as the real-time
 features require them.
 
+## The liveness criterion — keep the Portal live (every rung)
+
+> Every rung leaves the Portal **running and serving** in dev: the umbrella boots clean, the endpoint binds `:4000`,
+> `GET /health` answers `200`, and the rung's own route renders. A rung is not done until the platform it changed is
+> still live.
+
+This is the second standing gate, beside the master invariant, and it holds at the same scope — every rung, no
+exceptions. The ladder's whole promise is that each increment "ships a capability a real role can use and leaves the
+platform running"; the liveness criterion makes that promise *checkable* rather than assumed. After a rung's build
+gate is green (compile `--warnings-as-errors`, tests, the determinism loop), the rung is accepted only if:
+
+- the dev node boots — `iex -S mix` (or `mix phx.server`) binds `http://localhost:4000` with `server: true`
+  (`config/runtime.exs`, every env but `:test`); `Portal.Repo` is a supervision child, so `portal_dev` must exist
+  first (`mix ecto.create`);
+- the liveness probe is `200` — `curl -fsS localhost:4000/health` (the `PortalWeb.CourseController` `:health` action,
+  no session or CSRF — the operator probe);
+- the rung's surface renders — e.g. after F6.6, `curl -fsS localhost:4000/courses` returns the live catalog.
+
+**"Hot" in this umbrella is BEAM hot-code-load, not Phoenix live-reload.** This app is hand-built without
+`mix phx.gen.*`, so it carries no `phoenix_live_reload` dependency and no `CodeReloader`/`LiveReloader` plug. The dev
+loop that keeps the Portal hot is a long-lived `iex -S mix` session: after each edit, `recompile()` in that shell
+loads the changed modules into the running node — the warm node keeps its bound socket and its in-memory
+engine/event-store state across rungs, so a demo built up interactively survives the next rung's code change. The full
+runbook — preconditions, the boot, the per-rung check, the determinism loop — is in
+[`phoenix.operator.md`](phoenix.operator.md).
+
 ## The value ladder
 
 | Spec | Feature | Value it adds | Primary roles | Status |
@@ -70,6 +96,9 @@ value increments with stories and proof gates that build on that foundation.
   `Portal.ID.new/1` mints and `Portal.ID.snowflake/1` decodes, exactly as in F5.
 - **Proof.** Each spec's Invariants and acceptance criteria are the gates; a rung is done only under the completion
   rule in [the specs approach](../specs.approach.md).
+- **Always live.** Every rung leaves the Portal serving in dev — `:4000` bound, `GET /health` → `200`, the rung's
+  route renders — checked after the build gate is green (the liveness criterion above). The Operator's runbook for
+  keeping it live and hot is [`phoenix.operator.md`](phoenix.operator.md).
 
 ---
 
