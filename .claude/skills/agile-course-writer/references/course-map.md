@@ -20,7 +20,7 @@ A0 is the historical exception: its landing is `/intro` and its one built module
 | Chapter | Title | Landing route | Dir | Status |
 |---|---|---|---|---|
 | A0 | Foundations — why, what, who | `/course/agile-agent-workflow/intro` | `intro/` | **built** |
-| A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **landing + A1.01–A1.02 built; A1.03–A1.06 planned** |
+| A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **landing + A1.01–A1.04 built; A1.05–A1.06 planned** |
 | A2 | Decomposition: from vision to user stories | `…/decomposition` | — | planned (manifest forward-link) |
 | A3 | The roadmap layer: Agile delivery & iteration | `…/roadmap` | — | planned |
 | A4 | The spec layer: specifications & acceptance | `…/spec` | — | planned |
@@ -42,12 +42,12 @@ A0 is the historical exception: its landing is `/intro` and its one built module
 |---|---|---|---|---|
 | A1.01 | The two failure modes | Why vibe coding and big-bang specs both fail; the case for thin, provable slices. | `/why/failure-modes` | **built** |
 | A1.02 | Pragmatic Programming, revisited for agents | The pragmatic canon re-read for a world where an agent writes the code. | `/why/pragmatic` | **built** |
-| A1.03 | The Author/Operator loop | The two roles and the cycle that runs every rung end to end. | `/why/loop` | planned (next) |
-| A1.04 | Two layers: roadmap and specs | Separating how we deliver from what we build and prove. | `/why/two-layers` | planned |
-| A1.05 | Correct by definition | What "done" means: a closure over traced, executed checks. | `/why/correct` | planned |
+| A1.03 | The Author/Operator loop | The two roles and the cycle that runs every rung end to end. | `/why/loop` | **built** |
+| A1.04 | Two layers: roadmap and specs | Separating how we deliver from what we build and prove. | `/why/two-layers` | **built** |
+| A1.05 | Correct by definition | What "done" means: a closure over traced, executed checks. | `/why/correct` | planned (next) |
 | A1.06 | Meet the project: Portal | The running project, zero to a deployed, multi-surface platform. | `/why/portal` | planned |
 
-(A1.02 is built; its subpage slugs are locked — see below. Slugs A1.03–A1.06 remain suggested until each module is authored.)
+(A1.02–A1.04 are built; their subpage slugs are locked — see below. Slugs A1.05–A1.06 remain suggested until each module is authored.)
 
 ## A1.02 — built (the second module), slugs locked
 
@@ -64,13 +64,41 @@ ten gates with `--require-refs`. md sources of record under `docs/agile-agent-wo
 Portal grounding: one id authority (`Portal.ID`), one id contract (the A1.01.3 slice's acceptance), surfaces
 behind facades.
 
+## A1.03 — built (the third module), slugs locked
+
+**A1.03 · The Author/Operator loop** (`why/loop/`) — module hub plus three deep-dive subpages, the arc *who →
+how it turns → how it adapts*. Grounded in A0.2.3's canonical roles (Operator = human: intent, judgement,
+acceptance, never writes the code; Author = Claude agent: production, never decides the goal; they meet on the
+spec). Each subpage carries two interactives (hero-split + main) and passes all ten gates with `--require-refs`.
+1. **A1.03.1 · `roles`** — the two roles and the hard line between them. Interactives: the who-owns-what board;
+   the acceptance multiplier (⌊10/c⌋ accepted per cycle — cheap acceptance is the lever, ties A1.02.2).
+2. **A1.03.2 · `turn`** — one rung through the six owned stages (sharpen/demo/review/feedback = Operator;
+   build/ship = Author). Interactives: step through the turn; skip-a-stage → which A1.01 failure returns.
+3. **A1.03.3 · `adapt`** — feedback edits the spec, not the code. Interactives: edit-spec-vs-patch-code (drift
+   0 vs 3, ties A1.02.1 DRY); the loop ledger (rungs + spec edits locked, drift pinned 0).
+
+## A1.04 — built (the fourth module), slugs locked
+
+**A1.04 · Two layers: roadmap and specs** (`why/two-layers/`) — module hub plus three deep-dive subpages, the arc
+*deliver → define → keep apart*. Grounded in A0.2.1 (roadmap layer = how we deliver, points at the spec, never
+defines behaviour; spec layer = what we build + prove, the single source of truth, edited only by feedback; the
+user stories + agent brief derive from the spec). Authored by fanning out one agile-course-writer-skilled agent
+per dive, in parallel (user-confirmed process). Each subpage carries two interactives and passes all ten gates
+with `--require-refs`.
+1. **A1.04.1 · `roadmap`** — the coarse, re-orderable delivery plan. Interactives: re-order by value/risk/dep
+   (specs untouched); coarse-vs-full-spec granularity (fine = big-bang, A1.01.2).
+2. **A1.04.2 · `spec`** — the single source of truth; the hub the stories/brief/code/tests derive from.
+   Interactives: the spec-as-hub; zoom (one rung, two granularities).
+3. **A1.04.3 · `source`** — only feedback edits the spec; the two cadences; conflation costs. Interactives: the
+   two-cadence timeline; the conflation stack (bigbang = A1.01.2, coupled = A1.02.3).
+
 ## Resume point
 
-**A1.03 — "The Author/Operator loop"** (`/why/loop`, slug suggested): the two roles and the cycle that runs every
-rung end to end — sharpen → build → ship → demo → review → feedback, with feedback editing the spec. Author the
-module hub `why/loop/index.html` plus ≥3 deep-dive subpages (md-first under
-`docs/agile-agent-workflow/content/why/loop/`), each with a hero-split interactive and a main interactive, then
-relink the A1.03 card on `/why` (div → a, soon → live). A0.2.3 (`/what/author-operator-loop`) already sketches the
-loop in brief — A1.03 is its full treatment. The course thesis, restated each module: neither no-plan nor all-plan
-ships reliable software; the unit that does is a thin slice of value, specified only enough, proven before the
-next begins.
+**A1.05 — "Correct by definition"** (`/why/correct`, slug suggested): what "done" means — a closure over traced,
+executed checks, and the quality gates that hold it. Author the module hub `why/correct/index.html` plus ≥3
+deep-dive subpages (md-first under `docs/agile-agent-workflow/content/why/correct/`), each with a hero-split
+interactive and a main interactive, then relink the A1.05 card on `/why` (div → a, soon → live). **Process
+(user-confirmed):** fan out one agile-course-writer-skilled agent per dive, in parallel; ground the definition of
+"done" and the gates in the established course material before authoring. The course thesis, restated each module:
+neither no-plan nor all-plan ships reliable software; the unit that does is a thin slice of value, specified only
+enough, proven before the next begins.
