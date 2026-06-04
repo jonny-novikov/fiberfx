@@ -37,7 +37,7 @@ live create form. F6.6 is carried by exactly four artifacts:
 
 1. **The roadmap line** — a row in `phoenix.roadmap.md`: *"F6.6 | interactivity (live search, live create,
    streams) | search as you type; create without a reload | `LiveViewTest` (`render_change`/`render_submit`)
-   | does the interaction feel right?"* — answers *how we deliver* (place in the order, demo, harness,
+   | does the interaction feel right?"* — answers *how it ships* (place in the order, demo, harness,
    feedback asked).
 2. **The spec** — `f6.6.md` (Goal · Rationale (5W) · Scope · Deliverables · Invariants · Definition of Done)
    — answers *what & prove*.
@@ -74,7 +74,8 @@ highlights the selected artifact; the readout names the file, its role, and the 
 answers. Pure function over the four-artifact dataset.
 
 - control ids: `#satArtifact` (segmented, `data-k` = roadmap|spec|stories|brief)
-- pure function: `artifactCard(key) -> { file, role, question, gives }`
+- pure function: `artifactCard(key) -> { file, role, question, gives }` (questions: how it ships / what &
+  prove / what proves it / agent instructions)
 - sample readout: "stories — f6.6.stories.md · the acceptance · answers: what proves it. Gives: US0–US5,
   each a Connextra story plus its Given/When/Then, tagged INVEST + priority + size. The proof A2.07.2 runs is
   F6.6-US1."
@@ -91,7 +92,6 @@ of them.
 - sample readout: "WHEN · PASS — the event runs: it filters through Portal.search_courses/1 (the facade, not
   Catalog directly) and re-streams :courses with reset: true. The list is @streams.courses, never an assign
   (INV4)."
-
 ## Principle ↔ practice bridge
 
 - principle: the contract is the spec — a slice is ready when its acceptance is written as Given/When/Then,
