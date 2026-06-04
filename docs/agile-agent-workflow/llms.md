@@ -55,9 +55,9 @@ The thesis chapter: why thin, provable slices beat both vibe coding and big-bang
   - [one-rung](/course/agile-agent-workflow/why/portal/one-rung) — climbing from zero, thin provable rung by rung.
 - `○` A1.05 Correct by definition (`/why/correct`) — the one remaining A1 gap.
 
-### A2 · Decomposition `◐` · [/course/agile-agent-workflow/decomposition](/course/agile-agent-workflow/decomposition)
-Turning a product vision into a dependency-ordered value ladder of small, valuable, testable user stories. Landing +
-modules A2.01–A2.03 built; A2.04–A2.07 planned.
+### A2 · Decomposition `✓` · [/course/agile-agent-workflow/decomposition](/course/agile-agent-workflow/decomposition)
+Turning a product vision into a dependency-ordered value ladder of small, valuable, testable user stories. **Complete —
+landing + all seven modules A2.01–A2.07 built.**
 
 - A2.01 `✓` · [Value, not tasks](/course/agile-agent-workflow/decomposition/value) — a story names a change in what a
   role can do, not a chore.
@@ -83,8 +83,38 @@ modules A2.01–A2.03 built; A2.04–A2.07 planned.
     purely technical — diagnose and rewrite.
   - [small-and-independent](/course/agile-agent-workflow/decomposition/invest/small-and-independent) — the
     Independent–Small tension; estimability follows smallness.
-- `○` A2.04 Acceptance criteria (Given/When/Then) · A2.05 Splitting · A2.06 The value ladder · A2.07 Workshop —
-  decomposing Portal.
+- A2.04 `✓` · [Acceptance criteria with Given/When/Then](/course/agile-agent-workflow/decomposition/acceptance) —
+  Gherkin scenarios as the executable definition of done.
+  - [given-when-then](/course/agile-agent-workflow/decomposition/acceptance/given-when-then) — context / action /
+    outcome; one scenario per behaviour.
+  - [examples-as-spec](/course/agile-agent-workflow/decomposition/acceptance/examples-as-spec) — concrete examples as
+    the shared definition of done.
+  - [scenarios-to-tests](/course/agile-agent-workflow/decomposition/acceptance/scenarios-to-tests) — happy and sad
+    paths become acceptance tests.
+- A2.05 `✓` · [Splitting stories that are too big](/course/agile-agent-workflow/decomposition/splitting) —
+  vertical-slice patterns that keep each slice demoable.
+  - [when-to-split](/course/agile-agent-workflow/decomposition/splitting/when-to-split) — the signal: a story fails
+    INVEST Small/Estimable.
+  - [split-patterns](/course/agile-agent-workflow/decomposition/splitting/split-patterns) — by workflow step, business
+    rule, happy/sad path, operation.
+  - [vertical-not-horizontal](/course/agile-agent-workflow/decomposition/splitting/vertical-not-horizontal) — slice
+    through the layers, not across them.
+- A2.06 `✓` · [The value ladder](/course/agile-agent-workflow/decomposition/value-ladder) — composing stories into a
+  dependency-ordered, always-runnable ladder.
+  - [compose-the-ladder](/course/agile-agent-workflow/decomposition/value-ladder/compose-the-ladder) — stories into one
+    ordered ladder of capabilities.
+  - [dependency-order](/course/agile-agent-workflow/decomposition/value-ladder/dependency-order) — each rung rests only
+    on rungs below it.
+  - [always-runnable](/course/agile-agent-workflow/decomposition/value-ladder/always-runnable) — every rung leaves the
+    system runnable and demoable.
+- A2.07 `✓` · [Workshop — decomposing Portal](/course/agile-agent-workflow/decomposition/workshop) — the full sequence
+  run on the Portal vision.
+  - [vision-to-stories](/course/agile-agent-workflow/decomposition/workshop/vision-to-stories) — apply value,
+    Connextra, INVEST, acceptance to the vision.
+  - [split-and-test](/course/agile-agent-workflow/decomposition/workshop/split-and-test) — split the outsize stories;
+    re-test INVEST.
+  - [order-the-backlog](/course/agile-agent-workflow/decomposition/workshop/order-the-backlog) — order across the five
+    surfaces into the backlog Part III delivers.
 
 ### A3–A7 `○` planned
 A3 The roadmap layer (`…/roadmap`) · A4 The spec layer (`…/spec`) · A5 The agent brief `.llms.md` (`…/brief`) ·

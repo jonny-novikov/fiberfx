@@ -83,10 +83,10 @@ the Operator/Author pairing. Its built module, A0.2, is the framework in a singl
 - A0.3 · Who does the work `○` — the Operator, the Author, and the pairing in practice (developed at §1.3).
 
 **Current build front.** Part I is nearly complete — **§1.1–§1.4 and §1.6 are built** (chapter A1,
-[`/course/agile-agent-workflow/why`](/course/agile-agent-workflow/why)); only §1.5 remains. **Part II's chapter
-landing and modules §2.1–§2.3 are built**
-([`/course/agile-agent-workflow/decomposition`](/course/agile-agent-workflow/decomposition)); §2.4–§2.7 and
-Parts III–VII are planned.
+[`/course/agile-agent-workflow/why`](/course/agile-agent-workflow/why)); only §1.5 remains. **Part II is complete —
+its landing and all seven modules §2.1–§2.7 are built**
+([`/course/agile-agent-workflow/decomposition`](/course/agile-agent-workflow/decomposition)); Parts III–VII are
+planned.
 
 ---
 
@@ -128,7 +128,7 @@ rung at a time.
 
 ---
 
-# Part II — Decomposition: from vision to user stories&nbsp; `◐ §2.1–2.3 built` → [`/decomposition`](/course/agile-agent-workflow/decomposition)
+# Part II — Decomposition: from vision to user stories&nbsp; `✓ all modules built` → [`/decomposition`](/course/agile-agent-workflow/decomposition)
 
 *The craft of turning a product vision into a ladder of small, valuable, testable units. User stories, INVEST,
 acceptance criteria, and splitting — the input that everything downstream depends on.*
@@ -146,21 +146,28 @@ value with a conversation attached, not a frozen contract. Dives: `role-want-rea
 Independent, Negotiable, Valuable, Estimable, Small, Testable. The common story smells — too big, untestable, coupled,
 purely technical — and how to fix each. Dives: `six-tests` · `story-smells` · `small-and-independent`.
 
-### 2.4 · Acceptance criteria with Given/When/Then
-Gherkin scenarios as the shared, executable definition of done for a story. How behaviour-driven examples bridge intent
-and test, so product, QA, and an agent read the same thing.
+### 2.4 · Acceptance criteria with Given/When/Then&nbsp; `✓ built` → [`/decomposition/acceptance`](/course/agile-agent-workflow/decomposition/acceptance)
+Gherkin scenarios as the shared, executable definition of done for a story. A story's Confirmation (2.2) earns a
+Given/When/Then form; the concrete example IS the spec, read the same way by product, the Operator, and the Author, and
+run as the rung's acceptance test over happy and sad paths — the seed of the Part IV spec layer and its harness. Dives:
+`given-when-then` · `examples-as-spec` · `scenarios-to-tests`.
 
-### 2.5 · Splitting stories that are too big
+### 2.5 · Splitting stories that are too big&nbsp; `✓ built` → [`/decomposition/splitting`](/course/agile-agent-workflow/decomposition/splitting)
 Vertical-slice patterns — by workflow step, by business rule, by happy and sad paths, by operation — that cut a large
-story into shippable ones without slicing it into horizontal layers no one can demo.
+story into shippable ones without slicing it into horizontal layers no one can demo. The trigger is an INVEST failure on
+Small or Estimable (2.3); the repair is a vertical split that keeps every slice demoable end to end (2.1.3), never a
+horizontal layer (DB / API / UI) that ships a fragment no role can use. Dives: `when-to-split` · `split-patterns` ·
+`vertical-not-horizontal`.
 
-### 2.6 · The value ladder
+### 2.6 · The value ladder&nbsp; `✓ built` → [`/decomposition/value-ladder`](/course/agile-agent-workflow/decomposition/value-ladder)
 Composing stories into a dependency-ordered ladder where each rung adds a usable capability, depends only on rungs
-below it, and leaves the system runnable. The structure the rest of the course builds on.
+below it, and leaves the system runnable. The structure the rest of the course builds on. Dives: `compose-the-ladder` ·
+`dependency-order` · `always-runnable`.
 
-### 2.7 · Workshop — decomposing Portal
+### 2.7 · Workshop — decomposing Portal&nbsp; `✓ built` → [`/decomposition/workshop`](/course/agile-agent-workflow/decomposition/workshop)
 Turn the Portal vision into chapters and a value ladder: store, engine, web, bot, dashboard. You leave this chapter
-with the backlog you will specify, brief, and build for the remainder of the course.
+with the backlog you will specify, brief, and build for the remainder of the course. Dives: `vision-to-stories` ·
+`split-and-test` · `order-the-backlog`.
 
 ---
 

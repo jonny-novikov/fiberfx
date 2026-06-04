@@ -50,7 +50,7 @@ Frames the property: the system is demoable after every rung.
 A **runnability checker**. Four toggles mark each rung built or skipped; the checker reports
 whether the built set runs, and on a skip it names the first **orphaned** rung — a built rung
 whose dependency was skipped — and paints it burgundy. Pure function:
-`runnable(built) -> {ok, orphan}` where `built` is the set of included rung keys and `orphan` is
+`runnable(set) -> {ok, orphan}` where `set` is the map of included rung keys and `orphan` is
 the lowest rung whose dependency is missing. Different move from the hero: the hero confirms a
 clean prefix runs; the checker shows what breaks runnability when a rung is dropped out of order.
 
