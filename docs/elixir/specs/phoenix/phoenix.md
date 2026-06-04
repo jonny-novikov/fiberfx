@@ -60,18 +60,21 @@ runbook — preconditions, the boot, the per-rung check, the determinism loop �
 
 | Spec | Feature | Value it adds | Primary roles | Status |
 | --- | --- | --- | --- | --- |
-| [F6.1](f6.1.md) | Bootstrap the Phoenix Portal | the engine is served as a real web app; a request reaches the facade and renders | Operator, Visitor, Developer | **specced** |
-| [F6.2](f6.2.md) | Routing & the access surface | a navigable, protectable surface: read/write/REST/live routes, pipelines, plugs | Visitor, Learner, Developer, Operator | **specced** |
-| [F6.3](f6.3.md) | Persistence with Ecto | durable catalog & enrollments via a Postgres adapter behind the F5 port | Operator, Developer, Learner | **specced** |
-| [F6.4](f6.4.md) | Contexts & domain on the web | the web reads and writes real domain through the facade and bounded contexts | Developer, Learner | **specced** |
-| [F6.5](f6.5.md) | Views with HEEx | a rendered UI: templates, function components, forms with inline errors | Visitor, Learner | **specced** |
-| [F6.6](f6.6.md) | LiveView | interactive pages — live search and live create — without full reloads | Learner | **specced** |
+| [F0](../design/f0.md) | The design system (foundation) | the dark-editorial tokens, page anatomy, and build/parity gates every page renders in — the look the Portal inherits | Author, Reader, Developer | **foundation** — static system built; Portal-rendering → F6.5.5 |
+| [F6.1](f6.1.md) | Bootstrap the Phoenix Portal | the engine is served as a real web app; a request reaches the facade and renders | Operator, Visitor, Developer | **shipped** |
+| [F6.2](f6.2.md) | Routing & the access surface | a navigable, protectable surface: read/write/REST/live routes, pipelines, plugs | Visitor, Learner, Developer, Operator | **shipped** |
+| [F6.3](f6.3.md) | Persistence with Ecto | durable catalog & enrollments via a Postgres adapter behind the F5 port | Operator, Developer, Learner | **shipped** |
+| [F6.4](f6.4.md) | Contexts & domain on the web | the web reads and writes real domain through the facade and bounded contexts | Developer, Learner | **shipped** |
+| [F6.5](f6.5.md) | Views with HEEx | a rendered UI: templates, function components, forms with inline errors | Visitor, Learner | **shipped** |
+| [F6.5.5](f6.5.5.md) | Apply the design system | the catalog renders in the F0 dark-editorial system — root layout, tokens, page anatomy — over the facade, no CoreComponents | Visitor, Learner | **specced** |
+| [F6.6](f6.6.md) | LiveView | interactive pages — live search and live create — without full reloads | Learner | **shipped** |
 | [F6.7](f6.7.md) | Real-time (PubSub & Presence) | multi-client live updates and a live viewer count | Learner, Instructor | **specced** |
 | [F6.8](f6.8.md) | Auth & deployment | real users, protected areas, and a deployed, clustered release | Learner, Operator | **specced** |
 | [F6.9](f6.9.md) | The live dashboard (capstone) | an operations/learning dashboard folding live events, under auth, clustered | Instructor, Operator | **specced** |
 
 The rungs depend only downward: F6.2 assumes F6.1's endpoint and pipeline; F6.5 renders what F6.3/F6.4 make
-queryable; F6.6 makes F6.5's pages live; F6.7 pushes F6.6's state across clients; F6.9 composes all of it.
+queryable; F6.5.5 renders F6.5's pages in the F0 design system, and every later rung inherits that look; F6.6
+makes F6.5's pages live; F6.7 pushes F6.6's state across clients; F6.9 composes all of it.
 
 The delivery plan — the milestones, the build order, and the per-rung shipping iterations — is in
 [`phoenix.roadmap.md`](phoenix.roadmap.md).
@@ -84,8 +87,10 @@ to implement: its references, requirements, execution topology, and the comprehe
 build and self-check the increment.
 
 This index pairs with the design-system foundation [`F0 · The Design System`](../design/f0.md): F0 specifies the
-tokens, page anatomy, build pipeline, and quality gates every page renders in; these specs frame the web work as
-value increments with stories and proof gates that build on that foundation.
+tokens, page anatomy, build pipeline, and quality gates every page renders in. F0's own delivery books the Portal's
+HEEx rendering as milestone 4 and a static-vs-Portal parity gate as milestone 5 — both **planned**; the
+[**F6.5.5 · Apply the design system**](f6.5.5.md) rung is where they land, turning F0 from a cited backdrop into a
+scheduled web deliverable. The rungs above then render in it.
 
 ## Conventions
 
