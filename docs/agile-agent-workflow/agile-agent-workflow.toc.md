@@ -84,8 +84,9 @@ the Operator/Author pairing. Its built module, A0.2, is the framework in a singl
 
 **Current build front.** Part I is nearly complete — **§1.1–§1.4 and §1.6 are built** (chapter A1,
 [`/course/agile-agent-workflow/why`](/course/agile-agent-workflow/why)); only §1.5 remains. **Part II's chapter
-landing is built** ([`/course/agile-agent-workflow/decomposition`](/course/agile-agent-workflow/decomposition)); its
-seven modules and Parts III–VII are planned.
+landing and modules §2.1–§2.3 are built**
+([`/course/agile-agent-workflow/decomposition`](/course/agile-agent-workflow/decomposition)); §2.4–§2.7 and
+Parts III–VII are planned.
 
 ---
 
@@ -127,22 +128,23 @@ rung at a time.
 
 ---
 
-# Part II — Decomposition: from vision to user stories&nbsp; `◐ landing built` → [`/decomposition`](/course/agile-agent-workflow/decomposition)
+# Part II — Decomposition: from vision to user stories&nbsp; `◐ §2.1–2.3 built` → [`/decomposition`](/course/agile-agent-workflow/decomposition)
 
 *The craft of turning a product vision into a ladder of small, valuable, testable units. User stories, INVEST,
 acceptance criteria, and splitting — the input that everything downstream depends on.*
 
-### 2.1 · Value, not tasks
+### 2.1 · Value, not tasks&nbsp; `✓ built` → [`/decomposition/value`](/course/agile-agent-workflow/decomposition/value)
 Why a unit of work is a unit of *value a role can use*, not a technical chore. The shift from to-do lists to outcomes,
-and why it is the single most important habit in the workflow.
+and why it is the single most important habit in the workflow. Dives: `outcome-not-chore` · `who-benefits` ·
+`vertical-slice`.
 
-### 2.2 · The Connextra form and the three Cs
+### 2.2 · The Connextra form and the three Cs&nbsp; `✓ built` → [`/decomposition/connextra`](/course/agile-agent-workflow/decomposition/connextra)
 "As a `<role>`, I want `<capability>`, so that `<benefit>`." Card, Conversation, Confirmation — a story as a promise of
-value with a conversation attached, not a frozen contract.
+value with a conversation attached, not a frozen contract. Dives: `role-want-reason` · `three-cs` · `portal-cards`.
 
-### 2.3 · INVEST: what a good story looks like
+### 2.3 · INVEST: what a good story looks like&nbsp; `✓ built` → [`/decomposition/invest`](/course/agile-agent-workflow/decomposition/invest)
 Independent, Negotiable, Valuable, Estimable, Small, Testable. The common story smells — too big, untestable, coupled,
-purely technical — and how to fix each.
+purely technical — and how to fix each. Dives: `six-tests` · `story-smells` · `small-and-independent`.
 
 ### 2.4 · Acceptance criteria with Given/When/Then
 Gherkin scenarios as the shared, executable definition of done for a story. How behaviour-driven examples bridge intent

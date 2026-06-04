@@ -55,10 +55,41 @@ The thesis chapter: why thin, provable slices beat both vibe coding and big-bang
   - [one-rung](/course/agile-agent-workflow/why/portal/one-rung) — climbing from zero, thin provable rung by rung.
 - `○` A1.05 Correct by definition (`/why/correct`) — the one remaining A1 gap.
 
-### A2 `◐` landing built · A3–A7 `○` planned
-A2 · [Decomposition](/course/agile-agent-workflow/decomposition) — chapter landing built; modules A2.01–A2.07 planned. A3 The roadmap layer (`…/roadmap`) · A4 The spec layer (`…/spec`) ·
-A5 The agent brief `.llms.md` (`…/brief`) · A6 Reliability and correctness (`…/reliability`) ·
-A7 Portal exemplar, zero to production (`…/portal`). Full per-chapter abstracts: the TOC below.
+### A2 · Decomposition `◐` · [/course/agile-agent-workflow/decomposition](/course/agile-agent-workflow/decomposition)
+Turning a product vision into a dependency-ordered value ladder of small, valuable, testable user stories. Landing +
+modules A2.01–A2.03 built; A2.04–A2.07 planned.
+
+- A2.01 `✓` · [Value, not tasks](/course/agile-agent-workflow/decomposition/value) — a story names a change in what a
+  role can do, not a chore.
+  - [outcome-not-chore](/course/agile-agent-workflow/decomposition/value/outcome-not-chore) — task vs. story; the
+    demonstrability test.
+  - [who-benefits](/course/agile-agent-workflow/decomposition/value/who-benefits) — every slice names a role and its
+    value; value is the ordering key.
+  - [vertical-slice](/course/agile-agent-workflow/decomposition/value/vertical-slice) — value cuts through layers; a
+    usable thread, not a horizontal chore.
+- A2.02 `✓` · [The Connextra form and the three Cs](/course/agile-agent-workflow/decomposition/connextra) —
+  role/want/reason; card, conversation, confirmation.
+  - [role-want-reason](/course/agile-agent-workflow/decomposition/connextra/role-want-reason) — the template and its
+    anti-patterns.
+  - [three-cs](/course/agile-agent-workflow/decomposition/connextra/three-cs) — a promise with a conversation
+    attached, not a frozen contract.
+  - [portal-cards](/course/agile-agent-workflow/decomposition/connextra/portal-cards) — real Portal stories in the
+    form; confirmation foreshadows Given/When/Then.
+- A2.03 `✓` · [INVEST: what a good story looks like](/course/agile-agent-workflow/decomposition/invest) — the six
+  tests and the common smells.
+  - [six-tests](/course/agile-agent-workflow/decomposition/invest/six-tests) — each letter as a yes/no question,
+    scored on a Portal story.
+  - [story-smells](/course/agile-agent-workflow/decomposition/invest/story-smells) — too big, untestable, coupled,
+    purely technical — diagnose and rewrite.
+  - [small-and-independent](/course/agile-agent-workflow/decomposition/invest/small-and-independent) — the
+    Independent–Small tension; estimability follows smallness.
+- `○` A2.04 Acceptance criteria (Given/When/Then) · A2.05 Splitting · A2.06 The value ladder · A2.07 Workshop —
+  decomposing Portal.
+
+### A3–A7 `○` planned
+A3 The roadmap layer (`…/roadmap`) · A4 The spec layer (`…/spec`) · A5 The agent brief `.llms.md` (`…/brief`) ·
+A6 Reliability and correctness (`…/reliability`) · A7 Portal exemplar, zero to production (`…/portal`). Full
+per-chapter abstracts: the TOC.
 
 ## Sources of record — author here; the served HTML is hand-built from these
 - Living table of contents + per-chapter abstracts + build status — `docs/agile-agent-workflow/agile-agent-workflow.toc.md`
