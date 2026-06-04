@@ -106,9 +106,17 @@ Per-rung iterations (each a PR-sized increment — a spec triad, the slice, a gr
 | F6.8 | real users and a deployed clustered release | sign in; a protected area; a deployed URL | auth flow tests; release boot; cluster smoke | auth model and deploy target? |
 | F6.9 | an operations/learning dashboard folding live events, under auth, clustered | the dashboard updates live | dashboard render + live-event test | which metrics and views? |
 
-F6.1–F6.7 are specced; F6.8–F6.9 are planned and sharpened when milestone 3 begins.
+**Status — groomed at the F6.5 reconcile (`5a440fd`).** The engine (F5) and F6.1–F6.4 are **shipped** — six rungs (F5.8, F5.9, F6.1, F6.2, F6.3, F6.4) have landed since F6.6–F6.9 were first drafted, so those downstream stories had drifted from the as-built surface. F6.5 is **in flight** (spec reconciled to the engine-aligned routing + component direction; build underway). F6.6–F6.9 are **specced backlog, now groomed**: each carries a `[RECONCILE]` callout at the top of its body folding the shipped F6.5 direction (routes + components) forward, and each takes a pre-build lag-1 `/reconcile` (Venus step 1) before it is built — retiring up front the ambiguity that accrues when a story is written rungs ahead of its build.
+
+| Rung | Status |
+| --- | --- |
+| F6.1 endpoint · F6.2 routing · F6.3 Ecto · F6.4 contexts | **shipped** |
+| F6.5 HEEx views | **in flight** — reconciled `5a440fd`, build underway |
+| F6.6 LiveView · F6.7 PubSub · F6.8 auth & deploy · F6.9 dashboard | **specced backlog, groomed** — each body opens with a `[RECONCILE]` callout folding F6.5 forward |
 
 ## Seams & open decisions
+
+- **Routing & component direction (set at F6.5, `5a440fd`).** The catalog is `resources "/courses"` (`CourseController`: index/show/new/create); a learner's enrollments are `get "/my/courses"` (`EnrollmentController.index`, protected); `/courses/:user_id` and `/learn` are retired; one controller per context; a successful enroll redirects to the joined course's `:show`. Form-field components are a minimal LOCAL set in `PortalWeb.CatalogComponents` (`input/1`, `course_card`, `panel`) imported via `portal_web.ex` `html_helpers` — there is NO `CoreComponents` until F6.8's `phx.gen.auth` forces the decision. Each downstream rung (F6.6–F6.9) carries a `[RECONCILE]` callout folding this forward.
 
 - **Authentication (F6.8).** The likely path is `mix phx.gen.auth` for password accounts, with the `Accounts` context
   from F6.4 as the seam; the choice of social/SSO and session model is decided then.
@@ -135,7 +143,8 @@ F6.1–F6.7 are specced; F6.8–F6.9 are planned and sharpened when milestone 3 
 ---
 
 Chapter index & feature abstracts: [`phoenix.md`](phoenix.md). Rungs: [`f6.1.md`](f6.1.md) · [`f6.2.md`](f6.2.md) ·
-[`f6.3.md`](f6.3.md) · [`f6.4.md`](f6.4.md) · [`f6.5.md`](f6.5.md) · [`f6.6.md`](f6.6.md) · [`f6.7.md`](f6.7.md).
+[`f6.3.md`](f6.3.md) · [`f6.4.md`](f6.4.md) · [`f6.5.md`](f6.5.md) · [`f6.6.md`](f6.6.md) · [`f6.7.md`](f6.7.md) ·
+[`f6.8.md`](f6.8.md) · [`f6.9.md`](f6.9.md).
 Sibling roadmaps: [`../pragmatic/pragmatic.roadmap.md`](../pragmatic/pragmatic.roadmap.md) ·
 [`../bot/f10.roadmap.md`](../bot/f10.roadmap.md). Engine handoff: [`../pragmatic/f5.9.md`](../pragmatic/f5.9.md).
 Approach: [`../specs.approach.md`](../specs.approach.md).
