@@ -87,9 +87,10 @@ slices; the human is the source of decomposition, judgement, and acceptance.** E
 Identical to the shared anatomy (see `elixir-technical-writer/references/page-anatomy.md`), as a full HTML file:
 
 1. Skip link, then `<header class="site">` with brand + nav carrying a `.route-tag` = **this page's exact route**.
-2. A `.hero`: `.crumbs` (the chapter→module→here trail), an `.eyebrow` (chapter · module · position), an `<h1>`
-   with the accent word in `<span class="ex">` (the course's signature elixir-purple), a `.lede`, a `.kicker`,
-   a `.toc-mini` (must include a `#refs` link).
+2. A `.hero` inside a **`.hero-split`** (hero text on the left, an **interactive figure** on the right — the
+   four-artifacts / elixir pattern; stacks to one column on mobile): `.crumbs` (the chapter→module→here trail), an
+   `.eyebrow` (chapter · module · position), an `<h1>` with the accent word in `<span class="ex">` (the course's
+   signature elixir-purple), a `.lede`, a `.kicker`, a `.toc-mini` (must include a `#refs` link).
 3. One or more `<section>`s. A teaching section pairs `.prose` with a `.fig` (the interactive), a `pre.code`
    block where relevant, a `.geo-readout` live region, and a closing `.take`. Concept pairings use `.bridge`.
    A `.note` carries the forward pointer.
@@ -100,10 +101,13 @@ Identical to the shared anatomy (see `elixir-technical-writer/references/page-an
 
 ## 6. The interactive contract
 
-Each page carries ≥1 interactive that **performs the real operation and shows its actual result** (never a canned
-animation): inline SVG or HTML driven by vanilla JS; a live `.geo-readout` (`aria-live`); a one-sentence `.take`;
-**degrades** (controls + SVG present in static markup, JS only enhances); respects `prefers-reduced-motion`; no
-browser storage. Compute the readout from a fixed dataset with small pure functions so it is always truthful. See
+Each lesson page carries **two** interactives — one **in the hero** (the `.hero-split` figure, the four-artifacts /
+elixir pattern) and one in the **main content** — each of which **performs the real operation and shows its actual
+result** (never a canned animation): inline SVG or HTML driven by vanilla JS; a live `.geo-readout` (`aria-live`); a
+one-sentence `.take`; **degrades** (controls + SVG present in static markup, JS only enhances); respects
+`prefers-reduced-motion`; no browser storage. Compute the readout from a fixed dataset with small pure functions so
+it is always truthful — and the two interactives must teach *different* moves, not the same one twice (e.g. the hero
+frames the idea, the content figure proves a consequence). See
 `elixir-technical-writer/references/visualization-master.md` for the full rules and the standard shells.
 
 ## 7. The ten gates (nine Apollo + refs)
@@ -146,6 +150,12 @@ an existing valid id is fine for a hand-authored page (the decoder just decodes 
 
 ## 10. The authoring workflow (run for every new module)
 
+0. **Draft the markdown source first.** Write each page's content as markdown in
+   `docs/agile-agent-workflow/content/<chapter>/<module-slug>/<page>.md` — the readable source of record: the lead,
+   the precise definition, the worked Portal example, the **intent of both interactives** (what the hero figure
+   frames and what the content figure proves), the principle↔practice bridge, the recap, and the references. THEN
+   hand-author the HTML page from it. The bespoke interactives are written into the HTML (there is no generator);
+   the md is the human-readable plan the HTML realises, and it is committed alongside the page.
 1. **Author the module hub** `<chapter>/<module-slug>/index.html` — hero, an SVG that frames the module, a `.mods`
    grid of the ≥3 subpage cards (real routes), a References section, a pager.
 2. **Author each subpage** `<chapter>/<module-slug>/<sub>.html` — a full lesson (idea → worked Portal example →
