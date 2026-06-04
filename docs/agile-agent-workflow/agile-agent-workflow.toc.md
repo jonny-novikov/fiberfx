@@ -82,8 +82,10 @@ the Operator/Author pairing. Its built module, A0.2, is the framework in a singl
 - A0.1 · Why it works `○` — the two failure modes and the case for thin slices (developed in depth at §1.1).
 - A0.3 · Who does the work `○` — the Operator, the Author, and the pairing in practice (developed at §1.3).
 
-**Current build front.** Part I is in progress — **§1.1–§1.4 are built** (chapter A1,
-[`/course/agile-agent-workflow/why`](/course/agile-agent-workflow/why)); §1.5–§1.6 and Parts II–VII are planned.
+**Current build front.** Part I is nearly complete — **§1.1–§1.4 and §1.6 are built** (chapter A1,
+[`/course/agile-agent-workflow/why`](/course/agile-agent-workflow/why)); only §1.5 remains. **Part II's chapter
+landing is built** ([`/course/agile-agent-workflow/decomposition`](/course/agile-agent-workflow/decomposition)); its
+seven modules and Parts III–VII are planned.
 
 ---
 
@@ -118,14 +120,14 @@ What "done" means in this workflow: a closure over traced, executed checks — e
 every story accepted, every invariant proven. The mechanical quality gates that turn "A+" from an opinion into a
 repeatable result.
 
-### 1.6 · Meet the project: Portal&nbsp; `○ planned`
+### 1.6 · Meet the project: Portal&nbsp; `✓ built` → [`/why/portal`](/course/agile-agent-workflow/why/portal)
 The running project introduced: a learning platform built as a stack of chapters over one facade, from a branded store
 up to a student dashboard. What "zero" looks like, what "production" demands, and how the course will get there one
 rung at a time.
 
 ---
 
-# Part II — Decomposition: from vision to user stories
+# Part II — Decomposition: from vision to user stories&nbsp; `◐ landing built` → [`/decomposition`](/course/agile-agent-workflow/decomposition)
 
 *The craft of turning a product vision into a ladder of small, valuable, testable units. User stories, INVEST,
 acceptance criteria, and splitting — the input that everything downstream depends on.*

@@ -49,10 +49,14 @@ The thesis chapter: why thin, provable slices beat both vibe coding and big-bang
   - [roadmap](/course/agile-agent-workflow/why/two-layers/roadmap) — the coarse, re-orderable delivery plan.
   - [spec](/course/agile-agent-workflow/why/two-layers/spec) — the single source of truth the rest derives from.
   - [source](/course/agile-agent-workflow/why/two-layers/source) — only feedback edits the spec; the two cadences.
-- `○` A1.05 Correct by definition (`/why/correct`) · `○` A1.06 Meet the project: Portal (`/why/portal`).
+- A1.06 `✓` · [Meet the project: Portal](/course/agile-agent-workflow/why/portal) — the running project, zero to production.
+  - [domain](/course/agile-agent-workflow/why/portal/domain) — Portal as surfaces over one facade.
+  - [zero-to-production](/course/agile-agent-workflow/why/portal/zero-to-production) — what "zero" is and what "production" demands.
+  - [one-rung](/course/agile-agent-workflow/why/portal/one-rung) — climbing from zero, thin provable rung by rung.
+- `○` A1.05 Correct by definition (`/why/correct`) — the one remaining A1 gap.
 
-### A2–A7 `○` planned
-A2 Decomposition (`…/decomposition`) · A3 The roadmap layer (`…/roadmap`) · A4 The spec layer (`…/spec`) ·
+### A2 `◐` landing built · A3–A7 `○` planned
+A2 · [Decomposition](/course/agile-agent-workflow/decomposition) — chapter landing built; modules A2.01–A2.07 planned. A3 The roadmap layer (`…/roadmap`) · A4 The spec layer (`…/spec`) ·
 A5 The agent brief `.llms.md` (`…/brief`) · A6 Reliability and correctness (`…/reliability`) ·
 A7 Portal exemplar, zero to production (`…/portal`). Full per-chapter abstracts: the TOC below.
 
