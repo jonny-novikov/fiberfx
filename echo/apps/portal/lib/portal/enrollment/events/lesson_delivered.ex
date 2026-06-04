@@ -1,7 +1,7 @@
-defmodule Portal.Learning.Events.LessonDelivered do
+defmodule Portal.Enrollment.Events.LessonDelivered do
   @moduledoc """
   A lesson was delivered to a learner (F5.5). A past-tense, immutable fact; see
-  `Portal.Learning.Events.LearnerEnrolled`. `at` is supplied by the boundary.
+  `Portal.Enrollment.Events.LearnerEnrolled`. `at` is supplied by the boundary.
   """
   @derive {Jason.Encoder, only: [:user_id, :lesson_id, :at]}
   @enforce_keys [:user_id, :lesson_id, :at]

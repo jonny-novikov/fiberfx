@@ -10,7 +10,6 @@ defmodule PortalWeb.CourseControllerTest do
   use PortalWeb.ConnCase, async: false
 
   alias Portal.Accounts.User
-  alias Portal.Catalog.Course
 
   describe "GET /health" do
     test "returns 200 with body \"ok\" and touches no domain (F6.1-R6)", %{conn: conn} do
@@ -21,12 +20,17 @@ defmodule PortalWeb.CourseControllerTest do
 
   describe "GET /courses/:user_id" do
     test "a known enrolled user renders that user's course row (F6.1-US2)", %{conn: conn} do
-      # Seed a real User + Course in the Store, then enroll through the facade so the
-      # dual-write %Enrollment{} read model has the row courses_of/1 reads.
+      # Seed a real User (Store) + Course, then enroll through the facade so the
+      # dual-write %Enrollment{} read model has the row courses_of/1 reads. Since F6.4
+      # the Catalog is Repo-backed: the course is seeded via `Portal.create_course/1`
+      # (the engine's enroll gate reads it through the Repo). The test names only
+      # `Portal` (INV2), never a context/Repo.
       user = %User{id: Portal.ID.new("USR"), email: "ada@example.com", name: "Ada"}
-      course = %Course{id: Portal.ID.new("CRS"), title: "Elixir", slug: "elixir"}
       :ok = Portal.Store.put(user)
-      :ok = Portal.Store.put(course)
+      # A strong-random title token: portal_web has no Ecto sandbox, so this insert
+      # COMMITS — a resettable counter would collide with a prior run's committed row.
+      tok = Base.encode16(:crypto.strong_rand_bytes(8))
+      {:ok, course} = Portal.create_course(%{title: "Elixir #{tok}", slug: "elixir-#{tok}"})
       {:ok, _enrollment} = Portal.enroll(user.id, course.id)
 
       conn = get(conn, ~p"/courses/#{user.id}")
@@ -38,7 +42,9 @@ defmodule PortalWeb.CourseControllerTest do
       refute body =~ "No courses yet."
     end
 
-    test "an unknown user id renders the empty state at 200, never a 500 (F6.1-US5)", %{conn: conn} do
+    test "an unknown user id renders the empty state at 200, never a 500 (F6.1-US5)", %{
+      conn: conn
+    } do
       # courses_of/1 is total at F6.1: an unknown id yields {:ok, []} → empty state.
       conn = get(conn, ~p"/courses/#{Portal.ID.new("USR")}")
       body = html_response(conn, 200)

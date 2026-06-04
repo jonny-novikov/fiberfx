@@ -14,7 +14,7 @@ defmodule Portal.Engine.CorePureTest do
   use ExUnitProperties
 
   alias Portal.Engine.Core
-  alias Portal.Learning.Events.{LearnerEnrolled, LessonDelivered}
+  alias Portal.Enrollment.Events.{LearnerEnrolled, LessonDelivered}
 
   doctest Portal.Engine.Core
 

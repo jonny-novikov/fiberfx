@@ -14,13 +14,14 @@ defmodule Portal.Engine.Core do
   against the folded state and a single catalog read and returns the closed reasons
   (`:course_not_found`, `:already_enrolled`) BEFORE `decide` runs (F5.5-INV5).
   `authorize/2` is the only function here that calls out (one read of
-  `Portal.Catalog.course/1`); `decide`/`evolve`/`replay`/`query` take no I/O at all.
+  `Portal.Catalog.fetch_course/1` — Repo-backed since F6.4); `decide`/`evolve`/`replay`/`query`
+  take no I/O at all.
 
   The runtime home that holds the folded state and routes commands through this
   core is F5.6 (a supervised `Portal.Engine` GenServer); this module is plain
   functions, not a process.
   """
-  alias Portal.Learning.Events.{LearnerEnrolled, LessonDelivered}
+  alias Portal.Enrollment.Events.{LearnerEnrolled, LessonDelivered}
 
   @typedoc "A domain event: a past-tense fact recorded in the log."
   @type event :: LearnerEnrolled.t() | LessonDelivered.t()
@@ -107,7 +108,7 @@ defmodule Portal.Engine.Core do
   The reason is a bare atom — the F5.6 shell maps it to `%Portal.Error{}` via
   `Portal.Error.new/1` (the existing seam). The catalog read inside `course_exists/1`
   is the only call-out in this module; `decide`/`evolve`/`replay`/`query` take no I/O.
-  An enroll mirrors `Portal.Learning.enroll/2`'s `with`-chain, but the
+  An enroll runs the same checks as the `Portal.Enrollment` contract, but the
   not-already-enrolled check reads `state`, not the Store. `:deliver_lesson` has no
   rejection reason at this scope, so it is always admissible.
   """
@@ -133,10 +134,15 @@ defmodule Portal.Engine.Core do
       else: {:error, :course_not_found}
   end
 
+  # The one call-out in this module — the one-way `Enrollment → Catalog` edge
+  # (F6.4-INV3, internal to the Enrollment slice). `Catalog.fetch_course/1` is
+  # Repo-backed since F6.4 (the single source of truth for courses), returning
+  # `{:ok, %Course{}} | {:error, :not_found}`; the `:not_found` reason folds into the
+  # contract's closed `:course_not_found`.
   defp course_exists(course_id) do
-    case Portal.Catalog.course(course_id) do
+    case Portal.Catalog.fetch_course(course_id) do
       {:ok, course} -> {:ok, course}
-      :error -> {:error, :course_not_found}
+      {:error, :not_found} -> {:error, :course_not_found}
     end
   end
 
@@ -155,7 +161,7 @@ defmodule Portal.Engine.Core do
   `Portal.Engine.query/2` GenServer call (which today routes `:courses_of` to the
   Store); F5.6 reroutes the live query to read this folded state.
 
-      iex> alias Portal.Learning.Events.LearnerEnrolled
+      iex> alias Portal.Enrollment.Events.LearnerEnrolled
       iex> ev = %LearnerEnrolled{user_id: "USRaaaaaaaaaaa", course_id: "CRSaaaaaaaaaaa", at: ~U[2026-01-01 00:00:00Z]}
       iex> state = Portal.Engine.Core.evolve(ev, Portal.Engine.Core.initial_state())
       iex> Portal.Engine.Core.query(state, {:enrollments, "USRaaaaaaaaaaa"})

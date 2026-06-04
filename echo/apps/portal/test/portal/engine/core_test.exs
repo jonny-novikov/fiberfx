@@ -1,31 +1,25 @@
 defmodule Portal.Engine.CoreTest do
-  # Not async: the `authorize/2` cases are the boundary contract against the shared
-  # Portal.Store (via `course_exists`/`seed_course`), and the branded snowflake
-  # sequence resets per process (so two tests minting in the same millisecond could
-  # collide on an id), so this file resets the Store in setup. The store-free pure
-  # cases (decide/evolve/replay/query) + the `replay==fold` property live in
+  # async: false — the `authorize/2` cases are the boundary contract; since F6.4 their
+  # course-exists branch reads Catalog.fetch_course/1 -> Repo, so the course is seeded
+  # in the Ecto sandbox (Portal.DataCase). authorize/2 is called DIRECTLY here (the test
+  # process owns the sandbox), so the Repo read sees the seed. The store-free pure cases
+  # (decide/evolve/replay/query) + the `replay==fold` property live in
   # Portal.Engine.CorePureTest (`async: true`).
-  use ExUnit.Case, async: false
+  use Portal.DataCase, async: false
 
-  alias Portal.Catalog.Course
+  alias Portal.Catalog
   alias Portal.Engine.Core
-  alias Portal.Learning.Events.LearnerEnrolled
+  alias Portal.Enrollment.Events.LearnerEnrolled
 
   # A fixed occurrence time keeps the cases deterministic; `at` is data the boundary
   # supplies, never minted by the core.
   @at ~U[2026-01-01 00:00:00Z]
 
-  # Start every test from an empty store, per Portal.EnrollContractTest: a freshly
-  # minted "nonexistent" id is then guaranteed absent and no leftover collides.
-  setup do
-    Portal.Store.reset()
-    :ok
-  end
-
-  # Seed one stored course and return its id; mint a fresh USR id per run.
+  # Seed one course via the Repo-backed Catalog (F6.4) and return its branded id; mint
+  # a fresh USR id per run. The DataCase sandbox rolls the insert back at teardown.
   defp seed_course do
-    course = %Course{id: Portal.ID.new("CRS"), title: "Elixir", slug: "elixir"}
-    :ok = Portal.Store.put(course)
+    tok = Base.encode16(:crypto.strong_rand_bytes(8))
+    {:ok, course} = Catalog.create_course(%{title: "Elixir #{tok}", slug: "elixir-#{tok}"})
     course.id
   end
 

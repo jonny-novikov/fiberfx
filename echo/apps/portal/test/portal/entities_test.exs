@@ -3,7 +3,7 @@ defmodule Portal.EntitiesTest do
 
   alias Portal.Accounts.{User, Session}
   alias Portal.Catalog.{Course, Lesson, Page}
-  alias Portal.Learning.{Enrollment, Progress}
+  alias Portal.Enrollment.{Enrollment, Progress}
 
   # Real, well-formed branded ids — never the "USR1" placeholder.
   defp id(ns), do: Portal.ID.new(ns)

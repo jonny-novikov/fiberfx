@@ -49,8 +49,11 @@ defmodule Portal.Engine do
   """
   use GenServer
   alias Portal.Engine.Core
-  alias Portal.Learning.Enrollment
-  alias Portal.Learning.Events.LearnerEnrolled
+  # The internal Store-projection row (NOT the `Portal.Enrollment` context module): the
+  # engine mints + stores `%Enrollment{}` rows the `Portal.Enrollment` context maps to
+  # the published `%Enrolled{}` at its boundary.
+  alias Portal.Enrollment.Enrollment
+  alias Portal.Enrollment.Events.LearnerEnrolled
 
   # The single logical stream this engine reads and appends through the port. The
   # stream key is the engine's policy, not the port's or an adapter's — the

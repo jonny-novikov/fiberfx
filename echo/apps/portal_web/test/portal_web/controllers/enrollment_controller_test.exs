@@ -9,13 +9,17 @@ defmodule PortalWeb.EnrollmentControllerTest do
   use PortalWeb.ConnCase, async: false
 
   alias Portal.Accounts.User
-  alias Portal.Catalog.Course
 
   test "a valid enroll redirects to the user's course list (F6.2-US6)", %{conn: conn} do
     user = %User{id: Portal.ID.new("USR"), email: "ada@example.com", name: "Ada"}
-    course = %Course{id: Portal.ID.new("CRS"), title: "Elixir", slug: "elixir"}
     :ok = Portal.Store.put(user)
-    :ok = Portal.Store.put(course)
+    # Since F6.4 the Catalog is Repo-backed: seed the course through the facade
+    # (`Portal.create_course/1`) so the engine's enroll gate (`Catalog.fetch_course/1`
+    # -> Repo) sees it. The test still names only `Portal` (INV2), never a context/Repo.
+    # A strong-random title token: portal_web has no Ecto sandbox, so this insert
+    # COMMITS — a resettable counter would collide with a prior run's committed row.
+    tok = Base.encode16(:crypto.strong_rand_bytes(8))
+    {:ok, course} = Portal.create_course(%{title: "Elixir #{tok}", slug: "elixir-#{tok}"})
 
     conn = post(conn, ~p"/enroll", %{"user_id" => user.id, "course_id" => course.id})
 

@@ -1,47 +1,61 @@
 defmodule Portal.EnrollContractTest do
-  # Not async: drives the shared Portal.Store; properties mint fresh ids per run.
-  use ExUnit.Case, async: false
+  # async: false — the enroll contract runs through the encapsulated, named
+  # Portal.Engine (event-sourced); since F6.4 the course-exists gate reads
+  # Catalog.fetch_course/1 -> Repo INSIDE the Engine process. Portal.DataCase with
+  # async: false checks out a SHARED sandbox owner so the Engine process sees the course
+  # seeded via Repo here; the properties mint fresh USR ids per run. DataCase +
+  # ExUnitProperties compose. The Store/adapter/Engine resets give per-test fold
+  # isolation (the not-already-enrolled check reads the Engine fold, not the Store).
+  use Portal.DataCase, async: false
   use ExUnitProperties
 
-  alias Portal.Catalog.Course
+  alias Portal.Catalog
+  alias Portal.Enrollment
+  alias Portal.Enrollment.Enrolled
   alias Portal.Error
-  alias Portal.Learning
-  alias Portal.Learning.Enrollment
 
   doctest Portal.Error
 
-  # Start every test from an empty store. The branded snowflake sequence resets
-  # per process (EchoData.Snowflake keeps it in the process dictionary), so two
-  # tests minting in the same millisecond can produce the SAME id; clearing the
-  # store first guarantees a freshly-minted "nonexistent" id is absent and the
-  # property's users cannot collide with another test's leftovers.
   setup do
     Portal.Store.reset()
+    Portal.EventStore.InMemory.reset()
+    Portal.Engine.reset()
+
+    on_exit(fn ->
+      Portal.Store.reset()
+      Portal.EventStore.InMemory.reset()
+      Portal.Engine.reset()
+    end)
+
     :ok
   end
 
-  # Seed one stored course and return its id; mint a fresh USR id per run.
+  # Seed one course via the Repo-backed Catalog (F6.4) and return its branded id. A
+  # strong-random title token, so it never collides — not even with rows other suites
+  # commit (the portal_web ConnTests have no Ecto sandbox).
   defp seed_course do
-    course = %Course{id: Portal.ID.new("CRS"), title: "Elixir", slug: "elixir"}
-    :ok = Portal.Store.put(course)
+    tok = Base.encode16(:crypto.strong_rand_bytes(8))
+    {:ok, course} = Catalog.create_course(%{title: "Elixir #{tok}", slug: "elixir-#{tok}"})
     course.id
   end
 
   # Local guard: pins the 0..100 invariant. An out-of-range progress fails the
   # match (a crash), proving the impossible state is never silently accepted.
-  defp assert_progress_in_range!(%Enrollment{progress: p} = e) when p in 0..100, do: e
+  defp assert_progress_in_range!(%Enrolled{progress: p} = e) when p in 0..100, do: e
 
   describe "postcondition (F5.4-INV5)" do
-    property "a successful enroll always yields {:ok, %Enrollment{progress: 0}} and stores it" do
+    property "a successful enroll always yields {:ok, %Enrolled{progress: 0}}" do
       course_id = seed_course()
 
       check all(_ <- StreamData.constant(:ok), max_runs: 50) do
         user_id = Portal.ID.new("USR")
 
-        assert {:ok, %Enrollment{} = enrollment} = Learning.enroll(user_id, course_id)
-        assert enrollment.progress == 0
-        assert enrollment.user_id == user_id and enrollment.course_id == course_id
-        assert {:ok, ^enrollment} = Portal.Store.get("ENR", enrollment.id)
+        assert {:ok, %Enrolled{} = enrolled} = Enrollment.enroll(user_id, course_id)
+        assert enrolled.progress == 0
+        assert enrolled.user_id == user_id and enrolled.course_id == course_id
+
+        # The engine projects a Store %Enrollment{} row keyed by the published id.
+        assert {:ok, %Portal.Enrollment.Enrollment{}} = Portal.Store.get("ENR", enrolled.id)
       end
     end
   end
@@ -52,8 +66,8 @@ defmodule Portal.EnrollContractTest do
 
       check all(_ <- StreamData.constant(:ok), max_runs: 50) do
         user_id = Portal.ID.new("USR")
-        assert {:ok, enrollment} = Learning.enroll(user_id, course_id)
-        assert assert_progress_in_range!(enrollment) == enrollment
+        assert {:ok, enrolled} = Enrollment.enroll(user_id, course_id)
+        assert assert_progress_in_range!(enrolled) == enrolled
       end
     end
   end
@@ -63,7 +77,7 @@ defmodule Portal.EnrollContractTest do
       course_id = seed_course()
       before = Portal.Store.all("ENR")
 
-      assert {:error, %Error{code: :course_not_found}} = Learning.enroll("USR1", course_id)
+      assert {:error, %Error{code: :course_not_found}} = Enrollment.enroll("USR1", course_id)
       assert Portal.Store.all("ENR") == before
     end
 
@@ -73,7 +87,7 @@ defmodule Portal.EnrollContractTest do
       course_id = Portal.ID.new("CRS")
       before = Portal.Store.all("ENR")
 
-      assert {:error, %Error{code: :course_not_found}} = Learning.enroll(user_id, course_id)
+      assert {:error, %Error{code: :course_not_found}} = Enrollment.enroll(user_id, course_id)
       assert Portal.Store.all("ENR") == before
     end
 
@@ -83,7 +97,7 @@ defmodule Portal.EnrollContractTest do
       course_id = Portal.ID.new("LSN")
       before = Portal.Store.all("ENR")
 
-      assert {:error, %Error{code: :course_not_found}} = Learning.enroll(user_id, course_id)
+      assert {:error, %Error{code: :course_not_found}} = Enrollment.enroll(user_id, course_id)
       assert Portal.Store.all("ENR") == before
     end
   end
@@ -93,10 +107,11 @@ defmodule Portal.EnrollContractTest do
       user_id = Portal.ID.new("USR")
       course_id = seed_course()
 
-      assert {:ok, %Enrollment{}} = Learning.enroll(user_id, course_id)
-      assert {:error, %Error{code: :already_enrolled}} = Learning.enroll(user_id, course_id)
+      assert {:ok, %Enrolled{}} = Enrollment.enroll(user_id, course_id)
+      assert {:error, %Error{code: :already_enrolled}} = Enrollment.enroll(user_id, course_id)
 
-      matching = Enum.filter(Learning.courses_of(user_id), &(&1.course_id == course_id))
+      {:ok, listed} = Enrollment.courses_of(user_id)
+      matching = Enum.filter(listed, &(&1.course_id == course_id))
       assert length(matching) == 1
     end
   end
@@ -113,7 +128,7 @@ defmodule Portal.EnrollContractTest do
 
   describe "impossible state crashes, never returns a tuple (F5.4-INV4)" do
     test "an out-of-range progress fails the 0..100 guard (a crash)" do
-      out_of_range = %Enrollment{
+      out_of_range = %Enrolled{
         id: Portal.ID.new("ENR"),
         user_id: Portal.ID.new("USR"),
         course_id: Portal.ID.new("CRS"),

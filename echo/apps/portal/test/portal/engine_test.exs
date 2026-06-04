@@ -1,11 +1,17 @@
 defmodule Portal.EngineTest do
-  # Not async: drives the shared, named Portal.Engine / Portal.EventLog /
-  # Portal.Store, and one test kills the Engine.
-  use ExUnit.Case, async: false
+  # async: false — drives the shared, named Portal.Engine / the InMemory adapter /
+  # Portal.Store, and one test kills the Engine. Portal.DataCase with async: false
+  # checks out a SHARED Ecto sandbox owner (data_case.ex: `shared: not tags[:async]`),
+  # so the separately-supervised, named Portal.Engine process — and a restarted pid
+  # after the crash-recovery kill — sees the course seeded via Repo in this test's
+  # transaction (F6.4 fork-B: Core.authorize reads Catalog.fetch_course -> Repo INSIDE
+  # the Engine process, not the test process; shared mode is the cross-process grant).
+  use Portal.DataCase, async: false
 
+  alias Portal.Catalog
   alias Portal.Catalog.Course
   alias Portal.Catalog.Lesson
-  alias Portal.Learning.Enrollment
+  alias Portal.Enrollment.Enrollment
 
   setup do
     # Start each test from clean shared state. Resetting Store + EventLog clears
@@ -39,10 +45,16 @@ defmodule Portal.EngineTest do
     Portal.Engine.reset()
   end
 
-  # Seed one stored course and return its id (mirrors the slice/contract tests).
+  # Seed one course via the Repo-backed Catalog (F6.4): Core.authorize now reads
+  # Catalog.fetch_course/1 -> Repo, so the course must live in Postgres (the shared
+  # sandbox), not the Store. Insert through the changeset path and return the branded id.
   defp seed_course do
-    course = %Course{id: Portal.ID.new("CRS"), title: "Elixir", slug: "elixir"}
-    :ok = Portal.Store.put(course)
+    # A run-unique title token (the title carries a unique_constraint). Strong-random,
+    # so it never collides — not even with rows other suites commit (the portal_web
+    # ConnTests have no Ecto sandbox, so their course inserts persist; a resettable
+    # counter would collide across runs).
+    tok = Base.encode16(:crypto.strong_rand_bytes(8))
+    {:ok, course} = Catalog.create_course(%{title: "Elixir #{tok}", slug: "elixir-#{tok}"})
     course.id
   end
 

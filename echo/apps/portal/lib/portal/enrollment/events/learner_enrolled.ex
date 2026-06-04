@@ -1,4 +1,4 @@
-defmodule Portal.Learning.Events.LearnerEnrolled do
+defmodule Portal.Enrollment.Events.LearnerEnrolled do
   @moduledoc """
   A learner was enrolled in a course (F5.5). A past-tense, immutable fact:
   `Portal.Engine.Core.decide/2` emits it, `evolve/2` folds it. `at` is the

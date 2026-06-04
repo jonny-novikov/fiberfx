@@ -1,10 +1,13 @@
 defmodule Portal.EventStoreTest do
-  # Not async: drives the shared, named Portal.Engine / Portal.Store / the configured
-  # InMemory adapter, and swaps :event_store config to exercise the abort branch.
-  use ExUnit.Case, async: false
+  # async: false — drives the shared, named Portal.Engine / Portal.Store / the configured
+  # InMemory adapter, and swaps :event_store config to exercise the abort branch. Since
+  # F6.4 the engine's course-exists gate reads Catalog.fetch_course/1 -> Repo INSIDE the
+  # Engine process, so Portal.DataCase with async: false checks out a SHARED sandbox owner
+  # (the Engine — and a restarted pid after the kill — sees the course seeded via Repo).
+  use Portal.DataCase, async: false
 
-  alias Portal.Catalog.Course
-  alias Portal.Learning.Enrollment
+  alias Portal.Catalog
+  alias Portal.Enrollment.Enrolled
 
   # A failing adapter that satisfies the behaviour: read_stream delegates to the
   # real InMemory (so init/reset/replay still work), append always fails. Used to
@@ -35,8 +38,8 @@ defmodule Portal.EventStoreTest do
   end
 
   defp seed_course do
-    course = %Course{id: Portal.ID.new("CRS"), title: "Elixir", slug: "elixir"}
-    :ok = Portal.Store.put(course)
+    tok = Base.encode16(:crypto.strong_rand_bytes(8))
+    {:ok, course} = Catalog.create_course(%{title: "Elixir #{tok}", slug: "elixir-#{tok}"})
     course.id
   end
 
@@ -86,7 +89,7 @@ defmodule Portal.EventStoreTest do
       course_id = seed_course()
 
       # A successful enroll establishes a baseline fold + one ENR row.
-      assert {:ok, %Enrollment{}} = Portal.enroll(user_id, course_id)
+      assert {:ok, %Enrolled{}} = Portal.enroll(user_id, course_id)
 
       fold_before = :sys.get_state(Portal.Engine)
       enr_before = Portal.Store.all("ENR")
@@ -112,7 +115,7 @@ defmodule Portal.EventStoreTest do
       user_id = Portal.ID.new("USR")
       course_id = seed_course()
 
-      assert {:ok, %Enrollment{}} = Portal.enroll(user_id, course_id)
+      assert {:ok, %Enrolled{}} = Portal.enroll(user_id, course_id)
       {:ok, before} = Portal.courses_of(user_id)
       assert Enum.any?(before, &(&1.course_id == course_id))
 

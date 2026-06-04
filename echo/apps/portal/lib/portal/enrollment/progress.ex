@@ -1,4 +1,4 @@
-defmodule Portal.Learning.Progress do
+defmodule Portal.Enrollment.Progress do
   @moduledoc "A learner's progress through a lesson (namespace PRG)."
   @derive {Jason.Encoder, only: [:id, :enrollment_id, :lesson_id, :percent]}
   @enforce_keys [:id, :enrollment_id, :lesson_id, :percent]

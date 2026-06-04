@@ -9,7 +9,7 @@ defmodule Portal.EventStore.PostgresTest do
 
   alias Portal.EventStore.Event
   alias Portal.EventStore.Postgres
-  alias Portal.Learning.Events.LearnerEnrolled
+  alias Portal.Enrollment.Events.LearnerEnrolled
   alias Portal.Repo
 
   defp event(user, course) do

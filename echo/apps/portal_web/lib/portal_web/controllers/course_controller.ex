@@ -47,7 +47,7 @@ defmodule PortalWeb.CourseController do
   # inline `case`, the 1.18 type checker would prune the defensive `{:error, ...}` branch
   # as unreachable (`Portal.courses_of/1` is success-only today); distinct heads keep the
   # error path live for the injected-error unit test and the later id-validation rung.
-  @spec render_outcome(Plug.Conn.t(), {:ok, [Portal.Learning.Enrollment.t()]}) :: Plug.Conn.t()
+  @spec render_outcome(Plug.Conn.t(), {:ok, [Portal.Enrollment.Enrolled.t()]}) :: Plug.Conn.t()
   @spec render_outcome(Plug.Conn.t(), {:error, Portal.Error.t()}) :: Plug.Conn.t()
   def render_outcome(conn, {:ok, courses}) do
     render(conn, :index, courses: courses)
