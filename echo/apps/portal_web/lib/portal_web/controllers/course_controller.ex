@@ -8,6 +8,17 @@ defmodule PortalWeb.CourseController do
   two railway arms: data renders `:index`, and a `%Portal.Error{}` renders `:error`
   at status `422` (F6.1-INV4). `health/2` is the domain-free liveness action
   (F6.1-R6).
+
+  ## Two routes, one action (F6.2)
+
+  `index/2` backs BOTH the public `get "/courses/:user_id"` and the protected
+  `get "/learn"`. The public route supplies `user_id` as a route param; the protected
+  `/learn` route has no path param and instead carries the authenticated learner's id
+  in the `:current_user_id` assign that `PortalWeb.RequireUser` set (F6.2-INV6).
+  `index/2` reads `params["user_id"]` first, falling back to
+  `conn.assigns.current_user_id`, then calls the same facade read. The fallback adds
+  no domain logic and touches only assigns/params, so the action stays facade-only
+  (F6.2-INV1) and carries no cross-cutting code (F6.2-INV2).
   """
   use PortalWeb, :controller
 
@@ -21,8 +32,14 @@ defmodule PortalWeb.CourseController do
   F6.1-INV5): it satisfies the error-render contract structurally and becomes
   request-reachable when the facade gains id-validation (a later F6 rung); at F6.1 it
   is exercised by a controller/view unit test injecting a `%Portal.Error{}`.
+
+  The public `get "/courses/:user_id"` supplies `user_id` as a route param; the
+  protected `get "/learn"` (F6.2) has no path param and instead carries the
+  authenticated learner's id in the `:current_user_id` assign `PortalWeb.RequireUser`
+  set, so the param is read first with the assign as the fallback (F6.2-INV6).
   """
-  def index(conn, %{"user_id" => user_id}) do
+  def index(conn, params) do
+    user_id = params["user_id"] || conn.assigns.current_user_id
     render_outcome(conn, Portal.courses_of(user_id))
   end
 

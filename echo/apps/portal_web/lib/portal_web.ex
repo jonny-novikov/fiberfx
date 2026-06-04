@@ -3,10 +3,12 @@ defmodule PortalWeb do
   The entrypoint for the `:portal_web` Phoenix application (F6.1).
 
   Provides the `use PortalWeb, :controller`, `use PortalWeb, :html`,
-  `use PortalWeb, :router`, and `use PortalWeb, :verified_routes` macros that
-  controllers, views, the router, and the endpoint share. The web layer reaches the
-  domain only through the `Portal` facade (F6.1-INV1) — no macro here imports the
-  engine, a repo, or any module below the boundary.
+  `use PortalWeb, :router`, `use PortalWeb, :live_view`, and
+  `use PortalWeb, :verified_routes` macros that controllers, views, the router, the
+  LiveView modules, and the endpoint share. The web layer reaches the domain only
+  through the `Portal` facade (F6.1-INV1) — no macro here imports the engine, a repo,
+  or any module below the boundary. The `:live_view` macro (F6.2) imports
+  `Phoenix.LiveView` and the shared `html_helpers` (`~H`, `~p`) only.
   """
 
   def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
@@ -38,6 +40,14 @@ defmodule PortalWeb do
       use Phoenix.Component
 
       import Phoenix.Controller, only: [get_csrf_token: 0]
+
+      unquote(html_helpers())
+    end
+  end
+
+  def live_view do
+    quote do
+      use Phoenix.LiveView
 
       unquote(html_helpers())
     end
