@@ -88,7 +88,12 @@ slices; the human is the source of decomposition, judgement, and acceptance.** E
 
 Identical to the shared anatomy (see `elixir-technical-writer/references/page-anatomy.md`), as a full HTML file:
 
-1. Skip link, then `<header class="site">` with brand + nav carrying a `.route-tag` = **this page's exact route**.
+1. Skip link, then `<header class="site">` with brand + nav carrying a `.route-tag` = **this page's exact route**,
+   rendered as the **Elixir clickable-segment breadcrumb** (mandatory): each path part is its own element —
+   intermediate parts are `<a href>` links to that route level, the current (last) part is `<span class="rcur">`,
+   separated by `<span class="rsep">/</span>`; the base `/course/agile-agent-workflow` is one segment. The supporting
+   CSS (`.route-tag a`, `.route-tag .rsep`, `.route-tag .rcur`) must be present. Copy it from a recent page — the
+   route-tag `<a>` hrefs are then validated by the `links` gate.
 2. A `.hero` inside a **`.hero-split`** (hero text on the left, an **interactive figure** on the right — the
    four-artifacts / elixir pattern; stacks to one column on mobile): `.crumbs` (the chapter→module→here trail), an
    `.eyebrow` (chapter · module · position), an `<h1>` with the accent word in `<span class="ex">` (the course's
@@ -107,7 +112,11 @@ Identical to the shared anatomy (see `elixir-technical-writer/references/page-an
    vetted link fits, cite a different real authoritative source that has one. (`Related in this course` entries are
    internal course routes, not external links.)
 5. A `.pager` (`.btn.ghost` back, `.btn` forward, `.spacer`) — both links must resolve to real/built routes.
-6. The site footer with the `.stamp` + decoder script (copied verbatim; carries a minted `TSK…` Snowflake id).
+6. The **canonical 3-column footer** (mandatory; no one-off footers) — `<footer class="site-foot">` with a
+   `<div class="wrap" style="display:block">` holding `.foot-cols` (brand + `.tag` / a chapter-or-module link column
+   / a "The course" column) and a `.foot-bottom` carrying the `.stamp` + decoder script (copied verbatim; a `TSK…`
+   Snowflake id). The `.foot-cols` / `.fbrand` / `.foot-bottom` CSS must be present. Copy the whole footer verbatim
+   from a recent page.
 
 ## 6. The interactive contract
 

@@ -21,8 +21,8 @@ as the A0 chapter landing AND the A0.2 module hub. Every chapter from A1 on **ne
 | Chapter | Title | Landing route | Dir | Status |
 |---|---|---|---|---|
 | A0 | Foundations — why, what, who | `/course/agile-agent-workflow/what` | `what/` | **A0.2 built; A0.1, A0.3 planned** |
-| A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **landing + A1.01–A1.04 built; A1.05–A1.06 planned** |
-| A2 | Decomposition: from vision to user stories | `…/decomposition` | — | planned (manifest forward-link) |
+| A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **landing + A1.01–A1.04, A1.06 built; A1.05 planned** |
+| A2 | Decomposition: from vision to user stories | `/course/agile-agent-workflow/decomposition` | `decomposition/` | **landing built; A2.01–A2.07 planned** |
 | A3 | The roadmap layer: Agile delivery & iteration | `…/roadmap` | — | planned |
 | A4 | The spec layer: specifications & acceptance | `…/spec` | — | planned |
 | A5 | The agent brief (.llms.md) & implementation | `…/brief` | — | planned |
@@ -49,9 +49,9 @@ as the A0 chapter landing AND the A0.2 module hub. Every chapter from A1 on **ne
 | A1.03 | The Author/Operator loop | The two roles and the cycle that runs every rung end to end. | `/why/loop` | **built** |
 | A1.04 | Two layers: roadmap and specs | Separating how we deliver from what we build and prove. | `/why/two-layers` | **built** |
 | A1.05 | Correct by definition | What "done" means: a closure over traced, executed checks. | `/why/correct` | planned (next) |
-| A1.06 | Meet the project: Portal | The running project, zero to a deployed, multi-surface platform. | `/why/portal` | planned |
+| A1.06 | Meet the project: Portal | The running project, zero to a deployed, multi-surface platform. | `/why/portal` | **built** |
 
-(A1.02–A1.04 are built; their subpage slugs are locked — see below. Slugs A1.05–A1.06 remain suggested until each module is authored.)
+(A1.02–A1.04 and A1.06 are built; their subpage slugs are locked — see below. A1.06's dives: `domain`, `zero-to-production`, `one-rung`. The A1.05 slug remains suggested until that module is authored.)
 
 ## A1.02 — built (the second module), slugs locked
 
@@ -97,6 +97,8 @@ with `--require-refs`.
    two-cadence timeline; the conflation stack (bigbang = A1.01.2, coupled = A1.02.3).
 
 ## Resume point
+
+Built since last resume: **A1.06** (`/why/portal` + dives `domain`, `zero-to-production`, `one-rung`) and the **A2 chapter landing** (`/decomposition`, modules A2.01–A2.07 still planned). The one remaining gap inside chapter A1 is **A1.05**.
 
 **A1.05 — "Correct by definition"** (`/why/correct`, slug suggested): what "done" means — a closure over traced,
 executed checks, and the quality gates that hold it. Author the module hub `why/correct/index.html` plus ≥3
