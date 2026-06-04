@@ -22,7 +22,7 @@ as the A0 chapter landing AND the A0.2 module hub. Every chapter from A1 on **ne
 |---|---|---|---|---|
 | A0 | Foundations — why, what, who | `/course/agile-agent-workflow/what` | `what/` | **A0.2 built; A0.1, A0.3 planned** |
 | A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **landing + A1.01–A1.04, A1.06 built; A1.05 planned** |
-| A2 | Decomposition: from vision to user stories | `/course/agile-agent-workflow/decomposition` | `decomposition/` | **landing built; A2.01–A2.07 planned** |
+| A2 | Decomposition: from vision to user stories | `/course/agile-agent-workflow/decomposition` | `decomposition/` | **landing + A2.01–A2.03 built; A2.04–A2.07 planned** |
 | A3 | The roadmap layer: Agile delivery & iteration | `…/roadmap` | — | planned |
 | A4 | The spec layer: specifications & acceptance | `…/spec` | — | planned |
 | A5 | The agent brief (.llms.md) & implementation | `…/brief` | — | planned |
@@ -96,9 +96,30 @@ with `--require-refs`.
 3. **A1.04.3 · `source`** — only feedback edits the spec; the two cadences; conflation costs. Interactives: the
    two-cadence timeline; the conflation stack (bigbang = A1.01.2, coupled = A1.02.3).
 
+## A2 — built modules (three of seven; on the `/decomposition` landing's `#modules` grid), slugs locked
+
+The chapter's first three modules carry the dependency-ordered front of decomposition: *value → form → quality*.
+Authored by fanning out one `agile-expert`/`agile-course-writer`-skilled agent per module, in parallel (one hub +
+three dives each). md sources of record under `docs/agile-agent-workflow/content/decomposition/<module>/`. Each
+subpage carries two interactives and passes all ten gates with `--require-refs`.
+
+| Module | Title | Hub route | Dives | Status |
+|---|---|---|---|---|
+| A2.01 | Value, not tasks | `/decomposition/value` | `outcome-not-chore`, `who-benefits`, `vertical-slice` | **built** |
+| A2.02 | The Connextra form and the three Cs | `/decomposition/connextra` | `role-want-reason`, `three-cs`, `portal-cards` | **built** |
+| A2.03 | INVEST: what a good story looks like | `/decomposition/invest` | `six-tests`, `story-smells`, `small-and-independent` | **built** |
+
+Portal grounding (locked, no-invent): the canonical value ladder — browse the catalogue → enrol → open a lesson →
+track progress — plus the two non-stories ("manage the whole catalogue" fails Small/Estimable; "add the courses DB
+table" fails Valuable/Testable). A2.02.3 `portal-cards` foreshadows Given/When/Then (A2.04); A2.03.3
+`small-and-independent` forward-refs splitting (A2.05). A2.04–A2.07 (`acceptance`, `splitting`, `value-ladder`,
+`workshop` — slugs suggested) remain planned.
+
 ## Resume point
 
-Built since last resume: **A1.06** (`/why/portal` + dives `domain`, `zero-to-production`, `one-rung`) and the **A2 chapter landing** (`/decomposition`, modules A2.01–A2.07 still planned). The one remaining gap inside chapter A1 is **A1.05**.
+Built since last resume: **A2.01–A2.03** (`/decomposition/{value,connextra,invest}`, hub + three dives each, all A+),
+on top of **A1.06** and the **A2 chapter landing**. Two gaps remain to close before Part II is whole and Part I is
+complete: **A2.04** (the next Part II module) and **A1.05** (the lone A1 gap).
 
 **A1.05 — "Correct by definition"** (`/why/correct`, slug suggested): what "done" means — a closure over traced,
 executed checks, and the quality gates that hold it. Author the module hub `why/correct/index.html` plus ≥3
