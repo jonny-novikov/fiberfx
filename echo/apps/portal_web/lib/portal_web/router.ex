@@ -61,6 +61,7 @@ defmodule PortalWeb.Router do
 
     get("/", PageController, :home)
     get("/elixir", PageController, :elixir)
+    get("/course/agile-agent-workflow", PageController, :agile)
     live("/courses", CatalogLive)
     resources("/courses", CourseController, only: [:show, :new, :create])
     resources("/lessons", LessonController, only: [:show])

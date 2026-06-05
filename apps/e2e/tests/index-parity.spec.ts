@@ -56,6 +56,12 @@ const ELIXIR = {
   fiber: `${FIBER_BASE}/elixir`,
   portal: `${PORTAL_BASE}/elixir`,
 };
+// The third parity route (AAW-parity). Fiber serves the master at /course/...; Portal
+// now serves it too (the ratified PageController.agile/2 + route).
+const AGILE = {
+  fiber: `${FIBER_BASE}/course/agile-agent-workflow`,
+  portal: `${PORTAL_BASE}/course/agile-agent-workflow`,
+};
 
 type Style = { fontSize: number; fontStyle: string; fontFamily: string };
 async function styleOf(page: Page, sel: string): Promise<Style | null> {
@@ -129,19 +135,25 @@ test.describe("F6.5.5 · / (courses index) parity — Phoenix vs Fiber", () => {
 
   // The remap is a PORTAL-rendering property — the Fiber baseline serves the
   // un-remapped originals (relative deep links it actually serves), so the remap
-  // assertion runs on the Portal origin ONLY.
-  test("remap (portal): agile card → production, / and /elixir relative", async ({
+  // assertion runs on the Portal origin ONLY. AAW-parity flipped the agile card from
+  // production to LOCAL: Portal now serves /course/agile-agent-workflow, so the card
+  // matches the courses.html golden master (relative) and no /course/ link is remapped.
+  test("remap (portal): both course cards local relative, / relative", async ({
     page,
   }) => {
     await page.goto(COURSES.portal);
-    // The agile card link carries the configurable base (Portal does not serve
-    // /course/...). NAV_BASE proves the swap: set PORTAL_DEEP_LINK_BASE to the host
-    // the node was booted with and this asserts the override, not a baked literal.
+    // The agile card is no longer remapped to production — Portal serves the route, so
+    // the card is relative and ZERO /course/ link carries the base.
     expect(
       await hrefCount(page, NAV_BASE + "/course/agile-agent-workflow"),
-    ).toBe(1);
-    // No un-remapped /course/ deep link survives.
-    expect(await hrefCount(page, "/course/")).toBe(0);
+    ).toBe(0);
+    // Exactly the one relative agile card survives under /course/.
+    expect(await hrefCount(page, "/course/")).toBe(1);
+    const agileCard = await page.getAttribute(
+      '.series-card[data-tags="agents"]',
+      "href",
+    );
+    expect(agileCard).toBe("/course/agile-agent-workflow");
     // The routes Portal serves stay relative.
     expect(await hrefCount(page, "/elixir")).toBeGreaterThan(0);
     const elixirCard = await page.getAttribute(
@@ -151,6 +163,31 @@ test.describe("F6.5.5 · / (courses index) parity — Phoenix vs Fiber", () => {
     expect(elixirCard).toBe("/elixir");
     const brand = await page.getAttribute(".brand", "href");
     expect(brand).toBe("/");
+  });
+
+  // NAVIGATION (AAW-parity-D2): the home agile card is now a LOCAL link, and clicking
+  // it lands on the Portal's own agile page (200), never production. This is the
+  // strangler-fig flip made observable end to end.
+  test("navigation (portal): clicking the agile card lands on the Portal agile page", async ({
+    page,
+  }) => {
+    await page.goto(COURSES.portal);
+    const agileCard = await page.getAttribute(
+      '.series-card[data-tags="agents"]',
+      "href",
+    );
+    // LOCAL, not NAV_BASE + ... — the click stays inside the Portal.
+    expect(agileCard).toBe("/course/agile-agent-workflow");
+    const resp = await page.goto(AGILE.portal);
+    expect(resp?.status()).toBe(200);
+    // The landed page is the real Portal agile page (its hero + local asset), not a
+    // production redirect.
+    await expect(page.locator("h1")).toContainText("agile agent");
+    const css = await page.getAttribute(
+      'link[rel="stylesheet"][href^="/assets/"]',
+      "href",
+    );
+    expect(css).toBe("/assets/agile-index.css");
   });
 
   // INV9(b): the configurable base touches CATEGORY-4 nav links ONLY — the page's
@@ -278,6 +315,118 @@ test.describe("F6.5.5 · /elixir (course index) parity — Phoenix vs Fiber", ()
     expect(css).toBe("/assets/elixir-index.css");
     const js = await page.getAttribute('script[src^="/assets/"]', "src");
     expect(js).toBe("/assets/elixir-index.js");
+    expect(await hrefCount(page, NAV_BASE + "/assets")).toBe(0);
+    const swept = await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll('link[href*="/assets/"], script[src*="/assets/"]'),
+      ).filter((el) => {
+        const u = el.getAttribute("href") || el.getAttribute("src") || "";
+        return /^https?:\/\//.test(u);
+      }).length,
+    );
+    expect(swept).toBe(0);
+  });
+});
+
+test.describe("AAW · /course/agile-agent-workflow parity — Phoenix vs Fiber", () => {
+  test.use({ viewport: DESKTOP });
+
+  for (const [origin, url] of Object.entries(AGILE)) {
+    test(`type scale: h1 > 70px + .prose p > 18px — the clamp guard (${origin})`, async ({
+      page,
+    }) => {
+      await page.goto(url);
+      const h1 = await styleOf(page, "h1");
+      expect(h1, "h1 must exist").not.toBeNull();
+      // agile master hero h1 clamp max is clamp(2.7rem,1.9rem + 4.2vw,5.1rem) ≈ 81.6px
+      // @1440; a dropped/unspaced clamp collapses it to the 32px UA default.
+      expect(h1!.fontSize).toBeGreaterThan(70);
+      // Body copy: the master's .prose p inherits the body clamp
+      // clamp(1.02rem,0.97rem + 0.28vw,1.18rem) ≈ 18.9px @1440 — guard above 18px,
+      // the same dropped-clamp tell as the elixir page.
+      const body = await styleOf(page, ".prose p");
+      expect(body, ".prose p must exist").not.toBeNull();
+      expect(body!.fontSize).toBeGreaterThan(18);
+    });
+
+    test(`geometry: the hero sits above #modules; the .mods grid multi-column (${origin})`, async ({
+      page,
+    }) => {
+      await page.goto(url);
+      const hero = await rectOf(page, ".hero");
+      const modules = await rectOf(page, "#modules");
+      expect(hero, "the hero must exist").not.toBeNull();
+      expect(modules, "#modules must exist").not.toBeNull();
+      expect(modules!.y).toBeGreaterThan(hero!.y); // hero above the chapter directory
+
+      // The .mods grid is multi-column on desktop (grid-template-columns:repeat(3,1fr)):
+      // the .mod cards in the #modules section occupy more than one distinct x.
+      const modXs = await page.evaluate(() => {
+        const sec = document.querySelector("#modules");
+        if (!sec) return [];
+        return Array.from(sec.querySelectorAll(".mod")).map((el) =>
+          Math.round(el.getBoundingClientRect().x),
+        );
+      });
+      expect(new Set(modXs).size).toBeGreaterThan(1);
+    });
+  }
+
+  // The remap is a PORTAL-rendering property — the Fiber baseline serves the
+  // un-remapped original (relative deep links it actually serves), so these run on
+  // the Portal origin ONLY.
+  test("remap (portal): one bare /course/ index; 23 sub-links + 5 /elixir/course → base; bare /elixir relative", async ({
+    page,
+  }) => {
+    await page.goto(AGILE.portal);
+    // The bare index self-link (footer "Course home") survives relative; all 23
+    // sub-page deep links now carry the configurable base.
+    expect(await hrefCount(page, "/course/")).toBe(1);
+    expect(
+      await hrefCount(page, NAV_BASE + "/course/agile-agent-workflow/"),
+    ).toBeGreaterThanOrEqual(23);
+    // The /elixir/course cross-links (×5) are NOT Portal-served → all remapped; no
+    // un-remapped /elixir/ deep link survives.
+    expect(await hrefCount(page, "/elixir/")).toBe(0);
+    expect(await hrefCount(page, NAV_BASE + "/elixir/")).toBeGreaterThanOrEqual(5);
+    // The bare /elixir self-links (brand + crumb + footer ×2) stay relative — exactly 4.
+    const bareElixir = await page.evaluate(
+      () =>
+        Array.from(document.querySelectorAll("a[href]")).filter(
+          (a) => a.getAttribute("href") === "/elixir",
+        ).length,
+    );
+    expect(bareElixir).toBe(4);
+    // The bare /course/agile-agent-workflow self-link stays relative — exactly 1.
+    const bareAgile = await page.evaluate(
+      () =>
+        Array.from(document.querySelectorAll("a[href]")).filter(
+          (a) => a.getAttribute("href") === "/course/agile-agent-workflow",
+        ).length,
+    );
+    expect(bareAgile).toBe(1);
+    // Spot-check: a .mod chapter card carries the configurable base.
+    const modCard = await page.getAttribute("a.mod", "href");
+    expect(modCard!.startsWith(NAV_BASE + "/course/agile-agent-workflow/")).toBe(true);
+    // The in-page skip anchor stays untouched.
+    const skip = await page.getAttribute("a.skip", "href");
+    expect(skip).toBe("#main");
+  });
+
+  // INV9(b): agile-index.css/js stay Portal-local; the configurable base touches
+  // CATEGORY-4 nav links ONLY. (The agile JS builds no deep links, so there is no
+  // injection point that could sweep an asset — checked nonetheless.)
+  test("asset-locality (portal): agile-index.css/js are root-relative /assets, never the base", async ({
+    page,
+  }) => {
+    await page.goto(AGILE.portal);
+    const css = await page.getAttribute(
+      'link[rel="stylesheet"][href^="/assets/"]',
+      "href",
+    );
+    expect(css).toBe("/assets/agile-index.css");
+    const js = await page.getAttribute('script[src^="/assets/"]', "src");
+    expect(js).toBe("/assets/agile-index.js");
     expect(await hrefCount(page, NAV_BASE + "/assets")).toBe(0);
     const swept = await page.evaluate(() =>
       Array.from(

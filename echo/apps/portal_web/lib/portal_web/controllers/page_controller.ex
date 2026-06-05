@@ -26,4 +26,12 @@ defmodule PortalWeb.PageController do
   def elixir(conn, _params) do
     render(conn, :elixir)
   end
+
+  @doc """
+  Render the static agile-agent-workflow course index at `/course/agile-agent-workflow` —
+  always a `200`, no domain call (AAW-parity-R1).
+  """
+  def agile(conn, _params) do
+    render(conn, :agile)
+  end
 end
