@@ -182,6 +182,9 @@ F6.1 / F5.1 rung triads; every `pre.code` carries spec/stories text, never Elixi
 - A4.7 `✓` · [Workshop — specifying Portal's engine](/course/agile-agent-workflow/spec/workshop) — run the whole A4
   sequence on the real F5.1 engine triad to reproduce a closed, acceptable spec. Dives: `the-engine-deliverables` ·
   `run-the-sequence` · `the-closed-spec`.
+- A4 viewer `✓` · [The spec ladder](/course/agile-agent-workflow/spec/specimens) — an auxiliary page (not a numbered
+  module): a git-iteration slider over the shipped F6.1→F6.6 ladder, reached from the inline `.specref` citation chips
+  that frame each `F6.N` rung on the A4 lesson pages (click-to-expand tooltip → this viewer).
 
 ### A5–A7 `○` planned
 A5 The agent brief `.llms.md` (`…/brief`, modules A5.1–A5.8, triad seeded) · A6 Reliability and correctness

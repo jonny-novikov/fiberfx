@@ -136,6 +136,15 @@ A1–A3. Built: the landing `/spec` (the keystone, no orientation dives) + **all
 **A4.2 `the-triad`**, **A4.3 `spec-anatomy`**, **A4.4 `to-stories`**, **A4.5 `invariants`**, **A4.6 `traceability`**,
 **A4.7 `workshop`**. The no-code mandate held: every `pre.code` carries spec/stories markdown, never Elixir.
 
+A later **refinement pass** (supervised Senior Writer → per-page fan-out, embedded brief in `a4.progress.md`)
+re-grounded every retired-route citation onto the as-built surfaces — the public catalog `/courses`, a learner's own
+`/my/courses`; the function `Portal.courses_of/1` **stayed** (only the `/courses/:user_id` *route* retired) — and
+replaced bare-filename spec citations with an inline **`.specref` citation chip** (the build-stamp affordance applied
+to a citation: a click-to-expand tooltip → the new **spec-ladder viewer** `/spec/specimens`, a git-iteration slider
+over the shipped F6.1→F6.6 ladder). `workshop` cites F5.1 (below that ladder) as a named reference, no chip. The
+critical chip mechanic: the `links` gate does not strip a `#fragment`, so each chip uses a **bare-route href +
+`data-sr-hash`** and the JS appends the hash on click (degrades, and the gate stays green).
+
 **A3 — "The roadmap layer"** (`/roadmap`, Part III) is COMPLETE: the landing + 3 orientation dives + **all nine
 modules A3.1–A3.9** (`agile-distilled`, `xp-small-batches`, `roadmap-anatomy`, `thin-but-robust`, `milestones`,
 `program-roadmap`, `tracer-bullets`, `workshop`, `glossary`), grounded on the real `phoenix.roadmap.md`.

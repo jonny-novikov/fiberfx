@@ -277,6 +277,12 @@ Write the specs and stories for the engine chapter: its deliverables, its invari
 will accept it. The contracts an agent will implement in Part V. Dives: `the-engine-deliverables` · `run-the-sequence`
 · `the-closed-spec`.
 
+### Spec-ladder viewer&nbsp; `✓ built` → [`/spec/specimens`](/course/agile-agent-workflow/spec/specimens)
+An auxiliary page (not a numbered module): a git-iteration slider over the shipped F6.1→F6.6 ladder, with a then→now
+routes toggle. It is the destination of the inline **`.specref` citation chips** on the A4 lesson pages — each chip
+frames a cited `F6.N` rung as a click-to-expand tooltip (short description + a link here), the build-stamp affordance
+applied to spec citations.
+
 ---
 
 # Part V — The agent brief (.llms.md) and the implementation workflow
