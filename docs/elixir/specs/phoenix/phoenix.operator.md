@@ -110,6 +110,16 @@ Two invariants hold at *every* rung, plus the build gate and the acceptance rule
   Playwright parity gate** (`apps/e2e`, computed style + geometry — NOT pixels — against the static baseline).
   Such a rung **drops the ≥100 determinism loop** when it touches no id-mint or process state (F6.5.5-INV8) —
   the liveness criterion is the styled-envelope curls + the parity gate, not a repeated-suite loop.
+- **The config-injection probe** (when a rung makes a value CONFIGURABLE — F6.5.5's polish made the deep-link
+  base so). "Configurable" is proven by an actual SWAP, never by inspecting the default alone: boot the node a
+  second time with the override env set (`DEEP_LINK_BASE_URL=https://example.test mix phx.server`) and assert
+  the **rendered output** carries the override — on EVERY surface the value reaches (here both the
+  server-rendered HEEx markup AND the static JS's injected `<meta>`/`window` value), AND that the OLD default
+  literal no longer survives in the rendered page (proving the host comes from config, not a baked literal).
+  Pair it with the **invariant the configurability must NOT break**: F6.5.5's base touches CATEGORY-4 nav
+  links ONLY — never the Portal's own `~p"/assets/…"` static assets (a page pulling its CSS/JS from the base
+  visually matches yet is a hollow shell + a liveness regression), so the asset-locality probe (`curl
+  :4000/assets/<f>` → 200 local, no redirect; zero `<base>/assets` in the rendered page) runs under the swap too.
 - **Acceptance.** A rung is done iff every story's Given/When/Then is a passing test and the gate is green across the
   loop — and the `/reconcile` gate is build-grade (every spec claim is `MATCH` or an explicit `[RECONCILE]`-DEFERRED).
 

@@ -71,6 +71,12 @@ the LIVENESS check** — the standing criterion: boot the node (`mix phx.server`
 :4000/health` → 200 + the rung's route, because `mix test` runs `server: false` (`config/test.exs`) and never
 binds the port, so a green suite is NOT a live Portal (F6.6 shipped green while `:4000` was dead — the same "a
 check counts only if it RUNS" class as an inert doctest). A gate you did not run is a gate you cannot vouch for.
+And for an Operator-facing rung, liveness is a STANDING property: the boot→curl proves CAPABILITY, but a node
+you boot and kill within the verification turn leaves no artifact the Operator can re-probe — so require the
+node to outlive the turn (a durable boot from the Director's main session or the deploy, not the agent's
+ephemeral process) before vouching DONE (F6.5.5: a transient boot-curl-kill read green to the verifier yet
+dead to the Operator — the "a check counts only if it RUNS" rule extended to "still runs when the Operator
+looks").
 
 ## Sync the spec to what shipped — record, do not redesign
 Pre-build the spec body is authoritative and Venus corrects the code-facing claims to it; **post-build the
