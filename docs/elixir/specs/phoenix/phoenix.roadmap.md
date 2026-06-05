@@ -116,13 +116,13 @@ Per-rung iterations (each a PR-sized increment — a spec triad, the slice, a gr
 | F6.8 | real users and a deployed clustered release | sign in; a protected area; a deployed URL | auth flow tests; release boot; cluster smoke | auth model and deploy target? |
 | F6.9 | an operations/learning dashboard folding live events, under auth, clustered | the dashboard updates live | dashboard render + live-event test | which metrics and views? |
 
-**Status — F6.5 + F6.6 shipped; the design-system rung inserted.** The engine (F5) and **F6.1–F6.6** are **shipped** — F6.5 (HEEx views) and F6.6 (LiveView, `3cf2480`) have landed past the original draft. **F6.5.5 · Apply the design system** is the new styling rung — F0's Portal-rendering (its milestones 4–5) scheduled as a deliverable — specced here with its triad and ship-prompt; the build is pending (*prompt before run*). F6.7–F6.9 remain **specced backlog, groomed**: each opens with a `[RECONCILE]` callout at the top of its body folding the shipped direction forward (routes + components, and now the F6.5.5 styling fold), and each takes a pre-build lag-1 `/reconcile` (Venus step 1) before it is built — retiring up front the ambiguity that accrues when a story is written rungs ahead of its build.
+**Status — F6.1–F6.7 shipped (+ F6.5.5 design system + AAW-parity).** The engine (F5) and **F6.1–F6.7** are **shipped** — F6.5 (HEEx views), F6.6 (LiveView, `3cf2480`), and **F6.7 (real-time PubSub & Presence, `ae7f986`)** have landed past the original draft. **F6.5.5 · Apply the design system** SHIPPED + Operator-accepted (two STATIC parity pages `/` + `/elixir` at computed-style parity + the configurable deep-link base URL, live at `:4000`), with the **AAW-parity** follow-on (`/course/agile-agent-workflow`, the third parity page). F6.8–F6.9 remain **specced backlog, groomed**: each opens with a `[RECONCILE]` callout at the top of its body folding the shipped direction forward (routes + components, the F6.5.5 styling fold, and now F6.7's single-node Presence + broadcast pattern), and each takes a pre-build lag-1 `/reconcile` (Venus step 1) before it is built — retiring up front the ambiguity that accrues when a story is written rungs ahead of its build.
 
 | Rung | Status |
 | --- | --- |
-| F6.1 endpoint · F6.2 routing · F6.3 Ecto · F6.4 contexts · F6.5 HEEx views · F6.6 LiveView | **shipped** |
-| F6.5.5 Apply the design system | **specced** — triad + ship-prompt authored; build pending (*prompt before run*) |
-| F6.7 PubSub · F6.8 auth & deploy · F6.9 dashboard | **specced backlog, groomed** — each opens with a `[RECONCILE]` callout (now incl. the F6.5.5 styling fold) |
+| F6.1 endpoint · F6.2 routing · F6.3 Ecto · F6.4 contexts · F6.5 HEEx views · F6.6 LiveView · **F6.7 PubSub & Presence** | **shipped** |
+| F6.5.5 Apply the design system (+ AAW-parity) | **shipped** — two static parity pages at `:4000`, Operator-accepted; configurable deep-link base |
+| F6.8 auth & deploy · F6.9 dashboard | **specced backlog, groomed** — each opens with a `[RECONCILE]` callout (incl. the F6.5.5 styling fold + F6.7's Presence/broadcast fold) |
 
 ## Seams & open decisions
 

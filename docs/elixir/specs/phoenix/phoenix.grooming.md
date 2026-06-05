@@ -13,13 +13,19 @@ F6.1–F6.6 shipped. **F6.5.5** (the design system — two STATIC parity pages, 
 `/elixir` ↔ `elixir/index.html`, + the configurable deep-link base URL) shipped + Operator-accepted, verified
 live at `:4000`. The **AAW-parity** follow-on (`/course/agile-agent-workflow`, the third parity page) shipped.
 The Portal now serves **three strangler-fig parity pages** (`/`, `/elixir`, `/course/agile-agent-workflow`)
-over the `Portal` facade. **F6.7–F6.9 are the open backlog.**
+over the `Portal` facade, plus — from **F6.7 · Real-time (SHIPPED, `ae7f986` + `2d1ab1c`)** — a `live "/courses"`
+catalog that updates across every connected client over the same facade: PubSub broadcasts on `{:ok, _}` writes
+(incl. the ratified new `update_course/2`), `stream_insert` gated on the active `@query`, and a **single-node**
+`Presence` viewer count. **Forward-folds for F6.8/F6.9:** Presence is single-node — **F6.8's libcluster** makes it
+cluster-correct (F6.7-INV4 is realized single-node, pending the cluster); the `{:course_created/updated, _}`
+broadcast helper is the pattern **F6.9 inherits** for `{:enrolled, _}`; `:portal` now declares a `phoenix_pubsub`
+dep-edge (framework-free infra, `mix.lock` unchanged). **F6.8–F6.9 are the open backlog.**
 
 ## Recommended build order
 
 | # | Rung | Why here |
 |---|---|---|
-| 1 | **F6.7 · Real-time** | Lowest-risk remaining rung — its structural reconciles are RESOLVED, two new tree children only, no styling dependency. Build next. |
+| 1 | **F6.7 · Real-time** ✅ | **SHIPPED** (`ae7f986` + `2d1ab1c`) — structural reconciles were RESOLVED, two new tree children, no styling dependency. |
 | 2 | **A dedicated dynamic-UI styling pass** (recommended; not yet specced) | The F6.5.5 precedent — land the root layout + shared token stylesheet + the `CatalogComponents`/`CoreComponents` decision *separately* from the auth/deploy load. |
 | 3 | **F6.8 · Auth & deployment** | The convergence point; heaviest rung. Lighter if the styling pass lands first. |
 | 4 | **F6.9 · The live dashboard** | The capstone — composes everything below; introduces no new domain. |
@@ -38,7 +44,7 @@ dedicated pass**"). Pulling it forward keeps F6.8 to auth + ops.
 
 ---
 
-## F6.7 · Real-time (PubSub & Presence) — BUILD NEXT
+## F6.7 · Real-time (PubSub & Presence) — ✅ SHIPPED (`ae7f986` + `2d1ab1c`)
 
 [Spec: [`f6.7.md`](f6.7.md)] · Goal: the catalog updates live across every connected client, over the same facade.
 
@@ -64,7 +70,7 @@ dedicated pass**"). Pulling it forward keeps F6.8 to auth + ops.
 | **Live-search × broadcast insert — new interaction** | F6.6's search re-streams on `@query` with `reset: true`; F6.7's `stream_insert` ignores `@query`, so a broadcast can insert a row **outside an active filter**. *Why: F6.6 shipped a live filter the broadcast path must reckon with* → decide at build: gate the insert on a `@query` match, or accept the interaction and record it. |
 | **Styling — CONSISTENCY, not inheritance** | F6.5.5 styled STATIC pages, so `course_card` + the `live "/courses"` `CatalogLive` are **still unstyled**. *Why: F6.5.5 styled static documents, not the LiveView component F6.7 streams through* → a broadcast-inserted row must render through the **same `course_card/1`** the mount uses (styled if a prior pass styled it, bare if not). F6.7 does **not** own the live-catalog styling, only the match-the-mount invariant. |
 
-**Open decisions for the build:** (1) ratify `update_course/2` as the new write surface (or drop `:course_updated`); (2) the live-search × broadcast-insert interaction (gate vs. accept).
+**Decisions as shipped:** (1) `update_course/2` RATIFIED + built (`course |> Course.changeset/2 |> Repo.update/1`, the create-mirror) + the `Portal.update_course/2` delegate; (2) the live-search × broadcast-insert was **gated** on a `@query` substring match (mirrors `search_courses/1`'s title `ilike`). **As-built notes:** D6 (channel) DEFERRED; `Portal.subscribe/broadcast` are `def` (no delegate target); `apps/portal/mix.exs` += `phoenix_pubsub` visibility edge (`mix.lock` unchanged, F6.1-INV1 intent preserved); `Presence` single-node pending F6.8's libcluster. **Carried gap (NOT F6.7 code):** the pre-existing F6.1 endpoint-kill ETS-repopulation harness race flakes the full `portal_web` ≥100 loop (F6.7's own surface is 60/60 deterministic); fix in flight as its own scoped commit.
 
 ---
 
