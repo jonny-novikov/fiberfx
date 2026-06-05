@@ -171,7 +171,7 @@ four artifacts + its Given/When/Then) · `order-the-backlog` (the three mileston
 
 ---
 
-# Part III — The roadmap layer: Agile delivery & iteration&nbsp; `◐ landing + orientation built` → [`/roadmap`](/course/agile-agent-workflow/roadmap)
+# Part III — The roadmap layer: Agile delivery & iteration&nbsp; `◐ landing + orientation + §3.1–§3.3, §3.9 built` → [`/roadmap`](/course/agile-agent-workflow/roadmap)
 
 *Planning delivery as thin, robust increments. Milestones, iterations, and the inspect-and-adapt loop — where the
 Agile Manifesto, Extreme Programming, and Continuous Delivery meet the agent workflow in a `roadmap.md`.*
@@ -182,17 +182,20 @@ Agile Manifesto, Extreme Programming, and Continuous Delivery meet the agent wor
 [`the-road-ahead`](/course/agile-agent-workflow/roadmap/the-road-ahead) (a recap of A0–A2 + a 5W overview). The eight
 teaching modules below are planned.*
 
-### 3.1 · Agile, distilled
+### 3.1 · Agile, distilled&nbsp; `✓ built` → [`/roadmap/agile-distilled`](/course/agile-agent-workflow/roadmap/agile-distilled)
 Working software in short cycles, responding to change, inspect-and-adapt. The handful of principles that actually
-drive the workflow, separated from the ceremony that does not.
+drive the workflow, separated from the ceremony that does not. Dives: `the-values` · `inspect-and-adapt` ·
+`keep-vs-ceremony`.
 
-### 3.2 · Extreme Programming for small batches
+### 3.2 · Extreme Programming for small batches&nbsp; `✓ built` → [`/roadmap/xp-small-batches`](/course/agile-agent-workflow/roadmap/xp-small-batches)
 Small releases, incremental design, and continuous feedback, re-cast for an Author/Operator pair. Why small batches
-lower risk and raise learning — and how an agent makes small batches cheap.
+lower risk and raise learning — and how an agent makes small batches cheap. Dives: `small-releases` ·
+`incremental-design` · `continuous-feedback`.
 
-### 3.3 · Anatomy of a roadmap.md
+### 3.3 · Anatomy of a roadmap.md&nbsp; `✓ built` → [`/roadmap/roadmap-anatomy`](/course/agile-agent-workflow/roadmap/roadmap-anatomy)
 What a chapter roadmap carries: what it delivers, the start/end handoff, the architecture decision, the milestones, the
-per-iteration table, and the explicitly-named open decisions. A read-through of a complete roadmap.
+per-iteration table, and the explicitly-named open decisions. A read-through of the real F6 `phoenix.roadmap.md`.
+Dives: `what-it-carries` · `the-iteration-table` · `open-decisions`.
 
 ### 3.4 · Thin but robust
 The discipline at the centre of the method: each increment is a narrow vertical slice built to production quality —
@@ -213,6 +216,11 @@ the pragmatic techniques that keep a roadmap honest about uncertainty.
 ### 3.8 · Workshop — roadmapping Portal
 Write Portal's chapter roadmaps and its program roadmap: the milestones, the iteration tables, and the seams you
 choose to defer. The delivery plan you will execute in Part VII.
+
+### 3.9 · Glossary, references & the framework crosswalk&nbsp; `✓ built` → [`/roadmap/glossary`](/course/agile-agent-workflow/roadmap/glossary)
+The chapter's reference appendix: a UX-friendly expandable list of the course's key terms, each with an abstract, its
+source, and where the framework (`/elixir`) implements it. Dives: `glossary` (the terms) · `sources` (the annotated
+bibliography) · `crosswalk` (the idea→`/elixir` map).
 
 ---
 
