@@ -58,11 +58,14 @@ spec, not the code).
   suite proves the plug pipeline, NOT that the dev node boots + binds. Boot (`mix phx.server`) and
   `curl :4000/health` → 200 + the rung's route renders (F6.6 shipped green while `:4000` was never
   bound — the same "a check counts only if it RUNS" class as the inert doctest above). And liveness is
-  a STANDING property, not a one-shot gate: for an Operator-facing rung, leave the node RUNNING (a
-  durable boot from a non-ephemeral context, or hand the Director the one-line boot command) — never
-  boot→curl→kill, because an agent-booted node is reaped at turn-end and a server torn down when the
-  turn ends makes "DONE / the Portal lives at :4000" unfalsifiable when the Operator probes on demand
-  (F6.5.5: the polish curled :4000 green then killed it; the Operator's probe hit a dead port).
+  a STANDING property, not a one-shot gate: for an Operator-facing rung, the node must be left RUNNING
+  from a non-ephemeral context — the Director's main session or the deploy. A spawned agent CANNOT do
+  this (its process, and any node it boots, is reaped at turn-end), so the agent's SOLE reliable path
+  is to hand the Director the one-line boot command and report the route as served-pending-boot, never
+  to claim it "left up" — never boot→curl→kill, because a server dead at turn-end makes "the Portal
+  lives at :4000" unfalsifiable when the Operator probes on demand (F6.5.5: the polish curled :4000
+  green then killed it; AAW-parity: a fresh spawn reported ephemeral :4010/:4011 "left up", both dead
+  to the next probe).
 - **CSS clamps are gate-invisible — lint them.** For any rung that touches or creates CSS, before
   reporting done grep every `clamp()` in the changed CSS for an unspaced `+`/`-` inside the args:
   `clamp(2.7rem,1.9rem+4.2vw,5.1rem)` is INVALID CSS, silently dropped to the UA default

@@ -172,6 +172,43 @@ The minimal "is the Portal still live?" check after any rung is two lines: boot 
 
 ---
 
+## 5.1 Workload — add a static parity page through Phoenix (the Nth parity page)
+
+A recurring **workload**, not a chapter rung: take a static golden-master page the Fiber server already serves under
+`html/<section>/index.html`, and make Phoenix serve a byte-faithful, design-system-identical copy at the same clean URL —
+flipping the home card from a production REMAP to a LOCAL route as a strangler-fig step. Three pages have run this spine
+(`/` ↔ `html/courses.html`, `/elixir` ↔ `elixir/index.html`, `/course/agile-agent-workflow` ↔
+`html/agile-agent-workflow/index.html`); the steps are route-agnostic, so this is the repeatable L0 runbook. It runs the
+same Venus→Mars→Apollo loop (§3); the contract is a concise parity brief (the worked example is
+[`aaw-parity.md`](aaw-parity.md), §11 spine).
+
+**The L0 split — what the human decides vs what each agent does:**
+
+| Stage | Owner | What happens |
+| --- | --- | --- |
+| 0 · pick the page | **Operator** | Name the golden master (`html/<section>/index.html`, Operator out-of-band) + its `:8765/<route>` Fiber baseline. The new public route is an **Operator ratification** (a new HTTP surface — §1's decision split). |
+| 1 · reconcile (PROBE, not config-read) | Venus | Confirm the as-built pattern (the thin action, the public `scope "/"`, `deep_link_base/0`, `Plug.Static at:"/"`). **Probe `:4000`** for the route's current `404` and the asset's absence — a serving fact is a `curl`, never a re-read of `endpoint.ex` (the F6.5.5 `at:"/assets"` mount read-as-correct yet 404'd; the cure was a curl). READ the master's `<head>`/`<style>`/`<script>`/internal hrefs. Read **both** `<script>` blocks to decide whether a `<meta name="deep-link-base">` injection is needed: add it ONLY if the page's JS builds deep links (elixir does; agile does NOT). |
+| 2 · parity contract | Venus | Pin: the route+action (the ratification), the full-document template, the **verbatim** asset relocation (exact master line ranges), the keep-vs-remap taxonomy for **every** internal href, the home-card flip, the two-sided INV9, the e2e extension. |
+| 3 · build | Mars | action + route → assets (verbatim, clamp-clean) → full-document template (inline `<style>`/`<script>` → `~p"/assets/…"`; deep links remapped inline; `<meta>` ONLY if step 1 said so) → home-card flip (`deep_link_base() <> …` → relative) → e2e (a third `describe` + the navigation test). |
+| 4 · gate | Apollo | **clamp-spacing** (`grep -nE 'clamp\([^)]*[+-][^ 0-9.]' <asset>.css` → 0, siblings byte-unchanged; computed `<h1>` > 70px) · **asset-locality, two-sided** (`curl :4000/assets/<f>.css` → 200 local, no redirect; rendered refs `~p"/assets/…"`, zero carrying the base) · **two-origin parity** (computed style + geometry, the `apps/e2e` suite on the default AND override base) · **standing-liveness** (below) · **config-swap** (the override re-renders category-4 only). Re-run the master line-range `diff` to prove the relocation is byte-identical. |
+| 5 · ratify + commit | **Operator** + Director | The Operator accepts the demo; the Director makes one scoped commit (explicit pathspec, **excluding** the Operator out-of-band parity source `html/<section>/*`). |
+
+**Standing-liveness for a parity page — the load-bearing nuance (G3).** The proof the route serves is a probe of the
+**already-running, durable `:4000`** the Director holds in the main session — `curl -fsS :4000/health` → 200 AND `curl
+-fsS :4000/<route>` → 200, the node still answering afterward. An **agent CANNOT leave a node durably running**: a node
+an agent boots (for a config-swap check, say) is reaped at that agent's turn-end, so it is never a standing artifact.
+The agent's reliable path is therefore the **handoff** — hand the Director the boot/`recompile()` command and probe the
+Director's `:4000`; the "leave a node running" branch belongs to the Director's session or the deploy, not the agent.
+Run any ephemeral-node check (the config-swap) WITHIN the turn so the check RAN, then tear that node down — never
+present it as live to the Operator. (The Nth parity page confirmed this in the field: an agent reported its own
+`:4010`/`:4011` "left up," and both were dead to the next probe.)
+
+**The parity-specific gate vocabulary** (beyond §4's standing gates): the master line-range **byte-diff** (the relocation
+is verbatim or it is not), the **href taxonomy counts** (exact in both template source and rendered DOM), and the
+**`<meta>`-injection decision** (a per-page READ of the JS, not a cargo-cult of the prior page's `<meta>` tag).
+
+---
+
 ## 6. How to read a verdict
 
 What the Operator sees at a rung's close, and what each part means:
