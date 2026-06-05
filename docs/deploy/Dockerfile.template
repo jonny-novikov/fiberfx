@@ -1,0 +1,56 @@
+# -----------------------------------------------------------------------------
+# Stage: Elixir Base (using Debian for glibc compatibility with runtime)
+# Tag format: hexpm/elixir:1.18.4-erlang-27.3.4.1-debian-bookworm-20251117
+# -----------------------------------------------------------------------------
+FROM hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-bookworm-${DEBIAN_DATE} AS elixir-base
+
+WORKDIR /app
+ENV MIX_ENV=prod
+
+# Install build dependencies
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install hex + rebar
+RUN mix local.hex --force && \
+    mix local.rebar --force
+
+# -----------------------------------------------------------------------------
+# Stage: Elixir Build
+# -----------------------------------------------------------------------------
+# Uses umbrella structure for in_umbrella deps (live_svelte).
+# -----------------------------------------------------------------------------
+FROM elixir-base AS elixir-build
+
+# Copy umbrella root and apps (mix.lock is at umbrella root)
+COPY mix.exs mix.lock ./
+COPY config config
+COPY apps/echo/mix.exs apps/echo/
+COPY apps/echo/config apps/echo/config
+
+# Install and compile dependencies from umbrella root
+RUN mix deps.get --only prod
+RUN mix deps.compile
+
+# Copy echo application code
+COPY apps/echo/lib apps/echo/lib
+COPY apps/echo/priv apps/echo/priv
+
+# Compile echo application
+WORKDIR /app/apps/echo
+RUN mix compile
+
+# INSERT copy built assets from Node.js build stage
+# WHEN nodejs is required
+# Client bundle (browser)
+# Server bundle (Node 22 SSR)
+
+# Create digested assets with cache_manifest.json for production
+RUN mix phx.digest
+
+# Build release
+RUN mix release

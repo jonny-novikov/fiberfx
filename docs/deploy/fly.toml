@@ -1,0 +1,178 @@
+# =============================================================================
+# Fly.io Configuration for Codemoji v8 Zero Downtime Deployments
+# =============================================================================
+#
+# Echo (Elixir/Phoenix) + Fastify Workers on same machine (hot replacement enabled)
+# Writerside/topics/architecture/06-zero-downtime/01-zero-downtime-deployments.md
+#
+# Infrastructure:
+#   - codemoji-phoenix: This app (Echo + Workers)
+#   - codemoji-postgres: Fly Postgres (hosts both databases)
+#     - Database: codemoji_game (Game database)
+#   - codemoji-redis: Redis Fly.io machine (BullMQ, caching)
+#
+# Port Allocation:
+#   4000  | Echo Phoenix (public: HTTP + WebSocket Channels, Mint, Gun Proxy)
+#   6003  | Fastify API       | Node.js       | Game logic, REST, Socket.IO
+#   6004  | Fastify Queue     | Node.js       | Background jobs, leaderboards
+#   6005  | Fastify Broadcast | Node.js       | Redis pub/sub relay
+# =============================================================================
+
+app = "codemoji-phoenix"
+primary_region = "fra"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+# -----------------------------------------------------------------------------
+# Build Configuration
+# -----------------------------------------------------------------------------
+[build]
+  dockerfile = "Dockerfile"
+
+  [build.args]
+    NODE_VERSION = "22"
+    ELIXIR_VERSION = "1.18.4"
+    OTP_VERSION = "27.3.4.1"
+    # DEBIAN_DATE used for hexpm/elixir Debian image tag
+    DEBIAN_DATE = "20251117"
+
+# -----------------------------------------------------------------------------
+# Deploy Configuration
+# -----------------------------------------------------------------------------
+[deploy]
+  strategy = "rolling"
+
+# -----------------------------------------------------------------------------
+# Environment Variables (non-secret)
+# -----------------------------------------------------------------------------
+[env]
+  # Echo/Phoenix
+  PHX_HOST = "jonnify.fly.dev"
+  PHX_SERVER = "true"
+  MIX_ENV = "prod"
+  PORT = "4000"
+  POOL_SIZE = "10"
+  # enable /dev live routes
+  DEV_LIVE = "true"
+
+  # =============================================================================
+  # Erlang/Elixir DNS & Network Configuration
+  # =============================================================================
+  # Fly.io uses IPv6-only internal networking. These settings ensure:
+  # 1. Erlang can resolve .internal/.flycast hostnames via Fly's DNS (fdaa::3)
+  # 2. Ecto/Postgrex uses IPv6 sockets (required for internal connections)
+  # 3. External IPv4 addresses work via Fly's IPv6→IPv4 tunneling
+  #
+  # inetrc file configures Erlang's DNS resolver with:
+  # - Native OS resolution first (respects /etc/resolv.conf)
+  # - Fly internal DNS (fdaa::3) + public fallbacks (Cloudflare, Google)
+  # - Search domain "internal" for short hostnames
+  ERL_INETRC = "/app/inetrc"
+
+  # Enable IPv6 sockets for Ecto/Postgrex connections
+  # Required for Fly.io's IPv6-only internal network
+  ECTO_IPV6 = "true"
+
+  # Erlang VM flags for IPv6 protocol distribution
+  # Required if using Erlang clustering/distribution on Fly.io
+  ERL_AFLAGS = "-proto_dist inet6_tcp"
+
+  # Fastify Worker (Single API worker for stability)
+  # Single worker handles all roles: api, queue, broadcast
+  FASTIFY_PORT = "6003"
+  WORKER_COUNT = "1"
+  SPECIALIZED_WORKERS = "false"
+  NODE_ENV = "production"
+  QUEUE_CONCURRENCY = "5"
+
+  # FWHD v3: Worker path (symlink managed by DistrWatcher)
+  WORKER_PATH = "/app/packages/current"
+  ENTRY_POINT = "dist/index.js"
+
+  # FWHD v3: SQLitestream Distribution (DistrWatcher)
+  # DistrWatcher polls packages.db for active_versions changes
+  # Downloads from Tigris S3 or direct URL, creates symlink at WORKER_PATH
+  DISTR_WATCH_ENABLED = "false"
+  PACKAGES_DB_PATH = "/app/data/packages.db"
+  DISTR_WATCH_COMPONENT = "backend"
+
+  # VolumeWatcher disabled (no persistent volume in SQLitestream mode)
+  VOLUME_WATCH_ENABLED = "false"
+  VOLUME_WATCH_PATH = "/app/packages"
+
+  # Shared
+  TZ = "UTC"
+  LANG = "en_US.UTF-8"
+  LOG_LEVEL = "info"
+
+  # Fastify database name (for reference)
+  GAME_DB_NAME = "codemoji_game"
+
+  # Datadog Configuration
+  DD_ENABLED = "true"
+  DD_SERVICE = "codemoji-backend"
+  DD_ENV = "production"
+  DD_VERSION = "3.1.0"
+  DD_AGENT_HOST = "fly-global-services"
+  DD_TRACE_AGENT_PORT = "8126"
+  DD_DOGSTATSD_PORT = "8125"
+  DD_LOGS_INJECTION = "true"
+  DD_RUNTIME_METRICS_ENABLED = "true"
+# -----------------------------------------------------------------------------
+# Experimental Features
+# -----------------------------------------------------------------------------
+[experimental]
+  auto_rollback = true
+
+# -----------------------------------------------------------------------------
+# Compute Resources (Fly V2)
+# -----------------------------------------------------------------------------
+[compute]
+  cpu_kind = "shared"
+  cpus = 2
+  memory_mb = 2048
+
+# -----------------------------------------------------------------------------
+# Main HTTP Service (Echo Phoenix)
+# -----------------------------------------------------------------------------
+[[services]]
+  protocol = "tcp"
+  internal_port = 4000
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 50000
+    soft_limit = 45000
+
+  # HTTP → HTTPS redirect
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  # HTTPS with HTTP/2
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+    [services.ports.tls_options]
+      alpn = ["h2", "http/1.1"]
+
+  # TCP health check (fast, for load balancer)
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "3s"
+    grace_period = "10s"
+
+  # HTTP health check (comprehensive)
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
+    [services.http_checks.headers]
+      X-Forwarded-Proto = "https"
