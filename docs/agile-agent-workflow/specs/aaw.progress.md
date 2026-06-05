@@ -22,21 +22,22 @@ A1  Why                  ✓  ████████████████�
 A2  Decomposition        ✓  ████████████████████████  100%   (landing ▣ · 7/7 modules)
 A3  The roadmap layer    ✓  ████████████████████████  100%   (landing ▣ · 3 dives · 9/9 modules)
 A4  The spec layer       ✓  ████████████████████████  100%   (landing ▣ · 7/7 modules)
-A5  The agent brief      ◐  ███░░░░░░░░░░░░░░░░░░░░░   ~11%  (landing ▣ · 3 orientation dives ▣ · 0/8 modules)  ← FRONTIER
-A6  Reliability          ◐  ███░░░░░░░░░░░░░░░░░░░░░    —    (landing ▣ · 3 orientation dives ▣ · modules pending triad)
+A5  The agent brief      ✓  ████████████████████████  100%   (landing ▣ · 3 orientation dives ▣ · 8/8 modules)
+A6  Reliability          ◐  ███░░░░░░░░░░░░░░░░░░░░░    —    (landing ▣ · 3 orientation dives ▣ · modules pending triad)  ← FRONTIER
 A7  Portal exemplar      ◐  ███░░░░░░░░░░░░░░░░░░░░░   ~12%  (landing ▣ · 3 orientation dives ▣ · 0/7 steps)
 ────────────────────────────────────────────────────────────────────────────────────
-COURSE (A0–A5, A7)       ◐  ███████████████░░░░░░░░░   64%   (30 / 47 modules built)
+COURSE (A0–A5, A7)       ◐  ███████████████████░░░░░   81%   (38 / 47 modules built)
 ```
 
 *A6 is excluded from the denominator until its triad is seeded and its modules are enumerated. The course total
 counts modules across the seven chapters with a known module set (A0 3 · A1 6 · A2 7 · A3 9 · A4 7 · A5 8 · A7 7 =
-47). The course % counts **modules** only — the A5/A6/A7 landings + their why/what/how orientation dives (12 pages,
+47). The course % counts **modules** only — the A6/A7 landings + their why/what/how orientation dives (8 pages,
 all gating A+) are built but are not modules, so they raise each chapter to ◐ without moving the module count.*
 
-*Milestone — **all eight chapter landings + orientation now exist**: the course spans A0→A7 end to end at the chapter
-level (every `/<chapter>` and the A5/A6/A7 why/what/how triptychs are live). Module/step fill-in continues — A5's
-eight modules are next (triad seeded); A6 and A7 await their triads before their modules/steps are enumerated.*
+*Milestone — **A5 "The agent brief" is complete**: its eight modules A5.1–A5.8 (32 pages — each a hub + 3 dives) are
+built and gating A+, grounded verbatim on the Portal's real `f6.1`/`f5.2` agent briefs with `/elixir` cross-links on
+every page. The course now runs A1→A5 as five complete chapters on top of the A3/A4 keystones. Next: seed A6's triad
+and build its modules; A7's seven exemplar steps follow.*
 
 ## A0 · Foundations — `/what`  ◐ ~38%
 
@@ -98,12 +99,23 @@ eight modules are next (triad seeded); A6 and A7 await their triads before their
 ✓ A4.7  Workshop — specifying the engine   ████████████████████████  100%   (4/4)   /spec/workshop
 ```
 
-## A5 · The agent brief — `/brief`  ◐ ~11%  (landing + orientation built)
+## A5 · The agent brief — `/brief`  ✓ 100%  (landing + A5.1–A5.8 built)
 
 ```
 ▣ landing /brief  +  ▣ 3 orientation dives why · what · how    (all gating A+)
-○ A5.1–A5.8 (8 modules)                    ░░░░░░░░░░░░░░░░░░░░░░░░    0%   triad a5.{md,stories,llms} seeded ahead
+✓ A5.1  The llms.txt convention            ████████████████████████  100%   (4/4)   /brief/llms-txt
+✓ A5.2  References and requirements        ████████████████████████  100%   (4/4)   /brief/references-requirements
+✓ A5.3  Execution topology                 ████████████████████████  100%   (4/4)   /brief/execution-topology
+✓ A5.4  Agent stories                      ████████████████████████  100%   (4/4)   /brief/agent-stories
+✓ A5.5  The implementation prompt          ████████████████████████  100%   (4/4)   /brief/implementation-prompt
+✓ A5.6  Running Claude agents well         ████████████████████████  100%   (4/4)   /brief/running-agents
+✓ A5.7  Pragmatic Programming w/ Agents    ████████████████████████  100%   (4/4)   /brief/the-thesis
+✓ A5.8  Workshop — briefing for Portal     ████████████████████████  100%   (4/4)   /brief/workshop
 ```
+
+*Grounded on the real `f6.1.llms.md` (the web bootstrap: References + `F6.1-R1…R8`, the topology + `T1→T7` DAG, agent
+stories `F6.1-AS1…AS4`, the implementation prompt), the `f6.6`/`f6.7` ship prompts (running agents), and `f5.2.llms.md`
+(the workshop's engine rung). Every page cross-links the matching `/elixir/phoenix/*` rung.*
 
 ## A6 · Reliability and correctness — `/reliability`  ◐  (landing + orientation built; scope pending triad)
 

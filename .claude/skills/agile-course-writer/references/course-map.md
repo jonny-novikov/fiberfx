@@ -25,7 +25,7 @@ as the A0 chapter landing AND the A0.2 module hub. Every chapter from A1 on **ne
 | A2 | Decomposition: from vision to user stories | `/course/agile-agent-workflow/decomposition` | `decomposition/` | **complete — landing + A2.01–A2.07 built** |
 | A3 | The roadmap layer: Agile delivery & iteration | `/course/agile-agent-workflow/roadmap` | `roadmap/` | **complete — landing + 3 orientation dives + A3.1–A3.9 built** |
 | A4 | The spec layer: specifications & acceptance | `/course/agile-agent-workflow/spec` | `spec/` | **complete — landing + A4.1–A4.7 built** |
-| A5 | The agent brief (.llms.md) & implementation | `…/brief` | `brief/` | **landing + 3 orientation dives (why·what·how) built**; modules A5.1–A5.8 planned (triad seeded) |
+| A5 | The agent brief (.llms.md) & implementation | `…/brief` | `brief/` | **COMPLETE** — landing + 3 orientation dives + all 8 modules A5.1–A5.8 (hub + 3 dives each = 32 pages) built |
 | A6 | Reliability and correctness | `…/reliability` | `reliability/` | **landing + 3 orientation dives built**; modules await `a6.*` triad (scope: OTP supervision, boundaries, parse-don't-validate, property tests) |
 | A7 | Portal exemplar (zero to production) | `…/portal` | `portal/` | **landing + 3 orientation dives built**; steps A7.01–A7.07 await `a7.*` triad |
 
@@ -122,7 +122,7 @@ sequence on Portal's five surfaces (store, engine, web, bot, dashboard) to produ
 
 ## Resume point
 
-**Parts I, II, III, and IV are complete (A0–A4).** The course's own **spec system** lives under
+**Parts I, II, III, IV, and V are complete (A0–A5).** The course's own **spec system** lives under
 `docs/agile-agent-workflow/specs/` — the single `aaw.roadmap.md`, the `aaw.operator.md` build runbook, the live
 **`aaw.progress.md`** completion dashboard (per-rung status bar + %, recounted at each rung-close), and a **chapter
 triad** (`a<N>.md` chapter spec + `a<N>.llms.md` brief + `a<N>.stories.md` stories) for **A3, A4, and A5** (A5 is
@@ -156,9 +156,21 @@ on its seeded triad; **A6 and A7 have NO triad** and were grounded only on `aaw.
 with their module/step sets honestly **deferred** (a `.note`, not invented cards). The Senior Writer also ran a
 reverse verification (A7→A6→A5→A4) so each chapter's `why` echoes what its predecessor leaves unfinished.
 
-**Next: A5's MODULES — "The agent brief"** (`/brief`, Part V). The landing + orientation are built; fan out the eight
-modules **A5.1–A5.8** with `/agile-write brief <module-slug> …` against the seeded stories + brief — the same
-supervised-Senior-Writer-then-fan-out loop A3 and A4 used (author an `a5.progress.md`, embed it into each Author's
-prompt). **Then A6/A7:** seed each triad (`a6.*`, `a7.*`) first, then build its modules/steps; the landings already
-name the scope. The course thesis, restated each module: neither no-plan nor all-plan ships reliable software; the
-unit that does is a thin slice of value, specified only enough, proven before the next begins.
+**A5 — "The agent brief"** (`/brief`, Part V) is COMPLETE: the landing + 3 orientation dives + **all eight modules
+A5.1–A5.8** (each a hub + 3 dives = **32 pages**, all gating A+), built by the supervised-Senior-Writer-then-per-page
+fan-out loop — a single `a5.progress.md` embedded brief (whole-chapter narrative, reverse-verified A5.8→A5.1, 32
+per-page specs, shared directives) authored first, then **one agent per page**. Modules: **A5.1 `llms-txt`**, **A5.2
+`references-requirements`**, **A5.3 `execution-topology`**, **A5.4 `agent-stories`**, **A5.5 `implementation-prompt`**,
+**A5.6 `running-agents`**, **A5.7 `the-thesis`**, **A5.8 `workshop`**. Grounded verbatim on the real `f6.1.llms.md`
+(References/`R1…R8`, topology/`T1→T7`, `AS1…AS4`, the prompt), the `f6.6`/`f6.7` ship prompts, and `f5.2.llms.md` (the
+workshop's engine rung) — **every page cross-links the matching `/elixir/phoenix/*` rung** (the user's standing ask).
+The no-code mandate held (every `pre.code` is spec/stories markdown, never Elixir). Two waves hit transient API
+socket drops at the report boundary; the **md-first** checkpoint preserved each page's design, so recovery rebuilt
+only the HTML from the surviving md — no content lost.
+
+**Next: A6 "Reliability and correctness"** (`/reliability`, Part VI) — the new FRONTIER. The landing + orientation
+are built but **A6 has NO triad**; seed `a6.{md,stories.md,llms.md}` first (the landing already names the scope —
+supervision, boundaries, property tests), then run the same supervised-Senior-Writer-then-fan-out loop. **A7
+"Portal exemplar"** (`/portal`, Part VII) follows: seed `a7.*`, then build its seven exemplar steps A7.01–A7.07.
+The course thesis, restated each module: neither no-plan nor all-plan ships reliable software; the unit that does is
+a thin slice of value, specified only enough, proven before the next begins.

@@ -86,9 +86,11 @@ the Operator/Author pairing. Its built module, A0.2, is the framework in a singl
 [`/course/agile-agent-workflow/why`](/course/agile-agent-workflow/why)), chapter A2 (§2.1–§2.7,
 [`/course/agile-agent-workflow/decomposition`](/course/agile-agent-workflow/decomposition)), chapter A3 (§3.1–§3.9,
 [`/course/agile-agent-workflow/roadmap`](/course/agile-agent-workflow/roadmap)), and chapter A4 (§4.1–§4.7,
-[`/course/agile-agent-workflow/spec`](/course/agile-agent-workflow/spec)) are fully built. The frontier is
-**Part V / chapter A5** ("The agent brief", `/brief`); Parts V–VII are planned (A5 is specced ahead). Live
-per-rung completion is tracked in [`specs/aaw.progress.md`](specs/aaw.progress.md).
+[`/course/agile-agent-workflow/spec`](/course/agile-agent-workflow/spec)), and chapter A5 (§5.1–§5.8,
+[`/course/agile-agent-workflow/brief`](/course/agile-agent-workflow/brief)) are fully built. The frontier is
+**Part VI / chapter A6** ("Reliability and correctness", `/reliability`); its landing + orientation are built and its
+modules await the `a6.*` triad. Part VII (A7) follows. Live per-rung completion is tracked in
+[`specs/aaw.progress.md`](specs/aaw.progress.md).
 
 ---
 
@@ -285,46 +287,46 @@ applied to spec citations.
 
 ---
 
-# Part V — The agent brief (.llms.md) and the implementation workflow&nbsp; `◐ landing + orientation built` → [`/brief`](/course/agile-agent-workflow/brief)
+# Part V — The agent brief (.llms.md) and the implementation workflow&nbsp; `✓ landing + orientation + §5.1–§5.8 built` → [`/brief`](/course/agile-agent-workflow/brief)
 
 *The agent-facing brief and how a Claude agent turns it into working code. References-first, requirements, execution
 topology, agent stories, and the comprehensive implementation prompt — and the practice of running an agent well. The
 heart of "Pragmatic Programming with Claude Agents."*
 
-**Orientation** `✓ built` — the landing opens onto a why/what/how triptych: [Why a brief layer](/course/agile-agent-workflow/brief/why) · [What the chapter covers](/course/agile-agent-workflow/brief/what) · [How you learn and build it](/course/agile-agent-workflow/brief/how). The eight modules below are specced (triad seeded) and build next.
+**Orientation** `✓ built` — the landing opens onto a why/what/how triptych: [Why a brief layer](/course/agile-agent-workflow/brief/why) · [What the chapter covers](/course/agile-agent-workflow/brief/what) · [How you learn and build it](/course/agile-agent-workflow/brief/how). The eight modules below each carry a hub + three dives, grounded verbatim on the Portal's real `f6.1`/`f6.6`/`f6.7`/`f5.2` agent briefs with a cross-link to the matching `/elixir/phoenix` rung on every page.
 
-### 5.1 · Writing for an agent: the llms.txt convention
+### 5.1 · Writing for an agent: the llms.txt convention&nbsp; `✓ built` → [`/brief/llms-txt`](/course/agile-agent-workflow/brief/llms-txt)
 Why a brief written for an agent differs from documentation written for a person — links first, prose second, every
-reference exact. The shape of a machine-readable implementation brief.
+reference exact. The shape of a machine-readable implementation brief. Dives: `links-first` · `every-reference-exact` · `the-machine-brief`.
 
-### 5.2 · References and requirements
+### 5.2 · References and requirements&nbsp; `✓ built` → [`/brief/references-requirements`](/course/agile-agent-workflow/brief/references-requirements)
 The precise sources the agent must read first — framework docs, the upstream contract, the prior specs — and numbered,
-testable requirements, each traced back to a story and forward to an invariant or check.
+testable requirements, each traced back to a story and forward to an invariant or check. Dives: `references-first` · `numbered-requirements` · `traceability`.
 
-### 5.3 · Execution topology
+### 5.3 · Execution topology&nbsp; `✓ built` → [`/brief/execution-topology`](/course/agile-agent-workflow/brief/execution-topology)
 Giving the agent the runtime shape (processes, supervision, request flow) and the build-order task DAG, plus the exact
-files it will touch — so the agent assembles a system rather than a pile of snippets.
+files it will touch — so the agent assembles a system rather than a pile of snippets. Dives: `runtime-shape` · `the-task-dag` · `the-file-list`.
 
-### 5.4 · Agent stories
+### 5.4 · Agent stories&nbsp; `✓ built` → [`/brief/agent-stories`](/course/agile-agent-workflow/brief/agent-stories)
 The executable counterpart of a user story: a Directive (what the agent does) and an Acceptance gate (the check that
-closes it). The short first-two-stories plan that proves the path is unambiguous before the agent runs.
+closes it). The short first-two-stories plan that proves the path is unambiguous before the agent runs. Dives: `directive-and-gate` · `first-two-stories` · `acceptance-gates`.
 
-### 5.5 · The comprehensive implementation prompt
+### 5.5 · The comprehensive implementation prompt&nbsp; `✓ built` → [`/brief/implementation-prompt`](/course/agile-agent-workflow/brief/implementation-prompt)
 The single brief an agent runs to build an increment in task order and self-check against the gates. The anatomy of a
-prompt that leaves no decision the spec has not already fixed.
+prompt that leaves no decision the spec has not already fixed. Dives: `assembling-the-prompt` · `task-order` · `definition-of-done`.
 
-### 5.6 · Running Claude agents well
+### 5.6 · Running Claude agents well&nbsp; `✓ built` → [`/brief/running-agents`](/course/agile-agent-workflow/brief/running-agents)
 The practice around the prompt: how to brief, supervise, and review an agent; reading its work critically; recognizing
-when to let it run and when to intervene. Lessons from building effective agents, applied to real implementation.
+when to let it run and when to intervene. Lessons from building effective agents, applied to real implementation. Dives: `briefing` · `supervising` · `reviewing`.
 
-### 5.7 · Pragmatic Programming with Claude Agents
+### 5.7 · Pragmatic Programming with Claude Agents&nbsp; `✓ built` → [`/brief/the-thesis`](/course/agile-agent-workflow/brief/the-thesis)
 The thesis chapter. The agent as a fast, tireless implementer of *well-specified* thin slices; the human as the source
 of judgment, taste, and acceptance; and why the pairing compounds — speed from the agent, direction and correctness
-from the workflow. Where the value is real, and where it is not.
+from the workflow. Where the value is real, and where it is not. Dives: `the-pairing` · `where-value-is-real` · `the-failure-mode`.
 
-### 5.8 · Workshop — briefing the agent for Portal
+### 5.8 · Workshop — briefing the agent for Portal&nbsp; `✓ built` → [`/brief/workshop`](/course/agile-agent-workflow/brief/workshop)
 Write the engine chapter's agent briefs and run the implementation with a Claude agent: brief, build, and verify
-against the Definition of Done. Your first full pass from spec to running code.
+against the Definition of Done. Your first full pass from spec to running code. Dives: `brief-the-rung` · `run-the-agent` · `verify-the-increment`.
 
 ---
 

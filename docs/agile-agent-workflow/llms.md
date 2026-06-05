@@ -186,13 +186,31 @@ F6.1 / F5.1 rung triads; every `pre.code` carries spec/stories text, never Elixi
   module): a git-iteration slider over the shipped F6.1→F6.6 ladder, reached from the inline `.specref` citation chips
   that frame each `F6.N` rung on the A4 lesson pages (click-to-expand tooltip → this viewer).
 
-### A5 · The agent brief `◐` · [/course/agile-agent-workflow/brief](/course/agile-agent-workflow/brief)
-Landing + a why/what/how orientation triptych built (grounded on the seeded triad `a5.{md,stories,llms}.md`); the
-eight modules A5.1–A5.8 build next.
+### A5 · The agent brief `✓` · [/course/agile-agent-workflow/brief](/course/agile-agent-workflow/brief)
+Landing + a why/what/how orientation triptych + **all eight modules A5.1–A5.8** built (each a hub + 3 dives = 32
+pages), grounded verbatim on the Portal's real `f6.1.llms.md` (References/`R1…R8`, topology/`T1→T7`, `AS1…AS4`, the
+prompt), the `f6.6`/`f6.7` ship prompts, and `f5.2.llms.md`; every page cross-links its matching `/elixir/phoenix` rung.
 - A5 orientation `✓` · [why](/course/agile-agent-workflow/brief/why) — a spec is not runnable on its own; the brief
   fixes every remaining *how-to-build* decision. [what](/course/agile-agent-workflow/brief/what) — the five parts of
   an `.llms.md` and the eight modules ahead. [how](/course/agile-agent-workflow/brief/how) — write the brief, run the
   agent, review against the spec's Definition of Done, not the agent's self-report.
+- A5.1 `✓` [the llms.txt convention](/course/agile-agent-workflow/brief/llms-txt) — links first, prose second, every
+  reference exact. Dives: links-first · every-reference-exact · the-machine-brief.
+- A5.2 `✓` [references and requirements](/course/agile-agent-workflow/brief/references-requirements) — the sources read
+  first, then numbered testable requirements traced to a story and a check. Dives: references-first ·
+  numbered-requirements · traceability.
+- A5.3 `✓` [execution topology](/course/agile-agent-workflow/brief/execution-topology) — the runtime tree, the `T1→T7`
+  task DAG, the touched-file list. Dives: runtime-shape · the-task-dag · the-file-list.
+- A5.4 `✓` [agent stories](/course/agile-agent-workflow/brief/agent-stories) — the executable counterpart of a user
+  story: a Directive and an Acceptance gate. Dives: directive-and-gate · first-two-stories · acceptance-gates.
+- A5.5 `✓` [the implementation prompt](/course/agile-agent-workflow/brief/implementation-prompt) — the single prompt
+  run in task order, ending on the gates. Dives: assembling-the-prompt · task-order · definition-of-done.
+- A5.6 `✓` [running Claude agents well](/course/agile-agent-workflow/brief/running-agents) — brief, supervise, review
+  against the Definition of Done, not the self-report. Dives: briefing · supervising · reviewing.
+- A5.7 `✓` [Pragmatic Programming with Claude Agents](/course/agile-agent-workflow/brief/the-thesis) — the thesis:
+  speed from the agent × direction from the workflow. Dives: the-pairing · where-value-is-real · the-failure-mode.
+- A5.8 `✓` [workshop — briefing the agent for Portal](/course/agile-agent-workflow/brief/workshop) — run the full A5
+  sequence on a real engine rung. Dives: brief-the-rung · run-the-agent · verify-the-increment.
 
 ### A6 · Reliability and correctness `◐` · [/course/agile-agent-workflow/reliability](/course/agile-agent-workflow/reliability)
 Landing + a why/what/how orientation triptych built (grounded on `aaw.roadmap.md`; modules **deferred** until the
