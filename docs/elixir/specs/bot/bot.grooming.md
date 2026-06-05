@@ -9,20 +9,22 @@
 
 ## Status — where the ladder stands
 
-**F10.1** is **BUILD-NEXT**: its triad ([`f10.1.md`](f10.1.md) / [`.stories.md`](f10.1.stories.md) /
-[`.llms.md`](f10.1.llms.md)) and its Director orchestration brief [`f10.1.prompt.md`](f10.1.prompt.md) are authored and
-ready to fan out the lead-team. **F10.2** and **F10.3** are **specced backlog, groomed** — full triads exist, their
-`[RECONCILE]` callouts are written forward-looking against F10.1's surfaces. **F10.4–F10.10** are feature **abstracts** in
-[`f10.roadmap.md`](f10.roadmap.md), sharpened into triads only once the shipped engine and the first game earn feedback.
-Nothing in `apps/echo_bot/` or `apps/echo_games/` is built yet — the umbrella at `/Users/jonny/dev/jonnify/echo` carries
-`echo_data`, `portal`, `portal_web` today — so every F10.2/F10.3 reconcile is a **pre-build** reconcile against the
-as-built predecessor, discharged the moment that predecessor ships.
+**F10.1** is **SHIPPED** (commit `2379a74`, BUILD-GRADE — 28 tests, determinism loop 100/100): `apps/echo_bot/` now
+exists in the umbrella at `/Users/jonny/dev/jonnify/echo` (beside `echo_data`, `portal`, `portal_web`), the engine runs
+one bot from a YAML v1.0 config via the vendored-ex_gram wrap behind `EchoBot.Platform.Telegram`, Portal untouched. The
+squad ran venus (reconcile + brief) → mars (build) → mars (harden) → apollo (verify) — see the as-built surface recap in
+the F10.1 section below. **F10.2** and **F10.3** are **specced backlog, groomed** — full triads exist; their
+`[RECONCILE]` callouts that depended on F10.1 are now **DISCHARGED** against the as-built single-bot surface (the F10.2
+`EchoBot.Config`/`EchoBot.Application` rows; the F10.3 game-launch handler seam), with their F10.2-dependent rows still
+forward-looking. **F10.4–F10.10** are feature **abstracts** in [`f10.roadmap.md`](f10.roadmap.md), sharpened into triads
+only once the shipped engine and the first game earn feedback. **F10.2 is now BUILD-NEXT** — it generalizes F10.1's
+shipped loader + supervisor to N bots.
 
 ## Recommended build order
 
 | # | Rung | Why here |
 |---|---|---|
-| 1 | **F10.1 · Engine skeleton** (vendored-fork wrap) | BUILD-NEXT — the only rung with everything ready (triad + ship prompt). Greenfield, no predecessor surface to re-probe; the roadmap already settled its three would-be forks (wrap-then-own, vendored path, YAML v1.0). Stands the engine up end to end with one bot, so every later rung has a real skeleton to extend. |
+| 1 | **F10.1 · Engine skeleton** (vendored-fork wrap) | **SHIPPED** (commit `2379a74`, BUILD-GRADE). Greenfield, no predecessor surface to re-probe; the roadmap already settled its three would-be forks (wrap-then-own, vendored path, YAML v1.0). Stood the engine up end to end with one bot, so every later rung has a real skeleton to extend. |
 | 2 | **F10.2 · Multi-bot** | Depends only on F10.1's shipped skeleton — the loader, the supervisor, the platform-adapter port + vendored wrap. Adds no platform, no vendored code, no schema change; generalizes one bot to N. "Multibot" lands here, the precondition for everything later running across many bots. |
 | 3 | **F10.3 · The minimal valuable game** | Heaviest near-term rung — a new app (`echo_games`), a new isolated web server, a Svelte/Vite rewrite, WebSocket live state, and the payments seam. Builds on F10.1/F10.2 for the launch; carries the one open architecture fork (the games web server). The first playable, monetizable slice. |
 | — | **F10.4–F10.10** (deferred) | Abstracts in [`f10.roadmap.md`](f10.roadmap.md): the richer Telegram surface (F10.4), webhook (F10.5), owning the wrap (F10.6), adapter hardening (F10.7), the full payments flow (F10.8), the optional Portal-consumer (F10.9), robustness + notifications + the second-platform seam (F10.10). Each is sharpened into a triad only when the shipped engine and first game earn feedback. |
@@ -41,7 +43,7 @@ surface and the one architecture fork, so it lands last in the near-term arc, on
 
 ---
 
-## F10.1 · Engine skeleton (vendored-fork wrap) — BUILD NEXT
+## F10.1 · Engine skeleton (vendored-fork wrap) — SHIPPED (commit `2379a74`)
 
 [Spec: [`f10.1.md`](f10.1.md)] · Goal: a YAML file plus a handler module is a running bot — one bot, polling, `/start` +
 `/help` static text, over a vendored ex_gram copy wrapped behind the platform-adapter port, Portal untouched.
@@ -66,16 +68,26 @@ as-built code but the **roadmap-ratified additions** this rung introduces, pinne
 
 | Callout | Rationale |
 |---|---|
-| **Greenfield — convention reconcile, not code reconcile** | `apps/echo_bot` does not exist, so there is no STALE / INVENTED / MISSING claim against `echo_bot` code. *Why: the rung adds a brand-new app over an unchanged umbrella* → the pre-build reconcile is against the **umbrella conventions** the new app must match (the `mix.exs` `../../` block per `apps/portal_web/mix.exs:8-12`; `apps_path: "apps"` auto-discovery per the root `mix.exs:6`, so **no root edit**; the `:one_for_one` named-supervisor pattern per `apps/portal/lib/portal/application.ex:40` and `apps/portal_web/lib/portal_web/application.ex:21`; the `config/config.exs:52` per-app block). Confirm each cite resolves; the `echo_bot` config block is umbrella-level, never `portal`/`portal_web` code. |
+| **Greenfield — convention reconcile, not code reconcile** | `apps/echo_bot` does not exist, so there is no STALE / INVENTED / MISSING claim against `echo_bot` code. *Why: the rung adds a brand-new app over an unchanged umbrella* → the pre-build reconcile is against the **umbrella conventions** the new app must match (the `mix.exs` `../../` block per `apps/portal_web/mix.exs:8-12`; `apps_path: "apps"` auto-discovery per the root `mix.exs:6`, so **no root edit**; the `:one_for_one` named-supervisor pattern per `apps/portal/lib/portal/application.ex:50` and `apps/portal_web/lib/portal_web/application.ex:25-26` (Venus's pre-build reconcile caught these cites drifted from `:40`/`:21`); the `config/config.exs:52` per-app block). Confirm each cite resolves; the `echo_bot` config block is umbrella-level, never `portal`/`portal_web` code. |
 | **Library posture — RATIFIED (wrap-then-own)** | *Why: the roadmap decided it* → `echo_bot` carries a **vendored, owned copy** of ex_gram (not the hex dep, not a from-scratch hand-roll) and wraps it behind the port. The copy is owned source — modifiable directly, no upstream PR. Pinned, not re-opened. |
 | **Vendored path — RATIFIED (`apps/echo_bot/vendor/ex_gram/`)** | *Why: the roadmap fixed the layout* → the vendored tree lives under `apps/echo_bot/vendor/ex_gram/` with its `README.md` (provenance + Beer-Ware license) and `CLAUDE.md` (ownership directive). The F10.1 triad fixes the exact subset of ex_gram modules vendored. Pinned, not re-opened. |
 | **YAML v1.0 schema — RATIFIED (approved)** | *Why: the roadmap approved the five-key schema* → `version`, `name`, `platform`, `token_env`, `handler`, all required, the `version` read first. The token is referenced by env-var name and read at boot, never in the file. Pinned, not re-opened. |
 | **Scope — RATIFIED (one bot, static text)** | *Why: the roadmap set the slice* → **one** bot, polling, `/start` + `/help` static text; **no** games (→ F10.3), **no** Portal touchpoint (→ F10.9, optional). The wrap boundary (engine core reaches the vendored copy only through the adapter) is established here for every later rung to inherit. |
 
-**Open decisions for the build:** none open — the roadmap settled the three would-be forks (library posture, vendored
-path, YAML v1.0). The reconcile is the convention-cite check above; Venus pins the ratified additions and refreshes
-[`f10.1.llms.md`](f10.1.llms.md). The only forward work is the closing **feedback loop** (fold F10.1's as-built
-`EchoBot.Config` + supervisor surface into the F10.2/F10.3 `[RECONCILE]`s).
+**As-built surface (SHIPPED — the recap F10.2/F10.3/F10.6 reconcile against).** The squad ran venus (pre-build
+reconcile — BUILD-GRADE, fixed two drifted supervisor cites) → mars (build) → mars (harden — `boundary_test.exs` makes
+INV1/INV3/INV4 executable ExUnit assertions) → apollo (post-build verify — BUILD-GRADE, spec-synced `f10.1.md`). The
+concrete surface downstream rungs extend:
+
+| Shipped surface | As-built | Who inherits it |
+|---|---|---|
+| **`EchoBot.Config`** | `load/1 → {:ok, definition} \| {:error, reason}`, `load!/1` raises; `definition` is a **map** (`config.ex:25-32`) of the 5 YAML fields **+ resolved `adapter: module()` + `token: String.t()`**; `version` validated first; `Config.bot_config_path/0` resolves the YAML path. | **F10.2** maps a directory of files to a **list** of this same map. |
+| **`EchoBot.Application` / `EchoBot.Supervisor`** | `start/2` → `Supervisor.start_link(children, strategy: :one_for_one, name: EchoBot.Supervisor)`; per-bot unit = **`EchoBot.Bot.child_spec(definition, mode)`** (one child per definition); updater config-selected `:none`/`:polling`/`:fake`. | **F10.2** fans `EchoBot.Bot.child_spec/2` over the list → N siblings under the same supervisor. |
+| **`EchoBot.Platform` behaviour** | 4 callbacks (`platform.ex:38-48`): `child_spec/1`, `send_reply/3`, `command/1`, `chat_ref/1`. The handler is a pure `handle(update) → {:reply, text}`. | **F10.3** routes the `/play` Game-launch through the **same** `send_reply/3`; **F10.7** proves a 2nd adapter against this port. |
+| **Vendored `ExGram.*`** | `ExGram.Client`, `ExGram.Model`, `ExGram.Updater` (`.Polling` live + `.Noup` fake), reached **only** through `EchoBot.Platform.Telegram` (`vendor/ex_gram/`, with `README.md` + `CLAUDE.md`). | **F10.6** replaces these internals behind the **unchanged** `EchoBot.Platform.Telegram` port. |
+
+The F10.2/F10.3 `[RECONCILE]` rows that depended on these are now **DISCHARGED** (see their tables below + the triads);
+the remaining PENDING rows depend on F10.2 (the multi-bot child id) or Operator confirmation (the F10.3 games server).
 
 ---
 
@@ -98,14 +110,13 @@ own supervised, isolated subtree, all under one `:one_for_one` `EchoBot.Supervis
 | D8 | Verification — `mix compile` clean, N bots boot; the directory loader yields one definition per file; `name`-collisions rejected; per-bot dispatch holds; dropping a file adds a bot; one bot's crash isolates; only the adapter names a vendored module; Portal unchanged; a live two-bot demo. |
 
 **`[RECONCILE]` rationales** (why / what) — mirrored from the F10.2 triad's
-`## [RECONCILE] — folded forward from F10.1 (PENDING — predecessor not yet built)`. Each row is either
-**PENDING-on-F10.1** (re-probe the as-built single-bot surface the moment F10.1 lands) or **SETTLED** (fixed by the
-roadmap, inherited unchanged):
+`## [RECONCILE]`, now **DISCHARGED** against F10.1's shipped surface (commit `2379a74`). The two F10.1-dependent rows
+are resolved (cited file:line); the **SETTLED** rows were fixed by the roadmap and inherited unchanged:
 
 | Callout | Rationale |
 |---|---|
-| **`EchoBot.Config` return shape — PENDING on F10.1** | *Why: F10.2 maps the loader over a directory, so it depends on the exact value F10.1's single-file loader returns (struct vs bare map, field names, the resolved-token field)* → re-probe `apps/echo_bot/lib/echo_bot/config.ex` when F10.1 ships; F10.2's directory loader returns a **list of the same per-bot value**, one per file, matched field-for-field. Define **no new per-bot field** here. |
-| **`EchoBot.Application` child-build path — PENDING on F10.1** | *Why: F10.1 starts one bot's updater under `EchoBot.Supervisor`; F10.2 generalizes to a fan-out over N definitions, so the exact single-bot child spec is the unit F10.2 repeats* → re-read `apps/echo_bot/lib/echo_bot/application.ex` and the per-bot child spec when F10.1 ships; reuse it, do not redesign the per-bot process shape. |
+| **`EchoBot.Config` return shape — DISCHARGED (`config.ex:25-32`)** | *As-built:* `load/1 → {:ok, definition} \| {:error, reason}`, `load!/1` raises; `definition` is a **map** of the 5 YAML fields **+ resolved `adapter: module()` + `token: String.t()`** → F10.2's directory loader returns a **list of this same map**, one per file, matched field-for-field, reusing `load!/1` + `Config.bot_config_path/0`. Define **no new per-bot field** here. |
+| **`EchoBot.Application` child-build path — DISCHARGED (`application.ex`)** | *As-built:* `start/2` → `Supervisor.start_link(children, strategy: :one_for_one, name: EchoBot.Supervisor)`; per-bot unit = **`EchoBot.Bot.child_spec(definition, mode)`** (one child per definition) → F10.2 maps `EchoBot.Bot.child_spec/2` over the list for N siblings; reuse the F10.1 child spec, do not redesign the per-bot process shape. |
 | **Engine supervisor strategy + name — SETTLED by the roadmap** | *Why: the roadmap fixes `:one_for_one` and F10.1 names the supervisor `EchoBot.Supervisor`* → F10.2 keeps both; the only open shape question is **static fan-out vs `DynamicSupervisor`** under that strategy (resolved in D3 with a recommendation). **No fork on strategy or name.** |
 | **Per-bot child identity (child id) — SETTLED by the roadmap** | *Why: the roadmap fixes the YAML `name` as the supervisor child id + log identifier* → F10.2 derives each child id from `name`, so two same-`name` definitions collide deliberately and the loader rejects the duplicate (D2). **No new identity scheme invented.** |
 | **Platform-adapter port + vendored wrap — SETTLED, inherited unchanged** | *Why: the behaviour, the Telegram adapter, and the vendored copy are F10.1 deliverables and the roadmap states the wrap is the long-lived boundary* → F10.2 adds **no** adapter, **no** vendored code, **no** platform; N bots run through the same port and wrap, the boundary preserved as an F10.2 invariant. |
@@ -144,7 +155,7 @@ as-built predecessor (or Operator confirmation); SETTLED rows are fixed by the r
 
 | Callout | Rationale |
 |---|---|
-| **Game-launch path — re-ground against F10.2's as-built multi-bot surface (PENDING — F10.2 not built)** | *Why: the launch handler routes through the F10.1 handler/router seam (`EchoBot.Bot` + a bot's handler, `EchoBot.Platform` for the reply send), whose exact signature/arity is an F10.1/F10.2 deliverable not yet built* → when F10.2 ships, re-ground the launch handler against the as-built `EchoBot.Bot` command-routing surface and the `EchoBot.Platform` reply call; until then it is specced as **a new `/play` command sending a Telegram Game**, the integration point pinned but not arity-fixed. The launch belongs to `echo_bot`; `echo_games` only serves + owns the score — the two apps stay **decoupled** (no compile-time dependency). |
+| **Game-launch path — F10.1 seam CONCRETE (`platform.ex:38-48`); child id PENDING on F10.2** | *As-built (F10.1):* the launch routes through a handler's pure `handle(update) → {:reply, text}` and the adapter's **`EchoBot.Platform.send_reply(token, chat_ref, text)`** (3-arity callback `:41`; `command/1` `:45`, `chat_ref/1` `:48`) → the `/play` launch is **a new handler clause** returning the Game-launch reply through the **same** `send_reply/3` path, arity-fixed, no new platform call invented. *Still PENDING on F10.2:* the supervisor **child id** the launching bot resolves under (derived from the YAML `name`). The launch belongs to `echo_bot`; `echo_games` only serves + owns the score — the two apps stay **decoupled** (no compile-time dependency). |
 | **Games web server — option B confirmed before the triad fixes it (PENDING — Operator confirmation)** | *Why: the roadmap records the games server as **the one open architecture fork** — recommended **B** (a minimal `Plug.Router` on Bandit + `WebSock`/`WebSockAdapter`, own port + supervisor, isolated from `portal_web`) — the Operator confirms before the triad fixes it* → this triad is authored on **B**; if the Operator picks **A** (raw hand-wired Bandit/Plug router) or **C** (a second Phoenix app), D3/D5 and the topology re-derive. (`portal_web` is never a candidate — extending it breaches the no-touch boundary.) |
 | **`echo_games` one app vs. an `echo_games_web` split — Operator to confirm at the sharpen (PENDING)** | *Why: the backend + the games web server can live in one app or split into `echo_games` (logic) + `echo_games_web` (the listener), mirroring `portal`/`portal_web`; the roadmap recommends **one app holding both**, splitting only if the web surface grows* → this triad is authored on the **single-app** shape; if the Operator prefers the split, the touched-files list re-partitions across two apps with no change to the game logic or the protocol. |
 | **Payments seam opened; full flow deferred — SETTLED by the roadmap (F10.8)** | *Why: F10.3 opens the seam — a server-authoritative score + a **reserved** payment-webhook route — and does not build invoices, the pre-checkout/`successful_payment` updates, or validation; the roadmap places the full flow at F10.8* → **settled, not open**; the reserved route returns a not-implemented marker, exercised only as "the route exists and is isolated", never as a payment. |
