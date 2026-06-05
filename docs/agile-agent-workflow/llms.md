@@ -124,10 +124,10 @@ landing + all seven modules A2.01–A2.07 built.**
   - [order-the-backlog](/course/agile-agent-workflow/decomposition/workshop/order-the-backlog) — order across the five
     surfaces into the backlog Part III delivers.
 
-### A3 · The roadmap layer `◐` · [/course/agile-agent-workflow/roadmap](/course/agile-agent-workflow/roadmap)
+### A3 · The roadmap layer `✓` · [/course/agile-agent-workflow/roadmap](/course/agile-agent-workflow/roadmap)
 Planning delivery as thin, robust increments. The course's first **spec-first** chapter (specs in
-`docs/agile-agent-workflow/specs/`: `aaw.roadmap.md`, `a3.llms.md`, `a3.stories.md`). Landing + three orientation
-dives + **A3.1–A3.3 and the reference appendix A3.9** built; A3.4–A3.8 planned.
+`docs/agile-agent-workflow/specs/`: `aaw.roadmap.md`, `a3.{md,stories.md,llms.md}`, and the `a3.progress.md` build
+narrative). Landing + three orientation dives + **all nine modules A3.1–A3.9** built.
 - [where-we-are](/course/agile-agent-workflow/roadmap/where-we-are) — the journey A0→A2 recapped (Where + Who).
 - [the-roadmap-layer](/course/agile-agent-workflow/roadmap/the-roadmap-layer) — why a delivery layer, and what a
   `roadmap.md` is (Why + What).
@@ -140,6 +140,19 @@ dives + **A3.1–A3.3 and the reference appendix A3.9** built; A3.4–A3.8 plann
   `continuous-feedback`.
 - A3.3 `✓` · [Anatomy of a roadmap.md](/course/agile-agent-workflow/roadmap/roadmap-anatomy) — the six parts a real
   `roadmap.md` carries, on the F6 exemplar. Dives: `what-it-carries` · `the-iteration-table` · `open-decisions`.
+- A3.4 `✓` · [Thin but robust](/course/agile-agent-workflow/roadmap/thin-but-robust) — thin is a vertical slice, not a
+  shallow one; robust is the seven F6 production properties. Dives: `thin-not-shallow` · `what-robust-adds` · `always-live`.
+- A3.5 `✓` · [Milestones and iterations](/course/agile-agent-workflow/roadmap/milestones) — group rungs into shippable
+  milestones; the Ships/Demo/Harness/Feedback iteration; sequence by dependency and value. Dives: `shippable-milestones`
+  · `the-iteration-loop` · `sequencing-the-ladder`.
+- A3.6 `✓` · [The program roadmap](/course/agile-agent-workflow/roadmap/program-roadmap) — the roadmap of roadmaps; web
+  and bot as parallel surfaces over one facade, on independent cadences. Dives: `roadmap-of-roadmaps` ·
+  `one-core-many-surfaces` · `independent-cadence`.
+- A3.7 `✓` · [Tracer bullets and walking skeletons](/course/agile-agent-workflow/roadmap/tracer-bullets) — a thin
+  end-to-end thread (F6.1) before depth; tracer vs skeleton vs prototype; defer breadth. Dives: `end-to-end-first` ·
+  `tracer-vs-prototype` · `defer-breadth`.
+- A3.8 `✓` · [Workshop — roadmapping Portal](/course/agile-agent-workflow/roadmap/workshop) — run the whole A3 sequence
+  to reproduce the real F6 `phoenix.roadmap.md`. Dives: `ladder-to-roadmap` · `choose-the-tracer` · `the-program-view`.
 - A3.9 `✓` · [Glossary, references & the framework crosswalk](/course/agile-agent-workflow/roadmap/glossary) — a
   UX-friendly expandable list: term → abstract → source → where the framework implements it. Dives: `glossary` ·
   `sources` · `crosswalk`.

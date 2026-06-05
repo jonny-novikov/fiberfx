@@ -82,10 +82,11 @@ the Operator/Author pairing. Its built module, A0.2, is the framework in a singl
 - A0.1 · Why it works `○` — the two failure modes and the case for thin slices (developed in depth at §1.1).
 - A0.3 · Who does the work `○` — the Operator, the Author, and the pairing in practice (developed at §1.3).
 
-**Current build front.** **Parts I and II are complete** — chapter A1 (§1.1–§1.6,
-[`/course/agile-agent-workflow/why`](/course/agile-agent-workflow/why)) and chapter A2 (§2.1–§2.7,
-[`/course/agile-agent-workflow/decomposition`](/course/agile-agent-workflow/decomposition)) are fully built. The
-frontier is **Part III / chapter A3** ("The roadmap layer", `/roadmap`); Parts III–VII are planned.
+**Current build front.** **Parts I, II, and III are complete** — chapter A1 (§1.1–§1.6,
+[`/course/agile-agent-workflow/why`](/course/agile-agent-workflow/why)), chapter A2 (§2.1–§2.7,
+[`/course/agile-agent-workflow/decomposition`](/course/agile-agent-workflow/decomposition)), and chapter A3 (§3.1–§3.9,
+[`/course/agile-agent-workflow/roadmap`](/course/agile-agent-workflow/roadmap)) are fully built. The frontier is
+**Part IV / chapter A4** ("The spec layer", `/spec`); Parts IV–VII are planned (A4 + A5 are specced ahead).
 
 ---
 
@@ -171,16 +172,17 @@ four artifacts + its Given/When/Then) · `order-the-backlog` (the three mileston
 
 ---
 
-# Part III — The roadmap layer: Agile delivery & iteration&nbsp; `◐ landing + orientation + §3.1–§3.3, §3.9 built` → [`/roadmap`](/course/agile-agent-workflow/roadmap)
+# Part III — The roadmap layer: Agile delivery & iteration&nbsp; `✓ landing + orientation + §3.1–§3.9 built` → [`/roadmap`](/course/agile-agent-workflow/roadmap)
 
 *Planning delivery as thin, robust increments. Milestones, iterations, and the inspect-and-adapt loop — where the
 Agile Manifesto, Extreme Programming, and Continuous Delivery meet the agent workflow in a `roadmap.md`.*
 
-*Built so far: the chapter [landing](/course/agile-agent-workflow/roadmap) and three orientation dives —
+*The chapter [landing](/course/agile-agent-workflow/roadmap) opens with three orientation dives —
 [`where-we-are`](/course/agile-agent-workflow/roadmap/where-we-are) ·
 [`the-roadmap-layer`](/course/agile-agent-workflow/roadmap/the-roadmap-layer) ·
-[`the-road-ahead`](/course/agile-agent-workflow/roadmap/the-road-ahead) (a recap of A0–A2 + a 5W overview). The eight
-teaching modules below are planned.*
+[`the-road-ahead`](/course/agile-agent-workflow/roadmap/the-road-ahead) (a recap of A0–A2 + a 5W overview) — then the
+eight teaching modules below carry the layer from the agile values to a worked Portal roadmap, closing with the
+reference appendix §3.9. Each is grounded on the real F6 `phoenix.roadmap.md`.*
 
 ### 3.1 · Agile, distilled&nbsp; `✓ built` → [`/roadmap/agile-distilled`](/course/agile-agent-workflow/roadmap/agile-distilled)
 Working software in short cycles, responding to change, inspect-and-adapt. The handful of principles that actually
@@ -197,25 +199,30 @@ What a chapter roadmap carries: what it delivers, the start/end handoff, the arc
 per-iteration table, and the explicitly-named open decisions. A read-through of the real F6 `phoenix.roadmap.md`.
 Dives: `what-it-carries` · `the-iteration-table` · `open-decisions`.
 
-### 3.4 · Thin but robust
+### 3.4 · Thin but robust&nbsp; `✓ built` → [`/roadmap/thin-but-robust`](/course/agile-agent-workflow/roadmap/thin-but-robust)
 The discipline at the centre of the method: each increment is a narrow vertical slice built to production quality —
 supervised, contract-guarded, harnessed, and gated — never a prototype to be redone. The line between thin and flimsy.
+Dives: `thin-not-shallow` · `what-robust-adds` · `always-live`.
 
-### 3.5 · Milestones and iterations
+### 3.5 · Milestones and iterations&nbsp; `✓ built` → [`/roadmap/milestones`](/course/agile-agent-workflow/roadmap/milestones)
 Grouping rungs into shippable milestones; the Ships / Demo / Harness / Feedback iteration table; sequencing by
 dependency and by product priority so the most valuable, least risky thread ships first.
+Dives: `shippable-milestones` · `the-iteration-loop` · `sequencing-the-ladder`.
 
-### 3.6 · The program roadmap
+### 3.6 · The program roadmap&nbsp; `✓ built` → [`/roadmap/program-roadmap`](/course/agile-agent-workflow/roadmap/program-roadmap)
 The roadmap of roadmaps: sequencing whole chapters into program milestones for a system with many surfaces over one
 core. How parallel surfaces (a web app and a bot) share a facade and ship on their own cadence.
+Dives: `roadmap-of-roadmaps` · `one-core-many-surfaces` · `independent-cadence`.
 
-### 3.7 · Tracer bullets and walking skeletons
+### 3.7 · Tracer bullets and walking skeletons&nbsp; `✓ built` → [`/roadmap/tracer-bullets`](/course/agile-agent-workflow/roadmap/tracer-bullets)
 Shipping a thin end-to-end thread before adding depth; de-risking integration early; deferring breadth deliberately —
 the pragmatic techniques that keep a roadmap honest about uncertainty.
+Dives: `end-to-end-first` · `tracer-vs-prototype` · `defer-breadth`.
 
-### 3.8 · Workshop — roadmapping Portal
+### 3.8 · Workshop — roadmapping Portal&nbsp; `✓ built` → [`/roadmap/workshop`](/course/agile-agent-workflow/roadmap/workshop)
 Write Portal's chapter roadmaps and its program roadmap: the milestones, the iteration tables, and the seams you
 choose to defer. The delivery plan you will execute in Part VII.
+Dives: `ladder-to-roadmap` · `choose-the-tracer` · `the-program-view`.
 
 ### 3.9 · Glossary, references & the framework crosswalk&nbsp; `✓ built` → [`/roadmap/glossary`](/course/agile-agent-workflow/roadmap/glossary)
 The chapter's reference appendix: a UX-friendly expandable list of the course's key terms, each with an abstract, its

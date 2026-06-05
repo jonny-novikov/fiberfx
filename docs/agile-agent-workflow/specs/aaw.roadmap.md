@@ -32,7 +32,7 @@ Eight chapters. **A0** is the on-ramp; **A1–A7** are the seven teaching Parts.
 | A0 | Foundations — why, what, who | `/what` | the method in three questions; the framework in one read | **built** (A0.2) |
 | A1 | Why an Agile Agent Workflow | `/why` | the thesis: thin, provable slices beat vibe-coding and big-bang specs | **complete** (A1.01–A1.06) |
 | A2 | Decomposition: vision → user stories | `/decomposition` | a vision turned into a dependency-ordered value ladder of stories | **complete** (A2.01–A2.07) |
-| A3 | The roadmap layer: Agile delivery & iteration | `/roadmap` | planning delivery as thin, robust increments in a `roadmap.md` | **landing + 3 orientation dives built; A3.1–A3.9 in progress** |
+| A3 | The roadmap layer: Agile delivery & iteration | `/roadmap` | planning delivery as thin, robust increments in a `roadmap.md` | **complete** (A3.1–A3.9) |
 | A4 | The spec layer: specifications & acceptance | `/spec` | defining and proving each rung — correct by definition | planned |
 | A5 | The agent brief (`.llms.md`) & implementation | `/brief` | briefing a Claude agent and reviewing its work | planned |
 | A6 | Reliability and correctness | `/reliability` | OTP supervision, boundaries, parse-don't-validate, property tests | planned |
@@ -70,7 +70,7 @@ it, and is accepted only at `STATUS: PASS`. Adding a chapter adds teaching surfa
 | --- | --- | --- | --- |
 | M1 · The method, framed | A0–A1 | name why thin, provable slices win, and the two roles that run the loop | **complete** |
 | M2 · From vision to backlog | A2 | decompose a product vision into a dependency-ordered ladder of testable stories | **complete** |
-| M3 · Planning delivery | A3 | plan a backlog's delivery as a `roadmap.md` of thin, robust increments | **in progress** |
+| M3 · Planning delivery | A3 | plan a backlog's delivery as a `roadmap.md` of thin, robust increments | **complete** |
 | M4 · Defining & proving | A4–A6 | write a spec, brief an agent, and build the increment correct by definition | planned |
 | M5 · The exemplar | A7 | run the whole loop on the Portal, zero to production | planned |
 
@@ -100,16 +100,16 @@ ids, parseable inline scripts. The four living views (the served pages, `agile-a
 
 ## The near-term path
 
-Given the state above — A0–A2 complete, A3 landing + orientation built — the recommended sequence is:
+Given the state above — A0–A3 complete (A3.1–A3.9 all built, grounded on the real `phoenix.roadmap.md`, with an
+`a3.progress.md` build narrative) — the recommended sequence is:
 
-1. **Ship A3's first teaching modules.** Build **A3.1 Agile, distilled**, **A3.2 Extreme Programming for small
-   batches**, and **A3.3 Anatomy of a roadmap.md** (each a hub + three dives), grounded in the real `phoenix.roadmap.md`.
-2. **Ship the chapter's reference module, A3.9** — a glossary, the sources, and an idea→framework crosswalk as a
-   UX-friendly expandable list; the appendix every later chapter can point back to.
-3. **Complete A3** — A3.4 Thin but robust · A3.5 Milestones and iterations · A3.6 The program roadmap · A3.7 Tracer
-   bullets and walking skeletons · A3.8 Workshop — roadmapping Portal.
-4. **Open A4 (the spec layer)** — author its landing, then its modules; A4 is the natural next chapter (this roadmap's
-   reader becomes A4's spec writer).
+1. **Open A4 (the spec layer).** Its triad is already seeded (`a4.{md,stories.md,llms.md}`). Author the chapter
+   **landing `/spec` first** (the keystone, modelled on the A3 landing), then fan out its modules — A4 is the natural
+   next chapter, where this roadmap's reader becomes the spec writer.
+2. **Build A4's modules** with the supervised-lead-then-fan-out loop A3 used: a Senior Writer pass that authors an
+   `a4.progress.md` and reviews the keystone, then one `agile-expert` per module against the seeded stories + brief.
+3. **Then A5 (the agent brief)** — its triad is also seeded; the same loop applies.
+4. **A6–A7** — reliability, then the zero-to-production Portal exemplar that runs the whole loop end to end.
 
 ## Conventions (the course's invariants)
 
