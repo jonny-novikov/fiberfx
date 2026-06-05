@@ -19,10 +19,21 @@ defmodule PortalWeb.Application do
       PortalWeb.Presence
     ]
 
-    # A brutal endpoint kill churns its linked LiveView-socket subtree into a measured
-    # ~200-restart storm within max_seconds; the OTP default (3) gives up and the app
-    # exits. 300 absorbs the measured ceiling (~218) with margin, still bounded.
-    opts = [strategy: :one_for_one, name: PortalWeb.Supervisor, max_restarts: 300, max_seconds: 5]
+    # A brutal endpoint kill churns its linked LiveView-socket subtree into a restart
+    # storm within max_seconds; the OTP default (3) gives up and the app exits. The storm
+    # peak is LOAD-GATED: ~200-218 on a quiet box, but under CPU contention (the full
+    # async umbrella saturating all schedulers) the socket-pool drainer churn densifies
+    # and a single-kill storm was MEASURED at ~310 restart units — over the prior `300`
+    # ceiling, which surfaced as a probabilistic `Application portal_web exited: shutdown`
+    # in the ≥100 determinism loop (the supervisor gave up mid-storm, taking the endpoint's
+    # config ETS table down for the rest of the run and failing every sibling test). 1000
+    # clears the measured ~310 worst case with a 3.2x margin so a LEGITIMATE transient
+    # endpoint-crash storm self-heals, yet stays bounded: a GENUINE restart loop (a child
+    # that cannot stay up) restarts continuously and still trips 1000 well inside
+    # max_seconds: 5 (~40ms per transient storm ⇒ a real loop blows past 1000 in <1s), so
+    # the supervisor still gives up on an unrecoverable child. The storm settles in ~40ms,
+    # far inside the 5s window — max_restarts, not max_seconds, is the lever.
+    opts = [strategy: :one_for_one, name: PortalWeb.Supervisor, max_restarts: 1000, max_seconds: 5]
     Supervisor.start_link(children, opts)
   end
 
