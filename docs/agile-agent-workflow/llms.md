@@ -125,13 +125,24 @@ landing + all seven modules A2.01–A2.07 built.**
     surfaces into the backlog Part III delivers.
 
 ### A3 · The roadmap layer `◐` · [/course/agile-agent-workflow/roadmap](/course/agile-agent-workflow/roadmap)
-Planning delivery as thin, robust increments. **Landing + three orientation dives built** (a recap of A0–A2 + a 5W
-overview); the eight teaching modules A3.1–A3.8 are planned.
+Planning delivery as thin, robust increments. The course's first **spec-first** chapter (specs in
+`docs/agile-agent-workflow/specs/`: `aaw.roadmap.md`, `a3.llms.md`, `a3.stories.md`). Landing + three orientation
+dives + **A3.1–A3.3 and the reference appendix A3.9** built; A3.4–A3.8 planned.
 - [where-we-are](/course/agile-agent-workflow/roadmap/where-we-are) — the journey A0→A2 recapped (Where + Who).
 - [the-roadmap-layer](/course/agile-agent-workflow/roadmap/the-roadmap-layer) — why a delivery layer, and what a
   `roadmap.md` is (Why + What).
 - [the-road-ahead](/course/agile-agent-workflow/roadmap/the-road-ahead) — a deep overview of the eight A3 modules
   (When + How).
+- A3.1 `✓` · [Agile, distilled](/course/agile-agent-workflow/roadmap/agile-distilled) — the load-bearing principles vs
+  the ceremony. Dives: `the-values` · `inspect-and-adapt` · `keep-vs-ceremony`.
+- A3.2 `✓` · [Extreme Programming for small batches](/course/agile-agent-workflow/roadmap/xp-small-batches) — small
+  batches lower risk, raise learning; an agent makes them cheap. Dives: `small-releases` · `incremental-design` ·
+  `continuous-feedback`.
+- A3.3 `✓` · [Anatomy of a roadmap.md](/course/agile-agent-workflow/roadmap/roadmap-anatomy) — the six parts a real
+  `roadmap.md` carries, on the F6 exemplar. Dives: `what-it-carries` · `the-iteration-table` · `open-decisions`.
+- A3.9 `✓` · [Glossary, references & the framework crosswalk](/course/agile-agent-workflow/roadmap/glossary) — a
+  UX-friendly expandable list: term → abstract → source → where the framework implements it. Dives: `glossary` ·
+  `sources` · `crosswalk`.
 
 ### A4–A7 `○` planned
 A4 The spec layer (`…/spec`) · A5 The agent brief `.llms.md` (`…/brief`) ·

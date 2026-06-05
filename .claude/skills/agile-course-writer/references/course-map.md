@@ -122,11 +122,13 @@ sequence on Portal's five surfaces (store, engine, web, bot, dashboard) to produ
 
 ## Resume point
 
-Built since last resume: the course's own **spec system** under `docs/agile-agent-workflow/specs/` (the single
-`aaw.roadmap.md`, the `aaw.operator.md` build runbook, and per-chapter `a3.llms.md` + `a3.stories.md`), and — built
-**spec-first** from it — **A3.1–A3.3 and the new A3.9**: `/roadmap/{agile-distilled,xp-small-batches,roadmap-anatomy,
-glossary}`, a hub + three dives each, all A+. The Authors read `a3.llms.md` + `a3.stories.md` as their spec. Parts I
-and II are complete; A3 now has its landing, three orientation dives, and four modules built.
+Built since last resume: the course's own **spec system** under `docs/agile-agent-workflow/specs/` — the single
+`aaw.roadmap.md`, the `aaw.operator.md` build runbook, and a **chapter triad** (`a<N>.md` chapter spec with
+Parent/Goal/Rationale-5W/Scope/Deliverables/Invariants/DoD + `a<N>.llms.md` brief + `a<N>.stories.md` stories) for
+**A3, A4, and A5** (A4 + A5 are seeded ahead of their build — the "specced ahead" pattern). Built **spec-first** from
+the A3 triad: **A3.1–A3.3 and the new A3.9** (`/roadmap/{agile-distilled,xp-small-batches,roadmap-anatomy,glossary}`,
+a hub + three dives each, all A+; the Authors read `a3.llms.md` + `a3.stories.md` as their spec). Parts I and II are
+complete; A3 has its landing, three orientation dives, and four modules built.
 
 **A3 — "The roadmap layer"** (`/roadmap`, Part III) is the course's first **spec-first** chapter: its specs live in
 `docs/agile-agent-workflow/specs/` (`aaw.roadmap.md` the single course roadmap, `aaw.operator.md` the build runbook,
