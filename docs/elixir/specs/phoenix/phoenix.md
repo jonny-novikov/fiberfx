@@ -69,7 +69,8 @@ runbook — preconditions, the boot, the per-rung check, the determinism loop �
 | [F6.5.5](f6.5.5.md) | Apply the design system | the catalog renders in the F0 dark-editorial system — root layout, tokens, page anatomy — over the facade, no CoreComponents | Visitor, Learner | **specced** |
 | [F6.6](f6.6.md) | LiveView | interactive pages — live search and live create — without full reloads | Learner | **shipped** |
 | [F6.7](f6.7.md) | Real-time (PubSub & Presence) | multi-client live updates and a live viewer count | Learner, Instructor | **specced** |
-| [F6.8](f6.8.md) | Auth & deployment | real users, protected areas, and a deployed, clustered release | Learner, Operator | **specced** |
+| [F6.8.1](f6.8.1.md) | Authentication — the honest door | real sign-in: the static login page ported over a `Portal.Auth` facade; protected areas; `current_user` + `on_mount` | Learner, Operator | **specced** |
+| [F6.8.2](f6.8.2.md) | Deployment | a scoped umbrella release, the config split, `Portal.Release` migrate, libcluster, a distilled `fly.toml` (the live deploy is the Operator's) | Operator, Developer | **specced** |
 | [F6.9](f6.9.md) | The live dashboard (capstone) | an operations/learning dashboard folding live events, under auth, clustered | Instructor, Operator | **specced** |
 
 The rungs depend only downward: F6.2 assumes F6.1's endpoint and pipeline; F6.5 renders what F6.3/F6.4 make

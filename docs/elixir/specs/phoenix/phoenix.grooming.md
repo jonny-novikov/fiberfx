@@ -74,9 +74,14 @@ dedicated pass**"). Pulling it forward keeps F6.8 to auth + ops.
 
 ---
 
-## A dedicated dynamic-UI styling pass (recommended; currently folded into F6.8)
+## A dedicated dynamic-UI styling pass (recommended; NO LONGER folded into F6.8.1 — it re-defers here)
 
-[Source: the **Components & theming** `[RECONCILE]` in [`f6.8.md`](f6.8.md) — extracted here as a recommended standalone rung.]
+[Source: the **Components & theming** `[RECONCILE]` in the original `f6.8.md`, now [RECONCILE 2] in [`f6.8.1.md`](f6.8.1.md).]
+
+**Update (the F6.8 split):** [`f6.8.1.md`](f6.8.1.md) RECONCILE 2 establishes that the auth UI is a STATIC login-page
+port (per-page extracted CSS, like F6.5.5) — so it is NOT a dynamic styled page and does NOT force the reckoning. The
+dynamic-UI styling pass below therefore **re-defers to the first genuinely-dynamic styled page** (the live `/courses`
+restyle, or the F6.9 dashboard) — it is no longer "folded into F6.8." The deliverables stand; only its trigger moves.
 
 The "style the live catalog" work that F6.5.5 legitimately deferred (it styled static documents, not the dynamic UI). A dynamic LiveView **cannot** carry a per-page extracted static stylesheet, so this is ONE reckoning:
 
@@ -91,34 +96,57 @@ The "style the live catalog" work that F6.5.5 legitimately deferred (it styled s
 
 ---
 
-## F6.8 · Auth & deployment — THE CONVERGENCE POINT
+## F6.8 · Auth & deployment — SPLIT into F6.8.1 (auth) + F6.8.2 (deploy)
 
-[Spec: [`f6.8.md`](f6.8.md)] · Goal: authenticated users + a deployed, clustered release. **The heaviest rung — most deferred threads come due here.**
+[Parent pointer: [`f6.8.md`](f6.8.md)] The original "convergence point" rung was split (the decimal-insertion split,
+mirroring F6.5 → F6.5.5) so the visible auth surface and the deploy machinery ship and accept independently. Both
+spec triads are authored (**specced**); the parent [`f6.8.md`](f6.8.md) is a thin pointer.
 
-**Deliverables**
+### F6.8.1 · Authentication — the honest door
+
+[Spec: [`f6.8.1.md`](f6.8.1.md)] · Goal: real sign-in + a protected area, the visible surface ported the F6.5.5 way.
 
 | ID | Deliverable |
 |---|---|
-| D1 | `mix phx.gen.auth Accounts User users` — the `Accounts` context (extending F6.4's), `User` + token schemas, login/registration/reset LiveViews, session plumbing. |
-| D2 | Protected routes: `fetch_current_user` in `:browser`, `require_authenticated_user` on protected scopes, `on_mount` for LiveViews. |
-| D3 | The facade fronts auth queries (`get_user_by_session_token/1`, `register_user/1`) — `UserAuth` + auth LiveViews call only `Portal`. |
-| D4 | Config split: `runtime.exs` reads `DATABASE_URL` / `SECRET_KEY_BASE` / `PHX_HOST` at boot; compile-time config holds no secret. |
-| D5 | `Portal.Release.migrate/0` (+ `rollback/2`) via `bin/portal eval` (a release has no `mix`). |
-| D6 | Clustering: a libcluster topology so `Phoenix.PubSub` + `PortalWeb.Presence` span every node. |
-| D7 | The deploy sequence: build (`MIX_ENV=prod mix release`) → migrate → boot. |
-| D8 | Verification: register/login work; protected routes gate anonymous; a LiveView enforces on connect; the release builds/migrates/boots from env; PubSub/Presence correct across two nodes; the web still calls only the facade. |
+| D1–D2 | The static `login.html` ported (a `PageController.login/2` + a complete-document `login.html.heex` + extracted `login.css`/`login.js` + `GET /login`) — NOT `phx.gen.auth` (the `%User{}`/`%Session{}` entities already exist from F6.4). |
+| D3–D5 | A NET-NEW `Portal.Auth` facade: `sign_in/2` (the honest door — the SAME `{:error, :invalid_credentials}` for wrong-name and wrong-password) + `request_reset/1` (always `:ok`, no enumeration), over the existing entities + a private `password_hash` (Store-backed + `bcrypt_elixir`, RATIFIED — no schema). |
+| D6–D8 | `SessionController` (`POST /auth/session` writes the signed session + redirects; `POST /auth/reset` answers 200 either way) + the routes + the F6.2 `RequireUser` gate evolved into `PortalWeb.UserAuth` (`fetch_current_user/2`, `require_authenticated_user/2` → redirect to `/login`, `on_mount/4` `:ensure_authenticated`). |
+| D9–D10 | `/my/courses` reconciled to the loaded `current_user`; registration DEFERRED (the *"Soon"* footer preserved); verification (the honest door + the redirect + the parity envelope). |
 
 **`[RECONCILE]` rationales** (why / what):
 
 | Callout | Rationale |
 |---|---|
-| **Dynamic-UI styling reckoning comes due HERE** | The auth LiveViews are the **first dynamic styled pages**; a LiveView can't carry per-page extracted static CSS. *Why: F6.5.5 proved F0 reachable but only for static pages* → decide as ONE reckoning: **(1)** a shared token stylesheet (F0-INV2, not yet realized) + a root layout; **AND (2)** `CoreComponents` restyled to F0 (superseding INV8) **or** auth ported onto local `CatalogComponents`. *(Recommend extracting to the dedicated pass above.)* |
-| **Deploy — the two-origin strangler-fig boundary** | A deployed Portal is an **index-only slice** in front of Fiber; deep links use the configurable `:deep_link_base_url` (default `jonnify.fly.dev`, one config read). *Why: F6.5.5 introduced a two-origin strangler-fig the deploy rung first ships to prod* → state which routes Portal owns vs. fall back to Fiber; set the base in `runtime.exs`; the dynamic UI **inherits the same key** (no second mechanism); migrating deep pages off Fiber is a later rung. |
-| **Auth — generated `UserAuth` supersedes interim `RequireUser`** | *Why: F6.5's protected `/my/courses` rides the interim auth this rung replaces* → reconcile `current_user_id` → `current_user.id`, the pipeline → `require_authenticated_user`, the redirect → the generated login path. |
-| **Context — generated `Accounts` is Repo-backed** | *Why: F6.4 `Accounts` is a Store stand-in* → reconcile Store stand-in (`user/1`/`welcome/1`) → Ecto `users` / tokens. |
-| **Identity — branded-id mint unguarded under concurrency** | `create_course/1` mints + inserts outside the single-writer engine; `courses` has no `unique_constraint(:id)`, so two same-ms seq-0 mints RAISE `Ecto.ConstraintError`. *Why: F6.6's ≥100 loop surfaced it; a multi-node deploy makes it live* → derive `worker_id` per machine (`echo/CLAUDE.md` §4), and/or `unique_constraint(:id)` + graceful handling, and/or route create through the engine. |
-| **`live /courses` shipped PUBLIC** | *Why: F6.6 added a public read+write surface the auth rung must classify* → decide: browsing stays public (likely)? gate the inline create behind `require_authenticated_user`? |
-| **Endpoint bind hardcodes `127.0.0.1`** | `runtime.exs` binds loopback in every non-test env → a deployed release the Fly edge can't reach. *Why: the F6.6 liveness boot surfaced it; deployment makes it load-bearing* → set `{0,0,0,0}`/`:any` under release/`:prod`, keep `127.0.0.1` for dev. |
+| **Static login port over `Portal.Auth`, NOT `phx.gen.auth`** | *Why: `%User{}`/`%Session{}` already exist (F6.4); the Operator wants the static `login.html` ported in the F6.5.5 design system* → a `PageController.login/2` static-parity page + a net-new `Portal.Auth` facade backing the `/auth/*` POSTs; generated auth LiveViews + `CoreComponents` NOT adopted. |
+| **The dynamic-UI styling reckoning DISSOLVES here (re-defers)** | A static login port carries per-page extracted CSS (like F6.5.5) → there are NO dynamic auth LiveViews. *Why: the reckoning the combined rung pinned to "the auth UI" has no dynamic auth UI to attach to* → it re-defers to the dedicated dynamic-UI styling pass (the live `/courses` restyle or F6.9). The F6.6 flash-paint deferral moves with it. |
+| **`UserAuth` supersedes interim `RequireUser`** | *Why: F6.5's protected `/my/courses` + the `RequireUser` moduledoc ("F6.8 later swaps the redirect target") ride the interim auth this rung replaces* → `current_user_id` → a loaded `current_user`, the redirect → `~p"/login"`, the named surface F6.9's `{PortalWeb.UserAuth, :ensure_authenticated}` forward-ref expects. |
+| **Persistence — Store-backed + bcrypt (RATIFIED)** | *Why: F6.4 `Accounts` is a Store stand-in with no credential* → add a private `password_hash` + `bcrypt_elixir` (one net-new dep in `apps/portal/mix.exs`), no schema, no migration. The Ecto-tables alternative is documented, not built. |
+| **`live /courses` stays PUBLIC; inline-create gating deferred** | *Why: F6.6 added a public read+write surface* → browsing stays public; gating the inline create behind auth is deferred to the dynamic-UI pass (F6.8.1 ships the gate, that pass applies it). |
+
+### F6.8.2 · Deployment
+
+[Spec: [`f6.8.2.md`](f6.8.2.md)] · Goal: a deployable, clustered release — the ARTIFACTS, gated BUILD-LOCAL (the live `fly deploy` is the Operator's).
+
+| ID | Deliverable |
+|---|---|
+| D1–D2 | A scoped umbrella `releases/0` (`portal_web`/`portal`/`echo_data`, EXCLUDING `echo_bot`) + a completed Dockerfile built FROM the Operator's template (corrected to Elixir 1.18.4 / OTP 28.1, de-Codemoji'd, a runtime stage + `ENTRYPOINT`). |
+| D3–D4 | The completed config split: `runtime.exs` reads `DATABASE_URL`/`SECRET_KEY_BASE`/`PHX_HOST` at boot + binds `{0,0,0,0}` under prod (dev loopback); `prod.exs` holds the endpoint `url`/`cache_static_manifest`/`server`-toggle. |
+| D5–D7 | `Portal.Release.migrate/0` (via `bin/portal eval`); a libcluster topology (F6.7 single-node Presence → cluster-correct); a per-machine `worker_id` (the F6.6 mint-collision fix). |
+| D8–D10 | A distilled `fly.toml` (the Portal essentials, the `/health` check matching `router.ex:93`); the strangler-fig boundary stated + the deployed `:deep_link_base_url` set; BUILD-LOCAL verification. |
+
+**`[RECONCILE]` rationales** (why / what):
+
+| Callout | Rationale |
+|---|---|
+| **Image version skew — the templates pin OTP 27** | `Dockerfile.template:3` + `fly.toml:35` carry `OTP_VERSION="27.3.4.1"`. *Why: this umbrella is Elixir 1.18.4 / OTP 28.1 (`.tool-versions`)* → correct to `28.1` (the Operator confirms the exact 28.x tag); `ELIXIR_VERSION=1.18.4` matches; drop `NODE_VERSION`. |
+| **Dockerfile builds `apps/echo` (Codemoji), absent here** | `Dockerfile.template:32-45` copies/builds `apps/echo`. *Why: this umbrella's apps are portal/portal_web/echo_data/echo_bot* → a scoped `releases/0` (the Portal apps, `echo_bot` excluded), the umbrella-root build, a runtime stage + `ENTRYPOINT`. |
+| **`fly.toml` DISTILL** | *Why: the template is the full Codemoji v8 config (Fastify/Redis/SQLitestream/Datadog)* → keep the Portal essentials (app/region/PHX env/the IPv6-cluster trio/`[build]`/rolling+auto_rollback/`:4000` + 80→443 + the `GET /health` check matching `router.ex:93`); drop all worker/Redis/BullMQ/SQLitestream/`DD_*`/`GAME_DB` config. |
+| **Endpoint bind hardcodes `127.0.0.1`** | `runtime.exs:34` binds loopback in every non-test env → a deployed release the Fly edge can't reach. *Why: the F6.6 liveness boot surfaced it; deployment makes it load-bearing* → set `{0,0,0,0}`/`:any` under release/`:prod`, keep `127.0.0.1` for dev. The config split is partly done (the `SECRET_KEY_BASE`/`DATABASE_URL` raises); F6.8.2 completes it (+ `PHX_HOST`). |
+| **Branded-id mint unguarded under concurrency** | `id.ex:13` `@node 1` (its comment "F6.8 derives it per machine") + the same-ms collision (`echo/CLAUDE.md §4`). *Why: F6.6's ≥100 loop surfaced it; a multi-node deploy makes it live* → derive `worker_id` per machine (`FLY_MACHINE_ID`), and/or `unique_constraint(:id)`. |
+| **Clustering realizes F6.7's single-node real-time** | *Why: F6.7 shipped PubSub/Presence single-node* → a `libcluster` topology (one net-new dep in `apps/portal_web/mix.exs`; the `fly.toml` IPv6/`ERL_AFLAGS` trio its substrate) so broadcasts + viewer counts span nodes. |
+| **The two-origin strangler-fig boundary becomes prod** | *Why: F6.5.5 introduced a two-origin strangler-fig the deploy rung first ships to prod* → state which routes Portal owns (`/`,`/elixir`,`/course/agile-agent-workflow`,`/login`,`/auth/*`,`live /courses`,`/my/courses`,`/health`) vs. fall back to Fiber via `:deep_link_base_url`; set the base in `runtime.exs`. |
+
+> **DEFERRED to the Operator:** the live `fly deploy` (+ `fly apps create`, the machines) — *"the user will create the fly app and machines."* F6.8.2's gate is BUILD-LOCAL (`MIX_ENV=prod mix release` builds; `Portal.Release.migrate/0` runs; `fly config validate`; a local prod boot answers `/health` 200).
 
 ---
 
@@ -144,9 +172,9 @@ The "style the live catalog" work that F6.5.5 legitimately deferred (it styled s
 |---|---|
 | **Facade — new counts go through `Portal`** | `Catalog.count_courses/0` + `Enrollment.count/0` are new context additions surfaced on the facade. *Why: web names only the facade.* |
 | **Surface — the `{:enrolled, _}` broadcast is new** | F6.7 broadcasts course events; D3 folds enrollment. *Why: F6.7 covers courses, not enrollment* → the ok-only enrollment broadcast is added here. |
-| **Auth — `/dashboard` rides the F6.8 reconcile** | The `live_session` `on_mount` inherits F6.8's `UserAuth` / `current_user`. *Why: depends on the F6.8 auth reconcile.* |
+| **Auth — `/dashboard` rides the F6.8.1 reconcile** | The `live_session` `on_mount` inherits F6.8.1's `PortalWeb.UserAuth` / `current_user` (`{PortalWeb.UserAuth, :ensure_authenticated}`). *Why: depends on the F6.8.1 auth reconcile.* |
 | **The live-list pattern is set by F6.6/F6.7** | Reuse `stream(:courses)` + `course_card` + the `handle_info` `stream_insert` fold. *Why: F6.6 established the stream + component reuse; F6.9 composes it.* |
-| **Styling — inherits F0 through the F6.8 shell, not F6.5.5 directly** | The metric cards + feed render in the F0 anatomy through the **root layout + shared token stylesheet F6.8 introduces**. *Why: F6.9 composes everything below; the dynamic-UI look is set by F6.8, with F6.5.5 supplying the token VALUES + the static-parity proof, not a live shell.* |
+| **Styling — inherits F0 through the dynamic-UI styling pass, not F6.8.1 directly** | The metric cards + feed render in the F0 anatomy through the **root layout + shared token stylesheet the dynamic-UI styling pass introduces** (F6.8.1 RECONCILE 2 re-defers it there — the static login port adds no dynamic shell). *Why: F6.9 composes everything below; the dynamic-UI look is set by the styling pass, with F6.5.5 supplying the token VALUES + the static-parity proof, not a live shell.* |
 
 ---
 
@@ -166,14 +194,15 @@ Out-of-band for the lead-team; excluded from every F6 commit.
   rationales are mirrored from the spec bodies (re-sync if a spec's callout changes).
 - Each rung's **open decisions** (the surfaces to ratify, the interactions to decide) are the Director's pre-build
   agenda — settle them in Venus's reconcile before Mars builds (the lag-1 discipline).
-- The recommended insertion of a **dedicated dynamic-UI styling pass** before F6.8 is a Director recommendation,
-  not yet a spec; if adopted, give it its own triad (the F6.5.5 template) and the F6.8 styling `[RECONCILE]`
-  resolves to "inherited from the styling pass."
+- The recommended insertion of a **dedicated dynamic-UI styling pass** is a Director recommendation, not yet a
+  spec; if adopted, give it its own triad (the F6.5.5 template). F6.8.1 RECONCILE 2 re-defers the dynamic-UI
+  reckoning to it (the static login port adds no dynamic shell), so the F6.9 styling `[RECONCILE]` resolves to
+  "inherited from the styling pass," not from F6.8.
 
 ---
 
 Index: [`phoenix.md`](phoenix.md) · delivery view [`phoenix.roadmap.md`](phoenix.roadmap.md) · L0 field manual
 [`phoenix.operator.md`](phoenix.operator.md) · retrospective [`f6.progress.md`](f6.progress.md) · rungs
-[`f6.7.md`](f6.7.md) · [`f6.8.md`](f6.8.md) · [`f6.9.md`](f6.9.md). Approach: [`../specs.approach.md`](../specs.approach.md).
+[`f6.7.md`](f6.7.md) · [`f6.8.md`](f6.8.md) ([`f6.8.1.md`](f6.8.1.md) · [`f6.8.2.md`](f6.8.2.md)) · [`f6.9.md`](f6.9.md). Approach: [`../specs.approach.md`](../specs.approach.md).
 
 > Part of the jonnify toolkit. Branded id format: `TSK` + Base62(snowflake), e.g. `TSK0KHTOWnGLuC`.

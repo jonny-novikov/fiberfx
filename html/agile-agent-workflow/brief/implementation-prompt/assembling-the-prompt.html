@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A5.5.1 — Assembling the prompt · Agile Agent Workflow · jonnify</title>
+<meta name="description" content="A5.5.1 — the implementation prompt assembles the four prior parts of the brief into one runnable instruction: references, requirements, topology, and agent stories. Grounded on the Portal's real f6.1.llms.md prompt — read the spec, stories, and design system first; do not change anything under the facade; Phoenix deps only in apps/portal_web/mix.exs. Each part the prompt omits is a guarantee it cannot give.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(179,157,219,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--elixir-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--elixir-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="elixir"]{background:var(--elixir-bright)}
+.solid-select button.active[data-c="burg"]{background:#e08f8b}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--elixir-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--elixir-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/elixir">jonnify<span class="dot"></span><span class="sub">agile agents</span></a>
+    <nav>
+      <a href="/course/agile-agent-workflow">Course</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/course/agile-agent-workflow">course/agile-agent-workflow</a><span class="rsep">/</span><a href="/course/agile-agent-workflow/brief">brief</a><span class="rsep">/</span><a href="/course/agile-agent-workflow/brief/implementation-prompt">implementation-prompt</a><span class="rsep">/</span><span class="rcur">assembling-the-prompt</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .dq rect{transition:fill .18s ease, stroke .18s ease, opacity .18s ease}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/elixir">jonnify</a>
+        <span class="sep">/</span>
+        <a href="/course/agile-agent-workflow">Agile Agent Workflow</a>
+        <span class="sep">/</span>
+        <a href="/course/agile-agent-workflow/brief">A5 &middot; The agent brief</a>
+        <span class="sep">/</span>
+        <span class="here">Assembling the prompt</span>
+      </div>
+      <p class="eyebrow">A5.5.1 &middot; dive 1/3</p>
+      <h1>Assembling the <span class="ex">prompt</span></h1>
+      <p class="lede">The fifth part of the brief introduces nothing new. The implementation prompt gathers the four
+        parts that came before &mdash; references, requirements, topology, agent stories &mdash; into one runnable
+        instruction.</p>
+      <p class="kicker">A prompt is the assembly point of the whole brief. Each prior part it carries is a guarantee
+        it can give: name the sources and the agent reads the right thing first; pin the topology and the build order
+        and the boundary are fixed. Each part it omits is a guarantee it cannot give. Toggle the figure on the right
+        to see which of the four parts the Portal's real <code class="inl">f6.1.llms.md</code> prompt carries, and
+        the fragment that carries each.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#gather">The gather-point</a>
+        <a href="#guarantee">Drop a part, lose a guarantee</a>
+        <a href="#portal">On the Portal</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig" aria-labelledby="carryTitle">
+      <h4 id="carryTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Which prior parts the prompt carries &middot; select a part</h4>
+      <div class="controls">
+        <div class="solid-select" id="partSel" role="group" aria-label="Choose a prior part of the brief">
+          <button type="button" data-part="references" data-c="elixir" class="active" aria-pressed="true">references</button>
+          <button type="button" data-part="requirements" data-c="elixir" aria-pressed="false">requirements</button>
+          <button type="button" data-part="topology" data-c="elixir" aria-pressed="false">topology</button>
+          <button type="button" data-part="stories" data-c="elixir" aria-pressed="false">agent stories</button>
+        </div>
+      </div>
+
+      <svg id="carrySvg" class="dq" viewBox="0 0 460 236" role="img" aria-label="The four prior parts of the brief drawn as stacked bands — references, requirements, topology, and agent stories — each marked carried into the prompt, with a carried-count below. Selecting a part highlights the band it occupies. References is selected initially.">
+        <text x="18" y="18" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#cdb8f0">the prompt is the assembly point of the four prior parts</text>
+
+        <g id="cy-band-0">
+          <rect x="18" y="28" width="424" height="34" rx="8" fill="rgba(179,157,219,.18)" stroke="#cdb8f0" stroke-width="2"></rect>
+          <text x="32" y="48" font-family="Manrope, sans-serif" font-size="11" font-weight="700" fill="#ece4d0">references</text>
+          <text x="430" y="48" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="#a7c9b1">carried</text>
+        </g>
+        <g id="cy-band-1">
+          <rect x="18" y="68" width="424" height="34" rx="8" fill="rgba(16,22,43,.55)" stroke="#2a3252" stroke-width="2"></rect>
+          <text x="32" y="88" font-family="Manrope, sans-serif" font-size="11" font-weight="700" fill="#d7cfb9">requirements</text>
+          <text x="430" y="88" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="#a7c9b1">carried</text>
+        </g>
+        <g id="cy-band-2">
+          <rect x="18" y="108" width="424" height="34" rx="8" fill="rgba(16,22,43,.55)" stroke="#2a3252" stroke-width="2"></rect>
+          <text x="32" y="128" font-family="Manrope, sans-serif" font-size="11" font-weight="700" fill="#d7cfb9">execution topology</text>
+          <text x="430" y="128" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="#a7c9b1">carried</text>
+        </g>
+        <g id="cy-band-3">
+          <rect x="18" y="148" width="424" height="34" rx="8" fill="rgba(16,22,43,.55)" stroke="#2a3252" stroke-width="2"></rect>
+          <text x="32" y="168" font-family="Manrope, sans-serif" font-size="11" font-weight="700" fill="#d7cfb9">agent stories</text>
+          <text x="430" y="168" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="#a7c9b1">carried</text>
+        </g>
+
+        <rect x="18" y="190" width="424" height="30" rx="8" fill="rgba(123,163,135,.12)" stroke="#7ba387" stroke-width="1.5"></rect>
+        <text x="32" y="209" font-family="Manrope, sans-serif" font-size="10" fill="#a39c89">prior parts carried into the prompt:</text>
+        <text id="cy-count" x="294" y="209" font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" fill="#a7c9b1">4 of 4</text>
+      </svg>
+
+      <div class="geo-readout" id="carryOut" aria-live="polite">References &mdash; carried into the prompt: yes (4 of 4
+        prior parts carried). The prompt opens by naming the sources to read first: <code>f6.1.md</code>,
+        <code>f6.1.stories.md</code>, <code>f0.md</code>. The prompt is the gather-point of the whole brief.</div>
+    </figure>
+  </div>
+
+  <section id="gather">
+    <h2>The gather-point</h2>
+    <div class="prose">
+      <p>A5.1 through A5.4 each produced one part of the brief: the references the agent reads, the numbered and
+        traced requirements, the runtime topology and build order, and the agent stories with their gates. The fifth
+        part &mdash; the implementation prompt &mdash; adds no sixth idea. It gathers those four into one instruction
+        an agent runs top to bottom.</p>
+      <p>Read the prompt as an assembly. It opens by naming the sources to read first (the references). It states the
+        boundary the change must not cross and the order the work is built in (the topology). It runs the agent
+        stories, each closing on its gate, satisfying the numbered requirements. The prompt fixes no decision the
+        spec has not already fixed; it only folds the parts the brief already holds into a single runnable pass.</p>
+    </div>
+    <div class="bridge" aria-label="The prompt gathers the four prior parts">
+      <div class="cell idea">
+        <p class="lbl">The prior parts</p>
+        <p>References, requirements, topology, and agent stories &mdash; each its own part of the brief, each carrying
+          one guarantee the agent depends on.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">The prompt</p>
+        <p>Gathers all four into one instruction: name the sources, state the boundary and order, run the stories on
+          their gates. Nothing new is decided; the parts are folded in.</p>
+      </div>
+    </div>
+    <p class="note">The next dive walks the order the prompt runs the parts in &mdash; the task DAG turned into
+      numbered build steps that keep the tree compiling after each one.</p>
+  </section>
+
+  <section id="guarantee">
+    <h2>Drop a part, lose a guarantee</h2>
+    <div class="prose">
+      <p>Because the prompt assembles the four prior parts, each part it omits removes a specific guarantee. Drop the
+        references and the prompt no longer tells the agent which sources to read first &mdash; the agent improvises a
+        source. Drop the topology and the prompt no longer fixes the build order or the unchanged-code boundary
+        &mdash; the agent picks an order and may edit code the spec pinned as untouched. Drop the requirements and
+        the prompt names no checks the build must satisfy; drop the stories and the prompt names no units of work
+        with closing gates.</p>
+      <p>Toggle the figure below to drop one part and read the guarantee the prompt can no longer give. A complete
+        prompt carries all four; an incomplete one is missing a guarantee, not merely a paragraph.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="dropTitle">
+      <h4 id="dropTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Drop a part &middot; see the guarantee the prompt loses</h4>
+      <div class="controls">
+        <div class="solid-select" id="dropSel" role="group" aria-label="Choose a part to drop from the prompt">
+          <button type="button" data-drop="none" data-c="elixir" class="active" aria-pressed="true">drop nothing</button>
+          <button type="button" data-drop="references" data-c="elixir" aria-pressed="false">drop references</button>
+          <button type="button" data-drop="requirements" data-c="elixir" aria-pressed="false">drop requirements</button>
+          <button type="button" data-drop="topology" data-c="elixir" aria-pressed="false">drop topology</button>
+          <button type="button" data-drop="stories" data-c="elixir" aria-pressed="false">drop stories</button>
+        </div>
+      </div>
+
+      <svg id="dropSvg" class="dq" viewBox="0 0 460 236" role="img" aria-label="The four prior parts drawn as cells — references, requirements, topology, and agent stories — each carrying the guarantee it gives the prompt, with a guarantees-kept count below. Dropping a part marks its cell lost and removes its guarantee. With nothing dropped, all four are kept. Drop-nothing is shown initially.">
+        <text x="18" y="18" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#cdb8f0">each part the prompt omits is a guarantee it cannot give</text>
+
+        <g id="dp-cell-0">
+          <rect x="18" y="28" width="424" height="34" rx="8" fill="rgba(123,163,135,.12)" stroke="#7ba387" stroke-width="2"></rect>
+          <text x="32" y="44" font-family="Manrope, sans-serif" font-size="10.5" font-weight="700" fill="#ece4d0">references</text>
+          <text x="32" y="57" font-family="Manrope, sans-serif" font-size="8.5" fill="#a39c89">tells the agent which sources to read first</text>
+          <text id="dp-st-0" x="430" y="48" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="#a7c9b1">kept</text>
+        </g>
+        <g id="dp-cell-1">
+          <rect x="18" y="68" width="424" height="34" rx="8" fill="rgba(123,163,135,.12)" stroke="#7ba387" stroke-width="2"></rect>
+          <text x="32" y="84" font-family="Manrope, sans-serif" font-size="10.5" font-weight="700" fill="#ece4d0">requirements</text>
+          <text x="32" y="97" font-family="Manrope, sans-serif" font-size="8.5" fill="#a39c89">names the numbered checks the build satisfies</text>
+          <text id="dp-st-1" x="430" y="88" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="#a7c9b1">kept</text>
+        </g>
+        <g id="dp-cell-2">
+          <rect x="18" y="108" width="424" height="34" rx="8" fill="rgba(123,163,135,.12)" stroke="#7ba387" stroke-width="2"></rect>
+          <text x="32" y="124" font-family="Manrope, sans-serif" font-size="10.5" font-weight="700" fill="#ece4d0">topology</text>
+          <text x="32" y="137" font-family="Manrope, sans-serif" font-size="8.5" fill="#a39c89">fixes the build order and the unchanged-code boundary</text>
+          <text id="dp-st-2" x="430" y="128" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="#a7c9b1">kept</text>
+        </g>
+        <g id="dp-cell-3">
+          <rect x="18" y="148" width="424" height="34" rx="8" fill="rgba(123,163,135,.12)" stroke="#7ba387" stroke-width="2"></rect>
+          <text x="32" y="164" font-family="Manrope, sans-serif" font-size="10.5" font-weight="700" fill="#ece4d0">agent stories</text>
+          <text x="32" y="177" font-family="Manrope, sans-serif" font-size="8.5" fill="#a39c89">names each unit of work and its closing gate</text>
+          <text id="dp-st-3" x="430" y="168" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="#a7c9b1">kept</text>
+        </g>
+
+        <rect x="18" y="190" width="424" height="30" rx="8" fill="rgba(16,22,43,.55)" stroke="#2a3252" stroke-width="1.5"></rect>
+        <text x="32" y="209" font-family="Manrope, sans-serif" font-size="10" fill="#a39c89">guarantees the prompt keeps:</text>
+        <text id="dp-count" x="252" y="209" font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" fill="#a7c9b1">4 of 4</text>
+      </svg>
+
+      <div class="geo-readout" id="dropOut" aria-live="polite">Drop nothing &mdash; all four prior parts carried
+        (guarantees kept: 4 of 4). The prompt names the sources, fixes the order and the boundary, and runs each story
+        on its gate. A complete prompt is the four prior parts gathered into one runnable instruction.</div>
+    </figure>
+    <p class="take">A complete prompt carries all four prior parts &mdash; each part it omits is a guarantee it cannot
+      give.</p>
+  </section>
+
+  <section id="portal">
+    <h2>On the Portal</h2>
+    <div class="prose">
+      <p>The Portal's web bootstrap ships from a real brief, <code class="inl">f6.1.llms.md</code>. Its
+        <code class="inl">## Comprehensive implementation prompt</code> opens with directives that are the prior parts
+        folded in. The instruction to read three sources first is the <strong>references</strong> part. The
+        unchanged-facade boundary and the deps-placement rule are the <strong>topology</strong>'s boundary. The prompt
+        then runs the agent stories over the build order, satisfying the numbered requirements. The opening lines,
+        quoted verbatim:</p>
+      <pre class="code"><span class="cmt"># f6.1.llms.md — the implementation prompt's opening directives (verbatim)</span>
+<span class="cmt">#</span>
+You are implementing spec F6.1 (Bootstrap the Phoenix Portal) as a NEW umbrella app
+<span class="str">apps/portal_web</span> in the existing Elixir umbrella. Read <span class="str">specs/phoenix/f6.1.md</span>,
+<span class="str">specs/phoenix/f6.1.stories.md</span>, and <span class="str">specs/design/f0.md</span> first.    <span class="cmt"># &lt;- references</span>
+Do not change anything under the Portal facade: the engine (<span class="fn elixir">Portal.Engine</span>), the store,
+the contexts, and the <span class="fn elixir">Portal</span> facade stay exactly as F5 left them.                 <span class="cmt"># &lt;- topology: the boundary</span>
+Phoenix deps go ONLY in <span class="str">apps/portal_web/mix.exs</span>, so <span class="str">apps/portal/mix.exs</span>
+stays Phoenix-free (the master invariant, compiler-enforced at the app level).        <span class="cmt"># &lt;- topology: file scope</span></pre>
+      <p>Read those lines first, the prompt is the references and the topology boundary, gathered. Read on, and it
+        runs <code class="inl">F6.1-AS1</code> through <code class="inl">F6.1-AS4</code> in task order, satisfying
+        <code class="inl">F6.1-R1</code> through <code class="inl">F6.1-R8</code> &mdash; the agent stories and the
+        requirements, gathered. The endpoint the foundation step builds is the
+        <a href="/elixir/phoenix/lifecycle/endpoint">request lifecycle's front door</a>, taught in the companion
+        course. Across the whole prompt, no part of the brief is introduced fresh; every part is carried in.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">The principle</p>
+        <p>The prompt assembles the brief's parts; each part it omits is a guarantee it cannot give. A complete prompt
+          gathers all four into one runnable instruction.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <p class="lbl">On the Portal</p>
+        <p><code class="inl">f6.1.llms.md</code>'s prompt opens by naming the sources to read, the unchanged-facade
+          boundary, and the Phoenix-deps-only-in-<code class="inl">portal_web</code> constraint &mdash; references and
+          topology, folded in &mdash; then runs <code class="inl">AS1</code>&ndash;<code class="inl">AS4</code> on
+          their gates.</p>
+      </div>
+    </div>
+    <p class="take">The implementation prompt does not write the brief over again; it gathers the four parts the brief
+      already holds into one instruction the agent runs.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; the prompt gathers, it does not invent</h2>
+    <div class="prose">
+      <p>The fifth part of the brief is an assembly, not an addition. The implementation prompt carries the
+        references, requirements, topology, and agent stories into one runnable instruction, and fixes no decision the
+        spec has not already fixed. Each part it omits is a guarantee it cannot give &mdash; drop the references and
+        the agent improvises a source; drop the topology and it loses the build order and the boundary. The next dive
+        takes the gathered prompt and walks the order it runs the parts in.</p>
+    </div>
+    <p class="note">Next in A5.5: <strong>Task order</strong> &mdash; the prompt runs the agent stories in the
+      task-DAG order, keeping the tree compiling after each step.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Primary sources for assembling one complete, runnable instruction for an agent, and where the prompt's
+        prior parts and the rung it builds are defined in the course.</p>
+    </div>
+    <div class="refs">
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://www.anthropic.com/engineering/claude-code-best-practices">Anthropic &mdash; <em>Claude Code best practices</em></a> &mdash; assembling a single, complete prompt a coding agent runs in order, not an open-ended goal.</li>
+        <li><a href="https://llmstxt.org/">llmstxt.org &mdash; <em>The /llms.txt convention</em></a> &mdash; the links-first machine-brief form the prompt gathers its references from.</li>
+        <li><a href="https://pragprog.com/titles/tpp20/the-pragmatic-programmer-20th-anniversary-edition/">Hunt, A. &amp; Thomas, D. &mdash; <em>The Pragmatic Programmer</em></a> &mdash; pin every decision the builder must not have to invent.</li>
+      </ul>
+      <h3>Related in this course</h3>
+      <ul>
+        <li><a href="/course/agile-agent-workflow/brief/implementation-prompt">A5.5 &middot; The implementation prompt</a> &mdash; the module hub.</li>
+        <li><a href="/course/agile-agent-workflow/brief/agent-stories">A5.4 &middot; Agent stories</a> &mdash; the fourth part the prompt runs.</li>
+        <li><a href="/course/agile-agent-workflow/brief/execution-topology">A5.3 &middot; Execution topology</a> &mdash; the third part the prompt folds in.</li>
+        <li><a href="/course/agile-agent-workflow/brief">A5 &middot; The agent brief</a> &mdash; the chapter landing.</li>
+        <li><a href="/elixir/phoenix/lifecycle">Companion &middot; Phoenix request lifecycle</a> &mdash; the F6.1 rung whose prompt this dive grounds on.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/course/agile-agent-workflow/brief/implementation-prompt"><span aria-hidden="true">&larr;</span>&nbsp; A5.5 &middot; The implementation prompt</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/course/agile-agent-workflow/brief/implementation-prompt/task-order">A5.5.2 &middot; Task order <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/elixir">jonnify<span class="dot"></span></a>
+        <p class="tag">Agile Agent Workflow &mdash; Pragmatic Programming with Claude Agents, built end to end on the Portal.</p>
+      </div>
+      <div>
+        <h4>Modules</h4>
+        <a href="/course/agile-agent-workflow/why">A1 &middot; Why an agile agent workflow</a>
+        <a href="/course/agile-agent-workflow/decomposition">A2 &middot; Decomposition</a>
+        <a href="/course/agile-agent-workflow/roadmap">A3 &middot; The roadmap layer</a>
+        <a href="/course/agile-agent-workflow/spec">A4 &middot; The spec layer</a>
+        <a href="/course/agile-agent-workflow/brief">A5 &middot; The agent brief</a>
+        <span class="it">A6 &middot; Reliability &amp; correctness</span>
+        <span class="it">A7 &middot; Portal exemplar</span>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/course/agile-agent-workflow">Course home</a>
+        <a href="/course/agile-agent-workflow/brief">A5 &middot; The agent brief</a>
+        <a href="/elixir/course">Companion &middot; Functional Programming</a>
+        <a href="/elixir">jonnify home</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Ng9hnHJgW0</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-03 13:40:53 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: which prior parts the prompt carries ----------
+     Pure functions over a fixed dataset (the four prior parts, grounded on the real f6.1.llms.md prompt).
+     Degrades: the SVG and the selector sit in static markup (references band lit, references readout); JS only enhances. */
+
+  // fixed dataset: the four prior parts the prompt assembles, with the verbatim prompt fragment that carries each.
+  var PARTS = [
+    { key: 'references', label: 'references',
+      frag: 'The prompt opens by naming the sources to read first: f6.1.md, f6.1.stories.md, f0.md.' },
+    { key: 'requirements', label: 'requirements',
+      frag: 'The prompt satisfies the numbered requirements F6.1-R1 through F6.1-R8.' },
+    { key: 'topology', label: 'topology',
+      frag: 'The prompt fixes the build order and pins the unchanged-facade boundary and deps placement.' },
+    { key: 'stories', label: 'agent stories',
+      frag: 'The prompt runs the agent stories F6.1-AS1 through F6.1-AS4, each on its gate.' }
+  ];
+
+  function indexOfPart(key) { for (var i = 0; i < PARTS.length; i++) { if (PARTS[i].key === key) return i; } return -1; }
+
+  // pure: is part `key` carried into the prompt? all four prior parts are carried.
+  function carries(key) { return indexOfPart(key) >= 0; }
+  // pure: how many of the four prior parts the prompt carries (always all of them).
+  function carriedCount() { return PARTS.length; }
+  // pure: the verbatim prompt fragment that carries part `key`.
+  function fragmentFor(key) { var i = indexOfPart(key); return i < 0 ? '' : PARTS[i].frag; }
+  // pure: the hero readout string for a selected part.
+  function heroReadout(key) {
+    var i = indexOfPart(key);
+    var label = i < 0 ? key : PARTS[i].label;
+    return label.charAt(0).toUpperCase() + label.slice(1) + ' — carried into the prompt: ' +
+      (carries(key) ? 'yes' : 'no') + ' (' + carriedCount() + ' of ' + PARTS.length + ' prior parts carried). ' +
+      fragmentFor(key) + ' The prompt is the gather-point of the whole brief.';
+  }
+
+  function setText(id, t) { var el = document.getElementById(id); if (el) el.textContent = t; }
+
+  function paintCarry(key) {
+    var sel = indexOfPart(key);
+    for (var i = 0; i < PARTS.length; i++) {
+      var g = document.getElementById('cy-band-' + i);
+      if (!g) continue;
+      var rect = g.querySelector('rect');
+      if (rect) {
+        var on = (i === sel);
+        rect.setAttribute('fill', on ? 'rgba(179,157,219,.18)' : 'rgba(16,22,43,.55)');
+        rect.setAttribute('stroke', on ? '#cdb8f0' : '#2a3252');
+      }
+    }
+    setText('cy-count', carriedCount() + ' of ' + PARTS.length);
+    setText('carryOut', heroReadout(key));
+  }
+
+  document.querySelectorAll('#partSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-part');
+      document.querySelectorAll('#partSel button').forEach(function (x) {
+        var on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      paintCarry(key);
+    });
+  });
+
+  /* ---------- content: drop a part, lose a guarantee ----------
+     The four prior parts each pair with the guarantee they give the prompt. Dropping one removes that guarantee. */
+  var GUARANTEES = [
+    { key: 'references',   text: 'tells the agent which sources to read first' },
+    { key: 'requirements', text: 'names the numbered checks the build must satisfy' },
+    { key: 'topology',     text: 'fixes the build order and the unchanged-code boundary' },
+    { key: 'stories',      text: 'names each unit of work and its closing gate' }
+  ];
+
+  function indexOfGuarantee(key) { for (var i = 0; i < GUARANTEES.length; i++) { if (GUARANTEES[i].key === key) return i; } return -1; }
+
+  // pure: the guarantee the prompt can no longer give when `dropped` is removed.
+  function guaranteeLost(dropped) {
+    if (dropped === 'none') return 'none — all four parts carried';
+    var i = indexOfGuarantee(dropped);
+    return i < 0 ? 'none — all four parts carried' : GUARANTEES[i].text;
+  }
+  // pure: how many guarantees the prompt keeps under a given drop (4 when none, else 3).
+  function guaranteesKept(dropped) { return dropped === 'none' ? GUARANTEES.length : (GUARANTEES.length - 1); }
+  // pure: the content readout string for a given drop.
+  function dropReadout(dropped) {
+    if (dropped === 'none') {
+      return 'Drop nothing — all four prior parts carried (guarantees kept: ' + guaranteesKept('none') + ' of ' +
+        GUARANTEES.length + '). The prompt names the sources, fixes the order and the boundary, and runs each story ' +
+        'on its gate. A complete prompt is the four prior parts gathered into one runnable instruction.';
+    }
+    var i = indexOfGuarantee(dropped);
+    var label = i < 0 ? dropped : GUARANTEES[i].key;
+    return 'Drop ' + label + ' — the prompt no longer ' + guaranteeLost(dropped) + ' (guarantees kept: ' +
+      guaranteesKept(dropped) + ' of ' + GUARANTEES.length + '). Each part the prompt omits is a guarantee it cannot give.';
+  }
+
+  function paintDrop(dropped) {
+    var lost = indexOfGuarantee(dropped); // -1 for 'none'
+    for (var i = 0; i < GUARANTEES.length; i++) {
+      var g = document.getElementById('dp-cell-' + i);
+      if (!g) continue;
+      var rect = g.querySelector('rect');
+      var isLost = (i === lost);
+      if (rect) {
+        rect.setAttribute('fill', isLost ? 'rgba(196,80,76,.12)' : 'rgba(123,163,135,.12)');
+        rect.setAttribute('stroke', isLost ? '#c4504c' : '#7ba387');
+        rect.setAttribute('opacity', isLost ? '0.55' : '1');
+      }
+      var st = document.getElementById('dp-st-' + i);
+      if (st) { st.textContent = isLost ? 'lost' : 'kept'; st.setAttribute('fill', isLost ? '#e08f8b' : '#a7c9b1'); }
+    }
+    var cnt = document.getElementById('dp-count');
+    if (cnt) { cnt.textContent = guaranteesKept(dropped) + ' of ' + GUARANTEES.length;
+      cnt.setAttribute('fill', dropped === 'none' ? '#a7c9b1' : '#e08f8b'); }
+    setText('dropOut', dropReadout(dropped));
+  }
+
+  document.querySelectorAll('#dropSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var dropped = b.getAttribute('data-drop');
+      document.querySelectorAll('#dropSel button').forEach(function (x) {
+        var on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      paintDrop(dropped);
+    });
+  });
+
+  // initial render — both interactives correct without interaction
+  paintCarry('references');
+  paintDrop('none');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

@@ -113,25 +113,32 @@ Per-rung iterations (each a PR-sized increment — a spec triad, the slice, a gr
 | F6.5.5 | the design system applied to two STATIC index pages (`/` = courses, `/elixir`) at parity via per-page extracted CSS — no root layout, no `CoreComponents`; deep links remapped to production Fiber | the two index pages render identical to the static originals | render-parity (computed-style/geometry e2e) vs the static baseline | do `/` and `/elixir` match the static originals? |
 | F6.6 | interactivity (live search, live create, streams) | search as you type; create without a reload | `LiveViewTest` (`render_change`/`render_submit`) | does the interaction feel right? |
 | F6.7 | multi-client live updates and a viewer count (PubSub, Presence) | two windows; one creates, the other updates; a viewer count | broadcast tests; presence diff; two-LiveView test | what should propagate; count semantics? |
-| F6.8 | real users and a deployed clustered release | sign in; a protected area; a deployed URL | auth flow tests; release boot; cluster smoke | auth model and deploy target? |
+| F6.8.1 | real users and a protected area | sign in; a protected area redirects anonymous, admits a session | auth flow tests (the honest door); the `/login` page; `on_mount` | the persistence slice (ratified: Store-backed + bcrypt) |
+| F6.8.2 | a deployable, clustered release | the prod release builds + migrates + boots `/health`; the artifacts ready | `mix release`; `Portal.Release.migrate`; `fly config validate`; cluster smoke | release name; OTP tag; `worker_id` source (live deploy = Operator) |
 | F6.9 | an operations/learning dashboard folding live events, under auth, clustered | the dashboard updates live | dashboard render + live-event test | which metrics and views? |
 
-**Status — F6.1–F6.7 shipped (+ F6.5.5 design system + AAW-parity).** The engine (F5) and **F6.1–F6.7** are **shipped** — F6.5 (HEEx views), F6.6 (LiveView, `3cf2480`), and **F6.7 (real-time PubSub & Presence, `ae7f986`)** have landed past the original draft. **F6.5.5 · Apply the design system** SHIPPED + Operator-accepted (two STATIC parity pages `/` + `/elixir` at computed-style parity + the configurable deep-link base URL, live at `:4000`), with the **AAW-parity** follow-on (`/course/agile-agent-workflow`, the third parity page). F6.8–F6.9 remain **specced backlog, groomed**: each opens with a `[RECONCILE]` callout at the top of its body folding the shipped direction forward (routes + components, the F6.5.5 styling fold, and now F6.7's single-node Presence + broadcast pattern), and each takes a pre-build lag-1 `/reconcile` (Venus step 1) before it is built — retiring up front the ambiguity that accrues when a story is written rungs ahead of its build.
+**Status — F6.1–F6.7 shipped (+ F6.5.5 design system + AAW-parity).** The engine (F5) and **F6.1–F6.7** are **shipped** — F6.5 (HEEx views), F6.6 (LiveView, `3cf2480`), and **F6.7 (real-time PubSub & Presence, `ae7f986`)** have landed past the original draft. **F6.5.5 · Apply the design system** SHIPPED + Operator-accepted (two STATIC parity pages `/` + `/elixir` at computed-style parity + the configurable deep-link base URL, live at `:4000`), with the **AAW-parity** follow-on (`/course/agile-agent-workflow`, the third parity page). **F6.8 split into F6.8.1 (auth) + F6.8.2 (deploy)** (the decimal-insertion split, mirroring F6.5 → F6.5.5); F6.8.1–F6.9 remain **specced backlog, groomed**: each opens with a `[RECONCILE]` callout at the top of its body folding the shipped direction forward (routes + components, the F6.5.5 styling fold, and now F6.7's single-node Presence + broadcast pattern), and each takes a pre-build lag-1 `/reconcile` (Venus step 1) before it is built — retiring up front the ambiguity that accrues when a story is written rungs ahead of its build.
 
 | Rung | Status |
 | --- | --- |
 | F6.1 endpoint · F6.2 routing · F6.3 Ecto · F6.4 contexts · F6.5 HEEx views · F6.6 LiveView · **F6.7 PubSub & Presence** | **shipped** |
 | F6.5.5 Apply the design system (+ AAW-parity) | **shipped** — two static parity pages at `:4000`, Operator-accepted; configurable deep-link base |
-| F6.8 auth & deploy · F6.9 dashboard | **specced backlog, groomed** — each opens with a `[RECONCILE]` callout (incl. the F6.5.5 styling fold + F6.7's Presence/broadcast fold) |
+| F6.8.1 auth (the honest door, static login port + `Portal.Auth`) · F6.8.2 deploy (release + config split + libcluster + distilled `fly.toml`) · F6.9 dashboard | **specced backlog, groomed** — each opens with a `[RECONCILE]` callout (incl. the F6.5.5 styling fold + F6.7's Presence/broadcast fold); the live `fly deploy` is the Operator's, F6.8.2's gate is BUILD-LOCAL |
 
 ## Seams & open decisions
 
 - **Routing & component direction (set at F6.5, `5a440fd`).** The catalog is `resources "/courses"` (`CourseController`: index/show/new/create); a learner's enrollments are `get "/my/courses"` (`EnrollmentController.index`, protected); `/courses/:user_id` and `/learn` are retired; one controller per context; a successful enroll redirects to the joined course's `:show`. Form-field components are a minimal LOCAL set in `PortalWeb.CatalogComponents` (`input/1`, `course_card`, `panel`) imported via `portal_web.ex` `html_helpers` — there is NO `CoreComponents` until F6.8's `phx.gen.auth` forces the decision. Each downstream rung (F6.6–F6.9) carries a `[RECONCILE]` callout folding this forward. **F6.5.5 · Apply the design system applies the F0 system to two STATIC index pages (`/`, `/elixir`) at parity via per-page extracted CSS — it adds NO root layout, NO shared `app.css`, and does NOT restyle `CatalogComponents` (reframed from the original styled-catalog plan to a strangler-fig static-parity slice). So the root layout + shared token stylesheet for the DYNAMIC UI, the `CatalogComponents` restyle, AND the `CoreComponents` reckoning all come due together at F6.8 (the first dynamic styled pages — the auth LiveViews), where styling is also a theming decision (the generated auth UI must render in the F0 tokens). See the F6.8 `[RECONCILE]`.**
 
-- **Authentication (F6.8).** The likely path is `mix phx.gen.auth` for password accounts, with the `Accounts` context
-  from F6.4 as the seam; the choice of social/SSO and session model is decided then.
-- **Deployment & clustering (F6.8).** An Elixir release plus a clustering strategy (for example `libcluster`) makes
-  Presence and PubSub correct across nodes; the deploy target (a managed platform or containers) is decided then.
+- **Authentication (F6.8.1) — RESOLVED.** NOT `mix phx.gen.auth` (the `%User{}`/`%Session{}` entities already exist
+  from F6.4): the static `login.html` is ported the F6.5.5 way (`PageController.login/2` + extracted CSS/JS) over a
+  NET-NEW `Portal.Auth` facade (`sign_in/2` the honest door, `request_reset/1` no-enumeration); the F6.2 `RequireUser`
+  gate evolves into `PortalWeb.UserAuth` (`current_user` + `on_mount`). Persistence ratified: Store-backed +
+  `bcrypt_elixir`, no schema. Registration deferred. See [`f6.8.1.md`](f6.8.1.md).
+- **Deployment & clustering (F6.8.2) — RESOLVED to the artifacts.** A scoped umbrella release (excluding `echo_bot`)
+  packaged by a Dockerfile built FROM the Operator's template (corrected to Elixir 1.18.4 / OTP 28.1); the config
+  split + the prod deploy-bind; `Portal.Release` migrate; a `libcluster` topology (F6.7 single-node → cluster-correct);
+  a distilled `fly.toml`. The live `fly deploy` is the Operator's — the rung's gate is BUILD-LOCAL. See
+  [`f6.8.2.md`](f6.8.2.md).
 - **Dashboard data (F6.9).** The dashboard folds live events (the same broadcasts F6.7 emits) and read-model queries;
   which metrics it shows and whether it embeds `LiveDashboard` is decided then.
 - **Catalog browsing read.** Browsing the available catalog uses `Catalog.list_courses/0` (F6.4), distinct from the
@@ -154,7 +161,7 @@ Per-rung iterations (each a PR-sized increment — a spec triad, the slice, a gr
 
 Chapter index & feature abstracts: [`phoenix.md`](phoenix.md). Rungs: [`f6.1.md`](f6.1.md) · [`f6.2.md`](f6.2.md) ·
 [`f6.3.md`](f6.3.md) · [`f6.4.md`](f6.4.md) · [`f6.5.md`](f6.5.md) · [`f6.5.5.md`](f6.5.5.md) · [`f6.6.md`](f6.6.md) · [`f6.7.md`](f6.7.md) ·
-[`f6.8.md`](f6.8.md) · [`f6.9.md`](f6.9.md).
+[`f6.8.md`](f6.8.md) ([`f6.8.1.md`](f6.8.1.md) auth · [`f6.8.2.md`](f6.8.2.md) deploy) · [`f6.9.md`](f6.9.md).
 Sibling roadmaps: [`../pragmatic/pragmatic.roadmap.md`](../pragmatic/pragmatic.roadmap.md) ·
 [`../bot/f10.roadmap.md`](../bot/f10.roadmap.md). Engine handoff: [`../pragmatic/f5.9.md`](../pragmatic/f5.9.md).
 Operator's guide: [`phoenix.operator.md`](phoenix.operator.md). Approach: [`../specs.approach.md`](../specs.approach.md).
