@@ -23,7 +23,7 @@ as the A0 chapter landing AND the A0.2 module hub. Every chapter from A1 on **ne
 | A0 | Foundations — why, what, who | `/course/agile-agent-workflow/what` | `what/` | **A0.2 built; A0.1, A0.3 planned** |
 | A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **complete — landing + A1.01–A1.06 built** |
 | A2 | Decomposition: from vision to user stories | `/course/agile-agent-workflow/decomposition` | `decomposition/` | **complete — landing + A2.01–A2.07 built** |
-| A3 | The roadmap layer: Agile delivery & iteration | `…/roadmap` | — | planned |
+| A3 | The roadmap layer: Agile delivery & iteration | `/course/agile-agent-workflow/roadmap` | `roadmap/` | **landing + 3 orientation dives built; modules A3.1–A3.8 planned** |
 | A4 | The spec layer: specifications & acceptance | `…/spec` | — | planned |
 | A5 | The agent brief (.llms.md) & implementation | `…/brief` | — | planned |
 | A6 | Reliability and correctness | `…/reliability` | — | planned |
@@ -122,15 +122,17 @@ sequence on Portal's five surfaces (store, engine, web, bot, dashboard) to produ
 
 ## Resume point
 
-Built since last resume: **A1.05 "Correct by definition"** (`/why/correct` + dives `the-closure`,
-`proven-not-asserted`, `gates`, all A+) — which **completes chapter A1**. With A2 also complete, **Parts I and II are
-fully built**; the frontier is now **Part III / chapter A3** ("The roadmap layer", `/roadmap`).
+Built since last resume: the **A3 chapter landing** (`/roadmap`) plus its **three orientation dives** —
+`where-we-are`, `the-roadmap-layer`, `the-road-ahead` (a recap of A0–A2 + a 5W expert overview of the roadmap layer,
+all A+). Parts I and II are complete; A3's landing + orientation are now built, with its eight teaching modules to
+come.
 
-**A3 — "The roadmap layer: Agile delivery & iteration"** (`/roadmap`, Part III) is the next frontier — but its
-**chapter landing is not yet built**, so `/agile-write roadmap …` cannot fan out modules yet. First author the A3
-landing `html/agile-agent-workflow/roadmap/index.html` (model: the A2 landing `decomposition/index.html` — hero + a
-framing interactive + a `.mods` grid of the planned modules + References + pager), then fan out its modules. TOC
-Part III lists eight: §3.1 Agile distilled · §3.2 XP for small batches · §3.3 Anatomy of a roadmap.md · §3.4 Thin but
-robust · §3.5 Milestones and iterations · §3.6 The program roadmap · §3.7 Tracer bullets and walking skeletons ·
-§3.8 Workshop — roadmapping Portal. The course thesis, restated each module: neither no-plan nor all-plan ships
-reliable software; the unit that does is a thin slice of value, specified only enough, proven before the next begins.
+**A3 — "The roadmap layer: Agile delivery & iteration"** (`/roadmap`, Part III): the chapter **landing** and its
+**three orientation dives** are built — `/roadmap/{where-we-are,the-roadmap-layer,the-road-ahead}` (a recap of A0–A2
+and a 5W overview, with a "where we are" course-arc interactive and the `roadmap.md` anatomy grounded in the real F6
+`phoenix.roadmap.md`). **Next: the eight teaching modules A3.1–A3.8** — §3.1 Agile distilled · §3.2 XP for small
+batches · §3.3 Anatomy of a roadmap.md · §3.4 Thin but robust · §3.5 Milestones and iterations · §3.6 The program
+roadmap · §3.7 Tracer bullets and walking skeletons · §3.8 Workshop — roadmapping Portal — now fan-able with
+`/agile-write roadmap <module-slug> …` (the landing exists). The course thesis, restated each module: neither no-plan
+nor all-plan ships reliable software; the unit that does is a thin slice of value, specified only enough, proven
+before the next begins.

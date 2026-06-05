@@ -81,7 +81,7 @@ Related in this course:
 - toc-mini: `#fill` → `Fill from zero up`; `#advanced` → `Advanced: why greedy can lose`.
 - pager: prev → `/elixir/algorithms/dynamic-programming/memoization` label `F4.11.1 · memoization`; next → `/elixir/algorithms/dynamic-programming/problems` label `Next · classic problems`.
 - footer columns. **Chapters:** `/elixir/algebra`, `/elixir/functional`, `/elixir/language`, `/elixir/algorithms`, `/elixir/pragmatic`, `/elixir/phoenix`. **The course:** `/elixir` (Course home), `/elixir/course` (Contents & history), `/elixir/algebra/functions` (Start · F1.01). Foot tag: `Functional Programming in Elixir — functional thinking taught twice: first as mathematics, then as idiomatic Elixir.`
-- Page meta. `<title>`: `Tabulation & bottom-up — F4.11.2 · jonnify`. `<meta name="description">` (from the source head): describes filling a table of the fewest modules to reach a credit target bottom-up, where greedy choice can strand a remainder and the table is optimal.
+- Page meta. `<title>`: `Tabulation & bottom-up — F4.11.2 · jonnify`. `<meta name="description">`: `The fewest modules (worth 1, 3, or 4 credits) summing to a target is one more than the best answer for the target minus a module's worth — optimal substructure. Tabulation fills a table of the fewest modules for every total from zero up, so the target reads off smaller cells. For six credits the table finds two (3 + 3) where greedy takes three (4 + 1 + 1), because greedy commits to a locally largest step and the table weighs all worths.`
 
 ## Build instruction
 
