@@ -58,6 +58,13 @@ spec, not the code).
   suite proves the plug pipeline, NOT that the dev node boots + binds. Boot (`mix phx.server`) and
   `curl :4000/health` → 200 + the rung's route renders (F6.6 shipped green while `:4000` was never
   bound — the same "a check counts only if it RUNS" class as the inert doctest above).
+- **CSS clamps are gate-invisible — lint them.** For any rung that touches or creates CSS, before
+  reporting done grep every `clamp()` in the changed CSS for an unspaced `+`/`-` inside the args:
+  `clamp(2.7rem,1.9rem+4.2vw,5.1rem)` is INVALID CSS, silently dropped to the UA default
+  (`h1`→32px), and `mix test` never sees it — the 204-page silent-fallback bug. (F6.5.5 held parity
+  by relocating each golden-master `<style>` body VERBATIM into its per-page extracted asset — no
+  reformat — so the lint is the cheap proof the relocation drifted no spacing.) Same "a check counts
+  only if it RUNS" class as the liveness check above.
 - Do NOT `git commit` — the Director commits once, at the rung's close. Leave the work in the tree
   for ratification.
 

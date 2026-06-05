@@ -49,7 +49,12 @@ the stories re-derive).
    primitive (the list is a `stream`, never an assign), the body and brief must describe it that
    way — reconcile the prose to the primitive, or the brief mis-directs the build (F6.6: the brief's
    "re-assigns `@courses`" fought INV4's stream; Mars overrode it correctly, but a brief at odds
-   with its own invariant is a STALE owed pre-build).
+   with its own invariant is a STALE owed pre-build). **A serving / mount / route surface-fact —
+   what a mount actually SERVES, not what its config declares — is a claim discharged ONLY by a
+   PROBE (one `curl`), never a config-read:** F6.5.5's brief asserted the `Plug.Static` mount
+   "already serves `/assets/*`" from reading its config, but the as-built `curl :4000/assets/courses.css`
+   → 404 (the `at: "/assets"` prefix-strip latent); one pre-build curl would have caught it. Probe
+   the claim, do not read the config.
 2. **Apply the corrections** to the triad (the body authoritative; bring stories + brief up to
    it). Surgical sync, not a rewrite.
 3. **Author the brief** Mars builds from, in the `.llms.md` anatomy:

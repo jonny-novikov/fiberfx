@@ -23,7 +23,7 @@ as the A0 chapter landing AND the A0.2 module hub. Every chapter from A1 on **ne
 | A0 | Foundations — why, what, who | `/course/agile-agent-workflow/what` | `what/` | **A0.2 built; A0.1, A0.3 planned** |
 | A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **complete — landing + A1.01–A1.06 built** |
 | A2 | Decomposition: from vision to user stories | `/course/agile-agent-workflow/decomposition` | `decomposition/` | **complete — landing + A2.01–A2.07 built** |
-| A3 | The roadmap layer: Agile delivery & iteration | `/course/agile-agent-workflow/roadmap` | `roadmap/` | **landing + 3 orientation dives built; modules A3.1–A3.8 planned** |
+| A3 | The roadmap layer: Agile delivery & iteration | `/course/agile-agent-workflow/roadmap` | `roadmap/` | **landing + 3 orientation dives + A3.1–A3.3, A3.9 built; A3.4–A3.8 planned** |
 | A4 | The spec layer: specifications & acceptance | `…/spec` | — | planned |
 | A5 | The agent brief (.llms.md) & implementation | `…/brief` | — | planned |
 | A6 | Reliability and correctness | `…/reliability` | — | planned |
@@ -122,17 +122,19 @@ sequence on Portal's five surfaces (store, engine, web, bot, dashboard) to produ
 
 ## Resume point
 
-Built since last resume: the **A3 chapter landing** (`/roadmap`) plus its **three orientation dives** —
-`where-we-are`, `the-roadmap-layer`, `the-road-ahead` (a recap of A0–A2 + a 5W expert overview of the roadmap layer,
-all A+). Parts I and II are complete; A3's landing + orientation are now built, with its eight teaching modules to
-come.
+Built since last resume: the course's own **spec system** under `docs/agile-agent-workflow/specs/` (the single
+`aaw.roadmap.md`, the `aaw.operator.md` build runbook, and per-chapter `a3.llms.md` + `a3.stories.md`), and — built
+**spec-first** from it — **A3.1–A3.3 and the new A3.9**: `/roadmap/{agile-distilled,xp-small-batches,roadmap-anatomy,
+glossary}`, a hub + three dives each, all A+. The Authors read `a3.llms.md` + `a3.stories.md` as their spec. Parts I
+and II are complete; A3 now has its landing, three orientation dives, and four modules built.
 
-**A3 — "The roadmap layer: Agile delivery & iteration"** (`/roadmap`, Part III): the chapter **landing** and its
-**three orientation dives** are built — `/roadmap/{where-we-are,the-roadmap-layer,the-road-ahead}` (a recap of A0–A2
-and a 5W overview, with a "where we are" course-arc interactive and the `roadmap.md` anatomy grounded in the real F6
-`phoenix.roadmap.md`). **Next: the eight teaching modules A3.1–A3.8** — §3.1 Agile distilled · §3.2 XP for small
-batches · §3.3 Anatomy of a roadmap.md · §3.4 Thin but robust · §3.5 Milestones and iterations · §3.6 The program
-roadmap · §3.7 Tracer bullets and walking skeletons · §3.8 Workshop — roadmapping Portal — now fan-able with
-`/agile-write roadmap <module-slug> …` (the landing exists). The course thesis, restated each module: neither no-plan
-nor all-plan ships reliable software; the unit that does is a thin slice of value, specified only enough, proven
-before the next begins.
+**A3 — "The roadmap layer"** (`/roadmap`, Part III) is the course's first **spec-first** chapter: its specs live in
+`docs/agile-agent-workflow/specs/` (`aaw.roadmap.md` the single course roadmap, `aaw.operator.md` the build runbook,
+`a3.llms.md` the chapter brief, `a3.stories.md` the user stories for learner/developer/Claude-Agent), and its modules
+are built from them. Built: the landing + 3 orientation dives + **A3.1 `agile-distilled`**, **A3.2 `xp-small-batches`**,
+**A3.3 `roadmap-anatomy`** (each hub + 3 dives, grounded in the real F6 `phoenix.roadmap.md`), and the new reference
+appendix **A3.9 `glossary`** (a UX-friendly expandable list — glossary, sources, and the idea→`/elixir` crosswalk).
+**Next: A3.4–A3.8** — Thin but robust · Milestones and iterations · The program roadmap · Tracer bullets and walking
+skeletons · Workshop — roadmapping Portal: write each module's stories into `a3.stories.md`, then
+`/agile-write roadmap <module-slug> …`. The course thesis, restated each module: neither no-plan nor all-plan ships
+reliable software; the unit that does is a thin slice of value, specified only enough, proven before the next begins.
