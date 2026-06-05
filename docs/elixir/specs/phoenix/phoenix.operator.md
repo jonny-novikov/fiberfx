@@ -102,6 +102,14 @@ Two invariants hold at *every* rung, plus the build gate and the acceptance rule
   `TMPDIR=/tmp mix compile --warnings-as-errors` clean → `TMPDIR=/tmp mix test` green → for any id- or
   process-touching rung, the **≥100-iteration determinism loop** (a single green run is not proof — the
   same-millisecond branded-id collision flakes only across runs; see [`echo/CLAUDE.md`](../../../../echo/CLAUDE.md) §4).
+- **The visual-proxy gate** (for a styling / presentation rung — F6.5.5 was the first). When acceptance is
+  *visual* (the page renders in the design system), the proof is TEXT PROXIES + a computed-style parity gate,
+  never screenshots: a **clamp-spacing parse** over every touched CSS file (an unspaced `[+-]` inside `clamp()`
+  is invalid CSS that silently drops to the UA default — the highest-leverage check, gate-invisible to `mix
+  test`); a **token-fidelity diff** (the design `:root` byte-for-byte against its master); and a **two-origin
+  Playwright parity gate** (`apps/e2e`, computed style + geometry — NOT pixels — against the static baseline).
+  Such a rung **drops the ≥100 determinism loop** when it touches no id-mint or process state (F6.5.5-INV8) —
+  the liveness criterion is the styled-envelope curls + the parity gate, not a repeated-suite loop.
 - **Acceptance.** A rung is done iff every story's Given/When/Then is a passing test and the gate is green across the
   loop — and the `/reconcile` gate is build-grade (every spec claim is `MATCH` or an explicit `[RECONCILE]`-DEFERRED).
 

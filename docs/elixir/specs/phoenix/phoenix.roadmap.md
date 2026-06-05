@@ -74,9 +74,11 @@ Each rung is a narrow vertical slice built to production quality, not a prototyp
   fast and needs no live browser. The F6.3 changeset stays the parse boundary; the view adds no validation.
 - **Verified and safe.** Links are `~p` verified routes (a path typo fails to compile), interpolation is
   HEEx-escaped, and component `attr`s are declared.
-- **Rendered in the system.** Every page is emitted through the F0 root layout and the shared head — the tokens and
-  base CSS declared once (F0-INV2), never re-declared per page — and the rendered look is gated against the static
-  baseline by computed style, not pixels (F6.5.5).
+- **Rendered in the system.** The end-state target: every dynamic page emitted through a shared F0 root layout + a
+  single token stylesheet — the tokens and base CSS declared once (F0-INV2), never re-declared per page. F6.5.5 proved
+  the look against the static baseline by computed style, not pixels — but only for the two STATIC index pages (`/`,
+  `/elixir`), each via its own per-page extracted CSS; the shared root layout + single token stylesheet for the DYNAMIC
+  UI land at F6.8 (the first dynamic styled pages — see its `[RECONCILE]`).
 - **Honest real-time.** Broadcasts fire only after a successful write, so clients only ever learn of facts.
 - **Supervised.** New runtime pieces (the endpoint, PubSub, Presence) are supervised children; the engine's crash
   isolation is untouched.
@@ -108,7 +110,7 @@ Per-rung iterations (each a PR-sized increment — a spec triad, the slice, a gr
 | F6.3 | durable catalog and enrollments (Postgres adapter behind the F5 port) | data survives a restart | schema/changeset tests; sandbox; restart-replay | schema fields and constraints? |
 | F6.4 | the domain over the facade (`Catalog`/`Enrollment`/`Accounts`) | the web reads and writes real domain | context API tests; adapter-agnostic enrollment | context boundaries and naming? |
 | F6.5 | the rendered catalog (index, `course_card`, form, inline errors) | browse the catalog; create with inline errors | HTML render tests; valid/invalid create | layout, UX, error wording? |
-| F6.5.5 | the design system applied (root layout, `app.css` tokens, restyled `CatalogComponents`) | the catalog renders in the dark-editorial look | render-parity (computed-style/geometry e2e) vs the static baseline | does the rendered look match `/elixir`? |
+| F6.5.5 | the design system applied to two STATIC index pages (`/` = courses, `/elixir`) at parity via per-page extracted CSS — no root layout, no `CoreComponents`; deep links remapped to production Fiber | the two index pages render identical to the static originals | render-parity (computed-style/geometry e2e) vs the static baseline | do `/` and `/elixir` match the static originals? |
 | F6.6 | interactivity (live search, live create, streams) | search as you type; create without a reload | `LiveViewTest` (`render_change`/`render_submit`) | does the interaction feel right? |
 | F6.7 | multi-client live updates and a viewer count (PubSub, Presence) | two windows; one creates, the other updates; a viewer count | broadcast tests; presence diff; two-LiveView test | what should propagate; count semantics? |
 | F6.8 | real users and a deployed clustered release | sign in; a protected area; a deployed URL | auth flow tests; release boot; cluster smoke | auth model and deploy target? |
@@ -124,7 +126,7 @@ Per-rung iterations (each a PR-sized increment — a spec triad, the slice, a gr
 
 ## Seams & open decisions
 
-- **Routing & component direction (set at F6.5, `5a440fd`).** The catalog is `resources "/courses"` (`CourseController`: index/show/new/create); a learner's enrollments are `get "/my/courses"` (`EnrollmentController.index`, protected); `/courses/:user_id` and `/learn` are retired; one controller per context; a successful enroll redirects to the joined course's `:show`. Form-field components are a minimal LOCAL set in `PortalWeb.CatalogComponents` (`input/1`, `course_card`, `panel`) imported via `portal_web.ex` `html_helpers` — there is NO `CoreComponents` until F6.8's `phx.gen.auth` forces the decision. Each downstream rung (F6.6–F6.9) carries a `[RECONCILE]` callout folding this forward. **F6.5.5 · Apply the design system lands the F0 root layout + a committed `app.css` over this same LOCAL set, proving a styled UI is reachable without `CoreComponents` — so the `CoreComponents` reckoning stays deferred to F6.8, where it becomes also a theming decision (the generated auth UI must render in the F0 tokens).**
+- **Routing & component direction (set at F6.5, `5a440fd`).** The catalog is `resources "/courses"` (`CourseController`: index/show/new/create); a learner's enrollments are `get "/my/courses"` (`EnrollmentController.index`, protected); `/courses/:user_id` and `/learn` are retired; one controller per context; a successful enroll redirects to the joined course's `:show`. Form-field components are a minimal LOCAL set in `PortalWeb.CatalogComponents` (`input/1`, `course_card`, `panel`) imported via `portal_web.ex` `html_helpers` — there is NO `CoreComponents` until F6.8's `phx.gen.auth` forces the decision. Each downstream rung (F6.6–F6.9) carries a `[RECONCILE]` callout folding this forward. **F6.5.5 · Apply the design system applies the F0 system to two STATIC index pages (`/`, `/elixir`) at parity via per-page extracted CSS — it adds NO root layout, NO shared `app.css`, and does NOT restyle `CatalogComponents` (reframed from the original styled-catalog plan to a strangler-fig static-parity slice). So the root layout + shared token stylesheet for the DYNAMIC UI, the `CatalogComponents` restyle, AND the `CoreComponents` reckoning all come due together at F6.8 (the first dynamic styled pages — the auth LiveViews), where styling is also a theming decision (the generated auth UI must render in the F0 tokens). See the F6.8 `[RECONCILE]`.**
 
 - **Authentication (F6.8).** The likely path is `mix phx.gen.auth` for password accounts, with the `Accounts` context
   from F6.4 as the seam; the choice of social/SSO and session model is decided then.
