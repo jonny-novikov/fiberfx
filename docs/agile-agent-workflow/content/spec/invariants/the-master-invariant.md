@@ -5,6 +5,16 @@
 - **Accent:** elixir-purple · **Stamp:** `TSK0Ng9hnHJgW0`
 - **Model:** lesson ← `why/two-layers/spec.html`
 
+## Ground-truth note (refinement pass)
+
+The bare spec-filename citations in prose are replaced by the locked **F6.1 `.specref` chip** — display label
+**"F6.1 · Bootstrap the Phoenix Portal"**, a click-to-expand tooltip ("The first web rung: stand the F5 engine up
+as a Phoenix app, with one facade-backed route and a liveness route."), and a bare-route link to the spec-ladder
+viewer at `/course/agile-agent-workflow/spec/specimens` (the JS appends the `#f6-1` rung hash on click, so the link
+resolves with no JS). The verbatim `pre.code` Invariants fragment keeps its `# f6.1.md` code label unchanged — that
+is a code comment, not a prose citation. `%Portal.Error{}` and `Portal.Engine` appear only inside the verbatim
+master-invariant quote and the closed-error-set fact; both are real allowed Portal surfaces and are kept as-is.
+
 ## Lead
 
 One invariant on the Portal's web chapter does more work than any other. It draws the boundary the whole layer
@@ -26,9 +36,10 @@ Elixir source — the only names that appear are inside this verbatim quote.
 
 - It is universal: it quantifies over *every* module in the web layer and *every* request. There is no scenario
   for which it may fail.
-- A check samples it. F6.1-US3's "search `apps/portal_web/lib/`, find no module references `Portal.Engine`" is one
-  check that exercises the master invariant — but the invariant is the universal claim, named once in `f6.1.md`,
-  and the check is one of the ways it is exercised.
+- A check samples it. The story `F6.1-US3`, from the **F6.1 · Bootstrap the Phoenix Portal** rung (the `.specref`
+  chip in the prose, linking to the spec-ladder viewer), carries the check "search `apps/portal_web/lib/`, find no
+  module references `Portal.Engine`" — one check that exercises the master invariant. The invariant is the
+  universal claim, settled at the F6.1 rung and named once, and the check is one of the ways it is exercised.
 - The closed error set is a second invariant the master invariant names: `%Portal.Error{}` carries a `code` one of
   `:already_enrolled | :course_not_found | :lesson_locked | :invalid_progress`, extended only by an explicit,
   no-catch-all mapping.

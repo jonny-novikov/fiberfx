@@ -11,7 +11,23 @@ the code free; an over-specification dictates the code and leaves nothing for th
 to see the line is Scope's `Out`: it constrains by *deferring* — naming the later rung each concern moves to — instead
 of forbidding it forever.
 
-## The line, grounded on `f6.1.md`
+## Ground truth — citation chip and the real `courses_of/1`
+
+The bare-filename citations of `f6.1.md` in the prose (the "defer, do not forbid" lead, the "on the Portal" lead,
+and the bridge practice cell) are each rendered as a clickable **F6.1 specref chip** — label "F6.1 · Bootstrap the
+Phoenix Portal", a one-sentence tooltip ("the first web rung: stand the F5 engine up as a Phoenix app, with one
+facade-backed route and a liveness route"), and a link to the spec-ladder viewer at
+`/course/agile-agent-workflow/spec/specimens` (bare route + `data-sr-hash="f6-1"`, so it resolves with no JS and
+deep-links to the F6.1 stop when enhanced). The chip ids on the page are `sr-defer-f61`, `sr-portal-f61`, and
+`sr-bridge-f61`. The `# f6.1.md — Scope · Out` comment inside the `pre.code` block stays a bare label (it is the
+illustrated subject, not a dangling citation).
+
+`Portal.courses_of/1` is the **real, as-built facade function** — it returns the courses a user is enrolled in, and
+it is exactly what the protected `/my/courses` route calls. It is named verbatim in the D4 Deliverable below and in
+the Scope `Out` ("wiring beyond `courses_of/1`"); it is kept as written and is not the retired route
+`GET /courses/:user_id` (that route reframing happened at F6.5).
+
+## The line, grounded on the F6.1 rung's spec
 
 - **Scope `Out` defers, naming the rung.** Verbatim: "multiple pipelines … (→ F6.2); Ecto persistence (→ F6.3);
   domain and context wiring beyond `courses_of/1` (→ F6.4); rich templates, components, and forms (→ F6.5);
@@ -45,9 +61,11 @@ no Elixir.
 ## Bridge
 
 - idea: A spec constrains the build without over-specifying the solution; Scope's `Out` constrains by deferring.
-- practice: `f6.1.md`'s `Out` names `(→ F6.2)…(→ F6.6)`; each deferral is a constraint, not a forbidden gate.
+- practice: the F6.1 rung's `Out` (cited via the F6.1 specref chip) names `(→ F6.2)…(→ F6.6)`; each deferral is a
+  constraint, not a forbidden gate.
 
 ## References
 
 - Sources: Specification by Example, Continuous Delivery, User Stories Applied.
-- Related: hub, `/spec`, `/roadmap/roadmap-anatomy`, `/why/two-layers`, `/elixir/phoenix`.
+- Related: hub, `/spec`, `/spec/specimens` (the spec ladder the F6.1 chip links to), `/roadmap/roadmap-anatomy`,
+  `/why/two-layers`, `/elixir/phoenix`.

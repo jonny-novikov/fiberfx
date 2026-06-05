@@ -5,6 +5,15 @@
 - **Accent:** elixir-purple · **Stamp:** `TSK0Ng9hnHJgW0`
 - **Pager:** prev = `the-coverage-line` · next = hub `/spec/to-stories`
 
+## Ground-truth note (refinement pass)
+
+The bare-filename citation in the `On the Portal` section is framed as a clickable **F6.1 specref chip** — label
+**"F6.1 · Bootstrap the Phoenix Portal"** (the first web rung: stand the F5 engine up as a Phoenix app, with one
+facade-backed route and a liveness route), linking to the spec-ladder viewer at
+`/course/agile-agent-workflow/spec/specimens` (rung anchor `#f6-1`). The `pre.code` code-label mention of
+`f6.1.stories.md` stays — it labels the illustrated spec markdown, not a true prose citation. No `/courses/:user_id`
+route appears here; nothing to re-ground.
+
 ## Lead
 
 A story is more than its Connextra sentence. Each carries an **INVEST line** — the six properties (Independent,
@@ -15,10 +24,12 @@ is not testable accepts nothing.
 
 ## The worked example — F6.1-US2's INVEST line (verbatim)
 
-US2: "valuable on its own (the first real page); testable by rendered output for the three cases; encodes
-F6.1-INV1. Priority: must · Size: 3 · Implements deliverables: F6.1-D3, F6.1-D4, F6.1-D5." F6.1-INV1 is the
-master invariant: "PortalWeb calls only the Portal facade and renders only the closed %Portal.Error{} set." The
-`pre.code` block carries US2's INVEST line as markdown — no Elixir source.
+The story `F6.1-US2`, settled at the **F6.1 · Bootstrap the Phoenix Portal** rung (cited inline as a specref chip
+that opens the spec-ladder viewer at `/course/agile-agent-workflow/spec/specimens`), carries this line. US2:
+"valuable on its own (the first real page); testable by rendered output for the three cases; encodes F6.1-INV1.
+Priority: must · Size: 3 · Implements deliverables: F6.1-D3, F6.1-D4, F6.1-D5." F6.1-INV1 is the master invariant:
+"PortalWeb calls only the Portal facade and renders only the closed %Portal.Error{} set." The `pre.code` block
+carries US2's INVEST line as markdown — no Elixir source.
 
 ## Hero interactive — read a story's INVEST line
 

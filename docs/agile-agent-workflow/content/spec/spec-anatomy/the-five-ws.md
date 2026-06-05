@@ -4,6 +4,21 @@
 - **Model copied verbatim:** `html/agile-agent-workflow/why/two-layers/spec.html` (lesson)
 - **Pager:** prev = `.../the-six-sections` · next = `.../constrain-not-overspecify`
 
+## Ground-truth note (refinement pass)
+
+- Bare prose citations of `f6.1.md` are framed with the locked **F6.1 spec chip** — label
+  "F6.1 · Bootstrap the Phoenix Portal", a one-sentence tooltip, and a link to the spec-ladder viewer at
+  `/course/agile-agent-workflow/spec/specimens` (bare route + `data-sr-hash="f6-1"`; the chip JS appends `#f6-1` on
+  click, so it resolves with no JS and passes the `links` gate). The chip carries this description: "The first web
+  rung: stand the F5 engine up as a Phoenix app, with one facade-backed route and a liveness route." The literal
+  chip markup lives only in the `.html`; here it is described in prose.
+- Chip-framed citations on this page (one per prose mention): hero kicker, the §ws prose, the §match prose, the
+  §portal prose, the bridge practice cell, the recap. Figure/SVG/readout/code-label and Related-link mentions of
+  `f6.1.md` are left as plain references (they are not standalone prose citations).
+- `Portal.courses_of/1` is the **real, as-built facade function** (`defdelegate courses_of(user_id)` in
+  `portal.ex`) — the call `/my/courses` makes. It is **kept** wherever it appears: it is the function, not the
+  retired route `GET /courses/:user_id`. There is no route defect on this page.
+
 ## Lead
 
 The Rationale section answers five questions — **Why, What, Who, When, Where** — each a single bold bullet. They fix

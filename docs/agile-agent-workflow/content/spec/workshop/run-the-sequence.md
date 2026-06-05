@@ -7,6 +7,14 @@
 
 ## Grounding (verbatim from `f5.1.md` + `f5.1.stories.md`)
 
+Workshop citation rule: F5.1 is the Portal ENGINE rung, which sits below the F6 web ladder the spec-ladder
+viewer shows — there is no `#f5-1` viewer stop, so this page adds **no** `.specref` chip to `/spec/specimens`.
+Instead, the prose names it once with a named reference — **F5.1 — Portal's engine-facade rung** (the engine
+chapter's first rung; the seed of the F6 master invariant) — so the rung is framed, not a bare filename. The
+`f5.1.md` / `f5.1.stories.md` mentions elsewhere are the illustrated subject (the spec the sequence reads and
+reproduces, named in figures, the readout, and the code excerpt), and stay as-is. The engine itself is taught
+in the companion `/elixir` course (`/elixir/phoenix` / `/elixir/course`), kept as a cross-link in References.
+
 The six A4 moves run on the F5.1 triad:
 
 1. **By-example** — replace abstract requirements with worked cases (F5.1-US1's three: boot, `POST /enroll`
@@ -67,8 +75,8 @@ with `.cmt`/`.str`/`.res` spans. No Elixir source.
 
 - **The principle** — the spec layer is six ordered moves; run them on a chapter and each produces a named
   part, until the rung is fully defined and provable.
-- **On the Portal** — the six moves over the F5.1 triad reproduce `f5.1.md` and `f5.1.stories.md` — Goal
-  through DoD, five stories, five invariants, and the Coverage line that closes them.
+- **On the Portal** — the six moves over **F5.1 — Portal's engine-facade rung** reproduce `f5.1.md` and
+  `f5.1.stories.md` — Goal through DoD, five stories, five invariants, and the Coverage line that closes them.
 - **Take** — the workshop is the sequence applied once: examples to checks, deliverables to stories,
   invariants stated, the chain closed.
 

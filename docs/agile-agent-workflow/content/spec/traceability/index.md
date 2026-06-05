@@ -41,6 +41,14 @@ invariants INV1…INV5. The stories file ends with the Coverage line, verbatim:
 `Coverage: D1→US1 · D2→US1,US3,US4 · D3→US2 · D4→US2,US3,US5 · D5→US2 · D6→US1 · D7→US4,US5.`
 Every deliverable appears in that line, so the first clause of the completion rule holds for F6.1.
 
+**Ground-truth note on F6.1-US2 (the route reconcile).** F6.1-US2 was first written as the draft user story "see a
+user's courses", whose draft acceptance read "given a user id, when the page renders, then it lists that user's
+courses". That draft named a `/courses/:user_id` page (one learner viewing an arbitrary user id's courses). F6.5
+reconciled the surface to the protected `/my/courses` — a learner's own enrollments, read from the session, served
+facade-only over the real function `Portal.courses_of/1`. The hero readouts for the `story` and `accept` links
+frame F6.1-US2 as that F6.1 draft and carry the one-line F6.5 reconcile; the function `Portal.courses_of/1` is real
+and unchanged — only the route name moved.
+
 ## Framing interactive (hero) — step the chain
 
 - **Element ids:** `<div class="solid-select" id="tcLink">` with buttons `data-k="deliverable|story|accept|invariant|requirement"`, each `data-c="elixir"` (active first). SVG `class="dq"` with nodes `n-del`, `n-story`, `n-accept`, `n-inv`, `n-req` and link lines `l-del-story`, `l-story-accept`, `l-story-inv`, `l-del-req`, `l-req-proof`. Readout `id="tcOut"` (`aria-live="polite"`).

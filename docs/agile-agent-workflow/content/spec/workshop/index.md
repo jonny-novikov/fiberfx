@@ -22,9 +22,18 @@ F5.1-INV1…INV5. Coverage line (verbatim):
 
 Six modules taught one move each: specification by example, the triad, the anatomy of a spec, deriving the
 stories file, invariants, and the traceability closure. The capstone runs all six on one real target — the
-Portal's engine chapter, planned in the companion course as the first rung of F5 — and produces a spec and a
-`.stories.md` whose traceability chain closes. The worked output is not invented; it reproduces the real
-`pragmatic/f5.1.md` and `f5.1.stories.md`, including the Coverage line above.
+Portal's engine chapter, named in prose as **F5.1 — Portal's engine-facade rung** (the engine chapter's first
+rung, the seed of the F6 master invariant) and planned in the companion course at `/elixir/phoenix` — and
+produces a spec and a `.stories.md` whose traceability chain closes. The worked output is not invented; it
+reproduces the real `pragmatic/f5.1.md` and `f5.1.stories.md` (the engine deliverables the workshop specifies),
+including the Coverage line above.
+
+> Workshop ground-truth note (refinement pass): F5.1 sits **below** the F6 web ladder the `/spec/specimens`
+> viewer shows — there is no `#f5-1` viewer stop — so this page carries **no** `.specref` chip to the viewer.
+> Bare-filename prose citations of `f5.1.md`/`f5.1.stories.md` are de-bared to the named reference
+> **F5.1 — Portal's engine-facade rung**; the `/elixir` cross-links (`/elixir/phoenix`, `/elixir/course`) carry
+> the place the engine is actually taught. Filename mentions that label a figure, a readout, or the deliverables
+> the workshop reproduces stay as-is.
 
 ## Framing interactive (hero) — the workshop sequence
 

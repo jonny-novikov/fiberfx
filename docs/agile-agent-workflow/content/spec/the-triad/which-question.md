@@ -4,6 +4,14 @@
 - **Pager:** prev = hub `/course/agile-agent-workflow/spec/the-triad` · next = `.../the-triad/the-real-triad`
 - **Accent:** elixir-purple · **Stamp:** `TSK0Ng9hnHJgW0`
 
+> **Ground-truth citation (specref chip).** Where the "On the Portal" section names the first web rung, the rung is
+> cited with an inline `.specref` chip — label **F6.1 · Bootstrap the Phoenix Portal** (`data-sr-hash="f6-1"`,
+> chip id `sr-whichq-f61`). Click-to-expand tooltip: "The first web rung: stand the F5 engine up as a Phoenix app,
+> with one facade-backed route and a liveness route." The chip links to the spec-ladder viewer with a bare-route
+> href `/course/agile-agent-workflow/spec/specimens` (the rung hash `#f6-1` is appended by JS on click, so the link
+> resolves with no JS). The triad's three file names (`f6.1.md` / `f6.1.stories.md` / `f6.1.llms.md`) remain plain
+> `<code>` labels in the body — they are the taught content being sorted, not bare-filename provenance.
+
 ## Lead
 
 Each file in the triad answers one question and only one. Before naming the three real files, fix the three

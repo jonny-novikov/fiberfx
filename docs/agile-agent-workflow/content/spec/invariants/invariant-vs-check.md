@@ -28,8 +28,14 @@ From the real F6.1 triad:
 
 - **Invariant (F6.1-INV1, master):** "The web layer calls only the `Portal` facade and renders only the closed
   `%Portal.Error{}` set." True for every request. Quoted verbatim.
-- **Check (F6.1-US5, first Given/When/Then):** "Given an unknown or malformed user id, when I request
-  `GET /courses/:user_id`, then the page renders the empty state — a clean `200`." One scenario.
+- **Check (F6.1-US5, first Given/When/Then):** "Given an authenticated learner with no enrollments, when I request
+  `GET /my/courses` (the learner's own courses, protected), then the page renders the empty state — a clean `200`."
+  One scenario.
+
+  > **Ground-truth note (route vs function).** The F6.1 draft named a `/courses/:user_id` page; F6.5 renamed that
+  > surface to the protected `/my/courses` — a learner's own enrollments, with the authenticated id read from the
+  > session and no `:user_id` in the URL. Only the **route** retired; the facade function it calls, `Portal.courses_of/1`,
+  > is real and as-built — keep it where it appears.
 
 `pre.code`: a markdown fragment — the Invariants line and the Given/When/Then scenario, side by side, rendered
 with `.cmt`/`.str`/`.res` spans. No Elixir source.
@@ -41,7 +47,7 @@ with `.cmt`/`.str`/`.res` spans. No Elixir source.
 - **Dataset:** master invariant (invariant), "the error set is closed" (invariant), "unknown id → 200" (check),
   "a known user renders their courses" (check).
 - **Pure:** `classify(i)` → kind; `readoutFor(i)` → readout naming kind + the quantifier (for all / for this).
-- **Sample readout:** `Check · holds for one scenario. "Given an unknown user id … renders the empty state (a 200)" names a single case. It proves one example behaves; it does not state a universal rule.`
+- **Sample readout:** `Check · holds for one scenario. "An authenticated learner with no enrollments sees the empty state (a 200) at /my/courses" is F6.1-US5's first Given/When/Then. It proves one example behaves; it does not state a universal rule.`
 
 ## Main interactive — the spec section each belongs in
 
@@ -54,8 +60,17 @@ with `.cmt`/`.str`/`.res` spans. No Elixir source.
 ## Bridge
 
 - principle: name the universal rules apart from the example checks — different claims, different homes.
-- Portal: F6.1-INV1 (the master invariant) is named once in `f6.1.md`; F6.1-US5's "unknown id → 200" is a
+- Portal: F6.1-INV1 (the master invariant) is named once in `f6.1.md`; F6.1-US5's "empty `/my/courses` → 200" is a
   Given/When/Then in `f6.1.stories.md`.
+
+## Spec citation — the F6.1 chip
+
+Where the page first names the first web rung F6.1 (in the "On the Portal" section), the bare rung reference is a
+clickable `.specref` chip labelled **"F6.1 · Bootstrap the Phoenix Portal"**. Its tooltip carries the one-sentence
+description plus the route reconcile (the F6.1 draft named a `/courses/:user_id` page; F6.5 renamed it to the
+protected `/my/courses` — a learner's own enrollments) and a link to the spec-ladder viewer at
+`/course/agile-agent-workflow/spec/specimens` (bare-route href + `data-sr-hash="f6-1"`; JS appends `#f6-1` on
+click). The literal chip markup lives only in the `.html`.
 
 ## References
 

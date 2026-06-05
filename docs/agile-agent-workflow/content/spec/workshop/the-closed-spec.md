@@ -5,6 +5,16 @@
 - **Pager:** prev `run-the-sequence` · next hub `/course/agile-agent-workflow/spec/workshop`.
 - **Accent:** elixir-purple. **Stamp:** `TSK0Ng9hnHJgW0`. **Model:** `why/two-layers/spec.html` (lesson).
 
+## Ground-truth note — F5.1 reference, no spec-ladder chip
+
+This is a workshop page. It cites **F5.1 — Portal's engine-facade rung** (the engine chapter's first rung; the
+seed of the F6 master invariant), which sits *below* the F6 web ladder shown by the `/spec/specimens` viewer.
+There is no `#f5-1` stop on that viewer, so this page carries **no `.specref` chip**. F5.1 is named in prose
+instead — "F5.1 — Portal's engine-facade rung" — and the engine it specifies is implemented in the companion
+`/elixir` course (`/elixir/phoenix`, `/elixir/course`), kept as cross-links in References. The `f5.1.stories.md`
+filename still appears as the page's illustrated subject (the Coverage line the figures render and the code block
+quotes verbatim); those are figure/code labels, not bare citations.
+
 ## Grounding (verbatim from `f5.1.stories.md`)
 
 The real Coverage line, verbatim:
@@ -19,7 +29,8 @@ covering story — the spec is not closed.
 
 A spec is acceptable not when its author declares it done but when it closes: every deliverable maps to a
 story, every story has acceptance, and no gate is merely asserted. The workshop's last move checks that
-closure on the produced F5.1 Coverage line against the real one. If they match and every deliverable is
+closure on the produced Coverage line for **F5.1 — Portal's engine-facade rung** (the engine chapter's first
+rung, the seed of the F6 master invariant) against the real one. If they match and every deliverable is
 present, the spec is closed and acceptable — the engine chapter's first rung is ready for an Author. If a
 deliverable is missing from the map, the readout names the gap. This is "correct by definition" (A1.05) made
 operational on a real rung.

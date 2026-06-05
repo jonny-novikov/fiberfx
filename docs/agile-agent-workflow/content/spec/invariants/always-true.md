@@ -5,6 +5,13 @@
 - **Accent:** elixir-purple · **Stamp:** `TSK0Ng9hnHJgW0`
 - **Model:** lesson ← `why/two-layers/spec.html`
 
+> **Ground-truth note (refinement pass).** The prose mention of the F6.1 rung is carried as a clickable `.specref`
+> chip (label "F6.1 · Bootstrap the Phoenix Portal", id `sr-portal-f61`): a frame, a one-sentence tooltip, and a
+> link to the spec-ladder viewer at `/course/agile-agent-workflow/spec/specimens` (bare-route href +
+> `data-sr-hash="f6-1"`; JS appends `#f6-1` on click). The `f6.1.md` / `f6.1.stories.md` filenames inside the
+> worked-example `pre.code` block stay as code labels (not prose citations). `%Portal.Error{}` and the closed
+> error set are real allowed surfaces and stay.
+
 ## Lead
 
 An invariant says "always". A check says "for this case". The gap between them is the point of this dive: no
@@ -26,8 +33,8 @@ not asserted from one green scenario.
 - The master invariant — "the web layer calls only the `Portal` facade" — holds for every request the Portal ever
   serves, including users that do not exist yet.
 - The check "an unknown user id renders the empty state (a `200`)" (F6.1-US5) tests one value. The facade is total
-  at F6.1, so the empty state holds — but that one passing check is a sample of the universal rule, not a proof of
-  it for all ids.
+  at the F6.1 rung — carried in the prose as the "F6.1 · Bootstrap the Phoenix Portal" spec-ladder chip — so the
+  empty state holds; but that one passing check is a sample of the universal rule, not a proof of it for all ids.
 - "The error set is closed" holds for every error value: a `code` one of
   `:already_enrolled | :course_not_found | :lesson_locked | :invalid_progress`, extended only by an explicit
   no-catch-all mapping. A new error kind without that mapping would break the invariant, whatever the scenario.

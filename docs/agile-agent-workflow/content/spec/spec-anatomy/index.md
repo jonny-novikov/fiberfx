@@ -13,6 +13,18 @@ you can write any rung to: **Goal · Rationale (5W) · Scope · Deliverables · 
 teaching line of the whole module: a spec **constrains the build without over-specifying the solution** — it says
 what must be true, not how to write the code.
 
+## Ground-truth note (refinement pass) — F6.1 citation chip
+
+The two true prose provenance citations that named the bare file `f6.1.md` (in the "Six sections, in order" section)
+are rendered as the locked **F6.1 `.specref` chip**: label **"F6.1 · Bootstrap the Phoenix Portal"**, a
+click-to-expand tooltip (one-sentence rung description), and a link to the spec-ladder viewer at
+`/course/agile-agent-workflow/spec/specimens` (bare route + `data-sr-hash="f6-1"`; JS appends `#f6-1` on click, so it
+degrades to the ladder's first stop with no JS). The two chips carry unique ids `sr-sections-f61` and `sr-dives-f61`.
+The figure labels, the SVG `aria-label`, the hero kicker instruction, and the Related-link description still name
+`f6.1.md` as the illustrated subject of the interactive — they are not dangling citations, so they keep the plain
+filename per do-no-harm. The chip CSS and the `bindSpecrefs()` binder are copied verbatim from the corrected
+`spec/by-example/living-documentation.html` reference. `Portal.courses_of/1` is the real facade function and stays.
+
 ## The six sections (from `docs/elixir/specs/phoenix/f6.1.md`, verbatim)
 
 1. **Goal** — the destination, in prose. "After F6.1, the Portal runs as a Phoenix app. A browser request travels

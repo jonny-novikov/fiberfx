@@ -3,6 +3,11 @@
 > Source of record for `html/agile-agent-workflow/spec/by-example/living-documentation.html`.
 > Route: `/course/agile-agent-workflow/spec/by-example/living-documentation`. Accent: elixir-purple. Stamp: `TSK0Ng9hnHJgW0`.
 > Model copied verbatim: `why/two-layers/spec.html` (lesson, hero-split).
+> Ground-truth note (2026-06-05 reconcile): re-grounded off the **retired route** `GET /courses/:user_id` onto the
+> as-built protected `/my/courses`. The facade function `Portal.courses_of/1` is **real and as-built** — it is what
+> `/my/courses` calls (via `Portal.Enrollment`); only the route name retired, not the function. Bare-filename
+> citations replaced with `.specref` chips to `/spec/specimens#f6-5`. The behaviour-change demo regresses the
+> **not-signed-in** access case (redirect → renders) rather than the retired unknown-id case.
 
 ## Lead
 
@@ -18,44 +23,46 @@ runs. Edit a behaviour and the example fails; the documentation announces its ow
   cannot diverge silently.
 - **Drift** — the gap that opens between a static document and the system it describes. Specification by Example
   removes the gap by removing the second source.
-- **Grounding** — F6.1's three `courses_of/1` examples are the page's documentation and its acceptance at once. If
-  the unknown-id behaviour changed from "empty state, 200" to "404", the unknown-id example would fail — the
-  document would not quietly mislead.
+- **Grounding** — the protected `/my/courses` page's three `Portal.Enrollment` examples are its documentation and
+  its acceptance at once. If the not-signed-in behaviour changed from "redirect" to "render whatever courses the
+  request named", the not-signed-in example would fail — the document would not quietly mislead, and the access rule
+  would not be silently broken.
 
 ## Hero interactive — two sources drift; one source cannot
 
 A `.solid-select` over a fixed `MODES` dataset. View `two-sources`: a prose doc and the code as separate nodes; the
-readout reports a drift gap that grows as behaviour changes (a fixed `editCount` over the dataset). View
-`one-source`: the worked example as a single node feeding both the human and the build; the readout reports drift =
-0 because the example is the check. Pure `driftFor(mode)`, `heroReadout(mode)`; live `#ldHeroOut`. SVG: two
-diverging boxes vs one box with two outward arrows. Static default: `one-source` lit, "drift: 0".
+readout reports a drift gap that grows as behaviour changes. View `one-source`: the worked example as a single node
+feeding both the human and the build; the readout reports drift = 0 because the example is the check. Pure
+`driftFor(mode)`, `heroReadout(mode)`; live `#ldHeroOut`. SVG: two diverging boxes vs one box with two outward
+arrows. Static default: `one-source` lit, "drift: 0". (Generic — no route premise.)
 
 ## Main interactive — change a behaviour, watch the example flag the staleness
 
-A `.solid-select` over the three F6.1 examples; a second control toggles a behaviour change on the *unknown-id*
-case (200 → 404). When the toggle is off, all three examples match the system and the readout reports
-"documentation current". When on, the unknown-id example no longer matches and the readout reports "example fails →
-documentation is stale, not silently wrong". Pure `statusFor(toggled)`; live `#ldMainOut`. This teaches a
-different move from the hero: the hero contrasts one-source vs two-source structurally; the main demonstrates the
-self-announcing staleness on a single concrete example.
+A `.solid-select` toggles a behaviour change on the **not-signed-in** case (redirect → renders). When the toggle is
+off, all three `/my/courses` examples (enrolled learner / no enrollments / not signed in) match the system and the
+readout reports "documentation current". When on, the not-signed-in example no longer matches and the readout
+reports "example fails → documentation is stale, not silently wrong". Pure `statusFor(toggled)`; live `#ldMainOut`.
+This teaches a different move from the hero: the hero contrasts one-source vs two-source structurally; the main
+demonstrates the self-announcing staleness on a single concrete example.
 
 ## The `pre.code` block (NO CODE — markdown fragment only)
 
-A `.md`/`.stories.md` fragment: the F6.1 Definition-of-Done line "an unknown user renders an empty state" paired
-with F6.1-US5's Given/When/Then for the unknown id, rendered with `.cmt`/`.str`/`.res`. A note that a behaviour
-change is reflected by editing the spec — feedback edits the spec, never the example in isolation. No Elixir.
+A spec fragment: the `/my/courses` Definition-of-Done line "a request with no signed-in learner is redirected"
+paired with the matching Given/When/Then, rendered with `.cmt`/`.str`/`.res`. A note that a behaviour change is
+reflected by editing the spec — feedback edits the spec, never the example in isolation. No Elixir. Cited via the
+`.specref` chip **F6.5 · Views with HEEx** → `/spec/specimens#f6-5`.
 
 ## The bridge
 
 - **Principle** — make the examples the specification and they become living documentation: executed, not
   asserted, so it cannot drift from the system.
-- **Portal practice** — F6.1's three `courses_of/1` examples are the page's documentation and its acceptance check
-  at once; a behaviour change fails the matching example.
+- **Portal practice** — the `/my/courses` page's three `Portal.Enrollment` examples are its documentation and its
+  acceptance check at once; a behaviour change fails the matching example.
 
 ## References
 
 Sources: Specification by Example (`gojko.net`), Gherkin reference (`cucumber.io`), User Stories Applied
-(`mountaingoatsoftware.com`). Related: hub `/spec/by-example`, `examples-as-spec`, `/spec`,
+(`mountaingoatsoftware.com`). Related: hub `/spec/by-example`, `examples-as-spec`, `/spec`, `/spec/specimens`,
 `/what/four-artifacts`, `/elixir/phoenix`.
 
 ## Pager

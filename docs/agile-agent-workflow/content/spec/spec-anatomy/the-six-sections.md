@@ -4,6 +4,24 @@
 - **Model copied verbatim:** `html/agile-agent-workflow/why/two-layers/spec.html` (lesson)
 - **Pager:** prev = hub (`/spec/spec-anatomy`) · next = `.../the-five-ws`
 
+## Ground-truth note (citations + the kept facade function)
+
+- **Provenance citation → F6.1 chip.** The kicker's dangling source citation (the verbatim phrases are "drawn from
+  the Portal's real `f6.1.md`") is replaced by the locked **F6.1 `.specref` chip** — label "F6.1 · Bootstrap the
+  Phoenix Portal", a click-to-expand tooltip ("the first web rung: stand the F5 engine up as a Phoenix app, with one
+  facade-backed route and a liveness route"), and a bare-route link into the spec-ladder viewer at
+  `/course/agile-agent-workflow/spec/specimens` (`data-sr-hash="f6-1"`). The chip id is `sr-sixsec-f61`. The literal
+  chip HTML lives only in the served page; here it is described in plain words.
+- **The example spec's structural label stays.** This page lays out the six named sections of one real spec, so
+  `f6.1.md` is named as the worked artifact in the figure title, the code label, and the section/bridge/recap prose
+  that point at the document being laid out. Those are structural labels, not dangling provenance footnotes — they
+  are kept as written.
+- **Keep `Portal.courses_of/1`.** The deliverable D4 names the controller calling **only** `Portal.courses_of/1`,
+  and the section note says it "returns the courses a user is enrolled in". That facade function is real and
+  as-built (`defdelegate courses_of(user_id), to: Portal.Enrollment`) — it is exactly what the protected
+  `/my/courses` route calls. It is not the retired route `/courses/:user_id`; it is kept verbatim. No route defect
+  on this page.
+
 ## Lead
 
 A spec is six named sections in a fixed order, each answering a different question. Read them on the real `f6.1.md`

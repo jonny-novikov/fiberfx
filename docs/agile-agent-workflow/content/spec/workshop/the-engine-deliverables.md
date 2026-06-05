@@ -5,7 +5,15 @@
 - **Pager:** prev hub `/course/agile-agent-workflow/spec/workshop` · next `run-the-sequence`.
 - **Accent:** elixir-purple. **Stamp:** `TSK0Ng9hnHJgW0`. **Model:** `why/two-layers/spec.html` (lesson).
 
-## Grounding (verbatim from `f5.1.md`)
+## Grounding (verbatim from the F5.1 spec)
+
+The workshop rule for all four `workshop/*` pages: they cite **F5.1 — Portal's engine-facade rung** (the
+engine chapter's first rung), which sits below the F6 web ladder the spec-ladder viewer shows. There is no
+`#f5-1` viewer stop, so these pages add **no** `.specref` chip to `/spec/specimens`. Instead F5.1 is given a
+**named reference** in prose — written **"F5.1 — Portal's engine-facade rung"** — and the `/elixir` cross-link
+to the engine chapter (`/elixir/pragmatic`, with `/elixir/phoenix` for the F6 chapter that replaces the seam)
+is kept. A bare filename `f5.1.md` survives only as a `pre.code` excerpt label (the illustrated spec) and in JS
+comments, never as a dangling prose citation.
 
 The seven deliverables of F5.1 "Start thin: a running Portal":
 
@@ -28,10 +36,11 @@ inside this seam statement and the closed-error fact; the API named freely is `P
 ## Lead
 
 Before a spec is written, its inventory is fixed: the deliverables — the concrete artifacts a rung ships.
-F5.1's spec carries seven, D1 through D7. Each is one artifact, and each constrains the build by naming what
-exists without dictating how it is coded. This dive reads them, then shows the line F5.1-INV1 draws — the
-replaceable web seam that becomes the F6 master invariant. The deliverables are the workshop's starting
-material: A4.7.2 runs the sequence over them, A4.7.3 checks the result closes.
+**F5.1 — Portal's engine-facade rung** carries seven, D1 through D7. Each is one artifact, and each constrains
+the build by naming what exists without dictating how it is coded. This dive reads them from that rung's spec —
+the first rung of the engine chapter, taught in the companion Elixir course at `/elixir/pragmatic` — then shows
+the line F5.1-INV1 draws — the replaceable web seam that becomes the F6 master invariant. The deliverables are
+the workshop's starting material: A4.7.2 runs the sequence over them, A4.7.3 checks the result closes.
 
 ## Hero interactive — pick a deliverable, read what it constrains
 
@@ -80,4 +89,5 @@ with `.cmt`/`.str`/`.res` spans. No `def`/`defmodule`/test.
 - Sources: Specification by Example (`gojko.net`), Continuous Delivery (`continuousdelivery.com`), User
   Stories Applied (`mountaingoatsoftware.com`).
 - Related: hub, `/course/agile-agent-workflow/spec`, `/course/agile-agent-workflow/why/correct`,
-  `/elixir/phoenix`, `/elixir/course`.
+  `/elixir/pragmatic` (the engine chapter whose first rung, F5.1, ships these deliverables — the named-reference
+  anchor), `/elixir/phoenix` (the F6 chapter that replaces the seam), `/elixir/course`.

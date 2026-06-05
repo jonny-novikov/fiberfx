@@ -4,12 +4,24 @@
 - **Pager:** prev = `.../the-triad/which-question` · next = `.../the-triad/the-course-itself`
 - **Accent:** elixir-purple · **Stamp:** `TSK0Ng9hnHJgW0`
 
+## Ground-truth note (refinement pass — spec citation chip)
+
+Where the lead names the rung **F6.1**, that citation is framed with an inline `.specref` chip (label
+"F6.1 · Bootstrap the Phoenix Portal", id `sr-realtriad-f61`) rather than a bare filename. The chip carries a
+one-sentence tooltip — "The first web rung: stand the F5 engine up as a Phoenix app, with one facade-backed route
+and a liveness route." — and a link to the spec-ladder viewer at `/course/agile-agent-workflow/spec/specimens`. The
+link's href is the **bare** viewer route plus `data-sr-hash="f6-1"`; the page JS (`bindSpecrefs()`) appends the
+`#f6-1` rung anchor on click, so it deep-links when enhanced and still resolves with JS off. The three file names
+`f6.1.md` / `f6.1.stories.md` / `f6.1.llms.md` remain named in prose — they are the page's subject, the three
+artifacts the chip's rung is specified by.
+
 ## Lead
 
-The three questions are real files on the Portal. The first web rung — F6.1, "Bootstrap the Phoenix Portal" — is
-specified by `f6.1.md`, `f6.1.stories.md`, and `f6.1.llms.md`. This dive reads each: its scope, its audience, and
-its key sections, all verbatim from the `specs.approach.md` artifact table. The point is not the Phoenix detail; it
-is that one rung's specification is exactly three files, and each file is shaped for one reader.
+The three questions are real files on the Portal. The first web rung — the **F6.1 · Bootstrap the Phoenix Portal**
+spec citation chip — is specified by `f6.1.md`, `f6.1.stories.md`, and `f6.1.llms.md`. This dive reads each: its
+scope, its audience, and its key sections, all verbatim from the `specs.approach.md` artifact table. The point is
+not the Phoenix detail; it is that one rung's specification is exactly three files, and each file is shaped for one
+reader.
 
 ## Precise definition
 

@@ -4,6 +4,22 @@
 - **File:** `html/agile-agent-workflow/spec/traceability/the-chain.html`
 - **Pager:** prev = `/course/agile-agent-workflow/spec/traceability` (hub) · next = `.../the-closure`.
 
+## Ground-truth note (refinement pass)
+
+- **Citations are framed, not bare.** True dangling prose provenance citations (the F6.1 triad named in `#portal`)
+  carry the locked **F6.1 chip** (`F6.1 · Bootstrap the Phoenix Portal`, bare-route href
+  `/course/agile-agent-workflow/spec/specimens`, `data-sr-hash="f6-1"`, id `sr-chain-f61`) linking the spec-ladder
+  viewer. Where the reconcile is named, the **F6.5 chip** (`F6.5 · Views with HEEx`, `data-sr-hash="f6-5"`, id
+  `sr-chain-f65`) carries it. The id/file labels the traceability interactive resolves (`f6.1.md`,
+  `f6.1.stories.md`, `f6.1.llms.md`, `FN.M-D#`/`-US#`/`-INV#`) stay verbatim — they are illustrated content, not
+  provenance citations, so they are not chipped.
+- **US2 is the F6.1 draft.** "See a user's courses" is restated only as the **F6.1 draft** story; F6.5 reconciled
+  the surface to the protected `/my/courses` (a learner's own enrollments, no `:user_id` in the URL). The F6.1
+  draft route `/courses/:user_id` is named only as the draft it was.
+- **`Portal.courses_of/1` is the real function — KEEP.** It is the as-built facade function `/my/courses` calls
+  (`CourseController.index/2` calls only `Portal.courses_of/1`); it is unchanged across the F6.1 draft and the F6.5
+  reconcile. It is not the retired route and is never flagged as invented.
+
 ## Lead
 
 The traceability chain is the spine of "correct by definition". It links every artifact id from intent to proof:
@@ -25,11 +41,13 @@ Deliverable (fN.M.md  · FN.M-D#)
 
 ## Worked Portal example — walk F6.1
 
-- **Deliverable F6.1-D4** — `PortalWeb.CourseController.index/2` reads `user_id`, calls only `Portal.courses_of/1`,
-  renders the view.
-- **realized by → F6.1-US2** "See a user's courses" (the visitor opens `/courses/:user_id`).
-- **accepted by →** the Given/When/Then: "Given a known user id with enrollments, when I request the page, then it
-  renders that user's courses."
+- **Deliverable F6.1-D4** — `PortalWeb.CourseController.index/2` calls only `Portal.courses_of/1` and renders the
+  view.
+- **realized by → F6.1-US2** "See a user's courses" — the **F6.1 draft** story. The draft named a
+  `/courses/:user_id` page; **F6.5 reconciled the surface to the protected `/my/courses`** (a learner's own
+  enrollments, no `:user_id` in the URL). The facade function `Portal.courses_of/1` is unchanged across both rungs.
+- **accepted by →** the draft Given/When/Then: "Given a known user id with enrollments, when I request the page,
+  then it renders that user's courses."
 - **encodes → F6.1-INV1 (master)** — the web layer calls only the `Portal` facade and renders only the closed
   `%Portal.Error{}` set.
 - **built by → an Agent story** that implements US2; **governed by → a Requirement** carrying `[US: F6.1-US2]`;
