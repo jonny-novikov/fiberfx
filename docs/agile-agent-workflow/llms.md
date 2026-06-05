@@ -124,8 +124,17 @@ landing + all seven modules A2.01–A2.07 built.**
   - [order-the-backlog](/course/agile-agent-workflow/decomposition/workshop/order-the-backlog) — order across the five
     surfaces into the backlog Part III delivers.
 
-### A3–A7 `○` planned
-A3 The roadmap layer (`…/roadmap`) · A4 The spec layer (`…/spec`) · A5 The agent brief `.llms.md` (`…/brief`) ·
+### A3 · The roadmap layer `◐` · [/course/agile-agent-workflow/roadmap](/course/agile-agent-workflow/roadmap)
+Planning delivery as thin, robust increments. **Landing + three orientation dives built** (a recap of A0–A2 + a 5W
+overview); the eight teaching modules A3.1–A3.8 are planned.
+- [where-we-are](/course/agile-agent-workflow/roadmap/where-we-are) — the journey A0→A2 recapped (Where + Who).
+- [the-roadmap-layer](/course/agile-agent-workflow/roadmap/the-roadmap-layer) — why a delivery layer, and what a
+  `roadmap.md` is (Why + What).
+- [the-road-ahead](/course/agile-agent-workflow/roadmap/the-road-ahead) — a deep overview of the eight A3 modules
+  (When + How).
+
+### A4–A7 `○` planned
+A4 The spec layer (`…/spec`) · A5 The agent brief `.llms.md` (`…/brief`) ·
 A6 Reliability and correctness (`…/reliability`) · A7 Portal exemplar, zero to production (`…/portal`). Full
 per-chapter abstracts: the TOC.
 

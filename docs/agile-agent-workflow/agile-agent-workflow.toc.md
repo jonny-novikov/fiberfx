@@ -171,10 +171,16 @@ four artifacts + its Given/When/Then) · `order-the-backlog` (the three mileston
 
 ---
 
-# Part III — The roadmap layer: Agile delivery & iteration
+# Part III — The roadmap layer: Agile delivery & iteration&nbsp; `◐ landing + orientation built` → [`/roadmap`](/course/agile-agent-workflow/roadmap)
 
 *Planning delivery as thin, robust increments. Milestones, iterations, and the inspect-and-adapt loop — where the
 Agile Manifesto, Extreme Programming, and Continuous Delivery meet the agent workflow in a `roadmap.md`.*
+
+*Built so far: the chapter [landing](/course/agile-agent-workflow/roadmap) and three orientation dives —
+[`where-we-are`](/course/agile-agent-workflow/roadmap/where-we-are) ·
+[`the-roadmap-layer`](/course/agile-agent-workflow/roadmap/the-roadmap-layer) ·
+[`the-road-ahead`](/course/agile-agent-workflow/roadmap/the-road-ahead) (a recap of A0–A2 + a 5W overview). The eight
+teaching modules below are planned.*
 
 ### 3.1 · Agile, distilled
 Working software in short cycles, responding to change, inspect-and-adapt. The handful of principles that actually
