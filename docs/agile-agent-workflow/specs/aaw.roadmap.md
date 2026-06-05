@@ -33,7 +33,7 @@ Eight chapters. **A0** is the on-ramp; **A1–A7** are the seven teaching Parts.
 | A1 | Why an Agile Agent Workflow | `/why` | the thesis: thin, provable slices beat vibe-coding and big-bang specs | **complete** (A1.01–A1.06) |
 | A2 | Decomposition: vision → user stories | `/decomposition` | a vision turned into a dependency-ordered value ladder of stories | **complete** (A2.01–A2.07) |
 | A3 | The roadmap layer: Agile delivery & iteration | `/roadmap` | planning delivery as thin, robust increments in a `roadmap.md` | **complete** (A3.1–A3.9) |
-| A4 | The spec layer: specifications & acceptance | `/spec` | defining and proving each rung — correct by definition | planned |
+| A4 | The spec layer: specifications & acceptance | `/spec` | defining and proving each rung — correct by definition | **complete** (A4.1–A4.7) |
 | A5 | The agent brief (`.llms.md`) & implementation | `/brief` | briefing a Claude agent and reviewing its work | planned |
 | A6 | Reliability and correctness | `/reliability` | OTP supervision, boundaries, parse-don't-validate, property tests | planned |
 | A7 | Portal exemplar (zero to production) | `/portal` | the whole loop run end to end on the Portal | planned |
@@ -71,7 +71,7 @@ it, and is accepted only at `STATUS: PASS`. Adding a chapter adds teaching surfa
 | M1 · The method, framed | A0–A1 | name why thin, provable slices win, and the two roles that run the loop | **complete** |
 | M2 · From vision to backlog | A2 | decompose a product vision into a dependency-ordered ladder of testable stories | **complete** |
 | M3 · Planning delivery | A3 | plan a backlog's delivery as a `roadmap.md` of thin, robust increments | **complete** |
-| M4 · Defining & proving | A4–A6 | write a spec, brief an agent, and build the increment correct by definition | planned |
+| M4 · Defining & proving | A4–A6 | write a spec, brief an agent, and build the increment correct by definition | **in progress** (A4 complete; A5–A6 planned) |
 | M5 · The exemplar | A7 | run the whole loop on the Portal, zero to production | planned |
 
 ## How the course is built
@@ -100,16 +100,18 @@ ids, parseable inline scripts. The four living views (the served pages, `agile-a
 
 ## The near-term path
 
-Given the state above — A0–A3 complete (A3.1–A3.9 all built, grounded on the real `phoenix.roadmap.md`, with an
-`a3.progress.md` build narrative) — the recommended sequence is:
+Given the state above — A0–A4 complete (A4.1–A4.7 all built, grounded on the real F6.1/F5.1 rung triads, with an
+`a4.progress.md` build narrative; live completion tracked in [`aaw.progress.md`](aaw.progress.md)) — the recommended
+sequence is:
 
-1. **Open A4 (the spec layer).** Its triad is already seeded (`a4.{md,stories.md,llms.md}`). Author the chapter
-   **landing `/spec` first** (the keystone, modelled on the A3 landing), then fan out its modules — A4 is the natural
-   next chapter, where this roadmap's reader becomes the spec writer.
-2. **Build A4's modules** with the supervised-lead-then-fan-out loop A3 used: a Senior Writer pass that authors an
-   `a4.progress.md` and reviews the keystone, then one `agile-expert` per module against the seeded stories + brief.
-3. **Then A5 (the agent brief)** — its triad is also seeded; the same loop applies.
-4. **A6–A7** — reliability, then the zero-to-production Portal exemplar that runs the whole loop end to end.
+1. **Open A5 (the agent brief).** Its triad is already seeded (`a5.{md,stories.md,llms.md}`; modules A5.1–A5.8).
+   Author the chapter **landing `/brief` first** (the keystone, modelled on the A4 landing
+   `html/agile-agent-workflow/spec/index.html`), then fan out its modules — A5 is where the spec A4 wrote becomes a
+   machine-readable brief an agent builds from.
+2. **Build A5's modules** with the supervised-lead-then-fan-out loop A3 and A4 used: a Senior Writer pass that authors
+   an `a5.progress.md` and reviews the keystone, then one `agile-expert` per module against the seeded stories + brief.
+3. **Then A6 (reliability and correctness)** — seed its triad, then the same loop applies.
+4. **A7** — the zero-to-production Portal exemplar that runs the whole loop end to end.
 
 ## Conventions (the course's invariants)
 
@@ -124,7 +126,8 @@ Given the state above — A0–A3 complete (A3.1–A3.9 all built, grounded on t
 
 ## Map
 
-- The build process: [`aaw.operator.md`](aaw.operator.md).
+- The build process: [`aaw.operator.md`](aaw.operator.md). · The live completion dashboard: [`aaw.progress.md`](aaw.progress.md).
+- Chapter A4 agent brief: [`a4.llms.md`](a4.llms.md) · user stories: [`a4.stories.md`](a4.stories.md) · build narrative: [`a4.progress.md`](a4.progress.md).
 - Chapter A3 agent brief: [`a3.llms.md`](a3.llms.md) · its user stories: [`a3.stories.md`](a3.stories.md).
 - The living views: `docs/agile-agent-workflow/agile-agent-workflow.toc.md` (the TOC),
   `.claude/skills/agile-course-writer/references/course-map.md` (the route/status map),

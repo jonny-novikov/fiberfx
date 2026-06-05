@@ -24,7 +24,7 @@ as the A0 chapter landing AND the A0.2 module hub. Every chapter from A1 on **ne
 | A1 | Why an Agile Agent Workflow | `/course/agile-agent-workflow/why` | `why/` | **complete — landing + A1.01–A1.06 built** |
 | A2 | Decomposition: from vision to user stories | `/course/agile-agent-workflow/decomposition` | `decomposition/` | **complete — landing + A2.01–A2.07 built** |
 | A3 | The roadmap layer: Agile delivery & iteration | `/course/agile-agent-workflow/roadmap` | `roadmap/` | **complete — landing + 3 orientation dives + A3.1–A3.9 built** |
-| A4 | The spec layer: specifications & acceptance | `…/spec` | — | planned |
+| A4 | The spec layer: specifications & acceptance | `/course/agile-agent-workflow/spec` | `spec/` | **complete — landing + A4.1–A4.7 built** |
 | A5 | The agent brief (.llms.md) & implementation | `…/brief` | — | planned |
 | A6 | Reliability and correctness | `…/reliability` | — | planned |
 | A7 | Portal exemplar (zero to production) | `…/portal` | — | planned (steps A7.01–A7.07) |
@@ -122,23 +122,28 @@ sequence on Portal's five surfaces (store, engine, web, bot, dashboard) to produ
 
 ## Resume point
 
-**Parts I, II, and III are complete.** The course's own **spec system** lives under `docs/agile-agent-workflow/specs/`
-— the single `aaw.roadmap.md`, the `aaw.operator.md` build runbook, and a **chapter triad** (`a<N>.md` chapter spec
-with Parent/Goal/Rationale-5W/Scope/Deliverables/Invariants/DoD + `a<N>.llms.md` brief + `a<N>.stories.md` stories) for
-**A3, A4, and A5** (A4 + A5 are seeded ahead of their build — the "specced ahead" pattern).
+**Parts I, II, III, and IV are complete (A0–A4).** The course's own **spec system** lives under
+`docs/agile-agent-workflow/specs/` — the single `aaw.roadmap.md`, the `aaw.operator.md` build runbook, the live
+**`aaw.progress.md`** completion dashboard (per-rung status bar + %, recounted at each rung-close), and a **chapter
+triad** (`a<N>.md` chapter spec + `a<N>.llms.md` brief + `a<N>.stories.md` stories) for **A3, A4, and A5** (A5 is
+seeded ahead of its build — the "specced ahead" pattern).
 
-**A3 — "The roadmap layer"** (`/roadmap`, Part III) is COMPLETE and is the course's first **spec-first** chapter,
-built from its specs in `docs/agile-agent-workflow/specs/` (`a3.{md,stories.md,llms.md}`) plus an `a3.progress.md`
-build narrative — the agile analogue of the Portal's `f6.progress.md`, authored by a supervised Senior Writer and
-embedded into each module Author's prompt so all nine modules stay consistent. Built: the landing + 3 orientation
-dives + **all nine modules A3.1–A3.9**, each a hub + three dives, grounded verbatim on the real F6
-`phoenix.roadmap.md`: **A3.1 `agile-distilled`**, **A3.2 `xp-small-batches`**, **A3.3 `roadmap-anatomy`**,
-**A3.4 `thin-but-robust`**, **A3.5 `milestones`**, **A3.6 `program-roadmap`**, **A3.7 `tracer-bullets`**,
-**A3.8 `workshop`**, and the reference appendix **A3.9 `glossary`**.
+**A4 — "The spec layer"** (`/spec`, Part IV) is COMPLETE — the course's second **spec-first** chapter, built from
+its specs (`a4.{md,stories.md,llms.md}`) plus an `a4.progress.md` build narrative authored by a supervised Senior
+Writer and embedded into each module Author's prompt so all seven modules stay consistent with the landing and with
+A1–A3. Built: the landing `/spec` (the keystone, no orientation dives) + **all seven modules A4.1–A4.7**, each a hub
++ three dives, grounded verbatim on the real F6.1 (and F5.1, for the workshop) rung triads: **A4.1 `by-example`**,
+**A4.2 `the-triad`**, **A4.3 `spec-anatomy`**, **A4.4 `to-stories`**, **A4.5 `invariants`**, **A4.6 `traceability`**,
+**A4.7 `workshop`**. The no-code mandate held: every `pre.code` carries spec/stories markdown, never Elixir.
 
-**Next: A4 — "The spec layer"** (`/spec`, Part IV). Its triad is already seeded (`a4.{md,stories.md,llms.md}`). Author
-the **chapter landing `/spec` first** (the keystone — model it on the A3 landing `html/agile-agent-workflow/roadmap/
-index.html`), then fan out its modules with `/agile-write spec <module-slug> …` against the seeded stories + brief —
-the same supervised-lead-then-fan-out loop A3 used. The course thesis, restated each module: neither no-plan nor
+**A3 — "The roadmap layer"** (`/roadmap`, Part III) is COMPLETE: the landing + 3 orientation dives + **all nine
+modules A3.1–A3.9** (`agile-distilled`, `xp-small-batches`, `roadmap-anatomy`, `thin-but-robust`, `milestones`,
+`program-roadmap`, `tracer-bullets`, `workshop`, `glossary`), grounded on the real `phoenix.roadmap.md`.
+
+**Next: A5 — "The agent brief"** (`/brief`, Part V). Its triad is already seeded (`a5.{md,stories.md,llms.md}`;
+modules **A5.1–A5.8**). Author the **chapter landing `/brief` first** (the keystone — model it on the A4 landing
+`html/agile-agent-workflow/spec/index.html`), then fan out its modules with `/agile-write brief <module-slug> …`
+against the seeded stories + brief — the same supervised-Senior-Writer-then-fan-out loop A3 and A4 used (author an
+`a5.progress.md`, embed it into each Author's prompt). The course thesis, restated each module: neither no-plan nor
 all-plan ships reliable software; the unit that does is a thin slice of value, specified only enough, proven before
 the next begins.

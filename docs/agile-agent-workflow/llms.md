@@ -157,10 +157,36 @@ narrative). Landing + three orientation dives + **all nine modules A3.1–A3.9**
   UX-friendly expandable list: term → abstract → source → where the framework implements it. Dives: `glossary` ·
   `sources` · `crosswalk`.
 
-### A4–A7 `○` planned
-A4 The spec layer (`…/spec`) · A5 The agent brief `.llms.md` (`…/brief`) ·
-A6 Reliability and correctness (`…/reliability`) · A7 Portal exemplar, zero to production (`…/portal`). Full
-per-chapter abstracts: the TOC.
+### A4 · The spec layer `✓` · [/course/agile-agent-workflow/spec](/course/agile-agent-workflow/spec)
+Defining and proving each rung the roadmap points at — correct by definition. The course's second **spec-first**
+chapter (specs in `docs/agile-agent-workflow/specs/`: `a4.{md,stories.md,llms.md}` + the `a4.progress.md` build
+narrative). Landing (no orientation dives) + **all seven modules A4.1–A4.7** built, grounded verbatim on the real
+F6.1 / F5.1 rung triads; every `pre.code` carries spec/stories text, never Elixir.
+- A4.1 `✓` · [Specification by Example](/course/agile-agent-workflow/spec/by-example) — concrete examples become the
+  executable specification; living documentation that cannot drift. Dives: `examples-as-spec` · `living-documentation`
+  · `removing-ambiguity`.
+- A4.2 `✓` · [The triad: spec, stories, agent brief](/course/agile-agent-workflow/spec/the-triad) — one artifact per
+  question (what&why&done · who wants what · how to build); the course's own `a4.*` is the same triad. Dives:
+  `which-question` · `the-real-triad` · `the-course-itself`.
+- A4.3 `✓` · [Anatomy of a spec](/course/agile-agent-workflow/spec/spec-anatomy) — the six sections read verbatim on
+  `f6.1.md`; constrain without over-specifying. Dives: `the-six-sections` · `the-five-ws` · `constrain-not-overspecify`.
+- A4.4 `✓` · [From stories to a .stories.md](/course/agile-agent-workflow/spec/to-stories) — every deliverable realized
+  by a story; the INVEST line and the Coverage map, on the real F6.1 stories. Dives: `deliverable-to-story` ·
+  `the-coverage-line` · `invest-and-invariants`.
+- A4.5 `✓` · [Invariants](/course/agile-agent-workflow/spec/invariants) — an invariant (true for every value, always)
+  vs an acceptance check (true for one scenario); the master invariant. Dives: `invariant-vs-check` ·
+  `the-master-invariant` · `always-true`.
+- A4.6 `✓` · [Traceability — correct by definition](/course/agile-agent-workflow/spec/traceability) — the chain
+  deliverable → story → check & invariant → requirement, and the completion rule that closes it (ties A1.05). Dives:
+  `the-chain` · `the-closure` · `a-broken-link`.
+- A4.7 `✓` · [Workshop — specifying Portal's engine](/course/agile-agent-workflow/spec/workshop) — run the whole A4
+  sequence on the real F5.1 engine triad to reproduce a closed, acceptable spec. Dives: `the-engine-deliverables` ·
+  `run-the-sequence` · `the-closed-spec`.
+
+### A5–A7 `○` planned
+A5 The agent brief `.llms.md` (`…/brief`, modules A5.1–A5.8, triad seeded) · A6 Reliability and correctness
+(`…/reliability`) · A7 Portal exemplar, zero to production (`…/portal`). Full per-chapter abstracts: the TOC; live
+per-rung completion: `specs/aaw.progress.md`.
 
 ## Sources of record — author here; the served HTML is hand-built from these
 - Living table of contents + per-chapter abstracts + build status — `docs/agile-agent-workflow/agile-agent-workflow.toc.md`

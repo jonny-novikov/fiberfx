@@ -82,11 +82,13 @@ the Operator/Author pairing. Its built module, A0.2, is the framework in a singl
 - A0.1 · Why it works `○` — the two failure modes and the case for thin slices (developed in depth at §1.1).
 - A0.3 · Who does the work `○` — the Operator, the Author, and the pairing in practice (developed at §1.3).
 
-**Current build front.** **Parts I, II, and III are complete** — chapter A1 (§1.1–§1.6,
+**Current build front.** **Parts I, II, III, and IV are complete** — chapter A1 (§1.1–§1.6,
 [`/course/agile-agent-workflow/why`](/course/agile-agent-workflow/why)), chapter A2 (§2.1–§2.7,
-[`/course/agile-agent-workflow/decomposition`](/course/agile-agent-workflow/decomposition)), and chapter A3 (§3.1–§3.9,
-[`/course/agile-agent-workflow/roadmap`](/course/agile-agent-workflow/roadmap)) are fully built. The frontier is
-**Part IV / chapter A4** ("The spec layer", `/spec`); Parts IV–VII are planned (A4 + A5 are specced ahead).
+[`/course/agile-agent-workflow/decomposition`](/course/agile-agent-workflow/decomposition)), chapter A3 (§3.1–§3.9,
+[`/course/agile-agent-workflow/roadmap`](/course/agile-agent-workflow/roadmap)), and chapter A4 (§4.1–§4.7,
+[`/course/agile-agent-workflow/spec`](/course/agile-agent-workflow/spec)) are fully built. The frontier is
+**Part V / chapter A5** ("The agent brief", `/brief`); Parts V–VII are planned (A5 is specced ahead). Live
+per-rung completion is tracked in [`specs/aaw.progress.md`](specs/aaw.progress.md).
 
 ---
 
@@ -231,38 +233,49 @@ bibliography) · `crosswalk` (the idea→`/elixir` map).
 
 ---
 
-# Part IV — The spec layer: specifications & acceptance
+# Part IV — The spec layer: specifications & acceptance&nbsp; `✓ landing + §4.1–§4.7 built` → [`/spec`](/course/agile-agent-workflow/spec)
 
 *Specifications that are precise, traceable, and accepted only when proven. Specification by Example, the spec triad's
 anatomy, invariants, and the traceability that makes completion verifiable rather than asserted.*
 
-### 4.1 · Specification by Example
+*The chapter [landing](/course/agile-agent-workflow/spec) opens straight onto the seven teaching modules below (no
+orientation dives): from examples-as-specification to a worked spec of the Portal's engine. Each is grounded verbatim
+on the real F6.1 (and, for the workshop, F5.1) rung triads; every `pre.code` carries spec/stories text, never Elixir.*
+
+### 4.1 · Specification by Example&nbsp; `✓ built` → [`/spec/by-example`](/course/agile-agent-workflow/spec/by-example)
 Examples as the shared, executable specification; living documentation that cannot drift from the system because the
-system is checked against it. Removing ambiguity before a line of code is written.
+system is checked against it. Removing ambiguity before a line of code is written. Dives: `examples-as-spec` ·
+`living-documentation` · `removing-ambiguity`.
 
-### 4.2 · The triad: spec, stories, agent brief
+### 4.2 · The triad: spec, stories, agent brief&nbsp; `✓ built` → [`/spec/the-triad`](/course/agile-agent-workflow/spec/the-triad)
 Three artifacts per rung and the distinct question each answers — *what and why and done* (the spec), *who wants what*
-(the stories), and *how to build it with proof gates* (the agent brief). Why the separation matters.
+(the stories), and *how to build it with proof gates* (the agent brief). Why the separation matters. Dives:
+`which-question` · `the-real-triad` · `the-course-itself`.
 
-### 4.3 · Anatomy of a spec
+### 4.3 · Anatomy of a spec&nbsp; `✓ built` → [`/spec/spec-anatomy`](/course/agile-agent-workflow/spec/spec-anatomy)
 Goal, Rationale (the five Ws), Scope (in and out), Deliverables, Invariants, and a Definition of Done. How to write
-each section so it constrains the build without over-specifying the solution.
+each section so it constrains the build without over-specifying the solution. Dives: `the-six-sections` ·
+`the-five-ws` · `constrain-not-overspecify`.
 
-### 4.4 · From stories to a .stories.md
+### 4.4 · From stories to a .stories.md&nbsp; `✓ built` → [`/spec/to-stories`](/course/agile-agent-workflow/spec/to-stories)
 Deriving the stories file from the spec: Connextra stories with Given/When/Then, an INVEST line that names the
-invariants each story exercises, and a Coverage line that maps every deliverable to the stories that realize it.
+invariants each story exercises, and a Coverage line that maps every deliverable to the stories that realize it. Dives:
+`deliverable-to-story` · `the-coverage-line` · `invest-and-invariants`.
 
-### 4.5 · Invariants: properties that must always hold
+### 4.5 · Invariants: properties that must always hold&nbsp; `✓ built` → [`/spec/invariants`](/course/agile-agent-workflow/spec/invariants)
 Naming the rules an increment must never break, and distinguishing an invariant (true for every value, always) from an
-acceptance check (true for a specific scenario). The raw material of correctness.
+acceptance check (true for a specific scenario). The raw material of correctness. Dives: `invariant-vs-check` ·
+`the-master-invariant` · `always-true`.
 
-### 4.6 · Traceability — correct by definition
+### 4.6 · Traceability — correct by definition&nbsp; `✓ built` → [`/spec/traceability`](/course/agile-agent-workflow/spec/traceability)
 The chain from deliverable to story to acceptance and invariant to requirement to agent story, and the completion rule
-that closes it. How to make the whole chain checkable from the text alone.
+that closes it. How to make the whole chain checkable from the text alone. Dives: `the-chain` · `the-closure` ·
+`a-broken-link`.
 
-### 4.7 · Workshop — specifying Portal's engine
+### 4.7 · Workshop — specifying Portal's engine&nbsp; `✓ built` → [`/spec/workshop`](/course/agile-agent-workflow/spec/workshop)
 Write the specs and stories for the engine chapter: its deliverables, its invariants, and the acceptance criteria that
-will accept it. The contracts an agent will implement in Part V.
+will accept it. The contracts an agent will implement in Part V. Dives: `the-engine-deliverables` · `run-the-sequence`
+· `the-closed-spec`.
 
 ---
 
