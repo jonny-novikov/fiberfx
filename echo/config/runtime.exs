@@ -57,3 +57,11 @@ if config_env() != :test do
         pool_size: String.to_integer(System.get_env("POOL_SIZE", "10"))
   end
 end
+
+# The deep-link base (F6.5.5-D9) is overridable per deploy via an env var, with the
+# config.exs default as the fallback — so configurability holds in EVERY environment
+# (incl. :test, where the e2e config-swap probe sets it). It carries a default and so
+# never raises; it lives outside the :test-guarded block above for that reason.
+if base = System.get_env("DEEP_LINK_BASE_URL") do
+  config :portal_web, :deep_link_base_url, base
+end

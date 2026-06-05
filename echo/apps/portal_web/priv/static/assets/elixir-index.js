@@ -1,8 +1,15 @@
 (function () {
   "use strict";
 
+  /* The deep-link base (F6.5.5-D9) — injected ONCE by the server-rendered <head>
+     (a <meta name="deep-link-base">, or window.__deepLinkBase). This static asset
+     cannot read Elixir config, so it reads the injected value and prefixes its arc
+     "Open Fn" nav route with it. Empty fallback keeps the file servable bare. */
+  var META = document.querySelector('meta[name="deep-link-base"]');
+  var BASE = (META && META.content) || window.__deepLinkBase || "";
+
   /* ---------- Interactive 1: the arc ---------- */
-  var CH = [{"id": "F1", "name": "Algebra", "route": "https://jonnify.fly.dev/elixir/algebra", "live": true, "modules": 9, "one": "The functional mindset, straight from the math you already know.", "reuses": "Starts from the algebra you already know."}, {"id": "F2", "name": "Functional Programming", "route": "https://jonnify.fly.dev/elixir/functional", "live": true, "modules": 9, "one": "Pure functions, immutability, and higher-order functions on their own terms.", "reuses": "Builds on F1 · Algebra."}, {"id": "F3", "name": "The Elixir Language", "route": "https://jonnify.fly.dev/elixir/language", "live": true, "modules": 9, "one": "Syntax, pipelines, pattern matching, and structs on the BEAM.", "reuses": "Builds on F2 · Functional Programming."}, {"id": "F4", "name": "Algorithms & Data Structures", "route": "https://jonnify.fly.dev/elixir/algorithms", "live": true, "modules": 9, "one": "Classical and advanced problems, from lists to branded CHAMP tries.", "reuses": "Builds on F3 · The Elixir Language."}, {"id": "F5", "name": "Pragmatic Programming", "route": "https://jonnify.fly.dev/elixir/pragmatic", "live": true, "modules": 9, "one": "Real-world engineering: structure, testing, telemetry, releases.", "reuses": "Builds on F4 · Algorithms & Data Structures."}, {"id": "F6", "name": "Phoenix Framework", "route": "https://jonnify.fly.dev/elixir/phoenix", "live": true, "modules": 9, "one": "Web applications on Elixir, and the road into real-time LiveView.", "reuses": "Builds on F5 · Pragmatic Programming."}];
+  var CH = [{"id": "F1", "name": "Algebra", "route": "/elixir/algebra", "live": true, "modules": 9, "one": "The functional mindset, straight from the math you already know.", "reuses": "Starts from the algebra you already know."}, {"id": "F2", "name": "Functional Programming", "route": "/elixir/functional", "live": true, "modules": 9, "one": "Pure functions, immutability, and higher-order functions on their own terms.", "reuses": "Builds on F1 · Algebra."}, {"id": "F3", "name": "The Elixir Language", "route": "/elixir/language", "live": true, "modules": 9, "one": "Syntax, pipelines, pattern matching, and structs on the BEAM.", "reuses": "Builds on F2 · Functional Programming."}, {"id": "F4", "name": "Algorithms & Data Structures", "route": "/elixir/algorithms", "live": true, "modules": 9, "one": "Classical and advanced problems, from lists to branded CHAMP tries.", "reuses": "Builds on F3 · The Elixir Language."}, {"id": "F5", "name": "Pragmatic Programming", "route": "/elixir/pragmatic", "live": true, "modules": 9, "one": "Real-world engineering: structure, testing, telemetry, releases.", "reuses": "Builds on F4 · Algorithms & Data Structures."}, {"id": "F6", "name": "Phoenix Framework", "route": "/elixir/phoenix", "live": true, "modules": 9, "one": "Web applications on Elixir, and the road into real-time LiveView.", "reuses": "Builds on F5 · Pragmatic Programming."}];
   var byId = {};
   CH.forEach(function (c) { byId[c.id] = c; });
 
@@ -27,7 +34,7 @@
       open.textContent = '';
       if (c.live) {
         var a = document.createElement('a');
-        a.setAttribute('href', c.route);
+        a.setAttribute('href', BASE + c.route);
         a.textContent = 'Open ' + c.id + ' \u00b7 ' + c.name + ' \u2192';
         open.appendChild(a);
       } else {

@@ -13,6 +13,19 @@ defmodule PortalWeb do
 
   def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
 
+  @doc """
+  The production base URL prepended to navigation deep-links the Portal does not
+  itself serve (F6.5.5-D9 / INV9). A plain function — NOT a macro — read at render
+  time by the parity templates and injected ONCE (`window.__deepLinkBase`) for the
+  static `elixir-index.js` arc link-builder, so the host crosses the server/static
+  boundary exactly once and no `jonnify.fly.dev` literal survives outside config
+  (`config :portal_web, :deep_link_base_url`, default below; a deploy overrides it
+  in `config/runtime.exs`). Applies to CATEGORY-4 nav links only — never to the
+  `~p"/assets/…"` static routes (INV9(b)) nor the `/`,`/elixir` self-routes.
+  """
+  def deep_link_base,
+    do: Application.get_env(:portal_web, :deep_link_base_url, "https://jonnify.fly.dev")
+
   def router do
     quote do
       use Phoenix.Router, helpers: false

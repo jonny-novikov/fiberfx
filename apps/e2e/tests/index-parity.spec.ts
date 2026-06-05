@@ -23,12 +23,28 @@ import { test, expect, type Page } from "@playwright/test";
  * The clamp guard the baseline (elixir-hero.spec.ts) encodes — h1 > 70px,
  * .prose p > 18px — is asserted on /elixir at BOTH origins: a Phoenix h1
  * collapsing to 32px is a dropped/unspaced clamp and fails here.
+ *
+ * CONFIGURABLE NAV BASE (F6.5.5-D9 / INV9(a)). The remapped deep-link host is
+ * application config (`PortalWeb.deep_link_base/0`), default https://jonnify.fly.dev.
+ * The remap assertions assert NAV_BASE (PORTAL_DEEP_LINK_BASE, same default), so
+ * "configurable" is a CHECKED claim: boot the node with DEEP_LINK_BASE_URL set to a
+ * test host AND run with PORTAL_DEEP_LINK_BASE the same value, and the rendered
+ * markup deep-links AND the JS-built arc link both carry the override — while the
+ * asset-locality test (INV9(b)) proves the override never sweeps an /assets/* ref.
+ *
+ *   DEEP_LINK_BASE_URL=https://example.test mix phx.server   # boot the node with it
+ *   PORTAL_BASE_URL=http://localhost:4000 PORTAL_DEEP_LINK_BASE=https://example.test \
+ *     npx playwright test index-parity                       # assert the override re-renders
  */
 
 const DESKTOP = { width: 1440, height: 1300 };
 
 const FIBER_BASE = process.env.E2E_BASE_URL || "http://localhost:8765";
 const PORTAL_BASE = process.env.PORTAL_BASE_URL || "http://localhost:4000";
+// The configurable deep-link base the Portal is expected to render (F6.5.5-D9). The
+// default matches config.exs; set PORTAL_DEEP_LINK_BASE to the host the node was
+// booted with (DEEP_LINK_BASE_URL) to prove the swap re-renders both nav surfaces.
+const NAV_BASE = process.env.PORTAL_DEEP_LINK_BASE || "https://jonnify.fly.dev";
 
 // The same route on each origin: Fiber serves /courses + /elixir; Portal serves
 // / + /elixir. Absolute URLs drive both sides off Playwright's single baseURL.
@@ -118,9 +134,11 @@ test.describe("F6.5.5 · / (courses index) parity — Phoenix vs Fiber", () => {
     page,
   }) => {
     await page.goto(COURSES.portal);
-    // The agile card link is production (Portal does not serve /course/...).
+    // The agile card link carries the configurable base (Portal does not serve
+    // /course/...). NAV_BASE proves the swap: set PORTAL_DEEP_LINK_BASE to the host
+    // the node was booted with and this asserts the override, not a baked literal.
     expect(
-      await hrefCount(page, "https://jonnify.fly.dev/course/agile-agent-workflow"),
+      await hrefCount(page, NAV_BASE + "/course/agile-agent-workflow"),
     ).toBe(1);
     // No un-remapped /course/ deep link survives.
     expect(await hrefCount(page, "/course/")).toBe(0);
@@ -133,6 +151,30 @@ test.describe("F6.5.5 · / (courses index) parity — Phoenix vs Fiber", () => {
     expect(elixirCard).toBe("/elixir");
     const brand = await page.getAttribute(".brand", "href");
     expect(brand).toBe("/");
+  });
+
+  // INV9(b): the configurable base touches CATEGORY-4 nav links ONLY — the page's
+  // OWN assets (category 2) stay Portal-local. A page pulling its CSS/JS from the
+  // base would visually match yet be a hollow shell + a liveness regression.
+  test("asset-locality (portal): courses.css/js are root-relative /assets, never the base", async ({
+    page,
+  }) => {
+    await page.goto(COURSES.portal);
+    const css = await page.getAttribute('link[rel="stylesheet"][href^="/assets/"]', "href");
+    expect(css).toBe("/assets/courses.css");
+    const js = await page.getAttribute('script[src^="/assets/"]', "src");
+    expect(js).toBe("/assets/courses.js");
+    // No asset ref was ever swept into the base / any external host.
+    expect(await hrefCount(page, NAV_BASE + "/assets")).toBe(0);
+    const swept = await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll('link[href*="/assets/"], script[src*="/assets/"]'),
+      ).filter((el) => {
+        const u = el.getAttribute("href") || el.getAttribute("src") || "";
+        return /^https?:\/\//.test(u); // any absolute /assets/ URL is a regression
+      }).length,
+    );
+    expect(swept).toBe(0);
   });
 });
 
@@ -194,10 +236,8 @@ test.describe("F6.5.5 · /elixir (course index) parity — Phoenix vs Fiber", ()
     await page.goto(ELIXIR.portal);
     // The load-bearing assertion: no un-remapped deep /elixir/ link survives.
     expect(await hrefCount(page, "/elixir/")).toBe(0);
-    // Every deep link is production.
-    expect(
-      await hrefCount(page, "https://jonnify.fly.dev/elixir/"),
-    ).toBeGreaterThan(0);
+    // Every deep link carries the configurable base (NAV_BASE proves the swap).
+    expect(await hrefCount(page, NAV_BASE + "/elixir/")).toBeGreaterThan(0);
     // The bare /elixir self-links stay relative.
     const bareCount = await page.evaluate(
       () =>
@@ -206,24 +246,47 @@ test.describe("F6.5.5 · /elixir (course index) parity — Phoenix vs Fiber", ()
         ).length,
     );
     expect(bareCount).toBe(3);
-    // Spot-check: a hero CTA and a .mod card both resolve to production.
+    // Spot-check: a hero CTA and a .mod card both carry the configurable base.
     const heroCta = await page.getAttribute(".hero .cta-row a.btn", "href");
-    expect(heroCta).toMatch(/^https:\/\/jonnify\.fly\.dev\/elixir\//);
+    expect(heroCta!.startsWith(NAV_BASE + "/elixir/")).toBe(true);
     const modCard = await page.getAttribute("a.mod", "href");
-    expect(modCard).toMatch(/^https:\/\/jonnify\.fly\.dev\/elixir\//);
+    expect(modCard!.startsWith(NAV_BASE + "/elixir/")).toBe(true);
     // The in-page skip anchor stays untouched.
     const skip = await page.getAttribute("a.skip", "href");
     expect(skip).toBe("#main");
   });
 
-  test('arc selector (portal): switching a chapter points "Open Fn" at production', async ({
+  test('arc selector (portal): switching a chapter builds "Open Fn" from the configurable base', async ({
     page,
   }) => {
     await page.goto(ELIXIR.portal);
-    // Select F2 via its arc node; the arc readout's open link is built from the
-    // remapped CH "route" field, so it must resolve to production.
+    // Select F2 via its arc node; the arc readout's open link is built by the static
+    // JS from the injected base + the (now relative) CH "route" field — so it must
+    // carry NAV_BASE, proving the injected value (not a baked literal) drives it.
     await page.click('.arc-node[data-ch="F2"]');
     const openHref = await page.getAttribute("#arcOpen a", "href");
-    expect(openHref).toMatch(/^https:\/\/jonnify\.fly\.dev\/elixir\//);
+    expect(openHref!.startsWith(NAV_BASE + "/elixir/")).toBe(true);
+  });
+
+  // INV9(b): elixir-index.css/js stay Portal-local; the injected deep-link base
+  // reaches the JS's ~6 nav routes ONLY, NEVER an asset fetch.
+  test("asset-locality (portal): elixir-index.css/js are root-relative /assets, never the base", async ({
+    page,
+  }) => {
+    await page.goto(ELIXIR.portal);
+    const css = await page.getAttribute('link[rel="stylesheet"][href^="/assets/"]', "href");
+    expect(css).toBe("/assets/elixir-index.css");
+    const js = await page.getAttribute('script[src^="/assets/"]', "src");
+    expect(js).toBe("/assets/elixir-index.js");
+    expect(await hrefCount(page, NAV_BASE + "/assets")).toBe(0);
+    const swept = await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll('link[href*="/assets/"], script[src*="/assets/"]'),
+      ).filter((el) => {
+        const u = el.getAttribute("href") || el.getAttribute("src") || "";
+        return /^https?:\/\//.test(u);
+      }).length,
+    );
+    expect(swept).toBe(0);
   });
 });

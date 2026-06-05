@@ -38,6 +38,13 @@ config :portal_web, PortalWeb.Endpoint,
   pubsub_server: Portal.PubSub,
   live_view: [signing_salt: "5tFp7nQe"]
 
+# The production base URL the parity pages prepend to navigation deep-links the
+# Portal does not itself serve (F6.5.5-D9 / INV9). The default keeps the rendered
+# output byte-identical to the shipped pages; a deploy overrides it in
+# config/runtime.exs via DEEP_LINK_BASE_URL. The host is read ONCE through
+# PortalWeb.deep_link_base/0 — this key is the ONLY place the literal lives.
+config :portal_web, :deep_link_base_url, "https://jonnify.fly.dev"
+
 # Use Jason for JSON parsing in Phoenix.
 config :phoenix, :json_library, Jason
 
