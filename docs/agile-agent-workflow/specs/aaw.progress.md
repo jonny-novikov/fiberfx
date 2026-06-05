@@ -21,7 +21,7 @@ A0  Foundations          ◐  █████████░░░░░░░�
 A1  Why                  ✓  ████████████████████████  100%   (landing ▣ · 6/6 modules)
 A2  Decomposition        ✓  ████████████████████████  100%   (landing ▣ · 7/7 modules)
 A3  The roadmap layer    ✓  ████████████████████████  100%   (landing ▣ · 3 dives · 9/9 modules)
-A4  The spec layer       ○  ░░░░░░░░░░░░░░░░░░░░░░░░    0%   (landing ○ · 0/7 modules)   ← FRONTIER
+A4  The spec layer       ◐  █░░░░░░░░░░░░░░░░░░░░░░░    5%   (landing ▣ · 0/7 modules)   ← FRONTIER
 A5  The agent brief      ○  ░░░░░░░░░░░░░░░░░░░░░░░░    0%   (triad seeded · 0/8 modules)
 A6  Reliability          ○  ░░░░░░░░░░░░░░░░░░░░░░░░    0%   (scope not yet enumerated)
 A7  Portal exemplar      ○  ░░░░░░░░░░░░░░░░░░░░░░░░    0%   (planned · 0/7 steps)
@@ -80,10 +80,10 @@ counts modules across the seven chapters with a known module set (A0 3 · A1 6 �
 ✓ A3.9  Glossary, references & crosswalk    ███████████████████████  100%   (4/4)
 ```
 
-## A4 · The spec layer — `/spec`  ○ 0%  ← FRONTIER (building now)
+## A4 · The spec layer — `/spec`  ◐ building  ← FRONTIER (building now)
 
 ```
-○ landing /spec                            ░░░░░░░░░░░░░░░░░░░░░░░░    0%   keystone — built first
+▣ landing /spec                            ████████████████████████  100%   keystone built ✓ (9/10 gates; links resolves once A4.1 lands)
 ○ A4.1  Specification by Example           ░░░░░░░░░░░░░░░░░░░░░░░░    0%   (0/4)   /spec/by-example
 ○ A4.2  The triad: spec, stories, brief    ░░░░░░░░░░░░░░░░░░░░░░░░    0%   (0/4)   /spec/the-triad
 ○ A4.3  Anatomy of a spec                  ░░░░░░░░░░░░░░░░░░░░░░░░    0%   (0/4)   /spec/spec-anatomy
