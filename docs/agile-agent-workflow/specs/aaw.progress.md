@@ -22,16 +22,21 @@ A1  Why                  ✓  ████████████████�
 A2  Decomposition        ✓  ████████████████████████  100%   (landing ▣ · 7/7 modules)
 A3  The roadmap layer    ✓  ████████████████████████  100%   (landing ▣ · 3 dives · 9/9 modules)
 A4  The spec layer       ✓  ████████████████████████  100%   (landing ▣ · 7/7 modules)
-A5  The agent brief      ○  ░░░░░░░░░░░░░░░░░░░░░░░░    0%   (triad seeded · 0/8 modules)   ← FRONTIER
-A6  Reliability          ○  ░░░░░░░░░░░░░░░░░░░░░░░░    0%   (scope not yet enumerated)
-A7  Portal exemplar      ○  ░░░░░░░░░░░░░░░░░░░░░░░░    0%   (planned · 0/7 steps)
+A5  The agent brief      ◐  ███░░░░░░░░░░░░░░░░░░░░░   ~11%  (landing ▣ · 3 orientation dives ▣ · 0/8 modules)  ← FRONTIER
+A6  Reliability          ◐  ███░░░░░░░░░░░░░░░░░░░░░    —    (landing ▣ · 3 orientation dives ▣ · modules pending triad)
+A7  Portal exemplar      ◐  ███░░░░░░░░░░░░░░░░░░░░░   ~12%  (landing ▣ · 3 orientation dives ▣ · 0/7 steps)
 ────────────────────────────────────────────────────────────────────────────────────
 COURSE (A0–A5, A7)       ◐  ███████████████░░░░░░░░░   64%   (30 / 47 modules built)
 ```
 
 *A6 is excluded from the denominator until its triad is seeded and its modules are enumerated. The course total
 counts modules across the seven chapters with a known module set (A0 3 · A1 6 · A2 7 · A3 9 · A4 7 · A5 8 · A7 7 =
-47).*
+47). The course % counts **modules** only — the A5/A6/A7 landings + their why/what/how orientation dives (12 pages,
+all gating A+) are built but are not modules, so they raise each chapter to ◐ without moving the module count.*
+
+*Milestone — **all eight chapter landings + orientation now exist**: the course spans A0→A7 end to end at the chapter
+level (every `/<chapter>` and the A5/A6/A7 why/what/how triptychs are live). Module/step fill-in continues — A5's
+eight modules are next (triad seeded); A6 and A7 await their triads before their modules/steps are enumerated.*
 
 ## A0 · Foundations — `/what`  ◐ ~38%
 
@@ -93,22 +98,25 @@ counts modules across the seven chapters with a known module set (A0 3 · A1 6 �
 ✓ A4.7  Workshop — specifying the engine   ████████████████████████  100%   (4/4)   /spec/workshop
 ```
 
-## A5 · The agent brief — `/brief`  ○ 0%  (triad seeded)
+## A5 · The agent brief — `/brief`  ◐ ~11%  (landing + orientation built)
 
 ```
+▣ landing /brief  +  ▣ 3 orientation dives why · what · how    (all gating A+)
 ○ A5.1–A5.8 (8 modules)                    ░░░░░░░░░░░░░░░░░░░░░░░░    0%   triad a5.{md,stories,llms} seeded ahead
 ```
 
-## A6 · Reliability and correctness — `/reliability`  ○ 0%  (scope pending)
+## A6 · Reliability and correctness — `/reliability`  ◐  (landing + orientation built; scope pending triad)
 
 ```
-○ modules not yet enumerated               ░░░░░░░░░░░░░░░░░░░░░░░░    0%   triad to be seeded
+▣ landing /reliability  +  ▣ 3 orientation dives why · what · how    (all gating A+; roadmap-grounded)
+○ modules not yet enumerated               ░░░░░░░░░░░░░░░░░░░░░░░░    0%   triad to be seeded (modules deferred, not invented)
 ```
 
-## A7 · Portal exemplar — `/portal`  ○ 0%  (planned)
+## A7 · Portal exemplar — `/portal`  ◐ ~12%  (landing + orientation built)
 
 ```
-○ A7.01–A7.07 (7 steps)                    ░░░░░░░░░░░░░░░░░░░░░░░░    0%   the whole loop run end to end
+▣ landing /portal  +  ▣ 3 orientation dives why · what · how    (all gating A+; the capstone)
+○ A7.01–A7.07 (7 steps)                    ░░░░░░░░░░░░░░░░░░░░░░░░    0%   the whole loop run end to end (triad to be seeded)
 ```
 
 ---

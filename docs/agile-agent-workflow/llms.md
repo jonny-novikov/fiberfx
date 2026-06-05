@@ -186,10 +186,31 @@ F6.1 / F5.1 rung triads; every `pre.code` carries spec/stories text, never Elixi
   module): a git-iteration slider over the shipped F6.1→F6.6 ladder, reached from the inline `.specref` citation chips
   that frame each `F6.N` rung on the A4 lesson pages (click-to-expand tooltip → this viewer).
 
-### A5–A7 `○` planned
-A5 The agent brief `.llms.md` (`…/brief`, modules A5.1–A5.8, triad seeded) · A6 Reliability and correctness
-(`…/reliability`) · A7 Portal exemplar, zero to production (`…/portal`). Full per-chapter abstracts: the TOC; live
-per-rung completion: `specs/aaw.progress.md`.
+### A5 · The agent brief `◐` · [/course/agile-agent-workflow/brief](/course/agile-agent-workflow/brief)
+Landing + a why/what/how orientation triptych built (grounded on the seeded triad `a5.{md,stories,llms}.md`); the
+eight modules A5.1–A5.8 build next.
+- A5 orientation `✓` · [why](/course/agile-agent-workflow/brief/why) — a spec is not runnable on its own; the brief
+  fixes every remaining *how-to-build* decision. [what](/course/agile-agent-workflow/brief/what) — the five parts of
+  an `.llms.md` and the eight modules ahead. [how](/course/agile-agent-workflow/brief/how) — write the brief, run the
+  agent, review against the spec's Definition of Done, not the agent's self-report.
+
+### A6 · Reliability and correctness `◐` · [/course/agile-agent-workflow/reliability](/course/agile-agent-workflow/reliability)
+Landing + a why/what/how orientation triptych built (grounded on `aaw.roadmap.md`; modules **deferred** until the
+`a6.*` triad is seeded — scope at roadmap altitude: OTP supervision, boundaries, parse-don't-validate, property tests).
+- A6 orientation `✓` · [why](/course/agile-agent-workflow/reliability/why) — A5's increment is correct on the happy
+  path but not proven under failure; A6 closes that gap. [what](/course/agile-agent-workflow/reliability/what) — the
+  four scope pillars. [how](/course/agile-agent-workflow/reliability/how) — harden the increment; prove invariants,
+  do not assert them.
+
+### A7 · Portal exemplar (zero to production) `◐` · [/course/agile-agent-workflow/portal](/course/agile-agent-workflow/portal)
+Landing + a why/what/how orientation triptych built (grounded on `aaw.roadmap.md`; the A7.01–A7.07 steps build once
+the `a7.*` triad is seeded). The capstone — the whole loop run end to end on the Portal.
+- A7 orientation `✓` · [why](/course/agile-agent-workflow/portal/why) — the exemplar is worth running only because
+  every rung was hardened to production quality first. [what](/course/agile-agent-workflow/portal/what) — the
+  zero-to-production sequence. [how](/course/agile-agent-workflow/portal/how) — the loop runs once, uninterrupted,
+  with the roles unchanged.
+
+Full per-chapter abstracts: the TOC; live per-rung completion: `specs/aaw.progress.md`.
 
 ## Sources of record — author here; the served HTML is hand-built from these
 - Living table of contents + per-chapter abstracts + build status — `docs/agile-agent-workflow/agile-agent-workflow.toc.md`

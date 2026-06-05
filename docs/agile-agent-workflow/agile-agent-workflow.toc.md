@@ -285,11 +285,13 @@ applied to spec citations.
 
 ---
 
-# Part V — The agent brief (.llms.md) and the implementation workflow
+# Part V — The agent brief (.llms.md) and the implementation workflow&nbsp; `◐ landing + orientation built` → [`/brief`](/course/agile-agent-workflow/brief)
 
 *The agent-facing brief and how a Claude agent turns it into working code. References-first, requirements, execution
 topology, agent stories, and the comprehensive implementation prompt — and the practice of running an agent well. The
 heart of "Pragmatic Programming with Claude Agents."*
+
+**Orientation** `✓ built` — the landing opens onto a why/what/how triptych: [Why a brief layer](/course/agile-agent-workflow/brief/why) · [What the chapter covers](/course/agile-agent-workflow/brief/what) · [How you learn and build it](/course/agile-agent-workflow/brief/how). The eight modules below are specced (triad seeded) and build next.
 
 ### 5.1 · Writing for an agent: the llms.txt convention
 Why a brief written for an agent differs from documentation written for a person — links first, prose second, every
@@ -326,11 +328,13 @@ against the Definition of Done. Your first full pass from spec to running code.
 
 ---
 
-# Part VI — Reliability and correctness
+# Part VI — Reliability and correctness&nbsp; `◐ landing + orientation built` → [`/reliability`](/course/agile-agent-workflow/reliability)
 
 *Building it right. The Elixir/OTP and functional-programming techniques that make each increment reliable and
 correct: supervision, boundaries, parsing at the edge, illegal states made unrepresentable, a closed error set,
 event sourcing, and property-based testing.*
+
+**Orientation** `✓ built` — the landing opens onto a why/what/how triptych: [Why reliability is its own layer](/course/agile-agent-workflow/reliability/why) · [What the chapter covers](/course/agile-agent-workflow/reliability/what) · [How you learn and build it](/course/agile-agent-workflow/reliability/how). The landing names the chapter's scope at roadmap altitude; the modules below build once the `a6.*` triad is seeded.
 
 ### 6.1 · Let it crash: OTP supervision
 Processes, supervisors, and restart strategies. Reliability through isolation and recovery rather than defensive code —
@@ -374,11 +378,13 @@ increment from Part V, now provably correct.
 
 ---
 
-# Part VII — Portal: from zero to production
+# Part VII — Portal: from zero to production&nbsp; `◐ landing + orientation built` → [`/portal`](/course/agile-agent-workflow/portal)
 
 *The full loop, end to end. Walk the entire Portal build with the workflow — store, engine, web, bot, dashboard,
 deploy — running the Author/Operator loop chapter by chapter until the platform is live. The capstone, and the proof
 of the method.*
+
+**Orientation** `✓ built` — the landing opens onto a why/what/how triptych: [Why run the whole loop](/course/agile-agent-workflow/portal/why) · [What the chapter covers](/course/agile-agent-workflow/portal/what) · [How the loop runs here](/course/agile-agent-workflow/portal/how). The landing names the A7.01–A7.07 sequence at roadmap altitude; the steps build once the `a7.*` triad is seeded.
 
 ### 7.1 · The starting line: the branded store
 The given foundation — branded Snowflake identities and the store the engine stands on. Establishing the conventions

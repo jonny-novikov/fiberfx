@@ -25,9 +25,9 @@ as the A0 chapter landing AND the A0.2 module hub. Every chapter from A1 on **ne
 | A2 | Decomposition: from vision to user stories | `/course/agile-agent-workflow/decomposition` | `decomposition/` | **complete — landing + A2.01–A2.07 built** |
 | A3 | The roadmap layer: Agile delivery & iteration | `/course/agile-agent-workflow/roadmap` | `roadmap/` | **complete — landing + 3 orientation dives + A3.1–A3.9 built** |
 | A4 | The spec layer: specifications & acceptance | `/course/agile-agent-workflow/spec` | `spec/` | **complete — landing + A4.1–A4.7 built** |
-| A5 | The agent brief (.llms.md) & implementation | `…/brief` | — | planned |
-| A6 | Reliability and correctness | `…/reliability` | — | planned |
-| A7 | Portal exemplar (zero to production) | `…/portal` | — | planned (steps A7.01–A7.07) |
+| A5 | The agent brief (.llms.md) & implementation | `…/brief` | `brief/` | **landing + 3 orientation dives (why·what·how) built**; modules A5.1–A5.8 planned (triad seeded) |
+| A6 | Reliability and correctness | `…/reliability` | `reliability/` | **landing + 3 orientation dives built**; modules await `a6.*` triad (scope: OTP supervision, boundaries, parse-don't-validate, property tests) |
+| A7 | Portal exemplar (zero to production) | `…/portal` | `portal/` | **landing + 3 orientation dives built**; steps A7.01–A7.07 await `a7.*` triad |
 
 ## A0 — built modules and subpages
 
@@ -149,10 +149,16 @@ critical chip mechanic: the `links` gate does not strip a `#fragment`, so each c
 modules A3.1–A3.9** (`agile-distilled`, `xp-small-batches`, `roadmap-anatomy`, `thin-but-robust`, `milestones`,
 `program-roadmap`, `tracer-bullets`, `workshop`, `glossary`), grounded on the real `phoenix.roadmap.md`.
 
-**Next: A5 — "The agent brief"** (`/brief`, Part V). Its triad is already seeded (`a5.{md,stories.md,llms.md}`;
-modules **A5.1–A5.8**). Author the **chapter landing `/brief` first** (the keystone — model it on the A4 landing
-`html/agile-agent-workflow/spec/index.html`), then fan out its modules with `/agile-write brief <module-slug> …`
-against the seeded stories + brief — the same supervised-Senior-Writer-then-fan-out loop A3 and A4 used (author an
-`a5.progress.md`, embed it into each Author's prompt). The course thesis, restated each module: neither no-plan nor
-all-plan ships reliable software; the unit that does is a thin slice of value, specified only enough, proven before
-the next begins.
+**The chapter SKELETON is complete A0→A7.** A cross-chapter landings batch (supervised Senior Writer → embedded brief
+`landings.progress.md` → 3 parallel chapter-writers) built the **three remaining chapter landings + a why/what/how
+orientation triptych each** — A5 `/brief`, A6 `/reliability`, A7 `/portal` (12 pages, all gating A+). A5 was grounded
+on its seeded triad; **A6 and A7 have NO triad** and were grounded only on `aaw.roadmap.md` at the chapter altitude,
+with their module/step sets honestly **deferred** (a `.note`, not invented cards). The Senior Writer also ran a
+reverse verification (A7→A6→A5→A4) so each chapter's `why` echoes what its predecessor leaves unfinished.
+
+**Next: A5's MODULES — "The agent brief"** (`/brief`, Part V). The landing + orientation are built; fan out the eight
+modules **A5.1–A5.8** with `/agile-write brief <module-slug> …` against the seeded stories + brief — the same
+supervised-Senior-Writer-then-fan-out loop A3 and A4 used (author an `a5.progress.md`, embed it into each Author's
+prompt). **Then A6/A7:** seed each triad (`a6.*`, `a7.*`) first, then build its modules/steps; the landings already
+name the scope. The course thesis, restated each module: neither no-plan nor all-plan ships reliable software; the
+unit that does is a thin slice of value, specified only enough, proven before the next begins.
