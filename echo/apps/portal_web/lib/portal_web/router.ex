@@ -60,6 +60,7 @@ defmodule PortalWeb.Router do
     pipe_through(:browser)
 
     get("/", PageController, :home)
+    get("/elixir", PageController, :elixir)
     live("/courses", CatalogLive)
     resources("/courses", CourseController, only: [:show, :new, :create])
     resources("/lessons", LessonController, only: [:show])

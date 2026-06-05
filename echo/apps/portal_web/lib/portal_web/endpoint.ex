@@ -24,9 +24,15 @@ defmodule PortalWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
-  # Serve static assets from the app's own priv/static at /assets (F6.1-R1).
+  # Serve static assets from the app's own priv/static at the root (F6.1-R1; mount
+  # corrected F6.5.5). `static_paths/0` (`~w(assets fonts images …)`) is the phx.new
+  # default written for `at: "/"`: the URL `/assets/courses.css` keeps its first path
+  # segment `assets`, which the `only:` filter admits, and the file resolves at
+  # `priv/static/assets/courses.css`. The prior `at: "/assets"` stripped the prefix,
+  # leaving the inner first segment `courses.css` (not in `only`) → 404; F6.5.5 is the
+  # mount's first consumer, so that latent surfaced here and is corrected to one line.
   plug Plug.Static,
-    at: "/assets",
+    at: "/",
     from: :portal_web,
     gzip: false,
     only: PortalWeb.static_paths()
