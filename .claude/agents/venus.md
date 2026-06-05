@@ -54,7 +54,14 @@ the stories re-derive).
    PROBE (one `curl`), never a config-read:** F6.5.5's brief asserted the `Plug.Static` mount
    "already serves `/assets/*`" from reading its config, but the as-built `curl :4000/assets/courses.css`
    → 404 (the `at: "/assets"` prefix-strip latent); one pre-build curl would have caught it. Probe
-   the claim, do not read the config.
+   the claim, do not read the config. **A "no new dependency" claim is a per-app
+   DEP-GRAPH-VISIBILITY fact, not a `mix.lock`-presence fact:** in an umbrella, a module locked
+   transitively (a dep of a dep) is NOT compile-visible to an app whose own `mix.exs` `deps/0` does
+   not declare the edge — so discharge it by reading the consuming app's `deps/0`, never `mix.lock`
+   alone (F6.7: the brief said "no new dependency" because `phoenix_pubsub` was locked under
+   `phoenix`, yet `apps/portal/mix.exs` had no edge to it, so the facade PubSub wrappers + the
+   supervised child would not compile without the one-line `{:phoenix_pubsub, "~> 2.1"}` add the
+   claim hid).
 2. **Apply the corrections** to the triad (the body authoritative; bring stories + brief up to
    it). Surgical sync, not a rewrite.
 3. **Author the brief** Mars builds from, in the `.llms.md` anatomy:
