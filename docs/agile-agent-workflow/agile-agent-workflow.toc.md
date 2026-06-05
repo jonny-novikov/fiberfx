@@ -164,9 +164,10 @@ below it, and leaves the system runnable. The structure the rest of the course b
 `dependency-order` · `always-runnable`.
 
 ### 2.7 · Workshop — decomposing Portal&nbsp; `✓ built` → [`/decomposition/workshop`](/course/agile-agent-workflow/decomposition/workshop)
-Turn the Portal vision into chapters and a value ladder: store, engine, web, bot, dashboard. You leave this chapter
-with the backlog you will specify, brief, and build for the remainder of the course. Dives: `vision-to-stories` ·
-`split-and-test` · `order-the-backlog`.
+The capstone, grounded in the Portal's real web surface (the companion course's F6 Phoenix chapter): nine vertical
+rungs `f6.1`–`f6.9`, each specified, built, and proven, walked rung by rung through a roadmap slider answering
+why/what/when/how. Dives: `vision-to-stories` (the ladder of real user stories) · `split-and-test` (one rung as its
+four artifacts + its Given/When/Then) · `order-the-backlog` (the three milestones + the git spec-evolution timeline).
 
 ---
 

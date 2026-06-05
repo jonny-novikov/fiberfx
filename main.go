@@ -57,6 +57,10 @@ var (
 	// AGILE_AGENT_WORKFLOW_DIR env-overridable.
 	agileAgentWorkflowDir = "/app/html/agile-agent-workflow"
 	gameHTML              = "/app/html/game.html"
+	// Standalone two-course index served at /courses (the Elixir + Agile Agent
+	// Workflow courses). NOT linked from the home page — reachable by direct URL
+	// only. COURSES_HTML env-overridable.
+	coursesHTML = "/app/html/courses.html"
 	// On-disk dir for files served at the /vendor/* URL. Named "assets" (NOT
 	// "vendor") because a vendor/ dir at the Go module root is reserved by the
 	// toolchain (it forces vendor-mode builds).
@@ -110,6 +114,9 @@ func main() {
 	}
 	if path := os.Getenv("GAME_HTML"); path != "" {
 		gameHTML = path
+	}
+	if path := os.Getenv("COURSES_HTML"); path != "" {
+		coursesHTML = path
 	}
 	if dir := os.Getenv("HEALTH_DIR"); dir != "" {
 		healthDir = dir
@@ -227,6 +234,17 @@ func main() {
 		}
 		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
 		return c.SendFile(gameHTML)
+	})
+
+	// Serve the standalone two-course index at /courses (Elixir + Agile Agent
+	// Workflow). Deliberately NOT linked from the home page; a static literal
+	// route, so it does not collide with the /course/agile-agent-workflow wildcard.
+	app.Get("/courses", func(c *fiber.Ctx) error {
+		if _, err := os.Stat(coursesHTML); err != nil {
+			return fiber.NewError(fiber.StatusNotFound, "courses not found")
+		}
+		c.Set("Cache-Control", "public, max-age=300, must-revalidate")
+		return c.SendFile(coursesHTML)
 	})
 
 	// Serve vendored front-end modules (three.js) at /vendor/* — self-hosted so
@@ -477,7 +495,7 @@ func main() {
 		return c.SendFile(cleanPath)
 	})
 
-	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, elixir: %s, game: %s, health: %s, logic: %s, law: %s, physics: %s, ai-rabota: %s, agile-agent-workflow: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, elixirDir, gameHTML, healthDir, logicDir, lawDir, physicsDir, aiRabotaDir, agileAgentWorkflowDir, errorDir, len(errorPages))
+	log.Printf("Starting jonnify v%s on port %s, distr: %s, index: %s, ege: %s, edu: %s, school: %s, future: %s, map: %s, elixir: %s, game: %s, courses: %s, health: %s, logic: %s, law: %s, physics: %s, ai-rabota: %s, agile-agent-workflow: %s, error: %s (%d pages)", version, port, distrDir, indexHTML, egeDir, eduDir, schoolDir, futureDir, mapDir, elixirDir, gameHTML, coursesHTML, healthDir, logicDir, lawDir, physicsDir, aiRabotaDir, agileAgentWorkflowDir, errorDir, len(errorPages))
 	log.Fatal(app.Listen(":" + port))
 }
 

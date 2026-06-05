@@ -113,8 +113,10 @@ landing + all seven modules A2.01–A2.07 built.**
     on rungs below it.
   - [always-runnable](/course/agile-agent-workflow/decomposition/value-ladder/always-runnable) — every rung leaves the
     system runnable and demoable.
-- A2.07 `✓` · [Workshop — decomposing Portal](/course/agile-agent-workflow/decomposition/workshop) — the full sequence
-  run on the Portal vision.
+- A2.07 `✓` · [Workshop — decomposing Portal](/course/agile-agent-workflow/decomposition/workshop) — the capstone, on
+  the Portal's REAL web surface (the F6 Phoenix chapter): nine rungs `f6.1`–`f6.9` walked via a roadmap slider
+  (why/what/when/how), cross-linked to the `/elixir/phoenix` chapters that build them. References distilled in
+  `docs/elixir/content/phoenix/`.
   - [vision-to-stories](/course/agile-agent-workflow/decomposition/workshop/vision-to-stories) — apply value,
     Connextra, INVEST, acceptance to the vision.
   - [split-and-test](/course/agile-agent-workflow/decomposition/workshop/split-and-test) — split the outsize stories;

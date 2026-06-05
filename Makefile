@@ -25,6 +25,7 @@ SCHOOL_DIR ?= $(REPO_DIR)/html/school
 FUTURE_DIR ?= $(REPO_DIR)/html/future
 MAP_DIR    ?= $(REPO_DIR)/html/map
 GAME_HTML  ?= $(REPO_DIR)/html/game.html
+COURSES_HTML ?= $(REPO_DIR)/html/courses.html
 HEALTH_DIR ?= $(REPO_DIR)/html/health
 VENDOR_DIR ?= $(REPO_DIR)/html/assets
 ERROR_DIR  ?= $(REPO_DIR)/html/error
@@ -65,6 +66,7 @@ help:
 	@echo "  /map, /map/*         → $(MAP_DIR)/*.html (3D orbital map)"
 	@echo "  /elixir, /elixir/**  → $(ELIXIR_DIR)/ (folder tree → index.html / <name>.html)"
 	@echo "  /game                → $(GAME_HTML)"
+	@echo "  /courses             → $(COURSES_HTML) (Elixir + AAW, unlinked)"
 	@echo "  /healthz             → JSON liveness probe (Fly health check)"
 	@echo "  /health, /health/**  → $(HEALTH_DIR)/ (folder tree → index.html / <module>.html)"
 	@echo "  /logic, /logic/**    → $(LOGIC_DIR)/ (folder tree → index.html / <module>.html)"
@@ -117,6 +119,7 @@ start: build
 	 ROBOTS_TXT=$(ROBOTS_TXT) \
 	 LLMS_TXT=$(LLMS_TXT) \
 	 GAME_HTML=$(GAME_HTML) \
+	 COURSES_HTML=$(COURSES_HTML) \
 	 HEALTH_DIR=$(HEALTH_DIR) \
 	 LOGIC_DIR=$(LOGIC_DIR) \
 	 LAW_DIR=$(LAW_DIR) \
@@ -193,6 +196,7 @@ run: build
 	 ROBOTS_TXT=$(ROBOTS_TXT) \
 	 LLMS_TXT=$(LLMS_TXT) \
 	 GAME_HTML=$(GAME_HTML) \
+	 COURSES_HTML=$(COURSES_HTML) \
 	 HEALTH_DIR=$(HEALTH_DIR) \
 	 LOGIC_DIR=$(LOGIC_DIR) \
 	 LAW_DIR=$(LAW_DIR) \

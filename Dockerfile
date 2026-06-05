@@ -77,6 +77,10 @@ COPY html/index.html /app/html/index.html
 # Copy standalone emoji memory game served at "/game"
 COPY html/game.html /app/html/game.html
 
+# Copy standalone two-course index (Elixir + Agile Agent Workflow) served at
+# "/courses" — unlinked from the home page, reachable by direct URL only
+COPY html/courses.html /app/html/courses.html
+
 # Copy the Health course (folder tree → /health/<chapter>/<module>; JSON probe is /healthz)
 COPY html/health/ /app/html/health/
 
