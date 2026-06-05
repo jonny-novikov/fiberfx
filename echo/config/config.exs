@@ -48,5 +48,15 @@ config :portal_web, :deep_link_base_url, "https://jonnify.fly.dev"
 # Use Jason for JSON parsing in Phoenix.
 config :phoenix, :json_library, Jason
 
+# The echo_bot engine (F10.1). `:bot_config` is the YAML v1.0 file the loader reads — a relative
+# path resolves against the :echo_bot priv dir, so the one bot is `priv/bots/hello_bot.yaml`.
+# `:updater` selects the updater per env: the BASE default is `:none`, so a bare `iex -S mix`
+# boots the engine app with no live poll and no token required (F10.1-INV1). dev.exs flips it to
+# `:polling` (live long-poll); test.exs to `:fake` (the no-op updates source, F10.1-INV6). This is
+# an umbrella-level block — it configures `:echo_bot`, never `portal`/`portal_web`.
+config :echo_bot,
+  bot_config: "bots/hello_bot.yaml",
+  updater: :none
+
 # Per-environment overrides — load the matching env file last so its values win.
 import_config "#{config_env()}.exs"
