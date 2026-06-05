@@ -122,7 +122,48 @@ defmodule Portal.Catalog do
     %Course{id: Portal.ID.new("CRS"), title: nil, slug: nil}
     |> Course.changeset(attrs)
     |> Repo.insert()
+    |> broadcast(&{:course_created, &1})
   end
+
+  @doc """
+  Update an existing course from untrusted attrs (F6.7-D2/US0 — the one new write below
+  the facade this rung adds). The exact mirror of `create_course/1` (`catalog.ex:118`)
+  with `Repo.update/1` substituted for `Repo.insert/1`: the persisted struct's branded
+  `:id` is fixed (`Course.changeset/2` excludes `:id` from `cast`, F6.3-INV2), so it is
+  never re-minted — the same id rides through, which is what lets a `{:course_updated, _}`
+  broadcast `stream_insert` replace the row in place (F6.7-INV6). Returns
+  `{:ok, %Course{}}` or `{:error, %Ecto.Changeset{}}`, the identical shape to
+  `create_course/1` (`catalog.ex:117`), so the ok-only `broadcast/2` helper closes over
+  both write paths uniformly (F6.7-INV1).
+
+      iex> {:ok, c} = Portal.Catalog.create_course(%{title: "Original", slug: "orig"})
+      iex> {:ok, updated} = Portal.Catalog.update_course(c, %{title: "Renamed"})
+      iex> {c.id, updated.title}
+      {updated.id, "Renamed"}
+  """
+  @spec update_course(Course.t(), map()) :: {:ok, Course.t()} | {:error, Ecto.Changeset.t()}
+  def update_course(%Course{} = course, attrs) do
+    course
+    |> Course.changeset(attrs)
+    |> Repo.update()
+    |> broadcast(&{:course_updated, &1})
+  end
+
+  # The single place catalog writes broadcast from (F6.7-D2/INV1). Fires ONLY on an
+  # `{:ok, course}` result — a failed write (`{:error, %Ecto.Changeset{}}`) is passed
+  # through untouched and broadcasts nothing, so a subscriber only ever learns of a fact
+  # that committed. The event constructor is supplied by the caller as a 1-arity fn over
+  # the saved course (`&{:course_created, &1}` / `&{:course_updated, &1}`), so the helper
+  # itself is event-agnostic. Broadcasts over `Portal.PubSub` through the `Portal.broadcast/2`
+  # facade wrapper (F6.7-D1) on the `"courses"` topic — a domain-tier call to this app's own
+  # supervised process, not a web-boundary leak (the master invariant INV2 fences the WEB,
+  # not the context that owns the broadcast).
+  defp broadcast({:ok, %Course{} = course} = result, event_fun) do
+    Portal.broadcast("courses", event_fun.(course))
+    result
+  end
+
+  defp broadcast({:error, %Ecto.Changeset{}} = result, _event_fun), do: result
 
   @doc """
   Fetch a lesson by branded id — retained Store-backed reference data (lessons are out

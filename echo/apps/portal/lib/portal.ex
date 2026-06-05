@@ -44,9 +44,21 @@ defmodule Portal do
   defdelegate fetch_course(id), to: Portal.Catalog
   defdelegate change_course(), to: Portal.Catalog
   defdelegate create_course(attrs), to: Portal.Catalog
+  defdelegate update_course(course, attrs), to: Portal.Catalog
   defdelegate lesson(id), to: Portal.Catalog
 
   # ── Accounts (Store-backed this rung) ───────────────────────────────────────────
   defdelegate user(user_id), to: Portal.Accounts
   defdelegate welcome(user_id), to: Portal.Accounts
+
+  # ── Real-time (PubSub over Portal.PubSub, F6.7-D1/R1) ────────────────────────────
+  # The facade's real-time surface: two single-expression pass-throughs that wrap
+  # `Phoenix.PubSub` over the supervised `Portal.PubSub` server (started in
+  # Portal.Application). They are the master-invariant boundary (F6.7-INV2) — the WEB
+  # (`CatalogLive`) names ONLY `Portal.subscribe/1`, never `Phoenix.PubSub`, the engine,
+  # a `Repo`, or `GenServer.call`. They are not `defdelegate`s (there is no `Portal.*`
+  # target to delegate to — they wrap the transport directly), but they own no logic:
+  # one delegating call each, the `defdelegate`-style idiom D1 names.
+  def subscribe(topic), do: Phoenix.PubSub.subscribe(Portal.PubSub, topic)
+  def broadcast(topic, message), do: Phoenix.PubSub.broadcast(Portal.PubSub, topic, message)
 end

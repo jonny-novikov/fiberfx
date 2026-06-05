@@ -3,16 +3,20 @@ defmodule PortalWeb.Application do
 
   use Application
 
-  # The web app supervisor (F6.1-R2, F6.1-INV2). Owns the two web children — telemetry
-  # then the endpoint — under :one_for_one, so a killed endpoint restarts without
-  # disturbing telemetry (F6.1-US4). The F5 domain children live in the separate
-  # Portal.Application; the `:portal_web` → `:portal` app dependency boots that tree
-  # first, so store, event-store adapter, and engine are ready before traffic.
+  # The web app supervisor (F6.1-R2, F6.1-INV2). Owns the web children — telemetry, the
+  # endpoint, then (F6.7-D5) PortalWeb.Presence — under :one_for_one, so a killed endpoint
+  # restarts without disturbing telemetry (F6.1-US4). The F5 domain children live in the
+  # separate Portal.Application; the `:portal_web` → `:portal` app dependency boots that
+  # tree first, so store, event-store adapter, engine, AND Portal.PubSub are ready before
+  # traffic. PortalWeb.Presence (pubsub_server: Portal.PubSub) is a web-tier process placed
+  # here, not in :portal, and relies on that boot order so its PubSub server is up first
+  # (F6.7-INV5: the only new :portal_web child is Presence).
   @impl true
   def start(_type, _args) do
     children = [
       PortalWeb.Telemetry,
-      PortalWeb.Endpoint
+      PortalWeb.Endpoint,
+      PortalWeb.Presence
     ]
 
     # A brutal endpoint kill churns its linked LiveView-socket subtree into a measured

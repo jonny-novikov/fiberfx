@@ -30,11 +30,21 @@ defmodule Portal.Application do
     # `mix run`, and the `:portal_web` app (which depends on `:portal`) now require a
     # reachable DB. Run `mix ecto.create` (and `MIX_ENV=test mix ecto.create`) before
     # first boot.
+    #
+    # F6.7 adds {Phoenix.PubSub, name: Portal.PubSub} as the LAST child (F6.7-D1) — the
+    # real-time transport the `Portal.subscribe/1`/`Portal.broadcast/2` facade wrappers
+    # name. It lives in THIS (`:portal`) tree, not `:portal_web`, so it is up before the
+    # web tier (the `:portal_web` → `:portal` app dependency boots this tree first), which
+    # is why PortalWeb.Presence (a web-tier child, pubsub_server: Portal.PubSub) can rely
+    # on it. config.exs already declares `pubsub_server: Portal.PubSub` for the Endpoint,
+    # so this STARTS the process that key already names — no config change (F6.7-INV5: the
+    # only new `:portal` child is Phoenix.PubSub; everything below the facade is unchanged).
     children = [
       Portal.Repo,
       Portal.Store,
       Portal.EventStore.adapter(),
-      Portal.Engine
+      Portal.Engine,
+      {Phoenix.PubSub, name: Portal.PubSub}
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: Portal.Supervisor)
