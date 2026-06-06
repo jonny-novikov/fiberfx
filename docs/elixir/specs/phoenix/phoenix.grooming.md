@@ -102,9 +102,19 @@ The "style the live catalog" work that F6.5.5 legitimately deferred (it styled s
 mirroring F6.5 → F6.5.5) so the visible auth surface and the deploy machinery ship and accept independently. Both
 spec triads are authored (**specced**); the parent [`f6.8.md`](f6.8.md) is a thin pointer.
 
-### F6.8.1 · Authentication — the honest door
+### F6.8.1 · Authentication — the honest door · ✅ BUILD-GRADE (built `venus → mars ×2 → apollo`, 2026-06-06; pending the LAW-4 commit)
 
 [Spec: [`f6.8.1.md`](f6.8.1.md)] · Goal: real sign-in + a protected area, the visible surface ported the F6.5.5 way.
+**As shipped:** the static `login.html` (733L) ported the F6.5.5 way (`PageController.login/2` + a complete-document
+`login.html.heex` + verbatim `login.css`/`login.js` + CSRF `<meta>`); a net-new `Portal.Auth` honest-door facade
+(`sign_in/2` — same error for wrong-name/wrong-password, `Bcrypt.no_user_verify` anti-timing; `request_reset/1` always
+`:ok`) over a private `Portal.Accounts` credential surface (Option A: private `password_hash` + `{:bcrypt_elixir, "~> 3.1"}`
+→ `3.3.2`, SES mint, NO schema); `SessionController` + the `RequireUser → PortalWeb.UserAuth` evolution (`fetch_current_user`
+in `:browser`, `require_authenticated_user → ~p"/login"`, `on_mount(:ensure_authenticated)` for F6.9). INV7 held STRONGER
+(hash off the `%User{}` struct entirely). The hybrid split-gate passed (text-proxy parity for the page; SES-mint
+determinism clean across 300+ uncontended iterations); liveness GREEN on `:4000`. Two PRE-EXISTING full-suite flakes
+re-surfaced under load (the F6.7 `EndpointSupervisionTest` ETS race + a newly-found `IDTest.at/1` ~1h wall-clock skew) —
+routed to the Director, NOT F6.8.1 defects. Retrospective: [`f6.progress.md`](f6.progress.md) § F6.8.1.
 
 | ID | Deliverable |
 |---|---|
