@@ -1,0 +1,39 @@
+# Docker Compose stack for the compat_docker-tagged Node.js BullMQ
+# compatibility test (apps/echomq-go/tests/integration/nodejs_compat_docker_test.go).
+#
+# Stack:
+#   - redis: single-instance Redis 7 on host port 6390 (avoids 6379 clash).
+#   - node-producer: one-shot Node.js BullMQ container that runs producer.js,
+#     enqueues a single job onto queue "compat-docker-queue", then exits.
+#
+# Networking: services share the default compose network; the producer
+# resolves Redis as `redis:6379` internally. The host maps Redis to 6390 so
+# the Go test process (running on the host) can also connect.
+#
+# Spec reference: dev/mcp/features/FTR-009-echomq-go-parity/spec.yaml R-13
+# reserves apps/echomq-go/tests/compat/nodejs/ for the full P5 harness; this
+# P2 fixture lives at tests/compatibility/nodejs/ to avoid clashing.
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6390:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
+
+  node-producer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      QUEUE_NAME: compat-docker-queue
+    command: ["node", "producer.js"]

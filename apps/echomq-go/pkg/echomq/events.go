@@ -1,0 +1,185 @@
+package echomq
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+// Event represents a job lifecycle event
+type Event struct {
+	EventType    string                 `json:"event"`
+	JobID        string                 `json:"jobId"`
+	Timestamp    int64                  `json:"timestamp"`
+	AttemptsMade int                    `json:"attemptsMade"`
+	Data         map[string]interface{} `json:"data"`
+}
+
+// Event types
+const (
+	EventWaiting   = "waiting"
+	EventActive    = "active"
+	EventProgress  = "progress"
+	EventCompleted = "completed"
+	EventFailed    = "failed"
+	EventStalled   = "stalled"
+	EventRetry     = "retry"
+)
+
+// EventEmitter publishes events to Redis streams
+type EventEmitter struct {
+	queueName   string
+	redisClient redis.Cmdable
+	keyBuilder  *KeyBuilder // Shared with owner (Queue or Worker); honors ForceHashTags
+	maxLen      int64
+}
+
+// NewEventEmitter creates a new event emitter with auto-detected key formatting.
+// For explicit ForceHashTags propagation from a parent Queue or Worker, use
+// NewEventEmitterWithKeyBuilder instead.
+func NewEventEmitter(queueName string, redisClient redis.Cmdable, maxLen int64) *EventEmitter {
+	return &EventEmitter{
+		queueName:   queueName,
+		redisClient: redisClient,
+		keyBuilder:  NewKeyBuilder(queueName, redisClient),
+		maxLen:      maxLen,
+	}
+}
+
+// NewEventEmitterWithKeyBuilder creates an event emitter that reuses a pre-built KeyBuilder.
+// Used by Queue and Worker to propagate their ForceHashTags override to event emission.
+func NewEventEmitterWithKeyBuilder(queueName string, redisClient redis.Cmdable, maxLen int64, kb *KeyBuilder) *EventEmitter {
+	return &EventEmitter{
+		queueName:   queueName,
+		redisClient: redisClient,
+		keyBuilder:  kb,
+		maxLen:      maxLen,
+	}
+}
+
+// Emit publishes an event to the Redis stream
+// Events are stored as direct stream fields to match Node.js EchoMQ format
+func (ee *EventEmitter) Emit(ctx context.Context, event Event) error {
+	streamKey := ee.keyBuilder.Events()
+
+	// Convert event to direct fields (matches Node.js EchoMQ and Lua scripts)
+	values := map[string]interface{}{
+		"event":        event.EventType,
+		"jobId":        event.JobID,
+		"timestamp":    event.Timestamp,
+		"attemptsMade": event.AttemptsMade,
+	}
+
+	// Add optional data fields if present
+	if event.Data != nil {
+		for k, v := range event.Data {
+			values[k] = v
+		}
+	}
+
+	// Publish to stream with MAXLEN
+	_, err := ee.redisClient.XAdd(ctx, &redis.XAddArgs{
+		Stream: streamKey,
+		MaxLen: ee.maxLen,
+		Approx: true, // Use approximate trimming for performance
+		Values: values,
+	}).Result()
+
+	return err
+}
+
+// EmitWaiting emits a waiting event
+func (ee *EventEmitter) EmitWaiting(ctx context.Context, job *Job) error {
+	return ee.Emit(ctx, Event{
+		EventType:    EventWaiting,
+		JobID:        job.ID,
+		Timestamp:    time.Now().UnixMilli(),
+		AttemptsMade: job.AttemptsMade,
+	})
+}
+
+// EmitActive emits an active event
+func (ee *EventEmitter) EmitActive(ctx context.Context, job *Job) error {
+	return ee.Emit(ctx, Event{
+		EventType:    EventActive,
+		JobID:        job.ID,
+		Timestamp:    time.Now().UnixMilli(),
+		AttemptsMade: job.AttemptsMade,
+	})
+}
+
+// EmitCompleted emits a completed event
+func (ee *EventEmitter) EmitCompleted(ctx context.Context, job *Job, returnValue interface{}) error {
+	// Serialize returnvalue as JSON string (EchoMQ protocol requirement)
+	var returnValueStr string
+	if returnValue != nil {
+		returnValueJSON, err := json.Marshal(returnValue)
+		if err != nil {
+			// If marshaling fails, use error message
+			returnValueStr = `{"error":"failed to marshal return value"}`
+		} else {
+			returnValueStr = string(returnValueJSON)
+		}
+	}
+
+	return ee.Emit(ctx, Event{
+		EventType:    EventCompleted,
+		JobID:        job.ID,
+		Timestamp:    time.Now().UnixMilli(),
+		AttemptsMade: job.AttemptsMade,
+		Data: map[string]interface{}{
+			"returnvalue": returnValueStr,
+		},
+	})
+}
+
+// EmitFailed emits a failed event
+func (ee *EventEmitter) EmitFailed(ctx context.Context, job *Job, err error) error {
+	return ee.Emit(ctx, Event{
+		EventType:    EventFailed,
+		JobID:        job.ID,
+		Timestamp:    time.Now().UnixMilli(),
+		AttemptsMade: job.AttemptsMade,
+		Data: map[string]interface{}{
+			"error": err.Error(),
+		},
+	})
+}
+
+// EmitProgress emits a progress event
+func (ee *EventEmitter) EmitProgress(ctx context.Context, job *Job, progress int) error {
+	return ee.Emit(ctx, Event{
+		EventType:    EventProgress,
+		JobID:        job.ID,
+		Timestamp:    time.Now().UnixMilli(),
+		AttemptsMade: job.AttemptsMade,
+		Data: map[string]interface{}{
+			"progress": progress,
+		},
+	})
+}
+
+// EmitStalled emits a stalled event
+func (ee *EventEmitter) EmitStalled(ctx context.Context, job *Job) error {
+	return ee.Emit(ctx, Event{
+		EventType:    EventStalled,
+		JobID:        job.ID,
+		Timestamp:    time.Now().UnixMilli(),
+		AttemptsMade: job.AttemptsMade,
+	})
+}
+
+// EmitRetry emits a retry event
+func (ee *EventEmitter) EmitRetry(ctx context.Context, job *Job, delay int64) error {
+	return ee.Emit(ctx, Event{
+		EventType:    EventRetry,
+		JobID:        job.ID,
+		Timestamp:    time.Now().UnixMilli(),
+		AttemptsMade: job.AttemptsMade,
+		Data: map[string]interface{}{
+			"delay": delay,
+		},
+	})
+}
