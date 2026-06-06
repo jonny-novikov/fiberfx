@@ -245,9 +245,12 @@ the EchoMQ corpus. redis-patterns teaches the patterns; the EchoMQ course teache
 
 ## Tally
 
-9 chapters (R0 landing + R1–R8 spec chapters), ~46 teaching modules + 8 workshops, ~140 dives. All 30 catalog
-patterns are placed exactly once: **Fundamental ×20** across R1–R7, **Community ×6** (bitmap R7.04, geospatial
-R7.06, leaderboards R4.05, pubsub R5.03, session-management R1.06, vector-search-ai R7.05), **Production ×4** in R8.
+9 chapters (R0 landing + R1–R8 spec chapters), ~46 teaching modules + 8 workshops, ~140 dives. Each of the 30
+catalog patterns has a single **primary** module; a handful (`atomic-updates`, `delayed-queue`,
+`lexicographic-sorted-sets`, `redis-as-primary-database`, `streams-event-sourcing`) recur as labelled *applied*
+examples in later chapters, so they are taught once and reused in context. Primary placement: **Fundamental ×20**
+across R1–R7, **Community ×6** (bitmap R7.04, geospatial R7.06, leaderboards R4.05, pubsub R5.03, session-management
+R1.06, vector-search-ai R7.05), **Production ×4** in R8.
 
 ---
 

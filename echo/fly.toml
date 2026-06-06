@@ -1,0 +1,97 @@
+# Fly.io config for the Portal release (F6.8.2-D8). Distilled from
+# docs/deploy/fly.toml (the full Codemoji production config) to the Portal essentials:
+# a single Phoenix release + Postgres. All Fastify/Redis/SQLitestream/Datadog/game-DB
+# config is dropped. The OTP release is `portal` (bin/portal); the Fly app is
+# `echo-portal` (these are INDEPENDENT names — do not conflate). The Operator creates
+# the app + machines and runs `fly deploy`; this file ships ready and reconciled.
+
+app = "echo-portal"
+primary_region = "fra"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+  [build.args]
+    # The PINNED tag 1.18.4-erlang-28.5.0.1-debian-bookworm-20260518 (no 28.1 image
+    # exists). NODE_VERSION dropped — there is no Node build.
+    ELIXIR_VERSION = "1.18.4"
+    OTP_VERSION = "28.5.0.1"
+    DEBIAN_DATE = "20260518"
+
+[deploy]
+  strategy = "rolling"
+
+[env]
+  # The Portal's OWN host — the endpoint url + URL generation (read in runtime.exs).
+  # This is NOT :deep_link_base_url, which STAYS https://jonnify.fly.dev (the Fiber
+  # fallback origin) — two hosts, two keys (RECONCILE 7).
+  PHX_HOST = "echo-portal.fly.dev"
+  PHX_SERVER = "true"
+  MIX_ENV = "prod"
+  PORT = "4000"
+  POOL_SIZE = "10"
+
+  # Erlang/Elixir IPv6 DNS + clustering substrate (Fly's internal network is
+  # IPv6-only). ERL_INETRC points Erlang's resolver at Fly DNS; ECTO_IPV6 makes
+  # Postgrex use IPv6 sockets; ERL_AFLAGS makes BEAM distribution (libcluster) run
+  # over inet6 — the substrate the F6.8.2-D6 DNSPoll topology forms over.
+  ERL_INETRC = "/app/inetrc"
+  ECTO_IPV6 = "true"
+  ERL_AFLAGS = "-proto_dist inet6_tcp"
+
+  TZ = "UTC"
+  LANG = "en_US.UTF-8"
+
+[experimental]
+  auto_rollback = true
+
+# Single Phoenix release — distilled from the template's shared/2cpu/2048.
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"
+
+# -----------------------------------------------------------------------------
+# HTTP service (the Portal endpoint on :4000)
+# -----------------------------------------------------------------------------
+[[services]]
+  protocol = "tcp"
+  internal_port = 4000
+  # Presence/cluster trade: keeping at least one machine always running keeps the
+  # cluster + Presence counts warm; auto_stop is OFF so a node is not reaped mid-session.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 250
+    soft_limit = 200
+
+  # HTTP -> HTTPS redirect
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  # HTTPS with HTTP/2
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+    [services.ports.tls_options]
+      alpn = ["h2", "http/1.1"]
+
+  # HTTP liveness check — GET /health MATCHES the as-built F6.1 route
+  # (router.ex:113, get("/health", PortalWeb.CourseController, :health)), so a healthy
+  # machine is one the proxy can reach AND the app answers (F6.8.2-INV3).
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
+    [services.http_checks.headers]
+      X-Forwarded-Proto = "https"

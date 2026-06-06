@@ -16,7 +16,20 @@ defmodule PortalWeb.Application do
     children = [
       PortalWeb.Telemetry,
       PortalWeb.Endpoint,
-      PortalWeb.Presence
+      PortalWeb.Presence,
+      # F6.8.2-D6/INV4: the libcluster supervisor. It forms the BEAM cluster from the
+      # topology read from config (`:cluster_topologies`) so the F6.7 `Phoenix.PubSub`
+      # broadcasts and `PortalWeb.Presence` counts span every node. The topology is the
+      # prod Fly DNSPoll over `echo-portal.internal` (prod.exs) and the EMPTY list under
+      # dev/test (config.exs), so the suite never tries to cluster (an empty list ⇒ a
+      # no-op supervisor). Clustering is a supervision-tree + transport concern: the web
+      # still reaches PubSub/Presence ONLY through the `Portal` facade — no new
+      # web→engine path is introduced here.
+      {Cluster.Supervisor,
+       [
+         Application.get_env(:portal_web, :cluster_topologies, []),
+         [name: PortalWeb.ClusterSupervisor]
+       ]}
     ]
 
     # A brutal endpoint kill churns its linked LiveView-socket subtree into a restart

@@ -45,6 +45,13 @@ config :portal_web, PortalWeb.Endpoint,
 # PortalWeb.deep_link_base/0 — this key is the ONLY place the literal lives.
 config :portal_web, :deep_link_base_url, "https://jonnify.fly.dev"
 
+# The libcluster topologies (F6.8.2-D6). The BASE default is EMPTY `[]`, so dev and
+# test do NOT cluster — the one way libcluster silently breaks `mix test` is a topology
+# that makes the suite try to form a cluster and hang. `prod.exs` sets the real Fly
+# topology (DNSPoll over `echo-portal.internal`). `PortalWeb.Application` reads this key
+# and supervises a `Cluster.Supervisor` over its value (empty list ⇒ a no-op supervisor).
+config :portal_web, :cluster_topologies, []
+
 # Use Jason for JSON parsing in Phoenix.
 config :phoenix, :json_library, Jason
 

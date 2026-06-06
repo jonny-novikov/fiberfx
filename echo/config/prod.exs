@@ -18,3 +18,21 @@ config :portal, :event_store, Portal.EventStore.Postgres
 config :portal_web, PortalWeb.Endpoint,
   url: [host: "echo-portal.fly.dev", port: 443, scheme: "https"],
   cache_static_manifest: "priv/static/cache_manifest.json"
+
+# The prod libcluster topology (F6.8.2-D6, INV4). Fly's `.internal` DNS resolves the
+# app name to every machine's private IPv6, so `Cluster.Strategy.DNSPoll` over
+# `echo-portal.internal` forms and maintains the BEAM cluster — making the F6.7
+# `Phoenix.PubSub` broadcasts and `PortalWeb.Presence` counts cluster-correct across
+# nodes (the IPv6 substrate is the fly.toml `ERL_INETRC`/`ECTO_IPV6`/`ERL_AFLAGS` trio).
+# `node_basename: "portal"` matches the OTP release name (`bin/portal`), the left side
+# of the `name@host` the cluster connects. Dev/test keep the EMPTY config.exs default
+# (no clustering under the suite). `PortalWeb.Application` reads this key.
+config :portal_web, :cluster_topologies,
+  fly_dns: [
+    strategy: Cluster.Strategy.DNSPoll,
+    config: [
+      polling_interval: 5_000,
+      query: "echo-portal.internal",
+      node_basename: "portal"
+    ]
+  ]
