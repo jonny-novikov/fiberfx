@@ -22,11 +22,12 @@ reaching into it.
 
 | Chapter | Theme | Surface | Delivers | Status | Detail |
 | --- | --- | --- | --- | --- | --- |
-| F4 | Branded store | — (foundation) | the branded CHAMP store behind the facade's reads and writes (`get/2`, `all/2`, `put/1`) | given (assumed by F5) | — |
-| F5 | The engine (`pragmatic/`) | headless core | a supervised, event-sourced learning engine behind one facade | **specced** (F5.1–F5.9) | [index](pragmatic/pragmatic.md) · [roadmap](pragmatic/pragmatic.roadmap.md) |
-| F6 | The web (`phoenix/`) | web | browse, enroll, and learn — server-rendered, live, authed, deployed | **specced** (F6.1–F6.9) | [index](phoenix/phoenix.md) · [roadmap](phoenix/phoenix.roadmap.md) |
+| F0 | Design system | — (rendering foundation) | the dark-editorial token system + the envelope/anatomy the web renders; static `/elixir` + the `jonnify-cms` content store, byte-parity proven | **shipped (static)** — static parity + the Portal static-parity pages (`/`, `/elixir`, `/course/agile-agent-workflow`) landed at F6.5.5; the dynamic-UI styling pass re-defers | [index](design/f0.md) · [roadmap](design/f0.roadmap.md) |
+| F4 | Branded store | — (foundation) | the branded CHAMP store behind the facade's reads and writes (`get/2`, `all/2`, `put/1`) | given (in-memory stand-in ✓; branded CHAMP deferred) | — |
+| F5 | The engine (`pragmatic/`) | headless core | a supervised, event-sourced learning engine behind one facade | **complete** — F5.1–F5.9 shipped, the ladder is closed (M1) | [index](pragmatic/pragmatic.md) · [roadmap](pragmatic/pragmatic.roadmap.md) |
+| F6 | The web (`phoenix/`) | web | browse, enroll, and learn — server-rendered, live, authed, deployed | **shipping** — F6.1–F6.7 + F6.5.5 shipped; **F6.8.1 (auth) shipped** (`87ec6eb`); F6.8.2 (deploy) reconciled + config-pinned, next; F6.9 (dashboard) specced | [index](phoenix/phoenix.md) · [roadmap](phoenix/phoenix.roadmap.md) |
 | F7–F9 | Multi-runtime | messaging & workers | candidate: an EchoMQ bus, a Fastify worker cluster, Go/Echo services | open (reserved) | — |
-| F10 | The Telegram bot (`bot/`) | chat | the learner loop from Telegram (ex_gram, in-BEAM) | roadmapped (abstracts F10.1–F10.9) | [roadmap](bot/f10.roadmap.md) |
+| F10 | The Telegram bot (`bot/`) | chat | the learner loop from Telegram (a vendored-fork multibot engine, in-BEAM) | **building** — F10.1 shipped (`2379a74`, `apps/echo_bot`); F10.2/F10.3 graduated to triads | [roadmap](bot/f10.roadmap.md) |
 
 F7–F9 are reserved, not designed. The candidate themes are drawn from the program's stated architecture — EchoMQ (on
 BullMQ) as the message bus between BEAM, Node, and Go runtimes, with Fastify worker clusters and Go services on the
@@ -65,9 +66,9 @@ grow cheaply.
 
 | Milestone | Chapters | What you can do at the end | Status |
 | --- | --- | --- | --- |
-| M1 · The engine | F5 | a correct, recoverable, testable learning engine answers commands and queries behind the facade | specced; near-term F5.1–F5.5 ship first |
-| M2 · The web platform | F6 | browse and enroll on a live, multi-client, authenticated, deployed web app | specced; ships in three steps — catalog → live → users |
-| M3 · The bot | F10 | run the learner loop (browse, enroll, learn, progress) from Telegram | roadmapped; near-term F10.1–F10.5 |
+| M1 · The engine | F5 | a correct, recoverable, testable learning engine answers commands and queries behind the facade | **complete** — F5.1–F5.9 shipped, the ladder is closed |
+| M2 · The web platform | F6 | browse and enroll on a live, multi-client, authenticated, deployed web app | **shipping** — catalog ✓, live ✓, users ✓ (F6.8.1 auth); deploy (F6.8.2) reconciled + config-pinned, next; the dashboard (F6.9) is the capstone |
+| M3 · The bot | F10 | run the learner loop (browse, enroll, learn, progress) from Telegram | **building** — F10.1 shipped; F10.2/F10.3 triaged; near-term to F10.5 |
 | M4 · The multi-runtime platform | F7–F9 | scale surfaces out and add polyglot services over an EchoMQ bus | open (defined when needed) |
 
 M2 and M3 are both surfaces over M1's facade; either can lead, and they can advance in parallel once the engine's
@@ -90,21 +91,26 @@ specced abstracts (the later rungs, the bot's ladder) can be sharpened ahead of 
 
 ## The near-term path
 
-Given the current state — F5 and F6 specced, F10 roadmapped as abstracts — the recommended sequence is:
+The engine and the web's first milestones have shipped — F5 is complete, F6 is live through F6.8.1 (auth), and F10.1
+(the bot skeleton) has shipped. What remains:
 
-1. **Ship the engine's near-term slice.** Build F5.1–F5.5 to production per [`pragmatic/pragmatic.roadmap.md`](pragmatic/pragmatic.roadmap.md):
-   the supervised, canonical-Decider engine behind the facade, thin in scope and fully harnessed.
-2. **Ship the web's first milestone.** Build F6.1–F6.5 per [`phoenix/phoenix.roadmap.md`](phoenix/phoenix.roadmap.md)
-   — a persistent, server-rendered catalog you can browse and add to (the first deployable web product).
-3. **Stand up the bot's core.** Graduate F10.1–F10.2 from abstracts to triads and ship them per
-   [`bot/f10.roadmap.md`](bot/f10.roadmap.md): a supervised bot that answers, and the chat-to-learner identity seam.
-4. **Advance the surfaces in priority order.** Continue the web (make it live, then auth and deploy) and the bot
-   (browse, enroll, learn, progress) as parallel tracks over the same facade.
+1. **Ship the engine's slice.** ✅ **Done** — F5.1–F5.9 shipped (the whole ladder, not just the near-term slice): the
+   supervised, canonical-Decider engine answers behind the facade, fully harnessed.
+2. **Ship the web's first milestones.** ✅ **Done** — F6.1–F6.7 + F6.5.5 shipped: a persistent, server-rendered,
+   **live** multi-client catalog (F6.6/F6.7) in the F0 design system (F6.5.5), with **auth** over the facade (F6.8.1 —
+   the honest door).
+3. **Deploy the web — the current frontier.** Build **F6.8.2** (deploy): the scoped umbrella release, the
+   runtime/config split, `Portal.Release.migrate/0`, libcluster, and the distilled `fly.toml` (app `echo-portal`,
+   1024 MB, region `fra`); the spec is reconciled + config-pinned, gate BUILD-LOCAL (the live `fly deploy` is the
+   Operator's). Then **F6.9** — the read-only real-time dashboard, the capstone composing everything below.
+4. **Advance the bot in parallel.** Continue **F10.2** (multi-bot) and **F10.3** (the games slice) per
+   [`bot/f10.roadmap.md`](bot/f10.roadmap.md), over the same facade — F10.1 (a supervised bot that answers, from a
+   vendored-fork wrap) has shipped and F10.2/F10.3 are triaged.
 5. **Define F7–F9 when the need is real.** When the bot's traffic or a polyglot service warrants it, sharpen the
    multi-runtime chapters (the EchoMQ bus first), using F10.9 as the entry seam.
 
-Two housekeeping items sit alongside this path: bringing F6.2/F6.3 into the new triad format so the F6 chapter is
-uniform, and adding a chapter index (`bot/bot.md`) for the bot once its abstracts become triads.
+The earlier housekeeping is discharged: F6.2/F6.3 are in the triad format (the F6 chapter is uniform), and the bot
+chapter now carries its own roadmap + graduated F10.1–F10.3 triads.
 
 ## Seams & open decisions
 
@@ -113,8 +119,9 @@ uniform, and adding a chapter index (`bot/bot.md`) for the bot once its abstract
 - **The multi-runtime story.** EchoMQ (on BullMQ) is the bus between the BEAM, Node, and Go runtimes. The program is
   in-BEAM-first (the web and the bot run in the engine's VM) with documented off-BEAM seams, so polyglot scale-out is
   reversible rather than assumed.
-- **Deployment is shared.** F6.8 establishes the release, runtime-config, and clustering substrate; later surfaces and
-  workers deploy on the same foundation, and clustering keeps PubSub and Presence correct across nodes.
+- **Deployment is shared.** F6.8 — split into **F6.8.1 (auth, shipped)** + **F6.8.2 (deploy, reconciled + config-pinned:
+  app `echo-portal`, 1024 MB, region `fra`)** — establishes the release, runtime-config, and clustering substrate; later
+  surfaces and workers deploy on the same foundation, and libcluster keeps PubSub and Presence correct across nodes.
 - **The store is the floor.** F4's branded CHAMP store is the given foundation under F5; if it needs its own chapter
   later, it slots below the engine without disturbing the facade.
 
