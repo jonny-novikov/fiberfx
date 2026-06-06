@@ -77,6 +77,18 @@ node to outlive the turn (a durable boot from the Director's main session or the
 ephemeral process) before vouching DONE (F6.5.5: a transient boot-curl-kill read green to the verifier yet
 dead to the Operator — the "a check counts only if it RUNS" rule extended to "still runs when the Operator
 looks").
+- **The ≥100 loop must OWN the machine, and a third full loop is waste.** Run the determinism loop with
+  nothing else competing — never concurrent with a liveness `mix phx.server` or a sibling agent doing heavy
+  I/O. Load-sensitive PRE-EXISTING tests flake under contention and forge a failure the rung's mint did not
+  cause (F6.8.1: two loop breaks — a load-gated endpoint-kill restart-storm and an `IDTest.at/1` ~1h
+  wall-clock skew — fired ONLY under concurrent load; neither reproduced solo, neither was F6.8.1 code, both
+  routed to the Director). And bound your OWN turn: when the build + harden passes already ran the full loop
+  uncontended (≥2 green 100/100), reproduce with ONE confirming suite run + a SCOPED loop over the rung's own
+  id-minting tests (e.g. the `auth_test.exs` that mints `SES`), not a third ~7-minute full loop — the full
+  loop's only unique catch is the rung's same-ms mint collision, which the scoped loop isolates faster and
+  free of the pre-existing full-suite flakes. A loop that times out your turn ships nothing; a scoped loop
+  that finishes is the gate (F6.8.1: a verify turn carrying a third full loop + liveness + spec-sync +
+  retrospective timed out twice, and the Director completed the authorship from the transcript).
 
 ## Sync the spec to what shipped — record, do not redesign
 Pre-build the spec body is authoritative and Venus corrects the code-facing claims to it; **post-build the

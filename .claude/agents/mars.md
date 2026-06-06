@@ -73,6 +73,17 @@ spec, not the code).
   by relocating each golden-master `<style>` body VERBATIM into its per-page extracted asset — no
   reformat — so the lint is the cheap proof the relocation drifted no spacing.) Same "a check counts
   only if it RUNS" class as the liveness check above.
+- **A verbatim port diffs against the CURRENT source — "self-consistent" ≠ "current".** When you
+  relocate or port an existing document (a golden-master page, a `<style>`/`<script>` body), re-read
+  the source's REAL tag boundaries at build time and diff your extracted asset against THEM, not
+  against the line ranges the brief quotes (a brief authored earlier can cite a stale snapshot —
+  treat its line numbers as hints, not contract). The failure mode is silent: a port that is
+  internally consistent with a STALE snapshot — its CSS matches its own stale markup — renders fine
+  and passes every automated gate, yet drifts from the source the rung must mirror (F6.8.1: the build
+  pass ported an older topbar `.brand-mark` that matched its own stale CSS, gate-invisible; the harden
+  pass caught it only by a byte-diff against the CURRENT 733L master, which Venus's reconcile had
+  already grown from the 685L the spec cited). The cheap proof is the byte-diff against the current
+  source — same "a check counts only if it RUNS" class.
 - Do NOT `git commit` — the Director commits once, at the rung's close. Leave the work in the tree
   for ratification.
 
