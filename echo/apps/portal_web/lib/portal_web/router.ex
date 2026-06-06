@@ -23,6 +23,11 @@ defmodule PortalWeb.Router do
   """
   use PortalWeb, :router
 
+  # The auth gate's two plug functions are imported so the pipelines can name them with
+  # the bare `plug :name` form (F6.8.1-D9). `PortalWeb.UserAuth` calls only `Portal.Auth`
+  # for the user load (F6.8.1-INV1).
+  import PortalWeb.UserAuth, only: [fetch_current_user: 2, require_authenticated_user: 2]
+
   # Cross-cutting work for HTML browser requests, declared once (F6.2-INV2). The
   # function plug `stamp_request_marker` runs last (F6.2-D5) so both public and
   # protected browser routes pass through it.
@@ -32,6 +37,11 @@ defmodule PortalWeb.Router do
     plug(:fetch_live_flash)
     plug(:protect_from_forgery)
     plug(:put_secure_browser_headers)
+    # F6.8.1-D9: load the session `current_user` (a %User{} via Portal.Auth) on every
+    # browser request, AFTER fetch_session. It never halts — gating is :require_auth's
+    # job — so it cannot perturb a public route; it makes `current_user` available to
+    # any page that wants it (and supplies the id F6.5's enrollment read reconciles to).
+    plug(:fetch_current_user)
     plug(:stamp_request_marker)
   end
 
@@ -41,11 +51,14 @@ defmodule PortalWeb.Router do
     plug(:accepts, ["json"])
   end
 
-  # The auth gate, declared once (F6.2-D3). `PortalWeb.RequireUser` loads the session
-  # user or halts with a redirect; the protected scope stacks it AFTER `:browser`
-  # (F6.2-INV5) so the session is fetched before this plug reads it.
+  # The auth gate, declared once (F6.2-D3, evolved F6.8.1-D9). `:browser` runs
+  # `fetch_current_user` (the loaded `current_user`); this pipeline's
+  # `require_authenticated_user` admits a request carrying a `%User{}` and redirects an
+  # anonymous one to `~p"/login"` (the target moved from `~p"/"`, F6.8.1-INV5). The
+  # protected scope stacks it AFTER `:browser` (F6.2-INV5) so the session is fetched and
+  # the user loaded before this plug gates.
   pipeline :require_auth do
-    plug(PortalWeb.RequireUser)
+    plug(:require_authenticated_user)
   end
 
   # Public surface (F6.2-D1, F6.5-D0, F6.6-D6): the landing, the LIVE catalog index,
@@ -62,6 +75,13 @@ defmodule PortalWeb.Router do
     get("/", PageController, :home)
     get("/elixir", PageController, :elixir)
     get("/course/agile-agent-workflow", PageController, :agile)
+    # F6.8.1-D1/D8: the static sign-in page + the two facade-backed auth POSTs. All
+    # public — an anonymous learner signs in. The POSTs ride the `:browser` pipeline, so
+    # `fetch_session` is present for the cookie write and `protect_from_forgery` stays ON
+    # (login.js sends the rendered csrf-token as the x-csrf-token header, CSRF res. (a)).
+    get("/login", PageController, :login)
+    post("/auth/session", SessionController, :create)
+    post("/auth/reset", SessionController, :request_reset)
     live("/courses", CatalogLive)
     resources("/courses", CourseController, only: [:show, :new, :create])
     resources("/lessons", LessonController, only: [:show])

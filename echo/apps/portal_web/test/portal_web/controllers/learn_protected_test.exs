@@ -20,25 +20,26 @@ defmodule PortalWeb.LearnProtectedTest do
   use PortalWeb.ConnCase, async: false
 
   describe "GET /my/courses (the protected scope)" do
-    test "an unauthenticated request redirects to the landing and renders no protected body (F6.2-INV3)",
+    test "an unauthenticated request redirects to /login and renders no protected body (F6.8.1-INV5)",
          %{conn: conn} do
-      # No session is set, so `:require_auth` (PortalWeb.RequireUser) halts before the
-      # EnrollmentController.index action runs.
+      # No session is set, so `:require_auth` (PortalWeb.UserAuth.require_authenticated_user)
+      # halts before the EnrollmentController.index action runs. The redirect target moved
+      # from `~p"/"` to `~p"/login"` (F6.8.1-D9, discharging the RequireUser owed change).
       conn = get(conn, ~p"/my/courses")
 
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == ~p"/login"
       assert conn.halted == true
       # The protected action never rendered, so its body header is absent.
       refute conn.resp_body && conn.resp_body =~ "Courses"
     end
 
-    test "an authenticated request renders the protected courses page at 200 (F6.2-INV6)",
+    test "an authenticated request renders the protected courses page at 200 (F6.8.1-INV5)",
          %{conn: conn} do
-      # A `:user_id` in the session passes `:require_auth`; RequireUser assigns
-      # `:current_user_id` and EnrollmentController.index reads the learner's own
-      # courses. The branded id is the shape the other controller tests mint
-      # (USR-namespaced).
-      user_id = Portal.ID.new("USR")
+      # A `:user_id` in the session that resolves to a loaded `%User{}` passes
+      # `:require_auth`; `fetch_current_user` loads the user (and the `:current_user_id`
+      # EnrollmentController.index reads). The id is the seeded demonstration account
+      # (Portal.Accounts @credentials), resolvable via Portal.Auth even after a reset.
+      user_id = "USRada00000000"
 
       conn =
         conn

@@ -52,8 +52,11 @@ defmodule PortalWeb.EnrollmentControllerTest do
 
   describe "GET /my/courses (the protected enrolled read, F6.5-D0)" do
     # The read moved here from CourseController; the route is now the PROTECTED
-    # `/my/courses` (session `user_id`, no path param). RequireUser assigns
-    # `:current_user_id`, which EnrollmentController.index reads.
+    # `/my/courses` (session `user_id`, no path param). Since F6.8.1 the gate
+    # (`PortalWeb.UserAuth`) loads `current_user` (a %User{} via Portal.Auth) and
+    # `EnrollmentController.index` reads the loaded user's id; a session id that does
+    # NOT resolve to a real user is no longer authenticated (F6.8.1-INV5) and redirects
+    # to `/login` rather than being admitted to an empty state (the pre-F6.8.1 behavior).
     test "a known enrolled user renders that user's course row (F6.1-US2)", %{conn: conn} do
       # Seed a real User (Store) + Course, then enroll through the facade so the
       # dual-write %Enrolled{} read model has the row courses_of/1 reads. Since F6.4
@@ -79,29 +82,39 @@ defmodule PortalWeb.EnrollmentControllerTest do
       refute body =~ "No courses yet."
     end
 
-    test "an unknown user id renders the empty state at 200, never a 500 (F6.1-US5)", %{
+    test "an unresolvable user id is not authenticated and redirects to /login (F6.8.1-INV5)", %{
       conn: conn
     } do
-      # courses_of/1 is total at F6.1: an unknown id yields {:ok, []} → empty state.
+      # A well-formed but unseeded USR id does not resolve to a real %User{}, so since
+      # F6.8.1 the gate treats the request as anonymous and redirects to /login (never a
+      # 500, and no longer the pre-F6.8.1 admit-to-empty-state). The protected action is
+      # not reached.
       conn =
         conn
         |> Plug.Test.init_test_session(%{user_id: Portal.ID.new("USR")})
         |> get(~p"/my/courses")
 
-      body = html_response(conn, 200)
-      assert body =~ "No courses yet."
+      # Rejected by a clean redirect, NOT a 500 and NOT the pre-F6.8.1 admit-to-empty-
+      # state: the gate halts on the unloaded user (INV5), so the status is a redirect.
+      assert conn.status in [302, 303]
+      assert redirected_to(conn) == ~p"/login"
+      assert conn.halted == true
     end
 
-    test "a malformed user id still renders the empty state at 200 (F6.1-US5)", %{conn: conn} do
-      # "USR1" passes namespace/1 but fails valid?/1; the total facade returns no rows,
-      # so the page is a clean 200 empty state — not a 422 and not a 500.
+    test "a malformed user id is not authenticated and redirects to /login (F6.8.1-INV5)", %{
+      conn: conn
+    } do
+      # "USR1" passes namespace/1 but fails valid?/1; Portal.Auth.user/1 yields :error, so
+      # the gate redirects to /login — not a 422, not a 500, not an admitted empty state.
       conn =
         conn
         |> Plug.Test.init_test_session(%{user_id: "USR1"})
         |> get(~p"/my/courses")
 
-      body = html_response(conn, 200)
-      assert body =~ "No courses yet."
+      # A malformed id must not crash the gate — a redirect status, never a 500.
+      assert conn.status in [302, 303]
+      assert redirected_to(conn) == ~p"/login"
+      assert conn.halted == true
     end
   end
 

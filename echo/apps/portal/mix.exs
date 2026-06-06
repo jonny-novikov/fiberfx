@@ -51,12 +51,21 @@ defmodule Portal.MixProject do
   # overlooked that :portal had no declared edge to the locked phoenix_pubsub, so the
   # wrappers/child could not compile without this one line. No new artifact enters the
   # build; only the visibility edge is added.]
+  # bcrypt_elixir is the F6.8.1 auth credential dep (the ONE net-new dependency this
+  # rung adds). It is named by `Portal.Accounts.resolve_credential/2` (the private
+  # hash verify behind the `Portal.Auth` facade), so per the per-app DEP-GRAPH-VISIBILITY
+  # rule it is declared HERE, in the consuming app (`:portal`, where `Portal.Auth` lives),
+  # not transitively assumed. It is a framework-free hashing library (a NIF over the
+  # reference bcrypt), the same driven-edge category as ecto_sql/phoenix_pubsub above —
+  # it does NOT make the core Phoenix-coupled and appears in NO module under :portal_web
+  # (F6.8.1-INV1, compiler-enforced at the app level). [F6.8.1-D5]
   defp deps do
     [
       {:echo_data, in_umbrella: true},
       {:ecto_sql, "~> 3.12"},
       {:postgrex, ">= 0.0.0"},
       {:phoenix_pubsub, "~> 2.1"},
+      {:bcrypt_elixir, "~> 3.1"},
       {:jason, "~> 1.4"},
       {:stream_data, "~> 1.0", only: :test}
     ]

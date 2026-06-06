@@ -49,4 +49,37 @@ defmodule PortalWeb.PageControllerTest do
     assert body =~ ~s(href="/course/agile-agent-workflow")
     assert body =~ ~s(href="#{PortalWeb.deep_link_base()}/course/agile-agent-workflow/why")
   end
+
+  test "GET /login renders the styled static sign-in page at 200 with no session",
+       %{conn: conn} do
+    # ~p verifies the route exists at compile time (F6.8.1-D1/D8); the request proves
+    # the static envelope serves (F6.8.1-AS1, INV2). The page makes NO facade call.
+    conn = get(conn, ~p"/login")
+
+    assert conn.status == 200
+    body = html_response(conn, 200)
+    # The full-document envelope (US1): the master <head> with the page <title> and the
+    # .auth-card sign-in envelope — NOT a bare/unstyled body (a 200 with a bare form is a
+    # regression, F6.8.1-D1).
+    assert body =~ "<head"
+    assert body =~ "<title>Sign in · Functional Programming in Elixir · jonnify</title>"
+    assert body =~ ~s(<div class="auth-card")
+    # Asset locality (F6.8.1-D2): the page pulls its CSS/JS from the Portal's own
+    # priv/static.
+    assert body =~ ~s(href="/assets/login.css")
+    assert body =~ ~s(src="/assets/login.js")
+    # The hero (login.html:433) and the .site-foot build stamp (login.html:514).
+    assert body =~ "Welcome"
+    assert body =~ "Learning Portal"
+    # The CSRF meta the JS reads (resolution (a)) is rendered.
+    assert body =~ ~s(name="csrf-token")
+    # The honest-door form actions stay relative (category-1, Portal-served).
+    assert body =~ ~s(action="/auth/session")
+    assert body =~ ~s(action="/auth/reset")
+    # The new footer deep links remap via the configurable deep-link base (F6.5.5 rule).
+    assert body =~ ~s(href="#{PortalWeb.deep_link_base()}/elixir/course")
+    assert body =~ ~s(href="#{PortalWeb.deep_link_base()}/elixir/algebra/functions")
+    # Registration deferred — the "Soon" copy survives (INV6).
+    assert body =~ "Soon."
+  end
 end
