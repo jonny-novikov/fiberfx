@@ -1,0 +1,127 @@
+# Distributed Locking with Redis
+
+Implement mutual exclusion across distributed processes using `SET key value NX PX timeout` for atomic lock acquisition with automatic expiration.
+
+Distributed systems often need mutual exclusion to prevent race conditions when multiple processes access shared resources. This pattern covers single-instance locks, lock release with owner verification, and lock extension.
+
+## The Basic Lock
+
+Redis locks use the SET command with special options:
+
+    SET resource:lock <token> NX PX 30000
+
+This command:
+- Sets the key only if it doesn't exist (`NX`)
+- Sets a 30-second expiration (`PX 30000`)
+- Stores a unique token to identify the lock owner
+
+If the command returns OK, the lock was acquired. If it returns nil, another client holds the lock.
+
+## Why These Options Matter
+
+**NX (Not Exists)**: Ensures only one client can acquire the lock. If two clients try simultaneously, only one succeeds.
+
+**PX (Expiration)**: Prevents deadlocks. If the lock holder crashes without releasing the lock, it automatically expires. Without expiration, a crashed client would hold the lock forever.
+
+**Token**: A random value (typically a UUID) that identifies this specific lock acquisition. This is crucial for safe release.
+
+## Releasing the Lock
+
+Never release a lock with a simple DEL command:
+
+    DEL resource:lock    # DANGEROUS!
+
+This risks deleting another client's lock. Consider this scenario:
+
+1. Client A acquires lock with token "abc"
+2. Client A takes too long, lock expires
+3. Client B acquires lock with token "xyz"
+4. Client A finishes and calls DEL
+5. Client A deletes Client B's lock!
+
+## Safe Lock Release
+
+Use a Lua script that checks the token before deleting:
+
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+    else
+        return 0
+    end
+
+Execute with:
+
+    EVAL <script> 1 resource:lock abc-token-123
+
+The lock is only deleted if the token matches, preventing accidental deletion of another client's lock.
+
+## Lock Lifecycle
+
+1. **Generate token**: Create a unique identifier (UUID)
+2. **Acquire**: `SET resource:lock <token> NX PX 30000`
+3. **Check result**: If OK, proceed. If nil, lock is held by another client
+4. **Do work**: Perform the protected operation
+5. **Release**: Execute the Lua script to safely release
+
+## Handling Lock Acquisition Failure
+
+When lock acquisition fails, clients have several options:
+
+- **Retry with backoff**: Wait and try again, with increasing delays
+- **Fail immediately**: Return an error to the caller
+- **Block and wait**: Poll the lock until it becomes available
+
+## Extending Lock Duration
+
+For operations that may take longer than expected, extend the lock before it expires:
+
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("pexpire", KEYS[1], ARGV[2])
+    else
+        return 0
+    end
+
+This resets the TTL only if you still own the lock.
+
+**Modern alternative (Redis 6.2+)**: Use SET with GET and KEEPTTL options for atomic read-modify operations:
+
+    SET resource:lock <new_token> XX GET
+
+The `XX` ensures the key exists, and `GET` returns the old value. Your application verifies the returned token matches before considering the lock extended. However, the Lua script approach remains cleaner for conditional TTL updates.
+
+## Limitations
+
+Single-instance Redis locking has an important limitation: if the Redis master fails after a client acquires a lock but before the lock is replicated to a replica, the lock may be lost during failover. Two clients could then believe they hold the same lock.
+
+For applications requiring stronger guarantees, consider:
+- The Redlock algorithm (acquiring locks from multiple independent Redis instances)
+- Using a consensus system like etcd or ZooKeeper
+- Accepting the rare possibility of lock violations and designing for idempotency
+
+## Common Mistakes
+
+**No expiration**: Lock held forever if client crashes.
+
+    SET lock token NX    # Missing PX - deadlock risk!
+
+**Simple DEL for release**: May delete another client's lock.
+
+**Non-atomic acquire**: Using separate SETNX and EXPIRE commands creates a race condition.
+
+    SETNX lock token    # If crash here...
+    EXPIRE lock 30      # ...lock has no expiration!
+
+Always use the combined SET command with NX and PX.
+
+## When to Use
+
+- Coordinating access to external resources
+- Preventing duplicate job execution
+- Implementing leader election
+- Serializing updates to shared state
+
+## When to Avoid
+
+- High-frequency operations where lock contention would be severe
+- Scenarios requiring absolute correctness (consider consensus systems)
+- When the protected resource can handle concurrent access safely

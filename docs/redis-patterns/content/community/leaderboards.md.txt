@@ -1,0 +1,143 @@
+# Leaderboard Patterns
+
+Build real-time rankings with Sorted Sets: O(log N) score updates, O(log N) rank lookups, and efficient range queries for top-N or around-me leaderboards.
+
+Sorted Sets provide automatic ordering by score, making them ideal for gaming leaderboards, trending content, and any ranking of potentially millions of items with instant updates.
+
+## Core Operations
+
+A Sorted Set stores members with associated scores, automatically maintaining order by score.
+
+Add or update a player's score:
+
+    ZADD leaderboard 1500 "player:alice"
+    ZADD leaderboard 2300 "player:bob"
+    ZADD leaderboard 1800 "player:charlie"
+
+Get the top 10 players (highest scores first):
+
+    ZRANGE leaderboard 0 9 REV WITHSCORES
+
+Get a player's rank (0-indexed, where 0 is the highest):
+
+    ZRANK leaderboard "player:alice" REV
+
+> **Note:** Redis 6.2+ unified range commands. `ZRANGE` with `REV` replaces `ZREVRANGE`. The old commands still work but the unified syntax is preferred.
+
+Get a player's score:
+
+    ZSCORE leaderboard "player:alice"
+
+Increment a player's score:
+
+    ZINCRBY leaderboard 50 "player:alice"
+
+## Rank vs Reverse Rank
+
+Redis provides two ranking commands:
+- `ZRANK` returns position sorted low-to-high (lowest score = rank 0)
+- `ZREVRANK` returns position sorted high-to-low (highest score = rank 0)
+
+For most games, `ZREVRANK` is appropriate since higher scores are better.
+
+## Players Around a Rank
+
+To show a player their position relative to nearby competitors:
+
+    ZREVRANGE leaderboard 45 55 WITHSCORES
+
+This retrieves players ranked 46th through 56th (ranks 45-55 in 0-indexed terms).
+
+## Tiebreaking with Composite Scores
+
+When two players have identical scores, you may want the player who achieved it first to rank higher. Since Sorted Sets don't natively support secondary sort keys, encode both values into a single score.
+
+For a score of 1500 achieved at timestamp 1706648400:
+
+    composite_score = score * 10000000000 + (MAX_TIMESTAMP - timestamp)
+
+This ensures:
+- Higher scores always rank first (score dominates)
+- For equal scores, earlier timestamps rank higher (because we subtract from MAX_TIMESTAMP)
+
+The original score can be recovered by integer division: `original_score = composite_score // 10000000000`
+
+## Time-Windowed Leaderboards
+
+For "Top players this week" or "Daily high scores," create separate Sorted Sets with time-based key names:
+
+    ZADD leaderboard:daily:2024-01-30 1500 "player:alice"
+    ZADD leaderboard:weekly:2024-W05 1500 "player:alice"
+
+Set appropriate TTLs for automatic cleanup:
+
+    EXPIRE leaderboard:daily:2024-01-30 172800
+
+This keeps daily leaderboards for 2 days after the day ends.
+
+## Aggregating Leaderboards
+
+Combine multiple leaderboards using ZUNIONSTORE:
+
+    ZUNIONSTORE leaderboard:week leaderboard:day:mon leaderboard:day:tue ... AGGREGATE MAX
+
+The `AGGREGATE` option controls how scores combine:
+- `SUM`: Add scores (total points across days)
+- `MAX`: Take highest score (personal best)
+- `MIN`: Take lowest score (best time in racing)
+
+## Pagination
+
+For large leaderboards, paginate results:
+
+Page 1 (items 1-20):
+
+    ZREVRANGE leaderboard 0 19 WITHSCORES
+
+Page 2 (items 21-40):
+
+    ZREVRANGE leaderboard 20 39 WITHSCORES
+
+Use ZCARD to determine total pages:
+
+    ZCARD leaderboard
+
+## Efficient Player Info Retrieval
+
+To get a player's rank and score in one round-trip, use pipelining:
+
+    ZREVRANK leaderboard "player:alice"
+    ZSCORE leaderboard "player:alice"
+
+Both commands execute in a single network round-trip when pipelined, returning rank and score together.
+
+## Commands Summary
+
+| Command | Description | Complexity |
+|---------|-------------|------------|
+| ZADD | Add/update score | O(log N) |
+| ZINCRBY | Increment score | O(log N) |
+| ZRANK key member REV | Get rank (high to low) | O(log N) |
+| ZRANK | Get rank (low to high) | O(log N) |
+| ZSCORE | Get score | O(1) |
+| ZRANGE key start stop REV | Get range by rank (high to low) | O(log N + M) |
+| ZCARD | Get total count | O(1) |
+| ZUNIONSTORE | Merge leaderboards | O(N*K + M*log M) |
+
+## Modern Redis Additions (6.2+)
+
+**Unified ZRANGE**: The `ZRANGE` command now supports `REV`, `BYSCORE`, `BYLEX`, and `LIMIT` options, replacing `ZREVRANGE`, `ZRANGEBYSCORE`, and `ZRANGEBYLEX` with a single command.
+
+**ZRANGESTORE**: Store range results in a new key instead of returning them:
+
+    ZRANGESTORE top10:cache leaderboard 0 9 REV
+
+This creates a snapshot of the top 10 that can be read without re-querying the main leaderboard.
+
+**ZMPOP** (Redis 7.0+): Pop minimum or maximum elements from multiple sorted sets:
+
+    ZMPOP 1 leaderboard MAX COUNT 3
+
+Removes and returns the top 3 players—useful for tournament elimination or reward distribution.
+
+**GETEX pattern**: For leaderboards with TTL, consider using a Hash alongside the Sorted Set to store player metadata, using GETEX to refresh TTL on access.

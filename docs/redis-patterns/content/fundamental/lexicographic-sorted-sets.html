@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lexicographic Sorted Set Patterns - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="lexicographic-sorted-sets.md.txt">View Markdown</a>
+    </div>
+<h1 id="lexicographic-sorted-set-patterns">Lexicographic Sorted Set Patterns</h1>
+<p>Use Sorted Sets with identical scores (typically 0) to create B-tree-like indexes supporting prefix queries, range scans, and composite key lookups on string data.</p>
+<p>When all members in a Sorted Set share the same score, Redis sorts them lexicographically (byte-by-byte comparison). This transforms the Sorted Set into an ordered string index with O(log N) operations—effectively a B-tree for string keys.</p>
+<h2 id="how-lexicographic-ordering-works">How Lexicographic Ordering Works</h2>
+<p>With numeric scores, members sort by score:</p>
+<pre class="highlight"><code>ZADD scores 100 &quot;alice&quot; 200 &quot;bob&quot; 150 &quot;charlie&quot;
+ZRANGE scores 0 -1
+# Returns: alice, charlie, bob (sorted by score)
+</code></pre>
+
+<p>With identical scores, members sort lexicographically:</p>
+<pre class="highlight"><code>ZADD names 0 &quot;alice&quot; 0 &quot;bob&quot; 0 &quot;charlie&quot;
+ZRANGE names 0 -1
+# Returns: alice, bob, charlie (alphabetical)
+</code></pre>
+
+<h2 id="key-commands">Key Commands</h2>
+<h3 id="zrangebylex">ZRANGEBYLEX</h3>
+<p>Query members within a lexicographic range:</p>
+<pre class="highlight"><code>ZRANGEBYLEX names [a [d
+# Returns members from &quot;a&quot; (inclusive) to &quot;d&quot; (exclusive)
+# Result: alice, bob, charlie
+</code></pre>
+
+<p>Range specifiers:
+- <code>[value</code> — inclusive (&gt;=)
+- <code>(value</code> — exclusive (&gt;)
+- <code>-</code> — negative infinity (start of set)
+- <code>+</code> — positive infinity (end of set)</p>
+<h3 id="prefix-queries">Prefix Queries</h3>
+<p>Find all members starting with a prefix:</p>
+<pre class="highlight"><code>ZADD autocomplete 0 &quot;redis&quot; 0 &quot;redlock&quot; 0 &quot;redsocks&quot; 0 &quot;reduce&quot; 0 &quot;rabbit&quot;
+
+ZRANGEBYLEX autocomplete [red (ree
+# Returns: redis, redlock, redsocks, reduce
+</code></pre>
+
+<p>The trick: use <code>[prefix</code> as the start and <code>(prefix\xff</code> (or the next character after the prefix range) as the end.</p>
+<p>For prefix "red":
+- Start: <code>[red</code> (inclusive)
+- End: <code>(ree</code> (exclusive, "ree" is the first string that doesn't start with "red")</p>
+<h3 id="zlexcount">ZLEXCOUNT</h3>
+<p>Count members in a lexicographic range:</p>
+<pre class="highlight"><code>ZLEXCOUNT autocomplete [red (ree
+# Returns: 4
+</code></pre>
+
+<h3 id="zremrangebylex">ZREMRANGEBYLEX</h3>
+<p>Remove members in a lexicographic range:</p>
+<pre class="highlight"><code>ZREMRANGEBYLEX autocomplete [reda (redm
+# Removes: reduce, redis, redlock (everything between &quot;reda&quot; and &quot;redm&quot;)
+</code></pre>
+
+<h2 id="pattern-autocomplete">Pattern: Autocomplete</h2>
+<p>Build a fast autocomplete system:</p>
+<pre class="highlight"><code># Index terms
+ZADD search:index 0 &quot;application&quot;
+ZADD search:index 0 &quot;apple&quot;
+ZADD search:index 0 &quot;apply&quot;
+ZADD search:index 0 &quot;banana&quot;
+
+# User types &quot;app&quot;
+ZRANGEBYLEX search:index [app (apq LIMIT 0 10
+# Returns: apple, application, apply
+</code></pre>
+
+<p>The <code>LIMIT</code> clause returns only the first 10 matches, ideal for typeahead suggestions.</p>
+<h2 id="pattern-composite-keys-for-multi-field-queries">Pattern: Composite Keys for Multi-Field Queries</h2>
+<p>Encode multiple fields into a single member for hierarchical queries:</p>
+<pre class="highlight"><code># Format: user_id:timestamp:action
+ZADD events 0 &quot;user:100:1706648400:login&quot;
+ZADD events 0 &quot;user:100:1706648500:click&quot;
+ZADD events 0 &quot;user:100:1706648600:purchase&quot;
+ZADD events 0 &quot;user:200:1706648450:login&quot;
+ZADD events 0 &quot;user:200:1706648550:click&quot;
+</code></pre>
+
+<p>Query all events for user 100:</p>
+<pre class="highlight"><code>ZRANGEBYLEX events [user:100: (user:100:\xff
+# Returns all user:100:* entries
+</code></pre>
+
+<p>Query events for user 100 in a time range:</p>
+<pre class="highlight"><code>ZRANGEBYLEX events [user:100:1706648400 (user:100:1706648550
+# Returns events between those timestamps
+</code></pre>
+
+<h2 id="pattern-time-series-with-string-ids">Pattern: Time-Series with String IDs</h2>
+<p>For time-series data where you need string identifiers:</p>
+<pre class="highlight"><code># Format: timestamp:event_id
+ZADD timeseries 0 &quot;1706648400:evt_abc123&quot;
+ZADD timeseries 0 &quot;1706648401:evt_def456&quot;
+ZADD timeseries 0 &quot;1706648402:evt_ghi789&quot;
+</code></pre>
+
+<p>Query events in a time window:</p>
+<pre class="highlight"><code>ZRANGEBYLEX timeseries [1706648400 (1706648402
+# Returns events from timestamp 1706648400 to 1706648401
+</code></pre>
+
+<h2 id="pattern-sorted-tags-or-categories">Pattern: Sorted Tags or Categories</h2>
+<p>Maintain a sorted set of tags with counts encoded in the key:</p>
+<pre class="highlight"><code># Format: category:tag
+ZADD tags 0 &quot;language:go&quot;
+ZADD tags 0 &quot;language:python&quot;
+ZADD tags 0 &quot;language:rust&quot;
+ZADD tags 0 &quot;database:mysql&quot;
+ZADD tags 0 &quot;database:redis&quot;
+</code></pre>
+
+<p>Get all language tags:</p>
+<pre class="highlight"><code>ZRANGEBYLEX tags [language: (language:\xff
+</code></pre>
+
+<h2 id="pattern-ip-range-lookups">Pattern: IP Range Lookups</h2>
+<p>Store IP addresses for range queries:</p>
+<pre class="highlight"><code># Store IPs (zero-padded for correct lexicographic ordering)
+ZADD ips 0 &quot;010.000.000.001&quot;
+ZADD ips 0 &quot;010.000.000.255&quot;
+ZADD ips 0 &quot;192.168.001.001&quot;
+ZADD ips 0 &quot;192.168.001.100&quot;
+</code></pre>
+
+<p>Query a subnet:</p>
+<pre class="highlight"><code>ZRANGEBYLEX ips [192.168.001. (192.168.002.
+</code></pre>
+
+<p><strong>Important:</strong> Zero-pad numeric segments for correct ordering. Without padding, "9" sorts after "10" lexicographically.</p>
+<h2 id="combining-with-score-based-ordering">Combining with Score-Based Ordering</h2>
+<p>You can use both score and lexicographic ordering together. Members first sort by score, then lexicographically within the same score:</p>
+<pre class="highlight"><code>ZADD hybrid 1 &quot;a:first&quot; 1 &quot;a:second&quot; 2 &quot;b:first&quot; 2 &quot;b:second&quot;
+ZRANGE hybrid 0 -1
+# Returns: a:first, a:second, b:first, b:second
+</code></pre>
+
+<p>This enables bucketing: group items by score (category/priority) with lexicographic ordering within each bucket.</p>
+<h2 id="performance-characteristics">Performance Characteristics</h2>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Complexity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ZRANGEBYLEX</td>
+<td>O(log N + M) where M is results</td>
+</tr>
+<tr>
+<td>ZLEXCOUNT</td>
+<td>O(log N)</td>
+</tr>
+<tr>
+<td>ZREMRANGEBYLEX</td>
+<td>O(log N + M)</td>
+</tr>
+<tr>
+<td>ZADD (single)</td>
+<td>O(log N)</td>
+</tr>
+</tbody>
+</table>
+<p>All operations are efficient even with millions of members.</p>
+<h2 id="limitations">Limitations</h2>
+<ul>
+<li><strong>Binary comparison</strong>: Sorting is byte-by-byte, not locale-aware. "Éclair" sorts after "Zebra" because É (0xC3) &gt; Z (0x5A).</li>
+<li><strong>Case sensitivity</strong>: "Apple" and "apple" sort differently. Normalize case if needed.</li>
+<li><strong>Numeric strings</strong>: "9" &gt; "10" lexicographically. Zero-pad numbers: "09" &lt; "10".</li>
+<li><strong>No partial member updates</strong>: Changing a member requires remove + add.</li>
+</ul>
+<h2 id="when-to-use">When to Use</h2>
+<ul>
+<li>Autocomplete and typeahead suggestions</li>
+<li>Prefix-based searches</li>
+<li>Hierarchical data with composite keys</li>
+<li>Time-series with string identifiers</li>
+<li>Sorted string indexes (tags, categories, usernames)</li>
+<li>Any scenario requiring range queries on string keys</li>
+</ul>
+<h2 id="when-to-use-regular-score-based-sorting">When to Use Regular Score-Based Sorting</h2>
+<ul>
+<li>Numeric rankings (leaderboards, priority queues)</li>
+<li>When you need to update values without changing sort order</li>
+<li>Aggregations with ZUNIONSTORE/ZINTERSTORE (scores can be summed/averaged)</li>
+</ul>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="lexicographic-sorted-sets.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

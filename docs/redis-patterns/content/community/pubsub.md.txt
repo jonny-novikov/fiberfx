@@ -1,0 +1,159 @@
+# Pub/Sub Patterns
+
+Broadcast real-time events to multiple subscribers using fire-and-forget messaging—ideal for notifications, chat, and live updates where missed messages are acceptable.
+
+Redis Pub/Sub delivers messages to all active subscribers instantly. Messages are not persisted; if no subscribers are connected, messages are lost. Use Streams instead if you need durability.
+
+## Basic Operations
+
+Publish a message to a channel:
+
+    PUBLISH channel:news "Breaking news: Redis 8.0 released!"
+
+The command returns the number of subscribers that received the message.
+
+Subscribe to a channel:
+
+    SUBSCRIBE channel:news
+
+Once subscribed, the client enters a special mode where it only receives messages. To unsubscribe:
+
+    UNSUBSCRIBE channel:news
+
+## Pattern Subscriptions
+
+Subscribe to multiple channels matching a pattern:
+
+    PSUBSCRIBE channel:*
+
+This receives messages from `channel:news`, `channel:sports`, `channel:weather`, etc.
+
+Pattern matching uses glob-style patterns:
+- `*` matches any sequence of characters
+- `?` matches any single character
+- `[abc]` matches any character in the brackets
+
+Example patterns:
+
+    PSUBSCRIBE user:*:notifications
+    PSUBSCRIBE events:region:us-*
+
+## Message Format
+
+When a message is received, clients get:
+- Message type (`message` for direct, `pmessage` for pattern)
+- Channel name (for pattern subscriptions, both the pattern and actual channel)
+- Message payload
+
+## Fire-and-Forget Nature
+
+Pub/Sub is inherently ephemeral:
+- Messages are not persisted
+- If no subscribers are listening, the message is lost
+- Subscribers that disconnect miss all messages during disconnection
+- There's no acknowledgment mechanism
+
+This makes Pub/Sub unsuitable for work queues or reliable messaging, but perfect for real-time notifications where occasional message loss is acceptable.
+
+## Use Cases
+
+**Cache invalidation**: When data changes, broadcast to all application servers:
+
+    PUBLISH cache:invalidate "user:123"
+
+**Real-time notifications**: Push updates to connected users:
+
+    PUBLISH user:456:notifications '{"type":"new_message","from":"alice"}'
+
+**Live updates**: Typing indicators, presence status, cursor positions:
+
+    PUBLISH room:789:typing "user:123"
+
+**Inter-service signaling**: Notify microservices of events:
+
+    PUBLISH order:created '{"order_id":"12345"}'
+
+## Keyspace Notifications
+
+Redis can publish messages when keys are modified. This must be enabled in configuration:
+
+    CONFIG SET notify-keyspace-events Ex
+
+Notification flags:
+- `K`: Keyspace events (key-focused)
+- `E`: Keyevent events (operation-focused)
+- `g`: Generic commands (DEL, EXPIRE, etc.)
+- `$`: String commands (SET, INCR, etc.)
+- `x`: Expired events
+- `e`: Evicted events
+
+Subscribe to expiration events:
+
+    PSUBSCRIBE __keyevent@0__:expired
+
+This receives a message whenever any key expires, useful for implementing delayed actions or cleanup workflows.
+
+## Scaling with Multiple Servers
+
+When running multiple application servers, Pub/Sub enables coordination:
+
+1. User connects to Server A via WebSocket
+2. User's friend on Server B sends a message
+3. Server B publishes to Redis channel
+4. Server A (subscribed) receives and forwards to user's WebSocket
+
+This pattern allows horizontal scaling while maintaining real-time delivery.
+
+## Limitations
+
+| Limitation | Impact |
+|------------|--------|
+| No persistence | Messages lost if no subscriber |
+| No delivery guarantee | Disconnected clients miss messages |
+| No message history | Can't replay past messages |
+| No acknowledgment | Sender doesn't know if received |
+| No consumer groups | Can't load-balance message processing |
+
+## When to Use Streams Instead
+
+Redis Streams address Pub/Sub's limitations:
+
+- **Need persistence**: Streams store messages on disk
+- **Need delivery guarantees**: Streams track acknowledgments
+- **Need message replay**: Streams allow reading history
+- **Need consumer groups**: Streams support load-balanced consumption
+
+See the [Streams documentation](../fundamental/streams-event-sourcing.md) for details.
+
+## Pub/Sub vs Streams vs Lists
+
+| Feature | Pub/Sub | Lists | Streams |
+|---------|---------|-------|---------|
+| Persistence | No | Yes | Yes |
+| Consumer Groups | No | No | Yes |
+| Message History | No | No | Yes |
+| Acknowledgment | No | Manual | Built-in |
+| Multiple Consumers | Broadcast | Competing | Both |
+| Blocking Read | Yes | Yes | Yes |
+
+## Connection Considerations
+
+A subscribed client is in a special state:
+- It can only execute SUBSCRIBE, PSUBSCRIBE, UNSUBSCRIBE, PUNSUBSCRIBE, PING, and QUIT
+- Regular commands will return an error
+- Many client libraries use a dedicated connection for subscriptions
+
+For applications that need to both publish and subscribe, use separate Redis connections.
+
+## Channel Naming Conventions
+
+Establish consistent naming patterns:
+
+    service:event:subject
+
+Examples:
+- `orders:created:*` - New order events
+- `users:login:region:us-east` - Login events by region
+- `cache:invalidate:users` - Cache invalidation for user data
+
+Clear naming helps manage complexity as the number of channels grows.

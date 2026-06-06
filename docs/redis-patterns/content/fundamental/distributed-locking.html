@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distributed Locking with Redis - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="distributed-locking.md.txt">View Markdown</a>
+    </div>
+<h1 id="distributed-locking-with-redis">Distributed Locking with Redis</h1>
+<p>Implement mutual exclusion across distributed processes using <code>SET key value NX PX timeout</code> for atomic lock acquisition with automatic expiration.</p>
+<p>Distributed systems often need mutual exclusion to prevent race conditions when multiple processes access shared resources. This pattern covers single-instance locks, lock release with owner verification, and lock extension.</p>
+<h2 id="the-basic-lock">The Basic Lock</h2>
+<p>Redis locks use the SET command with special options:</p>
+<pre class="highlight"><code>SET resource:lock &lt;token&gt; NX PX 30000
+</code></pre>
+
+<p>This command:
+- Sets the key only if it doesn't exist (<code>NX</code>)
+- Sets a 30-second expiration (<code>PX 30000</code>)
+- Stores a unique token to identify the lock owner</p>
+<p>If the command returns OK, the lock was acquired. If it returns nil, another client holds the lock.</p>
+<h2 id="why-these-options-matter">Why These Options Matter</h2>
+<p><strong>NX (Not Exists)</strong>: Ensures only one client can acquire the lock. If two clients try simultaneously, only one succeeds.</p>
+<p><strong>PX (Expiration)</strong>: Prevents deadlocks. If the lock holder crashes without releasing the lock, it automatically expires. Without expiration, a crashed client would hold the lock forever.</p>
+<p><strong>Token</strong>: A random value (typically a UUID) that identifies this specific lock acquisition. This is crucial for safe release.</p>
+<h2 id="releasing-the-lock">Releasing the Lock</h2>
+<p>Never release a lock with a simple DEL command:</p>
+<pre class="highlight"><code>DEL resource:lock    # DANGEROUS!
+</code></pre>
+
+<p>This risks deleting another client's lock. Consider this scenario:</p>
+<ol>
+<li>Client A acquires lock with token "abc"</li>
+<li>Client A takes too long, lock expires</li>
+<li>Client B acquires lock with token "xyz"</li>
+<li>Client A finishes and calls DEL</li>
+<li>Client A deletes Client B's lock!</li>
+</ol>
+<h2 id="safe-lock-release">Safe Lock Release</h2>
+<p>Use a Lua script that checks the token before deleting:</p>
+<pre class="highlight"><code>if redis.call(&quot;get&quot;, KEYS[1]) == ARGV[1] then
+    return redis.call(&quot;del&quot;, KEYS[1])
+else
+    return 0
+end
+</code></pre>
+
+<p>Execute with:</p>
+<pre class="highlight"><code>EVAL &lt;script&gt; 1 resource:lock abc-token-123
+</code></pre>
+
+<p>The lock is only deleted if the token matches, preventing accidental deletion of another client's lock.</p>
+<h2 id="lock-lifecycle">Lock Lifecycle</h2>
+<ol>
+<li><strong>Generate token</strong>: Create a unique identifier (UUID)</li>
+<li><strong>Acquire</strong>: <code>SET resource:lock &lt;token&gt; NX PX 30000</code></li>
+<li><strong>Check result</strong>: If OK, proceed. If nil, lock is held by another client</li>
+<li><strong>Do work</strong>: Perform the protected operation</li>
+<li><strong>Release</strong>: Execute the Lua script to safely release</li>
+</ol>
+<h2 id="handling-lock-acquisition-failure">Handling Lock Acquisition Failure</h2>
+<p>When lock acquisition fails, clients have several options:</p>
+<ul>
+<li><strong>Retry with backoff</strong>: Wait and try again, with increasing delays</li>
+<li><strong>Fail immediately</strong>: Return an error to the caller</li>
+<li><strong>Block and wait</strong>: Poll the lock until it becomes available</li>
+</ul>
+<h2 id="extending-lock-duration">Extending Lock Duration</h2>
+<p>For operations that may take longer than expected, extend the lock before it expires:</p>
+<pre class="highlight"><code>if redis.call(&quot;get&quot;, KEYS[1]) == ARGV[1] then
+    return redis.call(&quot;pexpire&quot;, KEYS[1], ARGV[2])
+else
+    return 0
+end
+</code></pre>
+
+<p>This resets the TTL only if you still own the lock.</p>
+<p><strong>Modern alternative (Redis 6.2+)</strong>: Use SET with GET and KEEPTTL options for atomic read-modify operations:</p>
+<pre class="highlight"><code>SET resource:lock &lt;new_token&gt; XX GET
+</code></pre>
+
+<p>The <code>XX</code> ensures the key exists, and <code>GET</code> returns the old value. Your application verifies the returned token matches before considering the lock extended. However, the Lua script approach remains cleaner for conditional TTL updates.</p>
+<h2 id="limitations">Limitations</h2>
+<p>Single-instance Redis locking has an important limitation: if the Redis master fails after a client acquires a lock but before the lock is replicated to a replica, the lock may be lost during failover. Two clients could then believe they hold the same lock.</p>
+<p>For applications requiring stronger guarantees, consider:
+- The Redlock algorithm (acquiring locks from multiple independent Redis instances)
+- Using a consensus system like etcd or ZooKeeper
+- Accepting the rare possibility of lock violations and designing for idempotency</p>
+<h2 id="common-mistakes">Common Mistakes</h2>
+<p><strong>No expiration</strong>: Lock held forever if client crashes.</p>
+<pre class="highlight"><code>SET lock token NX    # Missing PX - deadlock risk!
+</code></pre>
+
+<p><strong>Simple DEL for release</strong>: May delete another client's lock.</p>
+<p><strong>Non-atomic acquire</strong>: Using separate SETNX and EXPIRE commands creates a race condition.</p>
+<pre class="highlight"><code>SETNX lock token    # If crash here...
+EXPIRE lock 30      # ...lock has no expiration!
+</code></pre>
+
+<p>Always use the combined SET command with NX and PX.</p>
+<h2 id="when-to-use">When to Use</h2>
+<ul>
+<li>Coordinating access to external resources</li>
+<li>Preventing duplicate job execution</li>
+<li>Implementing leader election</li>
+<li>Serializing updates to shared state</li>
+</ul>
+<h2 id="when-to-avoid">When to Avoid</h2>
+<ul>
+<li>High-frequency operations where lock contention would be severe</li>
+<li>Scenarios requiring absolute correctness (consider consensus systems)</li>
+<li>When the protected resource can handle concurrent access safely</li>
+</ul>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="distributed-locking.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitter/X: Deep Internals and Custom Data Structures - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="twitter-internals.md.txt">View Markdown</a>
+    </div>
+<h1 id="twitterx-deep-internals-and-custom-data-structures">Twitter/X: Deep Internals and Custom Data Structures</h1>
+<p>Historical case study of Twitter's Redis customizations—many of these innovations are now built into Redis core (quicklist, improved memory management).</p>
+<p>Twitter faces unique challenges due to the "fan-out" nature of its product—a single tweet from a high-profile account must appear in millions of timelines within seconds. This document covers patterns Twitter developed, noting which are now available natively in Redis.</p>
+<h2 id="the-timeline-challenge">The Timeline Challenge</h2>
+<p>When a user with 10 million followers tweets, that tweet must appear in 10 million timelines. Twitter caches these timelines in Redis for instant retrieval. The scale is immense: over 30 billion timeline updates per day.</p>
+<h2 id="custom-data-structures">Custom Data Structures</h2>
+<h3 id="the-problem-with-standard-structures">The Problem with Standard Structures</h3>
+<p>Standard Redis data structures present a trade-off between memory efficiency and CPU performance:</p>
+<p><strong>Listpack (formerly Ziplist)</strong>: Memory-compact, perfect for small lists, but modifying requires rewriting the entire contiguous memory block. For timeline services handling millions of insertions, the latency penalty becomes unacceptable.</p>
+<p><strong>Linked List</strong>: Offers O(1) insertion but suffers from significant memory overhead due to pointer storage and memory fragmentation.</p>
+<h3 id="hybrid-list">Hybrid List</h3>
+<p>Twitter developed the Hybrid List as a compromise: chains of multiple small Listpacks linked together.</p>
+<p><strong>Standard Listpack:</strong> A single contiguous memory block [entry1|entry2|...|entryN]. Must rewrite the entire block on any modification.</p>
+<p><strong>Hybrid List:</strong> Multiple small listpacks linked together. Each listpack holds a few entries. Modifications only affect one small block, not the entire structure.</p>
+<p><strong>Benefits:</strong>
+- Retains high memory locality and compactness of Listpacks
+- Enables flexible linking capabilities of standard lists
+- Minimizes memory fragmentation
+- Avoids "stop-the-world" latency spikes from resizing large monolithic structures
+- Ensures predictability for real-time timeline rendering</p>
+<blockquote>
+<p><strong>Modern Redis:</strong> This exact data structure is now built into Redis as <strong>quicklist</strong> (since Redis 3.2). All Redis Lists use quicklist internally—a doubly-linked list of listpacks. Configure with <code>list-max-listpack-size</code> to control how many entries each listpack holds before a new node is created. Twitter's innovation became a core Redis feature.</p>
+</blockquote>
+<h3 id="b-tree-sets">B-Tree Sets</h3>
+<p>For scenarios requiring both point lookups AND range queries:</p>
+<p><strong>Traditional approach:</strong>
+- Hash for point lookups (find specific tweet ID)
+- Sorted Set for ranges (tweets between timestamps)
+- Memory duplication</p>
+<p><strong>B-Tree Set approach:</strong>
+- Single structure supporting both operation types
+- Hierarchical keys enable point lookups and range queries
+- Significant memory footprint reduction when caching billions of objects</p>
+<blockquote>
+<p><strong>Modern Redis:</strong> Sorted Sets now support <strong>lexicographic ordering</strong> when members share the same score. By setting all scores to 0, members sort alphabetically, enabling B-tree-like functionality:
+- <code>ZRANGEBYLEX</code> for prefix and range queries on string keys
+- <code>ZLEXCOUNT</code> for counting items in a lexicographic range
+- Composite keys like <code>user:123:tweet:456</code> enable hierarchical queries</p>
+<p>See the <a href="../fundamental/lexicographic-sorted-sets.md.txt">Lexicographic Sorted Set Patterns</a> document for implementation details.</p>
+</blockquote>
+<h2 id="proxy-based-cluster-topology">Proxy-Based Cluster Topology</h2>
+<p>Twitter employs a sophisticated proxy layer separating concerns:</p>
+<p><strong>Layer 1 - Control Path (slow):</strong> Handles cluster management, resharding, and node additions.</p>
+<p><strong>Layer 2 - Cluster Management System:</strong> Maintains global view mapping Keys to Buckets to Machines.</p>
+<p><strong>Layer 3 - Proxy Layer (Twemproxy/Custom):</strong> Hashes keys to specific shards. Clients connect here.</p>
+<p><strong>Layer 4 - Shards:</strong> Multiple Redis shard instances (Shard 1, Shard 2, ... Shard N).</p>
+<p><strong>Key benefits:</strong>
+- Client application is unaware of physical cluster topology
+- Data can be moved between nodes without client updates
+- Cluster state changes don't induce latency jitter
+- Philosophy: "Predictability over peak performance"</p>
+<h2 id="lock-free-command-logger">Lock-Free Command Logger</h2>
+<h3 id="the-problem">The Problem</h3>
+<p>The standard Redis MONITOR command halts the event loop, degrading performance by 50%+ at high throughput.</p>
+<h3 id="the-solution">The Solution</h3>
+<p>Twitter implemented a Lock-Free Command Logger:</p>
+<p><strong>Flow:</strong> Redis Main Thread writes to a Lock-Free Ring Buffer. An Async Thread drains the buffer to disk.</p>
+<p>The main Redis thread writes to a lock-free ring buffer. A separate thread drains this buffer to disk asynchronously.</p>
+<p><strong>Captured per request:</strong>
+- Command type
+- Key size
+- Client IP
+- Timestamp</p>
+<p><strong>Capabilities enabled:</strong>
+- Traffic auditing at 100k+ QPS
+- Hot key identification (viral tweets causing uneven load)
+- Abusive client detection in real-time
+- Zero impact on primary Redis thread latency</p>
+<h2 id="timeline-data-model">Timeline Data Model</h2>
+<p>Each timeline entry contains:
+- Tweet ID (8 bytes)
+- User ID (8 bytes)
+- Metadata (4 bytes)
+- Total: 20 bytes per entry</p>
+<p>With 800 entries per user timeline, each user's cached timeline consumes approximately 16KB. Across hundreds of millions of users, this amounts to terabytes of RAM.</p>
+<h2 id="inactive-user-optimization">Inactive User Optimization</h2>
+<p>Not all users deserve cache space. Active users have their timelines hot in Redis. Inactive users (those who haven't logged in recently) have their timelines evicted. When an inactive user returns, their timeline is rebuilt from persistent storage on demand.</p>
+<p>This tiered approach ensures RAM is spent on users who will actually benefit from low-latency access.</p>
+<h2 id="scale-numbers">Scale Numbers</h2>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Timeline updates/day</td>
+<td>30 billion</td>
+</tr>
+<tr>
+<td>Commands/second</td>
+<td>40M - 100M</td>
+</tr>
+<tr>
+<td>Cache as % of infrastructure</td>
+<td>~3%</td>
+</tr>
+<tr>
+<td>Timeline IDs per user</td>
+<td>800 (capped)</td>
+</tr>
+<tr>
+<td>Replication factor</td>
+<td>3x (fault tolerance)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="source">Source</h2>
+<p>Twitter's engineering team has shared these patterns in technical talks including "Scaling Redis at Twitter" and the infrastructure blog at blog.x.com/engineering.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="twitter-internals.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server-Assisted Client-Side Caching - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="client-side-caching.md.txt">View Markdown</a>
+    </div>
+<h1 id="server-assisted-client-side-caching">Server-Assisted Client-Side Caching</h1>
+<p>Eliminate network round-trips for frequently accessed keys by caching values in application memory, with Redis 6+ automatically sending invalidation messages when data changes.</p>
+<p>Even with sub-millisecond Redis response times, the network round-trip can be a bottleneck for ultra-high-throughput applications. Client-side caching stores frequently accessed data in the application's local memory, with Redis managing invalidation.</p>
+<h2 id="the-architecture">The Architecture</h2>
+<p>This creates a multi-tier cache:</p>
+<ul>
+<li><strong>L1 (Local Memory)</strong>: Nanosecond access, managed by the application</li>
+<li><strong>L2 (Redis)</strong>: Microsecond to millisecond access</li>
+<li><strong>L3 (Database)</strong>: Millisecond access</li>
+</ul>
+<p>The key innovation is that Redis tracks which keys each client has accessed and sends invalidation messages when those keys change.</p>
+<h2 id="tracking-modes">Tracking Modes</h2>
+<h3 id="default-tracking">Default Tracking</h3>
+<p>The server remembers which keys each client has requested. When a key is modified by any client, the server sends an invalidation message to all clients that accessed it.</p>
+<pre class="highlight"><code>CLIENT TRACKING ON
+</code></pre>
+
+<p>After enabling tracking, every GET command causes Redis to remember that this client accessed that key. If another client modifies the key, an invalidation message is pushed to the original client.</p>
+<p><strong>Trade-off</strong>: The server must maintain a table mapping keys to client IDs. This consumes memory proportional to the number of tracked keys.</p>
+<h3 id="broadcasting-mode">Broadcasting Mode</h3>
+<p>Instead of tracking individual key accesses, clients subscribe to key prefixes. The server broadcasts invalidation messages to all subscribers when any matching key changes.</p>
+<pre class="highlight"><code>CLIENT TRACKING ON BCAST PREFIX user: PREFIX session:
+</code></pre>
+
+<p>This client receives invalidations for any key starting with <code>user:</code> or <code>session:</code>.</p>
+<p><strong>Trade-off</strong>: Clients may receive invalidation messages for keys they don't actually have cached locally. However, server memory usage is minimal since it only tracks prefix subscriptions, not individual key accesses.</p>
+<h2 id="how-invalidation-works">How Invalidation Works</h2>
+<p>When tracking is enabled and a key changes:</p>
+<ol>
+<li>Redis checks which clients have accessed (or subscribed to) that key</li>
+<li>Redis sends an invalidation message containing the key name</li>
+<li>The client removes the key from its local cache</li>
+<li>The next access fetches fresh data from Redis</li>
+</ol>
+<p>This ensures local caches stay synchronized with Redis without polling.</p>
+<h2 id="redis-commands">Redis Commands</h2>
+<p>Enable tracking for the current connection:</p>
+<pre class="highlight"><code>CLIENT TRACKING ON
+</code></pre>
+
+<p>Enable with broadcast mode and prefixes:</p>
+<pre class="highlight"><code>CLIENT TRACKING ON BCAST PREFIX user:
+</code></pre>
+
+<p>Redirect invalidations to a different connection (useful for dedicated invalidation handlers):</p>
+<pre class="highlight"><code>CLIENT TRACKING ON REDIRECT 123
+</code></pre>
+
+<p>Disable tracking:</p>
+<pre class="highlight"><code>CLIENT TRACKING OFF
+</code></pre>
+
+<h2 id="the-noloop-option">The NOLOOP Option</h2>
+<p>By default, if you modify a key, you receive an invalidation for it. The NOLOOP option prevents this:</p>
+<pre class="highlight"><code>CLIENT TRACKING ON NOLOOP
+</code></pre>
+
+<p>This is useful when the client that modifies a key already knows the new value—no need to invalidate its own cache.</p>
+<h2 id="the-optinoptout-options">The OPTIN/OPTOUT Options</h2>
+<p>For fine-grained control over which keys are tracked:</p>
+<pre class="highlight"><code>CLIENT TRACKING ON OPTIN
+</code></pre>
+
+<p>With OPTIN, keys are only tracked when you explicitly enable caching before accessing them:</p>
+<pre class="highlight"><code>CLIENT CACHING YES
+GET user:123       # This key will be tracked
+CLIENT CACHING NO
+GET temp:data      # This key will NOT be tracked
+</code></pre>
+
+<h2 id="when-to-use-client-side-caching">When to Use Client-Side Caching</h2>
+<p>This pattern benefits:</p>
+<ul>
+<li>Ultra-high-throughput applications where network RTT matters</li>
+<li>Frequently accessed "hot" keys</li>
+<li>Read-heavy workloads with relatively stable data</li>
+<li>Applications already maintaining local caches that need invalidation</li>
+</ul>
+<h2 id="considerations">Considerations</h2>
+<p><strong>Memory management</strong>: The application must manage its local cache size, implementing eviction when memory is constrained.</p>
+<p><strong>Complexity</strong>: Handling invalidation messages requires dedicated connection management or async processing.</p>
+<p><strong>Not for volatile data</strong>: If data changes constantly, invalidation traffic may exceed the benefit of local caching.</p>
+<p><strong>RESP3 recommended</strong>: The RESP3 protocol (Redis 6+) provides native support for push notifications, making invalidation handling cleaner.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="client-side-caching.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

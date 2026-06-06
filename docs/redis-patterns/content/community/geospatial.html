@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geospatial Patterns - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="geospatial.md.txt">View Markdown</a>
+    </div>
+<h1 id="geospatial-patterns">Geospatial Patterns</h1>
+<p>Store locations and query by radius, distance, or bounding box using GEOADD, GEOSEARCH, and GEODIST commands built on geohash-encoded Sorted Sets.</p>
+<p>Redis natively supports geospatial indexes using the GEO* command family. Coordinates are stored as geohashes in a Sorted Set, enabling efficient spatial queries for "find nearby" features.</p>
+<h2 id="adding-locations">Adding Locations</h2>
+<p>Store locations with their coordinates (longitude first, then latitude):</p>
+<pre class="highlight"><code>GEOADD locations -122.4194 37.7749 &quot;san_francisco&quot;
+GEOADD locations -73.9857 40.7484 &quot;new_york&quot;
+GEOADD locations -0.1276 51.5074 &quot;london&quot;
+</code></pre>
+
+<p>Multiple locations can be added in a single command:</p>
+<pre class="highlight"><code>GEOADD locations -122.4194 37.7749 &quot;san_francisco&quot; -73.9857 40.7484 &quot;new_york&quot;
+</code></pre>
+
+<h2 id="retrieving-coordinates">Retrieving Coordinates</h2>
+<p>Get the coordinates of stored locations:</p>
+<pre class="highlight"><code>GEOPOS locations &quot;san_francisco&quot;
+</code></pre>
+
+<p>Returns the longitude and latitude as a nested array.</p>
+<h2 id="calculating-distance">Calculating Distance</h2>
+<p>Measure distance between two members:</p>
+<pre class="highlight"><code>GEODIST locations &quot;san_francisco&quot; &quot;new_york&quot; km
+</code></pre>
+
+<p>Supported units: <code>m</code> (meters), <code>km</code> (kilometers), <code>mi</code> (miles), <code>ft</code> (feet).</p>
+<h2 id="searching-by-radius">Searching by Radius</h2>
+<p>Find all locations within a specified radius:</p>
+<pre class="highlight"><code>GEOSEARCH locations FROMMEMBER &quot;san_francisco&quot; BYRADIUS 500 km
+</code></pre>
+
+<p>Search from specific coordinates:</p>
+<pre class="highlight"><code>GEOSEARCH locations FROMLONLAT -122.4 37.8 BYRADIUS 50 km
+</code></pre>
+
+<h2 id="search-options">Search Options</h2>
+<p>GEOSEARCH supports several options for controlling output:</p>
+<pre class="highlight"><code>GEOSEARCH locations FROMLONLAT -122.4 37.8 BYRADIUS 50 km WITHCOORD WITHDIST COUNT 10 ASC
+</code></pre>
+
+<ul>
+<li><code>WITHCOORD</code>: Include coordinates in results</li>
+<li><code>WITHDIST</code>: Include distance from search point</li>
+<li><code>WITHHASH</code>: Include the geohash integer</li>
+<li><code>COUNT N</code>: Limit results to N items</li>
+<li><code>ASC/DESC</code>: Sort by distance (ascending = closest first)</li>
+</ul>
+<h2 id="searching-by-bounding-box">Searching by Bounding Box</h2>
+<p>Search within a rectangular area:</p>
+<pre class="highlight"><code>GEOSEARCH locations FROMMEMBER &quot;san_francisco&quot; BYBOX 1000 1000 km
+</code></pre>
+
+<p>The box is specified as width × height centered on the reference point.</p>
+<h2 id="storing-search-results">Storing Search Results</h2>
+<p>Save search results to a new key for further processing:</p>
+<pre class="highlight"><code>GEOSEARCHSTORE nearby_cache locations FROMLONLAT -122.4 37.8 BYRADIUS 50 km
+</code></pre>
+
+<p>The results are stored as a Sorted Set with geohash scores.</p>
+<h2 id="location-with-metadata">Location with Metadata</h2>
+<p>Since GEO commands use Sorted Sets, you can only store the member name directly. Store additional metadata in a separate Hash:</p>
+<pre class="highlight"><code>GEOADD restaurants -122.4194 37.7749 &quot;restaurant:123&quot;
+HSET restaurant:123 name &quot;Joe's Diner&quot; cuisine &quot;American&quot; rating &quot;4.5&quot;
+</code></pre>
+
+<p>When searching, first find nearby IDs, then fetch their metadata:</p>
+<pre class="highlight"><code>GEOSEARCH restaurants FROMLONLAT -122.4 37.8 BYRADIUS 5 km
+HGETALL restaurant:123
+</code></pre>
+
+<h2 id="real-time-location-tracking">Real-Time Location Tracking</h2>
+<p>For tracking moving entities like drivers or delivery personnel:</p>
+<ol>
+<li>
+<p>Update location on each GPS ping:</p>
+<p>GEOADD drivers -122.4 37.8 "driver:456"</p>
+</li>
+<li>
+<p>Store last-update timestamp:</p>
+<p>HSET driver:456:status last_update 1706648400 available 1</p>
+</li>
+<li>
+<p>Find nearby available drivers:</p>
+<p>GEOSEARCH drivers FROMLONLAT -122.4 37.8 BYRADIUS 5 km COUNT 20</p>
+</li>
+<li>
+<p>Filter results by checking availability and freshness in your application.</p>
+</li>
+</ol>
+<h2 id="geofencing">Geofencing</h2>
+<p>Geofencing detects when entities enter or leave defined areas. Redis doesn't provide built-in geofencing events, but you can implement it by:</p>
+<ol>
+<li>Storing geofence definitions (center coordinates and radius)</li>
+<li>On each location update, checking if the entity is inside each relevant fence</li>
+<li>Comparing current state to previous state to detect enter/exit events</li>
+<li>Using Pub/Sub to broadcast geofence events to interested services</li>
+</ol>
+<h2 id="geohash">Geohash</h2>
+<p>Get the geohash string representation:</p>
+<pre class="highlight"><code>GEOHASH locations &quot;san_francisco&quot;
+</code></pre>
+
+<p>Geohashes are useful for:
+- Debugging and visualization
+- Interoperability with other geospatial systems
+- Understanding the precision of stored coordinates</p>
+<h2 id="removing-locations">Removing Locations</h2>
+<p>Since GEO data is stored in a Sorted Set, use ZREM:</p>
+<pre class="highlight"><code>ZREM locations &quot;san_francisco&quot;
+</code></pre>
+
+<h2 id="commands-reference">Commands Reference</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GEOADD</td>
+<td>Add coordinates for members</td>
+</tr>
+<tr>
+<td>GEOPOS</td>
+<td>Get coordinates of members</td>
+</tr>
+<tr>
+<td>GEODIST</td>
+<td>Distance between two members</td>
+</tr>
+<tr>
+<td>GEOSEARCH</td>
+<td>Search by radius or box</td>
+</tr>
+<tr>
+<td>GEOSEARCHSTORE</td>
+<td>Search and store results</td>
+</tr>
+<tr>
+<td>GEOHASH</td>
+<td>Get geohash strings</td>
+</tr>
+<tr>
+<td>ZREM</td>
+<td>Remove a location</td>
+</tr>
+</tbody>
+</table>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="geospatial.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

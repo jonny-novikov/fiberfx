@@ -1,0 +1,66 @@
+# Write-Through Caching Pattern
+
+Maintain cache-database consistency by synchronously writing to both Redis and the database before returning success—ensures reads always hit cache with fresh data.
+
+Every write operation updates both the cache and the backing database synchronously before acknowledging success to the client. This eliminates cache misses for recently written data at the cost of higher write latency.
+
+## How It Works
+
+When a write occurs:
+
+1. The application writes data to Redis
+2. The application writes the same data to the database
+3. Only after both writes succeed does the operation complete
+
+The cache and database are always updated together, maintaining consistency between them.
+
+## Redis Commands Used
+
+A typical write-through operation:
+
+    SET user:123 "{...updated user data...}"
+
+Followed immediately by the corresponding database write. The application only returns success to the client after both operations complete.
+
+## Advantages
+
+**Strong consistency**: The cache always reflects the latest data. There is no window where the cache contains stale information (assuming both writes succeed atomically from the application's perspective).
+
+**Fast reads after writes**: Data written is immediately available in the cache for subsequent reads. This benefits write-then-read patterns.
+
+**Simpler cache invalidation**: Since writes go through the cache, there's no need to explicitly invalidate keys after database updates.
+
+## Disadvantages
+
+**Increased write latency**: The write operation isn't complete until both Redis and the database acknowledge. The total latency is at least the sum of both write latencies.
+
+**Cache pollution**: Data that is written but rarely read still occupies cache memory. This can evict more valuable frequently-read data.
+
+**Failure complexity**: If the database write fails after the cache write succeeds, you have an inconsistency. Applications must handle partial failures carefully.
+
+## Handling Partial Failures
+
+The safest approach is to write to the database first:
+
+1. Write to database
+2. If successful, write to cache
+3. If cache write fails, log the error but don't fail the operation
+
+This way, the database (source of truth) is always correct. A cache miss simply results in reading fresh data from the database.
+
+## When to Use Write-Through
+
+This pattern works well when:
+
+- Strong consistency between cache and database is required
+- Write-then-immediately-read patterns are common
+- The write latency overhead is acceptable
+- The dataset is relatively small (cache pollution less concerning)
+
+## When to Avoid
+
+Consider other patterns when:
+
+- Write latency is critical
+- Most data is written but rarely read
+- The system needs to tolerate cache failures without affecting write operations

@@ -1,0 +1,95 @@
+# Cache Stampede Prevention
+
+Prevent multiple clients from simultaneously regenerating an expired cache key using locking, probabilistic early refresh, or request coalescing.
+
+A cache stampede (also called "thundering herd") occurs when a popular cache key expires, causing many concurrent requests to simultaneously query the database to regenerate the value. This can overwhelm the database and cause cascading failures.
+
+## The Problem
+
+Consider a cache key accessed 10,000 times per second. When it expires:
+
+1. Thousands of requests arrive within milliseconds
+2. All see a cache miss
+3. All query the database simultaneously
+4. The database becomes overloaded
+5. Response times spike across the entire system
+
+This is particularly dangerous for keys with expensive regeneration costs (complex queries, aggregations, external API calls).
+
+## Solution 1: Probabilistic Early Expiration (X-Fetch)
+
+This technique decouples logical expiration from physical expiration. The idea is to have a small probability that any request will refresh the cache *before* it actually expires.
+
+### How It Works
+
+Set the physical TTL longer than needed (e.g., 1 hour). As requests arrive, each one calculates whether it should proactively refresh based on how close the key is to expiration and a random factor.
+
+When the key is fresh, the probability of refresh is near zero. As expiration approaches, the probability increases. Eventually, one "lucky" request triggers a refresh while all others continue serving the slightly stale data.
+
+### The Algorithm
+
+The decision to refresh is based on:
+
+    current_time - (expiry_time - delta * beta * log(random()))
+
+Where:
+- `delta` is the time needed to regenerate the value
+- `beta` is a tuning parameter (typically 1.0)
+- `random()` produces a value between 0 and 1
+
+This formula ensures that as the gap to expiration shrinks, the probability of any single request triggering a refresh increases.
+
+### Outcome
+
+Instead of thousands of simultaneous database queries at expiration, a single request refreshes the cache moments before expiration while others continue serving cached data. The traffic spike is smoothed away.
+
+## Solution 2: Mutex Locking
+
+A deterministic approach where only one process is allowed to regenerate the cache.
+
+### How It Works
+
+When a cache miss occurs:
+
+1. Attempt to acquire a lock using `SET lock:mykey <token> NX PX 5000`
+2. If the lock is acquired, query the database and update the cache
+3. Other requests either wait and poll, or return a stale/default value
+4. Release the lock after cache is populated
+
+### Redis Commands
+
+    SET lock:popular_key abc123 NX PX 5000
+
+The `NX` ensures only one client acquires the lock. The `PX 5000` sets a 5-second timeout to prevent deadlocks if the lock holder crashes.
+
+### Handling Waiting Clients
+
+Clients that fail to acquire the lock have options:
+
+- **Poll**: Sleep briefly and check the cache again
+- **Return stale data**: If a stale copy is available, serve it
+- **Return default**: Serve a default or degraded response
+- **Fail fast**: Return an error immediately
+
+### Releasing the Lock
+
+The lock must be released safely. Simply calling DEL risks deleting another client's lock if yours expired. Use a Lua script that checks the token matches before deleting:
+
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+    end
+    return 0
+
+## Comparison
+
+| Approach | Complexity | Database Queries | Staleness |
+|----------|------------|------------------|-----------|
+| No protection | Low | N (one per request) | None |
+| X-Fetch | Medium | 1-2 | Brief window |
+| Mutex lock | Higher | Exactly 1 | None |
+
+## Recommendation
+
+For most applications, start with mutex locking—it's easier to reason about and provides strong protection. Consider X-Fetch for extremely high-traffic keys where even brief lock contention is problematic.
+
+Some systems combine both: use X-Fetch for normal operation, with a mutex fallback for hard cache misses.

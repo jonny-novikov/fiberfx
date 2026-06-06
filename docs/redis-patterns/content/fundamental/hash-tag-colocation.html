@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hash Tag Co-location Patterns - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="hash-tag-colocation.md.txt">View Markdown</a>
+    </div>
+<h1 id="hash-tag-co-location-patterns">Hash Tag Co-location Patterns</h1>
+<p>Force related keys to the same Redis Cluster slot using hash tags, enabling atomic multi-key operations, transactions, and Lua scripts across logically related data.</p>
+<p>Redis Cluster distributes keys across slots based on a hash of the key name. By using hash tags <code>{...}</code>, you control which part of the key determines the slot, co-locating related keys for atomic operations.</p>
+<h2 id="how-hash-tags-work">How Hash Tags Work</h2>
+<p>Redis Cluster hashes only the substring inside <code>{...}</code> to determine the slot:</p>
+<pre class="highlight"><code>user:{123}:profile    → hashes &quot;123&quot; → slot X
+user:{123}:settings   → hashes &quot;123&quot; → slot X
+user:{123}:sessions   → hashes &quot;123&quot; → slot X
+</code></pre>
+
+<p>All three keys land in the same slot, enabling atomic operations across them.</p>
+<p>Without hash tags:</p>
+<pre class="highlight"><code>user:123:profile      → hashes entire key → slot A
+user:123:settings     → hashes entire key → slot B (different!)
+</code></pre>
+
+<h2 id="basic-pattern-user-data-co-location">Basic Pattern: User Data Co-location</h2>
+<p>Group all data for a single entity:</p>
+<pre class="highlight"><code>user:{user_id}:profile
+user:{user_id}:settings
+user:{user_id}:notifications
+user:{user_id}:sessions
+</code></pre>
+
+<p>Now you can:
+- Update multiple fields atomically with MULTI/EXEC
+- Run Lua scripts touching all user keys
+- Use WATCH for optimistic locking across keys</p>
+<h2 id="atomic-multi-key-operations">Atomic Multi-Key Operations</h2>
+<h3 id="transaction-across-related-keys">Transaction Across Related Keys</h3>
+<pre class="highlight"><code>MULTI
+HSET user:{123}:profile name &quot;Alice&quot; updated_at &quot;1706648400&quot;
+HSET user:{123}:settings theme &quot;dark&quot;
+INCR user:{123}:stats:updates
+EXEC
+</code></pre>
+
+<p>All commands execute atomically because keys share a slot.</p>
+<h3 id="lua-script-across-keys">Lua Script Across Keys</h3>
+<pre class="highlight"><code>local profile = redis.call('HGETALL', KEYS[1])
+local settings = redis.call('HGETALL', KEYS[2])
+-- Process both atomically
+redis.call('SET', KEYS[3], cjson.encode({profile, settings}))
+return 'OK'
+</code></pre>
+
+<p>Call with:</p>
+<pre class="highlight"><code>EVAL &lt;script&gt; 3 user:{123}:profile user:{123}:settings user:{123}:cache
+</code></pre>
+
+<h3 id="optimistic-locking-with-watch">Optimistic Locking with WATCH</h3>
+<pre class="highlight"><code>WATCH user:{123}:balance user:{123}:pending
+
+balance = GET user:{123}:balance
+pending = GET user:{123}:pending
+
+-- Application logic
+new_balance = balance - amount
+new_pending = pending + amount
+
+MULTI
+SET user:{123}:balance new_balance
+SET user:{123}:pending new_pending
+EXEC
+</code></pre>
+
+<p>If either key changes before EXEC, the transaction aborts.</p>
+<h2 id="pattern-order-with-line-items">Pattern: Order with Line Items</h2>
+<pre class="highlight"><code>order:{order_id}:header     → order metadata
+order:{order_id}:items      → list of line items
+order:{order_id}:totals     → computed totals
+order:{order_id}:status     → current status
+</code></pre>
+
+<p>Atomic status transitions:</p>
+<pre class="highlight"><code>MULTI
+HSET order:{abc}:header status &quot;shipped&quot;
+RPUSH order:{abc}:history &quot;shipped at 1706648400&quot;
+EXEC
+</code></pre>
+
+<h2 id="pattern-distributed-counter-with-inventory">Pattern: Distributed Counter with Inventory</h2>
+<pre class="highlight"><code>product:{sku}:stock         → available quantity
+product:{sku}:reserved      → reserved for carts
+product:{sku}:sold          → sold count
+</code></pre>
+
+<p>Atomic reservation:</p>
+<pre class="highlight"><code>-- Lua script for atomic reserve
+local stock = tonumber(redis.call('GET', KEYS[1])) or 0
+local qty = tonumber(ARGV[1])
+if stock &gt;= qty then
+    redis.call('DECRBY', KEYS[1], qty)
+    redis.call('INCRBY', KEYS[2], qty)
+    return 1
+end
+return 0
+</code></pre>
+
+<h2 id="pattern-session-with-related-state">Pattern: Session with Related State</h2>
+<pre class="highlight"><code>session:{session_id}:data       → session payload
+session:{session_id}:user       → user reference
+session:{session_id}:cart       → shopping cart
+session:{session_id}:expires    → expiration tracking
+</code></pre>
+
+<p>Atomic session operations without race conditions.</p>
+<h2 id="hash-tag-placement-rules">Hash Tag Placement Rules</h2>
+<p>The <strong>first</strong> <code>{...}</code> in the key determines the slot:</p>
+<pre class="highlight"><code>{user:123}:profile     → hashes &quot;user:123&quot;
+user:{123}:profile     → hashes &quot;123&quot;
+user:123:{profile}     → hashes &quot;profile&quot; (probably wrong!)
+</code></pre>
+
+<p>Be consistent. Convention: put the entity ID in the tag.</p>
+<h3 id="empty-hash-tags">Empty Hash Tags</h3>
+<p>An empty hash tag <code>{}</code> hashes the entire key (no co-location):</p>
+<pre class="highlight"><code>key:{}:suffix          → hashes entire key
+</code></pre>
+
+<p>Avoid empty tags unless intentional.</p>
+<h3 id="multiple-hash-tags">Multiple Hash Tags</h3>
+<p>Only the first is used:</p>
+<pre class="highlight"><code>{a}:{b}:key            → hashes &quot;a&quot;, ignores &quot;b&quot;
+</code></pre>
+
+<h2 id="hot-slot-problem">Hot Slot Problem</h2>
+<p>Co-location concentrates load. If one entity is extremely hot (celebrity user, viral product), its slot becomes a bottleneck.</p>
+<h3 id="mitigation-strategies">Mitigation Strategies</h3>
+<p><strong>Shard within the entity:</strong></p>
+<pre class="highlight"><code>user:{123}:profile             → hot user data
+user:{123}:followers:0         → follower shard 0
+user:{123}:followers:1         → follower shard 1
+...
+</code></pre>
+
+<p><strong>Separate hot data:</strong></p>
+<pre class="highlight"><code>user:{123}:profile             → co-located, atomic
+user_followers:123             → separate slot, different access pattern
+</code></pre>
+
+<p><strong>Accept eventual consistency for read-heavy data:</strong></p>
+<p>Keep writes co-located, replicate to non-tagged keys for reads:</p>
+<pre class="highlight"><code>user:{123}:profile             → source of truth (writes)
+user:123:profile:cache         → read replica (different slot)
+</code></pre>
+
+<h2 id="limitations">Limitations</h2>
+<h3 id="cross-entity-operations">Cross-Entity Operations</h3>
+<p>Hash tags help within one entity. Operations spanning entities (transfer between users) still require cross-shard patterns:</p>
+<pre class="highlight"><code>user:{alice}:balance    → slot A
+user:{bob}:balance      → slot B
+-- Cannot be atomic!
+</code></pre>
+
+<p>Use <a href="cross-shard-consistency.md.txt">Cross-Shard Consistency Patterns</a> for these cases.</p>
+<h3 id="cluster-commands">Cluster Commands</h3>
+<p>Some commands don't work across slots even with hash tags:</p>
+<ul>
+<li><code>KEYS</code> / <code>SCAN</code> - cluster-wide, not slot-aware</li>
+<li><code>FLUSHDB</code> - affects entire node</li>
+<li>Some pub/sub operations</li>
+</ul>
+<h3 id="resharding">Resharding</h3>
+<p>During cluster resharding, slots move between nodes. Operations on a moving slot may temporarily fail. Clients should retry.</p>
+<h2 id="design-guidelines">Design Guidelines</h2>
+<ol>
+<li><strong>Plan key structure early</strong> - changing hash tag patterns requires data migration</li>
+<li><strong>One entity per tag value</strong> - <code>{user:123}</code> groups user 123's data</li>
+<li><strong>Don't over-co-locate</strong> - only group keys that need atomic operations</li>
+<li><strong>Monitor slot distribution</strong> - ensure no slot is significantly hotter than others</li>
+<li><strong>Document your conventions</strong> - team should use consistent patterns</li>
+</ol>
+<h2 id="commands-that-benefit">Commands That Benefit</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Benefit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MULTI/EXEC</td>
+<td>Atomic transactions</td>
+</tr>
+<tr>
+<td>WATCH</td>
+<td>Optimistic locking</td>
+</tr>
+<tr>
+<td>EVAL/EVALSHA</td>
+<td>Lua scripts</td>
+</tr>
+<tr>
+<td>MGET/MSET</td>
+<td>Multi-key read/write</td>
+</tr>
+<tr>
+<td>RENAME</td>
+<td>Atomic key swap</td>
+</tr>
+<tr>
+<td>COPY</td>
+<td>Key duplication</td>
+</tr>
+</tbody>
+</table>
+<h2 id="example-complete-user-module">Example: Complete User Module</h2>
+<pre class="highlight"><code># Key structure
+user:{id}:profile       # Hash: name, email, avatar
+user:{id}:settings      # Hash: preferences
+user:{id}:sessions      # Set: active session IDs
+user:{id}:notifications # List: recent notifications
+user:{id}:stats         # Hash: counters
+
+# Atomic profile update with audit
+MULTI
+HSET user:{123}:profile name &quot;New Name&quot; updated_at &quot;1706648400&quot;
+RPUSH user:{123}:audit &quot;profile_updated:1706648400&quot;
+EXEC
+
+# Atomic session cleanup
+EVAL &quot;
+    redis.call('DEL', KEYS[1])
+    redis.call('SREM', KEYS[2], ARGV[1])
+    return 1
+&quot; 2 session:{abc123}:data user:{123}:sessions abc123
+</code></pre>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="hash-tag-colocation.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

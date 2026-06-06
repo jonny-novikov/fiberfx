@@ -1,0 +1,83 @@
+# Reliable Queue Pattern
+
+Guarantee at-least-once message delivery using LMOVE to atomically transfer messages to a processing list, enabling recovery if consumers crash before completing work.
+
+Standard queue operations using RPOP are unreliable—if a consumer fetches a message and crashes before processing completes, the message is lost forever. This pattern ensures no messages are lost.
+
+## The Problem with Simple Queues
+
+A naive queue implementation:
+
+1. Producer: `LPUSH queue "message"`
+2. Consumer: `RPOP queue` — message is removed
+3. Consumer crashes during processing
+4. Message is gone permanently
+
+## The Solution: Atomic Transfer
+
+Instead of removing the message, atomically move it to a "processing" list. The message remains in Redis until explicitly deleted after successful processing.
+
+## How It Works
+
+The consumer uses LMOVE (or the older RPOPLPUSH) to atomically transfer a message from the main queue to a processing queue:
+
+    LMOVE work_queue processing:worker1 RIGHT LEFT
+
+This single command:
+- Removes the message from the right of `work_queue`
+- Adds it to the left of `processing:worker1`
+- Does both atomically—no message loss possible
+
+After successful processing, remove the message from the processing queue:
+
+    LREM processing:worker1 1 "message"
+
+## The Processing Lifecycle
+
+1. **Dequeue**: `LMOVE work_queue processing:worker1 RIGHT LEFT`
+2. **Process**: Application handles the message
+3. **Acknowledge**: `LREM processing:worker1 1 "message"`
+
+If the worker crashes between steps 1 and 3, the message remains in `processing:worker1`.
+
+## Recovery from Failures
+
+A separate monitor process (sometimes called a "reaper") periodically scans processing queues for stalled messages:
+
+1. Check each processing queue
+2. If a message has been there longer than a timeout (e.g., 10 minutes), assume the worker died
+3. Move the message back to the main queue: `LMOVE processing:worker1 work_queue RIGHT RIGHT`
+
+This guarantees "at-least-once" delivery—messages may be processed multiple times but are never lost.
+
+## Blocking Variant
+
+For efficient consumption without polling, use the blocking version:
+
+    BLMOVE work_queue processing:worker1 RIGHT LEFT 30
+
+This waits up to 30 seconds for a message to arrive. If the queue is empty, the connection blocks rather than returning immediately.
+
+## Per-Worker Processing Queues
+
+Each worker should have its own processing queue (e.g., `processing:worker1`, `processing:worker2`). This allows the monitor to identify which worker holds which messages and makes recovery straightforward.
+
+## Delivery Guarantees
+
+This pattern provides **at-least-once** delivery:
+
+- Messages are never lost (always exist in some queue)
+- Messages may be processed multiple times if a worker crashes after processing but before acknowledgment
+
+For exactly-once semantics, make message handlers idempotent—processing the same message twice should produce the same result as processing it once.
+
+## When to Use
+
+- Job queues requiring reliability
+- Background task processing
+- Any scenario where message loss is unacceptable
+- Systems where workers may crash or be killed
+
+## When to Consider Alternatives
+
+For more complex requirements (multiple consumers per message, message replay, consumer groups), consider Redis Streams instead, which provide these features natively.

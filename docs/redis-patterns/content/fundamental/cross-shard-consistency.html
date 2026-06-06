@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cross-Shard Consistency Patterns - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="cross-shard-consistency.md.txt">View Markdown</a>
+    </div>
+<h1 id="cross-shard-consistency-patterns">Cross-Shard Consistency Patterns</h1>
+<p>Detect and handle torn writes across multiple Redis instances using transaction stamps, version tokens, and commit markers when atomic multi-key operations aren't possible.</p>
+<p>These patterns work with any multi-primary Redis setup: Redis Cluster shards, client-side sharding across independent Redis instances, or even different Redis deployments entirely. The key insight is that consistency detection happens at the application layer through shared tokens embedded in the values themselves—no coordination between Redis instances is required.</p>
+<h2 id="the-problem-torn-writes">The Problem: Torn Writes</h2>
+<p>When updating related keys A and B on different shards:</p>
+<ol>
+<li>Client writes A to shard 1 -&gt; Success</li>
+<li>Client writes B to shard 2 -&gt; Fails (network error, timeout)</li>
+</ol>
+<p>Now A has new data, B has old data. Readers see inconsistent state.</p>
+<h2 id="pattern-1-transaction-stamp-shared-token">Pattern 1: Transaction Stamp (Shared Token)</h2>
+<p>Generate a unique token for each logical transaction. Include it in all related writes.</p>
+<h3 id="write">Write</h3>
+<pre class="highlight"><code># Generate unique token (UUID, ULID, or random bytes)
+token = generate_random_token()
+
+SET user:123:profile &quot;{token}:{profile_json}&quot;
+SET user:123:settings &quot;{token}:{settings_json}&quot;
+</code></pre>
+
+<h3 id="read-and-validate">Read and Validate</h3>
+<pre class="highlight"><code>profile = GET user:123:profile
+settings = GET user:123:settings
+
+profile_token = parse_token(profile)
+settings_token = parse_token(settings)
+
+if profile_token == settings_token:
+    # Consistent: both from same logical write
+    return parse_payload(profile), parse_payload(settings)
+else:
+    # Torn write detected - handle inconsistency
+    trigger_repair()
+</code></pre>
+
+<h3 id="what-this-buys-you">What This Buys You</h3>
+<ul>
+<li><strong>Detects inconsistency</strong> without distributed transactions or cluster features</li>
+<li><strong>Cheap read-time proof</strong> that values match the same logical write</li>
+<li><strong>Works across anything</strong>: Redis Cluster shards, separate Redis instances with client-side sharding, different data centers, or even different storage systems entirely</li>
+<li><strong>No Redis coordination required</strong>: Each SET is independent; consistency is validated by the client reading both values</li>
+<li><strong>Enables idempotency</strong>: the token can serve as the operation ID</li>
+</ul>
+<h3 id="limitations">Limitations</h3>
+<ul>
+<li>Detection only, not prevention—you still need a recovery policy</li>
+<li>Doesn't tell you which side is newer (add timestamps for that)</li>
+</ul>
+<h3 id="client-side-sharding-example">Client-Side Sharding Example</h3>
+<p>This pattern is particularly valuable with client-side sharding where you have independent Redis primaries with no cluster coordination:</p>
+<p><strong>Setup:</strong> Two independent Redis instances (host1:6379 and host2:6379) with a client connecting to both.</p>
+<p>The client:
+1. Generates token
+2. Writes to Instance A: <code>SET user:profile "{token}:{data}"</code>
+3. Writes to Instance B: <code>SET user:settings "{token}:{data}"</code>
+4. On read, fetches both and compares tokens</p>
+<p>No clustering, no replication between instances—consistency is enforced entirely by the application through token validation.</p>
+<h2 id="pattern-2-version-stamped-values">Pattern 2: Version-Stamped Values</h2>
+<p>Add ordering information to detect inconsistency AND determine the newest version:</p>
+<pre class="highlight"><code>SET user:123:profile &quot;{timestamp}:{token}:{payload}&quot;
+SET user:123:settings &quot;{timestamp}:{token}:{payload}&quot;
+</code></pre>
+
+<p>On mismatch, accept the value with the higher timestamp, or trigger a full refresh.</p>
+<h3 id="monotonic-versions">Monotonic Versions</h3>
+<p>For stronger ordering guarantees, use a monotonic counter:</p>
+<pre class="highlight"><code>version = INCR user:123:version
+SET user:123:profile &quot;{version}:{payload}&quot;
+SET user:123:settings &quot;{version}:{payload}&quot;
+</code></pre>
+
+<p>Now you can always determine which write is newer.</p>
+<h2 id="pattern-3-commit-marker">Pattern 3: Commit Marker</h2>
+<p>Write all data first, then write a commit marker as the final step:</p>
+<pre class="highlight"><code># Phase 1: Write data (may partially fail)
+SET txn:abc:A &quot;{payload_A}&quot;
+SET txn:abc:B &quot;{payload_B}&quot;
+
+# Phase 2: Mark as committed
+SET txn:abc:committed &quot;1&quot; EX 3600
+</code></pre>
+
+<p>Readers only accept data whose transaction ID has a commit marker:</p>
+<pre class="highlight"><code>if EXISTS txn:abc:committed:
+    a = GET txn:abc:A
+    b = GET txn:abc:B
+    # Safe to use
+else:
+    # Transaction incomplete, ignore or wait
+</code></pre>
+
+<p>This resembles two-phase commit, with the commit marker acting as the decision record.</p>
+<h2 id="pattern-4-append-only-logs-with-shared-tokens">Pattern 4: Append-Only Logs with Shared Tokens</h2>
+<p>For event-sourced systems, append to per-key logs with shared tokens:</p>
+<pre class="highlight"><code># Each logical transaction appends to both logs
+RPUSH user:123:profile:log &quot;{token}:{profile_change}&quot;
+RPUSH user:123:settings:log &quot;{token}:{settings_change}&quot;
+</code></pre>
+
+<p>To find the latest consistent state:</p>
+<ol>
+<li>Read recent entries from both logs (LRANGE ... -N -1)</li>
+<li>Find the newest token that appears in BOTH logs</li>
+<li>That token identifies the latest complete transaction</li>
+</ol>
+<h3 id="zset-variant">ZSET Variant</h3>
+<p>Using sorted sets with timestamp scores:</p>
+<pre class="highlight"><code>ZADD user:123:events {timestamp} &quot;{token}:profile:{payload}&quot;
+ZADD user:123:events {timestamp} &quot;{token}:settings:{payload}&quot;
+</code></pre>
+
+<p>Query from newest, grouping by token until you find one with all expected parts.</p>
+<h2 id="recovery-strategies">Recovery Strategies</h2>
+<p>When inconsistency is detected:</p>
+<h3 id="re-read-with-backoff">Re-read with Backoff</h3>
+<p>The write may still be in progress:</p>
+<pre class="highlight"><code>for attempt in range(3):
+    if tokens_match():
+        return data
+    sleep(backoff * attempt)
+trigger_repair()
+</code></pre>
+
+<h3 id="accept-newest">Accept Newest</h3>
+<p>If values have timestamps/versions, use the newest:</p>
+<pre class="highlight"><code>if profile_version &gt; settings_version:
+    regenerate_settings_from_profile()
+else:
+    regenerate_profile_from_settings()
+</code></pre>
+
+<h3 id="consult-source-of-truth">Consult Source of Truth</h3>
+<p>Re-fetch from the authoritative source (database) and rewrite both:</p>
+<pre class="highlight"><code>canonical = fetch_from_database(user_id)
+token = generate_token()
+SET user:123:profile &quot;{token}:{canonical.profile}&quot;
+SET user:123:settings &quot;{token}:{canonical.settings}&quot;
+</code></pre>
+
+<h3 id="serve-stale-with-background-repair">Serve Stale with Background Repair</h3>
+<p>Return the most recent data immediately, trigger async repair:</p>
+<pre class="highlight"><code>queue_repair_job(user_id)
+return best_effort_merge(profile, settings)
+</code></pre>
+
+<h2 id="when-to-use-these-patterns">When to Use These Patterns</h2>
+<p><strong>Use transaction stamps when:</strong>
+- Keys must live on different shards (no hash tag option)
+- You can tolerate detection + repair instead of prevention
+- Cross-system consistency is needed (Redis + database + cache)</p>
+<p><strong>Use commit markers when:</strong>
+- You need clear transaction boundaries
+- Incomplete transactions should be invisible to readers
+- You can accept the overhead of an extra key per transaction</p>
+<p><strong>Use version stamps when:</strong>
+- You need to determine which write is newest
+- Last-write-wins semantics are acceptable
+- You want automatic conflict resolution</p>
+<h2 id="comparison-with-prevention-strategies">Comparison with Prevention Strategies</h2>
+<table>
+<thead>
+<tr>
+<th>Approach</th>
+<th>Guarantees</th>
+<th>Overhead</th>
+<th>Complexity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hash tags (same slot)</td>
+<td>Atomic</td>
+<td>None</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>Transaction stamps</td>
+<td>Detect only</td>
+<td>Per-value token</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>Commit markers</td>
+<td>Detect + visibility</td>
+<td>Extra key</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>Version stamps</td>
+<td>Detect + ordering</td>
+<td>Per-value version</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>External coordinator</td>
+<td>Atomic</td>
+<td>Network + latency</td>
+<td>High</td>
+</tr>
+</tbody>
+</table>
+<p>When possible, use hash tags to co-locate keys (see <a href="hash-tag-colocation.md.txt">Hash Tag Patterns</a>). Use these detection patterns when co-location isn't feasible.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="cross-shard-consistency.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

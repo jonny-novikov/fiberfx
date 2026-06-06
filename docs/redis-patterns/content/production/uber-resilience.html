@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uber: Resilience Patterns and Staggered Sharding - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="uber-resilience.md.txt">View Markdown</a>
+    </div>
+<h1 id="uber-resilience-patterns-and-staggered-sharding">Uber: Resilience Patterns and Staggered Sharding</h1>
+<p>Study Uber's resilience techniques: staggered sharding to prevent coordinated failures, circuit breakers, and graceful degradation patterns for 150M+ ops/sec cache workloads.</p>
+<p>Uber's architecture relies heavily on Redis to cache real-time state—driver locations, trip statuses, and dynamic pricing. The cache is a critical dependency where failures can cascade into system-wide outages.</p>
+<h2 id="the-hot-shard-problem">The Hot Shard Problem</h2>
+<p>A primary risk in cached architectures is the "Hot Shard" problem. When cache and database use the same sharding function, a cache shard failure sends all its traffic to a single database shard.</p>
+<p><strong>Scenario: 1:1 Cache-to-DB Sharding</strong></p>
+<p>Cache Cluster: Cache 1 (Keys A-H), Cache 2 (Keys I-P), Cache 3 (Keys Q-Z)</p>
+<p>Database Cluster: DB 1 (Keys A-H), DB 2 (Keys I-P), DB 3 (Keys Q-Z)</p>
+<p>Each cache shard maps directly to one DB shard.</p>
+<p><strong>Problem:</strong> If Cache 1 fails, ALL cache misses for keys A-H hit DB 1.</p>
+<p><strong>Result:</strong> DB 1 overwhelmed, leading to cascading failure.</p>
+<h2 id="staggered-sharding">Staggered Sharding</h2>
+<p>Uber's solution: use different hash functions for cache and database partitioning.</p>
+<p><strong>Cache Cluster:</strong> Cache 1 (Keys A-H), Cache 2 (Keys I-P), Cache 3 (Keys Q-Z) - using hash function #1.</p>
+<p><strong>Database Cluster:</strong> DB 1, DB 2, DB 3 - using hash function #2. Each DB shard contains a mix of keys from all cache shards.</p>
+<p><strong>Result:</strong> When Cache 1 fails, its keys (A-H) are distributed across ALL database shards by the different hash function. No single database shard sees a massive spike.</p>
+<p><strong>Blast radius contained:</strong> No single point of failure.</p>
+<h2 id="cdc-based-cache-consistency">CDC-Based Cache Consistency</h2>
+<p>Uber maintains cache consistency through Change Data Capture (CDC). Instead of updating the cache directly from the application, changes flow through the database transaction log.</p>
+<p><strong>Flow:</strong> Application writes to Database. Database writes to Transaction Log. Flux (CDC Tailer) reads the Transaction Log and updates Redis Cache.</p>
+<p><strong>Benefits:</strong></p>
+<ol>
+<li>
+<p><strong>Latency Isolation</strong>: Write latency tied only to database, not cache. If cache is temporarily slow or unavailable, user writes still succeed.</p>
+</li>
+<li>
+<p><strong>Eventual Consistency Guarantees</strong>: Cache updates driven from the immutable transaction log ensure the cache eventually reflects true state, even if the application server crashes mid-operation.</p>
+</li>
+<li>
+<p><strong>Redis as Materialized View</strong>: Effectively treats Redis as a materialized view of the persistent store, optimized for high-speed reads.</p>
+</li>
+</ol>
+<h2 id="invalidation-markers">Invalidation Markers</h2>
+<p>Instead of using DEL for cache invalidation, Uber writes special invalidation markers:</p>
+<pre class="highlight"><code>SET key &quot;__INVALIDATED__&quot; EX 60
+</code></pre>
+
+<p>On read, if the value is <code>__INVALIDATED__</code>, treat it as a cache miss and fetch from the database.</p>
+<p><strong>Why markers instead of DELETE:</strong>
+- Prevents cache stampedes during high-churn periods
+- Provides visibility into invalidation patterns
+- Allows debugging and auditing of cache behavior
+- The marker expires naturally, allowing future caching</p>
+<h2 id="cross-region-replication">Cross-Region Replication</h2>
+<p>For handling region failovers without massive cache miss spikes:</p>
+<p><strong>Setup:</strong> Redis Master in Primary Region replicates via write stream tailing to Redis Replica in Secondary Region.</p>
+<p><strong>Benefits:</strong>
+- Region failovers without massive cache miss spikes
+- Database protected from overload during DR events
+- Keys pre-warmed in secondary region before it becomes primary</p>
+<h2 id="scale-numbers">Scale Numbers</h2>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Reads per second</td>
+<td>40M+ (2023), 150M+ (2025)</td>
+</tr>
+<tr>
+<td>Cache hit rate</td>
+<td>~99.9%</td>
+</tr>
+<tr>
+<td>Redis cores</td>
+<td>~3,000</td>
+</tr>
+<tr>
+<td>Cache clusters</td>
+<td>Multiple, isolated by function</td>
+</tr>
+</tbody>
+</table>
+<h2 id="key-lessons">Key Lessons</h2>
+<ol>
+<li><strong>Decouple cache and database partitioning</strong>: Different hash functions prevent cascading failures</li>
+<li><strong>Use CDC for consistency</strong>: Transaction log is the source of truth</li>
+<li><strong>Prefer markers over deletes</strong>: Prevents stampedes and aids debugging</li>
+<li><strong>Pre-warm replicas</strong>: Cross-region replication protects against failover storms</li>
+</ol>
+<h2 id="source">Source</h2>
+<p>Uber Engineering Blog: "How Uber Serves Over 40 Million Reads Per Second from Online Storage Using an Integrated Cache" and "How Uber Serves over 150 Million Reads per Second from Integrated Cache with Stronger Consistency Guarantees"</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="uber-resilience.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

@@ -1,0 +1,80 @@
+# Write-Behind (Write-Back) Caching Pattern
+
+Maximize write throughput by writing only to Redis and asynchronously syncing to the database later—trades immediate durability for performance.
+
+The application writes only to Redis, which acknowledges instantly. A separate background process periodically synchronizes changes to the backing database, batching writes for efficiency.
+
+## How It Works
+
+1. The application writes data to Redis
+2. Redis acknowledges immediately—the client sees success
+3. A background process periodically reads changed data from Redis and writes it to the database
+
+The database update happens "behind" the cache write, hence the name.
+
+## Redis Commands Used
+
+The application simply writes to Redis:
+
+    SET counter:page_views "15847293"
+    INCRBY counter:page_views 1
+
+No database interaction occurs during these operations. The background sync process later reads these values and persists them.
+
+## Advantages
+
+**Extremely low write latency**: Operations complete as soon as Redis acknowledges, typically sub-millisecond.
+
+**High throughput**: The database is protected from write storms. Many rapid updates to the same key collapse into a single database write during sync.
+
+**Write coalescing**: If a counter is incremented 1000 times per second, only the final value needs to be written to the database, not 1000 individual increments.
+
+## The Durability Trade-off
+
+This pattern trades durability for speed:
+
+**Data loss risk**: If Redis fails before synchronization, any writes since the last sync are lost. Redis effectively becomes the system of record during the sync window.
+
+**Eventual consistency**: The database lags behind Redis. Queries directly to the database may return stale data.
+
+## Mitigating Data Loss
+
+Several strategies reduce the risk:
+
+**Redis persistence**: Enable AOF (Append Only File) with `appendfsync everysec` to persist writes to disk every second. This limits potential data loss to one second of writes.
+
+**Shorter sync intervals**: Reduce the time between syncs to minimize the window of potential loss.
+
+**Replication**: Run Redis with replicas so data survives single-node failures.
+
+However, none of these provide the same durability guarantees as synchronous database writes.
+
+## Ideal Use Cases
+
+Write-Behind excels for:
+
+- **Counters and metrics**: Page views, likes, impressions where losing a few counts is acceptable
+- **High-velocity session updates**: Frequent session touches where database latency would be prohibitive
+- **Analytics ingestion**: Collecting telemetry data at high speed
+- **Gaming leaderboards**: Rapid score updates that can tolerate brief inconsistency
+
+## When NOT to Use
+
+Never use Write-Behind for:
+
+- Financial transactions
+- Order processing
+- User credentials or authentication data
+- Any data with regulatory compliance requirements
+- Anything where data loss is unacceptable
+
+## The Sync Process
+
+The background synchronization typically works by:
+
+1. Scanning for keys that have changed (using a "dirty" flag or timestamp)
+2. Reading current values from Redis
+3. Writing to the database
+4. Marking keys as synchronized
+
+This process must handle failures gracefully—if a database write fails, the key should remain marked for retry.

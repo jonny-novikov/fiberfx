@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reliable Queue Pattern - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="reliable-queue.md.txt">View Markdown</a>
+    </div>
+<h1 id="reliable-queue-pattern">Reliable Queue Pattern</h1>
+<p>Guarantee at-least-once message delivery using LMOVE to atomically transfer messages to a processing list, enabling recovery if consumers crash before completing work.</p>
+<p>Standard queue operations using RPOP are unreliable—if a consumer fetches a message and crashes before processing completes, the message is lost forever. This pattern ensures no messages are lost.</p>
+<h2 id="the-problem-with-simple-queues">The Problem with Simple Queues</h2>
+<p>A naive queue implementation:</p>
+<ol>
+<li>Producer: <code>LPUSH queue "message"</code></li>
+<li>Consumer: <code>RPOP queue</code> — message is removed</li>
+<li>Consumer crashes during processing</li>
+<li>Message is gone permanently</li>
+</ol>
+<h2 id="the-solution-atomic-transfer">The Solution: Atomic Transfer</h2>
+<p>Instead of removing the message, atomically move it to a "processing" list. The message remains in Redis until explicitly deleted after successful processing.</p>
+<h2 id="how-it-works">How It Works</h2>
+<p>The consumer uses LMOVE (or the older RPOPLPUSH) to atomically transfer a message from the main queue to a processing queue:</p>
+<pre class="highlight"><code>LMOVE work_queue processing:worker1 RIGHT LEFT
+</code></pre>
+
+<p>This single command:
+- Removes the message from the right of <code>work_queue</code>
+- Adds it to the left of <code>processing:worker1</code>
+- Does both atomically—no message loss possible</p>
+<p>After successful processing, remove the message from the processing queue:</p>
+<pre class="highlight"><code>LREM processing:worker1 1 &quot;message&quot;
+</code></pre>
+
+<h2 id="the-processing-lifecycle">The Processing Lifecycle</h2>
+<ol>
+<li><strong>Dequeue</strong>: <code>LMOVE work_queue processing:worker1 RIGHT LEFT</code></li>
+<li><strong>Process</strong>: Application handles the message</li>
+<li><strong>Acknowledge</strong>: <code>LREM processing:worker1 1 "message"</code></li>
+</ol>
+<p>If the worker crashes between steps 1 and 3, the message remains in <code>processing:worker1</code>.</p>
+<h2 id="recovery-from-failures">Recovery from Failures</h2>
+<p>A separate monitor process (sometimes called a "reaper") periodically scans processing queues for stalled messages:</p>
+<ol>
+<li>Check each processing queue</li>
+<li>If a message has been there longer than a timeout (e.g., 10 minutes), assume the worker died</li>
+<li>Move the message back to the main queue: <code>LMOVE processing:worker1 work_queue RIGHT RIGHT</code></li>
+</ol>
+<p>This guarantees "at-least-once" delivery—messages may be processed multiple times but are never lost.</p>
+<h2 id="blocking-variant">Blocking Variant</h2>
+<p>For efficient consumption without polling, use the blocking version:</p>
+<pre class="highlight"><code>BLMOVE work_queue processing:worker1 RIGHT LEFT 30
+</code></pre>
+
+<p>This waits up to 30 seconds for a message to arrive. If the queue is empty, the connection blocks rather than returning immediately.</p>
+<h2 id="per-worker-processing-queues">Per-Worker Processing Queues</h2>
+<p>Each worker should have its own processing queue (e.g., <code>processing:worker1</code>, <code>processing:worker2</code>). This allows the monitor to identify which worker holds which messages and makes recovery straightforward.</p>
+<h2 id="delivery-guarantees">Delivery Guarantees</h2>
+<p>This pattern provides <strong>at-least-once</strong> delivery:</p>
+<ul>
+<li>Messages are never lost (always exist in some queue)</li>
+<li>Messages may be processed multiple times if a worker crashes after processing but before acknowledgment</li>
+</ul>
+<p>For exactly-once semantics, make message handlers idempotent—processing the same message twice should produce the same result as processing it once.</p>
+<h2 id="when-to-use">When to Use</h2>
+<ul>
+<li>Job queues requiring reliability</li>
+<li>Background task processing</li>
+<li>Any scenario where message loss is unacceptable</li>
+<li>Systems where workers may crash or be killed</li>
+</ul>
+<h2 id="when-to-consider-alternatives">When to Consider Alternatives</h2>
+<p>For more complex requirements (multiple consumers per message, message replay, consumer groups), consider Redis Streams instead, which provide these features natively.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="reliable-queue.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

@@ -1,0 +1,243 @@
+# Bitmap Patterns
+
+Store millions of boolean flags in minimal memory using Redis bitmaps—1 bit per flag with O(1) access, plus fast aggregate operations across entire datasets.
+
+A Redis bitmap is a string where each bit represents a boolean value. With SETBIT and GETBIT, you can address individual bits by offset. One megabyte stores 8 million flags. Combined with BITCOUNT and BITOP, bitmaps enable powerful analytics on binary state.
+
+## Basic Operations
+
+Set a bit (user 1000 is active):
+
+    SETBIT users:active 1000 1
+
+Get a bit:
+
+    GETBIT users:active 1000
+    # Returns: 1
+
+Count all set bits:
+
+    BITCOUNT users:active
+    # Returns: number of active users
+
+## Pattern: Daily Active Users
+
+Track which users were active each day:
+
+    # User 12345 visited today
+    SETBIT dau:2024-01-30 12345 1
+
+    # Count daily active users
+    BITCOUNT dau:2024-01-30
+
+    # Check if specific user was active
+    GETBIT dau:2024-01-30 12345
+
+Memory: 1 million users = 125 KB per day.
+
+### Weekly/Monthly Active Users
+
+Combine daily bitmaps with BITOP:
+
+    # Users active ANY day this week (union)
+    BITOP OR wau:2024-W05 dau:2024-01-28 dau:2024-01-29 dau:2024-01-30 ...
+
+    # Users active EVERY day this week (intersection)
+    BITOP AND wau:2024-W05:daily dau:2024-01-28 dau:2024-01-29 ...
+
+    BITCOUNT wau:2024-W05
+
+## Pattern: Feature Flags per User
+
+Track which features each user has enabled:
+
+    # Bit positions represent features
+    # 0 = dark_mode, 1 = notifications, 2 = beta_features, ...
+
+    # Enable dark mode for user 5000
+    SETBIT user:5000:features 0 1
+
+    # Enable beta features
+    SETBIT user:5000:features 2 1
+
+    # Check if notifications enabled
+    GETBIT user:5000:features 1
+
+### Bulk Feature Check
+
+Get all feature bits at once with GETEX (or GET) and parse client-side:
+
+    GET user:5000:features
+    # Returns binary string, decode to check multiple features
+
+## Pattern: Online Status
+
+Track online users with automatic expiration:
+
+    # User comes online
+    SETBIT online:users 12345 1
+
+    # User goes offline
+    SETBIT online:users 12345 0
+
+    # Count online users
+    BITCOUNT online:users
+
+For millions of users, this uses far less memory than storing individual keys.
+
+### Time-Windowed Online
+
+Use time-bucketed keys for "active in last 5 minutes":
+
+    # Bucket by minute
+    SETBIT online:minute:1706648400 12345 1
+    EXPIRE online:minute:1706648400 300
+
+    # Active in any of last 5 minutes
+    BITOP OR online:recent online:minute:1706648400 online:minute:1706648460 ...
+
+## Pattern: Bloom Filter Alternative
+
+For simple membership testing without external modules:
+
+    # Multiple hash functions map item to bit positions
+    pos1 = hash1(item) % bitmap_size
+    pos2 = hash2(item) % bitmap_size
+    pos3 = hash3(item) % bitmap_size
+
+    # Add item
+    SETBIT bloom:filter pos1 1
+    SETBIT bloom:filter pos2 1
+    SETBIT bloom:filter pos3 1
+
+    # Check membership (all bits must be set)
+    GETBIT bloom:filter pos1  # AND
+    GETBIT bloom:filter pos2  # AND
+    GETBIT bloom:filter pos3
+
+If any returns 0, item is definitely not in set. If all return 1, item is probably in set (false positives possible).
+
+> **Note:** For production bloom filters, use Redis Stack's `BF.*` commands which handle sizing and hash functions automatically.
+
+## Pattern: User Cohort Analysis
+
+Analyze user segments:
+
+    # Track user attributes as bitmaps
+    SETBIT users:premium 12345 1
+    SETBIT users:mobile 12345 1
+    SETBIT users:country:us 12345 1
+
+    # Premium mobile users in US
+    BITOP AND cohort:premium_mobile_us users:premium users:mobile users:country:us
+    BITCOUNT cohort:premium_mobile_us
+
+    # Premium users NOT on mobile
+    BITOP NOT users:not_mobile users:mobile
+    BITOP AND cohort:premium_desktop users:premium users:not_mobile
+    BITCOUNT cohort:premium_desktop
+
+## Pattern: Rate Limiting with Bitmaps
+
+Track requests per second with bit-level granularity:
+
+    # One bit per millisecond, offset = ms within second
+    SETBIT ratelimit:user:123:1706648400 150 1  # Request at 150ms
+
+    # Count requests in this second
+    BITCOUNT ratelimit:user:123:1706648400
+
+    # Expire after 2 seconds
+    EXPIRE ratelimit:user:123:1706648400 2
+
+Memory: 1000 bits (125 bytes) per user per second.
+
+## BITFIELD: Advanced Bit Manipulation
+
+BITFIELD provides atomic read-modify operations on arbitrary bit ranges:
+
+    # Store 8-bit counter at offset 0
+    BITFIELD counters SET u8 0 100
+
+    # Increment with overflow handling
+    BITFIELD counters INCRBY u8 0 1 OVERFLOW SAT
+
+    # Multiple operations atomically
+    BITFIELD mykey SET u8 0 200 INCRBY u8 100 1 GET u4 0
+
+### Packed Counters
+
+Store multiple small counters in one key:
+
+    # 4 8-bit counters in 32 bits
+    BITFIELD user:123:stats SET u8 0 50    # Counter 0 = 50
+    BITFIELD user:123:stats SET u8 8 100   # Counter 1 = 100
+    BITFIELD user:123:stats SET u8 16 25   # Counter 2 = 25
+    BITFIELD user:123:stats SET u8 24 75   # Counter 3 = 75
+
+    # Read all at once
+    BITFIELD user:123:stats GET u8 0 GET u8 8 GET u8 16 GET u8 24
+
+## BITPOS: Finding Set/Unset Bits
+
+Find the first set or unset bit:
+
+    # First active user (first 1 bit)
+    BITPOS users:active 1
+
+    # First inactive user ID (first 0 bit)
+    BITPOS users:active 0
+
+    # First set bit in range (bytes 100-200)
+    BITPOS users:active 1 100 200
+
+## Memory Efficiency
+
+| Users | Bitmap Size | Equivalent SET |
+|-------|-------------|----------------|
+| 1 million | 125 KB | ~50 MB |
+| 10 million | 1.25 MB | ~500 MB |
+| 100 million | 12.5 MB | ~5 GB |
+
+Bitmaps are ~400x more memory-efficient than storing user IDs in a Set.
+
+## Limitations
+
+### Sparse Data
+
+Bitmaps allocate memory for the highest offset used. If user IDs are sparse (e.g., UUIDs mapped to integers), memory is wasted:
+
+    SETBIT users:active 999999999 1  # Allocates ~125 MB!
+
+**Solutions:**
+- Use dense, sequential IDs
+- Hash UUIDs to a bounded range (accept collisions)
+- Use Sets for sparse data instead
+
+### ID Space
+
+User IDs must be non-negative integers. Map other identifiers:
+
+    # If using UUIDs, maintain a mapping
+    INCR user:id:counter                        # Get next integer ID
+    SET user:uuid:abc123 {integer_id}           # Map UUID to integer
+    SETBIT users:active {integer_id} 1          # Use integer in bitmap
+
+### Bit Operations Complexity
+
+BITOP is O(N) where N is the size of the longest input string. For huge bitmaps, operations can be slow:
+
+    # May be slow for 100M+ users
+    BITOP AND result bitmap1 bitmap2 bitmap3
+
+Consider sharding large bitmaps by ID range.
+
+## Summary
+
+| Use Case | Commands | Memory |
+|----------|----------|--------|
+| User presence | SETBIT, GETBIT | 1 bit/user |
+| Daily active | SETBIT + BITCOUNT | 125KB/1M users |
+| Cohort intersection | BITOP AND | Same as input |
+| Feature flags | SETBIT per feature | N bits/user |
+| Packed counters | BITFIELD | Configurable |

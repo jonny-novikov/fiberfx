@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitmap Patterns - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="bitmap-patterns.md.txt">View Markdown</a>
+    </div>
+<h1 id="bitmap-patterns">Bitmap Patterns</h1>
+<p>Store millions of boolean flags in minimal memory using Redis bitmaps—1 bit per flag with O(1) access, plus fast aggregate operations across entire datasets.</p>
+<p>A Redis bitmap is a string where each bit represents a boolean value. With SETBIT and GETBIT, you can address individual bits by offset. One megabyte stores 8 million flags. Combined with BITCOUNT and BITOP, bitmaps enable powerful analytics on binary state.</p>
+<h2 id="basic-operations">Basic Operations</h2>
+<p>Set a bit (user 1000 is active):</p>
+<pre class="highlight"><code>SETBIT users:active 1000 1
+</code></pre>
+
+<p>Get a bit:</p>
+<pre class="highlight"><code>GETBIT users:active 1000
+# Returns: 1
+</code></pre>
+
+<p>Count all set bits:</p>
+<pre class="highlight"><code>BITCOUNT users:active
+# Returns: number of active users
+</code></pre>
+
+<h2 id="pattern-daily-active-users">Pattern: Daily Active Users</h2>
+<p>Track which users were active each day:</p>
+<pre class="highlight"><code># User 12345 visited today
+SETBIT dau:2024-01-30 12345 1
+
+# Count daily active users
+BITCOUNT dau:2024-01-30
+
+# Check if specific user was active
+GETBIT dau:2024-01-30 12345
+</code></pre>
+
+<p>Memory: 1 million users = 125 KB per day.</p>
+<h3 id="weeklymonthly-active-users">Weekly/Monthly Active Users</h3>
+<p>Combine daily bitmaps with BITOP:</p>
+<pre class="highlight"><code># Users active ANY day this week (union)
+BITOP OR wau:2024-W05 dau:2024-01-28 dau:2024-01-29 dau:2024-01-30 ...
+
+# Users active EVERY day this week (intersection)
+BITOP AND wau:2024-W05:daily dau:2024-01-28 dau:2024-01-29 ...
+
+BITCOUNT wau:2024-W05
+</code></pre>
+
+<h2 id="pattern-feature-flags-per-user">Pattern: Feature Flags per User</h2>
+<p>Track which features each user has enabled:</p>
+<pre class="highlight"><code># Bit positions represent features
+# 0 = dark_mode, 1 = notifications, 2 = beta_features, ...
+
+# Enable dark mode for user 5000
+SETBIT user:5000:features 0 1
+
+# Enable beta features
+SETBIT user:5000:features 2 1
+
+# Check if notifications enabled
+GETBIT user:5000:features 1
+</code></pre>
+
+<h3 id="bulk-feature-check">Bulk Feature Check</h3>
+<p>Get all feature bits at once with GETEX (or GET) and parse client-side:</p>
+<pre class="highlight"><code>GET user:5000:features
+# Returns binary string, decode to check multiple features
+</code></pre>
+
+<h2 id="pattern-online-status">Pattern: Online Status</h2>
+<p>Track online users with automatic expiration:</p>
+<pre class="highlight"><code># User comes online
+SETBIT online:users 12345 1
+
+# User goes offline
+SETBIT online:users 12345 0
+
+# Count online users
+BITCOUNT online:users
+</code></pre>
+
+<p>For millions of users, this uses far less memory than storing individual keys.</p>
+<h3 id="time-windowed-online">Time-Windowed Online</h3>
+<p>Use time-bucketed keys for "active in last 5 minutes":</p>
+<pre class="highlight"><code># Bucket by minute
+SETBIT online:minute:1706648400 12345 1
+EXPIRE online:minute:1706648400 300
+
+# Active in any of last 5 minutes
+BITOP OR online:recent online:minute:1706648400 online:minute:1706648460 ...
+</code></pre>
+
+<h2 id="pattern-bloom-filter-alternative">Pattern: Bloom Filter Alternative</h2>
+<p>For simple membership testing without external modules:</p>
+<pre class="highlight"><code># Multiple hash functions map item to bit positions
+pos1 = hash1(item) % bitmap_size
+pos2 = hash2(item) % bitmap_size
+pos3 = hash3(item) % bitmap_size
+
+# Add item
+SETBIT bloom:filter pos1 1
+SETBIT bloom:filter pos2 1
+SETBIT bloom:filter pos3 1
+
+# Check membership (all bits must be set)
+GETBIT bloom:filter pos1  # AND
+GETBIT bloom:filter pos2  # AND
+GETBIT bloom:filter pos3
+</code></pre>
+
+<p>If any returns 0, item is definitely not in set. If all return 1, item is probably in set (false positives possible).</p>
+<blockquote>
+<p><strong>Note:</strong> For production bloom filters, use Redis Stack's <code>BF.*</code> commands which handle sizing and hash functions automatically.</p>
+</blockquote>
+<h2 id="pattern-user-cohort-analysis">Pattern: User Cohort Analysis</h2>
+<p>Analyze user segments:</p>
+<pre class="highlight"><code># Track user attributes as bitmaps
+SETBIT users:premium 12345 1
+SETBIT users:mobile 12345 1
+SETBIT users:country:us 12345 1
+
+# Premium mobile users in US
+BITOP AND cohort:premium_mobile_us users:premium users:mobile users:country:us
+BITCOUNT cohort:premium_mobile_us
+
+# Premium users NOT on mobile
+BITOP NOT users:not_mobile users:mobile
+BITOP AND cohort:premium_desktop users:premium users:not_mobile
+BITCOUNT cohort:premium_desktop
+</code></pre>
+
+<h2 id="pattern-rate-limiting-with-bitmaps">Pattern: Rate Limiting with Bitmaps</h2>
+<p>Track requests per second with bit-level granularity:</p>
+<pre class="highlight"><code># One bit per millisecond, offset = ms within second
+SETBIT ratelimit:user:123:1706648400 150 1  # Request at 150ms
+
+# Count requests in this second
+BITCOUNT ratelimit:user:123:1706648400
+
+# Expire after 2 seconds
+EXPIRE ratelimit:user:123:1706648400 2
+</code></pre>
+
+<p>Memory: 1000 bits (125 bytes) per user per second.</p>
+<h2 id="bitfield-advanced-bit-manipulation">BITFIELD: Advanced Bit Manipulation</h2>
+<p>BITFIELD provides atomic read-modify operations on arbitrary bit ranges:</p>
+<pre class="highlight"><code># Store 8-bit counter at offset 0
+BITFIELD counters SET u8 0 100
+
+# Increment with overflow handling
+BITFIELD counters INCRBY u8 0 1 OVERFLOW SAT
+
+# Multiple operations atomically
+BITFIELD mykey SET u8 0 200 INCRBY u8 100 1 GET u4 0
+</code></pre>
+
+<h3 id="packed-counters">Packed Counters</h3>
+<p>Store multiple small counters in one key:</p>
+<pre class="highlight"><code># 4 8-bit counters in 32 bits
+BITFIELD user:123:stats SET u8 0 50    # Counter 0 = 50
+BITFIELD user:123:stats SET u8 8 100   # Counter 1 = 100
+BITFIELD user:123:stats SET u8 16 25   # Counter 2 = 25
+BITFIELD user:123:stats SET u8 24 75   # Counter 3 = 75
+
+# Read all at once
+BITFIELD user:123:stats GET u8 0 GET u8 8 GET u8 16 GET u8 24
+</code></pre>
+
+<h2 id="bitpos-finding-setunset-bits">BITPOS: Finding Set/Unset Bits</h2>
+<p>Find the first set or unset bit:</p>
+<pre class="highlight"><code># First active user (first 1 bit)
+BITPOS users:active 1
+
+# First inactive user ID (first 0 bit)
+BITPOS users:active 0
+
+# First set bit in range (bytes 100-200)
+BITPOS users:active 1 100 200
+</code></pre>
+
+<h2 id="memory-efficiency">Memory Efficiency</h2>
+<table>
+<thead>
+<tr>
+<th>Users</th>
+<th>Bitmap Size</th>
+<th>Equivalent SET</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 million</td>
+<td>125 KB</td>
+<td>~50 MB</td>
+</tr>
+<tr>
+<td>10 million</td>
+<td>1.25 MB</td>
+<td>~500 MB</td>
+</tr>
+<tr>
+<td>100 million</td>
+<td>12.5 MB</td>
+<td>~5 GB</td>
+</tr>
+</tbody>
+</table>
+<p>Bitmaps are ~400x more memory-efficient than storing user IDs in a Set.</p>
+<h2 id="limitations">Limitations</h2>
+<h3 id="sparse-data">Sparse Data</h3>
+<p>Bitmaps allocate memory for the highest offset used. If user IDs are sparse (e.g., UUIDs mapped to integers), memory is wasted:</p>
+<pre class="highlight"><code>SETBIT users:active 999999999 1  # Allocates ~125 MB!
+</code></pre>
+
+<p><strong>Solutions:</strong>
+- Use dense, sequential IDs
+- Hash UUIDs to a bounded range (accept collisions)
+- Use Sets for sparse data instead</p>
+<h3 id="id-space">ID Space</h3>
+<p>User IDs must be non-negative integers. Map other identifiers:</p>
+<pre class="highlight"><code># If using UUIDs, maintain a mapping
+INCR user:id:counter                        # Get next integer ID
+SET user:uuid:abc123 {integer_id}           # Map UUID to integer
+SETBIT users:active {integer_id} 1          # Use integer in bitmap
+</code></pre>
+
+<h3 id="bit-operations-complexity">Bit Operations Complexity</h3>
+<p>BITOP is O(N) where N is the size of the longest input string. For huge bitmaps, operations can be slow:</p>
+<pre class="highlight"><code># May be slow for 100M+ users
+BITOP AND result bitmap1 bitmap2 bitmap3
+</code></pre>
+
+<p>Consider sharding large bitmaps by ID range.</p>
+<h2 id="summary">Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Use Case</th>
+<th>Commands</th>
+<th>Memory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>User presence</td>
+<td>SETBIT, GETBIT</td>
+<td>1 bit/user</td>
+</tr>
+<tr>
+<td>Daily active</td>
+<td>SETBIT + BITCOUNT</td>
+<td>125KB/1M users</td>
+</tr>
+<tr>
+<td>Cohort intersection</td>
+<td>BITOP AND</td>
+<td>Same as input</td>
+</tr>
+<tr>
+<td>Feature flags</td>
+<td>SETBIT per feature</td>
+<td>N bits/user</td>
+</tr>
+<tr>
+<td>Packed counters</td>
+<td>BITFIELD</td>
+<td>Configurable</td>
+</tr>
+</tbody>
+</table>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="bitmap-patterns.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

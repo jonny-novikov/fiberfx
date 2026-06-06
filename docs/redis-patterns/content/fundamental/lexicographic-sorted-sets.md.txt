@@ -1,0 +1,189 @@
+# Lexicographic Sorted Set Patterns
+
+Use Sorted Sets with identical scores (typically 0) to create B-tree-like indexes supporting prefix queries, range scans, and composite key lookups on string data.
+
+When all members in a Sorted Set share the same score, Redis sorts them lexicographically (byte-by-byte comparison). This transforms the Sorted Set into an ordered string index with O(log N) operations—effectively a B-tree for string keys.
+
+## How Lexicographic Ordering Works
+
+With numeric scores, members sort by score:
+
+    ZADD scores 100 "alice" 200 "bob" 150 "charlie"
+    ZRANGE scores 0 -1
+    # Returns: alice, charlie, bob (sorted by score)
+
+With identical scores, members sort lexicographically:
+
+    ZADD names 0 "alice" 0 "bob" 0 "charlie"
+    ZRANGE names 0 -1
+    # Returns: alice, bob, charlie (alphabetical)
+
+## Key Commands
+
+### ZRANGEBYLEX
+
+Query members within a lexicographic range:
+
+    ZRANGEBYLEX names [a [d
+    # Returns members from "a" (inclusive) to "d" (exclusive)
+    # Result: alice, bob, charlie
+
+Range specifiers:
+- `[value` — inclusive (>=)
+- `(value` — exclusive (>)
+- `-` — negative infinity (start of set)
+- `+` — positive infinity (end of set)
+
+### Prefix Queries
+
+Find all members starting with a prefix:
+
+    ZADD autocomplete 0 "redis" 0 "redlock" 0 "redsocks" 0 "reduce" 0 "rabbit"
+
+    ZRANGEBYLEX autocomplete [red (ree
+    # Returns: redis, redlock, redsocks, reduce
+
+The trick: use `[prefix` as the start and `(prefix\xff` (or the next character after the prefix range) as the end.
+
+For prefix "red":
+- Start: `[red` (inclusive)
+- End: `(ree` (exclusive, "ree" is the first string that doesn't start with "red")
+
+### ZLEXCOUNT
+
+Count members in a lexicographic range:
+
+    ZLEXCOUNT autocomplete [red (ree
+    # Returns: 4
+
+### ZREMRANGEBYLEX
+
+Remove members in a lexicographic range:
+
+    ZREMRANGEBYLEX autocomplete [reda (redm
+    # Removes: reduce, redis, redlock (everything between "reda" and "redm")
+
+## Pattern: Autocomplete
+
+Build a fast autocomplete system:
+
+    # Index terms
+    ZADD search:index 0 "application"
+    ZADD search:index 0 "apple"
+    ZADD search:index 0 "apply"
+    ZADD search:index 0 "banana"
+
+    # User types "app"
+    ZRANGEBYLEX search:index [app (apq LIMIT 0 10
+    # Returns: apple, application, apply
+
+The `LIMIT` clause returns only the first 10 matches, ideal for typeahead suggestions.
+
+## Pattern: Composite Keys for Multi-Field Queries
+
+Encode multiple fields into a single member for hierarchical queries:
+
+    # Format: user_id:timestamp:action
+    ZADD events 0 "user:100:1706648400:login"
+    ZADD events 0 "user:100:1706648500:click"
+    ZADD events 0 "user:100:1706648600:purchase"
+    ZADD events 0 "user:200:1706648450:login"
+    ZADD events 0 "user:200:1706648550:click"
+
+Query all events for user 100:
+
+    ZRANGEBYLEX events [user:100: (user:100:\xff
+    # Returns all user:100:* entries
+
+Query events for user 100 in a time range:
+
+    ZRANGEBYLEX events [user:100:1706648400 (user:100:1706648550
+    # Returns events between those timestamps
+
+## Pattern: Time-Series with String IDs
+
+For time-series data where you need string identifiers:
+
+    # Format: timestamp:event_id
+    ZADD timeseries 0 "1706648400:evt_abc123"
+    ZADD timeseries 0 "1706648401:evt_def456"
+    ZADD timeseries 0 "1706648402:evt_ghi789"
+
+Query events in a time window:
+
+    ZRANGEBYLEX timeseries [1706648400 (1706648402
+    # Returns events from timestamp 1706648400 to 1706648401
+
+## Pattern: Sorted Tags or Categories
+
+Maintain a sorted set of tags with counts encoded in the key:
+
+    # Format: category:tag
+    ZADD tags 0 "language:go"
+    ZADD tags 0 "language:python"
+    ZADD tags 0 "language:rust"
+    ZADD tags 0 "database:mysql"
+    ZADD tags 0 "database:redis"
+
+Get all language tags:
+
+    ZRANGEBYLEX tags [language: (language:\xff
+
+## Pattern: IP Range Lookups
+
+Store IP addresses for range queries:
+
+    # Store IPs (zero-padded for correct lexicographic ordering)
+    ZADD ips 0 "010.000.000.001"
+    ZADD ips 0 "010.000.000.255"
+    ZADD ips 0 "192.168.001.001"
+    ZADD ips 0 "192.168.001.100"
+
+Query a subnet:
+
+    ZRANGEBYLEX ips [192.168.001. (192.168.002.
+
+**Important:** Zero-pad numeric segments for correct ordering. Without padding, "9" sorts after "10" lexicographically.
+
+## Combining with Score-Based Ordering
+
+You can use both score and lexicographic ordering together. Members first sort by score, then lexicographically within the same score:
+
+    ZADD hybrid 1 "a:first" 1 "a:second" 2 "b:first" 2 "b:second"
+    ZRANGE hybrid 0 -1
+    # Returns: a:first, a:second, b:first, b:second
+
+This enables bucketing: group items by score (category/priority) with lexicographic ordering within each bucket.
+
+## Performance Characteristics
+
+| Operation | Complexity |
+|-----------|------------|
+| ZRANGEBYLEX | O(log N + M) where M is results |
+| ZLEXCOUNT | O(log N) |
+| ZREMRANGEBYLEX | O(log N + M) |
+| ZADD (single) | O(log N) |
+
+All operations are efficient even with millions of members.
+
+## Limitations
+
+- **Binary comparison**: Sorting is byte-by-byte, not locale-aware. "Éclair" sorts after "Zebra" because É (0xC3) > Z (0x5A).
+- **Case sensitivity**: "Apple" and "apple" sort differently. Normalize case if needed.
+- **Numeric strings**: "9" > "10" lexicographically. Zero-pad numbers: "09" < "10".
+- **No partial member updates**: Changing a member requires remove + add.
+
+## When to Use
+
+- Autocomplete and typeahead suggestions
+- Prefix-based searches
+- Hierarchical data with composite keys
+- Time-series with string identifiers
+- Sorted string indexes (tags, categories, usernames)
+- Any scenario requiring range queries on string keys
+
+## When to Use Regular Score-Based Sorting
+
+- Numeric rankings (leaderboards, priority queues)
+- When you need to update values without changing sort order
+- Aggregations with ZUNIONSTORE/ZINTERSTORE (scores can be summed/averaged)

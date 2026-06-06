@@ -1,0 +1,106 @@
+# Server-Assisted Client-Side Caching
+
+Eliminate network round-trips for frequently accessed keys by caching values in application memory, with Redis 6+ automatically sending invalidation messages when data changes.
+
+Even with sub-millisecond Redis response times, the network round-trip can be a bottleneck for ultra-high-throughput applications. Client-side caching stores frequently accessed data in the application's local memory, with Redis managing invalidation.
+
+## The Architecture
+
+This creates a multi-tier cache:
+
+- **L1 (Local Memory)**: Nanosecond access, managed by the application
+- **L2 (Redis)**: Microsecond to millisecond access
+- **L3 (Database)**: Millisecond access
+
+The key innovation is that Redis tracks which keys each client has accessed and sends invalidation messages when those keys change.
+
+## Tracking Modes
+
+### Default Tracking
+
+The server remembers which keys each client has requested. When a key is modified by any client, the server sends an invalidation message to all clients that accessed it.
+
+    CLIENT TRACKING ON
+
+After enabling tracking, every GET command causes Redis to remember that this client accessed that key. If another client modifies the key, an invalidation message is pushed to the original client.
+
+**Trade-off**: The server must maintain a table mapping keys to client IDs. This consumes memory proportional to the number of tracked keys.
+
+### Broadcasting Mode
+
+Instead of tracking individual key accesses, clients subscribe to key prefixes. The server broadcasts invalidation messages to all subscribers when any matching key changes.
+
+    CLIENT TRACKING ON BCAST PREFIX user: PREFIX session:
+
+This client receives invalidations for any key starting with `user:` or `session:`.
+
+**Trade-off**: Clients may receive invalidation messages for keys they don't actually have cached locally. However, server memory usage is minimal since it only tracks prefix subscriptions, not individual key accesses.
+
+## How Invalidation Works
+
+When tracking is enabled and a key changes:
+
+1. Redis checks which clients have accessed (or subscribed to) that key
+2. Redis sends an invalidation message containing the key name
+3. The client removes the key from its local cache
+4. The next access fetches fresh data from Redis
+
+This ensures local caches stay synchronized with Redis without polling.
+
+## Redis Commands
+
+Enable tracking for the current connection:
+
+    CLIENT TRACKING ON
+
+Enable with broadcast mode and prefixes:
+
+    CLIENT TRACKING ON BCAST PREFIX user:
+
+Redirect invalidations to a different connection (useful for dedicated invalidation handlers):
+
+    CLIENT TRACKING ON REDIRECT 123
+
+Disable tracking:
+
+    CLIENT TRACKING OFF
+
+## The NOLOOP Option
+
+By default, if you modify a key, you receive an invalidation for it. The NOLOOP option prevents this:
+
+    CLIENT TRACKING ON NOLOOP
+
+This is useful when the client that modifies a key already knows the new value—no need to invalidate its own cache.
+
+## The OPTIN/OPTOUT Options
+
+For fine-grained control over which keys are tracked:
+
+    CLIENT TRACKING ON OPTIN
+
+With OPTIN, keys are only tracked when you explicitly enable caching before accessing them:
+
+    CLIENT CACHING YES
+    GET user:123       # This key will be tracked
+    CLIENT CACHING NO
+    GET temp:data      # This key will NOT be tracked
+
+## When to Use Client-Side Caching
+
+This pattern benefits:
+
+- Ultra-high-throughput applications where network RTT matters
+- Frequently accessed "hot" keys
+- Read-heavy workloads with relatively stable data
+- Applications already maintaining local caches that need invalidation
+
+## Considerations
+
+**Memory management**: The application must manage its local cache size, implementing eviction when memory is constrained.
+
+**Complexity**: Handling invalidation messages requires dedicated connection management or async processing.
+
+**Not for volatile data**: If data changes constantly, invalidation traffic may exceed the benefit of local caching.
+
+**RESP3 recommended**: The RESP3 protocol (Redis 6+) provides native support for push notifications, making invalidation handling cleaner.

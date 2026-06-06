@@ -1,0 +1,125 @@
+# Rate Limiting Patterns
+
+Implement distributed rate limiting using fixed window, sliding window log, sliding window counter, token bucket, or leaky bucket algorithms with Redis atomic operations.
+
+Different algorithms offer different trade-offs between accuracy, memory usage, and burst handling. This guide covers implementations, trade-offs, and when to use each approach.
+
+## Fixed Window Counter
+
+The simplest approach: count requests in fixed time windows (e.g., per minute).
+
+    INCR ratelimit:user123:1706648400
+    EXPIRE ratelimit:user123:1706648400 60
+
+The key includes the window timestamp (truncated to the minute). INCR atomically increments and returns the new count. If the count exceeds the limit, reject the request.
+
+**Advantage**: Simple, low memory (one counter per user per window).
+
+**Disadvantage**: Boundary problem. A user could make 100 requests at 12:00:59 and 100 more at 12:01:01, effectively 200 requests in 2 seconds while technically staying under a "100 per minute" limit.
+
+## Sliding Window Log
+
+For precise rate limiting, track the timestamp of every request in a Sorted Set.
+
+    MULTI
+    ZREMRANGEBYSCORE ratelimit:user123 -inf <window_start>
+    ZCARD ratelimit:user123
+    ZADD ratelimit:user123 <now> <request_id>
+    EXPIRE ratelimit:user123 60
+    EXEC
+
+This:
+1. Removes entries older than the window
+2. Counts remaining entries
+3. Adds the current request
+4. Resets the expiration
+
+If the count exceeds the limit, reject the request and remove the entry you just added.
+
+**Advantage**: Accurate rolling window, no boundary problem.
+
+**Disadvantage**: Memory grows with request volume—stores one entry per request in the window.
+
+## Sliding Window Counter
+
+A memory-efficient approximation that combines two fixed windows with weighting.
+
+The algorithm tracks counts for the current and previous time windows:
+
+    current_window_count + (previous_window_count × overlap_percentage)
+
+For example, if we're 30% into the current minute:
+- Previous minute had 70 requests
+- Current minute has 20 requests so far
+- Weighted count = 20 + (70 × 0.70) = 69
+
+**Advantage**: O(1) memory per user (just two counters), good accuracy.
+
+**Disadvantage**: Approximate, not perfectly accurate.
+
+## Token Bucket
+
+Allows bursting while enforcing an average rate. Imagine a bucket that fills with tokens at a steady rate. Each request consumes a token. If the bucket is empty, the request is rejected.
+
+The bucket has two parameters:
+- **Capacity**: Maximum tokens (burst size)
+- **Refill rate**: Tokens added per second
+
+To implement, store the current token count and last refill time:
+
+    HGET bucket:user123 tokens
+    HGET bucket:user123 last_refill
+
+Calculate tokens to add based on elapsed time, cap at capacity, then subtract tokens for this request. Use a Lua script to make this atomic:
+
+    local tokens = tonumber(redis.call('hget', KEYS[1], 'tokens') or ARGV[1])
+    local last = tonumber(redis.call('hget', KEYS[1], 'last_refill') or ARGV[3])
+    local now = tonumber(ARGV[3])
+
+    -- Refill based on time elapsed
+    local elapsed = now - last
+    tokens = math.min(tonumber(ARGV[1]), tokens + elapsed * tonumber(ARGV[2]))
+
+    if tokens >= 1 then
+        tokens = tokens - 1
+        redis.call('hset', KEYS[1], 'tokens', tokens, 'last_refill', now)
+        return 1  -- Allowed
+    else
+        return 0  -- Denied
+    end
+
+**Advantage**: Handles bursts gracefully, intuitive model.
+
+**Disadvantage**: More complex to implement correctly.
+
+## Choosing an Algorithm
+
+| Algorithm | Memory | Accuracy | Burst Handling |
+|-----------|--------|----------|----------------|
+| Fixed Window | O(1) | Low | Poor (2x at boundary) |
+| Sliding Log | O(N) | High | None |
+| Sliding Counter | O(1) | Medium | None |
+| Token Bucket | O(1) | High | Configurable |
+
+## Response Headers
+
+Communicate rate limit status to clients:
+
+    X-RateLimit-Limit: 100
+    X-RateLimit-Remaining: 45
+    X-RateLimit-Reset: 1706648460
+
+On rejection, include `Retry-After` with seconds until the limit resets.
+
+## Multi-Tier Limits
+
+Apply multiple limits simultaneously:
+- 10 requests per second (burst protection)
+- 100 requests per minute (sustained rate)
+- 1000 requests per hour (overall quota)
+
+Check all limits on each request. Reject if any limit is exceeded.
+
+## Distributed Considerations
+
+When running multiple application servers, all must share the same Redis instance (or cluster) to enforce limits globally. Local rate limiting would allow `N × limit` requests across N servers.

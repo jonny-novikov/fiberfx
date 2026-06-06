@@ -1,0 +1,92 @@
+# Uber: Resilience Patterns and Staggered Sharding
+
+Study Uber's resilience techniques: staggered sharding to prevent coordinated failures, circuit breakers, and graceful degradation patterns for 150M+ ops/sec cache workloads.
+
+Uber's architecture relies heavily on Redis to cache real-time state—driver locations, trip statuses, and dynamic pricing. The cache is a critical dependency where failures can cascade into system-wide outages.
+
+## The Hot Shard Problem
+
+A primary risk in cached architectures is the "Hot Shard" problem. When cache and database use the same sharding function, a cache shard failure sends all its traffic to a single database shard.
+
+**Scenario: 1:1 Cache-to-DB Sharding**
+
+Cache Cluster: Cache 1 (Keys A-H), Cache 2 (Keys I-P), Cache 3 (Keys Q-Z)
+
+Database Cluster: DB 1 (Keys A-H), DB 2 (Keys I-P), DB 3 (Keys Q-Z)
+
+Each cache shard maps directly to one DB shard.
+
+**Problem:** If Cache 1 fails, ALL cache misses for keys A-H hit DB 1.
+
+**Result:** DB 1 overwhelmed, leading to cascading failure.
+
+## Staggered Sharding
+
+Uber's solution: use different hash functions for cache and database partitioning.
+
+**Cache Cluster:** Cache 1 (Keys A-H), Cache 2 (Keys I-P), Cache 3 (Keys Q-Z) - using hash function #1.
+
+**Database Cluster:** DB 1, DB 2, DB 3 - using hash function #2. Each DB shard contains a mix of keys from all cache shards.
+
+**Result:** When Cache 1 fails, its keys (A-H) are distributed across ALL database shards by the different hash function. No single database shard sees a massive spike.
+
+**Blast radius contained:** No single point of failure.
+
+## CDC-Based Cache Consistency
+
+Uber maintains cache consistency through Change Data Capture (CDC). Instead of updating the cache directly from the application, changes flow through the database transaction log.
+
+**Flow:** Application writes to Database. Database writes to Transaction Log. Flux (CDC Tailer) reads the Transaction Log and updates Redis Cache.
+
+**Benefits:**
+
+1. **Latency Isolation**: Write latency tied only to database, not cache. If cache is temporarily slow or unavailable, user writes still succeed.
+
+2. **Eventual Consistency Guarantees**: Cache updates driven from the immutable transaction log ensure the cache eventually reflects true state, even if the application server crashes mid-operation.
+
+3. **Redis as Materialized View**: Effectively treats Redis as a materialized view of the persistent store, optimized for high-speed reads.
+
+## Invalidation Markers
+
+Instead of using DEL for cache invalidation, Uber writes special invalidation markers:
+
+    SET key "__INVALIDATED__" EX 60
+
+On read, if the value is `__INVALIDATED__`, treat it as a cache miss and fetch from the database.
+
+**Why markers instead of DELETE:**
+- Prevents cache stampedes during high-churn periods
+- Provides visibility into invalidation patterns
+- Allows debugging and auditing of cache behavior
+- The marker expires naturally, allowing future caching
+
+## Cross-Region Replication
+
+For handling region failovers without massive cache miss spikes:
+
+**Setup:** Redis Master in Primary Region replicates via write stream tailing to Redis Replica in Secondary Region.
+
+**Benefits:**
+- Region failovers without massive cache miss spikes
+- Database protected from overload during DR events
+- Keys pre-warmed in secondary region before it becomes primary
+
+## Scale Numbers
+
+| Metric | Value |
+|--------|-------|
+| Reads per second | 40M+ (2023), 150M+ (2025) |
+| Cache hit rate | ~99.9% |
+| Redis cores | ~3,000 |
+| Cache clusters | Multiple, isolated by function |
+
+## Key Lessons
+
+1. **Decouple cache and database partitioning**: Different hash functions prevent cascading failures
+2. **Use CDC for consistency**: Transaction log is the source of truth
+3. **Prefer markers over deletes**: Prevents stampedes and aids debugging
+4. **Pre-warm replicas**: Cross-region replication protects against failover storms
+
+## Source
+
+Uber Engineering Blog: "How Uber Serves Over 40 Million Reads Per Second from Online Storage Using an Integrated Cache" and "How Uber Serves over 150 Million Reads per Second from Integrated Cache with Stronger Consistency Guarantees"

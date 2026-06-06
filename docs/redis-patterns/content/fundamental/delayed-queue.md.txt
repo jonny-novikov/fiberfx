@@ -1,0 +1,88 @@
+# Delayed Queue Pattern
+
+Schedule tasks for future execution using a Sorted Set where the score is the Unix timestamp when the task should run.
+
+Redis Lists process messages immediately in FIFO order but don't support delayed delivery. Sorted Sets provide natural time-based ordering with efficient range queries to fetch due tasks.
+
+## Data Model
+
+- **Member**: The task identifier or payload
+- **Score**: Unix timestamp when the task should execute
+
+Tasks are automatically sorted by their execution time, with the earliest tasks first.
+
+## Scheduling a Task
+
+To schedule a task for 5 minutes from now:
+
+    ZADD delayed_queue 1706649000 "task:abc123"
+
+The score (1706649000) is the Unix timestamp when the task should run.
+
+To store task details separately:
+
+    HSET task:abc123 type "send_email" recipient "user@example.com"
+    ZADD delayed_queue 1706649000 "task:abc123"
+
+## Polling for Ready Tasks
+
+Workers poll for tasks whose execution time has passed:
+
+    ZRANGEBYSCORE delayed_queue -inf 1706648500 LIMIT 0 10
+
+This returns up to 10 tasks with scores (timestamps) less than or equal to the current time. The `-inf` means "no lower bound."
+
+## Claiming Tasks Atomically
+
+Multiple workers may poll simultaneously. To prevent duplicate processing, each worker must atomically claim a task using ZREM:
+
+    ZREM delayed_queue "task:abc123"
+
+ZREM returns 1 if the task was removed (this worker claimed it) or 0 if it was already gone (another worker claimed it). Only proceed with processing if ZREM returns 1.
+
+## The Complete Flow
+
+1. **Poll**: `ZRANGEBYSCORE delayed_queue -inf <now> LIMIT 0 10`
+2. **Claim**: For each task, `ZREM delayed_queue "task:abc123"`
+3. **Process**: If ZREM returned 1, execute the task
+4. **Cleanup**: Delete task data `DEL task:abc123`
+
+## Avoiding Busy Waiting
+
+Constantly polling an empty queue wastes CPU. Instead, check when the next task is due:
+
+    ZRANGE delayed_queue 0 0 WITHSCORES
+
+This returns the earliest task and its scheduled time. If no tasks are ready, sleep until that time (or a maximum interval). This dramatically reduces polling overhead when the queue is empty or tasks are far in the future.
+
+## Combining with Lua
+
+For atomic poll-and-claim, use a Lua script:
+
+    local tasks = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2])
+    for i, task in ipairs(tasks) do
+        redis.call('ZREM', KEYS[1], task)
+    end
+    return tasks
+
+This atomically finds and claims ready tasks in a single operation.
+
+## Retry with Backoff
+
+If a task fails, reschedule it with a delay:
+
+    ZADD delayed_queue 1706649060 "task:abc123"
+
+This schedules a retry 60 seconds in the future. Track retry counts in the task data to implement exponential backoff or maximum retry limits.
+
+## Use Cases
+
+- **Scheduled emails**: Send at a specific time
+- **Reminder systems**: Notify users after a delay
+- **Retry mechanisms**: Retry failed operations with backoff
+- **Rate limiting**: Space out API calls over time
+- **Deferred processing**: Handle tasks during off-peak hours
+
+## Comparison with Streams
+
+Sorted Sets work well for delayed execution but lack features like consumer groups and message acknowledgment. For complex queue requirements, consider Redis Streams with a delay mechanism built on top.

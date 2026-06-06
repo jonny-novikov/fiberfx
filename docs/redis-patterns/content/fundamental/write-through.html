@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Write-Through Caching Pattern - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="write-through.md.txt">View Markdown</a>
+    </div>
+<h1 id="write-through-caching-pattern">Write-Through Caching Pattern</h1>
+<p>Maintain cache-database consistency by synchronously writing to both Redis and the database before returning success—ensures reads always hit cache with fresh data.</p>
+<p>Every write operation updates both the cache and the backing database synchronously before acknowledging success to the client. This eliminates cache misses for recently written data at the cost of higher write latency.</p>
+<h2 id="how-it-works">How It Works</h2>
+<p>When a write occurs:</p>
+<ol>
+<li>The application writes data to Redis</li>
+<li>The application writes the same data to the database</li>
+<li>Only after both writes succeed does the operation complete</li>
+</ol>
+<p>The cache and database are always updated together, maintaining consistency between them.</p>
+<h2 id="redis-commands-used">Redis Commands Used</h2>
+<p>A typical write-through operation:</p>
+<pre class="highlight"><code>SET user:123 &quot;{...updated user data...}&quot;
+</code></pre>
+
+<p>Followed immediately by the corresponding database write. The application only returns success to the client after both operations complete.</p>
+<h2 id="advantages">Advantages</h2>
+<p><strong>Strong consistency</strong>: The cache always reflects the latest data. There is no window where the cache contains stale information (assuming both writes succeed atomically from the application's perspective).</p>
+<p><strong>Fast reads after writes</strong>: Data written is immediately available in the cache for subsequent reads. This benefits write-then-read patterns.</p>
+<p><strong>Simpler cache invalidation</strong>: Since writes go through the cache, there's no need to explicitly invalidate keys after database updates.</p>
+<h2 id="disadvantages">Disadvantages</h2>
+<p><strong>Increased write latency</strong>: The write operation isn't complete until both Redis and the database acknowledge. The total latency is at least the sum of both write latencies.</p>
+<p><strong>Cache pollution</strong>: Data that is written but rarely read still occupies cache memory. This can evict more valuable frequently-read data.</p>
+<p><strong>Failure complexity</strong>: If the database write fails after the cache write succeeds, you have an inconsistency. Applications must handle partial failures carefully.</p>
+<h2 id="handling-partial-failures">Handling Partial Failures</h2>
+<p>The safest approach is to write to the database first:</p>
+<ol>
+<li>Write to database</li>
+<li>If successful, write to cache</li>
+<li>If cache write fails, log the error but don't fail the operation</li>
+</ol>
+<p>This way, the database (source of truth) is always correct. A cache miss simply results in reading fresh data from the database.</p>
+<h2 id="when-to-use-write-through">When to Use Write-Through</h2>
+<p>This pattern works well when:</p>
+<ul>
+<li>Strong consistency between cache and database is required</li>
+<li>Write-then-immediately-read patterns are common</li>
+<li>The write latency overhead is acceptable</li>
+<li>The dataset is relatively small (cache pollution less concerning)</li>
+</ul>
+<h2 id="when-to-avoid">When to Avoid</h2>
+<p>Consider other patterns when:</p>
+<ul>
+<li>Write latency is critical</li>
+<li>Most data is written but rarely read</li>
+<li>The system needs to tolerate cache failures without affecting write operations</li>
+</ul>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="write-through.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

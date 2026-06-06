@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redis as a Primary Database - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="redis-as-primary-database.md.txt">View Markdown</a>
+    </div>
+<h1 id="redis-as-a-primary-database">Redis as a Primary Database</h1>
+<p>Use Redis as the authoritative data store for applications requiring sub-millisecond latency and high write throughput, treating disk as a recovery mechanism rather than the primary storage layer.</p>
+<blockquote>
+<p><strong>Note:</strong> Using Redis as a primary database requires careful consideration of persistence, data modeling, and failure modes. It trades the strict ACID guarantees of traditional databases for extreme performance.</p>
+</blockquote>
+<h2 id="when-redis-works-as-primary">When Redis Works as Primary</h2>
+<p>Redis is suitable as a primary database for:</p>
+<ul>
+<li><strong>Real-time applications</strong>: Leaderboards, session stores, live dashboards</li>
+<li><strong>High-velocity data</strong>: Activity streams, IoT sensor data, gaming state</li>
+<li><strong>Precomputed views</strong>: Timeline fan-out (Twitter-style), materialized aggregations</li>
+<li><strong>Microservices coordination</strong>: Distributed locks, rate limiting, feature flags</li>
+</ul>
+<p>Redis is <strong>not</strong> suitable when:</p>
+<ul>
+<li>Dataset exceeds available RAM (without Redis Enterprise tiered storage)</li>
+<li>Complex multi-key ACID transactions are required</li>
+<li>Ad-hoc queries with joins are common</li>
+<li>Regulatory requirements mandate disk-first storage</li>
+</ul>
+<h2 id="persistence-configuration">Persistence Configuration</h2>
+<p>For primary database use, enable both RDB and AOF:</p>
+<pre class="highlight"><code>appendonly yes
+appendfsync everysec
+save 900 1
+save 300 10
+save 60 10000
+</code></pre>
+
+<h3 id="rdb-snapshotting">RDB (Snapshotting)</h3>
+<p>Point-in-time snapshots via <code>fork()</code>. Fast restarts, compact files, but potential data loss between snapshots.</p>
+<pre class="highlight"><code>save 60 10000    # Snapshot if 10000 keys changed in 60 seconds
+</code></pre>
+
+<p>Use RDB for:
+- Disaster recovery backups
+- Fast instance bootstrapping
+- Development/staging environments</p>
+<h3 id="aof-append-only-file">AOF (Append-Only File)</h3>
+<p>Write log of every operation. Configurable durability via <code>fsync</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Policy</th>
+<th>Durability</th>
+<th>Latency</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>always</code></td>
+<td>Maximum</td>
+<td>High</td>
+<td>Financial transactions</td>
+</tr>
+<tr>
+<td><code>everysec</code></td>
+<td>~1 second loss</td>
+<td>Low</td>
+<td>Most production workloads</td>
+</tr>
+<tr>
+<td><code>no</code></td>
+<td>OS-dependent</td>
+<td>Minimal</td>
+<td>Caching layer</td>
+</tr>
+</tbody>
+</table>
+<p>For primary database use, <code>everysec</code> is the standard choice—accepting up to 1 second of data loss for significantly better performance.</p>
+<h3 id="hybrid-persistence-redis-40">Hybrid Persistence (Redis 4.0+)</h3>
+<pre class="highlight"><code>aof-use-rdb-preamble yes
+</code></pre>
+
+<p>AOF files start with an RDB snapshot, followed by incremental commands. Combines fast restarts with durability.</p>
+<h2 id="data-modeling-without-sql">Data Modeling Without SQL</h2>
+<p>Redis requires denormalization and explicit indexing.</p>
+<h3 id="primary-keys">Primary Keys</h3>
+<p>Store entities in Hashes with namespace prefixes:</p>
+<pre class="highlight"><code>HSET user:1001 username &quot;alice&quot; email &quot;alice@example.com&quot; karma &quot;42&quot;
+</code></pre>
+
+<h3 id="secondary-indexes">Secondary Indexes</h3>
+<p>Build indexes manually using Sets or Sorted Sets:</p>
+<pre class="highlight"><code># Email lookup index
+SET user:email:alice@example.com 1001
+
+# Age range index
+ZADD users:by:age 25 1001
+</code></pre>
+
+<h3 id="one-to-many-relationships">One-to-Many Relationships</h3>
+<p>Use Sets to store relationships:</p>
+<pre class="highlight"><code>SADD user:1001:followers 1002 1003 1004
+SADD user:1001:following 1005 1006
+</code></pre>
+
+<h3 id="referential-integrity">Referential Integrity</h3>
+<p>Redis does not enforce foreign keys. Handle deletions explicitly:</p>
+<pre class="highlight"><code># Lua script for atomic user deletion with cleanup
+EVAL &quot;
+  local user_id = KEYS[1]
+  local followers = redis.call('SMEMBERS', 'user:' .. user_id .. ':followers')
+  for _, follower in ipairs(followers) do
+    redis.call('SREM', 'user:' .. follower .. ':following', user_id)
+  end
+  redis.call('DEL', 'user:' .. user_id)
+  redis.call('DEL', 'user:' .. user_id .. ':followers')
+  redis.call('DEL', 'user:' .. user_id .. ':following')
+&quot; 1 1001
+</code></pre>
+
+<h2 id="case-study-lamernews-architecture">Case Study: LamerNews Architecture</h2>
+<p>LamerNews (a Hacker News clone by antirez) demonstrates a complete web application using only Redis.</p>
+<h3 id="user-storage">User Storage</h3>
+<pre class="highlight"><code>user:1001 → Hash {username, password_hash, karma, created_at}
+username.to.id:alice → String &quot;1001&quot;
+auth:sha1token → String &quot;1001&quot;
+</code></pre>
+
+<p>Session validation is O(1)—no database round-trip for the common case.</p>
+<h3 id="news-ranking">News Ranking</h3>
+<pre class="highlight"><code>news.top → Sorted Set (score = rank)
+</code></pre>
+
+<p>Rank is computed as:</p>
+<pre class="highlight"><code>RANK = VOTES / (AGE_HOURS ^ GRAVITY)
+</code></pre>
+
+<p>When a vote occurs, the rank is recalculated and updated:</p>
+<pre class="highlight"><code>ZADD news.top &lt;new_rank&gt; &lt;news_id&gt;
+</code></pre>
+
+<p>The homepage is a single command:</p>
+<pre class="highlight"><code>ZREVRANGE news.top 0 29
+</code></pre>
+
+<h3 id="comment-threading">Comment Threading</h3>
+<p>All comments for a news item in one Hash:</p>
+<pre class="highlight"><code>news:5001:comments → Hash {comment_id: json_blob}
+</code></pre>
+
+<p>The application fetches all comments via <code>HGETALL</code>, builds the parent-child tree in memory, and renders recursively. This moves relational logic to the application layer.</p>
+<h2 id="production-patterns-from-scale">Production Patterns from Scale</h2>
+<h3 id="pinterest-virtual-sharding">Pinterest: Virtual Sharding</h3>
+<p>Pinterest stores billions of follower relationships in Redis. They use "virtual shards"—dividing the user ID space into 8192 logical shards distributed across physical instances. This enables:</p>
+<ul>
+<li>CPU utilization: Multiple single-threaded Redis processes per server</li>
+<li>Predictable data distribution</li>
+<li>Easier rebalancing</li>
+</ul>
+<h3 id="twitter-timeline-precomputation">Twitter: Timeline Precomputation</h3>
+<p>Twitter's home timeline is a Redis List per user, capped at ~800 entries. When a user tweets:</p>
+<ol>
+<li>Fan-out: Push tweet ID to all active followers' timeline Lists</li>
+<li>Read: <code>LRANGE timeline:user_id 0 199</code> returns the latest 200 tweets</li>
+</ol>
+<p>This trades write amplification for read simplicity—timeline reads are O(1), not expensive joins.</p>
+<h3 id="doordash-memory-optimization">DoorDash: Memory Optimization</h3>
+<p>DoorDash reduced ML feature store memory by 40% by switching from flat key-value pairs to Hashes. Redis uses compact "listpack" encoding for small Hashes:</p>
+<pre class="highlight"><code># Instead of:
+SET feature:1001:age 25
+SET feature:1001:city &quot;NYC&quot;
+
+# Use:
+HSET feature:1001 age 25 city &quot;NYC&quot;
+</code></pre>
+
+<p>Grouping related data under one Hash key enables significant memory savings.</p>
+<h2 id="operational-requirements">Operational Requirements</h2>
+<h3 id="high-availability">High Availability</h3>
+<p>Use Redis Sentinel for automatic failover:</p>
+<pre class="highlight"><code>sentinel monitor mymaster 127.0.0.1 6379 2
+sentinel down-after-milliseconds mymaster 5000
+sentinel failover-timeout mymaster 60000
+</code></pre>
+
+<p>Configure <code>min-replicas-to-write</code> to prevent split-brain:</p>
+<pre class="highlight"><code>min-replicas-to-write 1
+min-replicas-max-lag 10
+</code></pre>
+
+<h3 id="avoid-blocking-commands">Avoid Blocking Commands</h3>
+<p>In a single-threaded database, O(N) commands block everything:</p>
+<ul>
+<li>Never use <code>KEYS *</code> in production—use <code>SCAN</code></li>
+<li>Avoid <code>HGETALL</code> on Hashes with millions of fields</li>
+<li>Use <code>UNLINK</code> instead of <code>DEL</code> for large keys (async deletion)</li>
+</ul>
+<h3 id="monitor-for-hot-keys-and-big-keys">Monitor for Hot Keys and Big Keys</h3>
+<pre class="highlight"><code>redis-cli --hotkeys
+redis-cli --bigkeys
+</code></pre>
+
+<p>A single hot key can saturate a CPU core. A big key (millions of elements) causes latency spikes during operations.</p>
+<h2 id="source">Source</h2>
+<p>LamerNews source code (github.com/antirez/lamernews), Pinterest and Twitter engineering blogs, DoorDash ML infrastructure case study.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="redis-as-primary-database.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

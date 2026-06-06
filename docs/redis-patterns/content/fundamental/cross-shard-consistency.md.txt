@@ -1,0 +1,200 @@
+# Cross-Shard Consistency Patterns
+
+Detect and handle torn writes across multiple Redis instances using transaction stamps, version tokens, and commit markers when atomic multi-key operations aren't possible.
+
+These patterns work with any multi-primary Redis setup: Redis Cluster shards, client-side sharding across independent Redis instances, or even different Redis deployments entirely. The key insight is that consistency detection happens at the application layer through shared tokens embedded in the values themselves—no coordination between Redis instances is required.
+
+## The Problem: Torn Writes
+
+When updating related keys A and B on different shards:
+
+1. Client writes A to shard 1 -> Success
+2. Client writes B to shard 2 -> Fails (network error, timeout)
+
+Now A has new data, B has old data. Readers see inconsistent state.
+
+## Pattern 1: Transaction Stamp (Shared Token)
+
+Generate a unique token for each logical transaction. Include it in all related writes.
+
+### Write
+
+    # Generate unique token (UUID, ULID, or random bytes)
+    token = generate_random_token()
+
+    SET user:123:profile "{token}:{profile_json}"
+    SET user:123:settings "{token}:{settings_json}"
+
+### Read and Validate
+
+    profile = GET user:123:profile
+    settings = GET user:123:settings
+
+    profile_token = parse_token(profile)
+    settings_token = parse_token(settings)
+
+    if profile_token == settings_token:
+        # Consistent: both from same logical write
+        return parse_payload(profile), parse_payload(settings)
+    else:
+        # Torn write detected - handle inconsistency
+        trigger_repair()
+
+### What This Buys You
+
+- **Detects inconsistency** without distributed transactions or cluster features
+- **Cheap read-time proof** that values match the same logical write
+- **Works across anything**: Redis Cluster shards, separate Redis instances with client-side sharding, different data centers, or even different storage systems entirely
+- **No Redis coordination required**: Each SET is independent; consistency is validated by the client reading both values
+- **Enables idempotency**: the token can serve as the operation ID
+
+### Limitations
+
+- Detection only, not prevention—you still need a recovery policy
+- Doesn't tell you which side is newer (add timestamps for that)
+
+### Client-Side Sharding Example
+
+This pattern is particularly valuable with client-side sharding where you have independent Redis primaries with no cluster coordination:
+
+**Setup:** Two independent Redis instances (host1:6379 and host2:6379) with a client connecting to both.
+
+The client:
+1. Generates token
+2. Writes to Instance A: `SET user:profile "{token}:{data}"`
+3. Writes to Instance B: `SET user:settings "{token}:{data}"`
+4. On read, fetches both and compares tokens
+
+No clustering, no replication between instances—consistency is enforced entirely by the application through token validation.
+
+## Pattern 2: Version-Stamped Values
+
+Add ordering information to detect inconsistency AND determine the newest version:
+
+    SET user:123:profile "{timestamp}:{token}:{payload}"
+    SET user:123:settings "{timestamp}:{token}:{payload}"
+
+On mismatch, accept the value with the higher timestamp, or trigger a full refresh.
+
+### Monotonic Versions
+
+For stronger ordering guarantees, use a monotonic counter:
+
+    version = INCR user:123:version
+    SET user:123:profile "{version}:{payload}"
+    SET user:123:settings "{version}:{payload}"
+
+Now you can always determine which write is newer.
+
+## Pattern 3: Commit Marker
+
+Write all data first, then write a commit marker as the final step:
+
+    # Phase 1: Write data (may partially fail)
+    SET txn:abc:A "{payload_A}"
+    SET txn:abc:B "{payload_B}"
+
+    # Phase 2: Mark as committed
+    SET txn:abc:committed "1" EX 3600
+
+Readers only accept data whose transaction ID has a commit marker:
+
+    if EXISTS txn:abc:committed:
+        a = GET txn:abc:A
+        b = GET txn:abc:B
+        # Safe to use
+    else:
+        # Transaction incomplete, ignore or wait
+
+This resembles two-phase commit, with the commit marker acting as the decision record.
+
+## Pattern 4: Append-Only Logs with Shared Tokens
+
+For event-sourced systems, append to per-key logs with shared tokens:
+
+    # Each logical transaction appends to both logs
+    RPUSH user:123:profile:log "{token}:{profile_change}"
+    RPUSH user:123:settings:log "{token}:{settings_change}"
+
+To find the latest consistent state:
+
+1. Read recent entries from both logs (LRANGE ... -N -1)
+2. Find the newest token that appears in BOTH logs
+3. That token identifies the latest complete transaction
+
+### ZSET Variant
+
+Using sorted sets with timestamp scores:
+
+    ZADD user:123:events {timestamp} "{token}:profile:{payload}"
+    ZADD user:123:events {timestamp} "{token}:settings:{payload}"
+
+Query from newest, grouping by token until you find one with all expected parts.
+
+## Recovery Strategies
+
+When inconsistency is detected:
+
+### Re-read with Backoff
+
+The write may still be in progress:
+
+    for attempt in range(3):
+        if tokens_match():
+            return data
+        sleep(backoff * attempt)
+    trigger_repair()
+
+### Accept Newest
+
+If values have timestamps/versions, use the newest:
+
+    if profile_version > settings_version:
+        regenerate_settings_from_profile()
+    else:
+        regenerate_profile_from_settings()
+
+### Consult Source of Truth
+
+Re-fetch from the authoritative source (database) and rewrite both:
+
+    canonical = fetch_from_database(user_id)
+    token = generate_token()
+    SET user:123:profile "{token}:{canonical.profile}"
+    SET user:123:settings "{token}:{canonical.settings}"
+
+### Serve Stale with Background Repair
+
+Return the most recent data immediately, trigger async repair:
+
+    queue_repair_job(user_id)
+    return best_effort_merge(profile, settings)
+
+## When to Use These Patterns
+
+**Use transaction stamps when:**
+- Keys must live on different shards (no hash tag option)
+- You can tolerate detection + repair instead of prevention
+- Cross-system consistency is needed (Redis + database + cache)
+
+**Use commit markers when:**
+- You need clear transaction boundaries
+- Incomplete transactions should be invisible to readers
+- You can accept the overhead of an extra key per transaction
+
+**Use version stamps when:**
+- You need to determine which write is newest
+- Last-write-wins semantics are acceptable
+- You want automatic conflict resolution
+
+## Comparison with Prevention Strategies
+
+| Approach | Guarantees | Overhead | Complexity |
+|----------|------------|----------|------------|
+| Hash tags (same slot) | Atomic | None | Low |
+| Transaction stamps | Detect only | Per-value token | Medium |
+| Commit markers | Detect + visibility | Extra key | Medium |
+| Version stamps | Detect + ordering | Per-value version | Medium |
+| External coordinator | Atomic | Network + latency | High |
+
+When possible, use hash tags to co-locate keys (see [Hash Tag Patterns](hash-tag-colocation.md)). Use these detection patterns when co-location isn't feasible.

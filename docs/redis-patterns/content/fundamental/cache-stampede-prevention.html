@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cache Stampede Prevention - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="cache-stampede-prevention.md.txt">View Markdown</a>
+    </div>
+<h1 id="cache-stampede-prevention">Cache Stampede Prevention</h1>
+<p>Prevent multiple clients from simultaneously regenerating an expired cache key using locking, probabilistic early refresh, or request coalescing.</p>
+<p>A cache stampede (also called "thundering herd") occurs when a popular cache key expires, causing many concurrent requests to simultaneously query the database to regenerate the value. This can overwhelm the database and cause cascading failures.</p>
+<h2 id="the-problem">The Problem</h2>
+<p>Consider a cache key accessed 10,000 times per second. When it expires:</p>
+<ol>
+<li>Thousands of requests arrive within milliseconds</li>
+<li>All see a cache miss</li>
+<li>All query the database simultaneously</li>
+<li>The database becomes overloaded</li>
+<li>Response times spike across the entire system</li>
+</ol>
+<p>This is particularly dangerous for keys with expensive regeneration costs (complex queries, aggregations, external API calls).</p>
+<h2 id="solution-1-probabilistic-early-expiration-x-fetch">Solution 1: Probabilistic Early Expiration (X-Fetch)</h2>
+<p>This technique decouples logical expiration from physical expiration. The idea is to have a small probability that any request will refresh the cache <em>before</em> it actually expires.</p>
+<h3 id="how-it-works">How It Works</h3>
+<p>Set the physical TTL longer than needed (e.g., 1 hour). As requests arrive, each one calculates whether it should proactively refresh based on how close the key is to expiration and a random factor.</p>
+<p>When the key is fresh, the probability of refresh is near zero. As expiration approaches, the probability increases. Eventually, one "lucky" request triggers a refresh while all others continue serving the slightly stale data.</p>
+<h3 id="the-algorithm">The Algorithm</h3>
+<p>The decision to refresh is based on:</p>
+<pre class="highlight"><code>current_time - (expiry_time - delta * beta * log(random()))
+</code></pre>
+
+<p>Where:
+- <code>delta</code> is the time needed to regenerate the value
+- <code>beta</code> is a tuning parameter (typically 1.0)
+- <code>random()</code> produces a value between 0 and 1</p>
+<p>This formula ensures that as the gap to expiration shrinks, the probability of any single request triggering a refresh increases.</p>
+<h3 id="outcome">Outcome</h3>
+<p>Instead of thousands of simultaneous database queries at expiration, a single request refreshes the cache moments before expiration while others continue serving cached data. The traffic spike is smoothed away.</p>
+<h2 id="solution-2-mutex-locking">Solution 2: Mutex Locking</h2>
+<p>A deterministic approach where only one process is allowed to regenerate the cache.</p>
+<h3 id="how-it-works_1">How It Works</h3>
+<p>When a cache miss occurs:</p>
+<ol>
+<li>Attempt to acquire a lock using <code>SET lock:mykey &lt;token&gt; NX PX 5000</code></li>
+<li>If the lock is acquired, query the database and update the cache</li>
+<li>Other requests either wait and poll, or return a stale/default value</li>
+<li>Release the lock after cache is populated</li>
+</ol>
+<h3 id="redis-commands">Redis Commands</h3>
+<pre class="highlight"><code>SET lock:popular_key abc123 NX PX 5000
+</code></pre>
+
+<p>The <code>NX</code> ensures only one client acquires the lock. The <code>PX 5000</code> sets a 5-second timeout to prevent deadlocks if the lock holder crashes.</p>
+<h3 id="handling-waiting-clients">Handling Waiting Clients</h3>
+<p>Clients that fail to acquire the lock have options:</p>
+<ul>
+<li><strong>Poll</strong>: Sleep briefly and check the cache again</li>
+<li><strong>Return stale data</strong>: If a stale copy is available, serve it</li>
+<li><strong>Return default</strong>: Serve a default or degraded response</li>
+<li><strong>Fail fast</strong>: Return an error immediately</li>
+</ul>
+<h3 id="releasing-the-lock">Releasing the Lock</h3>
+<p>The lock must be released safely. Simply calling DEL risks deleting another client's lock if yours expired. Use a Lua script that checks the token matches before deleting:</p>
+<pre class="highlight"><code>if redis.call(&quot;get&quot;, KEYS[1]) == ARGV[1] then
+    return redis.call(&quot;del&quot;, KEYS[1])
+end
+return 0
+</code></pre>
+
+<h2 id="comparison">Comparison</h2>
+<table>
+<thead>
+<tr>
+<th>Approach</th>
+<th>Complexity</th>
+<th>Database Queries</th>
+<th>Staleness</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No protection</td>
+<td>Low</td>
+<td>N (one per request)</td>
+<td>None</td>
+</tr>
+<tr>
+<td>X-Fetch</td>
+<td>Medium</td>
+<td>1-2</td>
+<td>Brief window</td>
+</tr>
+<tr>
+<td>Mutex lock</td>
+<td>Higher</td>
+<td>Exactly 1</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<h2 id="recommendation">Recommendation</h2>
+<p>For most applications, start with mutex locking—it's easier to reason about and provides strong protection. Consider X-Fetch for extremely high-traffic keys where even brief lock contention is problematic.</p>
+<p>Some systems combine both: use X-Fetch for normal operation, with a mutex fallback for hard cache misses.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="cache-stampede-prevention.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

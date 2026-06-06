@@ -1,0 +1,131 @@
+# Twitter/X: Deep Internals and Custom Data Structures
+
+Historical case study of Twitter's Redis customizations—many of these innovations are now built into Redis core (quicklist, improved memory management).
+
+Twitter faces unique challenges due to the "fan-out" nature of its product—a single tweet from a high-profile account must appear in millions of timelines within seconds. This document covers patterns Twitter developed, noting which are now available natively in Redis.
+
+## The Timeline Challenge
+
+When a user with 10 million followers tweets, that tweet must appear in 10 million timelines. Twitter caches these timelines in Redis for instant retrieval. The scale is immense: over 30 billion timeline updates per day.
+
+## Custom Data Structures
+
+### The Problem with Standard Structures
+
+Standard Redis data structures present a trade-off between memory efficiency and CPU performance:
+
+**Listpack (formerly Ziplist)**: Memory-compact, perfect for small lists, but modifying requires rewriting the entire contiguous memory block. For timeline services handling millions of insertions, the latency penalty becomes unacceptable.
+
+**Linked List**: Offers O(1) insertion but suffers from significant memory overhead due to pointer storage and memory fragmentation.
+
+### Hybrid List
+
+Twitter developed the Hybrid List as a compromise: chains of multiple small Listpacks linked together.
+
+**Standard Listpack:** A single contiguous memory block [entry1|entry2|...|entryN]. Must rewrite the entire block on any modification.
+
+**Hybrid List:** Multiple small listpacks linked together. Each listpack holds a few entries. Modifications only affect one small block, not the entire structure.
+
+**Benefits:**
+- Retains high memory locality and compactness of Listpacks
+- Enables flexible linking capabilities of standard lists
+- Minimizes memory fragmentation
+- Avoids "stop-the-world" latency spikes from resizing large monolithic structures
+- Ensures predictability for real-time timeline rendering
+
+> **Modern Redis:** This exact data structure is now built into Redis as **quicklist** (since Redis 3.2). All Redis Lists use quicklist internally—a doubly-linked list of listpacks. Configure with `list-max-listpack-size` to control how many entries each listpack holds before a new node is created. Twitter's innovation became a core Redis feature.
+
+### B-Tree Sets
+
+For scenarios requiring both point lookups AND range queries:
+
+**Traditional approach:**
+- Hash for point lookups (find specific tweet ID)
+- Sorted Set for ranges (tweets between timestamps)
+- Memory duplication
+
+**B-Tree Set approach:**
+- Single structure supporting both operation types
+- Hierarchical keys enable point lookups and range queries
+- Significant memory footprint reduction when caching billions of objects
+
+> **Modern Redis:** Sorted Sets now support **lexicographic ordering** when members share the same score. By setting all scores to 0, members sort alphabetically, enabling B-tree-like functionality:
+> - `ZRANGEBYLEX` for prefix and range queries on string keys
+> - `ZLEXCOUNT` for counting items in a lexicographic range
+> - Composite keys like `user:123:tweet:456` enable hierarchical queries
+>
+> See the [Lexicographic Sorted Set Patterns](../fundamental/lexicographic-sorted-sets.md) document for implementation details.
+
+## Proxy-Based Cluster Topology
+
+Twitter employs a sophisticated proxy layer separating concerns:
+
+**Layer 1 - Control Path (slow):** Handles cluster management, resharding, and node additions.
+
+**Layer 2 - Cluster Management System:** Maintains global view mapping Keys to Buckets to Machines.
+
+**Layer 3 - Proxy Layer (Twemproxy/Custom):** Hashes keys to specific shards. Clients connect here.
+
+**Layer 4 - Shards:** Multiple Redis shard instances (Shard 1, Shard 2, ... Shard N).
+
+**Key benefits:**
+- Client application is unaware of physical cluster topology
+- Data can be moved between nodes without client updates
+- Cluster state changes don't induce latency jitter
+- Philosophy: "Predictability over peak performance"
+
+## Lock-Free Command Logger
+
+### The Problem
+
+The standard Redis MONITOR command halts the event loop, degrading performance by 50%+ at high throughput.
+
+### The Solution
+
+Twitter implemented a Lock-Free Command Logger:
+
+**Flow:** Redis Main Thread writes to a Lock-Free Ring Buffer. An Async Thread drains the buffer to disk.
+
+The main Redis thread writes to a lock-free ring buffer. A separate thread drains this buffer to disk asynchronously.
+
+**Captured per request:**
+- Command type
+- Key size
+- Client IP
+- Timestamp
+
+**Capabilities enabled:**
+- Traffic auditing at 100k+ QPS
+- Hot key identification (viral tweets causing uneven load)
+- Abusive client detection in real-time
+- Zero impact on primary Redis thread latency
+
+## Timeline Data Model
+
+Each timeline entry contains:
+- Tweet ID (8 bytes)
+- User ID (8 bytes)
+- Metadata (4 bytes)
+- Total: 20 bytes per entry
+
+With 800 entries per user timeline, each user's cached timeline consumes approximately 16KB. Across hundreds of millions of users, this amounts to terabytes of RAM.
+
+## Inactive User Optimization
+
+Not all users deserve cache space. Active users have their timelines hot in Redis. Inactive users (those who haven't logged in recently) have their timelines evicted. When an inactive user returns, their timeline is rebuilt from persistent storage on demand.
+
+This tiered approach ensures RAM is spent on users who will actually benefit from low-latency access.
+
+## Scale Numbers
+
+| Metric | Value |
+|--------|-------|
+| Timeline updates/day | 30 billion |
+| Commands/second | 40M - 100M |
+| Cache as % of infrastructure | ~3% |
+| Timeline IDs per user | 800 (capped) |
+| Replication factor | 3x (fault tolerance) |
+
+## Source
+
+Twitter's engineering team has shared these patterns in technical talks including "Scaling Redis at Twitter" and the infrastructure blog at blog.x.com/engineering.

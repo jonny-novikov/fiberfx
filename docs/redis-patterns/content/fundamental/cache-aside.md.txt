@@ -1,0 +1,70 @@
+# Cache-Aside Pattern (Lazy Loading)
+
+Use Cache-Aside for read-heavy workloads: on cache miss, fetch from the database and populate the cache; on write, invalidate or update the cache explicitly.
+
+The application treats the cache as an auxiliary data store, managing it explicitly rather than having the cache sit transparently between the application and the database.
+
+## How It Works
+
+When the application needs data, it follows this sequence:
+
+1. **Check the cache first**: Query Redis for the requested key.
+2. **On cache hit**: Return the cached data immediately.
+3. **On cache miss**: Query the primary database, store the result in Redis with an appropriate TTL, then return the data.
+
+The key insight is that the application is responsible for populating the cache. Redis never automatically fetches data from the database.
+
+## Redis Commands Used
+
+A typical cache-aside flow uses these commands:
+
+    GET user:123
+
+If this returns nil (cache miss), the application queries the database and then:
+
+    SET user:123 "{...user data...}" EX 3600
+
+The `EX 3600` sets a one-hour expiration, ensuring stale data eventually expires.
+
+## Advantages
+
+**Resilience to cache failure**: If Redis becomes unavailable, the application degrades gracefully by falling back to the database. Latency increases, but the system remains functional.
+
+**Memory efficiency**: Only data that is actually requested gets cached. This prevents "cold storage" where unused data occupies valuable cache memory.
+
+**Simplicity**: The pattern is straightforward to implement and reason about.
+
+## The Staleness Problem
+
+The primary disadvantage is the potential for stale data. Consider this scenario:
+
+1. Application reads `user:123` from cache (cache hit)
+2. Another process updates the user in the database
+3. The cached copy remains unchanged until TTL expires
+
+The cache now contains outdated information.
+
+## Mitigating Staleness
+
+The standard mitigation is **cache invalidation on write**. When the application successfully updates data in the database, it immediately deletes the corresponding cache key:
+
+    DEL user:123
+
+The next read will miss the cache and fetch fresh data from the database. This is simpler and safer than trying to update the cache, which risks race conditions.
+
+## When to Use Cache-Aside
+
+This pattern is ideal when:
+
+- The workload is read-heavy
+- Brief staleness is acceptable
+- You want graceful degradation if the cache fails
+- You need fine-grained control over what gets cached
+
+## When to Avoid
+
+Consider other patterns when:
+
+- You need strong consistency between cache and database
+- Write-then-immediately-read patterns are common (the read may hit stale cache)
+- The cost of a cache miss is extremely high

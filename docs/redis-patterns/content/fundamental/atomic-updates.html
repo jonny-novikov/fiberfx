@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atomic Update Patterns - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="atomic-updates.md.txt">View Markdown</a>
+    </div>
+<h1 id="atomic-update-patterns">Atomic Update Patterns</h1>
+<p>Ensure data integrity with atomic read-modify-write operations using WATCH/MULTI/EXEC for optimistic locking, Lua scripts for complex logic, and shadow-key patterns for safe bulk updates.</p>
+<p>Redis provides several mechanisms for atomic operations beyond simple commands. These patterns prevent race conditions when multiple clients update shared data concurrently.</p>
+<h2 id="pattern-1-optimistic-locking-with-watch">Pattern 1: Optimistic Locking with WATCH</h2>
+<p>WATCH implements check-and-set (CAS) semantics. If any watched key changes before EXEC, the transaction aborts.</p>
+<h3 id="basic-watch-pattern">Basic WATCH Pattern</h3>
+<pre class="highlight"><code>WATCH account:123:balance
+
+balance = GET account:123:balance
+new_balance = balance - 100
+
+MULTI
+SET account:123:balance new_balance
+EXEC
+</code></pre>
+
+<p>If another client modifies <code>account:123:balance</code> after WATCH but before EXEC, the transaction returns nil (aborted). Your code should retry.</p>
+<h3 id="retry-loop">Retry Loop</h3>
+<pre class="highlight"><code>max_retries = 5
+for attempt in range(max_retries):
+    WATCH account:123:balance
+
+    balance = GET account:123:balance
+    if balance &lt; amount:
+        UNWATCH
+        raise InsufficientFunds()
+
+    new_balance = balance - amount
+
+    result = MULTI
+    SET account:123:balance new_balance
+    EXEC
+
+    if result is not None:
+        return  # Success
+    # Transaction aborted, retry
+
+raise TooManyRetries()
+</code></pre>
+
+<h3 id="multi-key-watch">Multi-Key WATCH</h3>
+<p>Watch multiple keys for atomic updates across them:</p>
+<pre class="highlight"><code>WATCH inventory:sku123 order:456:status
+
+stock = GET inventory:sku123
+if stock &lt; quantity:
+    UNWATCH
+    raise OutOfStock()
+
+MULTI
+DECRBY inventory:sku123 quantity
+SET order:456:status &quot;confirmed&quot;
+EXEC
+</code></pre>
+
+<blockquote>
+<p><strong>Cluster Note:</strong> All watched keys must be in the same slot. Use hash tags to co-locate: <code>inventory:{sku123}</code>, <code>order:{sku123}:456</code>.</p>
+</blockquote>
+<h2 id="pattern-2-lua-scripts-for-atomic-logic">Pattern 2: Lua Scripts for Atomic Logic</h2>
+<p>Lua scripts execute atomically—no other command runs between script start and end.</p>
+<h3 id="compare-and-set">Compare-and-Set</h3>
+<pre class="highlight"><code>-- CAS: set only if current value matches expected
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    redis.call('SET', KEYS[1], ARGV[2])
+    return 1
+end
+return 0
+</code></pre>
+
+<p>Call:</p>
+<pre class="highlight"><code>EVAL &lt;script&gt; 1 mykey expected_value new_value
+</code></pre>
+
+<h3 id="atomic-transfer">Atomic Transfer</h3>
+<pre class="highlight"><code>-- Transfer amount between accounts
+local from_balance = tonumber(redis.call('GET', KEYS[1])) or 0
+local amount = tonumber(ARGV[1])
+
+if from_balance &lt; amount then
+    return {err = &quot;insufficient funds&quot;}
+end
+
+redis.call('DECRBY', KEYS[1], amount)
+redis.call('INCRBY', KEYS[2], amount)
+return {ok = &quot;transferred&quot;}
+</code></pre>
+
+<h3 id="conditional-update-with-side-effects">Conditional Update with Side Effects</h3>
+<pre class="highlight"><code>-- Update user and log the change atomically
+local old_value = redis.call('HGET', KEYS[1], ARGV[1])
+redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+redis.call('RPUSH', KEYS[2], cjson.encode({
+    field = ARGV[1],
+    old = old_value,
+    new = ARGV[2],
+    time = redis.call('TIME')[1]
+}))
+return old_value
+</code></pre>
+
+<h2 id="pattern-3-shadow-key-rename">Pattern 3: Shadow Key + RENAME</h2>
+<p>Update a complex value without readers seeing partial state:</p>
+<pre class="highlight"><code># Build new value in a temporary key
+DEL tmp:user:123:cache
+HSET tmp:user:123:cache field1 value1
+HSET tmp:user:123:cache field2 value2
+HSET tmp:user:123:cache field3 value3
+...
+
+# Atomic swap
+RENAME tmp:user:123:cache user:123:cache
+</code></pre>
+
+<p>RENAME is atomic—readers see either the old complete value or the new complete value, never a partial update.</p>
+<h3 id="with-expiration">With Expiration</h3>
+<p>RENAME preserves TTL from the source key. To set new TTL:</p>
+<pre class="highlight"><code>RENAME tmp:key final:key
+EXPIRE final:key 3600
+</code></pre>
+
+<p>Or use COPY (Redis 6.2+) with REPLACE:</p>
+<pre class="highlight"><code>COPY tmp:key final:key REPLACE
+DEL tmp:key
+EXPIRE final:key 3600
+</code></pre>
+
+<blockquote>
+<p><strong>Cluster Note:</strong> Both keys must be in the same slot for RENAME/COPY.</p>
+</blockquote>
+<h2 id="pattern-4-idempotency-keys">Pattern 4: Idempotency Keys</h2>
+<p>Ensure an operation executes exactly once using SET NX:</p>
+<pre class="highlight"><code># Check if operation already processed
+result = SET idempotency:{request_id} &quot;processing&quot; NX PX 86400000
+
+if result is None:
+    # Already processed, return cached result
+    return GET idempotency:{request_id}:result
+
+# Process operation
+outcome = process_operation()
+
+# Store result and mark complete
+MSET idempotency:{request_id} &quot;complete&quot; \
+     idempotency:{request_id}:result outcome
+
+return outcome
+</code></pre>
+
+<h3 id="with-lua-for-atomicity">With Lua for Atomicity</h3>
+<pre class="highlight"><code>local key = KEYS[1]
+local result_key = KEYS[2]
+local ttl = tonumber(ARGV[1])
+
+local status = redis.call('GET', key)
+if status then
+    if status == &quot;complete&quot; then
+        return redis.call('GET', result_key)
+    end
+    return {processing = true}  -- Still in progress
+end
+
+redis.call('SET', key, 'processing', 'PX', ttl)
+return {proceed = true}
+</code></pre>
+
+<h2 id="pattern-5-increment-with-bounds">Pattern 5: Increment with Bounds</h2>
+<p>Atomic increment that respects limits:</p>
+<pre class="highlight"><code>-- Increment but cap at maximum
+local current = tonumber(redis.call('GET', KEYS[1])) or 0
+local increment = tonumber(ARGV[1])
+local max_val = tonumber(ARGV[2])
+
+local new_val = math.min(current + increment, max_val)
+redis.call('SET', KEYS[1], new_val)
+return new_val
+</code></pre>
+
+<p>For inventory (decrement but not below zero):</p>
+<pre class="highlight"><code>local current = tonumber(redis.call('GET', KEYS[1])) or 0
+local decrement = tonumber(ARGV[1])
+
+if current &lt; decrement then
+    return -1  -- Insufficient
+end
+
+return redis.call('DECRBY', KEYS[1], decrement)
+</code></pre>
+
+<h2 id="pattern-6-getset-getdel-getex">Pattern 6: GETSET / GETDEL / GETEX</h2>
+<p>Atomic get-and-modify operations:</p>
+<h3 id="getset-deprecated-use-set-get">GETSET (deprecated, use SET GET)</h3>
+<pre class="highlight"><code># Atomically set new value, return old
+SET counter 100 GET
+# Returns: old value, sets new value
+</code></pre>
+
+<h3 id="getdel">GETDEL</h3>
+<pre class="highlight"><code># Atomically get and delete
+GETDEL job:result:123
+# Returns value and deletes key
+</code></pre>
+
+<h3 id="getex">GETEX</h3>
+<pre class="highlight"><code># Get and update expiration atomically
+GETEX session:abc EXAT 1706648400
+# Returns value, sets absolute expiration
+</code></pre>
+
+<h2 id="pattern-7-list-rotation">Pattern 7: List Rotation</h2>
+<p>Atomic move between lists:</p>
+<pre class="highlight"><code># Pop from source, push to destination
+LMOVE source destination RIGHT LEFT
+
+# Blocking version
+BLMOVE source destination RIGHT LEFT 30
+</code></pre>
+
+<p>Commonly used for reliable queues (see <a href="reliable-queue.md.txt">Reliable Queue Pattern</a>).</p>
+<h2 id="when-to-use-each-pattern">When to Use Each Pattern</h2>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Pattern</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Simple CAS on single key</td>
+<td>SET ... GET or Lua</td>
+</tr>
+<tr>
+<td>Multi-key transaction (same slot)</td>
+<td>WATCH + MULTI/EXEC</td>
+</tr>
+<tr>
+<td>Complex conditional logic</td>
+<td>Lua script</td>
+</tr>
+<tr>
+<td>Large value replacement</td>
+<td>Shadow key + RENAME</td>
+</tr>
+<tr>
+<td>Request deduplication</td>
+<td>Idempotency keys</td>
+</tr>
+<tr>
+<td>Counter with bounds</td>
+<td>Lua script</td>
+</tr>
+<tr>
+<td>Queue operations</td>
+<td>LMOVE / BLMOVE</td>
+</tr>
+</tbody>
+</table>
+<h2 id="error-handling">Error Handling</h2>
+<h3 id="watch-abort">WATCH Abort</h3>
+<pre class="highlight"><code>result = EXEC
+if result is None:
+    # Transaction aborted - watched key changed
+    # Retry or return conflict error
+</code></pre>
+
+<h3 id="lua-errors">Lua Errors</h3>
+<pre class="highlight"><code>result = EVAL script ...
+if isinstance(result, RedisError):
+    # Script error or KEYS/ARGV issue
+    handle_error(result)
+</code></pre>
+
+<h3 id="partial-failures">Partial Failures</h3>
+<p>For operations that can't be made atomic (cross-shard), use <a href="cross-shard-consistency.md.txt">Cross-Shard Consistency Patterns</a> to detect and recover from partial failures.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="atomic-updates.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

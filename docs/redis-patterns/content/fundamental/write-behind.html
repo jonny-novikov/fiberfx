@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Write-Behind (Write-Back) Caching Pattern - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="write-behind.md.txt">View Markdown</a>
+    </div>
+<h1 id="write-behind-write-back-caching-pattern">Write-Behind (Write-Back) Caching Pattern</h1>
+<p>Maximize write throughput by writing only to Redis and asynchronously syncing to the database later—trades immediate durability for performance.</p>
+<p>The application writes only to Redis, which acknowledges instantly. A separate background process periodically synchronizes changes to the backing database, batching writes for efficiency.</p>
+<h2 id="how-it-works">How It Works</h2>
+<ol>
+<li>The application writes data to Redis</li>
+<li>Redis acknowledges immediately—the client sees success</li>
+<li>A background process periodically reads changed data from Redis and writes it to the database</li>
+</ol>
+<p>The database update happens "behind" the cache write, hence the name.</p>
+<h2 id="redis-commands-used">Redis Commands Used</h2>
+<p>The application simply writes to Redis:</p>
+<pre class="highlight"><code>SET counter:page_views &quot;15847293&quot;
+INCRBY counter:page_views 1
+</code></pre>
+
+<p>No database interaction occurs during these operations. The background sync process later reads these values and persists them.</p>
+<h2 id="advantages">Advantages</h2>
+<p><strong>Extremely low write latency</strong>: Operations complete as soon as Redis acknowledges, typically sub-millisecond.</p>
+<p><strong>High throughput</strong>: The database is protected from write storms. Many rapid updates to the same key collapse into a single database write during sync.</p>
+<p><strong>Write coalescing</strong>: If a counter is incremented 1000 times per second, only the final value needs to be written to the database, not 1000 individual increments.</p>
+<h2 id="the-durability-trade-off">The Durability Trade-off</h2>
+<p>This pattern trades durability for speed:</p>
+<p><strong>Data loss risk</strong>: If Redis fails before synchronization, any writes since the last sync are lost. Redis effectively becomes the system of record during the sync window.</p>
+<p><strong>Eventual consistency</strong>: The database lags behind Redis. Queries directly to the database may return stale data.</p>
+<h2 id="mitigating-data-loss">Mitigating Data Loss</h2>
+<p>Several strategies reduce the risk:</p>
+<p><strong>Redis persistence</strong>: Enable AOF (Append Only File) with <code>appendfsync everysec</code> to persist writes to disk every second. This limits potential data loss to one second of writes.</p>
+<p><strong>Shorter sync intervals</strong>: Reduce the time between syncs to minimize the window of potential loss.</p>
+<p><strong>Replication</strong>: Run Redis with replicas so data survives single-node failures.</p>
+<p>However, none of these provide the same durability guarantees as synchronous database writes.</p>
+<h2 id="ideal-use-cases">Ideal Use Cases</h2>
+<p>Write-Behind excels for:</p>
+<ul>
+<li><strong>Counters and metrics</strong>: Page views, likes, impressions where losing a few counts is acceptable</li>
+<li><strong>High-velocity session updates</strong>: Frequent session touches where database latency would be prohibitive</li>
+<li><strong>Analytics ingestion</strong>: Collecting telemetry data at high speed</li>
+<li><strong>Gaming leaderboards</strong>: Rapid score updates that can tolerate brief inconsistency</li>
+</ul>
+<h2 id="when-not-to-use">When NOT to Use</h2>
+<p>Never use Write-Behind for:</p>
+<ul>
+<li>Financial transactions</li>
+<li>Order processing</li>
+<li>User credentials or authentication data</li>
+<li>Any data with regulatory compliance requirements</li>
+<li>Anything where data loss is unacceptable</li>
+</ul>
+<h2 id="the-sync-process">The Sync Process</h2>
+<p>The background synchronization typically works by:</p>
+<ol>
+<li>Scanning for keys that have changed (using a "dirty" flag or timestamp)</li>
+<li>Reading current values from Redis</li>
+<li>Writing to the database</li>
+<li>Marking keys as synchronized</li>
+</ol>
+<p>This process must handle failures gracefully—if a database write fails, the key should remain marked for retry.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="write-behind.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

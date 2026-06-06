@@ -1,0 +1,149 @@
+# Redis Streams and Event Sourcing
+
+Build persistent message queues with consumer groups, message acknowledgment, and historical replay using Redis Streams—ideal for event sourcing and multi-consumer workloads.
+
+Unlike Pub/Sub (fire-and-forget) or Lists (items removed on read), Streams persist messages and support multiple independent consumers reading the same data with tracking of what each has processed.
+
+## What is a Stream?
+
+A Stream is an append-only log. Each entry has:
+
+- **ID**: An auto-generated time-based identifier (e.g., `1526919030474-0`)
+- **Fields**: Key-value pairs containing the message data
+
+Entries are ordered by ID, guaranteeing strict temporal ordering.
+
+## Adding Messages
+
+    XADD orders * customer_id "123" product "widget" quantity "5"
+
+The `*` tells Redis to auto-generate an ID based on the current timestamp. The command returns the generated ID (e.g., `1526919030474-0`).
+
+You can also specify an ID explicitly, but auto-generation is recommended for most use cases.
+
+## Reading Messages
+
+Read from the beginning:
+
+    XREAD STREAMS orders 0
+
+Read only new messages (blocking):
+
+    XREAD BLOCK 5000 STREAMS orders $
+
+The `$` means "only messages arriving after this command." BLOCK 5000 waits up to 5 seconds for new messages.
+
+Read a specific range:
+
+    XRANGE orders 1526919030474-0 + COUNT 100
+
+This reads up to 100 messages starting from the specified ID.
+
+## Event Sourcing
+
+Streams enable event sourcing, where application state is derived from an immutable sequence of events.
+
+Instead of storing current state directly ("user has 100 points"), you store events ("user earned 10 points", "user spent 5 points", "user earned 95 points"). The current state is computed by replaying events.
+
+### Benefits
+
+- **Complete history**: Every change is recorded
+- **Audit trail**: Know exactly what happened and when
+- **Replay capability**: Rebuild state from scratch by replaying events
+- **Multiple projections**: Different services can derive different views from the same events
+
+### Implementation
+
+Services append events:
+
+    XADD user:123:events * type "points_earned" amount "10"
+    XADD user:123:events * type "points_spent" amount "5"
+
+A new service can bootstrap by reading the stream from the beginning:
+
+    XREAD STREAMS user:123:events 0
+
+It processes each event to build its local state.
+
+## Consumer Groups
+
+For scaling message processing, Redis implements Consumer Groups (similar to Kafka).
+
+### Creating a Group
+
+    XGROUP CREATE orders order-processors $ MKSTREAM
+
+This creates a consumer group named `order-processors` on the `orders` stream. The `$` means start from new messages only; use `0` to process the entire history.
+
+### Reading as a Consumer
+
+    XREADGROUP GROUP order-processors worker-1 COUNT 10 STREAMS orders >
+
+The `>` means "give me messages never delivered to this group." Each message is delivered to exactly one consumer in the group.
+
+### Acknowledging Messages
+
+When a message is delivered, it enters the Pending Entries List (PEL). It remains pending until acknowledged:
+
+    XACK orders order-processors 1526919030474-0
+
+This tells Redis the message was successfully processed.
+
+### Handling Failed Consumers
+
+If a consumer crashes, its pending messages remain in the PEL. Other consumers can claim them:
+
+    XPENDING orders order-processors
+
+This shows pending messages and which consumer holds them.
+
+    XCLAIM orders order-processors worker-2 60000 1526919030474-0
+
+This transfers ownership of a message to `worker-2` if it has been pending for at least 60 seconds (60000 milliseconds).
+
+**XAUTOCLAIM (Redis 6.2+)**: Combines XPENDING scan and XCLAIM in one command:
+
+    XAUTOCLAIM orders order-processors worker-2 60000 0-0 COUNT 10
+
+This automatically finds and claims up to 10 messages pending for over 60 seconds, simplifying recovery logic.
+
+## Stream Management
+
+### Trimming
+
+Streams can grow indefinitely. To limit size:
+
+    XTRIM orders MAXLEN 10000
+
+Keep only the most recent 10,000 entries. Use `MAXLEN ~ 10000` for approximate trimming (faster).
+
+**MINID trimming (Redis 6.2+)**: Trim by ID instead of count:
+
+    XTRIM orders MINID 1609459200000-0
+
+Removes all entries with IDs older than the specified minimum. Useful for time-based retention policies.
+
+### Information
+
+    XINFO STREAM orders
+    XINFO GROUPS orders
+    XINFO CONSUMERS orders order-processors
+
+## When to Use Streams
+
+- Event sourcing architectures
+- Message queues requiring persistence
+- Activity feeds and timelines
+- Audit logs
+- Communication between microservices
+- Any scenario requiring reliable message delivery with history
+
+## Streams vs. Pub/Sub vs. Lists
+
+| Feature | Pub/Sub | Lists | Streams |
+|---------|---------|-------|---------|
+| Persistence | No | Yes | Yes |
+| Consumer Groups | No | No | Yes |
+| Message History | No | No | Yes |
+| Acknowledgment | No | Manual | Built-in |
+| Multiple Consumers | Broadcast | Competing | Both |

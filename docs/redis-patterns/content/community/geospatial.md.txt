@@ -1,0 +1,139 @@
+# Geospatial Patterns
+
+Store locations and query by radius, distance, or bounding box using GEOADD, GEOSEARCH, and GEODIST commands built on geohash-encoded Sorted Sets.
+
+Redis natively supports geospatial indexes using the GEO* command family. Coordinates are stored as geohashes in a Sorted Set, enabling efficient spatial queries for "find nearby" features.
+
+## Adding Locations
+
+Store locations with their coordinates (longitude first, then latitude):
+
+    GEOADD locations -122.4194 37.7749 "san_francisco"
+    GEOADD locations -73.9857 40.7484 "new_york"
+    GEOADD locations -0.1276 51.5074 "london"
+
+Multiple locations can be added in a single command:
+
+    GEOADD locations -122.4194 37.7749 "san_francisco" -73.9857 40.7484 "new_york"
+
+## Retrieving Coordinates
+
+Get the coordinates of stored locations:
+
+    GEOPOS locations "san_francisco"
+
+Returns the longitude and latitude as a nested array.
+
+## Calculating Distance
+
+Measure distance between two members:
+
+    GEODIST locations "san_francisco" "new_york" km
+
+Supported units: `m` (meters), `km` (kilometers), `mi` (miles), `ft` (feet).
+
+## Searching by Radius
+
+Find all locations within a specified radius:
+
+    GEOSEARCH locations FROMMEMBER "san_francisco" BYRADIUS 500 km
+
+Search from specific coordinates:
+
+    GEOSEARCH locations FROMLONLAT -122.4 37.8 BYRADIUS 50 km
+
+## Search Options
+
+GEOSEARCH supports several options for controlling output:
+
+    GEOSEARCH locations FROMLONLAT -122.4 37.8 BYRADIUS 50 km WITHCOORD WITHDIST COUNT 10 ASC
+
+- `WITHCOORD`: Include coordinates in results
+- `WITHDIST`: Include distance from search point
+- `WITHHASH`: Include the geohash integer
+- `COUNT N`: Limit results to N items
+- `ASC/DESC`: Sort by distance (ascending = closest first)
+
+## Searching by Bounding Box
+
+Search within a rectangular area:
+
+    GEOSEARCH locations FROMMEMBER "san_francisco" BYBOX 1000 1000 km
+
+The box is specified as width × height centered on the reference point.
+
+## Storing Search Results
+
+Save search results to a new key for further processing:
+
+    GEOSEARCHSTORE nearby_cache locations FROMLONLAT -122.4 37.8 BYRADIUS 50 km
+
+The results are stored as a Sorted Set with geohash scores.
+
+## Location with Metadata
+
+Since GEO commands use Sorted Sets, you can only store the member name directly. Store additional metadata in a separate Hash:
+
+    GEOADD restaurants -122.4194 37.7749 "restaurant:123"
+    HSET restaurant:123 name "Joe's Diner" cuisine "American" rating "4.5"
+
+When searching, first find nearby IDs, then fetch their metadata:
+
+    GEOSEARCH restaurants FROMLONLAT -122.4 37.8 BYRADIUS 5 km
+    HGETALL restaurant:123
+
+## Real-Time Location Tracking
+
+For tracking moving entities like drivers or delivery personnel:
+
+1. Update location on each GPS ping:
+
+       GEOADD drivers -122.4 37.8 "driver:456"
+
+2. Store last-update timestamp:
+
+       HSET driver:456:status last_update 1706648400 available 1
+
+3. Find nearby available drivers:
+
+       GEOSEARCH drivers FROMLONLAT -122.4 37.8 BYRADIUS 5 km COUNT 20
+
+4. Filter results by checking availability and freshness in your application.
+
+## Geofencing
+
+Geofencing detects when entities enter or leave defined areas. Redis doesn't provide built-in geofencing events, but you can implement it by:
+
+1. Storing geofence definitions (center coordinates and radius)
+2. On each location update, checking if the entity is inside each relevant fence
+3. Comparing current state to previous state to detect enter/exit events
+4. Using Pub/Sub to broadcast geofence events to interested services
+
+## Geohash
+
+Get the geohash string representation:
+
+    GEOHASH locations "san_francisco"
+
+Geohashes are useful for:
+- Debugging and visualization
+- Interoperability with other geospatial systems
+- Understanding the precision of stored coordinates
+
+## Removing Locations
+
+Since GEO data is stored in a Sorted Set, use ZREM:
+
+    ZREM locations "san_francisco"
+
+## Commands Reference
+
+| Command | Description |
+|---------|-------------|
+| GEOADD | Add coordinates for members |
+| GEOPOS | Get coordinates of members |
+| GEODIST | Distance between two members |
+| GEOSEARCH | Search by radius or box |
+| GEOSEARCHSTORE | Search and store results |
+| GEOHASH | Get geohash strings |
+| ZREM | Remove a location |

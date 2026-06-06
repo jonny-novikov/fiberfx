@@ -1,0 +1,153 @@
+# Pinterest: Task Queue and Functional Partitioning
+
+Learn Pinterest's Redis scaling patterns: functional partitioning by use case, List-based reliable queues for background jobs, and horizontal scaling from 1 to 1000+ instances.
+
+Pinterest's growth from a single Redis instance (2011) to thousands of instances today provides a textbook example of vertical to horizontal scaling for billions of page views.
+
+## The Redis-Backed Task Queue
+
+Pinterest uses Redis Lists and Sorted Sets to manage an immense volume of background jobs:
+- Image transcoding
+- Spam analysis
+- Notification dispatch
+- Feed generation
+
+## Reliable At-Least-Once Delivery
+
+The fundamental challenge with task queues is preventing task loss when workers crash. Pinterest's pattern uses atomic list operations to guarantee at-least-once delivery.
+
+### The Problem with Simple RPOP
+
+Without atomic transfer:
+1. Worker calls RPOP - task removed from queue
+2. Worker crashes before completing task
+3. Task is LOST forever
+
+### The Solution: RPOPLPUSH / LMOVE
+
+With RPOPLPUSH (now BLMOVE):
+1. Worker calls RPOPLPUSH - task moves atomically to processing queue
+2. Worker crashes
+3. Task still exists in processing queue
+4. Reaper process detects stalled task, moves back to pending
+5. Another worker processes the task
+6. Task is NEVER lost
+
+The key commands:
+
+Enqueue a task:
+
+    LPUSH tasks:pending '{"job":"transcode","image_id":"123"}'
+
+Dequeue with atomic transfer to processing list:
+
+    BRPOPLPUSH tasks:pending tasks:processing 30
+
+When the task completes successfully, remove it from processing:
+
+    LREM tasks:processing 1 '{"job":"transcode","image_id":"123"}'
+
+A separate reaper process monitors the processing queue for stalled tasks and moves them back to pending.
+
+## Functional Partitioning
+
+As Pinterest scaled, they learned the necessity of separating workloads by function.
+
+### The Problem with Mixed Workloads
+
+**Initial Architecture (Problematic):** Single Redis cluster handling sessions, cache, and task queues together.
+
+Workload characteristics:
+- Sessions: Read/Write balanced
+- Cache: Read-heavy, tolerates eviction
+- Queue: Write-heavy, needs persistence
+
+Problems:
+- Queue write bursts saturate network
+- Cache eviction affects session reliability
+- Single config can't optimize for all patterns
+
+### The Solution: Workload Isolation
+
+**Evolved Architecture:** Three separate clusters, each optimized for its workload.
+
+**Session Cluster:** Persistence via AOF everysec, no eviction, async replication.
+
+**Cache Cluster:** No persistence, allkeys-lru eviction, async replication.
+
+**Queue Cluster:** Persistence via AOF always, no eviction, sync replication.
+
+### Configuration by Workload
+
+**Session Cluster** (must not lose data, must not evict):
+
+    maxmemory-policy noeviction
+    appendonly yes
+    appendfsync everysec
+
+**Cache Cluster** (can lose data, optimize for speed):
+
+    maxmemory-policy allkeys-lru
+    appendonly no
+    save ""
+
+**Queue Cluster** (must not lose data, durability critical):
+
+    maxmemory-policy noeviction
+    appendonly yes
+    appendfsync always
+    min-replicas-to-write 1
+
+## Priority Queues
+
+Pinterest implements priority queues using multiple lists:
+
+- `tasks:critical` - Highest priority
+- `tasks:high`
+- `tasks:default`
+- `tasks:low` - Lowest priority
+
+Workers use BLPOP with multiple keys:
+
+    BLPOP tasks:critical tasks:high tasks:default tasks:low 30
+
+Redis checks queues in order, returning from the first non-empty queue. Critical tasks are always processed before lower-priority work.
+
+## Photo-to-User Mapping
+
+Pinterest stores hundreds of millions of photo-to-user mappings for database sharding decisions. Each photo must be stored in the same database shard as its owner for efficient queries.
+
+The mapping uses the bucketing pattern for memory efficiency:
+
+    HSET photo:map:12 12345 "user:789"
+    HSET photo:map:12 12789 "user:456"
+
+Photos are grouped into buckets (photo_id / 1000), keeping each Hash small enough for memory-efficient encoding. This stores 300+ million mappings in under 5GB.
+
+## Scale Evolution
+
+| Year | Redis Instances | Scale |
+|------|-----------------|-------|
+| 2011 | 1 | Millions/month page views |
+| 2012 | 110 | Billions/month page views |
+| 2024 | Thousands | 150M+ requests/sec |
+
+## Philosophy
+
+Pinterest's Redis philosophy:
+- "Versatile complement to core data storage"
+- Avoid two tools doing the same job
+- Simple, mature, predictable technologies preferred
+- Functional partitioning over mixed workloads
+
+## Key Lessons
+
+1. **Use RPOPLPUSH/LMOVE for reliable queues**: Atomic transfer prevents task loss
+2. **Separate workloads by function**: Different use cases need different configurations
+3. **Use priority queues with BLPOP**: Simple, effective priority ordering
+4. **Apply bucketing for large mappings**: Memory-efficient storage of millions of items
+5. **Plan for growth**: Architecture that works at 1 instance must work at 1000
+
+## Source
+
+Pinterest Engineering Blog and "Scaling Pinterest" case studies.

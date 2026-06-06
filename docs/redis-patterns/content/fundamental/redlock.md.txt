@@ -1,0 +1,158 @@
+# The Redlock Algorithm
+
+Achieve fault-tolerant distributed locking by acquiring locks on a majority (N/2+1) of N independent Redis instances, tolerating node failures without losing lock consistency.
+
+Redlock addresses the fundamental weakness of single-instance Redis locks: if the Redis node fails, the lock is lost. With master-replica setups, a race condition can cause two clients to hold the same lock after failover.
+
+## The Problem with Single-Instance Locks
+
+A single Redis instance lock using `SET resource NX PX 30000` works well until the Redis server fails. With master-replica replication, a race condition exists:
+
+1. Client A acquires the lock on the master
+2. The master crashes before replicating the write to the replica
+3. The replica is promoted to master
+4. Client B acquires the same lock—the replica doesn't know about Client A's lock
+
+Two clients now believe they hold the same lock. This violates the mutual exclusion property that locks must guarantee.
+
+## The Redlock Solution
+
+Redlock uses N independent Redis masters (typically 5) with no replication between them. A lock is considered acquired only when a client holds it on a majority of instances (N/2 + 1, so at least 3 out of 5).
+
+### Acquiring the Lock
+
+1. Get the current time in milliseconds (T1)
+
+2. Attempt to acquire the lock on all N instances sequentially or in parallel:
+
+       SET resource_name <random_value> NX PX 30000
+
+   Use a small timeout per instance (5-50ms) to avoid blocking on unavailable nodes. The random value must be unique across all clients and all lock attempts.
+
+3. Get the current time again (T2)
+
+4. Calculate the elapsed time: `elapsed = T2 - T1`
+
+5. The lock is acquired only if:
+   - The client acquired the lock on at least N/2 + 1 instances
+   - The elapsed time is less than the lock validity time (TTL)
+
+6. If acquired, the actual lock validity time is:
+
+       validity_time = TTL - elapsed - clock_drift_allowance
+
+7. If the lock was not acquired (fewer than N/2+1 instances, or elapsed time exceeded TTL), release the lock on ALL instances immediately.
+
+### Releasing the Lock
+
+Release the lock on all instances using this Lua script:
+
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+    else
+        return 0
+    end
+
+The script checks that the random value matches before deleting. This prevents a client from accidentally releasing a lock held by another client (which could happen if the original lock expired and was re-acquired).
+
+Always attempt to release on all instances, even those where acquisition appeared to fail—network issues may have caused false negatives.
+
+### Retry on Failure
+
+When lock acquisition fails:
+
+1. Release all instances immediately (don't wait for expiry)
+2. Wait a random delay before retrying
+3. The random delay desynchronizes competing clients, reducing contention
+
+## Safety and Liveness Properties
+
+### Safety: Mutual Exclusion
+
+At any moment, at most one client can hold the lock.
+
+This guarantee holds as long as the client completes its work within the validity time. If the lock expires while work is in progress, another client may acquire it.
+
+### Liveness: Deadlock Freedom
+
+A lock will eventually become available, even if the client holding it crashes. The TTL ensures automatic release.
+
+### Liveness: Fault Tolerance
+
+As long as a majority of Redis instances are available, clients can acquire and release locks.
+
+## Clock Drift and Timing
+
+Redlock assumes that clocks on different machines advance at approximately the same rate. It does not require synchronized clocks—only that local clocks don't drift significantly relative to the lock TTL.
+
+The algorithm is immune to network delays during acquisition because it re-checks the time after acquiring locks. If too much time elapsed, the lock is considered invalid even if a majority responded successfully.
+
+However, clock jumps (manual time changes, aggressive NTP corrections) can compromise safety. Configure NTP properly and prevent manual clock adjustments on Redis servers.
+
+## The Fencing Problem
+
+A subtle issue affects all distributed locks with automatic expiration:
+
+1. Client A acquires the lock
+2. Client A pauses (GC, context switch, etc.)
+3. The lock expires
+4. Client B acquires the lock
+5. Client A resumes and believes it still holds the lock
+6. Both clients operate on the shared resource
+
+### Fencing Tokens
+
+For critical applications, implement fencing tokens:
+
+1. When acquiring a lock, also obtain a monotonically increasing token
+2. When accessing the shared resource, include the token
+3. The resource rejects operations with tokens older than the highest seen
+
+Redlock's random values can serve as tokens with check-and-set semantics, though they don't provide ordering.
+
+## When to Use Redlock
+
+**Appropriate for:**
+- Coordinating access to external resources without built-in concurrency control
+- Preventing duplicate job execution in distributed task queues
+- Distributed rate limiting where approximate correctness is acceptable
+- Leader election among application instances
+
+**Consider alternatives when:**
+- You need absolute correctness guarantees (use consensus systems like etcd or ZooKeeper)
+- You have a linearizable storage system that can implement fencing
+- Single-instance Redis reliability is sufficient for your use case
+- The operational complexity of running 5 independent Redis instances isn't justified
+
+## Implementation Guidelines
+
+**Number of instances**: Use 5 Redis masters. This tolerates up to 2 failures while maintaining a majority.
+
+**Instance independence**: Each Redis instance must be completely independent—no replication, no clustering, ideally in different availability zones.
+
+**TTL selection**: Choose a TTL significantly longer than expected operation time, but short enough that failed clients don't block resources for too long. Common values: 10-30 seconds.
+
+**Timeout per instance**: Use 5-50ms. Long enough for healthy instances to respond, short enough to avoid blocking on failed ones.
+
+**Random value**: Use at least 20 bytes from a cryptographically secure random source (/dev/urandom). This must be unique per client per lock attempt.
+
+**Clock drift allowance**: Subtract a small percentage (typically 1-2%) from the validity time to account for clock drift between machines.
+
+## The Debate
+
+Martin Kleppmann published a critique arguing that Redlock is unsafe for correctness-critical applications, primarily due to timing assumptions. Antirez (Salvatore Sanfilippo, Redis creator) responded defending the algorithm's practical safety.
+
+The core disagreement centers on whether Redlock's timing checks are sufficient to prevent safety violations in real-world conditions. Both agree that fencing tokens provide stronger guarantees when the protected resource supports them.
+
+For most applications, Redlock provides reasonable distributed locking. For applications where a lock violation would cause catastrophic data corruption, consider consensus-based systems or ensure your resource layer implements proper fencing.
+
+## Summary
+
+| Aspect | Single Instance | Redlock |
+|--------|-----------------|---------|
+| Fault tolerance | None | Tolerates minority failures |
+| Complexity | Low | Higher (5 instances) |
+| Consistency | Lost on failover | Maintained if majority survives |
+| Use case | Non-critical coordination | Important distributed coordination |
+
+Redlock trades operational complexity for fault tolerance. It's not a consensus algorithm and doesn't provide the same guarantees as Paxos or Raft, but for many practical applications, it provides sufficient distributed locking with reasonable safety properties.

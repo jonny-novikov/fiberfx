@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Redlock Algorithm - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="redlock.md.txt">View Markdown</a>
+    </div>
+<h1 id="the-redlock-algorithm">The Redlock Algorithm</h1>
+<p>Achieve fault-tolerant distributed locking by acquiring locks on a majority (N/2+1) of N independent Redis instances, tolerating node failures without losing lock consistency.</p>
+<p>Redlock addresses the fundamental weakness of single-instance Redis locks: if the Redis node fails, the lock is lost. With master-replica setups, a race condition can cause two clients to hold the same lock after failover.</p>
+<h2 id="the-problem-with-single-instance-locks">The Problem with Single-Instance Locks</h2>
+<p>A single Redis instance lock using <code>SET resource NX PX 30000</code> works well until the Redis server fails. With master-replica replication, a race condition exists:</p>
+<ol>
+<li>Client A acquires the lock on the master</li>
+<li>The master crashes before replicating the write to the replica</li>
+<li>The replica is promoted to master</li>
+<li>Client B acquires the same lock—the replica doesn't know about Client A's lock</li>
+</ol>
+<p>Two clients now believe they hold the same lock. This violates the mutual exclusion property that locks must guarantee.</p>
+<h2 id="the-redlock-solution">The Redlock Solution</h2>
+<p>Redlock uses N independent Redis masters (typically 5) with no replication between them. A lock is considered acquired only when a client holds it on a majority of instances (N/2 + 1, so at least 3 out of 5).</p>
+<h3 id="acquiring-the-lock">Acquiring the Lock</h3>
+<ol>
+<li>
+<p>Get the current time in milliseconds (T1)</p>
+</li>
+<li>
+<p>Attempt to acquire the lock on all N instances sequentially or in parallel:</p>
+<p>SET resource_name <random_value> NX PX 30000</p>
+</li>
+</ol>
+<p>Use a small timeout per instance (5-50ms) to avoid blocking on unavailable nodes. The random value must be unique across all clients and all lock attempts.</p>
+<ol>
+<li>
+<p>Get the current time again (T2)</p>
+</li>
+<li>
+<p>Calculate the elapsed time: <code>elapsed = T2 - T1</code></p>
+</li>
+<li>
+<p>The lock is acquired only if:</p>
+</li>
+<li>The client acquired the lock on at least N/2 + 1 instances</li>
+<li>
+<p>The elapsed time is less than the lock validity time (TTL)</p>
+</li>
+<li>
+<p>If acquired, the actual lock validity time is:</p>
+<p>validity_time = TTL - elapsed - clock_drift_allowance</p>
+</li>
+<li>
+<p>If the lock was not acquired (fewer than N/2+1 instances, or elapsed time exceeded TTL), release the lock on ALL instances immediately.</p>
+</li>
+</ol>
+<h3 id="releasing-the-lock">Releasing the Lock</h3>
+<p>Release the lock on all instances using this Lua script:</p>
+<pre class="highlight"><code>if redis.call(&quot;get&quot;, KEYS[1]) == ARGV[1] then
+    return redis.call(&quot;del&quot;, KEYS[1])
+else
+    return 0
+end
+</code></pre>
+
+<p>The script checks that the random value matches before deleting. This prevents a client from accidentally releasing a lock held by another client (which could happen if the original lock expired and was re-acquired).</p>
+<p>Always attempt to release on all instances, even those where acquisition appeared to fail—network issues may have caused false negatives.</p>
+<h3 id="retry-on-failure">Retry on Failure</h3>
+<p>When lock acquisition fails:</p>
+<ol>
+<li>Release all instances immediately (don't wait for expiry)</li>
+<li>Wait a random delay before retrying</li>
+<li>The random delay desynchronizes competing clients, reducing contention</li>
+</ol>
+<h2 id="safety-and-liveness-properties">Safety and Liveness Properties</h2>
+<h3 id="safety-mutual-exclusion">Safety: Mutual Exclusion</h3>
+<p>At any moment, at most one client can hold the lock.</p>
+<p>This guarantee holds as long as the client completes its work within the validity time. If the lock expires while work is in progress, another client may acquire it.</p>
+<h3 id="liveness-deadlock-freedom">Liveness: Deadlock Freedom</h3>
+<p>A lock will eventually become available, even if the client holding it crashes. The TTL ensures automatic release.</p>
+<h3 id="liveness-fault-tolerance">Liveness: Fault Tolerance</h3>
+<p>As long as a majority of Redis instances are available, clients can acquire and release locks.</p>
+<h2 id="clock-drift-and-timing">Clock Drift and Timing</h2>
+<p>Redlock assumes that clocks on different machines advance at approximately the same rate. It does not require synchronized clocks—only that local clocks don't drift significantly relative to the lock TTL.</p>
+<p>The algorithm is immune to network delays during acquisition because it re-checks the time after acquiring locks. If too much time elapsed, the lock is considered invalid even if a majority responded successfully.</p>
+<p>However, clock jumps (manual time changes, aggressive NTP corrections) can compromise safety. Configure NTP properly and prevent manual clock adjustments on Redis servers.</p>
+<h2 id="the-fencing-problem">The Fencing Problem</h2>
+<p>A subtle issue affects all distributed locks with automatic expiration:</p>
+<ol>
+<li>Client A acquires the lock</li>
+<li>Client A pauses (GC, context switch, etc.)</li>
+<li>The lock expires</li>
+<li>Client B acquires the lock</li>
+<li>Client A resumes and believes it still holds the lock</li>
+<li>Both clients operate on the shared resource</li>
+</ol>
+<h3 id="fencing-tokens">Fencing Tokens</h3>
+<p>For critical applications, implement fencing tokens:</p>
+<ol>
+<li>When acquiring a lock, also obtain a monotonically increasing token</li>
+<li>When accessing the shared resource, include the token</li>
+<li>The resource rejects operations with tokens older than the highest seen</li>
+</ol>
+<p>Redlock's random values can serve as tokens with check-and-set semantics, though they don't provide ordering.</p>
+<h2 id="when-to-use-redlock">When to Use Redlock</h2>
+<p><strong>Appropriate for:</strong>
+- Coordinating access to external resources without built-in concurrency control
+- Preventing duplicate job execution in distributed task queues
+- Distributed rate limiting where approximate correctness is acceptable
+- Leader election among application instances</p>
+<p><strong>Consider alternatives when:</strong>
+- You need absolute correctness guarantees (use consensus systems like etcd or ZooKeeper)
+- You have a linearizable storage system that can implement fencing
+- Single-instance Redis reliability is sufficient for your use case
+- The operational complexity of running 5 independent Redis instances isn't justified</p>
+<h2 id="implementation-guidelines">Implementation Guidelines</h2>
+<p><strong>Number of instances</strong>: Use 5 Redis masters. This tolerates up to 2 failures while maintaining a majority.</p>
+<p><strong>Instance independence</strong>: Each Redis instance must be completely independent—no replication, no clustering, ideally in different availability zones.</p>
+<p><strong>TTL selection</strong>: Choose a TTL significantly longer than expected operation time, but short enough that failed clients don't block resources for too long. Common values: 10-30 seconds.</p>
+<p><strong>Timeout per instance</strong>: Use 5-50ms. Long enough for healthy instances to respond, short enough to avoid blocking on failed ones.</p>
+<p><strong>Random value</strong>: Use at least 20 bytes from a cryptographically secure random source (/dev/urandom). This must be unique per client per lock attempt.</p>
+<p><strong>Clock drift allowance</strong>: Subtract a small percentage (typically 1-2%) from the validity time to account for clock drift between machines.</p>
+<h2 id="the-debate">The Debate</h2>
+<p>Martin Kleppmann published a critique arguing that Redlock is unsafe for correctness-critical applications, primarily due to timing assumptions. Antirez (Salvatore Sanfilippo, Redis creator) responded defending the algorithm's practical safety.</p>
+<p>The core disagreement centers on whether Redlock's timing checks are sufficient to prevent safety violations in real-world conditions. Both agree that fencing tokens provide stronger guarantees when the protected resource supports them.</p>
+<p>For most applications, Redlock provides reasonable distributed locking. For applications where a lock violation would cause catastrophic data corruption, consider consensus-based systems or ensure your resource layer implements proper fencing.</p>
+<h2 id="summary">Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Single Instance</th>
+<th>Redlock</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fault tolerance</td>
+<td>None</td>
+<td>Tolerates minority failures</td>
+</tr>
+<tr>
+<td>Complexity</td>
+<td>Low</td>
+<td>Higher (5 instances)</td>
+</tr>
+<tr>
+<td>Consistency</td>
+<td>Lost on failover</td>
+<td>Maintained if majority survives</td>
+</tr>
+<tr>
+<td>Use case</td>
+<td>Non-critical coordination</td>
+<td>Important distributed coordination</td>
+</tr>
+</tbody>
+</table>
+<p>Redlock trades operational complexity for fault tolerance. It's not a consensus algorithm and doesn't provide the same guarantees as Paxos or Raft, but for many practical applications, it provides sufficient distributed locking with reasonable safety properties.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="redlock.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

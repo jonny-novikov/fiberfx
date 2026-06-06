@@ -1,0 +1,144 @@
+# Memory Optimization Patterns
+
+Reduce Redis memory consumption by leveraging compact encodings (listpack, intset), using Hashes for small object storage, and choosing memory-efficient data structures.
+
+Redis stores everything in memory, making efficient memory usage critical. Understanding Redis's internal encoding optimizations enables significant memory savings—often 50-80% reduction for small objects.
+
+## Small Object Encoding
+
+Redis automatically uses compact encodings for small collections. A Hash with few fields is stored as a sequential byte array (listpack) rather than a hash table. This eliminates pointer overhead, which can consume 80% of memory for small objects.
+
+### Configuration Thresholds
+
+These settings control when Redis switches from compact to standard encoding:
+
+    hash-max-listpack-entries 512
+    hash-max-listpack-value 64
+
+    list-max-listpack-size -2
+
+    zset-max-listpack-entries 128
+    zset-max-listpack-value 64
+
+    set-max-intset-entries 512
+
+A Hash with fewer than 512 entries, where each value is under 64 bytes, uses the memory-efficient listpack encoding.
+
+## The Bucketing Pattern
+
+Individual keys have overhead—each key requires memory for the key name, expiration data, and internal bookkeeping. For millions of small values, this overhead dominates.
+
+Instead of storing each item as a separate key:
+
+    SET user:1:name "John"
+    SET user:2:name "Jane"
+    ... (1 million keys)
+
+Group items into Hash buckets:
+
+    HSET users:0 "1:name" "John"
+    HSET users:0 "2:name" "Jane"
+    ...
+    HSET users:1 "1001:name" "Alice"
+    ...
+
+With 1000 items per bucket, you have 1000 Hash keys instead of 1 million String keys. Each Hash stays small enough for compact encoding, and you eliminate per-key overhead for 999,000 keys.
+
+### Calculating Bucket
+
+For item ID 12345 with bucket size 1000:
+
+    bucket_number = item_id / 1000 = 12
+    key = "users:12"
+    field = "12345:name"
+
+## Key Name Length
+
+Every byte in a key name consumes memory. At scale, short keys matter:
+
+Instead of:
+
+    user:profile:12345:display_name
+
+Consider:
+
+    u:12345:dn
+
+Or better, use a Hash:
+
+    HGET u:12345 dn
+
+The Hash approach stores the key prefix once rather than repeating it for each field.
+
+## Integer Encoding
+
+Redis automatically uses integer encoding for numeric strings. These values share a pool of pre-allocated small integers:
+
+    SET counter "42"    # Efficient integer encoding
+    SET counter "42 items"  # String encoding, more memory
+
+When possible, store pure numeric values without formatting.
+
+## Expiration Overhead
+
+Every key with a TTL requires additional memory to store the expiration time. For millions of keys with individual TTLs, this adds up.
+
+If many keys should expire around the same time, consider grouping them in a Hash with a single TTL on the Hash key, rather than individual TTLs on each entry.
+
+## Analyzing Memory Usage
+
+Check overall memory:
+
+    INFO memory
+
+Check specific key:
+
+    MEMORY USAGE user:12345
+
+Sample memory statistics:
+
+    MEMORY STATS
+
+Find large keys (use with caution in production):
+
+    MEMORY DOCTOR
+
+## Eviction Policies
+
+When memory is exhausted, Redis can evict keys automatically. The policy determines which keys are removed:
+
+    maxmemory 1gb
+    maxmemory-policy allkeys-lru
+
+Policies:
+- `noeviction`: Return errors on writes (safest)
+- `allkeys-lru`: Evict least recently used keys
+- `allkeys-lfu`: Evict least frequently used keys
+- `volatile-lru`: Evict LRU among keys with TTL
+- `volatile-ttl`: Evict keys with shortest TTL
+- `allkeys-random`: Random eviction
+
+Choose based on your workload. For caches, LRU/LFU makes sense. For data that must not be lost, use `noeviction` and manage memory explicitly.
+
+## Compression
+
+For large string values, consider compressing before storing:
+
+1. Compress the value in your application (gzip, lz4, snappy)
+2. Store the compressed bytes
+3. Decompress when reading
+
+This trades CPU for memory. Effective for values over a few hundred bytes where compression ratios are meaningful.
+
+## Summary of Techniques
+
+| Technique | Impact | Effort |
+|-----------|--------|--------|
+| Bucketing | 5-10x reduction | Moderate |
+| Short key names | 10-30% reduction | Low |
+| Integer encoding | Variable | Low |
+| Expiration grouping | 10-20% reduction | Moderate |
+| Compression | 50-90% reduction | Higher |
+| Choosing right data type | Variable | Low |
+
+Start with the low-effort techniques and measure. Bucketing offers the largest gains for datasets with millions of small items.

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redis Streams and Event Sourcing - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="streams-event-sourcing.md.txt">View Markdown</a>
+    </div>
+<h1 id="redis-streams-and-event-sourcing">Redis Streams and Event Sourcing</h1>
+<p>Build persistent message queues with consumer groups, message acknowledgment, and historical replay using Redis Streams—ideal for event sourcing and multi-consumer workloads.</p>
+<p>Unlike Pub/Sub (fire-and-forget) or Lists (items removed on read), Streams persist messages and support multiple independent consumers reading the same data with tracking of what each has processed.</p>
+<h2 id="what-is-a-stream">What is a Stream?</h2>
+<p>A Stream is an append-only log. Each entry has:</p>
+<ul>
+<li><strong>ID</strong>: An auto-generated time-based identifier (e.g., <code>1526919030474-0</code>)</li>
+<li><strong>Fields</strong>: Key-value pairs containing the message data</li>
+</ul>
+<p>Entries are ordered by ID, guaranteeing strict temporal ordering.</p>
+<h2 id="adding-messages">Adding Messages</h2>
+<pre class="highlight"><code>XADD orders * customer_id &quot;123&quot; product &quot;widget&quot; quantity &quot;5&quot;
+</code></pre>
+
+<p>The <code>*</code> tells Redis to auto-generate an ID based on the current timestamp. The command returns the generated ID (e.g., <code>1526919030474-0</code>).</p>
+<p>You can also specify an ID explicitly, but auto-generation is recommended for most use cases.</p>
+<h2 id="reading-messages">Reading Messages</h2>
+<p>Read from the beginning:</p>
+<pre class="highlight"><code>XREAD STREAMS orders 0
+</code></pre>
+
+<p>Read only new messages (blocking):</p>
+<pre class="highlight"><code>XREAD BLOCK 5000 STREAMS orders $
+</code></pre>
+
+<p>The <code>$</code> means "only messages arriving after this command." BLOCK 5000 waits up to 5 seconds for new messages.</p>
+<p>Read a specific range:</p>
+<pre class="highlight"><code>XRANGE orders 1526919030474-0 + COUNT 100
+</code></pre>
+
+<p>This reads up to 100 messages starting from the specified ID.</p>
+<h2 id="event-sourcing">Event Sourcing</h2>
+<p>Streams enable event sourcing, where application state is derived from an immutable sequence of events.</p>
+<p>Instead of storing current state directly ("user has 100 points"), you store events ("user earned 10 points", "user spent 5 points", "user earned 95 points"). The current state is computed by replaying events.</p>
+<h3 id="benefits">Benefits</h3>
+<ul>
+<li><strong>Complete history</strong>: Every change is recorded</li>
+<li><strong>Audit trail</strong>: Know exactly what happened and when</li>
+<li><strong>Replay capability</strong>: Rebuild state from scratch by replaying events</li>
+<li><strong>Multiple projections</strong>: Different services can derive different views from the same events</li>
+</ul>
+<h3 id="implementation">Implementation</h3>
+<p>Services append events:</p>
+<pre class="highlight"><code>XADD user:123:events * type &quot;points_earned&quot; amount &quot;10&quot;
+XADD user:123:events * type &quot;points_spent&quot; amount &quot;5&quot;
+</code></pre>
+
+<p>A new service can bootstrap by reading the stream from the beginning:</p>
+<pre class="highlight"><code>XREAD STREAMS user:123:events 0
+</code></pre>
+
+<p>It processes each event to build its local state.</p>
+<h2 id="consumer-groups">Consumer Groups</h2>
+<p>For scaling message processing, Redis implements Consumer Groups (similar to Kafka).</p>
+<h3 id="creating-a-group">Creating a Group</h3>
+<pre class="highlight"><code>XGROUP CREATE orders order-processors $ MKSTREAM
+</code></pre>
+
+<p>This creates a consumer group named <code>order-processors</code> on the <code>orders</code> stream. The <code>$</code> means start from new messages only; use <code>0</code> to process the entire history.</p>
+<h3 id="reading-as-a-consumer">Reading as a Consumer</h3>
+<pre class="highlight"><code>XREADGROUP GROUP order-processors worker-1 COUNT 10 STREAMS orders &gt;
+</code></pre>
+
+<p>The <code>&gt;</code> means "give me messages never delivered to this group." Each message is delivered to exactly one consumer in the group.</p>
+<h3 id="acknowledging-messages">Acknowledging Messages</h3>
+<p>When a message is delivered, it enters the Pending Entries List (PEL). It remains pending until acknowledged:</p>
+<pre class="highlight"><code>XACK orders order-processors 1526919030474-0
+</code></pre>
+
+<p>This tells Redis the message was successfully processed.</p>
+<h3 id="handling-failed-consumers">Handling Failed Consumers</h3>
+<p>If a consumer crashes, its pending messages remain in the PEL. Other consumers can claim them:</p>
+<pre class="highlight"><code>XPENDING orders order-processors
+</code></pre>
+
+<p>This shows pending messages and which consumer holds them.</p>
+<pre class="highlight"><code>XCLAIM orders order-processors worker-2 60000 1526919030474-0
+</code></pre>
+
+<p>This transfers ownership of a message to <code>worker-2</code> if it has been pending for at least 60 seconds (60000 milliseconds).</p>
+<p><strong>XAUTOCLAIM (Redis 6.2+)</strong>: Combines XPENDING scan and XCLAIM in one command:</p>
+<pre class="highlight"><code>XAUTOCLAIM orders order-processors worker-2 60000 0-0 COUNT 10
+</code></pre>
+
+<p>This automatically finds and claims up to 10 messages pending for over 60 seconds, simplifying recovery logic.</p>
+<h2 id="stream-management">Stream Management</h2>
+<h3 id="trimming">Trimming</h3>
+<p>Streams can grow indefinitely. To limit size:</p>
+<pre class="highlight"><code>XTRIM orders MAXLEN 10000
+</code></pre>
+
+<p>Keep only the most recent 10,000 entries. Use <code>MAXLEN ~ 10000</code> for approximate trimming (faster).</p>
+<p><strong>MINID trimming (Redis 6.2+)</strong>: Trim by ID instead of count:</p>
+<pre class="highlight"><code>XTRIM orders MINID 1609459200000-0
+</code></pre>
+
+<p>Removes all entries with IDs older than the specified minimum. Useful for time-based retention policies.</p>
+<h3 id="information">Information</h3>
+<pre class="highlight"><code>XINFO STREAM orders
+XINFO GROUPS orders
+XINFO CONSUMERS orders order-processors
+</code></pre>
+
+<h2 id="when-to-use-streams">When to Use Streams</h2>
+<ul>
+<li>Event sourcing architectures</li>
+<li>Message queues requiring persistence</li>
+<li>Activity feeds and timelines</li>
+<li>Audit logs</li>
+<li>Communication between microservices</li>
+<li>Any scenario requiring reliable message delivery with history</li>
+</ul>
+<h2 id="streams-vs-pubsub-vs-lists">Streams vs. Pub/Sub vs. Lists</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Pub/Sub</th>
+<th>Lists</th>
+<th>Streams</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Persistence</td>
+<td>No</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Consumer Groups</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Message History</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Acknowledgment</td>
+<td>No</td>
+<td>Manual</td>
+<td>Built-in</td>
+</tr>
+<tr>
+<td>Multiple Consumers</td>
+<td>Broadcast</td>
+<td>Competing</td>
+<td>Both</td>
+</tr>
+</tbody>
+</table>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="streams-event-sourcing.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

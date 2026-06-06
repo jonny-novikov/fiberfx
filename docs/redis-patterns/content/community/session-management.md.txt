@@ -1,0 +1,130 @@
+# Session Management Patterns
+
+Store user sessions in Redis with automatic expiration using TTL, choosing between Hashes (field-level access), Strings (serialized), or JSON (nested data) based on access patterns.
+
+Redis is ideal for session storage due to its speed, built-in TTL support, and flexible data structures. This guide covers storage strategies, sliding expiration, and multi-server session sharing.
+
+## Hash-Based Sessions
+
+Hashes allow storing multiple session attributes with individual field access:
+
+    HSET session:abc123 user_id "1" created_at "1706648400" last_access "1706648400"
+    EXPIRE session:abc123 1800
+
+Retrieve the full session:
+
+    HGETALL session:abc123
+
+Update a single field:
+
+    HSET session:abc123 last_access "1706648500"
+
+## Sliding Expiration
+
+Sessions should typically expire after a period of inactivity, not from creation time. Reset the TTL on each access:
+
+    HGETALL session:abc123
+    EXPIRE session:abc123 1800
+
+This creates a "sliding window" where active users stay logged in, while inactive sessions automatically expire.
+
+## String-Based Sessions with JSON
+
+For complex session data with nested structures, serialize to JSON:
+
+    SET session:abc123 '{"user_id":1,"cart":["item1","item2"],"prefs":{"theme":"dark"}}' EX 1800
+
+This approach requires reading and writing the entire session on each update, but simplifies handling complex nested data.
+
+## Session Creation Flow
+
+1. Generate a unique session ID (UUID or secure random string)
+2. Store session data with initial fields
+3. Set expiration time
+4. Return session ID to client (typically as a cookie)
+
+The session ID should be cryptographically random to prevent guessing attacks.
+
+## Multi-Device Session Tracking
+
+To support "logout from all devices" or "see active sessions":
+
+Track all sessions for a user in a Set:
+
+    HSET session:abc123 user_id "1" device "iPhone"
+    SADD user:1:sessions "abc123"
+    EXPIRE user:1:sessions 7200
+
+List all sessions for a user:
+
+    SMEMBERS user:1:sessions
+
+For each session ID, fetch details:
+
+    HGETALL session:abc123
+
+## Logout Operations
+
+Logout single session:
+
+    DEL session:abc123
+    SREM user:1:sessions "abc123"
+
+Logout from all devices:
+
+    SMEMBERS user:1:sessions
+
+For each session ID returned, delete the session key, then delete the set:
+
+    DEL session:abc123 session:def456 ...
+    DEL user:1:sessions
+
+## Real-Time Session Invalidation
+
+When a user logs out or an admin revokes access, all application servers must immediately stop accepting the session. Use Pub/Sub to broadcast invalidation:
+
+Publisher (on logout):
+
+    PUBLISH session:invalidate abc123
+
+Subscribers (all app servers):
+
+    SUBSCRIBE session:invalidate
+
+When a message arrives, remove the session from any local cache.
+
+## Session Data Cleanup
+
+Expired sessions are automatically removed by Redis, but the session ID references in user Sets may become stale. Periodically clean these:
+
+1. Iterate through `user:*:sessions` keys
+2. For each session ID in the set, check if `session:{id}` exists
+3. Remove references to non-existent sessions
+
+This can run as a background job during low-traffic periods.
+
+## Security Considerations
+
+- Generate session IDs using cryptographically secure random generators
+- Never store passwords or sensitive credentials in sessions
+- Use HTTPS-only cookies for session IDs
+- Consider storing a hash of the user's IP or user-agent to detect session hijacking
+- Set appropriate cookie flags: HttpOnly, Secure, SameSite
+
+## Memory Optimization
+
+Sessions can consume significant memory at scale. Strategies to reduce footprint:
+
+- Store minimal data in the session; fetch user details from database when needed
+- Use short field names (e.g., "uid" instead of "user_id")
+- Set appropriate TTLs—inactive sessions waste memory
+- Consider compressing session data for users with large carts or preferences
+
+## Best Practices
+
+1. **Use sliding expiration**: Reset TTL on each access
+2. **Store minimal data**: Keep sessions lean
+3. **Track sessions per user**: Enable multi-device management
+4. **Use Pub/Sub for invalidation**: Notify all servers immediately
+5. **Clean up orphaned references**: Run periodic maintenance
+6. **Generate secure IDs**: Use cryptographically random values

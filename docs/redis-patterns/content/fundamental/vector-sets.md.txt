@@ -1,0 +1,281 @@
+# Vector Sets and Similarity Search
+
+Store vectors and find similar items using Redis 8's native Vector Sets—an HNSW-based data structure supporting semantic search, RAG, recommendations, and classification with optional filtered queries.
+
+Vector Sets are a Redis data type similar to Sorted Sets, but elements are associated with vectors instead of scores. They enable finding items most similar to a query vector (or to an existing element) using approximate nearest neighbor search based on HNSW (Hierarchical Navigable Small World) graphs.
+
+## When to Use Vector Sets
+
+- **Semantic search**: Find documents/products by meaning, not keywords
+- **RAG (Retrieval Augmented Generation)**: Ground LLM responses in your data
+- **Recommendations**: "Users who liked X also liked..."
+- **Classification**: Assign categories based on vector similarity
+- **Deduplication**: Find near-duplicates in content
+- **Anomaly detection**: Find items far from normal patterns
+
+## Core Commands
+
+### Adding Vectors
+
+    VADD key VALUES 3 0.1 0.5 0.9 my-element
+
+Or with a binary blob (faster for clients):
+
+    VADD key FP32 <binary-blob> my-element
+
+Options:
+- `Q8` (default): 8-bit quantization—4x memory reduction, minimal recall loss
+- `BIN`: Binary quantization—32x reduction, faster, lower recall
+- `NOQUANT`: Full precision floats
+- `REDUCE dim`: Random projection to reduce dimensionality
+- `SETATTR '{...}'`: Attach JSON metadata for filtered search
+- `M num`: HNSW connectivity (default 16, higher = better recall, more memory)
+- `EF num`: Build-time exploration factor (default 200)
+
+### Finding Similar Items
+
+By vector:
+
+    VSIM key VALUES 3 0.1 0.5 0.9 COUNT 10 WITHSCORES
+
+By existing element:
+
+    VSIM key ELE existing-element COUNT 10 WITHSCORES
+
+Options:
+- `COUNT n`: Return top N results (default 10)
+- `WITHSCORES`: Include similarity scores (0-1, where 1 = identical)
+- `EPSILON d`: Only return items with similarity ≥ (1-d)
+- `EF num`: Search exploration factor (higher = better recall, slower)
+- `FILTER expr`: Filter by JSON attributes
+
+### Other Commands
+
+    VCARD key                    # Count elements
+    VDIM key                     # Get vector dimension
+    VEMB key element             # Get element's vector
+    VREM key element             # Remove element (true deletion, memory reclaimed)
+    VISMEMBER key element        # Check existence
+    VINFO key                    # Get index metadata
+    VRANDMEMBER key [count]      # Random sampling
+
+## Similarity Scores
+
+Vector Sets normalize vectors on insertion and use cosine similarity. Scores range from 0 to 1:
+
+- **1.0**: Identical vectors (same direction)
+- **0.5**: Orthogonal vectors (unrelated)
+- **0.0**: Opposite vectors
+
+The score represents `(cosine_similarity + 1) / 2`, rescaled from [-1, 1] to [0, 1].
+
+## Filtered Search
+
+Attach JSON attributes to elements:
+
+    VADD movies VALUES 128 ... "inception" SETATTR '{"year": 2010, "genre": "scifi", "rating": 8.8}'
+
+Query with filters:
+
+    VSIM movies VALUES 128 ... FILTER '.year >= 2000 and .genre == "scifi"' COUNT 10
+
+### Filter Expression Syntax
+
+- **Comparisons**: `>`, `>=`, `<`, `<=`, `==`, `!=`
+- **Logic**: `and`, `or`, `not` (or `&&`, `||`, `!`)
+- **Arithmetic**: `+`, `-`, `*`, `/`, `%`, `**`
+- **Containment**: `value in [1, 2, 3]` or `"sub" in "substring"`
+- **Selectors**: `.field` accesses JSON attributes
+
+Examples:
+
+    .year >= 1980 and .year < 1990
+    .genre == "action" and .rating > 8.0
+    .director in ["Spielberg", "Nolan"]
+    (.budget / 1000000) > 100 and .rating > 7
+
+Elements with missing fields or invalid JSON are silently excluded (no errors).
+
+### Filter Effort
+
+By default, Vector Sets explore `COUNT * 100` candidates when filtering. For selective filters:
+
+    VSIM key ... FILTER '.rare_field == 1' FILTER-EF 5000
+
+Setting `FILTER-EF 0` explores until COUNT is satisfied (may scan entire index).
+
+## RAG Pattern: Retrieval Augmented Generation
+
+Store document chunks with embeddings:
+
+    # Index document chunks
+    VADD docs:index VALUES 1536 <embedding> "chunk:doc1:p1" SETATTR '{"doc": "doc1", "page": 1}'
+    VADD docs:index VALUES 1536 <embedding> "chunk:doc1:p2" SETATTR '{"doc": "doc1", "page": 2}'
+
+Retrieve relevant context for LLM:
+
+    # User asks a question
+    query_embedding = embed(user_question)
+
+    # Find relevant chunks
+    VSIM docs:index VALUES 1536 <query_embedding> COUNT 5 WITHSCORES
+
+    # Use retrieved chunks as context for LLM
+    context = [GET chunk:id for id in results]
+    answer = llm.generate(question=user_question, context=context)
+
+### RAG with Metadata Filtering
+
+    # Only search within specific document or date range
+    VSIM docs:index VALUES 1536 <query> COUNT 5 FILTER '.doc == "manual.pdf" and .date > "2024-01-01"'
+
+## Semantic Cache Pattern
+
+Cache LLM responses by query similarity:
+
+    # Before calling LLM, check cache
+    VSIM llm:cache VALUES 1536 <query_embedding> COUNT 1 WITHSCORES
+
+    if score > 0.95:
+        # Similar query found, return cached response
+        return GET llm:response:{cached_id}
+    else:
+        # Call LLM and cache
+        response = llm.generate(query)
+        VADD llm:cache VALUES 1536 <query_embedding> query_id
+        SET llm:response:{query_id} response EX 3600
+
+## Recommendations Pattern
+
+    # User liked item X, find similar items
+    VSIM products:embeddings ELE "product:123" COUNT 20 FILTER '.category == "electronics" and .in_stock == 1'
+
+    # Combine with collaborative filtering
+    # Get items similar to multiple liked items, dedupe, rank by frequency
+
+## Classification Pattern
+
+Store labeled examples:
+
+    VADD classifier VALUES 768 <embedding> "spam:example1" SETATTR '{"label": "spam"}'
+    VADD classifier VALUES 768 <embedding> "ham:example1" SETATTR '{"label": "ham"}'
+
+Classify new items:
+
+    VSIM classifier VALUES 768 <new_item_embedding> COUNT 5 WITHATTRIBS
+
+    # Majority vote among nearest neighbors
+    labels = [parse_label(attrib) for attrib in results]
+    prediction = most_common(labels)
+
+## Performance Characteristics
+
+| Operation | Complexity | Typical Throughput |
+|-----------|------------|-------------------|
+| VSIM | O(log N) | ~50K ops/sec (3M items, 300 dims) |
+| VADD | O(log N) | ~5K ops/sec |
+| VREM | O(log N) | Fast, true deletion |
+| Load from RDB | O(N) | ~3M items in 15 seconds |
+
+### Memory Usage
+
+With default int8 quantization:
+- Vector storage: 1 byte per dimension
+- Graph overhead: ~M*2.5 pointers per element (M=16 default)
+- Total: ~1KB per element (300 dimensions, default settings)
+
+## Quantization Trade-offs
+
+| Type | Memory | Speed | Recall |
+|------|--------|-------|--------|
+| NOQUANT (fp32) | 4 bytes/dim | Baseline | Best |
+| Q8 (default) | 1 byte/dim | ~2x faster | ~96% |
+| BIN | 1 bit/dim | ~4x faster | ~80% |
+
+Binary quantization is ideal when speed matters more than perfect recall (e.g., initial candidate retrieval before reranking).
+
+## Scaling to Multiple Instances
+
+Partition vectors across Redis instances:
+
+    # Partition by hash
+    shard = crc32(element) % num_shards
+    VADD vset:{shard} VALUES ... element
+
+    # Query all shards in parallel
+    results = parallel([VSIM vset:{i} ... for i in range(num_shards)])
+
+    # Merge by score
+    final = sorted(flatten(results), key=score, reverse=True)[:count]
+
+Benefits:
+- Linear write scaling (insert to one shard)
+- High availability (partial results if some shards down)
+- Smaller graphs = faster traversal
+
+Limitations:
+- Queries hit all shards (but parallel)
+- Client-side result merging
+
+## Memory Optimization
+
+1. **Use Q8 quantization** (default)—4x memory reduction, minimal recall impact
+2. **Tune M parameter**—default 16 is good; only increase for near-perfect recall needs
+3. **Use REDUCE for high-dimensional vectors**—random projection to lower dimensions
+4. **Keep element names short**—stored with each node
+5. **Minimize JSON attributes**—only store filterable fields
+
+## Debugging Recall Issues
+
+Compare against ground truth:
+
+    # Get approximate results
+    VSIM key ELE query COUNT 10
+
+    # Get exact results (slow, linear scan)
+    VSIM key ELE query COUNT 10 TRUTH
+
+    # Calculate recall
+    recall = len(set(approx) & set(truth)) / len(truth)
+
+Improve recall:
+- Increase `EF` in VSIM (more exploration)
+- Increase `M` in VADD (more connections, rebuild required)
+- Use less aggressive quantization
+
+## Example: Document Search
+
+    # Index documents with embeddings
+    for doc in documents:
+        embedding = embed_model.encode(doc.text)
+        VADD search:docs FP32 <embedding> doc.id SETATTR json.dumps({
+            "title": doc.title,
+            "date": doc.date,
+            "author": doc.author
+        })
+
+    # Search
+    query_embedding = embed_model.encode("machine learning tutorials")
+    results = VSIM search:docs FP32 <query_embedding> COUNT 10 WITHSCORES WITHATTRIBS \
+              FILTER '.date > "2024-01-01"'
+
+    for doc_id, score, attrs in results:
+        print(f"{attrs['title']} (score: {score:.3f})")
+
+## Commands Reference
+
+| Command | Description |
+|---------|-------------|
+| VADD | Add element with vector |
+| VSIM | Find similar elements |
+| VREM | Remove element |
+| VEMB | Get element's vector |
+| VCARD | Count elements |
+| VDIM | Get vector dimension |
+| VISMEMBER | Check if element exists |
+| VSETATTR | Set JSON attributes |
+| VGETATTR | Get JSON attributes |
+| VRANGE | Iterate elements lexicographically |
+| VLINKS | Inspect HNSW graph connections |
+| VINFO | Get index metadata |
+| VRANDMEMBER | Random sampling |

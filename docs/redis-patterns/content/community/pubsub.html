@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pub/Sub Patterns - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="pubsub.md.txt">View Markdown</a>
+    </div>
+<h1 id="pubsub-patterns">Pub/Sub Patterns</h1>
+<p>Broadcast real-time events to multiple subscribers using fire-and-forget messaging—ideal for notifications, chat, and live updates where missed messages are acceptable.</p>
+<p>Redis Pub/Sub delivers messages to all active subscribers instantly. Messages are not persisted; if no subscribers are connected, messages are lost. Use Streams instead if you need durability.</p>
+<h2 id="basic-operations">Basic Operations</h2>
+<p>Publish a message to a channel:</p>
+<pre class="highlight"><code>PUBLISH channel:news &quot;Breaking news: Redis 8.0 released!&quot;
+</code></pre>
+
+<p>The command returns the number of subscribers that received the message.</p>
+<p>Subscribe to a channel:</p>
+<pre class="highlight"><code>SUBSCRIBE channel:news
+</code></pre>
+
+<p>Once subscribed, the client enters a special mode where it only receives messages. To unsubscribe:</p>
+<pre class="highlight"><code>UNSUBSCRIBE channel:news
+</code></pre>
+
+<h2 id="pattern-subscriptions">Pattern Subscriptions</h2>
+<p>Subscribe to multiple channels matching a pattern:</p>
+<pre class="highlight"><code>PSUBSCRIBE channel:*
+</code></pre>
+
+<p>This receives messages from <code>channel:news</code>, <code>channel:sports</code>, <code>channel:weather</code>, etc.</p>
+<p>Pattern matching uses glob-style patterns:
+- <code>*</code> matches any sequence of characters
+- <code>?</code> matches any single character
+- <code>[abc]</code> matches any character in the brackets</p>
+<p>Example patterns:</p>
+<pre class="highlight"><code>PSUBSCRIBE user:*:notifications
+PSUBSCRIBE events:region:us-*
+</code></pre>
+
+<h2 id="message-format">Message Format</h2>
+<p>When a message is received, clients get:
+- Message type (<code>message</code> for direct, <code>pmessage</code> for pattern)
+- Channel name (for pattern subscriptions, both the pattern and actual channel)
+- Message payload</p>
+<h2 id="fire-and-forget-nature">Fire-and-Forget Nature</h2>
+<p>Pub/Sub is inherently ephemeral:
+- Messages are not persisted
+- If no subscribers are listening, the message is lost
+- Subscribers that disconnect miss all messages during disconnection
+- There's no acknowledgment mechanism</p>
+<p>This makes Pub/Sub unsuitable for work queues or reliable messaging, but perfect for real-time notifications where occasional message loss is acceptable.</p>
+<h2 id="use-cases">Use Cases</h2>
+<p><strong>Cache invalidation</strong>: When data changes, broadcast to all application servers:</p>
+<pre class="highlight"><code>PUBLISH cache:invalidate &quot;user:123&quot;
+</code></pre>
+
+<p><strong>Real-time notifications</strong>: Push updates to connected users:</p>
+<pre class="highlight"><code>PUBLISH user:456:notifications '{&quot;type&quot;:&quot;new_message&quot;,&quot;from&quot;:&quot;alice&quot;}'
+</code></pre>
+
+<p><strong>Live updates</strong>: Typing indicators, presence status, cursor positions:</p>
+<pre class="highlight"><code>PUBLISH room:789:typing &quot;user:123&quot;
+</code></pre>
+
+<p><strong>Inter-service signaling</strong>: Notify microservices of events:</p>
+<pre class="highlight"><code>PUBLISH order:created '{&quot;order_id&quot;:&quot;12345&quot;}'
+</code></pre>
+
+<h2 id="keyspace-notifications">Keyspace Notifications</h2>
+<p>Redis can publish messages when keys are modified. This must be enabled in configuration:</p>
+<pre class="highlight"><code>CONFIG SET notify-keyspace-events Ex
+</code></pre>
+
+<p>Notification flags:
+- <code>K</code>: Keyspace events (key-focused)
+- <code>E</code>: Keyevent events (operation-focused)
+- <code>g</code>: Generic commands (DEL, EXPIRE, etc.)
+- <code>$</code>: String commands (SET, INCR, etc.)
+- <code>x</code>: Expired events
+- <code>e</code>: Evicted events</p>
+<p>Subscribe to expiration events:</p>
+<pre class="highlight"><code>PSUBSCRIBE __keyevent@0__:expired
+</code></pre>
+
+<p>This receives a message whenever any key expires, useful for implementing delayed actions or cleanup workflows.</p>
+<h2 id="scaling-with-multiple-servers">Scaling with Multiple Servers</h2>
+<p>When running multiple application servers, Pub/Sub enables coordination:</p>
+<ol>
+<li>User connects to Server A via WebSocket</li>
+<li>User's friend on Server B sends a message</li>
+<li>Server B publishes to Redis channel</li>
+<li>Server A (subscribed) receives and forwards to user's WebSocket</li>
+</ol>
+<p>This pattern allows horizontal scaling while maintaining real-time delivery.</p>
+<h2 id="limitations">Limitations</h2>
+<table>
+<thead>
+<tr>
+<th>Limitation</th>
+<th>Impact</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No persistence</td>
+<td>Messages lost if no subscriber</td>
+</tr>
+<tr>
+<td>No delivery guarantee</td>
+<td>Disconnected clients miss messages</td>
+</tr>
+<tr>
+<td>No message history</td>
+<td>Can't replay past messages</td>
+</tr>
+<tr>
+<td>No acknowledgment</td>
+<td>Sender doesn't know if received</td>
+</tr>
+<tr>
+<td>No consumer groups</td>
+<td>Can't load-balance message processing</td>
+</tr>
+</tbody>
+</table>
+<h2 id="when-to-use-streams-instead">When to Use Streams Instead</h2>
+<p>Redis Streams address Pub/Sub's limitations:</p>
+<ul>
+<li><strong>Need persistence</strong>: Streams store messages on disk</li>
+<li><strong>Need delivery guarantees</strong>: Streams track acknowledgments</li>
+<li><strong>Need message replay</strong>: Streams allow reading history</li>
+<li><strong>Need consumer groups</strong>: Streams support load-balanced consumption</li>
+</ul>
+<p>See the <a href="../fundamental/streams-event-sourcing.md.txt">Streams documentation</a> for details.</p>
+<h2 id="pubsub-vs-streams-vs-lists">Pub/Sub vs Streams vs Lists</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Pub/Sub</th>
+<th>Lists</th>
+<th>Streams</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Persistence</td>
+<td>No</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Consumer Groups</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Message History</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Acknowledgment</td>
+<td>No</td>
+<td>Manual</td>
+<td>Built-in</td>
+</tr>
+<tr>
+<td>Multiple Consumers</td>
+<td>Broadcast</td>
+<td>Competing</td>
+<td>Both</td>
+</tr>
+<tr>
+<td>Blocking Read</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<h2 id="connection-considerations">Connection Considerations</h2>
+<p>A subscribed client is in a special state:
+- It can only execute SUBSCRIBE, PSUBSCRIBE, UNSUBSCRIBE, PUNSUBSCRIBE, PING, and QUIT
+- Regular commands will return an error
+- Many client libraries use a dedicated connection for subscriptions</p>
+<p>For applications that need to both publish and subscribe, use separate Redis connections.</p>
+<h2 id="channel-naming-conventions">Channel Naming Conventions</h2>
+<p>Establish consistent naming patterns:</p>
+<pre class="highlight"><code>service:event:subject
+</code></pre>
+
+<p>Examples:
+- <code>orders:created:*</code> - New order events
+- <code>users:login:region:us-east</code> - Login events by region
+- <code>cache:invalidate:users</code> - Cache invalidation for user data</p>
+<p>Clear naming helps manage complexity as the number of channels grows.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="pubsub.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

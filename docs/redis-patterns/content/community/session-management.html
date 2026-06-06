@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session Management Patterns - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="session-management.md.txt">View Markdown</a>
+    </div>
+<h1 id="session-management-patterns">Session Management Patterns</h1>
+<p>Store user sessions in Redis with automatic expiration using TTL, choosing between Hashes (field-level access), Strings (serialized), or JSON (nested data) based on access patterns.</p>
+<p>Redis is ideal for session storage due to its speed, built-in TTL support, and flexible data structures. This guide covers storage strategies, sliding expiration, and multi-server session sharing.</p>
+<h2 id="hash-based-sessions">Hash-Based Sessions</h2>
+<p>Hashes allow storing multiple session attributes with individual field access:</p>
+<pre class="highlight"><code>HSET session:abc123 user_id &quot;1&quot; created_at &quot;1706648400&quot; last_access &quot;1706648400&quot;
+EXPIRE session:abc123 1800
+</code></pre>
+
+<p>Retrieve the full session:</p>
+<pre class="highlight"><code>HGETALL session:abc123
+</code></pre>
+
+<p>Update a single field:</p>
+<pre class="highlight"><code>HSET session:abc123 last_access &quot;1706648500&quot;
+</code></pre>
+
+<h2 id="sliding-expiration">Sliding Expiration</h2>
+<p>Sessions should typically expire after a period of inactivity, not from creation time. Reset the TTL on each access:</p>
+<pre class="highlight"><code>HGETALL session:abc123
+EXPIRE session:abc123 1800
+</code></pre>
+
+<p>This creates a "sliding window" where active users stay logged in, while inactive sessions automatically expire.</p>
+<h2 id="string-based-sessions-with-json">String-Based Sessions with JSON</h2>
+<p>For complex session data with nested structures, serialize to JSON:</p>
+<pre class="highlight"><code>SET session:abc123 '{&quot;user_id&quot;:1,&quot;cart&quot;:[&quot;item1&quot;,&quot;item2&quot;],&quot;prefs&quot;:{&quot;theme&quot;:&quot;dark&quot;}}' EX 1800
+</code></pre>
+
+<p>This approach requires reading and writing the entire session on each update, but simplifies handling complex nested data.</p>
+<h2 id="session-creation-flow">Session Creation Flow</h2>
+<ol>
+<li>Generate a unique session ID (UUID or secure random string)</li>
+<li>Store session data with initial fields</li>
+<li>Set expiration time</li>
+<li>Return session ID to client (typically as a cookie)</li>
+</ol>
+<p>The session ID should be cryptographically random to prevent guessing attacks.</p>
+<h2 id="multi-device-session-tracking">Multi-Device Session Tracking</h2>
+<p>To support "logout from all devices" or "see active sessions":</p>
+<p>Track all sessions for a user in a Set:</p>
+<pre class="highlight"><code>HSET session:abc123 user_id &quot;1&quot; device &quot;iPhone&quot;
+SADD user:1:sessions &quot;abc123&quot;
+EXPIRE user:1:sessions 7200
+</code></pre>
+
+<p>List all sessions for a user:</p>
+<pre class="highlight"><code>SMEMBERS user:1:sessions
+</code></pre>
+
+<p>For each session ID, fetch details:</p>
+<pre class="highlight"><code>HGETALL session:abc123
+</code></pre>
+
+<h2 id="logout-operations">Logout Operations</h2>
+<p>Logout single session:</p>
+<pre class="highlight"><code>DEL session:abc123
+SREM user:1:sessions &quot;abc123&quot;
+</code></pre>
+
+<p>Logout from all devices:</p>
+<pre class="highlight"><code>SMEMBERS user:1:sessions
+</code></pre>
+
+<p>For each session ID returned, delete the session key, then delete the set:</p>
+<pre class="highlight"><code>DEL session:abc123 session:def456 ...
+DEL user:1:sessions
+</code></pre>
+
+<h2 id="real-time-session-invalidation">Real-Time Session Invalidation</h2>
+<p>When a user logs out or an admin revokes access, all application servers must immediately stop accepting the session. Use Pub/Sub to broadcast invalidation:</p>
+<p>Publisher (on logout):</p>
+<pre class="highlight"><code>PUBLISH session:invalidate abc123
+</code></pre>
+
+<p>Subscribers (all app servers):</p>
+<pre class="highlight"><code>SUBSCRIBE session:invalidate
+</code></pre>
+
+<p>When a message arrives, remove the session from any local cache.</p>
+<h2 id="session-data-cleanup">Session Data Cleanup</h2>
+<p>Expired sessions are automatically removed by Redis, but the session ID references in user Sets may become stale. Periodically clean these:</p>
+<ol>
+<li>Iterate through <code>user:*:sessions</code> keys</li>
+<li>For each session ID in the set, check if <code>session:{id}</code> exists</li>
+<li>Remove references to non-existent sessions</li>
+</ol>
+<p>This can run as a background job during low-traffic periods.</p>
+<h2 id="security-considerations">Security Considerations</h2>
+<ul>
+<li>Generate session IDs using cryptographically secure random generators</li>
+<li>Never store passwords or sensitive credentials in sessions</li>
+<li>Use HTTPS-only cookies for session IDs</li>
+<li>Consider storing a hash of the user's IP or user-agent to detect session hijacking</li>
+<li>Set appropriate cookie flags: HttpOnly, Secure, SameSite</li>
+</ul>
+<h2 id="memory-optimization">Memory Optimization</h2>
+<p>Sessions can consume significant memory at scale. Strategies to reduce footprint:</p>
+<ul>
+<li>Store minimal data in the session; fetch user details from database when needed</li>
+<li>Use short field names (e.g., "uid" instead of "user_id")</li>
+<li>Set appropriate TTLs—inactive sessions waste memory</li>
+<li>Consider compressing session data for users with large carts or preferences</li>
+</ul>
+<h2 id="best-practices">Best Practices</h2>
+<ol>
+<li><strong>Use sliding expiration</strong>: Reset TTL on each access</li>
+<li><strong>Store minimal data</strong>: Keep sessions lean</li>
+<li><strong>Track sessions per user</strong>: Enable multi-device management</li>
+<li><strong>Use Pub/Sub for invalidation</strong>: Notify all servers immediately</li>
+<li><strong>Clean up orphaned references</strong>: Run periodic maintenance</li>
+<li><strong>Generate secure IDs</strong>: Use cryptographically random values</li>
+</ol>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="session-management.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

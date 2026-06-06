@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Probabilistic Data Structures - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="probabilistic-data-structures.md.txt">View Markdown</a>
+    </div>
+<h1 id="probabilistic-data-structures">Probabilistic Data Structures</h1>
+<p>Count unique items with HyperLogLog (12KB fixed), test set membership with Bloom filters, or estimate frequencies with Count-Min Sketch—trading small accuracy loss for massive memory savings.</p>
+<p>When datasets grow to billions of items, exact counting and membership testing become prohibitively expensive. Redis provides probabilistic data structures that offer 1000x memory reduction with configurable error rates.</p>
+<h2 id="hyperloglog-counting-unique-items">HyperLogLog: Counting Unique Items</h2>
+<p>HyperLogLog (HLL) estimates the cardinality (count of unique items) in a set. A standard Set storing 1 billion unique user IDs would require roughly 12GB of RAM. An HLL requires exactly 12KB regardless of how many elements you add, with about 0.81% standard error.</p>
+<h3 id="how-it-works">How It Works</h3>
+<p>HLL hashes each element and observes the maximum number of leading zeros in the resulting binary string. The probability of seeing N leading zeros is 1/2^N. By tracking the maximum leading zeros seen, HLL estimates how many unique elements have been added.</p>
+<p>To reduce variance, HLL uses multiple "registers" (buckets) and combines their estimates using harmonic mean.</p>
+<h3 id="commands">Commands</h3>
+<p>Add elements:</p>
+<pre class="highlight"><code>PFADD visitors:2024-01-30 &quot;user:123&quot; &quot;user:456&quot; &quot;user:789&quot;
+</code></pre>
+
+<p>Get the estimated count:</p>
+<pre class="highlight"><code>PFCOUNT visitors:2024-01-30
+</code></pre>
+
+<p>Merge multiple HLLs (e.g., daily into weekly):</p>
+<pre class="highlight"><code>PFMERGE visitors:week visitors:2024-01-28 visitors:2024-01-29 visitors:2024-01-30
+</code></pre>
+
+<h3 id="use-cases">Use Cases</h3>
+<ul>
+<li>Counting unique visitors to a website</li>
+<li>Tracking unique search queries</li>
+<li>Counting distinct IP addresses</li>
+<li>Any scenario where approximate counts of large sets are acceptable</li>
+</ul>
+<h3 id="accuracy">Accuracy</h3>
+<p>HLL provides an estimate with ~0.81% standard error. For 1 million actual unique items, the estimate will typically be between 991,900 and 1,008,100.</p>
+<h2 id="bloom-filter-membership-testing">Bloom Filter: Membership Testing</h2>
+<p>A Bloom Filter answers "Is this item in the set?" with possible false positives but zero false negatives. If it says "no," the item is definitely not in the set. If it says "yes," the item is probably in the set.</p>
+<h3 id="how-it-works_1">How It Works</h3>
+<p>Items are hashed by multiple hash functions, each setting a bit in a shared bit array. To check membership, compute the same hashes—if all corresponding bits are set, the item might be present. If any bit is zero, the item is definitely absent.</p>
+<h3 id="commands-redis-stack">Commands (Redis Stack)</h3>
+<p>Create a filter with 1% false positive rate for 1 million items:</p>
+<pre class="highlight"><code>BF.RESERVE usernames 0.01 1000000
+</code></pre>
+
+<p>Add items:</p>
+<pre class="highlight"><code>BF.ADD usernames &quot;john_doe&quot;
+</code></pre>
+
+<p>Check membership:</p>
+<pre class="highlight"><code>BF.EXISTS usernames &quot;john_doe&quot;
+</code></pre>
+
+<h3 id="use-cases_1">Use Cases</h3>
+<ul>
+<li>Username/email availability checks before expensive database queries</li>
+<li>Spam filtering (quick rejection of known spam)</li>
+<li>Cache miss optimization (skip cache lookup for items known to be absent)</li>
+<li>Preventing duplicate processing</li>
+</ul>
+<h3 id="the-cache-penetration-problem">The Cache Penetration Problem</h3>
+<p>Without a Bloom Filter, attackers can flood your system with requests for non-existent keys. Each request misses the cache and hits the database. A Bloom Filter lets you reject these requests immediately—if the filter says the key doesn't exist, don't bother checking the cache or database.</p>
+<h2 id="cuckoo-filter">Cuckoo Filter</h2>
+<p>Similar to Bloom Filters but supports deletion. Uses Cuckoo Hashing to store fingerprints of items.</p>
+<h3 id="commands-redis-stack_1">Commands (Redis Stack)</h3>
+<pre class="highlight"><code>CF.RESERVE sessions 1000000
+CF.ADD sessions &quot;session:abc123&quot;
+CF.EXISTS sessions &quot;session:abc123&quot;
+CF.DEL sessions &quot;session:abc123&quot;
+</code></pre>
+
+<h3 id="bloom-vs-cuckoo">Bloom vs Cuckoo</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Bloom Filter</th>
+<th>Cuckoo Filter</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Deletion</td>
+<td>Not supported</td>
+<td>Supported</td>
+</tr>
+<tr>
+<td>Space efficiency</td>
+<td>Good</td>
+<td>Better for low FP rates</td>
+</tr>
+<tr>
+<td>Insert performance</td>
+<td>Faster</td>
+<td>Slightly slower</td>
+</tr>
+<tr>
+<td>Lookup performance</td>
+<td>Slightly slower</td>
+<td>Faster</td>
+</tr>
+</tbody>
+</table>
+<p>Use Cuckoo when you need to remove items from the filter (e.g., tracking active sessions that expire).</p>
+<h2 id="t-digest-percentile-estimation">T-Digest: Percentile Estimation</h2>
+<p>Computing exact percentiles requires sorting all data points—impractical for streaming data. T-Digest maintains a compressed representation that provides accurate percentile estimates, especially at the tails (p99, p99.9).</p>
+<h3 id="commands-redis-stack_2">Commands (Redis Stack)</h3>
+<p>Create a T-Digest:</p>
+<pre class="highlight"><code>TDIGEST.CREATE latencies
+</code></pre>
+
+<p>Add observations:</p>
+<pre class="highlight"><code>TDIGEST.ADD latencies 45.2 89.1 12.5 156.7 23.4
+</code></pre>
+
+<p>Get percentiles:</p>
+<pre class="highlight"><code>TDIGEST.QUANTILE latencies 0.5 0.95 0.99
+</code></pre>
+
+<p>This returns the estimated 50th, 95th, and 99th percentile values.</p>
+<h3 id="use-cases_2">Use Cases</h3>
+<ul>
+<li>SLA monitoring (p99 latency must be under 100ms)</li>
+<li>Performance analysis where averages are misleading</li>
+<li>Any streaming data where exact percentiles are too expensive</li>
+</ul>
+<h2 id="count-min-sketch-frequency-estimation">Count-Min Sketch: Frequency Estimation</h2>
+<p>Estimates how many times each item has been seen, with possible over-counting but never under-counting.</p>
+<pre class="highlight"><code>CMS.INITBYDIM page_views 2000 5
+CMS.INCRBY page_views &quot;/home&quot; 1 &quot;/about&quot; 1
+CMS.QUERY page_views &quot;/home&quot;
+</code></pre>
+
+<p>Useful for estimating frequencies in streaming data where exact counts are impractical.</p>
+<h2 id="top-k-heavy-hitters-redis-stack">Top-K: Heavy Hitters (Redis Stack)</h2>
+<p>Track the K most frequent items in a stream without storing all items:</p>
+<pre class="highlight"><code>TOPK.RESERVE trending 10 50 3 0.9
+TOPK.ADD trending &quot;topic:redis&quot; &quot;topic:python&quot; &quot;topic:redis&quot; &quot;topic:go&quot;
+TOPK.LIST trending
+</code></pre>
+
+<p>Returns the top 10 most frequently added items. The algorithm may temporarily misrank items but converges to accuracy over time. Ideal for trending topics, popular products, or frequent errors.</p>
+<h2 id="choosing-the-right-structure">Choosing the Right Structure</h2>
+<table>
+<thead>
+<tr>
+<th>Need</th>
+<th>Structure</th>
+<th>Error Type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Count unique items</td>
+<td>HyperLogLog</td>
+<td>Cardinality ±0.81%</td>
+</tr>
+<tr>
+<td>Check set membership</td>
+<td>Bloom/Cuckoo Filter</td>
+<td>False positives possible</td>
+</tr>
+<tr>
+<td>Calculate percentiles</td>
+<td>T-Digest</td>
+<td>Percentile estimates</td>
+</tr>
+<tr>
+<td>Count item frequency</td>
+<td>Count-Min Sketch</td>
+<td>Over-counting possible</td>
+</tr>
+</tbody>
+</table>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="probabilistic-data-structures.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

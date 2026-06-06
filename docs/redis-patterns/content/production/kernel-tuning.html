@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Linux Kernel Tuning for Redis - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="kernel-tuning.md.txt">View Markdown</a>
+    </div>
+<h1 id="linux-kernel-tuning-for-redis">Linux Kernel Tuning for Redis</h1>
+<p>Configure Linux kernel parameters to prevent latency spikes, persistence failures, and connection drops in production Redis deployments—essential settings that override defaults hostile to in-memory databases.</p>
+<p>Standard Linux kernel defaults are optimized for general workloads, not in-memory databases. Production Redis instances require specific kernel tuning to achieve consistent sub-millisecond latency.</p>
+<h2 id="transparent-huge-pages-thp">Transparent Huge Pages (THP)</h2>
+<p>THP is the most critical setting. When enabled, it causes severe latency spikes during persistence operations.</p>
+<p><strong>The Problem:</strong></p>
+<p>Redis uses <code>fork()</code> to create child processes for RDB snapshots and AOF rewrites. Linux uses copy-on-write (COW) to share memory between parent and child. With THP enabled, the kernel uses 2MB pages instead of 4KB pages. When the parent modifies a single byte, the kernel must copy the entire 2MB page—a 500x amplification.</p>
+<p><strong>Symptoms:</strong>
+- Latency spikes of 10-100x during BGSAVE or BGREWRITEAOF
+- Memory usage doubling temporarily during persistence
+- Client timeouts during background saves</p>
+<p><strong>Fix (required):</strong></p>
+<pre class="highlight"><code>echo never &gt; /sys/kernel/mm/transparent_hugepage/enabled
+</code></pre>
+
+<p>Make it permanent in <code>/etc/rc.local</code> or via systemd:</p>
+<pre class="highlight"><code>[Service]
+ExecStartPre=/bin/sh -c 'echo never &gt; /sys/kernel/mm/transparent_hugepage/enabled'
+</code></pre>
+
+<p>Redis logs a warning at startup if THP is enabled. Never ignore this warning.</p>
+<h2 id="memory-overcommit">Memory Overcommit</h2>
+<p>The <code>fork()</code> system call can fail if the kernel thinks there's insufficient memory.</p>
+<p><strong>The Problem:</strong></p>
+<p>When Redis forks, the kernel may pessimistically assume the child needs as much memory as the parent. On a 32GB instance with 30GB used, the fork can fail even though COW means minimal actual memory is needed.</p>
+<p><strong>Fix:</strong></p>
+<pre class="highlight"><code>sysctl vm.overcommit_memory=1
+</code></pre>
+
+<p>This tells the kernel to always allow memory allocation requests, trusting that COW will work correctly. Add to <code>/etc/sysctl.conf</code>:</p>
+<pre class="highlight"><code>vm.overcommit_memory=1
+</code></pre>
+
+<h2 id="swappiness">Swappiness</h2>
+<p>Redis data in swap is a catastrophic failure mode.</p>
+<p><strong>The Problem:</strong></p>
+<p>If any Redis memory pages are swapped to disk, access times go from nanoseconds to milliseconds—a 1,000,000x slowdown. A single swapped page can cause client timeouts.</p>
+<p><strong>Fix:</strong></p>
+<pre class="highlight"><code>sysctl vm.swappiness=1
+</code></pre>
+
+<p>Setting to 0 is not recommended as it can cause OOM kills. Setting to 1 makes swapping extremely unlikely while still allowing the kernel to swap in desperate situations:</p>
+<pre class="highlight"><code>vm.swappiness=1
+</code></pre>
+
+<h2 id="tcp-stack-tuning">TCP Stack Tuning</h2>
+<p>Under high connection rates, default TCP settings cause connection failures.</p>
+<p><strong>Connection Backlog:</strong></p>
+<p>The listen queue for incoming connections defaults to 128. During traffic spikes, new connections are dropped before Redis sees them.</p>
+<pre class="highlight"><code>sysctl net.core.somaxconn=65536
+sysctl net.ipv4.tcp_max_syn_backlog=65536
+</code></pre>
+
+<p>Also set in redis.conf:</p>
+<pre class="highlight"><code>tcp-backlog 65536
+</code></pre>
+
+<p>The effective backlog is <code>min(tcp-backlog, somaxconn)</code>.</p>
+<p><strong>TIME_WAIT Connections:</strong></p>
+<p>With many short-lived connections, ports can be exhausted by TIME_WAIT sockets:</p>
+<pre class="highlight"><code>sysctl net.ipv4.tcp_tw_reuse=1
+</code></pre>
+
+<p><strong>TCP Keepalive:</strong></p>
+<p>For long-lived connections through load balancers:</p>
+<pre class="highlight"><code>tcp-keepalive 300
+</code></pre>
+
+<p>Redis will send keepalives every 300 seconds to prevent idle connection termination.</p>
+<h2 id="file-descriptor-limits">File Descriptor Limits</h2>
+<p>Each Redis connection consumes a file descriptor.</p>
+<p><strong>Check Current Limits:</strong></p>
+<pre class="highlight"><code>ulimit -n
+</code></pre>
+
+<p><strong>Set Appropriately:</strong></p>
+<p>In <code>/etc/security/limits.conf</code>:</p>
+<pre class="highlight"><code>redis soft nofile 65536
+redis hard nofile 65536
+</code></pre>
+
+<p>Or in the systemd service file:</p>
+<pre class="highlight"><code>[Service]
+LimitNOFILE=65536
+</code></pre>
+
+<p>Redis's <code>maxclients</code> is limited by available file descriptors minus ~32 for internal use.</p>
+<h2 id="summary-configuration">Summary Configuration</h2>
+<p>Add to <code>/etc/sysctl.conf</code>:</p>
+<pre class="highlight"><code># Redis kernel tuning
+vm.overcommit_memory=1
+vm.swappiness=1
+net.core.somaxconn=65536
+net.ipv4.tcp_max_syn_backlog=65536
+net.ipv4.tcp_tw_reuse=1
+</code></pre>
+
+<p>Disable THP at boot:</p>
+<pre class="highlight"><code>echo never &gt; /sys/kernel/mm/transparent_hugepage/enabled
+echo never &gt; /sys/kernel/mm/transparent_hugepage/defrag
+</code></pre>
+
+<p>Apply without reboot:</p>
+<pre class="highlight"><code>sysctl -p
+</code></pre>
+
+<h2 id="verification">Verification</h2>
+<p>Check Redis startup logs for warnings:</p>
+<pre class="highlight"><code>grep -i warning /var/log/redis/redis-server.log
+</code></pre>
+
+<p>Common warnings to address:
+- "THP is enabled" - disable transparent huge pages
+- "overcommit_memory is set to 0" - set to 1
+- "somaxconn is lower than" - increase TCP backlog</p>
+<h2 id="memory-allocator">Memory Allocator</h2>
+<p>Redis uses jemalloc by default, which is well-suited for its allocation patterns. Key behaviors:</p>
+<p><strong>High-Water Mark:</strong> After deleting large amounts of data, jemalloc retains memory to satisfy future allocations. The process RSS reflects peak usage, not current dataset size.</p>
+<p><strong>Fragmentation:</strong> Monitor <code>mem_fragmentation_ratio</code> in <code>INFO MEMORY</code>:
+- Below 1.0: Redis is using swap (critical)
+- 1.0-1.5: Normal
+- Above 1.5: Significant fragmentation</p>
+<p>If fragmentation is high:</p>
+<pre class="highlight"><code>MEMORY PURGE
+</code></pre>
+
+<p>This forces jemalloc to return memory to the OS. In Redis 4.0+, active defragmentation can be enabled:</p>
+<pre class="highlight"><code>activedefrag yes
+</code></pre>
+
+<h2 id="source">Source</h2>
+<p>Shopify RedisDays presentation, Redis documentation, and production post-mortems from Netflix, Uber, and AWS ElastiCache teams.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="kernel-tuning.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

@@ -1,0 +1,265 @@
+# Atomic Update Patterns
+
+Ensure data integrity with atomic read-modify-write operations using WATCH/MULTI/EXEC for optimistic locking, Lua scripts for complex logic, and shadow-key patterns for safe bulk updates.
+
+Redis provides several mechanisms for atomic operations beyond simple commands. These patterns prevent race conditions when multiple clients update shared data concurrently.
+
+## Pattern 1: Optimistic Locking with WATCH
+
+WATCH implements check-and-set (CAS) semantics. If any watched key changes before EXEC, the transaction aborts.
+
+### Basic WATCH Pattern
+
+    WATCH account:123:balance
+
+    balance = GET account:123:balance
+    new_balance = balance - 100
+
+    MULTI
+    SET account:123:balance new_balance
+    EXEC
+
+If another client modifies `account:123:balance` after WATCH but before EXEC, the transaction returns nil (aborted). Your code should retry.
+
+### Retry Loop
+
+    max_retries = 5
+    for attempt in range(max_retries):
+        WATCH account:123:balance
+
+        balance = GET account:123:balance
+        if balance < amount:
+            UNWATCH
+            raise InsufficientFunds()
+
+        new_balance = balance - amount
+
+        result = MULTI
+        SET account:123:balance new_balance
+        EXEC
+
+        if result is not None:
+            return  # Success
+        # Transaction aborted, retry
+
+    raise TooManyRetries()
+
+### Multi-Key WATCH
+
+Watch multiple keys for atomic updates across them:
+
+    WATCH inventory:sku123 order:456:status
+
+    stock = GET inventory:sku123
+    if stock < quantity:
+        UNWATCH
+        raise OutOfStock()
+
+    MULTI
+    DECRBY inventory:sku123 quantity
+    SET order:456:status "confirmed"
+    EXEC
+
+> **Cluster Note:** All watched keys must be in the same slot. Use hash tags to co-locate: `inventory:{sku123}`, `order:{sku123}:456`.
+
+## Pattern 2: Lua Scripts for Atomic Logic
+
+Lua scripts execute atomically—no other command runs between script start and end.
+
+### Compare-and-Set
+
+    -- CAS: set only if current value matches expected
+    if redis.call('GET', KEYS[1]) == ARGV[1] then
+        redis.call('SET', KEYS[1], ARGV[2])
+        return 1
+    end
+    return 0
+
+Call:
+
+    EVAL <script> 1 mykey expected_value new_value
+
+### Atomic Transfer
+
+    -- Transfer amount between accounts
+    local from_balance = tonumber(redis.call('GET', KEYS[1])) or 0
+    local amount = tonumber(ARGV[1])
+
+    if from_balance < amount then
+        return {err = "insufficient funds"}
+    end
+
+    redis.call('DECRBY', KEYS[1], amount)
+    redis.call('INCRBY', KEYS[2], amount)
+    return {ok = "transferred"}
+
+### Conditional Update with Side Effects
+
+    -- Update user and log the change atomically
+    local old_value = redis.call('HGET', KEYS[1], ARGV[1])
+    redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+    redis.call('RPUSH', KEYS[2], cjson.encode({
+        field = ARGV[1],
+        old = old_value,
+        new = ARGV[2],
+        time = redis.call('TIME')[1]
+    }))
+    return old_value
+
+## Pattern 3: Shadow Key + RENAME
+
+Update a complex value without readers seeing partial state:
+
+    # Build new value in a temporary key
+    DEL tmp:user:123:cache
+    HSET tmp:user:123:cache field1 value1
+    HSET tmp:user:123:cache field2 value2
+    HSET tmp:user:123:cache field3 value3
+    ...
+
+    # Atomic swap
+    RENAME tmp:user:123:cache user:123:cache
+
+RENAME is atomic—readers see either the old complete value or the new complete value, never a partial update.
+
+### With Expiration
+
+RENAME preserves TTL from the source key. To set new TTL:
+
+    RENAME tmp:key final:key
+    EXPIRE final:key 3600
+
+Or use COPY (Redis 6.2+) with REPLACE:
+
+    COPY tmp:key final:key REPLACE
+    DEL tmp:key
+    EXPIRE final:key 3600
+
+> **Cluster Note:** Both keys must be in the same slot for RENAME/COPY.
+
+## Pattern 4: Idempotency Keys
+
+Ensure an operation executes exactly once using SET NX:
+
+    # Check if operation already processed
+    result = SET idempotency:{request_id} "processing" NX PX 86400000
+
+    if result is None:
+        # Already processed, return cached result
+        return GET idempotency:{request_id}:result
+
+    # Process operation
+    outcome = process_operation()
+
+    # Store result and mark complete
+    MSET idempotency:{request_id} "complete" \
+         idempotency:{request_id}:result outcome
+
+    return outcome
+
+### With Lua for Atomicity
+
+    local key = KEYS[1]
+    local result_key = KEYS[2]
+    local ttl = tonumber(ARGV[1])
+
+    local status = redis.call('GET', key)
+    if status then
+        if status == "complete" then
+            return redis.call('GET', result_key)
+        end
+        return {processing = true}  -- Still in progress
+    end
+
+    redis.call('SET', key, 'processing', 'PX', ttl)
+    return {proceed = true}
+
+## Pattern 5: Increment with Bounds
+
+Atomic increment that respects limits:
+
+    -- Increment but cap at maximum
+    local current = tonumber(redis.call('GET', KEYS[1])) or 0
+    local increment = tonumber(ARGV[1])
+    local max_val = tonumber(ARGV[2])
+
+    local new_val = math.min(current + increment, max_val)
+    redis.call('SET', KEYS[1], new_val)
+    return new_val
+
+For inventory (decrement but not below zero):
+
+    local current = tonumber(redis.call('GET', KEYS[1])) or 0
+    local decrement = tonumber(ARGV[1])
+
+    if current < decrement then
+        return -1  -- Insufficient
+    end
+
+    return redis.call('DECRBY', KEYS[1], decrement)
+
+## Pattern 6: GETSET / GETDEL / GETEX
+
+Atomic get-and-modify operations:
+
+### GETSET (deprecated, use SET GET)
+
+    # Atomically set new value, return old
+    SET counter 100 GET
+    # Returns: old value, sets new value
+
+### GETDEL
+
+    # Atomically get and delete
+    GETDEL job:result:123
+    # Returns value and deletes key
+
+### GETEX
+
+    # Get and update expiration atomically
+    GETEX session:abc EXAT 1706648400
+    # Returns value, sets absolute expiration
+
+## Pattern 7: List Rotation
+
+Atomic move between lists:
+
+    # Pop from source, push to destination
+    LMOVE source destination RIGHT LEFT
+
+    # Blocking version
+    BLMOVE source destination RIGHT LEFT 30
+
+Commonly used for reliable queues (see [Reliable Queue Pattern](reliable-queue.md)).
+
+## When to Use Each Pattern
+
+| Scenario | Pattern |
+|----------|---------|
+| Simple CAS on single key | SET ... GET or Lua |
+| Multi-key transaction (same slot) | WATCH + MULTI/EXEC |
+| Complex conditional logic | Lua script |
+| Large value replacement | Shadow key + RENAME |
+| Request deduplication | Idempotency keys |
+| Counter with bounds | Lua script |
+| Queue operations | LMOVE / BLMOVE |
+
+## Error Handling
+
+### WATCH Abort
+
+    result = EXEC
+    if result is None:
+        # Transaction aborted - watched key changed
+        # Retry or return conflict error
+
+### Lua Errors
+
+    result = EVAL script ...
+    if isinstance(result, RedisError):
+        # Script error or KEYS/ARGV issue
+        handle_error(result)
+
+### Partial Failures
+
+For operations that can't be made atomic (cross-shard), use [Cross-Shard Consistency Patterns](cross-shard-consistency.md) to detect and recover from partial failures.

@@ -1,0 +1,218 @@
+# Vector Search and AI Patterns
+
+Build semantic search, RAG pipelines, recommendation systems, and AI agent infrastructure using Redis Vector Sets—native HNSW-based similarity search with sub-millisecond latency.
+
+> **See Also:** For detailed Vector Set command reference and options, see [Vector Sets and Similarity Search](../fundamental/vector-sets.md).
+
+## Vector Search Fundamentals
+
+Vector search finds items based on semantic similarity rather than keyword matching. Text, images, and other data are converted to numerical vectors (embeddings) using machine learning models. Similar items have vectors close together in the embedding space.
+
+Redis Vector Sets provide O(log N) approximate nearest neighbor search using HNSW graphs, with built-in quantization for memory efficiency and filtered queries for hybrid search.
+
+## Retrieval-Augmented Generation (RAG)
+
+RAG enhances Large Language Models by retrieving relevant context from your private data before generating responses.
+
+**The RAG Pipeline:**
+
+1. **Ingestion**: Split documents into chunks, generate embeddings, store in Vector Set
+2. **Query**: Convert user question to embedding
+3. **Retrieval**: Find similar document chunks via VSIM
+4. **Augmentation**: Include retrieved chunks in the LLM prompt
+5. **Generation**: LLM generates answer using the provided context
+
+### Document Ingestion
+
+    # Store document chunks with metadata
+    VADD docs:index FP32 <embedding> "chunk:doc1:p1" SETATTR '{"doc": "manual.pdf", "page": 1, "section": "intro"}'
+    VADD docs:index FP32 <embedding> "chunk:doc1:p2" SETATTR '{"doc": "manual.pdf", "page": 2, "section": "setup"}'
+
+### Context Retrieval
+
+    # Find relevant chunks for user question
+    VSIM docs:index FP32 <query_embedding> COUNT 5 WITHSCORES
+
+    # With metadata filtering (only certain documents, date ranges, etc.)
+    VSIM docs:index FP32 <query_embedding> COUNT 5 FILTER '.doc == "manual.pdf"'
+
+### Integration Pattern
+
+```python
+def answer_question(question):
+    # Generate query embedding
+    query_embedding = embed_model.encode(question)
+
+    # Retrieve relevant context
+    results = redis.vsim('docs:index', 'FP32', query_embedding,
+                         count=5, withscores=True)
+
+    # Fetch chunk content
+    context = [redis.get(f"chunk:{chunk_id}:text") for chunk_id, _ in results]
+
+    # Generate answer with context
+    return llm.generate(
+        prompt=f"Context: {context}\n\nQuestion: {question}\n\nAnswer:"
+    )
+```
+
+## Semantic Caching
+
+Traditional caches fail with natural language because different phrasings produce different cache keys:
+- "Who is the US President?"
+- "Current POTUS"
+- "Who leads the United States?"
+
+These mean the same thing but hash to different keys.
+
+### Implementation
+
+    # Check cache before calling LLM
+    VSIM query:cache FP32 <query_embedding> COUNT 1 WITHSCORES
+
+If the top result has similarity > 0.95, return the cached response:
+
+```python
+def cached_llm_call(query):
+    query_embedding = embed_model.encode(query)
+
+    # Check semantic cache
+    cached = redis.vsim('query:cache', 'FP32', query_embedding,
+                        count=1, withscores=True)
+
+    if cached and cached[0][1] > 0.95:  # High similarity
+        cache_id = cached[0][0]
+        return redis.get(f"response:{cache_id}")
+
+    # Cache miss - call LLM
+    response = llm.generate(query)
+
+    # Store in cache
+    query_id = str(uuid4())
+    redis.vadd('query:cache', 'FP32', query_embedding, query_id)
+    redis.set(f"response:{query_id}", response, ex=3600)
+
+    return response
+```
+
+Semantic caching can reduce LLM API costs by 40-60% for applications with repetitive queries like customer support or FAQ bots.
+
+## AI Agent Session Persistence
+
+Voice and chat AI agents require maintaining session state across distributed servers.
+
+### Client-to-Server Mapping
+
+When an agent session spans multiple requests, route them to the same server:
+
+    # Store session mapping
+    HSET agent:sessions client_id_123 '{"server": "server-5", "started": 1706648400}'
+
+    # Custom router looks up mapping before forwarding request
+    server = HGET agent:sessions client_id_123
+    route_to(server)
+
+### Conversation Context
+
+Store conversation history with embeddings for context-aware responses:
+
+    # Store each message with embedding
+    VADD conv:user123 FP32 <msg_embedding> "msg:001" SETATTR '{"role": "user", "ts": 1706648400}'
+    VADD conv:user123 FP32 <msg_embedding> "msg:002" SETATTR '{"role": "assistant", "ts": 1706648401}'
+
+    # Retrieve relevant past messages for context
+    VSIM conv:user123 FP32 <current_msg_embedding> COUNT 10 FILTER '.role == "user"'
+
+## Recommendations
+
+Find similar items to those a user has interacted with:
+
+    # User liked product X, find similar products
+    VSIM products:embeddings ELE "product:123" COUNT 20 FILTER '.category == "electronics" and .in_stock == true'
+
+### Multi-Item Recommendations
+
+When a user has liked multiple items:
+
+```python
+def recommend(user_liked_items, count=10):
+    candidates = {}
+
+    for item in user_liked_items:
+        similar = redis.vsim('products', 'ELE', item, count=20)
+        for product_id, score in similar:
+            if product_id not in user_liked_items:
+                candidates[product_id] = candidates.get(product_id, 0) + score
+
+    # Return items that are similar to multiple liked items
+    return sorted(candidates.items(), key=lambda x: -x[1])[:count]
+```
+
+## Classification
+
+Use vector similarity for zero-shot or few-shot classification:
+
+    # Store labeled examples
+    VADD classifier FP32 <embedding> "spam:ex1" SETATTR '{"label": "spam"}'
+    VADD classifier FP32 <embedding> "ham:ex1" SETATTR '{"label": "ham"}'
+
+    # Classify new item by nearest neighbors
+    VSIM classifier FP32 <new_item_embedding> COUNT 5 WITHATTRIBS
+
+Majority vote among k-nearest neighbors determines the label.
+
+## LLM Token Streaming
+
+For real-time LLM response display, use Redis Streams to decouple generation from delivery:
+
+    # LLM service writes tokens as they're generated
+    XADD llm:stream:session123 * event token content "The"
+    XADD llm:stream:session123 * event token content " answer"
+    XADD llm:stream:session123 * event token content " is"
+    XADD llm:stream:session123 * event complete content ""
+
+    # Frontend reads from the Stream
+    XREAD BLOCK 5000 STREAMS llm:stream:session123 $
+
+Benefits:
+- Multiple frontends can read the same stream
+- Handles reconnection gracefully (resume from last-seen ID)
+- Decouples slow LLM inference from client delivery
+
+## Memory and Performance
+
+### Embedding Dimensions
+
+Common embedding model dimensions:
+- OpenAI text-embedding-3-small: 1536 dimensions
+- OpenAI text-embedding-3-large: 3072 dimensions (or reduced)
+- Sentence transformers: 384-768 dimensions
+- Cohere embed-v3: 1024 dimensions
+
+### Memory Estimation
+
+With default int8 quantization (Q8):
+- 1536-dim vector ≈ 1.5KB per element (including graph overhead)
+- 1 million documents ≈ 1.5GB
+
+### Quantization for Scale
+
+The default int8 quantization (Q8) provides 4x memory reduction with minimal recall loss (~96%):
+
+    # Q8 is the default - no flag needed
+    VADD docs:index FP32 <embedding> "doc:1" ...
+
+For full precision when recall is critical:
+
+    # Store without quantization
+    VADD docs:index NOQUANT FP32 <embedding> "doc:1" ...
+
+## Distance Metrics
+
+Vector Sets use cosine similarity (normalized on insertion). This matches most text embedding models which produce direction-oriented embeddings.
+
+For models that produce L2-normalized embeddings (OpenAI, Cohere), cosine similarity and dot product are equivalent.
+
+## Source
+
+Redis Vector Sets documentation and AI application patterns from production deployments.

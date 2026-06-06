@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vector Search and AI Patterns - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="vector-search-ai.md.txt">View Markdown</a>
+    </div>
+<h1 id="vector-search-and-ai-patterns">Vector Search and AI Patterns</h1>
+<p>Build semantic search, RAG pipelines, recommendation systems, and AI agent infrastructure using Redis Vector Sets—native HNSW-based similarity search with sub-millisecond latency.</p>
+<blockquote>
+<p><strong>See Also:</strong> For detailed Vector Set command reference and options, see <a href="../fundamental/vector-sets.md.txt">Vector Sets and Similarity Search</a>.</p>
+</blockquote>
+<h2 id="vector-search-fundamentals">Vector Search Fundamentals</h2>
+<p>Vector search finds items based on semantic similarity rather than keyword matching. Text, images, and other data are converted to numerical vectors (embeddings) using machine learning models. Similar items have vectors close together in the embedding space.</p>
+<p>Redis Vector Sets provide O(log N) approximate nearest neighbor search using HNSW graphs, with built-in quantization for memory efficiency and filtered queries for hybrid search.</p>
+<h2 id="retrieval-augmented-generation-rag">Retrieval-Augmented Generation (RAG)</h2>
+<p>RAG enhances Large Language Models by retrieving relevant context from your private data before generating responses.</p>
+<p><strong>The RAG Pipeline:</strong></p>
+<ol>
+<li><strong>Ingestion</strong>: Split documents into chunks, generate embeddings, store in Vector Set</li>
+<li><strong>Query</strong>: Convert user question to embedding</li>
+<li><strong>Retrieval</strong>: Find similar document chunks via VSIM</li>
+<li><strong>Augmentation</strong>: Include retrieved chunks in the LLM prompt</li>
+<li><strong>Generation</strong>: LLM generates answer using the provided context</li>
+</ol>
+<h3 id="document-ingestion">Document Ingestion</h3>
+<pre class="highlight"><code># Store document chunks with metadata
+VADD docs:index FP32 &lt;embedding&gt; &quot;chunk:doc1:p1&quot; SETATTR '{&quot;doc&quot;: &quot;manual.pdf&quot;, &quot;page&quot;: 1, &quot;section&quot;: &quot;intro&quot;}'
+VADD docs:index FP32 &lt;embedding&gt; &quot;chunk:doc1:p2&quot; SETATTR '{&quot;doc&quot;: &quot;manual.pdf&quot;, &quot;page&quot;: 2, &quot;section&quot;: &quot;setup&quot;}'
+</code></pre>
+
+<h3 id="context-retrieval">Context Retrieval</h3>
+<pre class="highlight"><code># Find relevant chunks for user question
+VSIM docs:index FP32 &lt;query_embedding&gt; COUNT 5 WITHSCORES
+
+# With metadata filtering (only certain documents, date ranges, etc.)
+VSIM docs:index FP32 &lt;query_embedding&gt; COUNT 5 FILTER '.doc == &quot;manual.pdf&quot;'
+</code></pre>
+
+<h3 id="integration-pattern">Integration Pattern</h3>
+<pre class="highlight"><code class="language-python">def answer_question(question):
+    # Generate query embedding
+    query_embedding = embed_model.encode(question)
+
+    # Retrieve relevant context
+    results = redis.vsim('docs:index', 'FP32', query_embedding,
+                         count=5, withscores=True)
+
+    # Fetch chunk content
+    context = [redis.get(f&quot;chunk:{chunk_id}:text&quot;) for chunk_id, _ in results]
+
+    # Generate answer with context
+    return llm.generate(
+        prompt=f&quot;Context: {context}\n\nQuestion: {question}\n\nAnswer:&quot;
+    )
+</code></pre>
+
+<h2 id="semantic-caching">Semantic Caching</h2>
+<p>Traditional caches fail with natural language because different phrasings produce different cache keys:
+- "Who is the US President?"
+- "Current POTUS"
+- "Who leads the United States?"</p>
+<p>These mean the same thing but hash to different keys.</p>
+<h3 id="implementation">Implementation</h3>
+<pre class="highlight"><code># Check cache before calling LLM
+VSIM query:cache FP32 &lt;query_embedding&gt; COUNT 1 WITHSCORES
+</code></pre>
+
+<p>If the top result has similarity &gt; 0.95, return the cached response:</p>
+<pre class="highlight"><code class="language-python">def cached_llm_call(query):
+    query_embedding = embed_model.encode(query)
+
+    # Check semantic cache
+    cached = redis.vsim('query:cache', 'FP32', query_embedding,
+                        count=1, withscores=True)
+
+    if cached and cached[0][1] &gt; 0.95:  # High similarity
+        cache_id = cached[0][0]
+        return redis.get(f&quot;response:{cache_id}&quot;)
+
+    # Cache miss - call LLM
+    response = llm.generate(query)
+
+    # Store in cache
+    query_id = str(uuid4())
+    redis.vadd('query:cache', 'FP32', query_embedding, query_id)
+    redis.set(f&quot;response:{query_id}&quot;, response, ex=3600)
+
+    return response
+</code></pre>
+
+<p>Semantic caching can reduce LLM API costs by 40-60% for applications with repetitive queries like customer support or FAQ bots.</p>
+<h2 id="ai-agent-session-persistence">AI Agent Session Persistence</h2>
+<p>Voice and chat AI agents require maintaining session state across distributed servers.</p>
+<h3 id="client-to-server-mapping">Client-to-Server Mapping</h3>
+<p>When an agent session spans multiple requests, route them to the same server:</p>
+<pre class="highlight"><code># Store session mapping
+HSET agent:sessions client_id_123 '{&quot;server&quot;: &quot;server-5&quot;, &quot;started&quot;: 1706648400}'
+
+# Custom router looks up mapping before forwarding request
+server = HGET agent:sessions client_id_123
+route_to(server)
+</code></pre>
+
+<h3 id="conversation-context">Conversation Context</h3>
+<p>Store conversation history with embeddings for context-aware responses:</p>
+<pre class="highlight"><code># Store each message with embedding
+VADD conv:user123 FP32 &lt;msg_embedding&gt; &quot;msg:001&quot; SETATTR '{&quot;role&quot;: &quot;user&quot;, &quot;ts&quot;: 1706648400}'
+VADD conv:user123 FP32 &lt;msg_embedding&gt; &quot;msg:002&quot; SETATTR '{&quot;role&quot;: &quot;assistant&quot;, &quot;ts&quot;: 1706648401}'
+
+# Retrieve relevant past messages for context
+VSIM conv:user123 FP32 &lt;current_msg_embedding&gt; COUNT 10 FILTER '.role == &quot;user&quot;'
+</code></pre>
+
+<h2 id="recommendations">Recommendations</h2>
+<p>Find similar items to those a user has interacted with:</p>
+<pre class="highlight"><code># User liked product X, find similar products
+VSIM products:embeddings ELE &quot;product:123&quot; COUNT 20 FILTER '.category == &quot;electronics&quot; and .in_stock == true'
+</code></pre>
+
+<h3 id="multi-item-recommendations">Multi-Item Recommendations</h3>
+<p>When a user has liked multiple items:</p>
+<pre class="highlight"><code class="language-python">def recommend(user_liked_items, count=10):
+    candidates = {}
+
+    for item in user_liked_items:
+        similar = redis.vsim('products', 'ELE', item, count=20)
+        for product_id, score in similar:
+            if product_id not in user_liked_items:
+                candidates[product_id] = candidates.get(product_id, 0) + score
+
+    # Return items that are similar to multiple liked items
+    return sorted(candidates.items(), key=lambda x: -x[1])[:count]
+</code></pre>
+
+<h2 id="classification">Classification</h2>
+<p>Use vector similarity for zero-shot or few-shot classification:</p>
+<pre class="highlight"><code># Store labeled examples
+VADD classifier FP32 &lt;embedding&gt; &quot;spam:ex1&quot; SETATTR '{&quot;label&quot;: &quot;spam&quot;}'
+VADD classifier FP32 &lt;embedding&gt; &quot;ham:ex1&quot; SETATTR '{&quot;label&quot;: &quot;ham&quot;}'
+
+# Classify new item by nearest neighbors
+VSIM classifier FP32 &lt;new_item_embedding&gt; COUNT 5 WITHATTRIBS
+</code></pre>
+
+<p>Majority vote among k-nearest neighbors determines the label.</p>
+<h2 id="llm-token-streaming">LLM Token Streaming</h2>
+<p>For real-time LLM response display, use Redis Streams to decouple generation from delivery:</p>
+<pre class="highlight"><code># LLM service writes tokens as they're generated
+XADD llm:stream:session123 * event token content &quot;The&quot;
+XADD llm:stream:session123 * event token content &quot; answer&quot;
+XADD llm:stream:session123 * event token content &quot; is&quot;
+XADD llm:stream:session123 * event complete content &quot;&quot;
+
+# Frontend reads from the Stream
+XREAD BLOCK 5000 STREAMS llm:stream:session123 $
+</code></pre>
+
+<p>Benefits:
+- Multiple frontends can read the same stream
+- Handles reconnection gracefully (resume from last-seen ID)
+- Decouples slow LLM inference from client delivery</p>
+<h2 id="memory-and-performance">Memory and Performance</h2>
+<h3 id="embedding-dimensions">Embedding Dimensions</h3>
+<p>Common embedding model dimensions:
+- OpenAI text-embedding-3-small: 1536 dimensions
+- OpenAI text-embedding-3-large: 3072 dimensions (or reduced)
+- Sentence transformers: 384-768 dimensions
+- Cohere embed-v3: 1024 dimensions</p>
+<h3 id="memory-estimation">Memory Estimation</h3>
+<p>With default int8 quantization (Q8):
+- 1536-dim vector ≈ 1.5KB per element (including graph overhead)
+- 1 million documents ≈ 1.5GB</p>
+<h3 id="quantization-for-scale">Quantization for Scale</h3>
+<p>The default int8 quantization (Q8) provides 4x memory reduction with minimal recall loss (~96%):</p>
+<pre class="highlight"><code># Q8 is the default - no flag needed
+VADD docs:index FP32 &lt;embedding&gt; &quot;doc:1&quot; ...
+</code></pre>
+
+<p>For full precision when recall is critical:</p>
+<pre class="highlight"><code># Store without quantization
+VADD docs:index NOQUANT FP32 &lt;embedding&gt; &quot;doc:1&quot; ...
+</code></pre>
+
+<h2 id="distance-metrics">Distance Metrics</h2>
+<p>Vector Sets use cosine similarity (normalized on insertion). This matches most text embedding models which produce direction-oriented embeddings.</p>
+<p>For models that produce L2-normalized embeddings (OpenAI, Cohere), cosine similarity and dot product are equivalent.</p>
+<h2 id="source">Source</h2>
+<p>Redis Vector Sets documentation and AI application patterns from production deployments.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="vector-search-ai.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

@@ -1,0 +1,205 @@
+# Redis as a Primary Database
+
+Use Redis as the authoritative data store for applications requiring sub-millisecond latency and high write throughput, treating disk as a recovery mechanism rather than the primary storage layer.
+
+> **Note:** Using Redis as a primary database requires careful consideration of persistence, data modeling, and failure modes. It trades the strict ACID guarantees of traditional databases for extreme performance.
+
+## When Redis Works as Primary
+
+Redis is suitable as a primary database for:
+
+- **Real-time applications**: Leaderboards, session stores, live dashboards
+- **High-velocity data**: Activity streams, IoT sensor data, gaming state
+- **Precomputed views**: Timeline fan-out (Twitter-style), materialized aggregations
+- **Microservices coordination**: Distributed locks, rate limiting, feature flags
+
+Redis is **not** suitable when:
+
+- Dataset exceeds available RAM (without Redis Enterprise tiered storage)
+- Complex multi-key ACID transactions are required
+- Ad-hoc queries with joins are common
+- Regulatory requirements mandate disk-first storage
+
+## Persistence Configuration
+
+For primary database use, enable both RDB and AOF:
+
+    appendonly yes
+    appendfsync everysec
+    save 900 1
+    save 300 10
+    save 60 10000
+
+### RDB (Snapshotting)
+
+Point-in-time snapshots via `fork()`. Fast restarts, compact files, but potential data loss between snapshots.
+
+    save 60 10000    # Snapshot if 10000 keys changed in 60 seconds
+
+Use RDB for:
+- Disaster recovery backups
+- Fast instance bootstrapping
+- Development/staging environments
+
+### AOF (Append-Only File)
+
+Write log of every operation. Configurable durability via `fsync`:
+
+| Policy | Durability | Latency | Use Case |
+|--------|------------|---------|----------|
+| `always` | Maximum | High | Financial transactions |
+| `everysec` | ~1 second loss | Low | Most production workloads |
+| `no` | OS-dependent | Minimal | Caching layer |
+
+For primary database use, `everysec` is the standard choice—accepting up to 1 second of data loss for significantly better performance.
+
+### Hybrid Persistence (Redis 4.0+)
+
+    aof-use-rdb-preamble yes
+
+AOF files start with an RDB snapshot, followed by incremental commands. Combines fast restarts with durability.
+
+## Data Modeling Without SQL
+
+Redis requires denormalization and explicit indexing.
+
+### Primary Keys
+
+Store entities in Hashes with namespace prefixes:
+
+    HSET user:1001 username "alice" email "alice@example.com" karma "42"
+
+### Secondary Indexes
+
+Build indexes manually using Sets or Sorted Sets:
+
+    # Email lookup index
+    SET user:email:alice@example.com 1001
+
+    # Age range index
+    ZADD users:by:age 25 1001
+
+### One-to-Many Relationships
+
+Use Sets to store relationships:
+
+    SADD user:1001:followers 1002 1003 1004
+    SADD user:1001:following 1005 1006
+
+### Referential Integrity
+
+Redis does not enforce foreign keys. Handle deletions explicitly:
+
+    # Lua script for atomic user deletion with cleanup
+    EVAL "
+      local user_id = KEYS[1]
+      local followers = redis.call('SMEMBERS', 'user:' .. user_id .. ':followers')
+      for _, follower in ipairs(followers) do
+        redis.call('SREM', 'user:' .. follower .. ':following', user_id)
+      end
+      redis.call('DEL', 'user:' .. user_id)
+      redis.call('DEL', 'user:' .. user_id .. ':followers')
+      redis.call('DEL', 'user:' .. user_id .. ':following')
+    " 1 1001
+
+## Case Study: LamerNews Architecture
+
+LamerNews (a Hacker News clone by antirez) demonstrates a complete web application using only Redis.
+
+### User Storage
+
+    user:1001 → Hash {username, password_hash, karma, created_at}
+    username.to.id:alice → String "1001"
+    auth:sha1token → String "1001"
+
+Session validation is O(1)—no database round-trip for the common case.
+
+### News Ranking
+
+    news.top → Sorted Set (score = rank)
+
+Rank is computed as:
+
+    RANK = VOTES / (AGE_HOURS ^ GRAVITY)
+
+When a vote occurs, the rank is recalculated and updated:
+
+    ZADD news.top <new_rank> <news_id>
+
+The homepage is a single command:
+
+    ZREVRANGE news.top 0 29
+
+### Comment Threading
+
+All comments for a news item in one Hash:
+
+    news:5001:comments → Hash {comment_id: json_blob}
+
+The application fetches all comments via `HGETALL`, builds the parent-child tree in memory, and renders recursively. This moves relational logic to the application layer.
+
+## Production Patterns from Scale
+
+### Pinterest: Virtual Sharding
+
+Pinterest stores billions of follower relationships in Redis. They use "virtual shards"—dividing the user ID space into 8192 logical shards distributed across physical instances. This enables:
+
+- CPU utilization: Multiple single-threaded Redis processes per server
+- Predictable data distribution
+- Easier rebalancing
+
+### Twitter: Timeline Precomputation
+
+Twitter's home timeline is a Redis List per user, capped at ~800 entries. When a user tweets:
+
+1. Fan-out: Push tweet ID to all active followers' timeline Lists
+2. Read: `LRANGE timeline:user_id 0 199` returns the latest 200 tweets
+
+This trades write amplification for read simplicity—timeline reads are O(1), not expensive joins.
+
+### DoorDash: Memory Optimization
+
+DoorDash reduced ML feature store memory by 40% by switching from flat key-value pairs to Hashes. Redis uses compact "listpack" encoding for small Hashes:
+
+    # Instead of:
+    SET feature:1001:age 25
+    SET feature:1001:city "NYC"
+
+    # Use:
+    HSET feature:1001 age 25 city "NYC"
+
+Grouping related data under one Hash key enables significant memory savings.
+
+## Operational Requirements
+
+### High Availability
+
+Use Redis Sentinel for automatic failover:
+
+    sentinel monitor mymaster 127.0.0.1 6379 2
+    sentinel down-after-milliseconds mymaster 5000
+    sentinel failover-timeout mymaster 60000
+
+Configure `min-replicas-to-write` to prevent split-brain:
+
+    min-replicas-to-write 1
+    min-replicas-max-lag 10
+
+### Avoid Blocking Commands
+
+In a single-threaded database, O(N) commands block everything:
+
+- Never use `KEYS *` in production—use `SCAN`
+- Avoid `HGETALL` on Hashes with millions of fields
+- Use `UNLINK` instead of `DEL` for large keys (async deletion)
+
+### Monitor for Hot Keys and Big Keys
+
+    redis-cli --hotkeys
+    redis-cli --bigkeys
+
+A single hot key can saturate a CPU core. A big key (millions of elements) causes latency spikes during operations.
+
+## Source
+
+LamerNews source code (github.com/antirez/lamernews), Pinterest and Twitter engineering blogs, DoorDash ML infrastructure case study.

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Optimization Patterns - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="memory-optimization.md.txt">View Markdown</a>
+    </div>
+<h1 id="memory-optimization-patterns">Memory Optimization Patterns</h1>
+<p>Reduce Redis memory consumption by leveraging compact encodings (listpack, intset), using Hashes for small object storage, and choosing memory-efficient data structures.</p>
+<p>Redis stores everything in memory, making efficient memory usage critical. Understanding Redis's internal encoding optimizations enables significant memory savings—often 50-80% reduction for small objects.</p>
+<h2 id="small-object-encoding">Small Object Encoding</h2>
+<p>Redis automatically uses compact encodings for small collections. A Hash with few fields is stored as a sequential byte array (listpack) rather than a hash table. This eliminates pointer overhead, which can consume 80% of memory for small objects.</p>
+<h3 id="configuration-thresholds">Configuration Thresholds</h3>
+<p>These settings control when Redis switches from compact to standard encoding:</p>
+<pre class="highlight"><code>hash-max-listpack-entries 512
+hash-max-listpack-value 64
+
+list-max-listpack-size -2
+
+zset-max-listpack-entries 128
+zset-max-listpack-value 64
+
+set-max-intset-entries 512
+</code></pre>
+
+<p>A Hash with fewer than 512 entries, where each value is under 64 bytes, uses the memory-efficient listpack encoding.</p>
+<h2 id="the-bucketing-pattern">The Bucketing Pattern</h2>
+<p>Individual keys have overhead—each key requires memory for the key name, expiration data, and internal bookkeeping. For millions of small values, this overhead dominates.</p>
+<p>Instead of storing each item as a separate key:</p>
+<pre class="highlight"><code>SET user:1:name &quot;John&quot;
+SET user:2:name &quot;Jane&quot;
+... (1 million keys)
+</code></pre>
+
+<p>Group items into Hash buckets:</p>
+<pre class="highlight"><code>HSET users:0 &quot;1:name&quot; &quot;John&quot;
+HSET users:0 &quot;2:name&quot; &quot;Jane&quot;
+...
+HSET users:1 &quot;1001:name&quot; &quot;Alice&quot;
+...
+</code></pre>
+
+<p>With 1000 items per bucket, you have 1000 Hash keys instead of 1 million String keys. Each Hash stays small enough for compact encoding, and you eliminate per-key overhead for 999,000 keys.</p>
+<h3 id="calculating-bucket">Calculating Bucket</h3>
+<p>For item ID 12345 with bucket size 1000:</p>
+<pre class="highlight"><code>bucket_number = item_id / 1000 = 12
+key = &quot;users:12&quot;
+field = &quot;12345:name&quot;
+</code></pre>
+
+<h2 id="key-name-length">Key Name Length</h2>
+<p>Every byte in a key name consumes memory. At scale, short keys matter:</p>
+<p>Instead of:</p>
+<pre class="highlight"><code>user:profile:12345:display_name
+</code></pre>
+
+<p>Consider:</p>
+<pre class="highlight"><code>u:12345:dn
+</code></pre>
+
+<p>Or better, use a Hash:</p>
+<pre class="highlight"><code>HGET u:12345 dn
+</code></pre>
+
+<p>The Hash approach stores the key prefix once rather than repeating it for each field.</p>
+<h2 id="integer-encoding">Integer Encoding</h2>
+<p>Redis automatically uses integer encoding for numeric strings. These values share a pool of pre-allocated small integers:</p>
+<pre class="highlight"><code>SET counter &quot;42&quot;    # Efficient integer encoding
+SET counter &quot;42 items&quot;  # String encoding, more memory
+</code></pre>
+
+<p>When possible, store pure numeric values without formatting.</p>
+<h2 id="expiration-overhead">Expiration Overhead</h2>
+<p>Every key with a TTL requires additional memory to store the expiration time. For millions of keys with individual TTLs, this adds up.</p>
+<p>If many keys should expire around the same time, consider grouping them in a Hash with a single TTL on the Hash key, rather than individual TTLs on each entry.</p>
+<h2 id="analyzing-memory-usage">Analyzing Memory Usage</h2>
+<p>Check overall memory:</p>
+<pre class="highlight"><code>INFO memory
+</code></pre>
+
+<p>Check specific key:</p>
+<pre class="highlight"><code>MEMORY USAGE user:12345
+</code></pre>
+
+<p>Sample memory statistics:</p>
+<pre class="highlight"><code>MEMORY STATS
+</code></pre>
+
+<p>Find large keys (use with caution in production):</p>
+<pre class="highlight"><code>MEMORY DOCTOR
+</code></pre>
+
+<h2 id="eviction-policies">Eviction Policies</h2>
+<p>When memory is exhausted, Redis can evict keys automatically. The policy determines which keys are removed:</p>
+<pre class="highlight"><code>maxmemory 1gb
+maxmemory-policy allkeys-lru
+</code></pre>
+
+<p>Policies:
+- <code>noeviction</code>: Return errors on writes (safest)
+- <code>allkeys-lru</code>: Evict least recently used keys
+- <code>allkeys-lfu</code>: Evict least frequently used keys
+- <code>volatile-lru</code>: Evict LRU among keys with TTL
+- <code>volatile-ttl</code>: Evict keys with shortest TTL
+- <code>allkeys-random</code>: Random eviction</p>
+<p>Choose based on your workload. For caches, LRU/LFU makes sense. For data that must not be lost, use <code>noeviction</code> and manage memory explicitly.</p>
+<h2 id="compression">Compression</h2>
+<p>For large string values, consider compressing before storing:</p>
+<ol>
+<li>Compress the value in your application (gzip, lz4, snappy)</li>
+<li>Store the compressed bytes</li>
+<li>Decompress when reading</li>
+</ol>
+<p>This trades CPU for memory. Effective for values over a few hundred bytes where compression ratios are meaningful.</p>
+<h2 id="summary-of-techniques">Summary of Techniques</h2>
+<table>
+<thead>
+<tr>
+<th>Technique</th>
+<th>Impact</th>
+<th>Effort</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bucketing</td>
+<td>5-10x reduction</td>
+<td>Moderate</td>
+</tr>
+<tr>
+<td>Short key names</td>
+<td>10-30% reduction</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>Integer encoding</td>
+<td>Variable</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>Expiration grouping</td>
+<td>10-20% reduction</td>
+<td>Moderate</td>
+</tr>
+<tr>
+<td>Compression</td>
+<td>50-90% reduction</td>
+<td>Higher</td>
+</tr>
+<tr>
+<td>Choosing right data type</td>
+<td>Variable</td>
+<td>Low</td>
+</tr>
+</tbody>
+</table>
+<p>Start with the low-effort techniques and measure. Bucketing offers the largest gains for datasets with millions of small items.</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="memory-optimization.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

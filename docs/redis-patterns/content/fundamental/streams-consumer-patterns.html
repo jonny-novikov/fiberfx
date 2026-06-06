@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Streams Consumer Group Patterns - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="streams-consumer-patterns.md.txt">View Markdown</a>
+    </div>
+<h1 id="streams-consumer-group-patterns">Streams Consumer Group Patterns</h1>
+<p>Implement reliable message processing with Redis Streams consumer groups, handling failure recovery, poison pills, and memory management—the operational patterns that production systems require beyond basic XREADGROUP usage.</p>
+<blockquote>
+<p><strong>Prerequisite:</strong> See <a href="streams-event-sourcing.md.txt">Streams and Event Sourcing</a> for Stream basics and consumer group introduction.</p>
+</blockquote>
+<h2 id="the-mental-model-problem">The Mental Model Problem</h2>
+<p>Most Stream adoption failures stem from treating Streams like Lists. Key differences:</p>
+<table>
+<thead>
+<tr>
+<th>Behavior</th>
+<th>List (LPUSH/RPOP)</th>
+<th>Stream (XADD/XREADGROUP)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read effect</td>
+<td>Destructive (removes item)</td>
+<td>Non-destructive (moves cursor)</td>
+</tr>
+<tr>
+<td>Failure handling</td>
+<td>Data lost if consumer crashes</td>
+<td>Data stays until ACKed</td>
+</tr>
+<tr>
+<td>Cleanup</td>
+<td>Automatic</td>
+<td>Explicit (XTRIM)</td>
+</tr>
+</tbody>
+</table>
+<p>A Stream is an <strong>immutable log</strong>, not a work queue. The queue state (pending vs. completed) lives in Consumer Group metadata, not in the data itself.</p>
+<h2 id="the-pending-entries-list-pel">The Pending Entries List (PEL)</h2>
+<p>When a consumer reads via XREADGROUP, messages enter the Pending Entries List. They stay pending until explicitly acknowledged with XACK.</p>
+<p><strong>The hidden cost:</strong> The PEL is a separate Radix tree structure. Millions of unacknowledged messages consume significant memory and degrade XREADGROUP performance.</p>
+<p>Monitor PEL size:</p>
+<pre class="highlight"><code>XINFO GROUPS mystream
+</code></pre>
+
+<p>The <code>pending</code> field should be small relative to throughput. If it grows while processing appears healthy, consumers are failing to ACK.</p>
+<h2 id="the-startup-recovery-pattern">The Startup Recovery Pattern</h2>
+<p>A critical anti-pattern: consumers that only request <code>&gt;</code> (new messages).</p>
+<p><strong>The Problem:</strong></p>
+<pre class="highlight"><code>XREADGROUP GROUP mygroup worker-1 STREAMS mystream &gt;
+</code></pre>
+
+<p>If worker-1 crashes after receiving messages but before ACKing, those messages become zombies—stuck in the PEL, never redelivered.</p>
+<p><strong>The Correct Pattern (two-phase startup):</strong></p>
+<pre class="highlight"><code class="language-python">def consume():
+    # Phase 1: Process any previously assigned but unacked messages
+    while True:
+        messages = redis.xreadgroup('mygroup', 'worker-1',
+                                    {'mystream': '0'},  # Read PEL history
+                                    count=100)
+        if not messages or not messages[0][1]:
+            break  # PEL is empty
+        process_and_ack(messages)
+
+    # Phase 2: Read new messages
+    while True:
+        messages = redis.xreadgroup('mygroup', 'worker-1',
+                                    {'mystream': '&gt;'},  # New messages only
+                                    block=5000, count=100)
+        process_and_ack(messages)
+</code></pre>
+
+<p>Using ID <code>0</code> queries the PEL for messages already assigned to this consumer. Only after clearing the backlog do you switch to <code>&gt;</code>.</p>
+<h2 id="automated-recovery-with-xautoclaim">Automated Recovery with XAUTOCLAIM</h2>
+<p>When a consumer dies permanently, its messages remain orphaned. Other consumers must claim them.</p>
+<p><strong>Legacy approach (complex):</strong></p>
+<pre class="highlight"><code>XPENDING mystream mygroup    # Find stale messages
+XCLAIM mystream mygroup worker-2 60000 &lt;message-id&gt;   # Claim one by one
+</code></pre>
+
+<p><strong>Modern pattern (Redis 6.2+):</strong></p>
+<pre class="highlight"><code>XAUTOCLAIM mystream mygroup worker-2 60000 0-0 COUNT 10
+</code></pre>
+
+<p>This atomically scans and claims up to 10 messages idle for over 60 seconds. Implement a background "janitor" coroutine in every consumer:</p>
+<pre class="highlight"><code class="language-python">async def janitor():
+    while True:
+        await asyncio.sleep(30)  # Run every 30 seconds
+        redis.xautoclaim('mystream', 'mygroup', 'worker-1',
+                        min_idle_time=60000,  # 60 second threshold
+                        start='0-0', count=50)
+</code></pre>
+
+<p>This creates decentralized work-stealing—consumers automatically pick up slack from failed peers.</p>
+<h2 id="poison-pill-handling">Poison Pill Handling</h2>
+<p>A poison pill is a message that consistently crashes consumers (malformed JSON, missing required fields, etc.).</p>
+<p><strong>The Infinite Loop:</strong></p>
+<ol>
+<li>Consumer A reads message, crashes</li>
+<li>Message becomes idle, Consumer B auto-claims it</li>
+<li>Consumer B crashes</li>
+<li>Loop continues until all consumers are dead</li>
+</ol>
+<p><strong>Solution: Track delivery count and use a Dead Letter Queue</strong></p>
+<pre class="highlight"><code>XPENDING mystream mygroup - + 10 consumer-1
+</code></pre>
+
+<p>Returns entries with a <code>times-delivered</code> field. Implement DLQ logic:</p>
+<pre class="highlight"><code class="language-python">MAX_RETRIES = 3
+
+def process_message(msg_id, data):
+    pending_info = redis.xpending_range('mystream', 'mygroup',
+                                        msg_id, msg_id, 1)
+    if pending_info and pending_info[0]['times_delivered'] &gt; MAX_RETRIES:
+        # Move to DLQ instead of processing
+        redis.xadd('mystream-dlq', {'original_id': msg_id, **data})
+        redis.xack('mystream', 'mygroup', msg_id)
+        return
+
+    try:
+        do_work(data)
+        redis.xack('mystream', 'mygroup', msg_id)
+    except Exception:
+        # Don't ACK - will be retried
+        raise
+</code></pre>
+
+<p>Redis has no built-in DLQ—this pattern must be implemented in application code.</p>
+<h2 id="memory-management-xdel-vs-xtrim">Memory Management: XDEL vs XTRIM</h2>
+<p><strong>The Anti-Pattern:</strong> Deleting messages after ACK with XDEL.</p>
+<pre class="highlight"><code># Don't do this
+XACK mystream mygroup 1234567890-0
+XDEL mystream 1234567890-0
+</code></pre>
+
+<p><strong>Why it's harmful:</strong> Streams use Radix trees with macro-nodes (listpacks). XDEL marks entries as deleted but doesn't free memory until the entire macro-node is empty. Heavy XDEL usage creates "Swiss cheese" fragmentation.</p>
+<p><strong>The Correct Pattern:</strong></p>
+<ol>
+<li>Use XACK to mark messages as processed (affects Consumer Group state only)</li>
+<li>Use XTRIM to enforce retention policy (frees memory efficiently)</li>
+</ol>
+<pre class="highlight"><code># Add with automatic trimming
+XADD mystream MAXLEN ~ 100000 * field value
+
+# Or periodically trim
+XTRIM mystream MAXLEN ~ 100000
+</code></pre>
+
+<p>The <code>~</code> enables approximate trimming—Redis trims whole macro-nodes rather than exact counts, dramatically reducing CPU overhead.</p>
+<p><strong>MINID trimming (Redis 6.2+):</strong> Trim by time instead of count:</p>
+<pre class="highlight"><code>XTRIM mystream MINID ~ 1609459200000-0
+</code></pre>
+
+<p>Removes entries older than the specified ID (timestamp-based).</p>
+<h2 id="blocking-read-pitfalls">Blocking Read Pitfalls</h2>
+<p>Blocking XREADGROUP can exhaust connection pools.</p>
+<p><strong>The Deadlock Scenario:</strong></p>
+<pre class="highlight"><code class="language-python"># Connection pool size: 10
+# Worker threads: 10
+# Each worker does:
+redis.xreadgroup('mygroup', 'worker-N', {'mystream': '&gt;'}, block=5000)
+</code></pre>
+
+<p>All 10 connections are now blocked. Any other code needing Redis (even a simple GET) waits forever for a connection.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li><strong>Dedicated connections:</strong> Use separate connection instances for blocking consumers</li>
+<li><strong>Shorter block times:</strong> Use 2-3 second blocks instead of infinite (<code>BLOCK 0</code>)</li>
+<li><strong>Timeout coordination:</strong> Redis BLOCK timeout must be shorter than client socket timeout</li>
+</ol>
+<h2 id="lag-monitoring">Lag Monitoring</h2>
+<p>"Lag" in Streams is complex:</p>
+<p><strong>Ingestion Lag:</strong> Difference between newest Stream ID and last-delivered-id</p>
+<pre class="highlight"><code>XINFO GROUPS mystream
+# Check 'last-delivered-id' vs stream's last ID
+</code></pre>
+
+<p><strong>Processing Lag:</strong> PEL size—messages delivered but not ACKed</p>
+<pre class="highlight"><code>XINFO GROUPS mystream
+# Check 'pending' count
+</code></pre>
+
+<p>Low ingestion lag with high PEL size indicates processing bottlenecks or ACK failures, not delivery problems.</p>
+<h2 id="client-side-sharding-for-scale">Client-Side Sharding for Scale</h2>
+<p>A single Stream lives on one Redis shard. For extreme throughput (&gt;100k ops/sec), the Stream becomes a hot spot.</p>
+<p><strong>Pattern:</strong> Partition by hash:</p>
+<pre class="highlight"><code class="language-python">def get_stream_key(user_id):
+    shard = hash(user_id) % 16
+    return f'events:{{shard{shard}}}'
+
+# Producer
+redis.xadd(get_stream_key(user_id), {'event': 'login', 'user': user_id})
+
+# Consumer groups needed for each shard
+for i in range(16):
+    redis.xgroup_create(f'events:{{shard{i}}}', 'processors', mkstream=True)
+</code></pre>
+
+<p>This mimics Kafka partitions but requires manual implementation.</p>
+<h2 id="comparison-with-kafka">Comparison with Kafka</h2>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Redis Streams</th>
+<th>Apache Kafka</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Storage</td>
+<td>RAM (hours/days)</td>
+<td>Disk (months/years)</td>
+</tr>
+<tr>
+<td>Latency</td>
+<td>Sub-millisecond</td>
+<td>Milliseconds</td>
+</tr>
+<tr>
+<td>Partitioning</td>
+<td>Manual (client-side)</td>
+<td>Native</td>
+</tr>
+<tr>
+<td>Consumer rebalancing</td>
+<td>Manual (XAUTOCLAIM)</td>
+<td>Automatic</td>
+</tr>
+<tr>
+<td>Operational complexity</td>
+<td>Low</td>
+<td>High</td>
+</tr>
+</tbody>
+</table>
+<p>Use Redis Streams for real-time inter-service communication and active job queues. Use Kafka for event sourcing with long retention and analytics pipelines.</p>
+<h2 id="source">Source</h2>
+<p>Redis Streams documentation, production post-mortems, and "You're Probably Thinking About Redis Streams Wrong" (redis.io/blog).</p>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="streams-consumer-patterns.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

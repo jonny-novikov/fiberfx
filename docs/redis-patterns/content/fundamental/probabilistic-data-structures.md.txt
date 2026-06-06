@@ -1,0 +1,150 @@
+# Probabilistic Data Structures
+
+Count unique items with HyperLogLog (12KB fixed), test set membership with Bloom filters, or estimate frequencies with Count-Min Sketch—trading small accuracy loss for massive memory savings.
+
+When datasets grow to billions of items, exact counting and membership testing become prohibitively expensive. Redis provides probabilistic data structures that offer 1000x memory reduction with configurable error rates.
+
+## HyperLogLog: Counting Unique Items
+
+HyperLogLog (HLL) estimates the cardinality (count of unique items) in a set. A standard Set storing 1 billion unique user IDs would require roughly 12GB of RAM. An HLL requires exactly 12KB regardless of how many elements you add, with about 0.81% standard error.
+
+### How It Works
+
+HLL hashes each element and observes the maximum number of leading zeros in the resulting binary string. The probability of seeing N leading zeros is 1/2^N. By tracking the maximum leading zeros seen, HLL estimates how many unique elements have been added.
+
+To reduce variance, HLL uses multiple "registers" (buckets) and combines their estimates using harmonic mean.
+
+### Commands
+
+Add elements:
+
+    PFADD visitors:2024-01-30 "user:123" "user:456" "user:789"
+
+Get the estimated count:
+
+    PFCOUNT visitors:2024-01-30
+
+Merge multiple HLLs (e.g., daily into weekly):
+
+    PFMERGE visitors:week visitors:2024-01-28 visitors:2024-01-29 visitors:2024-01-30
+
+### Use Cases
+
+- Counting unique visitors to a website
+- Tracking unique search queries
+- Counting distinct IP addresses
+- Any scenario where approximate counts of large sets are acceptable
+
+### Accuracy
+
+HLL provides an estimate with ~0.81% standard error. For 1 million actual unique items, the estimate will typically be between 991,900 and 1,008,100.
+
+## Bloom Filter: Membership Testing
+
+A Bloom Filter answers "Is this item in the set?" with possible false positives but zero false negatives. If it says "no," the item is definitely not in the set. If it says "yes," the item is probably in the set.
+
+### How It Works
+
+Items are hashed by multiple hash functions, each setting a bit in a shared bit array. To check membership, compute the same hashes—if all corresponding bits are set, the item might be present. If any bit is zero, the item is definitely absent.
+
+### Commands (Redis Stack)
+
+Create a filter with 1% false positive rate for 1 million items:
+
+    BF.RESERVE usernames 0.01 1000000
+
+Add items:
+
+    BF.ADD usernames "john_doe"
+
+Check membership:
+
+    BF.EXISTS usernames "john_doe"
+
+### Use Cases
+
+- Username/email availability checks before expensive database queries
+- Spam filtering (quick rejection of known spam)
+- Cache miss optimization (skip cache lookup for items known to be absent)
+- Preventing duplicate processing
+
+### The Cache Penetration Problem
+
+Without a Bloom Filter, attackers can flood your system with requests for non-existent keys. Each request misses the cache and hits the database. A Bloom Filter lets you reject these requests immediately—if the filter says the key doesn't exist, don't bother checking the cache or database.
+
+## Cuckoo Filter
+
+Similar to Bloom Filters but supports deletion. Uses Cuckoo Hashing to store fingerprints of items.
+
+### Commands (Redis Stack)
+
+    CF.RESERVE sessions 1000000
+    CF.ADD sessions "session:abc123"
+    CF.EXISTS sessions "session:abc123"
+    CF.DEL sessions "session:abc123"
+
+### Bloom vs Cuckoo
+
+| Feature | Bloom Filter | Cuckoo Filter |
+|---------|--------------|---------------|
+| Deletion | Not supported | Supported |
+| Space efficiency | Good | Better for low FP rates |
+| Insert performance | Faster | Slightly slower |
+| Lookup performance | Slightly slower | Faster |
+
+Use Cuckoo when you need to remove items from the filter (e.g., tracking active sessions that expire).
+
+## T-Digest: Percentile Estimation
+
+Computing exact percentiles requires sorting all data points—impractical for streaming data. T-Digest maintains a compressed representation that provides accurate percentile estimates, especially at the tails (p99, p99.9).
+
+### Commands (Redis Stack)
+
+Create a T-Digest:
+
+    TDIGEST.CREATE latencies
+
+Add observations:
+
+    TDIGEST.ADD latencies 45.2 89.1 12.5 156.7 23.4
+
+Get percentiles:
+
+    TDIGEST.QUANTILE latencies 0.5 0.95 0.99
+
+This returns the estimated 50th, 95th, and 99th percentile values.
+
+### Use Cases
+
+- SLA monitoring (p99 latency must be under 100ms)
+- Performance analysis where averages are misleading
+- Any streaming data where exact percentiles are too expensive
+
+## Count-Min Sketch: Frequency Estimation
+
+Estimates how many times each item has been seen, with possible over-counting but never under-counting.
+
+    CMS.INITBYDIM page_views 2000 5
+    CMS.INCRBY page_views "/home" 1 "/about" 1
+    CMS.QUERY page_views "/home"
+
+Useful for estimating frequencies in streaming data where exact counts are impractical.
+
+## Top-K: Heavy Hitters (Redis Stack)
+
+Track the K most frequent items in a stream without storing all items:
+
+    TOPK.RESERVE trending 10 50 3 0.9
+    TOPK.ADD trending "topic:redis" "topic:python" "topic:redis" "topic:go"
+    TOPK.LIST trending
+
+Returns the top 10 most frequently added items. The algorithm may temporarily misrank items but converges to accuracy over time. Ideal for trending topics, popular products, or frequent errors.
+
+## Choosing the Right Structure
+
+| Need | Structure | Error Type |
+|------|-----------|------------|
+| Count unique items | HyperLogLog | Cardinality ±0.81% |
+| Check set membership | Bloom/Cuckoo Filter | False positives possible |
+| Calculate percentiles | T-Digest | Percentile estimates |
+| Count item frequency | Count-Min Sketch | Over-counting possible |

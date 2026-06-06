@@ -1,0 +1,168 @@
+# Linux Kernel Tuning for Redis
+
+Configure Linux kernel parameters to prevent latency spikes, persistence failures, and connection drops in production Redis deployments—essential settings that override defaults hostile to in-memory databases.
+
+Standard Linux kernel defaults are optimized for general workloads, not in-memory databases. Production Redis instances require specific kernel tuning to achieve consistent sub-millisecond latency.
+
+## Transparent Huge Pages (THP)
+
+THP is the most critical setting. When enabled, it causes severe latency spikes during persistence operations.
+
+**The Problem:**
+
+Redis uses `fork()` to create child processes for RDB snapshots and AOF rewrites. Linux uses copy-on-write (COW) to share memory between parent and child. With THP enabled, the kernel uses 2MB pages instead of 4KB pages. When the parent modifies a single byte, the kernel must copy the entire 2MB page—a 500x amplification.
+
+**Symptoms:**
+- Latency spikes of 10-100x during BGSAVE or BGREWRITEAOF
+- Memory usage doubling temporarily during persistence
+- Client timeouts during background saves
+
+**Fix (required):**
+
+    echo never > /sys/kernel/mm/transparent_hugepage/enabled
+
+Make it permanent in `/etc/rc.local` or via systemd:
+
+    [Service]
+    ExecStartPre=/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/enabled'
+
+Redis logs a warning at startup if THP is enabled. Never ignore this warning.
+
+## Memory Overcommit
+
+The `fork()` system call can fail if the kernel thinks there's insufficient memory.
+
+**The Problem:**
+
+When Redis forks, the kernel may pessimistically assume the child needs as much memory as the parent. On a 32GB instance with 30GB used, the fork can fail even though COW means minimal actual memory is needed.
+
+**Fix:**
+
+    sysctl vm.overcommit_memory=1
+
+This tells the kernel to always allow memory allocation requests, trusting that COW will work correctly. Add to `/etc/sysctl.conf`:
+
+    vm.overcommit_memory=1
+
+## Swappiness
+
+Redis data in swap is a catastrophic failure mode.
+
+**The Problem:**
+
+If any Redis memory pages are swapped to disk, access times go from nanoseconds to milliseconds—a 1,000,000x slowdown. A single swapped page can cause client timeouts.
+
+**Fix:**
+
+    sysctl vm.swappiness=1
+
+Setting to 0 is not recommended as it can cause OOM kills. Setting to 1 makes swapping extremely unlikely while still allowing the kernel to swap in desperate situations:
+
+    vm.swappiness=1
+
+## TCP Stack Tuning
+
+Under high connection rates, default TCP settings cause connection failures.
+
+**Connection Backlog:**
+
+The listen queue for incoming connections defaults to 128. During traffic spikes, new connections are dropped before Redis sees them.
+
+    sysctl net.core.somaxconn=65536
+    sysctl net.ipv4.tcp_max_syn_backlog=65536
+
+Also set in redis.conf:
+
+    tcp-backlog 65536
+
+The effective backlog is `min(tcp-backlog, somaxconn)`.
+
+**TIME_WAIT Connections:**
+
+With many short-lived connections, ports can be exhausted by TIME_WAIT sockets:
+
+    sysctl net.ipv4.tcp_tw_reuse=1
+
+**TCP Keepalive:**
+
+For long-lived connections through load balancers:
+
+    tcp-keepalive 300
+
+Redis will send keepalives every 300 seconds to prevent idle connection termination.
+
+## File Descriptor Limits
+
+Each Redis connection consumes a file descriptor.
+
+**Check Current Limits:**
+
+    ulimit -n
+
+**Set Appropriately:**
+
+In `/etc/security/limits.conf`:
+
+    redis soft nofile 65536
+    redis hard nofile 65536
+
+Or in the systemd service file:
+
+    [Service]
+    LimitNOFILE=65536
+
+Redis's `maxclients` is limited by available file descriptors minus ~32 for internal use.
+
+## Summary Configuration
+
+Add to `/etc/sysctl.conf`:
+
+    # Redis kernel tuning
+    vm.overcommit_memory=1
+    vm.swappiness=1
+    net.core.somaxconn=65536
+    net.ipv4.tcp_max_syn_backlog=65536
+    net.ipv4.tcp_tw_reuse=1
+
+Disable THP at boot:
+
+    echo never > /sys/kernel/mm/transparent_hugepage/enabled
+    echo never > /sys/kernel/mm/transparent_hugepage/defrag
+
+Apply without reboot:
+
+    sysctl -p
+
+## Verification
+
+Check Redis startup logs for warnings:
+
+    grep -i warning /var/log/redis/redis-server.log
+
+Common warnings to address:
+- "THP is enabled" - disable transparent huge pages
+- "overcommit_memory is set to 0" - set to 1
+- "somaxconn is lower than" - increase TCP backlog
+
+## Memory Allocator
+
+Redis uses jemalloc by default, which is well-suited for its allocation patterns. Key behaviors:
+
+**High-Water Mark:** After deleting large amounts of data, jemalloc retains memory to satisfy future allocations. The process RSS reflects peak usage, not current dataset size.
+
+**Fragmentation:** Monitor `mem_fragmentation_ratio` in `INFO MEMORY`:
+- Below 1.0: Redis is using swap (critical)
+- 1.0-1.5: Normal
+- Above 1.5: Significant fragmentation
+
+If fragmentation is high:
+
+    MEMORY PURGE
+
+This forces jemalloc to return memory to the OS. In Redis 4.0+, active defragmentation can be enabled:
+
+    activedefrag yes
+
+## Source
+
+Shopify RedisDays presentation, Redis documentation, and production post-mortems from Netflix, Uber, and AWS ElastiCache teams.

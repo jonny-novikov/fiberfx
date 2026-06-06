@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cache-Aside Pattern (Lazy Loading) - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="cache-aside.md.txt">View Markdown</a>
+    </div>
+<h1 id="cache-aside-pattern-lazy-loading">Cache-Aside Pattern (Lazy Loading)</h1>
+<p>Use Cache-Aside for read-heavy workloads: on cache miss, fetch from the database and populate the cache; on write, invalidate or update the cache explicitly.</p>
+<p>The application treats the cache as an auxiliary data store, managing it explicitly rather than having the cache sit transparently between the application and the database.</p>
+<h2 id="how-it-works">How It Works</h2>
+<p>When the application needs data, it follows this sequence:</p>
+<ol>
+<li><strong>Check the cache first</strong>: Query Redis for the requested key.</li>
+<li><strong>On cache hit</strong>: Return the cached data immediately.</li>
+<li><strong>On cache miss</strong>: Query the primary database, store the result in Redis with an appropriate TTL, then return the data.</li>
+</ol>
+<p>The key insight is that the application is responsible for populating the cache. Redis never automatically fetches data from the database.</p>
+<h2 id="redis-commands-used">Redis Commands Used</h2>
+<p>A typical cache-aside flow uses these commands:</p>
+<pre class="highlight"><code>GET user:123
+</code></pre>
+
+<p>If this returns nil (cache miss), the application queries the database and then:</p>
+<pre class="highlight"><code>SET user:123 &quot;{...user data...}&quot; EX 3600
+</code></pre>
+
+<p>The <code>EX 3600</code> sets a one-hour expiration, ensuring stale data eventually expires.</p>
+<h2 id="advantages">Advantages</h2>
+<p><strong>Resilience to cache failure</strong>: If Redis becomes unavailable, the application degrades gracefully by falling back to the database. Latency increases, but the system remains functional.</p>
+<p><strong>Memory efficiency</strong>: Only data that is actually requested gets cached. This prevents "cold storage" where unused data occupies valuable cache memory.</p>
+<p><strong>Simplicity</strong>: The pattern is straightforward to implement and reason about.</p>
+<h2 id="the-staleness-problem">The Staleness Problem</h2>
+<p>The primary disadvantage is the potential for stale data. Consider this scenario:</p>
+<ol>
+<li>Application reads <code>user:123</code> from cache (cache hit)</li>
+<li>Another process updates the user in the database</li>
+<li>The cached copy remains unchanged until TTL expires</li>
+</ol>
+<p>The cache now contains outdated information.</p>
+<h2 id="mitigating-staleness">Mitigating Staleness</h2>
+<p>The standard mitigation is <strong>cache invalidation on write</strong>. When the application successfully updates data in the database, it immediately deletes the corresponding cache key:</p>
+<pre class="highlight"><code>DEL user:123
+</code></pre>
+
+<p>The next read will miss the cache and fetch fresh data from the database. This is simpler and safer than trying to update the cache, which risks race conditions.</p>
+<h2 id="when-to-use-cache-aside">When to Use Cache-Aside</h2>
+<p>This pattern is ideal when:</p>
+<ul>
+<li>The workload is read-heavy</li>
+<li>Brief staleness is acceptable</li>
+<li>You want graceful degradation if the cache fails</li>
+<li>You need fine-grained control over what gets cached</li>
+</ul>
+<h2 id="when-to-avoid">When to Avoid</h2>
+<p>Consider other patterns when:</p>
+<ul>
+<li>You need strong consistency between cache and database</li>
+<li>Write-then-immediately-read patterns are common (the read may hit stale cache)</li>
+<li>The cost of a cache miss is extremely high</li>
+</ul>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="cache-aside.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>

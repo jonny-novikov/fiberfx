@@ -1,0 +1,231 @@
+# Hash Tag Co-location Patterns
+
+Force related keys to the same Redis Cluster slot using hash tags, enabling atomic multi-key operations, transactions, and Lua scripts across logically related data.
+
+Redis Cluster distributes keys across slots based on a hash of the key name. By using hash tags `{...}`, you control which part of the key determines the slot, co-locating related keys for atomic operations.
+
+## How Hash Tags Work
+
+Redis Cluster hashes only the substring inside `{...}` to determine the slot:
+
+    user:{123}:profile    → hashes "123" → slot X
+    user:{123}:settings   → hashes "123" → slot X
+    user:{123}:sessions   → hashes "123" → slot X
+
+All three keys land in the same slot, enabling atomic operations across them.
+
+Without hash tags:
+
+    user:123:profile      → hashes entire key → slot A
+    user:123:settings     → hashes entire key → slot B (different!)
+
+## Basic Pattern: User Data Co-location
+
+Group all data for a single entity:
+
+    user:{user_id}:profile
+    user:{user_id}:settings
+    user:{user_id}:notifications
+    user:{user_id}:sessions
+
+Now you can:
+- Update multiple fields atomically with MULTI/EXEC
+- Run Lua scripts touching all user keys
+- Use WATCH for optimistic locking across keys
+
+## Atomic Multi-Key Operations
+
+### Transaction Across Related Keys
+
+    MULTI
+    HSET user:{123}:profile name "Alice" updated_at "1706648400"
+    HSET user:{123}:settings theme "dark"
+    INCR user:{123}:stats:updates
+    EXEC
+
+All commands execute atomically because keys share a slot.
+
+### Lua Script Across Keys
+
+    local profile = redis.call('HGETALL', KEYS[1])
+    local settings = redis.call('HGETALL', KEYS[2])
+    -- Process both atomically
+    redis.call('SET', KEYS[3], cjson.encode({profile, settings}))
+    return 'OK'
+
+Call with:
+
+    EVAL <script> 3 user:{123}:profile user:{123}:settings user:{123}:cache
+
+### Optimistic Locking with WATCH
+
+    WATCH user:{123}:balance user:{123}:pending
+
+    balance = GET user:{123}:balance
+    pending = GET user:{123}:pending
+
+    -- Application logic
+    new_balance = balance - amount
+    new_pending = pending + amount
+
+    MULTI
+    SET user:{123}:balance new_balance
+    SET user:{123}:pending new_pending
+    EXEC
+
+If either key changes before EXEC, the transaction aborts.
+
+## Pattern: Order with Line Items
+
+    order:{order_id}:header     → order metadata
+    order:{order_id}:items      → list of line items
+    order:{order_id}:totals     → computed totals
+    order:{order_id}:status     → current status
+
+Atomic status transitions:
+
+    MULTI
+    HSET order:{abc}:header status "shipped"
+    RPUSH order:{abc}:history "shipped at 1706648400"
+    EXEC
+
+## Pattern: Distributed Counter with Inventory
+
+    product:{sku}:stock         → available quantity
+    product:{sku}:reserved      → reserved for carts
+    product:{sku}:sold          → sold count
+
+Atomic reservation:
+
+    -- Lua script for atomic reserve
+    local stock = tonumber(redis.call('GET', KEYS[1])) or 0
+    local qty = tonumber(ARGV[1])
+    if stock >= qty then
+        redis.call('DECRBY', KEYS[1], qty)
+        redis.call('INCRBY', KEYS[2], qty)
+        return 1
+    end
+    return 0
+
+## Pattern: Session with Related State
+
+    session:{session_id}:data       → session payload
+    session:{session_id}:user       → user reference
+    session:{session_id}:cart       → shopping cart
+    session:{session_id}:expires    → expiration tracking
+
+Atomic session operations without race conditions.
+
+## Hash Tag Placement Rules
+
+The **first** `{...}` in the key determines the slot:
+
+    {user:123}:profile     → hashes "user:123"
+    user:{123}:profile     → hashes "123"
+    user:123:{profile}     → hashes "profile" (probably wrong!)
+
+Be consistent. Convention: put the entity ID in the tag.
+
+### Empty Hash Tags
+
+An empty hash tag `{}` hashes the entire key (no co-location):
+
+    key:{}:suffix          → hashes entire key
+
+Avoid empty tags unless intentional.
+
+### Multiple Hash Tags
+
+Only the first is used:
+
+    {a}:{b}:key            → hashes "a", ignores "b"
+
+## Hot Slot Problem
+
+Co-location concentrates load. If one entity is extremely hot (celebrity user, viral product), its slot becomes a bottleneck.
+
+### Mitigation Strategies
+
+**Shard within the entity:**
+
+    user:{123}:profile             → hot user data
+    user:{123}:followers:0         → follower shard 0
+    user:{123}:followers:1         → follower shard 1
+    ...
+
+**Separate hot data:**
+
+    user:{123}:profile             → co-located, atomic
+    user_followers:123             → separate slot, different access pattern
+
+**Accept eventual consistency for read-heavy data:**
+
+Keep writes co-located, replicate to non-tagged keys for reads:
+
+    user:{123}:profile             → source of truth (writes)
+    user:123:profile:cache         → read replica (different slot)
+
+## Limitations
+
+### Cross-Entity Operations
+
+Hash tags help within one entity. Operations spanning entities (transfer between users) still require cross-shard patterns:
+
+    user:{alice}:balance    → slot A
+    user:{bob}:balance      → slot B
+    -- Cannot be atomic!
+
+Use [Cross-Shard Consistency Patterns](cross-shard-consistency.md) for these cases.
+
+### Cluster Commands
+
+Some commands don't work across slots even with hash tags:
+
+- `KEYS` / `SCAN` - cluster-wide, not slot-aware
+- `FLUSHDB` - affects entire node
+- Some pub/sub operations
+
+### Resharding
+
+During cluster resharding, slots move between nodes. Operations on a moving slot may temporarily fail. Clients should retry.
+
+## Design Guidelines
+
+1. **Plan key structure early** - changing hash tag patterns requires data migration
+2. **One entity per tag value** - `{user:123}` groups user 123's data
+3. **Don't over-co-locate** - only group keys that need atomic operations
+4. **Monitor slot distribution** - ensure no slot is significantly hotter than others
+5. **Document your conventions** - team should use consistent patterns
+
+## Commands That Benefit
+
+| Command | Benefit |
+|---------|---------|
+| MULTI/EXEC | Atomic transactions |
+| WATCH | Optimistic locking |
+| EVAL/EVALSHA | Lua scripts |
+| MGET/MSET | Multi-key read/write |
+| RENAME | Atomic key swap |
+| COPY | Key duplication |
+
+## Example: Complete User Module
+
+    # Key structure
+    user:{id}:profile       # Hash: name, email, avatar
+    user:{id}:settings      # Hash: preferences
+    user:{id}:sessions      # Set: active session IDs
+    user:{id}:notifications # List: recent notifications
+    user:{id}:stats         # Hash: counters
+
+    # Atomic profile update with audit
+    MULTI
+    HSET user:{123}:profile name "New Name" updated_at "1706648400"
+    RPUSH user:{123}:audit "profile_updated:1706648400"
+    EXEC
+
+    # Atomic session cleanup
+    EVAL "
+        redis.call('DEL', KEYS[1])
+        redis.call('SREM', KEYS[2], ARGV[1])
+        return 1
+    " 2 session:{abc123}:data user:{123}:sessions abc123

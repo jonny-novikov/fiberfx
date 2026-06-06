@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vector Sets and Similarity Search - Redis Patterns</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.7;
+            color: #333;
+        }
+        h1 { border-bottom: 2px solid #d32f2f; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #d32f2f; margin-top: 40px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        h3 { color: #555; margin-top: 30px; }
+        a { color: #1976d2; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 3px solid #d32f2f;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        blockquote {
+            border-left: 4px solid #d32f2f;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #fff8f8;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .nav {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 15px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="../index.html">← Back to Index</a>
+        <a href="vector-sets.md.txt">View Markdown</a>
+    </div>
+<h1 id="vector-sets-and-similarity-search">Vector Sets and Similarity Search</h1>
+<p>Store vectors and find similar items using Redis 8's native Vector Sets—an HNSW-based data structure supporting semantic search, RAG, recommendations, and classification with optional filtered queries.</p>
+<p>Vector Sets are a Redis data type similar to Sorted Sets, but elements are associated with vectors instead of scores. They enable finding items most similar to a query vector (or to an existing element) using approximate nearest neighbor search based on HNSW (Hierarchical Navigable Small World) graphs.</p>
+<h2 id="when-to-use-vector-sets">When to Use Vector Sets</h2>
+<ul>
+<li><strong>Semantic search</strong>: Find documents/products by meaning, not keywords</li>
+<li><strong>RAG (Retrieval Augmented Generation)</strong>: Ground LLM responses in your data</li>
+<li><strong>Recommendations</strong>: "Users who liked X also liked..."</li>
+<li><strong>Classification</strong>: Assign categories based on vector similarity</li>
+<li><strong>Deduplication</strong>: Find near-duplicates in content</li>
+<li><strong>Anomaly detection</strong>: Find items far from normal patterns</li>
+</ul>
+<h2 id="core-commands">Core Commands</h2>
+<h3 id="adding-vectors">Adding Vectors</h3>
+<pre class="highlight"><code>VADD key VALUES 3 0.1 0.5 0.9 my-element
+</code></pre>
+
+<p>Or with a binary blob (faster for clients):</p>
+<pre class="highlight"><code>VADD key FP32 &lt;binary-blob&gt; my-element
+</code></pre>
+
+<p>Options:
+- <code>Q8</code> (default): 8-bit quantization—4x memory reduction, minimal recall loss
+- <code>BIN</code>: Binary quantization—32x reduction, faster, lower recall
+- <code>NOQUANT</code>: Full precision floats
+- <code>REDUCE dim</code>: Random projection to reduce dimensionality
+- <code>SETATTR '{...}'</code>: Attach JSON metadata for filtered search
+- <code>M num</code>: HNSW connectivity (default 16, higher = better recall, more memory)
+- <code>EF num</code>: Build-time exploration factor (default 200)</p>
+<h3 id="finding-similar-items">Finding Similar Items</h3>
+<p>By vector:</p>
+<pre class="highlight"><code>VSIM key VALUES 3 0.1 0.5 0.9 COUNT 10 WITHSCORES
+</code></pre>
+
+<p>By existing element:</p>
+<pre class="highlight"><code>VSIM key ELE existing-element COUNT 10 WITHSCORES
+</code></pre>
+
+<p>Options:
+- <code>COUNT n</code>: Return top N results (default 10)
+- <code>WITHSCORES</code>: Include similarity scores (0-1, where 1 = identical)
+- <code>EPSILON d</code>: Only return items with similarity ≥ (1-d)
+- <code>EF num</code>: Search exploration factor (higher = better recall, slower)
+- <code>FILTER expr</code>: Filter by JSON attributes</p>
+<h3 id="other-commands">Other Commands</h3>
+<pre class="highlight"><code>VCARD key                    # Count elements
+VDIM key                     # Get vector dimension
+VEMB key element             # Get element's vector
+VREM key element             # Remove element (true deletion, memory reclaimed)
+VISMEMBER key element        # Check existence
+VINFO key                    # Get index metadata
+VRANDMEMBER key [count]      # Random sampling
+</code></pre>
+
+<h2 id="similarity-scores">Similarity Scores</h2>
+<p>Vector Sets normalize vectors on insertion and use cosine similarity. Scores range from 0 to 1:</p>
+<ul>
+<li><strong>1.0</strong>: Identical vectors (same direction)</li>
+<li><strong>0.5</strong>: Orthogonal vectors (unrelated)</li>
+<li><strong>0.0</strong>: Opposite vectors</li>
+</ul>
+<p>The score represents <code>(cosine_similarity + 1) / 2</code>, rescaled from [-1, 1] to [0, 1].</p>
+<h2 id="filtered-search">Filtered Search</h2>
+<p>Attach JSON attributes to elements:</p>
+<pre class="highlight"><code>VADD movies VALUES 128 ... &quot;inception&quot; SETATTR '{&quot;year&quot;: 2010, &quot;genre&quot;: &quot;scifi&quot;, &quot;rating&quot;: 8.8}'
+</code></pre>
+
+<p>Query with filters:</p>
+<pre class="highlight"><code>VSIM movies VALUES 128 ... FILTER '.year &gt;= 2000 and .genre == &quot;scifi&quot;' COUNT 10
+</code></pre>
+
+<h3 id="filter-expression-syntax">Filter Expression Syntax</h3>
+<ul>
+<li><strong>Comparisons</strong>: <code>&gt;</code>, <code>&gt;=</code>, <code>&lt;</code>, <code>&lt;=</code>, <code>==</code>, <code>!=</code></li>
+<li><strong>Logic</strong>: <code>and</code>, <code>or</code>, <code>not</code> (or <code>&amp;&amp;</code>, <code>||</code>, <code>!</code>)</li>
+<li><strong>Arithmetic</strong>: <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, <code>%</code>, <code>**</code></li>
+<li><strong>Containment</strong>: <code>value in [1, 2, 3]</code> or <code>"sub" in "substring"</code></li>
+<li><strong>Selectors</strong>: <code>.field</code> accesses JSON attributes</li>
+</ul>
+<p>Examples:</p>
+<pre class="highlight"><code>.year &gt;= 1980 and .year &lt; 1990
+.genre == &quot;action&quot; and .rating &gt; 8.0
+.director in [&quot;Spielberg&quot;, &quot;Nolan&quot;]
+(.budget / 1000000) &gt; 100 and .rating &gt; 7
+</code></pre>
+
+<p>Elements with missing fields or invalid JSON are silently excluded (no errors).</p>
+<h3 id="filter-effort">Filter Effort</h3>
+<p>By default, Vector Sets explore <code>COUNT * 100</code> candidates when filtering. For selective filters:</p>
+<pre class="highlight"><code>VSIM key ... FILTER '.rare_field == 1' FILTER-EF 5000
+</code></pre>
+
+<p>Setting <code>FILTER-EF 0</code> explores until COUNT is satisfied (may scan entire index).</p>
+<h2 id="rag-pattern-retrieval-augmented-generation">RAG Pattern: Retrieval Augmented Generation</h2>
+<p>Store document chunks with embeddings:</p>
+<pre class="highlight"><code># Index document chunks
+VADD docs:index VALUES 1536 &lt;embedding&gt; &quot;chunk:doc1:p1&quot; SETATTR '{&quot;doc&quot;: &quot;doc1&quot;, &quot;page&quot;: 1}'
+VADD docs:index VALUES 1536 &lt;embedding&gt; &quot;chunk:doc1:p2&quot; SETATTR '{&quot;doc&quot;: &quot;doc1&quot;, &quot;page&quot;: 2}'
+</code></pre>
+
+<p>Retrieve relevant context for LLM:</p>
+<pre class="highlight"><code># User asks a question
+query_embedding = embed(user_question)
+
+# Find relevant chunks
+VSIM docs:index VALUES 1536 &lt;query_embedding&gt; COUNT 5 WITHSCORES
+
+# Use retrieved chunks as context for LLM
+context = [GET chunk:id for id in results]
+answer = llm.generate(question=user_question, context=context)
+</code></pre>
+
+<h3 id="rag-with-metadata-filtering">RAG with Metadata Filtering</h3>
+<pre class="highlight"><code># Only search within specific document or date range
+VSIM docs:index VALUES 1536 &lt;query&gt; COUNT 5 FILTER '.doc == &quot;manual.pdf&quot; and .date &gt; &quot;2024-01-01&quot;'
+</code></pre>
+
+<h2 id="semantic-cache-pattern">Semantic Cache Pattern</h2>
+<p>Cache LLM responses by query similarity:</p>
+<pre class="highlight"><code># Before calling LLM, check cache
+VSIM llm:cache VALUES 1536 &lt;query_embedding&gt; COUNT 1 WITHSCORES
+
+if score &gt; 0.95:
+    # Similar query found, return cached response
+    return GET llm:response:{cached_id}
+else:
+    # Call LLM and cache
+    response = llm.generate(query)
+    VADD llm:cache VALUES 1536 &lt;query_embedding&gt; query_id
+    SET llm:response:{query_id} response EX 3600
+</code></pre>
+
+<h2 id="recommendations-pattern">Recommendations Pattern</h2>
+<pre class="highlight"><code># User liked item X, find similar items
+VSIM products:embeddings ELE &quot;product:123&quot; COUNT 20 FILTER '.category == &quot;electronics&quot; and .in_stock == 1'
+
+# Combine with collaborative filtering
+# Get items similar to multiple liked items, dedupe, rank by frequency
+</code></pre>
+
+<h2 id="classification-pattern">Classification Pattern</h2>
+<p>Store labeled examples:</p>
+<pre class="highlight"><code>VADD classifier VALUES 768 &lt;embedding&gt; &quot;spam:example1&quot; SETATTR '{&quot;label&quot;: &quot;spam&quot;}'
+VADD classifier VALUES 768 &lt;embedding&gt; &quot;ham:example1&quot; SETATTR '{&quot;label&quot;: &quot;ham&quot;}'
+</code></pre>
+
+<p>Classify new items:</p>
+<pre class="highlight"><code>VSIM classifier VALUES 768 &lt;new_item_embedding&gt; COUNT 5 WITHATTRIBS
+
+# Majority vote among nearest neighbors
+labels = [parse_label(attrib) for attrib in results]
+prediction = most_common(labels)
+</code></pre>
+
+<h2 id="performance-characteristics">Performance Characteristics</h2>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Complexity</th>
+<th>Typical Throughput</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VSIM</td>
+<td>O(log N)</td>
+<td>~50K ops/sec (3M items, 300 dims)</td>
+</tr>
+<tr>
+<td>VADD</td>
+<td>O(log N)</td>
+<td>~5K ops/sec</td>
+</tr>
+<tr>
+<td>VREM</td>
+<td>O(log N)</td>
+<td>Fast, true deletion</td>
+</tr>
+<tr>
+<td>Load from RDB</td>
+<td>O(N)</td>
+<td>~3M items in 15 seconds</td>
+</tr>
+</tbody>
+</table>
+<h3 id="memory-usage">Memory Usage</h3>
+<p>With default int8 quantization:
+- Vector storage: 1 byte per dimension
+- Graph overhead: ~M*2.5 pointers per element (M=16 default)
+- Total: ~1KB per element (300 dimensions, default settings)</p>
+<h2 id="quantization-trade-offs">Quantization Trade-offs</h2>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Memory</th>
+<th>Speed</th>
+<th>Recall</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NOQUANT (fp32)</td>
+<td>4 bytes/dim</td>
+<td>Baseline</td>
+<td>Best</td>
+</tr>
+<tr>
+<td>Q8 (default)</td>
+<td>1 byte/dim</td>
+<td>~2x faster</td>
+<td>~96%</td>
+</tr>
+<tr>
+<td>BIN</td>
+<td>1 bit/dim</td>
+<td>~4x faster</td>
+<td>~80%</td>
+</tr>
+</tbody>
+</table>
+<p>Binary quantization is ideal when speed matters more than perfect recall (e.g., initial candidate retrieval before reranking).</p>
+<h2 id="scaling-to-multiple-instances">Scaling to Multiple Instances</h2>
+<p>Partition vectors across Redis instances:</p>
+<pre class="highlight"><code># Partition by hash
+shard = crc32(element) % num_shards
+VADD vset:{shard} VALUES ... element
+
+# Query all shards in parallel
+results = parallel([VSIM vset:{i} ... for i in range(num_shards)])
+
+# Merge by score
+final = sorted(flatten(results), key=score, reverse=True)[:count]
+</code></pre>
+
+<p>Benefits:
+- Linear write scaling (insert to one shard)
+- High availability (partial results if some shards down)
+- Smaller graphs = faster traversal</p>
+<p>Limitations:
+- Queries hit all shards (but parallel)
+- Client-side result merging</p>
+<h2 id="memory-optimization">Memory Optimization</h2>
+<ol>
+<li><strong>Use Q8 quantization</strong> (default)—4x memory reduction, minimal recall impact</li>
+<li><strong>Tune M parameter</strong>—default 16 is good; only increase for near-perfect recall needs</li>
+<li><strong>Use REDUCE for high-dimensional vectors</strong>—random projection to lower dimensions</li>
+<li><strong>Keep element names short</strong>—stored with each node</li>
+<li><strong>Minimize JSON attributes</strong>—only store filterable fields</li>
+</ol>
+<h2 id="debugging-recall-issues">Debugging Recall Issues</h2>
+<p>Compare against ground truth:</p>
+<pre class="highlight"><code># Get approximate results
+VSIM key ELE query COUNT 10
+
+# Get exact results (slow, linear scan)
+VSIM key ELE query COUNT 10 TRUTH
+
+# Calculate recall
+recall = len(set(approx) &amp; set(truth)) / len(truth)
+</code></pre>
+
+<p>Improve recall:
+- Increase <code>EF</code> in VSIM (more exploration)
+- Increase <code>M</code> in VADD (more connections, rebuild required)
+- Use less aggressive quantization</p>
+<h2 id="example-document-search">Example: Document Search</h2>
+<pre class="highlight"><code># Index documents with embeddings
+for doc in documents:
+    embedding = embed_model.encode(doc.text)
+    VADD search:docs FP32 &lt;embedding&gt; doc.id SETATTR json.dumps({
+        &quot;title&quot;: doc.title,
+        &quot;date&quot;: doc.date,
+        &quot;author&quot;: doc.author
+    })
+
+# Search
+query_embedding = embed_model.encode(&quot;machine learning tutorials&quot;)
+results = VSIM search:docs FP32 &lt;query_embedding&gt; COUNT 10 WITHSCORES WITHATTRIBS \
+          FILTER '.date &gt; &quot;2024-01-01&quot;'
+
+for doc_id, score, attrs in results:
+    print(f&quot;{attrs['title']} (score: {score:.3f})&quot;)
+</code></pre>
+
+<h2 id="commands-reference">Commands Reference</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VADD</td>
+<td>Add element with vector</td>
+</tr>
+<tr>
+<td>VSIM</td>
+<td>Find similar elements</td>
+</tr>
+<tr>
+<td>VREM</td>
+<td>Remove element</td>
+</tr>
+<tr>
+<td>VEMB</td>
+<td>Get element's vector</td>
+</tr>
+<tr>
+<td>VCARD</td>
+<td>Count elements</td>
+</tr>
+<tr>
+<td>VDIM</td>
+<td>Get vector dimension</td>
+</tr>
+<tr>
+<td>VISMEMBER</td>
+<td>Check if element exists</td>
+</tr>
+<tr>
+<td>VSETATTR</td>
+<td>Set JSON attributes</td>
+</tr>
+<tr>
+<td>VGETATTR</td>
+<td>Get JSON attributes</td>
+</tr>
+<tr>
+<td>VRANGE</td>
+<td>Iterate elements lexicographically</td>
+</tr>
+<tr>
+<td>VLINKS</td>
+<td>Inspect HNSW graph connections</td>
+</tr>
+<tr>
+<td>VINFO</td>
+<td>Get index metadata</td>
+</tr>
+<tr>
+<td>VRANDMEMBER</td>
+<td>Random sampling</td>
+</tr>
+</tbody>
+</table>
+    <hr>
+    <p style="color: #666; font-size: 0.9em;">
+        <a href="../index.html">← Back to Index</a> |
+        <a href="vector-sets.md.txt">Markdown source</a>
+    </p>
+</body>
+</html>
