@@ -9,16 +9,26 @@ defmodule Portal.ID do
   and the per-process sequence inside `EchoData.Snowflake`.
   """
 
-  # Fixed node/worker id for F5 (single node); F6.8 derives it per machine.
-  @node 1
-
   @typedoc "A branded id: 3-letter namespace followed by an 11-char Base62 snowflake."
   @type t :: String.t()
 
   @doc "Mints a fresh branded id for the 3-letter uppercase `namespace`."
   @spec new(binary()) :: t()
   def new(<<_::binary-size(3)>> = namespace) do
-    namespace <> EchoData.Base62.encode(EchoData.Snowflake.generate(worker_id: @node))
+    namespace <> EchoData.Base62.encode(EchoData.Snowflake.generate(worker_id: node_id()))
+  end
+
+  # The 10-bit Snowflake node/worker id (F6.8.2-D7, INV5 — the F6.6 same-ms mint
+  # collision fix). Derived per machine from the Fly per-machine env (OPERATOR-PINNED:
+  # the FLY_MACHINE_ID hash, topology-agnostic — no region+ordinal scheme), so two
+  # machines minting in the SAME millisecond no longer mint the same id once the app
+  # is clustered. A non-Fly local boot (no FLY_MACHINE_ID) falls back to `node()`, so a
+  # single local node behaves unchanged (one node → one stable worker_id). Read at
+  # mint time so the release picks up the machine env at BOOT, not at compile time.
+  # `phash2` masks any term into 0..1023, the Snowflake node field width.
+  @spec node_id() :: non_neg_integer()
+  defp node_id do
+    :erlang.phash2(System.get_env("FLY_MACHINE_ID") || node(), 1024)
   end
 
   @doc "Decodes a branded id back to its canonical integer snowflake."

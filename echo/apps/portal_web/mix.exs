@@ -39,6 +39,15 @@ defmodule PortalWeb.MixProject do
   # to render the F6.5 catalog create form (`Portal.change_course/0` returns a
   # changeset). It lives HERE, not in `apps/portal` — the engine owns the schema, the
   # web owns the form bridge — so the layering stays intact (the bridge is a web concern).
+  #
+  # libcluster is the F6.8.2 clustering dep (the ONE net-new dependency this rung adds;
+  # mix.lock confirms neither libcluster nor dns_cluster was locked). It is declared
+  # HERE, in `:portal_web`, per the per-app DEP-GRAPH-VISIBILITY rule: `PortalWeb.Presence`
+  # and the endpoint live in this app, and `PortalWeb.Application` supervises the
+  # `Cluster.Supervisor` child (F6.8.2-D6). Clustering is a supervision-tree + transport
+  # concern — the web still reaches PubSub/Presence ONLY through the `Portal` facade
+  # (`Portal.subscribe/1`/`Portal.broadcast/2`); libcluster adds NO web→engine path
+  # (F6.8.2-INV4).
   defp deps do
     [
       {:portal, in_umbrella: true},
@@ -50,6 +59,7 @@ defmodule PortalWeb.MixProject do
       {:telemetry_poller, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:bandit, "~> 1.5"},
+      {:libcluster, "~> 3.3"},
       # The DOM backend `Phoenix.LiveViewTest` parses against (LiveView 1.1 requires it
       # explicitly). F6.6 is the first rung to drive a LiveView THROUGH `LiveViewTest`
       # (F6.2's `EnrollmentLive` was compile-only), so this test-only dep is pulled here.
