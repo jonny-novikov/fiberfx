@@ -313,7 +313,7 @@ proof is mostly behavioral and engine-gated.
 | → executable subset | capability US with ≥1 runnable test | **35 / 35 (100%)** | the non-gate, non-ledger rows of §3 |
 | → process-proven subset | design-gate US (ADR + declared-keys analysis) | 6 / 6 | the emq.1–2.3 design gates + emq.3.1-US6 + emq.3.2-US1 — ledger, by design |
 | **Conformance (protocol-as-parse)** | wire scenarios green against the truth row | **46 / 46** (post-emq.3.2 — 43 + `flow_add` + `flow_fanin` + `flow_children_values`) | `conformance_run_test.exs` → `{:ok, 46}` |
-| **Test population** | as-built test cases | echo_mq **275** (post-emq.3.2, the harden track's measured final: 4 doctests + 275 tests, 0 failures; +`flow_add` 9 +`flow_fanin` 6 +`flow_children_values` 10 + the harden additions over the 251 emq.2.4 board) · echo_wire **18** · echo_cache **68** | `TMPDIR=/tmp mix test --include valkey` (the full per-app run) |
+| **Test population** | as-built test cases | echo_mq **275** (post-emq.3.2, the harden track's measured final: 4 doctests + 275 tests, 0 failures; +`flow_add` 9 +`flow_fanin` 6 +`flow_children_values` 10 + the harden additions over the 251 emq.2.4 board) · echo_wire **18** · echo_store **68** | `TMPDIR=/tmp mix test --include valkey` (the full per-app run) |
 | **Code line/branch** | measured coverage % | **UNMEASURED** | see the gap below |
 
 > **emq.2.4 lifted the depth axis.** The closer added the five depth suites (`metrics_depth`, `admin_depth`,

@@ -16,7 +16,8 @@ movement lives in [`./emq.roadmap.md`](./emq.roadmap.md); one line each here:
 
 - **Movement 0 · BCS Migration** — the measured, rung-gated BCS drop lands in the production umbrella
   and is re-proven there: `echo_wire` (the extracted wire layer under the `EchoWire` facade), `echo_mq`
-  (the bus), `echo_cache` (with the pluggable `EchoCache.Shadow`), the `EchoData` BCS subtree, the rung
+  (the bus), `echo_store` (the store; durable replication via the `EchoStore.Graft` engine, the `Shadow`
+  behaviour since retired — `store.design.md` §2), the `EchoData` BCS subtree, the rung
   gates tracked. Rung **emq.0 — shipped** (`a2d599c8`).
 - **Movement I · The Core** — the v1 capability surface pushed to state of the art inside `echo_mq`:
   the scheduler + retry vocabulary (**emq.1**, shipped), the **full-parity rewrite of the v1

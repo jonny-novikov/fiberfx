@@ -16,7 +16,7 @@ a solution to someone else's problem.
 - Append-only event streams.
 - Consumer groups, at-least-once, a handful per stream. `XREADGROUP` / `XACK` / `XAUTOCLAIM` — group state lives with the stream.
 - Bounded retention as policy | the compliance window; memory truth | `XTRIM` `MAXLEN` (approx) and `MINID` — and `MINID` is mint time, see below |
-- Deep history without resident memory | the strategies' walk-forward; audit | the archive tier: stream segments folded to SQLite under a Shadow — emq3.5 |
+- Deep history without resident memory | the strategies' walk-forward; audit | the archive tier: stream segments folded to local CubDB and streamed to Tigris by the `EchoStore.Graft` engine — emq3.5 |
 - Latest-value-per-key reads | config, positions, hydration | already built: versioned claims + Tables, newer-wins by mint order — changelog semantics without a compactor |
 - Time-travel: backtests, audit, debugging - stream entry ids are millisecond-prefixed; branded mint instants map straight to `XRANGE` bounds.
 - One wire, one ops posture: the whole series | RESP on the house port; Dragonfly native primary, Valkey portable secondary — both speak Streams |
@@ -30,12 +30,15 @@ record carries a branded id whose byte order is mint order, so stream position, 
 one value (Appendix F's property extended to the log). **Latest-per-key is already law** — the staleness fence and
 newer-wins admission (Chapters 4.1–4.2) give changelog reads at the read path.
 
-## The Litestream answer
+## The durable-archive answer
 
-Litestream is load-bearing in 3.0, not dropped. The archive tier (emq3.5) folds trimmed stream segments into SQLite
-files under the pluggable `EchoCache.Shadow` — Litestream to object storage in production, the Copy shadow on a
-laptop — giving the committed restore drill (Appendix D, `2456 ms` box-loss recovery) a second job. The journal
-keeps its consumer-side role untouched; the shadow rung's pluggability is what makes the archive tier nearly free.
+The archive tier (emq3.5) folds trimmed stream segments into the `EchoStore.Graft` engine's local CubDB and lets the
+engine stream those pages natively to Tigris S3 — one durable path, gated by one knob (`remote_cfg`), not a sidecar
+bolted alongside. This supersedes the earlier Litestream/`Shadow` plan: the `EchoStore.Shadow` behaviour and its
+`Copy` implementation are retired (`store.design.md` §2), the Litestream sidecar is gone, and the SQLite journal is
+demoted to a rebuildable local working set — on recovery the bus's own admission dedup absorbs the ids the journal
+would have replayed. Box-loss recovery is now the engine's lazy fetch of `segments/{SEG}` frames from Tigris, and the
+fold being a property of the engine already in place is what makes the archive tier nearly free.
 
 ## Alignment with the active program
 
@@ -51,7 +54,7 @@ branded ids at the builder, declared Lua keys, additive registration as a protoc
 | emq3.2 | `EchoMQ.Stream` (the writer law): per-key hash-tagged streams, branded record ids, append is mint order | Keyspace tags, the canon | append-order property: stream order == id sort, every time |
 | emq3.3 | groups and the polyglot seam: a BEAM consumer and one non-BEAM reader on the same group | emq3.1–3.2 | at-least-once with idempotent handlers; crash → `XAUTOCLAIM` re-delivery; replay parity with the journal fold |
 | emq3.4 | retention as policy: per-stream `MAXLEN` (approx) and mint-time `MINID` windows, declared not defaulted | emq3.2 | trim honors the window; a read inside the window never misses; outside, it answers truthfully |
-| emq3.5 | the archive: a group consumer folding trimmed segments to SQLite under `EchoCache.Shadow`; deep reads = segment + live tail merge | Journal mechanics (4.4), Shadow (Appendix D, the shadow rung) | segment fold == stream slice; box-loss restore of an archive; the merge-read property |
+| emq3.5 | the archive: a group consumer folding trimmed segments into the `EchoStore.Graft` engine (local CubDB → Tigris); deep reads = segment + live tail merge | Journal mechanics (4.4), the Graft engine (`store.design.md`) | segment fold == stream slice; box-loss restore of an archive; the merge-read property |
 | emq3.6 | time-travel and hydration: mint-instant → `XRANGE` bounds; Table hydration from a stream tail (the changelog read, no compactor) | the staleness fence (4.2), Tables (4.1) | a mint-time window read equals the id-filtered truth; hydrate-then-fence equals loader truth |
 
 Each rung is spec-triad-first under the program's loop; the numbers any rung claims will be its committed record's

@@ -12,8 +12,8 @@ is the single consolidated [`emq.roadmap.md`](../emq.roadmap.md); the next major
 
 EchoMQ 2.x is the Valkey-native bus that the Branded Component System re-derived from first principles and shipped as
 measured, rung-gated code — born braced, born branded, born declared — converging in one production app
-(`echo/apps/echo_mq`) above an extracted wire layer (`echo/apps/echo_wire`), beside the near-cache
-(`echo/apps/echo_cache`) and the canon (`echo/apps/echo_data`).
+(`echo/apps/echo_mq`) above an extracted wire layer (`echo/apps/echo_wire`), beside the store
+(`echo/apps/echo_store`) and the canon (`echo/apps/echo_data`).
 
 ## The laws (binding, carried whole from the canon)
 
@@ -37,8 +37,9 @@ on its own traffic ([`bcsH.md`](../../echo/bcs/content/bcsH.md)), with reconnect
 pipelines, and telemetry spans. The bus: the six `EchoMQ.*` modules over it — the three-field row, the four sets,
 attempts-as-token `EMQSTALE`, completion-deletes, server-clock reap, REV BYLEX browse — with `EchoMQ.Jobs`,
 `EchoMQ.Lanes` (fair per-group rotation: pause, resume, limit, depth — Chapter 3.4's record), and
-`EchoMQ.Consumer`. The cache: `EchoCache.{Table, Coherence, Ring, Journal}` with the pluggable `EchoCache.Shadow`
-(`Litestream` and `Shadow.Copy` conforming) — Chapters 4.1–4.5 and Appendix D are the records. The canon:
+`EchoMQ.Consumer`. The store: `EchoStore.{Table, Coherence, Ring, Journal}` — Chapters 4.1–4.5 are the records;
+durable replication is the `EchoStore.Graft` engine streamed to Tigris (the `EchoStore.Shadow` behaviour is retired,
+`store.design.md` §2). The canon:
 `EchoData.*` with branded Snowflake ids as sequence, key, sort, claim, and cache key in one paid form (Appendix F).
 
 ## The capability families (Movements I–II, specified, shipping by rung)
@@ -74,7 +75,7 @@ specifications and re-ground when rungs ship — the course teaches, the rungs s
 
 The in-place v2→v2 migration treatment (settled with the Operator before any such build); `apps/echomq` dissolution
 timing; the carried family knobs (limiter window mode, batch contract, eviction beyond TTL, scheduler dogfooding of
-EchoCache, cross-runtime adoption order, benchmark numbers, `{emq}:queues` with its coherence probe, `{emq}:locks`
+EchoStore, cross-runtime adoption order, benchmark numbers, `{emq}:queues` with its coherence probe, `{emq}:locks`
 reserved-by-name); and the unslotted proposals held at the program's seam — the transport rung (unix and TLS priced
 against committed loopback rows), FLAME ephemeral consumers (the journal-beside-consumer pattern makes a consumer
 disposable), the Go conformance harness and ports, and the MCP surface over bus, cache, and journal.

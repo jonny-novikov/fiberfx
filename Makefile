@@ -19,7 +19,7 @@ $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
 
 # ── MCP servers (aaw :8905 + msh :8899) via the mcpd controller ──────────────
-# mcpd (apps/mcpd) is the single control plane for both MCP servers. It builds
+# mcpd (go/mcpd) is the single control plane for both MCP servers. It builds
 # each server to a temp path and atomically swaps it into bin/ — a FAILED build
 # never takes down a running server — then restarts, waiting for aaw's instance
 # flock to release so the fresh aaw boots without INSTANCE_LOCKED. `make mcp` is
@@ -30,7 +30,7 @@ MCPD_BIN := $(BIN_DIR)/mcpd
 
 mcpd: | $(BIN_DIR)
 	@echo "→ Building $(MCPD_BIN)"
-	@cd $(REPO_DIR)/apps/mcpd && GOWORK=off go build -o $(MCPD_BIN) .
+	@cd $(REPO_DIR)/go/mcpd && GOWORK=off go build -o $(MCPD_BIN) .
 	@echo "✓ Built $(MCPD_BIN)"
 
 mcp: mcpd

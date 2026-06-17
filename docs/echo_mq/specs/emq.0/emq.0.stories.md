@@ -1,5 +1,11 @@
 # EMQ.0 · user stories
 
+> **Superseded — the Shadow subsystem is retired.** The stories below pin Movement 0 as imported, including
+> the cache's pluggable `Shadow` behaviour and `Shadow.Copy`. That subsystem has since been retired
+> ([`../../store/design/store.design.md`](../../store/design/store.design.md) §2) — the app renamed `echo_store`,
+> durable replicated state moved to the native `EchoStore.Graft` engine streamed to Tigris, and the Shadow
+> modules and tests deleted. The shadow stories are import history, not the current acceptance surface.
+
 ## EMQ.0-US1 — the bus's pure surfaces pinned
 
 As an umbrella developer consuming the 2.0 bus, I want the pure surfaces of the bus app's six `EchoMQ.*`
@@ -25,15 +31,15 @@ Priority: must · Size: 3 · Implements deliverables: EMQ.0-D5.
 
 ## EMQ.0-US2 — the cache and the stores pinned
 
-As an umbrella developer, I want EchoCache's pure surfaces and the additive `EchoData.Bcs*` stores covered
+As an umbrella developer, I want EchoStore's pure surfaces and the additive `EchoData.Bcs*` stores covered
 in their own apps' test trees, so that the near-cache and the BCS stores do not ship to production untested
 (the record's ratified Q3 ground).
 
 Acceptance criteria
-- Given `apps/echo_cache/test/`, when the per-app pure run executes, then it covers per the §5 map:
+- Given `apps/echo_store/test/`, when the per-app pure run executes, then it covers per the §5 map:
   `Ring` (the best pure M2 suite — collecting `apply_fn`, `publish/2`, order across drains, `occupancy/1`,
   `:dropped` at capacity, edge-triggered wakes ≤ published, `stats/1` keys, `stop/1` erasing the
-  persistent_term, init refusals `capacity < 2` / non-1-arity `apply_fn`); `EchoCache`/`Directory`
+  persistent_term, init refusals `capacity < 2` / non-1-arity `apply_fn`); `EchoStore`/`Directory`
   (`tables/0 == []` before ensure, `spec/1 :error`, register-then-read, owner-death DOWN scrub,
   `unregister/1`); `Keyspace` (`key/2` shape, raise on invalid id); `Coherence`'s pure half
   (`payload/2`/`parse/1` round-trip + garbage `:error`, `newer?/2` mint order, `channel/1`/`queue/1`);
@@ -77,7 +83,7 @@ Acceptance criteria
   rotation, pause/resume, `limit/4` ceiling parks + complete reopens, `depth/3`); `Consumer` end-to-end
   (handler `:ok` completes; a raising handler → typed retry survives the loop; `stop/2` drains and answers
   after DOWN); `Pool` (`size/1`; round-robin distribution asserted via per-member `stats/1` counters); in
-  `apps/echo_cache/test/`: `Coherence`'s wire half (`drop_l2/4` newer-deletes/stale-keeps/
+  `apps/echo_store/test/`: `Coherence`'s wire half (`drop_l2/4` newer-deletes/stale-keeps/
   short-frame-deletes; `broadcast/4` receiver count; `enqueue/5` rides Lanes); `Table` (fetch
   `:hit`/`:l2`/`:fill` + counters; the single-flight herd — N concurrent fetches, loader called once,
   `coalesced` counted; `{:error, :kind}`; `put/3`+`put/4`; `apply_coherence/4` `:applied`/`:stale`
@@ -129,7 +135,7 @@ Acceptance criteria
 - Given the suites green, when `TMPDIR=/tmp mix test --cover` runs per app (`--include valkey` where the
   app has wire suites), then the report lists per-module numbers; a pure-only undershoot on
   `Connector`/`Table` is reported as such, never padded.
-- Given `EchoCache.Litestream`, when its coverage is reported, then it is named partially covered with the
+- Given `EchoStore.Litestream`, when its coverage is reported, then it is named partially covered with the
   reason (the runtime demands the deferred binary; `replica_url/2` + the behaviour exports are the
   reachable surface — the record §7).
 - Given the optional `test_coverage: [summary: [threshold: 0]]` keys, when added to the new apps'
@@ -147,7 +153,7 @@ under the D9–D11 re-shape, the record flipped, the rungs tracked.
 
 Acceptance criteria
 - Given the import and the suites on disk, when the ladder runs in order (toolchain re-probe; per-app
-  strict compiles for echo_wire, echo_mq, echo_data, echo_cache + the umbrella compile; per-app pure
+  strict compiles for echo_wire, echo_mq, echo_data, echo_store + the umbrella compile; per-app pure
   suites; per-app `--include valkey` suites; then
   `mix run --no-compile --no-deps-check --no-start rungs/...` from the echo root), then rungs 3_1..3_5 end
   `PASS 5/5 · 5/5 · 6/6 · 8/8 · 6/6`, 4_1..4_4 end `PASS 6/6` each, the NEW shadow rung ends `PASS 4/4`,
@@ -185,7 +191,7 @@ Acceptance criteria
   delegated surface (`function_exported?/3` true for `command/3`, `pipeline/3`, `noreply_pipeline/3`,
   `transaction_pipeline/3`, `eval/5`, `push_command/3`, `subscribe/2`, `stats/1`, `start_link/1`) and
   `EchoWire.script/2` returning the same `%EchoMQ.Script{}` as `Script.new/2`.
-- Given the umbrella, when `mix compile --warnings-as-errors` runs per app, then `echo_mq` and `echo_cache`
+- Given the umbrella, when `mix compile --warnings-as-errors` runs per app, then `echo_mq` and `echo_store`
   compile unchanged through their new `{:echo_wire, in_umbrella: true}` edges (zero call-site edits), and
   `mix deps.get` produces NO lock movement (EMQ.0-INV6 — the wire app is dependency-free).
 
@@ -202,16 +208,16 @@ Priority: must · Size: 5 · Implements deliverables: EMQ.0-D9, EMQ.0-D5 (the wi
 
 ## EMQ.0-US8 — the journal's shadow, pluggable and proven
 
-As a cache-layer author (the cache's durable edge is `EchoCache.Journal` under a pluggable
-`EchoCache.Shadow`), I want the shadow subsystem imported and its
+As a cache-layer author (the cache's durable edge is `EchoStore.Journal` under a pluggable
+`EchoStore.Shadow`), I want the shadow subsystem imported and its
 contract proven — the behaviour, the laptop `Copy` implementation, `Litestream` conforming — so that the
 journal's box-loss posture runs on a development machine with zero binaries and zero credentials.
 
 Acceptance criteria
-- Given `apps/echo_cache/test/`, when the pure suite runs, then it covers `EchoCache.Shadow` (the
+- Given `apps/echo_store/test/`, when the pure suite runs, then it covers `EchoStore.Shadow` (the
   dispatcher: `start_link(:none)` → `:ignore`; `restore(:none)` → `{:ok, :no_replica}`; `child_spec/1`
   both arms — the `:none` transient self-start map vs the `{mod, opts}` permanent worker; dispatch through
-  a test stub implementing the behaviour) and `EchoCache.Shadow.Copy` (SQLite-bound, wire-free:
+  a test stub implementing the behaviour) and `EchoStore.Shadow.Copy` (SQLite-bound, wire-free:
   `restore/1`'s three arms — live-file-exists → `{:ok, :no_replica}`, replica-missing →
   `{:ok, :no_replica}`, copy-back → `{:ok, :restored}`; `replica_path/2`'s shape; `start_link` +
   forced `sync/1` with `syncs` counting; `status/1` keys `db`/`dir`/`every_ms`/`syncs`/`last_error`; the

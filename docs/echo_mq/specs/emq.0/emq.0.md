@@ -4,14 +4,21 @@
 > pending delta (the echo_wire wire-layer extraction + the cache's pluggable shadow) imports first, then the
 > §5 test/coverage pass closes the movement, under the program
 > "EchoMQ in Three Movements" ([`../emq.roadmap.md`](../../emq.roadmap.md)).
+>
+> **Superseded — the Shadow subsystem is retired.** This record is the as-imported account of Movement 0,
+> which imported the cache's pluggable `Shadow` behaviour (`shadow.ex`, `shadow/copy.ex`, the shadow rung)
+> intact. That subsystem has since been **retired** ([`../../store/design/store.design.md`](../../store/design/store.design.md) §2):
+> the app was renamed `echo_store`, durable replicated state moved to the native `EchoStore.Graft` engine
+> streamed to Tigris, and `shadow.ex`/`shadow/copy.ex` and their tests were deleted. The Shadow details below
+> stand as the import history, not the current shape.
 
 ## Goal
 
 The drop's pending Movement-0 delta lands in production exactly as the drop shapes it — the new
 `echo/apps/echo_wire` app (`EchoMQ.{RESP, Connector, Script}` relocated, names frozen, the `EchoWire` facade
-in front), the cache's pluggable shadow (`EchoCache.Shadow` + `Shadow.Copy`, `Litestream` conforming), the
+in front), the cache's pluggable shadow (`EchoStore.Shadow` + `Shadow.Copy`, `Litestream` conforming), the
 new shadow rung, and the dual-path loader re-adaptation — and then every public module of the as-landed
-shape (`echo_wire`: 3 modules + the facade; `echo_mq`: 6 modules; `echo_cache`: 9 files + the nested
+shape (`echo_wire`: 3 modules + the facade; `echo_mq`: 6 modules; `echo_store`: 9 files + the nested
 `Directory`; `EchoData.Bcs*`: 5 files) is exercised by per-app ExUnit suites: pure surfaces in the default
 run, wire-bound surfaces behind the `:valkey` tag against Valkey on 6390; per-module coverage is reported
 honestly; the full gate ladder (compiles → suites → rung gates 3_1..3_5 + 4_1..4_4 + the shadow rung)
@@ -24,7 +31,7 @@ pathspec commit.
   5/5·5/5·6/6·8/8·6/6 and 4_1..4_4 PASS 6/6 each, recorded 2026-06-12), but the drop then moved again: its
   CHANGELOG declares the movement NOT COMPLETED, and the Operator ruled the pending code MUST be imported.
   The delta is also exactly the inventory the program's worked consumer stands on — codemoji draws its work
-  surface from "the wire (`EchoMQ.Connector` over `EchoWire`)" and a pluggable shadow (`EchoCache.Shadow`
+  surface from "the wire (`EchoMQ.Connector` over `EchoWire`)" and a pluggable shadow (`EchoStore.Shadow`
   with the Litestream and Copy implementations) behind the bus it enqueues on. And only three migrated test files guard the tree
   (the floor, not the suite): untested public surface cannot anchor Movement I, and the additive BCS stores
   would otherwise ship untested (the ratified Q3 ground).
@@ -45,9 +52,9 @@ pathspec commit.
   scope expansion 2026-06-13 (the Stage-1b checkpoint); emq.1 (Movement I, ratified: the scheduler + retry
   vocabulary) follows it.
 - **Where** — the import touches `echo/apps/echo_wire` (new), `echo/apps/echo_mq` (three lib files +
-  `resp_test.exs` move out; `mix.exs`), `echo/apps/echo_cache` (two new lib files; `litestream.ex`;
+  `resp_test.exs` move out; `mix.exs`), `echo/apps/echo_store` (two new lib files; `litestream.ex`;
   `mix.exs`), and `echo/rungs/` (one new script; 9 re-adapted loaders). The proof touches test trees only:
-  `echo/apps/echo_wire/test/`, `echo/apps/echo_mq/test/`, `echo/apps/echo_cache/test/`,
+  `echo/apps/echo_wire/test/`, `echo/apps/echo_mq/test/`, `echo/apps/echo_store/test/`,
   `echo/apps/echo_data/test/bcs/` (new files, D15), plus at most the new apps' `mix.exs`
   `test_coverage: [summary: [threshold: 0]]` keys, the record's one-line §5 flip, and the `echo/rungs/`
   tracking at commit time. `echo/apps/echomq` (the frozen v1 line) untouched entirely; `echo_data/lib`
@@ -76,8 +83,8 @@ re-proven by this rung):
 
 - **EMQ.0-D1** — `echo/apps/echo_mq`: OTP `:echo_mq`, the drop's bus modules byte-identical, adapted
   `mix.exs` (`EchoMq.MixProject` — the §3.6 collision exception), helper `ExUnit.start(exclude: [:valkey])`.
-- **EMQ.0-D2** — `echo/apps/echo_cache`: OTP `:echo_cache`, the drop's cache modules byte-identical
-  (+ nested `EchoCache.Directory`, `echo_cache.ex:41`), deps `{:echo_data, in_umbrella}` +
+- **EMQ.0-D2** — `echo/apps/echo_store`: OTP `:echo_store`, the drop's cache modules byte-identical
+  (+ nested `EchoStore.Directory`, `echo_store.ex:41`), deps `{:echo_data, in_umbrella}` +
   `{:echo_mq, in_umbrella}` + `{:exqlite, "0.23.0"}`; lock delta exqlite-only (one insertion).
 - **EMQ.0-D3** — the additive `EchoData.Bcs*` subtree: `lib/echo_data/bcs.ex` +
   `bcs/{property_store,archetypes,edge_store,supervisor}.ex`, no existing `echo_data` file edited.
@@ -104,9 +111,9 @@ Open — the Stage-1c import (the CHANGELOG delta, all of it):
   made byte-identity and the strict compile jointly unsatisfiable; Stage-4 verified the relocation is the
   only diff, 16 lines, clause order otherwise preserved). `resp.ex`, `script.ex`, `echo_wire.ex`, and
   `resp_test.exs` are byte-identical to the drop as specified.
-- **EMQ.0-D10** — the cache's pluggable shadow: `lib/echo_cache/shadow.ex` + `lib/echo_cache/shadow/copy.ex`
-  byte-identical; `lib/echo_cache/litestream.ex` replaced with the drop copy (verified additive-only:
-  `@behaviour EchoCache.Shadow` + four `@impl` lines); `apps/echo_cache/mix.exs` ADAPTED: deps gain
+- **EMQ.0-D10** — the cache's pluggable shadow: `lib/echo_store/shadow.ex` + `lib/echo_store/shadow/copy.ex`
+  byte-identical; `lib/echo_store/litestream.ex` replaced with the drop copy (verified additive-only:
+  `@behaviour EchoStore.Shadow` + four `@impl` lines); `apps/echo_store/mix.exs` ADAPTED: deps gain
   `{:echo_wire, in_umbrella: true}` (the drop's stale `{:echomq, in_umbrella}` dep atom is a drop source
   defect — no `:echomq` app exists in the drop — production's `{:echo_mq, in_umbrella}` stands);
   `rungs/journal/bcs_rung_shadow_check.exs` byte-identical (a compiled-module rung like 4_4; its `.out`
@@ -121,7 +128,7 @@ Open — the proof (the record's §5 pass over the as-landed shape):
 
 - **EMQ.0-D5** — pure-surface ExUnit suites for every public module per the record's §5 lifecycle map AS
   EXTENDED by the agent brief (the `EchoWire` facade; the connector's `noreply_pipeline/3` +
-  `transaction_pipeline/3` + `subscribe/2`; `EchoCache.Shadow`; `EchoCache.Shadow.Copy`; the Litestream
+  `transaction_pipeline/3` + `subscribe/2`; `EchoStore.Shadow`; `EchoStore.Shadow.Copy`; the Litestream
   behaviour conformance), in the four test trees; the three migrated test files stay byte-identical and
   green (the floor), `resp_test.exs` now living in `apps/echo_wire/test/`.
 - **EMQ.0-D6** — `:valkey`-tagged integration suites for every wire-bound surface in the extended map,
@@ -154,7 +161,7 @@ Open — the proof (the record's §5 pass over the as-landed shape):
 ## Invariants
 
 - **EMQ.0-INV1** — strict compiles hold: `mix compile --warnings-as-errors` exits 0 per app (echo_wire,
-  echo_mq, echo_cache, echo_data) and the umbrella `mix compile` stays clean (the root compile is viable —
+  echo_mq, echo_store, echo_data) and the umbrella `mix compile` stays clean (the root compile is viable —
   the mercury_cms phantom dep is fixed, Stage-1c).
 - **EMQ.0-INV2** — the D7 hard law + the toolchain law: umbrella-wide `mix test` is NEVER run (the frozen
   v1 suite hangs); every test/coverage command is per-app-scoped and `TMPDIR=/tmp`-prefixed; the toolchain
@@ -187,7 +194,7 @@ Open — the proof (the record's §5 pass over the as-landed shape):
 - **EMQ.0-INV9** — the namespace law: `EchoMQ.RESP`, `EchoMQ.Connector`, `EchoMQ.Script` keep their module
   names under `apps/echo_wire/lib/echo_mq/` (committed records and articles cite them — the drop's frozen
   rule), `EchoWire` is the facade and the only `EchoWire*` module, and ZERO call sites change anywhere in
-  the umbrella (the relocation moves files, never renames modules — `echo_mq`'s and `echo_cache`'s
+  the umbrella (the relocation moves files, never renames modules — `echo_mq`'s and `echo_store`'s
   `alias EchoMQ.{...}` lines compile unchanged through the new dep edge).
 
 ## Definition of Done
@@ -207,7 +214,7 @@ Open — the proof (the record's §5 pass over the as-landed shape):
 - [ ] Platform runnable: the umbrella compiles clean; the portal release surface untouched.
 
 Carried forward (Stage-4, for the next Mars pass — production code sits outside the evaluator's edit
-fence): a doc-comment on `EchoCache.Ring.stats/1` recording that the stats snapshot is assembled from
+fence): a doc-comment on `EchoStore.Ring.stats/1` recording that the stats snapshot is assembled from
 independent reads (counters → occupancy → the synchronizing `:max_batch` call), so a quiescence poll over
 it must predicate on the SETTLED COUNTER values the assertions need, never on the occupancy gauge alone —
 the gauge and the counters are not one atomic read (the L-3/P-7 torn-snapshot mechanism; the library

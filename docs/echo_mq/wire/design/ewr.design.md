@@ -82,7 +82,7 @@ engineer and the wire.
 - **What** — `%EchoWire.Pipe{conn, cmds}` + `new/1`, one append verb per command, and three terminals
   `exec/1` / `exec_txn/1` / `exec_noreply/1` mapping to `pipeline/3` / `transaction_pipeline/3` /
   `noreply_pipeline/3`.
-- **Who** — `echo_mq` and `echo_cache` internals (the two systems built over the wire) and any future direct
+- **Who** — `echo_mq` and `echo_store` internals (the two systems built over the wire) and any future direct
   consumer; the Pool is the deployment target.
 - **When** — the founding `wire.*` rung, before a higher app standardizes a calling convention.
 - **Where** — a new module `echo/apps/echo_wire/lib/echo_wire/pipe.ex`, beside the frozen facade; zero
@@ -102,7 +102,7 @@ pipeline-of-one, mirroring the connector's own `command/3` reduction (connector.
 unbounded set of pinned `{fun, arity}` pairs, the surface that ages worst because each verb is a
 hand-maintained promise (the maintenance question rueidis answers with code-gen from `hack/cmds/*.json`). The
 **mitigation is a design invariant the triad must carry**: `Pipe` exposes a small *curated* verb set (the
-commands `echo_mq`/`echo_cache` actually issue) **plus a generic escape hatch** `Pipe.command(pipe, parts)`
+commands `echo_mq`/`echo_store` actually issue) **plus a generic escape hatch** `Pipe.command(pipe, parts)`
 that appends a raw command-list — so the surface is "the curated few + one universal verb", closed and small,
 and a never-before-seen command never forces a new public arity. With that invariant A ages well; without it,
 worst of the three. Otherwise A is the cleanest long game: it touches **neither** the frozen facade **nor** the
@@ -133,7 +133,7 @@ cannot know what is idempotent" (connector.ex:21) — a `:readonly` flag is exac
   the value rather than re-parsed from `parts`.
 - **What** — `EchoWire.Cmd` builder verbs + `build/1` (stamps `parts` + `flags`), the `%Cmd{parts, flags}`
   struct, and `EchoWire.Cmd.run/2` extracting `parts` into `Connector.pipeline/3`.
-- **Who** — primarily a *future* retry/routing layer and `echo_cache` (cacheability is its concern); the
+- **Who** — primarily a *future* retry/routing layer and `echo_store` (cacheability is its concern); the
   everyday batch caller consumes it only indirectly.
 - **When** — a wire rung, but the flag *consumers* (retry-on-`:readonly`, cluster slot routing) are later
   rungs — B ships the vocabulary ahead of its readers.

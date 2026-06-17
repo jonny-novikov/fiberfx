@@ -42,7 +42,7 @@ ANSI bars: `█` done · `░` remaining. A rung is one shippable increment; a m
 EchoMQ 2.x — the bus core · convergence target echo/apps/echo_mq
 
 Foundation · land + prove
-  emq.0     ✅ established  ████████████████████  EchoMQ protocol v2 + BCS substrate · wire extraction · pluggable shadow · §5 pass
+  emq.0     ✅ established  ████████████████████  EchoMQ protocol v2 + BCS substrate · wire extraction · the store's durable Graft engine · §5 pass
 
 Movement I · scheduler + retry · the parity floor · flows   ✅ CLOSED (conformance 52/52)
   emq.1     ✅ shipped     ████████████████████  scheduler + retry vocabulary (delayed/repeatable · backoff · resubscribe)
@@ -78,7 +78,7 @@ removed — single source of truth, no compatibility layer.
 
 | Stage | Required components (what it must ship) | Rungs | State |
 |---|---|---|---|
-| **Foundation** | the measured drop in the production umbrella: `echo_wire` (extracted wire), `echo_mq` (the bus modules), `echo_cache` (with pluggable `Shadow`), the `EchoData.Bcs*` subtree, the `echo/rungs/` gate ladder, the §5 test/coverage pass | `emq.0` | ✅ established |
+| **Foundation** | the measured drop in the production umbrella: `echo_wire` (extracted wire), `echo_mq` (the bus modules), `echo_store` (the store; durable replication via the `EchoStore.Graft` engine, the `Shadow` behaviour retired — `store.design.md` §2), the `EchoData.Bcs*` subtree, the `echo/rungs/` gate ladder, the §5 test/coverage pass | `emq.0` | ✅ established |
 | **I · The Core** | the v1 capability surface rewritten state-of-the-art inside `echo_mq`: scheduler + retry (emq.1) · the full-parity read/operator/watch/close floor (emq.2.1–2.4) · the parent/flow family (emq.3.1–3.5) | `emq.1`–`emq.3` | ✅ CLOSED |
 | **II · The Extension** | the family ladder: groups deepened · batches · lifecycle controls · cache deepened · the three-layer proof stack (conformance + engine matrix + telemetry + benchmark gate) | `emq.4`–`emq.8` | 📋 planned |
 
@@ -90,7 +90,7 @@ Event streams on the certified wire, under the v2 laws, no second protocol. Hard
 |---|---|---|---|
 | **S1 · the writer** | stream verbs on the connector (`XADD`/`XRANGE`/`XREADGROUP`/`XACK`/`XAUTOCLAIM`); `EchoMQ.Stream` — hash-tagged, branded record ids, append == mint order | `emq3.1`–`emq3.2` | 🔒 PROPOSED |
 | **S2 · the readers** | BEAM consumer group + one non-BEAM reader, crash re-delivery; retention as declared policy (`MAXLEN` approx, mint-time `MINID` windows) | `emq3.3`–`emq3.4` | 🔒 PROPOSED |
-| **S3 · the memory** | the archive — segments folded to SQLite under `EchoCache.Shadow`, box-loss restore, merge reads; time-travel (mint-instant → `XRANGE` bound) + Table hydration | `emq3.5`–`emq3.6` | 🔒 PROPOSED |
+| **S3 · the memory** | the archive — segments folded into the `EchoStore.Graft` engine (local CubDB → Tigris), box-loss restore, merge reads; time-travel (mint-instant → `XRANGE` bound) + Table hydration | `emq3.5`–`emq3.6` | 🔒 PROPOSED |
 
 ### The consumers
 
@@ -121,11 +121,11 @@ to a BCS chapter with a committed `PASS n/n` rung record (the figures live in th
 | **B3.5** Bus Meets Stores (`PASS 6/6`) | commands out, results back; exactly-once by provenance | `EchoMQ.Consumer` | `emq.0` ✅ |
 | **B3.6** Conformance (`14/14` → … → `52/52`) | the scenario harness · the referee habit | `EchoMQ.Conformance` | `emq.0` ✅ (14) → `emq.1` (18) → `emq.2.1–2.4` ✅ (read/operator/watch/depth → 43) → `emq.3.1–3.5` ✅ (the flow family → **52**) · proof stack `emq.8` 📋 |
 | **B3.7 / App. A / App. H** The Connector | one-pass RESP2/3 · EVALSHA-first · typed fence · auto-resubscribe | `EchoMQ.Connector` over `EchoWire` | `emq.0` ✅ (extraction) · resubscribe `emq.1` ✅ · the event pub/sub seam `emq.2.3` ✅ |
-| **B4.1** Cache-Aside (`PASS 6/6`) | declared directory · single-flight fills | `EchoCache.Table` | `emq.0` ✅ · deepened `emq.7` 📋 |
-| **B4.2** Coherence by Mint Time (`PASS 6/6`) | the 29-byte message · newer-wins | `EchoCache.Coherence` | `emq.0` ✅ · `emq.7` 📋 |
-| **B4.3** Single Writer & the Ring (`PASS 6/6`) | two atomic sequences · counted drops (the Disruptor seat) | `EchoCache.Ring` | `emq.0` ✅ |
-| **B4.4** The Lane That Remembers (`PASS 6/6`) | per-group SQLite journal · replay == live | `EchoCache.Journal` | `emq.0` ✅ · `synchronous=FULL` `emq.7` 📋 |
-| **App. D** The Shadow | pluggable `Shadow` behaviour · Litestream + Copy impls | `EchoCache.Shadow` | `emq.0` ✅ |
+| **B4.1** Cache-Aside (`PASS 6/6`) | declared directory · single-flight fills | `EchoStore.Table` | `emq.0` ✅ · deepened `emq.7` 📋 |
+| **B4.2** Coherence by Mint Time (`PASS 6/6`) | the 29-byte message · newer-wins | `EchoStore.Coherence` | `emq.0` ✅ · `emq.7` 📋 |
+| **B4.3** Single Writer & the Ring (`PASS 6/6`) | two atomic sequences · counted drops (the Disruptor seat) | `EchoStore.Ring` | `emq.0` ✅ |
+| **B4.4** The Lane That Remembers (`PASS 6/6`) | per-group SQLite journal · replay == live | `EchoStore.Journal` | `emq.0` ✅ · `synchronous=FULL` `emq.7` 📋 |
+| **App. D** The Shadow (retired) | superseded by the native replication engine — durable, replicated state is `EchoStore.Graft` streamed to Tigris (`store.design.md` §2) | `EchoStore.Graft` | `emq.0` imported · retired |
 | **App. F** The Canon | the 14-byte branded snowflake · `hash32` placement | `EchoData.*` | pre-program ✅ |
 | **App. G** The Claim Check | claims-only on the bus (never an object) | coherence payloads | `emq.0` ✅ |
 | **App. I** Partitioned-log examined & **rejected** | → the stream tier built instead | — | `emq3.1–emq3.6` 🔒 |
@@ -153,4 +153,4 @@ to a BCS chapter with a committed `PASS n/n` rung record (the figures live in th
 - **Rung triads / ledgers:** the triads under [`specs/`](./specs/) (`emq.0`/`emq.1`/`emq.2`/`emq.3` shipped); the per-rung ship ledgers under [`specs/progress/`](./specs/progress/)
 - **Build-team tooling:** `.claude/skills/echo-mq-{program,surface}.md` + `.claude/skills/echo-mq-{architect,implementor,evaluator}/SKILL.md` · the tuned [`program/`](./program/) calibrations (`emq.{venus,mars,apollo}.md`)
 - **BCS grounding:** [`../echo/bcs/bcs.toc.md`](../echo/bcs/bcs.toc.md) · [`../echo/bcs/bcs.roadmap.md`](../echo/bcs/bcs.roadmap.md)
-- **As-built:** `echo/apps/echo_mq` · `echo/apps/echo_wire` · `echo/apps/echo_cache` · `echo/apps/echo_data` · the consumers `echo/apps/codemoji` · `echo/apps/echo_bot`
+- **As-built:** `echo/apps/echo_mq` · `echo/apps/echo_wire` · `echo/apps/echo_store` · `echo/apps/echo_data` · the consumers `echo/apps/codemoji` · `echo/apps/echo_bot`

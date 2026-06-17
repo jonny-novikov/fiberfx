@@ -33,7 +33,7 @@ Read [Echo References](./emq.references.md) before EXPANDING this roadmap.
 - **When.** The foundation (EchoMQ protocol v2 + the BCS substrate) is **established** — shipped as `emq.0`.
   **Movement I is CLOSED** (emq.1 · the emq.2 parity cluster · the emq.3 flow family; conformance **52/52**).
   Movement II (emq.4–emq.8) opens on a complete core — one increment per run.
-- **Where.** Code: `echo/apps/echo_wire`, `echo/apps/echo_mq`, `echo/apps/echo_cache`, `echo/apps/echo_data`
+- **Where.** Code: `echo/apps/echo_wire`, `echo/apps/echo_mq`, `echo/apps/echo_store`, `echo/apps/echo_data`
   (the additive `bcs/` subtree), `echo/rungs/{bus,cache,journal}`. Specs: `docs/echo_mq/` (this roadmap, the
   design canon, the references, `specs/emq.N.*`).
 
@@ -43,8 +43,10 @@ Read [Echo References](./emq.references.md) before EXPANDING this roadmap.
 
 The v2 protocol and the BCS substrate are **in place and proven on this machine**, shipped as **`emq.0`**: the
 owned wire (`echo/apps/echo_wire` — `EchoMQ.{RESP, Connector, Script}` under the `EchoWire` facade), the bus
-(`echo/apps/echo_mq`), the near-cache (`echo/apps/echo_cache` with the pluggable `EchoCache.Shadow`), and the
-`EchoData` branded-id substrate (the additive `bcs/` subtree) — gated by the `echo/rungs/` ladder and the §5
+(`echo/apps/echo_mq`), the store (`echo/apps/echo_store` — its durable replication since grown into the
+`EchoStore.Graft` engine streamed to Tigris; the `EchoStore.Shadow` behaviour emq.0 first imported is now retired,
+`store.design.md` §2), and the `EchoData` branded-id substrate (the additive `bcs/` subtree) — gated by the
+`echo/rungs/` ladder and the §5
 pure + `:valkey` test pass. Movement I builds on it.
 
 > Implementation detail (the import delta, the manifests-as-executed, the as-built notes) lives in the
@@ -103,13 +105,13 @@ by `EchoMQ.Consumer`, scored by a single authority, results published on `EchoMQ
 - **When** — after Movement I's parity. The cache-deepening rung is least coupled to the machine and may be
   pulled forward — an Operator call, recorded here so it is a decision, not drift (carried from the old
   roadmap's same note).
-- **Where** — `echo/apps/echo_mq`, `echo/apps/echo_cache`, and the conformance/test surfaces beside them.
+- **Where** — `echo/apps/echo_mq`, `echo/apps/echo_store`, and the conformance/test surfaces beside them.
 
 ## The rung ladder (CONFIRMED at the Stage-1b checkpoint)
 
 | Rung | Movement | Ships (the slice) | Status |
 | --- | --- | --- | --- |
-| **emq.0** | Foundation | EchoMQ protocol v2 + the BCS substrate (wire extraction · pluggable shadow · §5 suite) | ✅ **established** |
+| **emq.0** | Foundation | EchoMQ protocol v2 + the BCS substrate (wire extraction · the store's durable `Graft` engine · §5 suite) | ✅ **established** |
 | **emq.1** | I | scheduler + retry vocabulary (delayed / repeatable jobs · attempts-with-backoff · auto-resubscribe) | ✅ CLOSED |
 | **emq.2** | I | the **parity floor** — read → operator → watch → close (emq.2.1 · 2.2 · 2.3 · 2.4) | ✅ CLOSED |
 | **emq.3** | I | the **parent/flow family** — single-queue → reads → cross-queue → failure-policy → grandchildren (emq.3.1–3.5) | ✅ CLOSED |
@@ -130,7 +132,7 @@ them through this map):
 | old emq.2 — the BCS state machine | CLOSED in Movement I (the as-built `echo_mq`: three-field row · four sets · attempts-as-token `EMQSTALE` · completion-deletes · server-clock reap · REV BYLEX browse) |
 | old emq.3 — batches | emq.5 |
 | old emq.4 — lifecycle | emq.6 |
-| old emq.5 — EchoCache | the near-cache landed structurally in the foundation (`echo/apps/echo_cache`); the deepening is emq.7 |
+| old emq.5 — EchoStore | the near-cache landed structurally in the foundation (`echo/apps/echo_store`); the deepening is emq.7 |
 | old emq.6 — conformance/proof | emq.8 |
 | the displaced groups family (the old open seam) | emq.4 — RULED (Stage-1b; seam 2 closed) |
 
@@ -179,7 +181,7 @@ honest-row reporting (§1 S-4). Process laws bind every rung in this repo: per-a
    rebuild before gates. The recorded rung-gate flags stand.
 6. **Carried family knobs** (from the old roadmap, owners unchanged — each belongs to its family rung's
    first feedback loop): limiter window mode · the batch processor contract · cache eviction beyond TTL ·
-   dogfooding EchoCache in the scheduler · cross-runtime adoption order (Go, node; echomq-node strictly
+   dogfooding EchoStore in the scheduler · cross-runtime adoption order (Go, node; echomq-node strictly
    PROPOSED) · the benchmark gate numbers · `{emq}:queues` ships only WITH its registry⇄keyspace coherence
    probe, at the rung that consumes it · `{emq}:locks` stays registered reserved-by-name, populated by the
    rung that needs it.
@@ -194,11 +196,12 @@ honest-row reporting (§1 S-4). Process laws bind every rung in this repo: per-a
 The hard edges and the recorded consumer traces, in one place (folded from the BCS-side 2.x mirror so every
 document points at one truth):
 
-- **emq.0 is the spine.** The extracted wire (`echo/apps/echo_wire`) and the pluggable `EchoCache.Shadow`
-  are the universal predecessors — Movement I, Movement II, and the entire 3.x stream tier stand on them.
+- **emq.0 is the spine.** The extracted wire (`echo/apps/echo_wire`) and the store's durable engine
+  (`EchoStore.Graft` → Tigris) are the universal predecessors — Movement I, Movement II, and the entire 3.x stream
+  tier stand on them.
 
-- **The 3.x stream tier hard-gates on emq.0** (its verbs land on the extracted wire; its archive lives under
-  the pluggable Shadow — EchoMQ 3.x below). It is slot-ratified by the Operator against this ladder;
+- **The 3.x stream tier hard-gates on emq.0** (its verbs land on the extracted wire; its archive lives in the
+  `EchoStore.Graft` engine — EchoMQ 3.x below). It is slot-ratified by the Operator against this ladder;
   emq3.1–emq3.2 carry their own recorded pull-forward call.
 - **The unslotted proposals** — the transport rung (unix/TLS), FLAME ephemeral consumers, the Go-driven
   conformance harness and the Go store/keyspace ports, the MCP surface over bus + cache + journal — are held
@@ -211,10 +214,10 @@ document points at one truth):
 ### Where this tier starts
 
 On this program's foundation: the extracted wire (`echo_wire`) is the hard dependency — emq3.1's verbs land
-there and nowhere else — and the pluggable `EchoCache.Shadow` is the second (emq3.5's archive lives under
-it). Both closed with rung emq.0. Beyond those, the tier stands on committed records only: the connector
-referee (BCS App. H), the journal's fold (BCS Chapter 4.4), the shadow drill (BCS App. D), the staleness
-fence and Tables (4.1–4.2), and the canon's id law (BCS App. F).
+there and nowhere else — and the store's durable engine (`EchoStore.Graft` → Tigris) is the second (emq3.5's
+archive lives in it). Both closed with rung emq.0. Beyond those, the tier stands on committed records only: the
+connector referee (BCS App. H), the journal's fold (BCS Chapter 4.4), the Graft engine (`store.design.md`), the
+staleness fence and Tables (4.1–4.2), and the canon's id law (BCS App. F).
 
 ### Where this tier ends [RECONCILE]
 
@@ -226,7 +229,7 @@ Which Movement is stream-tier? What is N rung wave number depends on deliver ord
 |-------------------|-----------------|---|
 | S1 · the writer   | emq.N.1–emq.N.2 | append events to a hash-tagged stream through the certified connector and read them back in mint order, with the append-order property gated |
 | S2 · the readers  | emq.N.3–emq.N.4 | run a BEAM consumer group beside a non-BEAM reader with crash re-delivery, and declare a retention window the trim provably honors |
-| S3 · the memory   | emq.N.5–emq.N.6 | fold trimmed segments to an archive under a shadow, survive box loss, merge-read segment plus tail, and answer a mint-time window query from either |
+| S3 · the memory   | emq.N.5–emq.N.6 | fold trimmed segments into the `EchoStore.Graft` engine (local CubDB → Tigris), survive box loss, merge-read segment plus tail, and answer a mint-time window query from either |
 
 ### The stream-tier rungs
 
@@ -236,7 +239,7 @@ Which Movement is stream-tier? What is N rung wave number depends on deliver ord
 | emq.N.2 | `EchoMQ.Stream`, the writer law: hash-tagged per key, branded record ids, append is mint order | stream order == id sort, every time; wrong-kind refused at the door | the stream-naming grammar under the braced keyspace |
 | emq.N.3 | groups + the polyglot seam: BEAM consumer and one non-BEAM reader on one group | at-least-once with idempotent handlers; crash → `XAUTOCLAIM` re-delivery; replay parity with the journal fold | the non-BEAM reference reader's runtime (Go or Python) |
 | emq.N.4 | retention as declared policy: `MAXLEN` (approx) and mint-time `MINID` windows per stream | trim honors the window; inside-window reads never miss; outside answers truthfully | the default window per stream kind, decided not assumed |
-| emq.N.5 | the archive: segments folded to SQLite under `EchoCache.Shadow`; merge reads | segment fold == stream slice; box-loss restore; the merge-read property | segment size and cadence; the archive's retention of its own |
+| emq.N.5 | the archive: segments folded into the `EchoStore.Graft` engine (local CubDB → Tigris); merge reads | segment fold == stream slice; box-loss restore; the merge-read property | segment size and cadence; the archive's retention of its own |
 | emq.N.6 | time-travel + hydration: mint-instant → `XRANGE` bounds; Table hydration from a tail | window read equals id-filtered truth; hydrate-then-fence equals loader truth | which Tables hydrate from streams first |
 
 ### The stream-tier conventions

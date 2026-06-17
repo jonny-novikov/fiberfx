@@ -5,6 +5,11 @@
 > [`./emq.0.stories.md`](emq.0.stories.md). Framing clause (propagates into every derived prompt):
 > third person for any agent reference; no gendered pronouns for agents; no perceptual or interior-state
 > verbs for agents or software; components read, compute, refuse, return — never observe, want, or notice.
+>
+> **Superseded — the Shadow subsystem is retired.** This brief is the as-imported account; the cache's
+> pluggable `Shadow` behaviour it imported has since been retired ([`../../store/design/store.design.md`](../../store/design/store.design.md) §2),
+> the app renamed `echo_store`, durable replicated state moved to the native `EchoStore.Graft` engine streamed
+> to Tigris. The Shadow material below is import history, not the current shape.
 
 ## References
 
@@ -12,14 +17,14 @@
 - [`./emq.0.stories.md`](emq.0.stories.md) — acceptance (US1–US8, incl. the standing EMQ.0-US-GATE).
 - As-built production trees (derive every assertion from these — the no-invent law): after the import,
   `echo/apps/echo_wire/lib/` (`echo_mq/{resp,script,connector}.ex` + `echo_wire.ex`),
-  `echo/apps/echo_mq/lib/echo_mq/` (6 modules), `echo/apps/echo_cache/lib/echo_cache/` (9 files;
-  `Directory` nested at `echo_cache.ex:41`), `echo/apps/echo_data/lib/echo_data/bcs.ex` + `bcs/`.
+  `echo/apps/echo_mq/lib/echo_mq/` (6 modules), `echo/apps/echo_store/lib/echo_store/` (9 files;
+  `Directory` nested at `echo_store.ex:41`), `echo/apps/echo_data/lib/echo_data/bcs.ex` + `bcs/`.
 - [`../emq.design.md`](../../emq.design.md) §6 (the grammar, for Keyspace expectations) · §1 S-4 (honest-row
   reporting). [`../emq.roadmap.md`](../../emq.roadmap.md) — the movement frame; the worked consumer
   (codemoji, `echo/apps/codemoji`) draws on EchoWire + the pluggable Shadow behind the bus it enqueues on —
   this import completes that inventory.
 - Existing test floor: `resp_test.exs` (relocates to `apps/echo_wire/test/`), `keyspace_test.exs`
-  (stays in `apps/echo_mq/test/`), `coherence_test.exs` (stays in `apps/echo_cache/test/`) — all three
+  (stays in `apps/echo_mq/test/`), `coherence_test.exs` (stays in `apps/echo_store/test/`) — all three
   byte-unmodified and green; helpers read `ExUnit.start(exclude: [:valkey])` (the new echo_wire helper is
   ADAPTED to the same line — the drop's is bare `ExUnit.start()`).
 
@@ -58,14 +63,14 @@ import): the §5 RESP row's full RESP2/3 surface pinned, coverage 42.37 → 93.2
 | `lib/echo_mq/{resp,script,connector}.ex` + `test/resp_test.exs` | REMOVED by the moves above — `lib/echo_mq/` keeps exactly `{conformance,consumer,jobs,keyspace,lanes,pool}.ex` (all six byte-identical to the drop's post-move `DROP/apps/echo_mq/lib/echo_mq/`, verified) |
 | `mix.exs` | ADAPTED: deps become `[{:echo_data, in_umbrella: true}, {:echo_wire, in_umbrella: true}]`; `extra_applications` drops `:crypto` → `[:logger]` (the `:crypto` need lives in `Script`, which moves — the drop's post-move echo_mq says `[:logger]`, echo_wire carries `[:logger, :crypto]`). **The project module stays `EchoMq.MixProject`** — the record §3.6 collision exception SURVIVES: the drop's renamed `EchoMQ.MixProject` still collides with the frozen v1 `apps/echomq/mix.exs` module in production |
 
-**G. The cache shadow (`ECHO/apps/echo_cache/` — EMQ.0-D10):**
+**G. The cache shadow (`ECHO/apps/echo_store/` — EMQ.0-D10):**
 
 | Source (DROP) | Destination (ECHO) | Mode |
 |---|---|---|
-| `apps/echo_cache/lib/echo_cache/shadow.ex` | same rel. path | byte-identical (the behaviour: callbacks `start_link/1`, `restore/1` — RESTORE-IF-MISSING by law, `status/1`, `stop/1`; the pure dispatcher: `start_link(:none)` → `:ignore`, `restore(:none)` → `{:ok, :no_replica}`, `child_spec/1` both arms) |
-| `apps/echo_cache/lib/echo_cache/shadow/copy.ex` | same | byte-identical (the laptop shadow: `VACUUM INTO` snapshots via `Exqlite.Sqlite3` — NO wire, NO sidecar binary, NO credentials; `sync/1`, `status/1`, module-level `restore/1`, `replica_path/2`, periodic `:tick` re-arm, tmp-then-rename) |
-| `apps/echo_cache/lib/echo_cache/litestream.ex` | same | REPLACED with the drop copy — verified ADDITIVE-ONLY delta: `@behaviour EchoCache.Shadow` + four `@impl EchoCache.Shadow` lines; zero functional change |
-| `apps/echo_cache/mix.exs` | same | ADAPTED: deps gain `{:echo_wire, in_umbrella: true}`. **Do NOT copy the drop's dep list**: its `{:echomq, in_umbrella: true}` atom is a recorded drop SOURCE DEFECT (no `:echomq` app exists in the drop anymore); production's `{:echo_data}` + `{:echo_mq}` + `{:exqlite, "0.23.0"}` stand |
+| `apps/echo_store/lib/echo_store/shadow.ex` | same rel. path | byte-identical (the behaviour: callbacks `start_link/1`, `restore/1` — RESTORE-IF-MISSING by law, `status/1`, `stop/1`; the pure dispatcher: `start_link(:none)` → `:ignore`, `restore(:none)` → `{:ok, :no_replica}`, `child_spec/1` both arms) |
+| `apps/echo_store/lib/echo_store/shadow/copy.ex` | same | byte-identical (the laptop shadow: `VACUUM INTO` snapshots via `Exqlite.Sqlite3` — NO wire, NO sidecar binary, NO credentials; `sync/1`, `status/1`, module-level `restore/1`, `replica_path/2`, periodic `:tick` re-arm, tmp-then-rename) |
+| `apps/echo_store/lib/echo_store/litestream.ex` | same | REPLACED with the drop copy — verified ADDITIVE-ONLY delta: `@behaviour EchoStore.Shadow` + four `@impl EchoStore.Shadow` lines; zero functional change |
+| `apps/echo_store/mix.exs` | same | ADAPTED: deps gain `{:echo_wire, in_umbrella: true}`. **Do NOT copy the drop's dep list**: its `{:echomq, in_umbrella: true}` atom is a recorded drop SOURCE DEFECT (no `:echomq` app exists in the drop anymore); production's `{:echo_data}` + `{:echo_mq}` + `{:exqlite, "0.23.0"}` stand |
 | `rungs/journal/bcs_rung_shadow_check.exs` | `ECHO/rungs/journal/bcs_rung_shadow_check.exs` | byte-identical (a compiled-module rung like 4_4 — aliases only, no self-loading; gates SH1..SH4; needs NO Valkey, NO credentials; its frozen `.out` stays in the drop per D5 — expected tail `PASS 4/4`) |
 
 **H. The dual-path loaders (`ECHO/rungs/` — EMQ.0-D11):**
@@ -99,7 +104,7 @@ NOT imported (out of scope, surfaced): `DROP/rungs/bus/bcs_rung_busobjects_check
 ## Requirements
 
 - **EMQ.0-R9** — the import manifest E + F executed exactly; per-app strict compiles green afterward
-  (echo_wire, echo_mq, echo_cache, echo_data + the umbrella root); zero call-site edits anywhere
+  (echo_wire, echo_mq, echo_store, echo_data + the umbrella root); zero call-site edits anywhere
   (INV9 — the moves never rename modules). [US: EMQ.0-US7]
 - **EMQ.0-R10** — the import manifest G executed exactly; the shadow rung lands; the litestream delta is
   the verified additive behaviour conformance and nothing else. [US: EMQ.0-US8]
@@ -108,7 +113,7 @@ NOT imported (out of scope, surfaced): `DROP/rungs/bus/bcs_rung_busobjects_check
   [US: EMQ.0-US6]
 - **EMQ.0-R1** — pure ExUnit suites in `apps/echo_mq/test/` covering the pure column of the six bus-module
   rows in the lifecycle map; `keyspace_test.exs` unmodified. [US: EMQ.0-US1]
-- **EMQ.0-R2** — pure suites in `apps/echo_cache/test/` covering the pure column of every cache row
+- **EMQ.0-R2** — pure suites in `apps/echo_store/test/` covering the pure column of every cache row
   INCLUDING the extension rows (the Shadow dispatcher; the Copy suite; the Litestream behaviour
   conformance beside the `replica_url/2` pin). [US: EMQ.0-US2, EMQ.0-US8]
 - **EMQ.0-R3** — NEW files only under `apps/echo_data/test/bcs/` covering the five `EchoData.Bcs*` rows;
@@ -120,7 +125,7 @@ NOT imported (out of scope, surfaced): `DROP/rungs/bus/bcs_rung_busobjects_check
   (incl. the three Stage-1c verbs: `noreply_pipeline/3` → `:ok` replies-suppressed,
   `transaction_pipeline/3` → `{:ok, exec_replies}`, `subscribe/2` on RESP3) and one facade-live test in
   `apps/echo_wire/test/`; Jobs/Lanes/Consumer/Pool in `apps/echo_mq/test/`; Coherence-wire/Table/
-  Journal-wire in `apps/echo_cache/test/`; per-test sub-queue names; the baseline purge idiom
+  Journal-wire in `apps/echo_store/test/`; per-test sub-queue names; the baseline purge idiom
   (`KEYS emq:{<q>}:*` → `DEL`, the `Conformance.purge/2` pattern, `conformance.ex:271-275`); the
   `{emq}:version` mutation test `async: false` with snapshot/restore in `on_exit`. [US: EMQ.0-US3]
 - **EMQ.0-R5** — the standing gate test: `:valkey`-tagged `EchoMQ.Conformance.run/2 → {:ok, 14}` on a
@@ -151,7 +156,7 @@ echo_wire:  RESP/Script = pure modules; Connector = caller-started GenServer (st
 echo_mq:    Consumer = caller-started spawn_link loop, NOT a GenServer (child_spec/1 map; control at settle points)
             Pool = caller-started Supervisor over N Connectors (:persistent_term + :atomics dispatch)
             Keyspace/Jobs/Lanes/Conformance = pure modules (Jobs/Lanes/Conformance compose Connector calls)
-echo_cache: Table = GenServer; init STARTS ITS OWN Connector (table.ex:207) → init refusals testable only with a live wire
+echo_store: Table = GenServer; init STARTS ITS OWN Connector (table.ex:207) → init refusals testable only with a live wire
             Directory = lazily-ensured NAMED singleton (monitors owners; DOWN scrubs) → async: false where touched
             Ring = GenServer applier + :persistent_term; single-producer BY STRUCTURE (publish from one process)
             Journal = GenServer per group; exqlite WAL under :dir (fresh System.tmp_dir!() subdir, removed in on_exit)
@@ -162,7 +167,7 @@ echo_data:  Bcs pure; PropertyStore/EdgeStore = caller-started GenServers (priva
 Snowflake bootstrap: per-app `mix test` starts :echo_data whose Application runs Snowflake.start();
             start/1 is idempotent — a setup_all `EchoData.Snowflake.start(4)` is safe either way.
 Hazards bank: GenServers that raise in init (Ring refusals; Journal non-branded group) exit the caller —
-            trap exits + assert, never bare-match start_link; named singletons (EchoCache.Directory,
+            trap exits + assert, never bare-match start_link; named singletons (EchoStore.Directory,
             EchoData.Bcs.Supervisor children) force async: false; the fence-mismatch test MUTATES shared
             {emq}:version — async: false + snapshot/restore in on_exit; Copy's periodic :tick is timing —
             drive determinism through forced sync/1, never timer waits (init KeyError on missing :db/:dir);
@@ -180,7 +185,7 @@ T0 toolchain re-probe + preconditions → T1 AS6 (the import: manifests E+F+G+H 
 ```
 
 Touched files (the complete set — anything else is an INV5 violation): the manifest E/F/G/H paths;
-`apps/echo_wire/test/*_test.exs` + `apps/echo_mq/test/*_test.exs` + `apps/echo_cache/test/*_test.exs` +
+`apps/echo_wire/test/*_test.exs` + `apps/echo_mq/test/*_test.exs` + `apps/echo_store/test/*_test.exs` +
 `apps/echo_data/test/bcs/*_test.exs` (new); optionally the `test_coverage:` key in the new apps' `mix.exs`;
 and ONE line of `docs/echo/migration/echo2-migration.md` (the §5 status flip).
 
@@ -204,13 +209,13 @@ guard-level column and the `RESP`/`Script` rows test in `apps/echo_wire/test/` a
 | `EchoMQ.Consumer` | caller-started loop (NOT a GenServer) | `child_spec/1` map fields | end-to-end: handler `:ok` completes; raising handler → typed retry survives the loop; `stop/2` drains and answers after DOWN |
 | `EchoMQ.Pool` | caller-started Supervisor | — | `size/1`; round-robin `command/3` distributing across members (assert via per-member `stats/1` commands counters) |
 | `EchoMQ.Conformance` | pure + wire | `scenarios/0` returns the 14 names in run order (pin the list) | `run/2` → `{:ok, 14}` against 6390 — **the strongest single integration test; mirrors rung 3_6's C2 without the rival** |
-| `EchoCache` / `.Directory` | module + lazy GenServer | `tables/0 == []` before ensure; `spec/1 :error`; `Directory.register/3` then `tables/0`/`spec/1`; owner-death DOWN scrubs the entry; `unregister/1` | — |
-| `EchoCache.Keyspace` | pure | `key/2` shape; raise on invalid id | — |
-| `EchoCache.Coherence` | pure + wire | `payload/2`/`parse/1` round-trip + garbage `:error`; `newer?/2` mint-order across namespaces; `channel/1`/`queue/1` shapes | `drop_l2/4` newer-deletes/stale-keeps/short-frame-deletes; `broadcast/4` receiver count; `enqueue/5` rides Lanes |
-| `EchoCache.Ring` | caller-started GenServer + persistent_term | **the best pure M2 suite, no wire:** `start_link` with a collecting `apply_fn`; `publish/2` `:ok`; order preserved across drains; `occupancy/1`; `:dropped` + counted at capacity; edge-triggered wake (stats `wakes` ≤ `published`); `stats/1` keys incl. `max_batch`/`capacity`; `stop/1` erases the persistent_term; init refusals (`capacity < 2`, non-1-arity `apply_fn`) | — |
-| `EchoCache.Table` | caller-started GenServer (starts its own Connector in `init` — `table.ex:207`) | init refusals are testable ONLY with a live wire (init connects first) — so: none pure | `fetch/3` `:hit`/`:l2`/`:fill` sources + counters; single-flight herd (N concurrent fetches, loader called once — `coalesced` counter); `{:error, :kind}` wrong-namespace; `put/3` (mints version of table kind) and `put/4`; `apply_coherence/4` `:applied`/`:stale` idempotence; `invalidate/3`; sweep reclaims expired; full table degrades to pass-through (`full_skips`); `coherence: :broadcast` end-to-end (a second table instance drops its L1 row on a `Coherence.broadcast`); `stats/1` |
-| `EchoCache.Journal` | caller-started GenServer (exqlite, NO wire needed for the intents side) | start refuses non-branded `group` (`ArgumentError`); `record/4` returns seq; `record_many/2` one transaction, seq list; `mark_enqueued/2`; `stats/1` (`intents`/`pending_enqueue`/`remembered`/`path`); `last_applied/2` nil when unknown; persistence across stop + reopen of the same dir/group; `compact/1` retires nothing with an empty applied table | `intend_and_enqueue/4` outbox verb; `replay/2` `%{replayed: _, deduplicated: _}` counts; `apply_and_remember/4` `:remembered_stale` without touching the table vs newer passes through (needs a live Table); `handler/2` over a Consumer |
-| `EchoCache.Litestream` | deferred runtime (record §7) | `replica_url/2` exact shape (`s3://bucket/prefix/group?endpoint=…&region=…`) — pure, pin it; nothing else (init demands the binary) | — |
+| `EchoStore` / `.Directory` | module + lazy GenServer | `tables/0 == []` before ensure; `spec/1 :error`; `Directory.register/3` then `tables/0`/`spec/1`; owner-death DOWN scrubs the entry; `unregister/1` | — |
+| `EchoStore.Keyspace` | pure | `key/2` shape; raise on invalid id | — |
+| `EchoStore.Coherence` | pure + wire | `payload/2`/`parse/1` round-trip + garbage `:error`; `newer?/2` mint-order across namespaces; `channel/1`/`queue/1` shapes | `drop_l2/4` newer-deletes/stale-keeps/short-frame-deletes; `broadcast/4` receiver count; `enqueue/5` rides Lanes |
+| `EchoStore.Ring` | caller-started GenServer + persistent_term | **the best pure M2 suite, no wire:** `start_link` with a collecting `apply_fn`; `publish/2` `:ok`; order preserved across drains; `occupancy/1`; `:dropped` + counted at capacity; edge-triggered wake (stats `wakes` ≤ `published`); `stats/1` keys incl. `max_batch`/`capacity`; `stop/1` erases the persistent_term; init refusals (`capacity < 2`, non-1-arity `apply_fn`) | — |
+| `EchoStore.Table` | caller-started GenServer (starts its own Connector in `init` — `table.ex:207`) | init refusals are testable ONLY with a live wire (init connects first) — so: none pure | `fetch/3` `:hit`/`:l2`/`:fill` sources + counters; single-flight herd (N concurrent fetches, loader called once — `coalesced` counter); `{:error, :kind}` wrong-namespace; `put/3` (mints version of table kind) and `put/4`; `apply_coherence/4` `:applied`/`:stale` idempotence; `invalidate/3`; sweep reclaims expired; full table degrades to pass-through (`full_skips`); `coherence: :broadcast` end-to-end (a second table instance drops its L1 row on a `Coherence.broadcast`); `stats/1` |
+| `EchoStore.Journal` | caller-started GenServer (exqlite, NO wire needed for the intents side) | start refuses non-branded `group` (`ArgumentError`); `record/4` returns seq; `record_many/2` one transaction, seq list; `mark_enqueued/2`; `stats/1` (`intents`/`pending_enqueue`/`remembered`/`path`); `last_applied/2` nil when unknown; persistence across stop + reopen of the same dir/group; `compact/1` retires nothing with an empty applied table | `intend_and_enqueue/4` outbox verb; `replay/2` `%{replayed: _, deduplicated: _}` counts; `apply_and_remember/4` `:remembered_stale` without touching the table vs newer passes through (needs a live Table); `handler/2` over a Consumer |
+| `EchoStore.Litestream` | deferred runtime (record §7) | `replica_url/2` exact shape (`s3://bucket/prefix/group?endpoint=…&region=…`) — pure, pin it; nothing else (init demands the binary) | — |
 | `EchoData.Bcs` | pure | `gate/2` `{:ok, snow}`/`{:error, :namespace}`/`{:error, :invalid}`; `gate!/2` raises `NamespaceError` (message names both namespaces) and `ArgumentError` | — |
 | `EchoData.Bcs.PropertyStore` | caller-started GenServer (private ordered_set ETS) | `put/get` gated both ways; `get` `:not_found`; `page_desc/2` newest-first walk; `window/3` `[lo, hi)` with gated bounds; `placement/1` `{:ok, hash32}`/`{:error, :invalid}`; `record_entity/2` cast gated silently | — |
 | `EchoData.Bcs.Archetypes` | pure | `compose/2` right-most-wins + `:extends` stripped; `resolve/3` root-first chain through a fetch fun; `{:error, :cycle}`; `{:error, :depth}` at the 8-bundle ceiling; fetch error propagation | — |
@@ -223,9 +228,9 @@ guard-level column and the `RESP`/`Script` rows test in `apps/echo_wire/test/` a
 |---|---|---|---|
 | `EchoWire` (facade) | pure delegation module | the delegated surface present — `function_exported?/3` true for `command/3`, `pipeline/3`, `noreply_pipeline/3`, `transaction_pipeline/3`, `eval/5`, `push_command/3`, `subscribe/2`, `stats/1`, `start_link/1`; `EchoWire.script/2` returns the same `%EchoMQ.Script{}` as `Script.new/2` | one happy-path `command/3` and one `pipeline/3` THROUGH the facade against 6390 (delegation proven live) |
 | `EchoMQ.Connector` — the Stage-1c verbs (EXTENDS the row above) | — | — | `noreply_pipeline/3` answers `:ok` with replies suppressed wire-side (`CLIENT REPLY OFF .. ON` — `connector.ex:110`, doc line :109); `transaction_pipeline/3` answers `{:ok, exec_replies}` under MULTI/EXEC (`:115`); `subscribe/2` `:ok` on a RESP3 connection (`:104`; rides the push path — `{:error, :requires_resp3}` on `protocol: 2`) |
-| `EchoCache.Shadow` | behaviour + PURE dispatcher | `start_link(:none)` → `:ignore`; `restore(:none)` → `{:ok, :no_replica}`; `child_spec(:none)` = the transient self-start map vs `child_spec({mod, opts})` = the permanent worker `{mod, :start_link, [opts]}`; dispatch `start_link/1` + `restore/1` through a test stub module implementing the behaviour | — |
-| `EchoCache.Shadow.Copy` | caller-started GenServer (Exqlite `VACUUM INTO`; NO wire, NO binary) | module-level `restore/1` three arms (live-file-exists → `{:ok, :no_replica}`; replica-missing → `{:ok, :no_replica}`; copy-back → `{:ok, :restored}`, never overwriting a live file); `replica_path/2` = `Path.join(dir, Path.basename(db))`; `start_link(db:, dir:, every_ms:)` + forced `sync/1` (the `syncs` counter moves); `status/1` keys `db`/`dir`/`every_ms`/`syncs`/`last_error`; the SH2 cycle — rows written, one forced sync, the live file deleted, restore answers `:restored`, the row count survives exactly; the SH3 law — restore over a live file answers `:no_replica` and leaves it byte-identical, restore with nothing behind answers `:no_replica` and writes nothing; the SH4 follow — a second sync after more rows carries them; snapshot is a no-op when the live file is absent; `init` raises `KeyError` on missing `:db`/`:dir` | — |
-| `EchoCache.Litestream` — the behaviour (EXTENDS the row above) | + `@behaviour EchoCache.Shadow` | behaviour conformance: `function_exported?/3` true for `start_link/1`, `restore/1`, `status/1`, `stop/1` (the SH1 shape — `Code.ensure_loaded!/1` first) | — |
+| `EchoStore.Shadow` | behaviour + PURE dispatcher | `start_link(:none)` → `:ignore`; `restore(:none)` → `{:ok, :no_replica}`; `child_spec(:none)` = the transient self-start map vs `child_spec({mod, opts})` = the permanent worker `{mod, :start_link, [opts]}`; dispatch `start_link/1` + `restore/1` through a test stub module implementing the behaviour | — |
+| `EchoStore.Shadow.Copy` | caller-started GenServer (Exqlite `VACUUM INTO`; NO wire, NO binary) | module-level `restore/1` three arms (live-file-exists → `{:ok, :no_replica}`; replica-missing → `{:ok, :no_replica}`; copy-back → `{:ok, :restored}`, never overwriting a live file); `replica_path/2` = `Path.join(dir, Path.basename(db))`; `start_link(db:, dir:, every_ms:)` + forced `sync/1` (the `syncs` counter moves); `status/1` keys `db`/`dir`/`every_ms`/`syncs`/`last_error`; the SH2 cycle — rows written, one forced sync, the live file deleted, restore answers `:restored`, the row count survives exactly; the SH3 law — restore over a live file answers `:no_replica` and leaves it byte-identical, restore with nothing behind answers `:no_replica` and writes nothing; the SH4 follow — a second sync after more rows carries them; snapshot is a no-op when the live file is absent; `init` raises `KeyError` on missing `:db`/`:dir` | — |
+| `EchoStore.Litestream` — the behaviour (EXTENDS the row above) | + `@behaviour EchoStore.Shadow` | behaviour conformance: `function_exported?/3` true for `start_link/1`, `restore/1`, `status/1`, `stop/1` (the SH1 shape — `Code.ensure_loaded!/1` first) | — |
 
 **Coverage expectation** (record §5, verbatim in substance): every public function exercised on its happy
 path AND each refusal/guard path named above; per-module numbers from
@@ -238,7 +243,7 @@ with the reason.
 
 - **EMQ.0-AS6** [implements EMQ.0-US7, EMQ.0-US8 — the import halves] — Directive: execute the import
   manifest E + F + G + H in order, then `mix deps.get` from ECHO. Acceptance gate: per-app
-  `mix compile --warnings-as-errors` exits 0 in echo_wire, echo_mq, echo_cache, echo_data AND the umbrella
+  `mix compile --warnings-as-errors` exits 0 in echo_wire, echo_mq, echo_store, echo_data AND the umbrella
   root compiles clean; the lock delta is still exqlite-only; read-only `git status` shows exactly the
   manifest's paths; zero `EchoMQ.`-alias call-site edits anywhere (INV9).
 - **EMQ.0-AS1** [implements EMQ.0-US1] — Directive: author the pure echo_mq suites per the map (Keyspace,
@@ -247,7 +252,7 @@ with the reason.
 - **EMQ.0-AS2** [implements EMQ.0-US2] — Directive: author the pure cache suites (Ring, Directory,
   Keyspace, Coherence-pure, Journal-pure, the `replica_url/2` pin) and the NEW `apps/echo_data/test/bcs/`
   suites (Bcs, PropertyStore, Archetypes, EdgeStore, Supervisor). Acceptance gate: per-app
-  `TMPDIR=/tmp mix test` green in echo_cache AND echo_data (existing echo_data suite still green);
+  `TMPDIR=/tmp mix test` green in echo_store AND echo_data (existing echo_data suite still green);
   read-only `git status` on `apps/echo_data` shows only new `test/bcs/` paths.
 - **EMQ.0-AS7** [implements EMQ.0-US7] — Directive: author the echo_wire pure suites (the relocated
   `resp_test.exs` untouched as the floor; `script_test.exs`; `echo_wire_facade_test.exs` per the extension
@@ -255,16 +260,16 @@ with the reason.
   byte-unmodified.
 - **EMQ.0-AS8** [implements EMQ.0-US8] — Directive: author the shadow suites per the extension rows
   (`shadow_test.exs` — the dispatcher + a stub impl; `shadow_copy_test.exs` — the full Copy surface;
-  the Litestream behaviour-conformance assertions beside the URL pin). Acceptance gate: the echo_cache
+  the Litestream behaviour-conformance assertions beside the URL pin). Acceptance gate: the echo_store
   pure run green; then (post-compile) the shadow rung:
   `mix run --no-compile --no-deps-check --no-start rungs/journal/bcs_rung_shadow_check.exs` ends `PASS 4/4`.
 - **EMQ.0-AS3** [implements EMQ.0-US3, EMQ.0-US4] — Directive: author the `:valkey`-tagged suites per the
   map's wire column — Connector (incl. the three Stage-1c verbs) + the facade-live test in
   `apps/echo_wire/test/`; Jobs, Lanes, Consumer, Pool in `apps/echo_mq/test/`; Coherence-wire, Table,
-  Journal-wire in `apps/echo_cache/test/`; plus the standing gate test `Conformance.run/2 → {:ok, 14}`;
+  Journal-wire in `apps/echo_store/test/`; plus the standing gate test `Conformance.run/2 → {:ok, 14}`;
   per-test sub-queues + the purge idiom; the fence-mutation test `async: false` + snapshot/restore.
   Acceptance gate: with `redis-cli -p 6390 ping` → `PONG`, per-app `TMPDIR=/tmp mix test --include valkey`
-  green in echo_wire, echo_mq, and echo_cache.
+  green in echo_wire, echo_mq, and echo_store.
   *As-built VACUITY NOTE (Stage-4, D-10):* with the Connector suite and the facade-live test placed in
   `apps/echo_mq/test/` (the ratified deviation — echo_wire's own run cannot reach the wire),
   `apps/echo_wire/test/` carries ZERO `:valkey`-tagged tests, so this gate's "green in echo_wire" clause
@@ -313,7 +318,7 @@ LAWS (inviolable, from the record's §2 + §9 and the spec's INV1–INV9):
 - NO git mutation of any kind (D8). Read-only `git status` / `git diff` are permitted for the INV checks.
   File moves are filesystem mv — the Director's pathspec commit records them.
 - Touch ONLY: the import manifest E/F/G/H paths (this brief); new test files under apps/echo_wire/test/,
-  apps/echo_mq/test/, apps/echo_cache/test/, apps/echo_data/test/bcs/; optionally the one test_coverage:
+  apps/echo_mq/test/, apps/echo_store/test/, apps/echo_data/test/bcs/; optionally the one test_coverage:
   key in the new apps' mix.exs; ONE status line in docs/echo/migration/echo2-migration.md
   (§5 PENDING → COMPLETE, last step). Anything else = STOP.
 - apps/echomq is FROZEN — read nothing into assertions from it, edit nothing in it, and no rung loader
@@ -337,7 +342,7 @@ HAZARDS (banked — design tests around them):
   in on_exit.
 - GenServers that raise in init (Ring's capacity < 2 / non-1-arity apply_fn; Journal's non-branded group;
   Copy's missing :db/:dir KeyError) exit the caller: trap exits and assert, never bare-match start_link.
-- Named singletons (EchoCache.Directory; EchoData.Bcs.Supervisor's named PropertyStores) force
+- Named singletons (EchoStore.Directory; EchoData.Bcs.Supervisor's named PropertyStores) force
   async: false in any suite that touches them.
 - Copy's periodic :tick is timing-dependent — drive every snapshot through the forced sync/1; never
   assert on timer-fired ticks. Copy's restore/1 is module-level (no process needed). Use a fresh
@@ -353,13 +358,13 @@ T0  Toolchain re-probe; 6390 PONG probe.
 T1  AS6 THE IMPORT — manifest E (the echo_wire app: 4 file moves + 2 copies + the adapted helper),
     F (echo_mq mix.exs: + {:echo_wire, in_umbrella: true}, extra_applications → [:logger]; module name
     EchoMq.MixProject UNCHANGED), G (shadow.ex + shadow/copy.ex copies; litestream.ex replaced —
-    additive behaviour delta only; echo_cache mix.exs + {:echo_wire}; the shadow rung script copied),
+    additive behaviour delta only; echo_store mix.exs + {:echo_wire}; the shadow rung script copied),
     H (9 loaders re-adapted dual-path, fallback re-spelled apps/echo_mq/; 4_4 untouched);
     then `cd ECHO && mix deps.get` + the exqlite-only lock check + four per-app strict compiles + the
     umbrella compile + the read-only tree check.
 T2  AS1 echo_mq pure suites (Keyspace, Jobs/Lanes guards, Consumer.child_spec/1, the scenarios/0 pin:
     fence, mint, duplicate, kind, order, claim, stale, complete, retry, dead, reap, rotate, pause, limit).
-T3  AS2 echo_cache pure suites + apps/echo_data/test/bcs/ suites (NEW files only).
+T3  AS2 echo_store pure suites + apps/echo_data/test/bcs/ suites (NEW files only).
 T4  AS7 echo_wire pure suites (resp_test floor untouched; script_test; the facade delegation suite).
 T5  AS8 the shadow suites (Shadow dispatcher + stub; the full Copy surface; the Litestream behaviour
     conformance beside the replica_url/2 pin).
@@ -376,24 +381,24 @@ order, compile gates strictly first; commands are copy-pasteable from a clean sh
   cd /Users/jonny/dev/jonnify/echo/apps/echo_wire  && mix compile --warnings-as-errors
   cd /Users/jonny/dev/jonnify/echo/apps/echo_mq    && mix compile --warnings-as-errors
   cd /Users/jonny/dev/jonnify/echo/apps/echo_data  && mix compile --warnings-as-errors
-  cd /Users/jonny/dev/jonnify/echo/apps/echo_cache && mix compile --warnings-as-errors
+  cd /Users/jonny/dev/jonnify/echo/apps/echo_store && mix compile --warnings-as-errors
   cd /Users/jonny/dev/jonnify/echo                 && mix compile   # umbrella root stays clean (mercury fixed)
 
   # unit gates (per-app — NEVER umbrella-wide, D7)
   cd /Users/jonny/dev/jonnify/echo/apps/echo_wire  && TMPDIR=/tmp mix test
   cd /Users/jonny/dev/jonnify/echo/apps/echo_mq    && TMPDIR=/tmp mix test
-  cd /Users/jonny/dev/jonnify/echo/apps/echo_cache && TMPDIR=/tmp mix test
+  cd /Users/jonny/dev/jonnify/echo/apps/echo_store && TMPDIR=/tmp mix test
   cd /Users/jonny/dev/jonnify/echo/apps/echo_data  && TMPDIR=/tmp mix test
 
   # integration gates (Valkey on 6390 probed first)
   cd /Users/jonny/dev/jonnify/echo/apps/echo_wire  && TMPDIR=/tmp mix test --include valkey
   cd /Users/jonny/dev/jonnify/echo/apps/echo_mq    && TMPDIR=/tmp mix test --include valkey
-  cd /Users/jonny/dev/jonnify/echo/apps/echo_cache && TMPDIR=/tmp mix test --include valkey
+  cd /Users/jonny/dev/jonnify/echo/apps/echo_store && TMPDIR=/tmp mix test --include valkey
 
   # coverage (report-only; the gate is suites-green)
   cd /Users/jonny/dev/jonnify/echo/apps/echo_wire  && TMPDIR=/tmp mix test --cover --include valkey
   cd /Users/jonny/dev/jonnify/echo/apps/echo_mq    && TMPDIR=/tmp mix test --cover --include valkey
-  cd /Users/jonny/dev/jonnify/echo/apps/echo_cache && TMPDIR=/tmp mix test --cover --include valkey
+  cd /Users/jonny/dev/jonnify/echo/apps/echo_store && TMPDIR=/tmp mix test --cover --include valkey
   cd /Users/jonny/dev/jonnify/echo/apps/echo_data  && TMPDIR=/tmp mix test --cover
 
   # rung gates (D9 + §3.6 as-built flags; dev env; the compile gates above must have run)

@@ -74,7 +74,7 @@ Movement I · the parity floor   (all SHIPPED & gate-green — the bar = hardeni
 ── roll-up · the four shipped rungs ──────────────────────────────
   acceptance     33 / 33 user stories bound to a proof   (25 executable · 4 conformance-gate · 4 ledger)
   conformance    37 / 37 scenarios   ·   run/2 → {:ok, 37}   ·   pinned twice (registry + live count)
-  population      echo_mq 201 (20/27 files :valkey) · echo_wire 18 (pure) · echo_cache 68   =  287 tests
+  population      echo_mq 201 (20/27 files :valkey) · echo_wire 18 (pure) · echo_store 68   =  287 tests
   determinism    emq.1 120+100 · emq.2.2 100/100 (race caught) · emq.2.3 100/0   ·   emq.2.1 seed-sweep
   coverage(line)  UNMEASURED on v2  ⛔  (excoveralls v1-only; 20/27 echo_mq files Valkey-gated)
   the depth gap   v1 echomq ≈531 tests / 41 files   →   v2 echo_mq 201 / 27   ·   residual = emq.2.4
@@ -302,6 +302,6 @@ band-5 gap). The spec-name vs file-name drift (`Meter`/`Locks`/`Stalled`/`Cancel
 - **Per-rung task ledgers:** [`emq.1.testing.md`](./emq.1.testing.md) · [`emq.2.1.testing.md`](./emq.2.1.testing.md) · [`emq.2.2.testing.md`](./emq.2.2.testing.md) · [`emq.2.3.testing.md`](./emq.2.3.testing.md)
 - **Build-status mirror:** [`../emq.progress.md`](../emq.progress.md) · **design canon:** [`../emq.design.md`](../emq.design.md) · **roadmap:** [`../emq.roadmap.md`](../emq.roadmap.md)
 - **Spec triads + ledgers:** [`../specs/emq.1.stories.md`](../epics/emq.epic.1/emq.1.stories.md) · [`../specs/emq.2.1.stories.md`](../specs/emq.2/emq.2.rungs/emq.2.1.stories.md) · [`../specs/emq.2.2.stories.md`](../specs/emq.2/emq.2.rungs/emq.2.2.stories.md) · [`../specs/emq.2.3.stories.md`](../specs/emq.2/emq.2.rungs/emq.2.3.stories.md) · the `specs/emq-N.progress.md` ledgers
-- **As-built test trees:** `echo/apps/echo_mq/test/` (201 / 27) · `echo/apps/echo_wire/test/` (18 / 4) · `echo/apps/echo_cache/test/` (68 / 12) · the v1 reference `echo/apps/echomq/test/` (≈531 / 41)
+- **As-built test trees:** `echo/apps/echo_mq/test/` (201 / 27) · `echo/apps/echo_wire/test/` (18 / 4) · `echo/apps/echo_store/test/` (68 / 12) · the v1 reference `echo/apps/echomq/test/` (≈531 / 41)
 - **The standing gate:** `echo/apps/echo_mq/lib/echo_mq/conformance.ex` (37 scenarios) ↔ `conformance_run_test.exs` (`{:ok, 37}`) + `conformance_scenarios_test.exs` (the registry pin)
 - **Commits:** `a2d599c8` (emq.0 · 14) · `e0fa9b03` (emq.1 · →18) · `7d98ef86` (emq.2.1 · →24) · `76fc947c` (emq.2.2 · →32) · `3c6461ff` (emq.2.3 · →37)

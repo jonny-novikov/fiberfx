@@ -1,6 +1,6 @@
 ---
 name: echo-mq-three-movements
-description: "EchoMQ program — echo/apps/echo_mq is THE v3 library. DEPTH lives on-disk at docs/echo_mq/program/emq.program.md (the operating manual + agent calibrations). Shipped emq.0. emq.1 emq.2 emq.3 — **MOVEMENT I CLOSED**. Epics layer + AAW Epic/corpus framework instrument live. Rebalance 2026-06-15: Mars=primary code-quality gate, Apollo=fast finisher (stories+closure). This memory = slim pointer + frontier (de-bloated to disk 2026-06-15)."
+description: "EchoMQ program — echo/apps/echo_mq is THE v3 library. DEPTH lives on-disk at docs/echo_mq/program/emq.program.md (the operating manual + agent calibrations). Shipped emq.0. emq.1 emq.2 emq.3 — **MOVEMENT I CLOSED**. Epics layer + AAW Epic/corpus framework instrument live. Recalibration 2026-06-17 (D-1): Mars=code-quality gate+stories, Director verifies code+invariants, Apollo=Mentor ONLY (out of pipeline). Consumer pivot: codemoji (live) + echo_bot (planned Telegram); Exchange dropped; apps/echomq REMOVED. This memory = slim pointer + frontier."
 metadata:
   node_type: memory
   type: project
@@ -8,9 +8,12 @@ metadata:
 ---
 
 **The program.** `echo/apps/echo_mq` is THE EchoMQ 2.0 library (Valkey-native, above `echo/apps/echo_wire`);
-`apps/echomq` is the FROZEN v1 line (1.3.0), the feature reference, untouched, clear to dissolve. One program,
-three movements; shipped one rung per run through the aaw lead-team (Director-supervised → one LAW-4 commit).
-The named consumer is the Exchange platform.
+the v1 line was rewritten fresh into echo_mq and **`apps/echomq` REMOVED** (single source of truth). One program,
+three movements; shipped one rung per run through the aaw lead-team (Director-orchestrated → one LAW-4 commit).
+The consumers: **codemoji** (`echo/apps/codemoji`, the live Mastermind game on Lanes/Consumer/Events + the BCS
+property stores) is the worked present-tense consumer; **echo_bot** (`echo/apps/echo_bot`) is the headline-planned
+consumer (Telegram notifications at scale, forward-tense — no bus coupling yet; seam
+`EchoBot.Platform.Telegram.send_reply/3`). Exchange is no longer a target.
 
 ## The depth lives ON DISK — read these (the 2026-06-15 de-bloat)
 
@@ -56,13 +59,16 @@ mutation (EVALSHA-first) · committed harness ≠ ephemeral `/tmp` proof · the 
 verdict + SendMessage before idle) · `echo_mq` not under `mix format` · **spec home convention:** `specs/` =
 chapter triads only, decomposition → `specs/emq.N/`, ledgers → `specs/progress/`.
 
-## The rebalance (2026-06-15, Operator-directed — agents were too passive)
+## The pipeline (2026-06-17 recalibration, D-1 — Operator-directed)
 
-**Mars = the PRIMARY code-quality gate** — owns the gate ladder + the adversarial battery (declared-keys,
-mutation kill-rate w/ `SCRIPT FLUSH`, order theorem), proactively, BEFORE reporting. **Apollo = the FAST
-finisher** — story-gen coverage (`test/stories/*_story_test.exs` → `mix echo_mq.stories` →
-`docs/echo_mq/stories/`) + the closure report; the ~1h47m cold-run adversarial marathon retired to Mars.
-Details: `emq.program.md` + `emq.{mars,apollo,venus}.md`.
+**Venus** = spec-steward + strawman spec author; frames the seam forks as four-part Arms (Rationale/5W/Steelman/
+Steward, per `docs/aaw/aaw.architect-approach.md`). **Director** = orchestrator: rules each Arm with the Operator
+via the **mandatory `AskUserQuestion`**, then independently **verifies code + invariants**, then consolidates the
+rung's findings+learnings for Apollo. **Mars** = PRIMARY code-quality gate (the gate ladder + the adversarial
+battery: declared-keys, mutation kill-rate w/ `SCRIPT FLUSH`, order theorem) + the story-gen coverage (moved from
+Apollo). **Apollo = the Mentor ONLY**, out of the per-rung pipeline — folds the Director's consolidated findings
+into agent calibrations (PROPOSE-ONLY, sharpen-don't-stack); the cold-run marathon is retired. Details:
+`emq.program.md` + `emq.{venus,mars,apollo}.md`.
 
 Related: [[echomq-umbrella-app]], [[bcs-course]],
 [[x-mode-cclin-leadteam]], [[local-valkey-replaces-redis]], [[exchange-platform]].

@@ -46,7 +46,7 @@ planned consumer, named in forward tense, never asserted as a shipped integratio
 | **The extracted wire** | A RESP3 connector over a frozen-named wire layer — `EchoMQ.{RESP, Connector, Script}` under the `EchoWire` facade — dependency-free, the universal predecessor every later rung lands its verbs on. | `echo/apps/echo_wire/lib/echo_wire.ex` (9 `defdelegate`s + `script/2`); `connector.ex` | ✅ |
 | **The connect-scoped version fence** | On every connect and reconnect the connector claims `{emq}:version` `SET NX`, read-back-verifies, and refuses typed on mismatch — the boot contract for a fresh v2 deployment, five-code fence union. | `echo_wire` Connector (`{emq}:version` = `echomq:2.0.0`); design §3 | ✅ |
 | **Pub/sub seam + telemetry hook** | `subscribe/2`/`unsubscribe/2` over `push_command` (RESP3), the `{:emq_push, …}` message, a guarded `emit/3` (zero cost when `:telemetry` is absent) — the seam the event/telemetry plane rides. | `echo_wire` Connector | ✅ |
-| **The near-cache** | A read-through cache with a pluggable `EchoCache.Shadow` archive behaviour (`Shadow.Copy` laptop impl, Litestream conforming) — the structural landing of the BCS near-cache. | `echo/apps/echo_cache` (7 files + the nested `Directory`) | ✅ |
+| **The near-cache** | A read-through cache; durable, replicated state is the `EchoStore.Graft` engine streamed to Tigris (the `EchoStore.Shadow` behaviour is retired, `store.design.md` §2) — the structural landing of the BCS near-cache. | `echo/apps/echo_store` (the cache + journal + `Graft` engine) | ✅ |
 | **The canon (identity + structures)** | The lock-free `:atomics` Snowflake mint, the 14-byte `BrandedId` (the `JOB`/`ORD` brand domains), and the CHAMP family — Ecto-free, the in-umbrella dep every key and id gates on. | `echo/apps/echo_data` (the additive `bcs/` subtree) | ✅ |
 
 **Use cases.** *Consumers/systems:* any BEAM service needing an audited keyspace and a self-healing connector
@@ -250,7 +250,7 @@ wire + the pluggable shadow, both closed). Consolidated into [`./emq.roadmap.md`
 | **emq3.2** | `EchoMQ.Stream`, the writer law: hash-tagged per key, branded record ids, append is mint order. | 🔭 |
 | **emq3.3** | groups + the polyglot seam: a BEAM consumer and one non-BEAM reader on one group, crash → `XAUTOCLAIM` re-delivery. | 🔭 |
 | **emq3.4** | retention as declared policy: `MAXLEN` (approx) + mint-time `MINID` windows per stream. | 🔭 |
-| **emq3.5** | the archive: segments folded to SQLite under `EchoCache.Shadow`; merge reads; box-loss restore. | 🔭 |
+| **emq3.5** | the archive: segments folded into the `EchoStore.Graft` engine (local CubDB → Tigris); merge reads; box-loss restore. | 🔭 |
 | **emq3.6** | time-travel + hydration: a mint-instant → `XRANGE` bounds; Table hydration from a tail. | 🔭 |
 
 **Use cases.** *Consumers/systems:* per-key event streams with replay, polyglot readers on ordinary Redis

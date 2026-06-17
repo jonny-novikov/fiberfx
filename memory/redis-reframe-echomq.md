@@ -13,9 +13,7 @@ The operator evolved the reframe into a stronger **TARGET DESIGN**:
 - **Exemplar: Portal → the EXCHANGE PLATFORM.** The worked consumer is the Exchange Platform — REAL partial code at
   `echo/apps/exchange/` (`Exchange.Gateway`/`OrderBook`/`Decider`; design corpus `docs/exchange/`), renamed from the
   "trading platform" (`docs/trading/` → `docs/exchange/`). NOT Portal.
-- **BullMQ → ZERO mentions** (SUPERSEDES decision #4's "one lineage note"). `emq` ships a new library with no
-  compatibility layer; the v1 history is told without naming BullMQ ("EchoMQ broke from its v1 line, now frozen at
-  1.3.0"). I removed BOTH the reserved-tier note AND the immutable-core note.
+- **BullMQ → ZERO mentions** `emq` ships an author library without any compatibility with BullMQ;
 - **Ground in the REAL as-built code, NOT specs, NEVER `.out` files** (operator: "'out' files not included in
   course… EchoMQ is the REAL ADVANCED PATTERNS APPLIED. KEEP FOCUSED"). The spine: `echo/apps/echo_mq` (EchoMQ —
   Jobs/Lanes/Consumer/Keyspace + Lua), `echo/apps/echo_cache` (EchoCache — Ring/Table/Journal/Coherence),
