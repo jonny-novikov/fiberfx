@@ -6,7 +6,7 @@ defmodule EchoData.Graft.Id do
   Graft identifies Volumes, Segments, and Commits with GIDs. The BCS branded id
   is the same shape, and its snowflake suffix is monotonic, so a commit id minted
   by a Volume's single writer orders by mint order — which is commit order. That
-  is the property `EchoCache.Table`'s newer-wins coherence (a 14-byte version)
+  is the property `EchoStore.Table`'s newer-wins coherence (a 14-byte version)
   relies on, so a commit id doubles as the page version on the L1.
 
   Namespaces:
