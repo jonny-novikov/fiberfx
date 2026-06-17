@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R1.05 &#183; Cache stampede prevention &#183; Redis Patterns Applied &#183; jonnify</title>
+<meta name="description" content="The R1.05 module hub: cache stampede prevention. When a hot key expires under heavy concurrency every reader misses at once and hammers the source. Three solutions stop the herd: a per-key regeneration lock (SET NX PX), probabilistic early refresh (X-Fetch) before expiry, and request coalescing. Grounded in EchoCache's single-flight flights map and its jittered TTL, backed by Valkey.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+.skip{position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 6px 0;font-family:var(--mono);font-weight:700;z-index:50}
+.skip:focus{left:0}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ol,.prose ul{margin:0 0 14px 1.3rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.ctrls{display:flex;flex-wrap:wrap;gap:18px 26px;align-items:center;margin:4px 0 14px}
+.ctrl{display:flex;align-items:center;gap:12px;font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.ctrl label{min-width:8.5rem;color:var(--b-ink)}
+.ctrl input[type=range]{accent-color:var(--r-red)}
+.ctrl .val{color:var(--r-red);font-weight:700;min-width:3.2rem;text-align:right}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- the module map ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink);margin:22px 0 6px}
+div.door:hover{box-shadow:none}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.9rem;color:var(--b-dim);max-width:74ch}
+.door .frozen{margin:12px 0 0}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+table.ltable{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:13px;margin:0 0 18px}
+.ltable th,.ltable td{border:1px solid var(--b-line);padding:8px 10px;text-align:left;vertical-align:top}
+.ltable th{background:var(--b-card);color:var(--b-dim);text-transform:uppercase;font-size:11.5px;letter-spacing:.06em}
+.ltable td b{color:var(--r-red)}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .mods{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the herd figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.herd{width:100%;height:auto;display:block;margin-top:4px}
+.herd .reg{cursor:pointer;transition:opacity .18s ease}
+.herd .reg rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.herd .reg.lead rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.herd .rlbl{font:12px var(--mono);fill:var(--b-ink)}
+.herd .rsub{font:10.5px var(--mono);fill:var(--b-dim)}
+.herd .axis{stroke:var(--b-line);stroke-width:1}
+.herd .bar{transition:height .2s ease,y .2s ease}
+.herd.focus .reg{opacity:.3}
+.herd.focus .reg.on{opacity:1}
+.herd.focus .reg.on rect{stroke-width:2.6}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the module</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">&#183;</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/caching">caching</a><span class="rsep">/</span><span class="rcur">cache-stampede-prevention</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#problem">The problem</a>
+      <a href="#xfetch">X-Fetch</a>
+      <a href="#mutex">Mutex lock</a>
+      <a href="#dives">The dives</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R1.05 &#183; Caching &#8212; module hub</p>
+      <h1>Cache stampede <span class="hns">prevention</span>.</h1>
+      <p class="lede">Prevent multiple clients from simultaneously regenerating an expired cache key using locking,
+      probabilistic early refresh, or request coalescing.</p>
+      <p class="heronote">Grounding: echo/apps/echo_cache &#183; table.ex (the single-flight <code>flights</code> map,
+      the jittered <code>expires_at</code>) &#183; content/bcs4.1.md &#8212; every figure verbatim from a committed
+      record.</p>
+
+      <figure class="anatomy" aria-labelledby="floodCap">
+        <figcaption id="floodCap"><b>The flood at expiry.</b> Set the read rate and the regeneration time; the
+        readout counts the concurrent source reads an unprotected hot key takes at the moment it expires.</figcaption>
+        <div class="ctrls">
+          <div class="ctrl">
+            <label for="rateRange">reads / second</label>
+            <input type="range" id="rateRange" min="100" max="20000" step="100" value="10000">
+            <span class="val" id="rateVal">10000</span>
+          </div>
+          <div class="ctrl">
+            <label for="regenRange">regen time (ms)</label>
+            <input type="range" id="regenRange" min="10" max="500" step="10" value="200">
+            <span class="val" id="regenVal">200</span>
+          </div>
+        </div>
+        <svg class="herd" id="floodSvg" viewBox="0 0 460 190" role="img" aria-label="A bar of how many concurrent requests reach the source during the regeneration window with no protection. The bar grows with the read rate and the regeneration time. A dashed line marks one source read, the target every solution reaches.">
+          <line class="axis" x1="40" y1="160" x2="440" y2="160"></line>
+          <text class="rsub" x="40" y="178" text-anchor="start">expiry</text>
+          <text class="rsub" x="440" y="178" text-anchor="end">regen window ends</text>
+          <line id="oneLine" x1="40" y1="152" x2="440" y2="152" stroke="#2e7d5b" stroke-width="1" stroke-dasharray="4 4"></line>
+          <text class="rsub" x="48" y="148" text-anchor="start" fill="#2e7d5b">1 read &#183; the target</text>
+          <rect id="floodBar" class="bar" x="150" y="40" width="160" height="120" rx="5" fill="var(--r-red-tint)" stroke="#d6584f" stroke-width="1.5"></rect>
+          <text id="floodNum" x="230" y="30" text-anchor="middle" font-size="13" font-weight="700" fill="#d6584f" font-family="ui-monospace,monospace">2000</text>
+          <text class="rsub" x="230" y="178" text-anchor="middle">concurrent source reads, no protection</text>
+        </svg>
+        <div class="readout" id="floodOut" aria-live="polite"><span class="rk">readout &#183;</span> Set the rate and
+        the regen window to count the flood at expiry.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="problem">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The problem</h2>
+        <span class="ssrc">source &#183; the thundering herd</span>
+      </div>
+      <div class="prose">
+        <p>Consider a cache key accessed ten thousand times a second. While it is present every read is a hit and the
+        source is untouched. The instant it expires, the picture inverts:</p>
+        <ol>
+          <li>Thousands of requests arrive within milliseconds.</li>
+          <li>All take a cache miss.</li>
+          <li>All query the source simultaneously.</li>
+          <li>The source becomes overloaded.</li>
+          <li>Response times spike across the entire system.</li>
+        </ol>
+        <p>This is particularly dangerous for keys with expensive regeneration costs &#8212; complex queries,
+        aggregations, external API calls. The danger scales with two factors: how hot the key is, and how expensive
+        its regeneration is. Plain cache-aside has no defence here &#8212; every miss is independent, so <em>N</em>
+        concurrent misses become <em>N</em> source reads. The cost of a miss is what makes the herd dangerous: in the
+        measured EchoCache record an L1 hit costs <code>762 ns</code>, while the L2 GET it replaces costs
+        <code>31 us</code> &#8212; the L1 hit is <strong>40 times cheaper</strong>, and a herd pays that round trip
+        <em>N</em> times at once.</p>
+      </div>
+      <p class="take">With no protection, every miss is its own source read, so a hot key turns one expiry into a
+      flood the size of the request rate over the regeneration window.</p>
+    </section>
+
+    <section id="xfetch">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Solution 1 &#8212; probabilistic early expiration</h2>
+        <span class="ssrc">source &#183; X-Fetch</span>
+      </div>
+      <div class="prose">
+        <p>This technique decouples logical expiration from physical expiration. The idea is to give any request a
+        small probability of refreshing the cache <em>before</em> it actually expires.</p>
+        <p><strong>How it works.</strong> Set the physical TTL longer than needed &#8212; one hour, say. As requests
+        arrive, each one calculates whether it should proactively refresh based on how close the key is to expiration
+        and a random factor. When the key is fresh the probability of refresh is near zero; as expiration approaches
+        the probability increases, until one request triggers a refresh while all others continue serving the
+        slightly stale value.</p>
+        <p><strong>The algorithm.</strong> The decision to refresh is based on:</p>
+      </div>
+      <pre class="code">current_time - (expiry_time - delta * beta * log(random()))</pre>
+      <div class="prose">
+        <p>Where <code>delta</code> is the time needed to regenerate the value, <code>beta</code> is a tuning
+        parameter (typically 1.0), and <code>random()</code> produces a value between 0 and 1. The formula ensures
+        that as the gap to expiration shrinks, the probability of any single request triggering a refresh increases.
+        Instead of thousands of simultaneous source reads at expiration, a single request refreshes the cache moments
+        before expiration while others continue serving cached data. The traffic spike is smoothed away.</p>
+      </div>
+      <p class="take">X-Fetch beats the deadline: one read rebuilds early, the rest serve the fresh value, no lock and
+      no waiting &#8212; the <a href="/redis-patterns/caching/cache-stampede-prevention/early-refresh">early-refresh
+      dive</a> computes the formula, then grounds the applied part in EchoCache&#8217;s jitter.</p>
+    </section>
+
+    <section id="mutex">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Solution 2 &#8212; mutex locking</h2>
+        <span class="ssrc">source &#183; SET NX PX</span>
+      </div>
+      <div class="prose">
+        <p>A deterministic approach where only one process is allowed to regenerate the cache. When a cache miss
+        occurs:</p>
+        <ol>
+          <li>Attempt to acquire a lock using <code>SET lock:mykey &lt;token&gt; NX PX 5000</code>.</li>
+          <li>If the lock is acquired, query the source and update the cache.</li>
+          <li>Other requests either wait and poll, or return a stale or default value.</li>
+          <li>Release the lock after the cache is populated.</li>
+        </ol>
+        <p><strong>Redis commands.</strong> The acquire is one command:</p>
+      </div>
+      <pre class="code"><b>SET</b> lock:popular_key abc123 <b>NX</b> <b>PX</b> 5000</pre>
+      <div class="prose">
+        <p>The <code>NX</code> ensures only one client acquires the lock. The <code>PX 5000</code> sets a five-second
+        timeout to prevent deadlocks if the lock holder crashes. Clients that fail to acquire the lock have options:
+        <strong>poll</strong> (sleep briefly and check the cache again), <strong>return stale data</strong> (serve a
+        stale copy if one is available), <strong>return a default</strong> (serve a degraded response), or
+        <strong>fail fast</strong> (return an error immediately).</p>
+        <p><strong>Releasing the lock.</strong> The lock must be released safely. A plain <code>DEL</code> risks
+        deleting another client&#8217;s lock if yours already expired. Use a Lua script that checks the token matches
+        before deleting:</p>
+      </div>
+      <pre class="code">if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+end
+return 0</pre>
+      <p class="take">Mutex locking is the deterministic defence: one winner reads the source, the losers wait or
+      serve stale, and a token-checked release deletes only the lock this request still owns &#8212; the
+      <a href="/redis-patterns/caching/cache-stampede-prevention/lock-on-miss">lock-on-miss dive</a> runs the
+      race.</p>
+    </section>
+
+    <section id="comparison">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Comparison</h2>
+        <span class="ssrc">source &#183; the three regimes</span>
+      </div>
+      <div class="prose">
+        <p>The three regimes trade along three axes &#8212; complexity, source reads at expiry, and staleness:</p>
+      </div>
+      <table class="ltable">
+        <thead><tr><th>Approach</th><th>Complexity</th><th>Database queries</th><th>Staleness</th></tr></thead>
+        <tbody>
+          <tr><td>No protection</td><td>Low</td><td>N (one per request)</td><td>None</td></tr>
+          <tr><td>X-Fetch</td><td>Medium</td><td>1&#8211;2</td><td>Brief window</td></tr>
+          <tr><td>Mutex lock</td><td>Higher</td><td>Exactly 1</td><td>None</td></tr>
+        </tbody>
+      </table>
+
+      <figure class="anatomy" aria-labelledby="herdCap">
+        <figcaption id="herdCap"><b>Compare the regimes.</b> Select a regime to read its source-read count,
+        complexity, staleness, and what the waiting requests do while one rebuilds &#8212; the bar shows reads at
+        expiry.</figcaption>
+        <div class="segbar" id="regSel" role="group" aria-label="Select a stampede regime">
+          <button type="button" data-reg="none" aria-pressed="false">no protection</button>
+          <button type="button" data-reg="lock" aria-pressed="false">mutex lock</button>
+          <button type="button" data-reg="xfetch" aria-pressed="false">X-Fetch</button>
+          <button type="button" data-reg="coalesce" aria-pressed="false">coalescing</button>
+        </div>
+        <svg class="herd" id="herdSvg" viewBox="0 0 460 150" role="img" aria-label="Four regimes shown as bars of source reads at one expiry: no protection is a tall flood; mutex lock, X-Fetch, and coalescing each drop to about one. Select a regime to highlight it; its trade-offs appear in the readout.">
+          <line class="axis" x1="40" y1="120" x2="440" y2="120"></line>
+          <g class="reg" data-reg="none"><rect x="58" y="24" width="76" height="96" rx="5"></rect><text class="rlbl" x="96" y="138" text-anchor="middle">none</text></g>
+          <g class="reg lead" data-reg="lock"><rect x="158" y="96" width="76" height="24" rx="5"></rect><text class="rlbl" x="196" y="138" text-anchor="middle">lock</text></g>
+          <g class="reg" data-reg="xfetch"><rect x="258" y="90" width="76" height="30" rx="5"></rect><text class="rlbl" x="296" y="138" text-anchor="middle">X-Fetch</text></g>
+          <g class="reg" data-reg="coalesce"><rect x="358" y="96" width="76" height="24" rx="5"></rect><text class="rlbl" x="396" y="138" text-anchor="middle">coalesce</text></g>
+        </svg>
+        <div class="readout" id="regOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a regime.
+        All three solutions converge a flood of misses to one regeneration; they differ in complexity and
+        staleness.</div>
+      </figure>
+      <p class="take">All three converge a flood of misses to a single regeneration; they differ in complexity, in
+      whether any request reads a stale value, and in whether the guard spans one process or the whole fleet.</p>
+    </section>
+
+    <section id="recommendation">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Recommendation</h2>
+        <span class="ssrc">source &#183; what to reach for</span>
+      </div>
+      <div class="prose">
+        <p>For most applications, start with mutex locking &#8212; it is easier to reason about and provides strong
+        protection. Consider X-Fetch for extremely high-traffic keys where even brief lock contention is problematic.
+        Some systems combine both: X-Fetch for normal operation, with a mutex fallback for hard cache misses. The
+        early-refresh formula is a probability, so an unlucky run can still let the key physically expire &#8212; the
+        lock catches that hard miss.</p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>SET key value PX &lt;ms&gt;</code> writes the
+      value and its millisecond expiry atomically &#8212; the form EchoCache uses for the jittered TTL. A separate
+      <code>EXPIRE</code> after <code>SET</code> leaves an immortal key if the process dies between the two
+      &#8212; <a href="https://valkey.io/commands/set" rel="noopener">valkey.io/commands/set</a>.</p>
+
+      <div class="door">
+        <span class="dr">the application &#183; one fill per herd, measured</span>
+        <h3>EchoCache stops the herd by construction</h3>
+        <p>EchoCache does not bolt a lock on after the fact: misses route through the table&#8217;s owner, concurrent
+        misses on one id coalesce onto a single in-flight load, and rows expire on a jittered clock so a cohort never
+        re-herds. The cost the herd would have paid is the committed figure &#8212; an L1 hit against the L2 GET it
+        replaces:</p>
+        <figure class="frozen">
+          <figcaption>content/bcs4.1.md &#183; the cache hit cost, against live Valkey<span class="tag">frozen</span></figcaption>
+          <pre>L1 hit reads/s                <b>1311621</b>        <span class="fd">&#8592; 762 ns each, caller-side ETS</span>
+L2 GET                        <b>31 us</b>          <span class="fd">&#8592; the round trip a herd multiplies</span>
+the L1 hit is                 <b>40 times</b>       cheaper than the round trip it replaces</pre>
+        </figure>
+      </div>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The three dives</h2>
+        <span class="ssrc">lock &#8594; refresh early &#8594; coalesce</span>
+      </div>
+      <div class="prose">
+        <p>Each dive takes one solution and runs it on a hot key, in the arc <em>lock &#8594; refresh early &#8594;
+        coalesce</em>: a deterministic per-key lock, a probabilistic refresh that beats expiry, and the coalescing
+        EchoCache really does. Read them in order &#8212; the lock is the one to reach for first.</p>
+      </div>
+
+      <div class="mods" style="margin-top:6px">
+        <a class="mod" href="/redis-patterns/caching/cache-stampede-prevention/lock-on-miss">
+          <div class="top"><span class="num">R1.05.1</span><span class="pill built">built</span></div>
+          <p class="t">Lock-on-miss</p>
+          <p class="o">A per-key regeneration lock with <code>SET NX PX</code>: one request wins and rebuilds, the
+          rest wait or serve stale, and a token-checked release stops a stale lock deleting another holder&#8217;s.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/caching/cache-stampede-prevention/early-refresh">
+          <div class="top"><span class="num">R1.05.2</span><span class="pill built">built</span></div>
+          <p class="t">Probabilistic early refresh</p>
+          <p class="o">X-Fetch the pattern: recompute before expiry with a rising probability, using the real
+          <code>delta&#183;beta&#183;&minus;log(rand)</code> formula &#8212; then grounded in EchoCache&#8217;s real
+          expiry jitter.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/caching/cache-stampede-prevention/coalescing">
+          <div class="top"><span class="num">R1.05.3</span><span class="pill built">built</span></div>
+          <p class="t">Request coalescing</p>
+          <p class="o">Concurrent misses on one id collapse into a single in-flight fill &#8212; the EchoCache
+          <code>flights</code> map and the <code>:coalesced</code> counter; every waiter reads the one answer.</p>
+        </a>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>When a hot key expires, do not let every reader rebuild it. Elect one regeneration &#8212; by a lock, by
+          a probabilistic early refresh, or by coalescing &#8212; and let the rest wait or serve the previous
+          value.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoCache application</span>
+          <p>EchoCache fuses two of these into the owner: the single-flight <code>flights</code> map coalesces
+          concurrent misses onto one load (the <code>:coalesced</code> counter), and the jittered
+          <code>expires_at</code> spreads a cohort&#8217;s expiry &#8212; one fill per herd, no synchronized
+          re-herd.</p>
+        </div>
+      </div>
+      <p class="take">Three dives, one rule: a hot key expires once, and it is rebuilt once too &#8212; not once per
+      reader.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/set" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; the <code>NX</code> and <code>PX</code> options for the regeneration lock, and <code>PX</code> for the jittered millisecond TTL EchoCache writes.</li>
+            <li><a href="https://redis.io/commands/set" rel="noopener">Redis &mdash; <em>SET</em></a> &mdash; the canonical command reference for the self-expiring lock.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; expiry, key TTL, and the string commands the lock and refresh are built from.</li>
+            <li><a href="https://antirez.com/" rel="noopener">Sanfilippo, S. &mdash; <em>antirez weblog</em></a> &mdash; the Redis creator on locks, TTL, and atomic check-and-delete with a token.</li>
+            <li><a href="https://llmstxt.org/" rel="noopener">llmstxt.org &mdash; <em>The llms.txt convention</em></a> &mdash; the machine-readable map format the course follows.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/caching/cache-stampede-prevention/lock-on-miss">R1.05.1 &#183; Lock-on-miss</a><span class="rs">the regeneration lock</span></li>
+            <li><a href="/redis-patterns/caching/cache-stampede-prevention/early-refresh">R1.05.2 &#183; Probabilistic early refresh</a><span class="rs">X-Fetch the pattern, jitter the mechanism</span></li>
+            <li><a href="/redis-patterns/caching/cache-stampede-prevention/coalescing">R1.05.3 &#183; Request coalescing</a><span class="rs">one fill per herd, every waiter served</span></li>
+            <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
+            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under the Exchange Platform</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the protocol the coherence lane rides</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/caching"><span class="pk">up</span>&#8592; R1 &#183; Caching</a>
+      <a class="pgx" href="/redis-patterns/caching/cache-stampede-prevention/lock-on-miss"><span class="pk">next</span>R1.05.1 &#183; Lock-on-miss &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">&#183;</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/caching/cache-stampede-prevention/lock-on-miss">R1.05.1 &#183; Lock-on-miss</a>
+        <a href="/redis-patterns/caching/cache-stampede-prevention/early-refresh">R1.05.2 &#183; Early refresh</a>
+        <a href="/redis-patterns/caching/cache-stampede-prevention/coalescing">R1.05.3 &#183; Request coalescing</a>
+        <a href="/redis-patterns/caching">R1 &#183; Caching</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the flood at expiry (pure over a fixed model) ---------- */
+  // pure: (reads/sec, regen ms) -> concurrent source reads during the regen window
+  function floodCount(rate, regenMs) { return Math.max(1, Math.round(rate * (regenMs / 1000))); }
+  var MAX_N = floodCount(20000, 500); // the model's ceiling
+  // pure: (rate, regen) -> {n, h, txt}
+  function describeFlood(rate, regenMs) {
+    var n = floodCount(rate, regenMs);
+    var h = Math.max(8, Math.round(120 * Math.min(1, n / MAX_N)));
+    var txt = 'Read rate ' + rate + '/s over a ' + regenMs + 'ms regen window gives ' + n +
+      ' concurrent source reads with no protection. Each solution cuts this to 1 (the lock and coalescing exactly; X-Fetch to 1-2).';
+    return { n: n, h: h, txt: txt };
+  }
+  var rateRange = document.getElementById('rateRange'), rateVal = document.getElementById('rateVal');
+  var regenRange = document.getElementById('regenRange'), regenVal = document.getElementById('regenVal');
+  var floodBar = document.getElementById('floodBar'), floodNum = document.getElementById('floodNum'), floodOut = document.getElementById('floodOut');
+  function renderFlood() {
+    var rate = rateRange ? parseInt(rateRange.value, 10) : 10000;
+    var regenMs = regenRange ? parseInt(regenRange.value, 10) : 200;
+    if (rateVal) rateVal.textContent = String(rate);
+    if (regenVal) regenVal.textContent = String(regenMs);
+    var d = describeFlood(rate, regenMs);
+    if (floodBar) { floodBar.setAttribute('height', String(d.h)); floodBar.setAttribute('y', String(160 - d.h)); }
+    if (floodNum) { floodNum.textContent = String(d.n); floodNum.setAttribute('y', String(Math.max(16, 160 - d.h - 8))); }
+    if (floodOut) floodOut.innerHTML = '<span class="rk">readout &#183;</span> ' + d.txt;
+  }
+  if (rateRange) rateRange.addEventListener('input', renderFlood);
+  if (regenRange) regenRange.addEventListener('input', renderFlood);
+  renderFlood();
+
+  /* ---------- Interactive 2: compare the regimes (hover-select over a fixed table) ---------- */
+  var REG = {
+    none:     { name: 'No protection',     reads: 'N (one per concurrent miss)', complexity: 'low',    staleness: 'none',                 waiters: 'every request reads the source' },
+    lock:     { name: 'Mutex lock',        reads: 'exactly 1',                   complexity: 'higher', staleness: 'none if waiters poll', waiters: 'poll for the fill, or serve a stale copy' },
+    xfetch:   { name: 'X-Fetch',           reads: '1-2',                         complexity: 'medium', staleness: 'brief, pre-expiry only', waiters: 'serve the still-fresh value while one refreshes' },
+    coalesce: { name: 'Coalescing',        reads: '1 per process',               complexity: 'medium', staleness: 'none',                 waiters: 'await the one in-flight load' }
+  };
+  // pure: regime key -> readout text
+  function describeReg(key) {
+    var r = REG[key];
+    return r.name + '. Source reads at expiry: ' + r.reads + '. Complexity: ' + r.complexity +
+      '. Staleness: ' + r.staleness + '. Waiting requests: ' + r.waiters + '.';
+  }
+  var herdSvg = document.getElementById('herdSvg');
+  var regButtons = document.querySelectorAll('#regSel button');
+  var regOut = document.getElementById('regOut');
+  // pure: highlight a regime, sync the buttons, fill the readout — hover or click.
+  function selectReg(key) {
+    regButtons.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-reg') === key ? 'true' : 'false'); });
+    if (herdSvg) {
+      herdSvg.classList.toggle('focus', !!key);
+      herdSvg.querySelectorAll('.reg').forEach(function (g) { g.classList.toggle('on', g.getAttribute('data-reg') === key); });
+    }
+    if (regOut) {
+      regOut.innerHTML = key
+        ? '<span class="rk">readout &#183;</span> ' + describeReg(key)
+        : '<span class="rk">readout &#183;</span> Select a regime. All three solutions converge a flood of misses to one regeneration; they differ in complexity and staleness.';
+    }
+  }
+  regButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-reg');
+      selectReg(b.getAttribute('aria-pressed') === 'true' ? null : key);
+    });
+  });
+  if (herdSvg) {
+    herdSvg.querySelectorAll('.reg').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectReg(g.getAttribute('data-reg')); });
+      g.addEventListener('mouseleave', function () { selectReg(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

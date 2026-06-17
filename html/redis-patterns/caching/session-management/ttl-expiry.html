@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R1.06.2 · TTL expiry · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R1.06.2 — session expiry: an absolute deadline fixed at sign-in against a sliding window refreshed by an EXPIRE on each access, so active users stay in and idle ones fall out. Plus the lazy and active eviction that makes a TTL real, and EchoCache's jittered expires_at and sweeper. Grounded in EchoCache.Table — SET … PX, the jittered clock, and the :sweep handler.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.range{display:flex;align-items:center;gap:1rem;margin:10px 0 12px;font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.range label{min-width:9rem}
+.range input[type=range]{flex:1;accent-color:var(--r-red);height:2px}
+.range .val{color:var(--b-ink);min-width:3rem;text-align:right}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+pre.code .str{color:var(--b-node)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .cell p code{font-size:.86em}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+dl.deflist{display:grid;grid-template-columns:auto 1fr;gap:.4rem 1.1rem;font-family:var(--mono);font-size:13px;margin:0 0 18px}
+dl.deflist dt{color:var(--r-red);font-weight:700}
+dl.deflist dd{color:var(--b-ink)}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  dl.deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the expiry-mode figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.lstack{width:100%;height:auto;display:block;margin-top:4px}
+.lstack .axis{stroke:var(--b-line);stroke-width:1.4}
+.lstack .tick{font:10px var(--mono);fill:var(--b-dim)}
+.lstack .req{fill:var(--b-ts)}
+.lstack .mode{cursor:pointer;transition:opacity .18s ease}
+.lstack .mode .win{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.4}
+.lstack .mode.abs .win{fill:var(--r-red-tint);stroke:var(--r-red)}
+.lstack .mlbl{font:11px var(--mono);fill:var(--b-ink)}
+.lstack.focus .mode{opacity:.25}
+.lstack.focus .mode.on{opacity:1}
+.lstack.focus .mode.on .win{stroke-width:2.6}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/caching">caching</a><span class="rsep">/</span><a href="/redis-patterns/caching/session-management">session-management</a><span class="rsep">/</span><span class="rcur">ttl-expiry</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#two">Absolute vs sliding</a>
+      <a href="#evict">How a key is reclaimed</a>
+      <a href="#echocache">On EchoCache</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R1.06.2 &#183; Session management &#8212; dive 2</p>
+      <h1>A deadline that <span class="hns">slides</span>.</h1>
+      <p class="lede">An absolute TTL ends the session at a fixed time from sign-in. A sliding TTL refreshes the deadline
+      on each request, so <b>active users stay in and idle ones fall out</b>.</p>
+      <p class="heronote">Grounding: echo/apps/echo_cache/lib/echo_cache/table.ex (SET&#8230;PX, the jittered expires_at/1,
+      the :sweep handler) &#8212; the deadline the store enforces.</p>
+
+      <figure class="anatomy" aria-labelledby="modeCap">
+        <figcaption id="modeCap"><b>Absolute vs sliding.</b> Three requests at 0, 10, 20 minutes; the next is at 50.
+        Select a mode to read where its deadline falls.</figcaption>
+        <div class="segbar" id="modeSel" role="group" aria-label="Select an expiry mode">
+          <button type="button" data-mode="sliding" aria-pressed="false">sliding (refresh)</button>
+          <button type="button" data-mode="absolute" aria-pressed="false">absolute (fixed)</button>
+        </div>
+        <svg class="lstack" id="lstack" viewBox="0 0 460 168" role="img" aria-label="A timeline of requests at minutes 0, 10, 20 against a 30-minute window, with the next request at minute 50. The sliding window stretches to minute 50 because each request refreshes the deadline; the absolute window ends at minute 30, fixed from sign-in, so the minute-50 request finds nothing. Select a mode to highlight its window.">
+          <line class="axis" x1="20" y1="120" x2="440" y2="120"></line>
+          <text class="tick" x="20" y="140">t=0</text>
+          <text class="tick" x="180" y="140">10m</text>
+          <text class="tick" x="244" y="140">20m</text>
+          <text class="tick" x="300" y="140">30m</text>
+          <text class="tick" x="440" y="140" text-anchor="end">50m</text>
+          <circle class="req" cx="22" cy="120" r="5"></circle>
+          <circle class="req" cx="180" cy="120" r="5"></circle>
+          <circle class="req" cx="244" cy="120" r="5"></circle>
+          <circle class="req" cx="438" cy="120" r="5"></circle>
+
+          <g class="mode" data-mode="sliding"><rect class="win" x="22" y="44" width="416" height="18" rx="5"></rect><text class="mlbl" x="30" y="38">sliding &#8212; deadline rides to the last request + 30m = 50m</text></g>
+          <g class="mode abs" data-mode="absolute"><rect class="win" x="22" y="76" width="265" height="18" rx="5"></rect><text class="mlbl" x="30" y="110">absolute &#8212; deadline fixed at 30m from sign-in; the 50m request finds nothing</text></g>
+        </svg>
+        <div class="readout" id="modeOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a mode. A
+        sliding deadline rides each request forward; an absolute deadline is fixed at sign-in.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="two">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Fixed at sign-in, or moved on access</h2>
+        <span class="ssrc">source &#183; Absolute vs sliding</span>
+      </div>
+      <div class="prose">
+        <p>A session usually should expire after a period of <strong>inactivity</strong>, not at a fixed time after
+        sign-in. A learner reading a long page for forty minutes should not be logged out mid-read because their session
+        was born forty-one minutes ago. That is the case for a sliding deadline.</p>
+        <p>An <strong>absolute</strong> deadline is one <code>EXPIRE session:abc123 1800</code> at sign-in. The key dies
+        thirty minutes later regardless of activity. It is the right choice when a hard session cap matters &#8212; a
+        banking session that must end on a fixed schedule whatever the user does.</p>
+        <p>A <strong>sliding</strong> deadline runs the same <code>EXPIRE session:abc123 1800</code> after every read.
+        <code>HGETALL</code> to read the record, then <code>EXPIRE</code> to push the deadline a full window past now.
+        While requests keep arriving inside the window, the deadline keeps moving and the session stays alive. The moment
+        requests stop, the last <code>EXPIRE</code> stands, and the key dies one window after the final request. Active
+        users stay in; idle ones fall out.</p>
+      </div>
+      <dl class="deflist">
+        <dt>absolute</dt><dd>One <code>EXPIRE</code> at sign-in. The session ends at a fixed instant, busy or not. A hard cap.</dd>
+        <dt>sliding</dt><dd>An <code>EXPIRE</code> after each read, resetting the deadline to a full window past now. Idle-based expiry.</dd>
+        <dt>TTL key</dt><dd>Read the remaining time-to-live in seconds; <code>-2</code> means the key is gone, <code>-1</code> means it has no deadline.</dd>
+      </dl>
+      <p class="take">A sliding deadline reset by an <code>EXPIRE</code> on each read is exactly what the source calls a
+      &#8220;sliding window&#8221;: each access pays one extra command and buys another full window of life.</p>
+    </section>
+
+    <section id="evict">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>How a key is actually reclaimed</h2>
+        <span class="ssrc">source &#183; Session Data Cleanup</span>
+      </div>
+      <div class="prose">
+        <p>A deadline is a promise, not an instant deletion. When a key&#8217;s TTL passes, the engine does not stop the
+        world to delete it that second. It reclaims an expired key two ways, and knowing both is what makes a TTL real.</p>
+        <p><strong>Lazy</strong> eviction happens on access: when a command touches a key whose TTL has passed, the engine
+        detects the lapsed deadline, deletes the key, and responds as if it were absent &#8212; a <code>GET</code> returns
+        nil, an <code>HGETALL</code> returns empty. The expired key is reclaimed exactly when it is next asked for.
+        <strong>Active</strong> eviction runs in the background: the engine periodically samples keys that carry a TTL and
+        deletes the ones that have expired, so a key that is never read again does not sit in memory forever.</p>
+        <p>For a session this matters in one way: an expired session is functionally gone the instant a request reads it,
+        because the read lazily evicts it and returns nothing. The application never receives a stale session. The active
+        sweep is what keeps abandoned sessions &#8212; the ones no request ever returns to &#8212; from leaking memory.
+        Pick a key state below to see which mechanism reclaims it and what the next read returns.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="evictCap">
+        <figcaption id="evictCap"><b>Reclaim a key &#8212; lazy on read, active in the background.</b> Choose a key
+        state and the time since the last read; the readout names the mechanism and the next read&#8217;s answer.</figcaption>
+        <div class="segbar" id="stateSel" role="group" aria-label="Which key state to inspect">
+          <button type="button" data-state="live" aria-pressed="true">live &#183; read soon</button>
+          <button type="button" data-state="expired-read" aria-pressed="false">expired &#183; then read</button>
+          <button type="button" data-state="expired-idle" aria-pressed="false">expired &#183; never read</button>
+        </div>
+        <div class="range">
+          <label for="sinceRange">since last read (s)</label>
+          <input type="range" id="sinceRange" min="0" max="3600" step="60" value="600">
+          <span class="val" id="sinceVal">600</span>
+        </div>
+        <div class="readout" id="evictOut" aria-live="polite"></div>
+      </figure>
+
+      <p class="take">A TTL is reclaimed lazily on the next read and actively by a background sweep. An expired session is
+      gone the instant it is read; the sweep keeps the never-read ones from leaking.</p>
+    </section>
+
+    <section id="echocache">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The deadline on EchoCache</h2>
+        <span class="ssrc">table.ex:290, :484, :350 &#183; verbatim</span>
+      </div>
+      <div class="prose">
+        <p>EchoCache writes its L2 row with the TTL in the same command &#8212; <code>SET ecc:{&lt;table&gt;}:&lt;id&gt;
+        (version&lt;&gt;value) PX ttl_ms</code> (<code>table.ex:290</code>) &#8212; so value and deadline land atomically;
+        a session is a TTL&#8217;d row and the <code>PX</code> expiry is its lifetime. A re-<code>put</code> on the next
+        request re-stamps the row with a fresh deadline, the sliding-window move.</p>
+        <p>Above L2, the L1 ETS copy carries its own expiry drawn from a <strong>jittered</strong> clock &#8212;
+        <code>expires_at/1</code> returns <code>ttl &#177; ttl&#183;jitter</code> (<code>table.ex:484</code>) &#8212; so a
+        cohort filled together never expires together, and a separate <code>:sweep</code> handler
+        (<code>table.ex:350</code>) reclaims the dead rows on a fixed tick with one <code>:ets.select_delete</code>. Two
+        clocks, each layer sovereign over its own staleness. The functional-Elixir and OTP craft behind the cache is the
+        <a href="/elixir">/elixir</a> course; this dive is the deadline the store enforces.</p>
+      </div>
+      <pre class="code"><span class="cmt"># EchoCache.Table — L2 row written with its expiry, value and deadline in one command (table.ex:290)</span>
+SET ecc:{sessions}:SES0KH... <span class="str">&lt;version&lt;&gt;value&gt;</span> PX <span class="str">1800000</span>
+
+<span class="cmt"># L1 expiry is jittered, so a cohort filled together never expires together (table.ex:484)</span>
+expires_at = monotonic_now + ttl_ms &#177; ttl_ms&#183;jitter
+<span class="cmt"># the :sweep handler reclaims the dead L1 rows on a fixed tick (table.ex:350)</span>
+:ets.select_delete(table, [expired rows])</pre>
+
+      <div class="door">
+        <span class="dr">the application &#183; the jittered clock and the sweeper</span>
+        <h3>The jittered expiry, gated</h3>
+        <p>Rows filled together must not expire together, or the TTL itself schedules the next herd &#8212; the committed
+        cache record shows the jitter spreading a cohort:</p>
+        <figure class="frozen">
+          <figcaption>content/bcs4.1.md &#183; the jittered clock and the sweeper<span class="tag">frozen</span></figcaption>
+          <pre>400 rows filled in 24 ms       <b>expire 138 ms apart at jitter 0.2</b>   <span class="fd">&#8592; no synchronized re-herd</span>
+the sweeper                    <b>swept 400, table size 0</b>
+the L2 row                     SET &#8230; PX, PTTL 300 ms of 300</pre>
+        </figure>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Choose the deadline by policy: an absolute <code>EXPIRE</code> at sign-in for a hard cap, or a sliding
+          <code>EXPIRE</code> on each read for idle-based expiry. The engine reclaims the key lazily on read and actively
+          in the background.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoCache application</span>
+          <p>The L2 row carries <code>PX</code> on the server&#8217;s clock; the L1 copy carries a jittered
+          <code>expires_at</code> and a <code>:sweep</code> handler reclaims the dead rows &#8212; two clocks, neither
+          trusting the other&#8217;s watch.</p>
+        </div>
+      </div>
+      <p class="take">A sliding deadline keeps active sessions alive and lets idle ones lapse; lazy eviction makes the
+      lapse certain the instant the session is next read, and the jittered clock keeps a cohort from expiring together.</p>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>EXPIRE</code> does not delete at the deadline instant:
+      the engine reclaims a TTL&#8217;d key on access and on an active background cycle &#8212;
+      <a href="https://valkey.io/commands/expire/" rel="noopener">valkey.io/commands/expire</a>.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Recap &#8212; set it, slide it, reclaim it</h2>
+        <span class="ssrc">expire &#8594; bind</span>
+      </div>
+      <div class="prose">
+        <p>A session deadline is absolute when it is fixed at sign-in and sliding when an <code>EXPIRE</code> after each
+        read pushes it a full window past now. Sliding keeps active users in and lets idle ones fall out. The engine makes
+        the deadline real two ways: lazily, deleting an expired key the instant a command reads it, and actively, sweeping
+        never-read expired keys in the background. EchoCache adds a jittered L1 clock and its own sweeper. The next dive
+        binds this deadline to the namespace it belongs to &#8212; keyed by a branded id, dropped on logout, refused at
+        the kind gate.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/expire/" rel="noopener">Valkey &mdash; <em>EXPIRE</em></a> &mdash; set a key&#8217;s time-to-live; the command rerun on each read to slide a session&#8217;s deadline, and the engine&#8217;s two reclamation paths.</li>
+            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; set a key with <code>PX</code>; value and TTL in one command, the way <code>EchoCache.Table.put</code> writes L2.</li>
+            <li><a href="https://redis.io/commands/ttl" rel="noopener">Redis &mdash; <em>TTL</em></a> &mdash; read a key&#8217;s remaining life in seconds; <code>-2</code> for a reclaimed key, <code>-1</code> for no deadline.</li>
+            <li><a href="https://antirez.com/" rel="noopener">Sanfilippo, S. &mdash; <em>antirez weblog</em></a> &mdash; the Redis creator on expiry sampling and the cost of background eviction.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/caching/session-management">R1.06 &#183; Session management</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/caching/session-management/encodings">R1.06.1 &#183; Hash, String &amp; JSON</a><span class="rs">the previous dive</span></li>
+            <li><a href="/redis-patterns/caching/session-management/auth-session">R1.06.3 &#183; The auth tie-in</a><span class="rs">the next dive</span></li>
+            <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the protocol the coherence lane rides</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/redis-patterns/caching/session-management/encodings"><span class="pk">previous</span>&#8592; R1.06.1 &#183; Hash, String &amp; JSON</a>
+      <a class="pgx" href="/redis-patterns/caching/session-management/auth-session"><span class="pk">next</span>R1.06.3 &#183; The auth tie-in &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/caching/session-management/encodings">R1.06.1 &#183; Hash, String &amp; JSON</a>
+        <a href="/redis-patterns/caching/session-management/ttl-expiry">R1.06.2 &#183; TTL expiry</a>
+        <a href="/redis-patterns/caching/session-management/auth-session">R1.06.3 &#183; The auth tie-in</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: absolute vs sliding over a fixed request series (pure) ---------- */
+  var WINDOW = 30; // the inactivity window, in minutes
+  var REQS = [0, 10, 20]; // authenticated requests arrive at these minutes; the next is at 50
+  var NEXT = 50;
+  // pure: mode -> the minute the deadline finally falls
+  function deadlineAt(mode) {
+    if (mode === 'absolute') return REQS[0] + WINDOW;          // fixed at sign-in: 0 + 30 = 30
+    return REQS[REQS.length - 1] + WINDOW;                     // sliding: last request + window = 20 + 30 = 50
+  }
+  // pure: mode -> whether the minute-50 request is served
+  function servedAtNext(mode) { return NEXT < deadlineAt(mode); }
+  // pure: mode -> readout text
+  function describeMode(mode) {
+    var dl = deadlineAt(mode);
+    if (mode === 'absolute') {
+      return 'Absolute: EXPIRE once at sign-in (t=0), deadline fixed at t=' + dl + 'm. Requests at 10m and 20m do not move it. ' +
+        'By the request at ' + NEXT + 'm the key has expired — the read returns nothing and the user is sent to sign in.';
+    }
+    return 'Sliding: EXPIRE after each read pushes the deadline a full ' + WINDOW + 'm past now. After the 20m request the deadline is t=' + dl + 'm. ' +
+      'The request at ' + NEXT + 'm arrives right at the edge and is still served; it refreshes the deadline again.';
+  }
+  var lstack = document.getElementById('lstack');
+  var modeButtons = document.querySelectorAll('#modeSel button');
+  var modeOut = document.getElementById('modeOut');
+  // pure: highlight a mode in the diagram, sync the buttons, fill the readout — hover or click.
+  function selectMode(key) {
+    modeButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-mode') === key ? 'true' : 'false');
+    });
+    if (lstack) {
+      lstack.classList.toggle('focus', !!key);
+      lstack.querySelectorAll('.mode').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-mode') === key);
+      });
+    }
+    if (modeOut) {
+      modeOut.innerHTML = key
+        ? '<span class="rk">readout &#183;</span> ' + describeMode(key) +
+            ' The ' + NEXT + 'm request is ' + (servedAtNext(key) ? 'served' : 'rejected') + '.'
+        : '<span class="rk">readout &#183;</span> Select a mode. A sliding deadline rides each request forward; an absolute deadline is fixed at sign-in.';
+    }
+  }
+  modeButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-mode');
+      selectMode(b.getAttribute('aria-pressed') === 'true' ? null : key);
+    });
+  });
+  if (lstack) {
+    lstack.querySelectorAll('.mode').forEach(function (g) {
+      var m = g.getAttribute('data-mode');
+      g.addEventListener('mouseenter', function () { selectMode(m); });
+      g.addEventListener('mouseleave', function () { selectMode(null); });
+    });
+  }
+
+  /* ---------- Interactive 2: lazy vs active eviction (pure over a fixed dataset) ---------- */
+  var TTL_WINDOW = 1800; // 30 min, in seconds
+  // pure: (state, secondsSinceRead) -> readout text
+  function reclaim(state, since) {
+    var expired = since > TTL_WINDOW;
+    if (state === 'live') {
+      var left = Math.max(0, TTL_WINDOW - since);
+      if (expired) {
+        return 'Read soon, but ' + since + 's have passed (> ' + TTL_WINDOW + 's window): the key has expired. The read lazily evicts it and HGETALL returns empty; the session is gone.';
+      }
+      return 'Read soon: ' + since + 's since the last read, TTL ~' + left + 's remaining. HGETALL returns the record; an EXPIRE then slides the deadline back to ' + TTL_WINDOW + 's.';
+    }
+    if (state === 'expired-read') {
+      return 'Expired, then read: ' + since + 's have passed. On the next command the engine detects the lapsed TTL, deletes the key (lazy eviction), and HGETALL returns empty (TTL -> -2). No stale session is ever served.';
+    }
+    // expired-idle
+    return 'Expired, never read again: ' + since + 's have passed and no command touches it. Lazy eviction cannot fire (nothing reads it); the active background sweep samples TTL keys and reclaims it, freeing the memory.';
+  }
+  var evictOut = document.getElementById('evictOut');
+  var sinceRange = document.getElementById('sinceRange'), sinceVal = document.getElementById('sinceVal');
+  var curState = 'live';
+  function renderEvict() {
+    var since = sinceRange ? parseInt(sinceRange.value, 10) : 600;
+    if (sinceVal) sinceVal.textContent = String(since);
+    if (evictOut) evictOut.innerHTML = '<span class="rk">readout &#183;</span> ' + reclaim(curState, since);
+  }
+  document.querySelectorAll('#stateSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      curState = b.getAttribute('data-state');
+      document.querySelectorAll('#stateSel button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      renderEvict();
+    });
+  });
+  if (sinceRange) sinceRange.addEventListener('input', renderEvict);
+  renderEvict(); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

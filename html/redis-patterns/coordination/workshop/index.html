@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R2.06 · Workshop — Order placement, made atomic · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R2.06 capstone workshop: fold the five R2 coordination patterns into one Exchange Platform order placement. Exchange.Gateway.parse_place/1 parses untrusted input and mints a branded order id at acceptance; EchoMQ.Jobs.enqueue admits that order onto the {orders} queue as one atomic Lua script — kind check, EXISTS duplicate refusal, HSET the three-field row, ZADD pending — over co-located emq:{orders}:* keys, idempotent on retry, never a torn write, needing no lock and no Redlock because the script is the serialization.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- the course map ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:82ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door a{color:var(--b-ts);font-weight:600}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+pre.code .op{color:var(--b-seq)}
+pre.code .str{color:var(--b-node)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- when-to / status table ---------- */
+.tbl{width:100%;border-collapse:collapse;margin:6px 0 18px;font-family:var(--sans);font-size:.9rem}
+.tbl th,.tbl td{text-align:left;padding:.55rem .75rem;border-bottom:1px solid var(--b-line);vertical-align:top}
+.tbl th{font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--b-dim);font-weight:700}
+.tbl td{color:var(--b-ink)}
+.tbl td code{font-family:var(--mono);font-size:.86em;color:var(--b-ns)}
+.tbl tr:last-child td{border-bottom:0}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the admission figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.atom{width:100%;height:auto;display:block;margin-top:4px}
+.atom .cellbox rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.atom .cellbox.changed rect{fill:#e6f0e9;stroke:var(--b-node)}
+.atom .cellbox.blocked rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.atom .celltag{font:10.5px var(--mono);fill:var(--b-dim)}
+.atom .cellval{font:13px var(--mono);fill:var(--b-ink);font-weight:700}
+.atom .reflabel{font:11px var(--mono);fill:var(--b-dim)}
+.atom .flow{stroke:var(--b-line);stroke-width:1.4;fill:none}
+.atom .retbox rect{fill:var(--b-paper);stroke:var(--b-line);stroke-width:1.4}
+.atom .retbox.ok rect{stroke:var(--b-node);fill:#e6f0e9}
+.atom .retbox.no rect{stroke:var(--r-red);fill:var(--r-red-tint)}
+.atom .retval{font:13px var(--mono);font-weight:700}
+.atom .retval.ok{fill:var(--b-node)}
+.atom .retval.no{fill:var(--r-red)}
+/* ---------- the slot figure ---------- */
+.slot{width:100%;height:auto;display:block;margin-top:4px}
+.slot .slotbar rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.3;transition:fill .18s ease,stroke .18s ease}
+.slot .slotbar.colo rect{fill:#e6f0e9;stroke:var(--b-node)}
+.slot .slotbar.miss rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.slot text{font:12px var(--mono);fill:var(--b-ink)}
+.slot .reflabel{font:11px var(--mono);fill:var(--b-dim)}
+.slot .verdict.ok{fill:var(--b-node);font-weight:700}
+.slot .verdict.no{fill:var(--r-red);font-weight:700}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/coordination">coordination</a><span class="rsep">/</span><span class="rcur">workshop</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#parse">The two steps</a>
+      <a href="#keys">The keys</a>
+      <a href="#script">One script</a>
+      <a href="#lighter">Why no lock</a>
+      <a href="#tag">The tag</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R2.06 &#183; Coordination &#8212; capstone workshop</p>
+      <h1>Order placement, made <span class="hns">atomic</span>.</h1>
+      <p class="lede">Fold five coordination patterns into one Exchange Platform order placement that either lands
+      completely or not at all &#8212; a parsed order admitted onto the <code>{orders}</code> queue by a single Lua
+      script. <b>It needs no lock and no Redlock, because the script is the serialization.</b></p>
+      <p class="heronote">Grounding: echo/apps/exchange &#183; Exchange.Gateway.parse_place/1 &#183; echo/apps/echo_mq
+      &#183; EchoMQ.Jobs.enqueue &#8594; @enqueue &#8212; the parse-don't-validate door and the real atomic admission,
+      every figure verbatim from the as-built code.</p>
+
+      <figure class="anatomy" aria-labelledby="enrCap">
+        <figcaption id="enrCap"><b>The admission transition &#8212; run @enqueue over two co-located keys and read the
+        before&#8594;after state.</b> Select an action to run the script's branches and read its return.</figcaption>
+        <div class="segbar" id="enrSel" role="group" aria-label="Drive the order admission">
+          <button type="button" data-act="place" aria-pressed="false">admit ORD&#8230;a</button>
+          <button type="button" data-act="retry" aria-pressed="false">retry ORD&#8230;a</button>
+          <button type="button" data-act="place2" aria-pressed="false">admit ORD&#8230;b</button>
+          <button type="button" data-act="badkind" aria-pressed="false">admit a non-JOB id</button>
+          <button type="button" data-act="reset" aria-pressed="false">reset</button>
+        </div>
+        <svg class="atom" id="enrSvg" viewBox="0 0 460 210" role="img" aria-label="The order admission over two co-located keys. The start state is an empty {orders}:pending set and no row for the incoming order. Each action runs the pure runEnqueue function, which mirrors the @enqueue Lua script: if the id is not JOB-namespaced it returns an EMQKIND error and writes nothing; if the row already exists it returns zero, a duplicate, and writes nothing; otherwise it HSETs the three-field row, ZADDs the id to pending at score zero, and returns one, enqueued. The diagram shows the job row and the pending set before and after the step, and the script's return value, so a duplicate is refused with no change and a non-JOB id never reaches the queue.">
+          <text class="reflabel" x="20" y="16">emq:{orders}:* &#8212; two co-located keys, one atomic script</text>
+
+          <g class="cellbox" id="cRow"><rect x="14" y="28" width="214" height="46" rx="8"></rect></g>
+          <text class="celltag" x="26" y="46">emq:{orders}:job:&lt;id&gt; (HASH)</text>
+          <text class="cellval" id="vRow" x="26" y="66">&#8212;</text>
+
+          <g class="cellbox" id="cPend"><rect x="236" y="28" width="210" height="46" rx="8"></rect></g>
+          <text class="celltag" x="248" y="46">emq:{orders}:pending (ZSET)</text>
+          <text class="cellval" id="vPend" x="248" y="66" style="font-size:12px">{ } &#183; 0 members</text>
+
+          <text class="reflabel" x="20" y="98" id="actLbl">action: EVALSHA @enqueue(KEYS, id, payload)</text>
+          <line class="flow" x1="14" y1="108" x2="446" y2="108"></line>
+
+          <g class="retbox" id="retBox"><rect x="14" y="122" width="432" height="40" rx="8"></rect></g>
+          <text class="retval" id="retVal" x="28" y="147" style="font-size:14px">return &#8212;</text>
+
+          <text class="reflabel" x="20" y="188" id="effLbl">effect: press an action to run @enqueue over the two keys</text>
+        </svg>
+        <div class="readout" id="enrOut" aria-live="polite"><span class="rk">readout &#183;</span> Start: no row, the
+        pending set empty. Admit an order to run <code>@enqueue</code>; retry it to see the <code>EXISTS</code> refusal.</div>
+        <p class="take">One script checks the kind, refuses a duplicate by id, writes the row, and inserts the pending
+        entry &#8212; the whole admission lands together or not at all, with no <code>WATCH</code> loop and no lock.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="parse">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Two steps &#8212; parse-and-mint, then admit-as-one-script</h2>
+        <span class="ssrc">exchange/gateway.ex:91</span>
+      </div>
+      <div class="prose">
+        <p>An order placement is two moves, and the chapter&#8217;s patterns govern the second.</p>
+        <p><strong>First, the door.</strong> <code>Exchange.Gateway.parse_place/1</code> turns an untrusted
+        <code>map()</code> into either a typed command or one member of the closed six-atom error set. No exception
+        escapes; no partially-built command is ever returned. On success it mints a branded id at the instant of
+        acceptance and returns the place command:</p>
+      </div>
+      <pre class="code"><span class="cmt"># Exchange.Gateway.parse_place/1 — the success branch (gateway.ex:91)</span>
+{<span class="str">:ok</span>,
+ {<span class="str">:place</span>,
+  %{
+    id: EchoData.Snowflake.next_branded(<b>"ORD"</b>),   <span class="cmt"># minted at acceptance, success branch only</span>
+    instrument: instrument,
+    account: account,
+    direction: direction,                          <span class="cmt"># :buy | :sell</span>
+    type: type,                                    <span class="cmt"># :limit | :market</span>
+    quantity: quantity,                            <span class="cmt"># pos_integer</span>
+    price: price                                   <span class="cmt"># {units, nano} | :market — never a float</span>
+  }}}</pre>
+      <div class="prose">
+        <p>The six closed errors are the whole failure channel &#8212; <code>:unknown_instrument</code>,
+        <code>:bad_direction</code>, <code>:bad_order_type</code>, <code>:nonpositive_quantity</code>,
+        <code>:bad_price</code>, <code>:malformed</code> &#8212; and a rejection mints nothing.</p>
+        <p><strong>Second, admission.</strong> The parsed order is recorded onto the <code>{orders}</code> queue as one
+        atomic Lua script. The branded id is the job key and the venue idempotency key
+        (<code>docs/exchange/trd.1.1.md</code>), so admitting the order and refusing a duplicate are the same indivisible
+        step.</p>
+      </div>
+      <p class="take">The Gateway parses and mints; the queue admits. The chapter&#8217;s five patterns are all about
+      that second step &#8212; making the admission one atomic, co-located, idempotent move.</p>
+    </section>
+
+    <section id="keys">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The keys that must move together</h2>
+        <span class="ssrc">echo_mq/keyspace.ex</span>
+      </div>
+      <div class="prose">
+        <p>Admission touches two co-located keys, both declared in the script&#8217;s <code>KEYS</code> &#8212; the v2
+        law: every key a script touches is named in <code>KEYS</code>, and <code>ARGV</code> carries values only.</p>
+      </div>
+      <pre class="code">emq:<b>{orders}</b>:job:&lt;branded&gt;   <span class="cmt"># Hash: the order's row — state, attempts, payload</span>
+emq:<b>{orders}</b>:pending         <span class="cmt"># Sorted set: the pending queue, member = the id, score 0</span></pre>
+      <div class="prose">
+        <p><code>EchoMQ.Keyspace.queue_key(q, type)</code> always braces the queue name &#8212;
+        <code>"emq:{" &lt;&gt; q &lt;&gt; "}:" &lt;&gt; type</code> &#8212; and <code>job_key(q, branded)</code> returns
+        <code>emq:{q}:job:&lt;branded&gt;</code> after gating the id with <code>EchoData.BrandedId.valid?/1</code>. The
+        row and the pending entry are one fact: an order on the pending set with no row, or a row with no pending entry,
+        is a half-written order. They must change as one.</p>
+      </div>
+      <p class="take">Two keys, one fact: the order&#8217;s row and its place in the pending queue. Atomicity is the
+      requirement they impose, not a nicety.</p>
+    </section>
+
+    <section id="script">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>One Lua script &#8212; the whole admission, all-or-nothing</h2>
+        <span class="ssrc">echo_mq/jobs.ex:14</span>
+      </div>
+      <div class="prose">
+        <p><code>EchoMQ.Jobs.enqueue/4</code> (<code>jobs.ex:27</code>) runs the admission as a single declared-keys
+        script, <code>@enqueue</code> (<code>jobs.ex:14</code>), through <code>EchoMQ.Connector.eval/5</code>
+        (<code>connector.ex:63</code>), EVALSHA-first with a load-on-<code>NOSCRIPT</code> fallback. There is no
+        <code>WATCH</code>/retry loop (<a href="/redis-patterns/coordination/atomic-updates">R2.01</a>): a Lua script
+        is the serialization point &#8212; Valkey runs it to completion before any other command, so nothing
+        interleaves.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_mq/lib/echo_mq/jobs.ex:14 &#183; @enqueue, the atomic admission<span class="tag">verbatim</span></figcaption>
+        <pre><span class="fd">-- @enqueue  KEYS[1] = emq:{orders}:job:&lt;id&gt;   KEYS[2] = emq:{orders}:pending</span>
+<span class="fd">--           ARGV[1] = the branded id          ARGV[2] = the payload</span>
+if string.sub(ARGV[1], 1, 3) ~= 'JOB' then
+  return redis.error_reply(<b>'EMQKIND job id must be JOB-namespaced'</b>)   <span class="fd">-- admit by kind</span>
+end
+if redis.call('EXISTS', KEYS[1]) == 1 then
+  return 0                                                            <span class="fd">-- refuse duplicates</span>
+end
+redis.call('HSET', KEYS[1], 'state', 'pending', 'attempts', '0', 'payload', ARGV[2])
+redis.call('ZADD', KEYS[2], 0, ARGV[1])
+return 1</pre>
+      </figure>
+      <div class="prose">
+        <p><code>enqueue/4</code> reads the script&#8217;s integer back into a verdict in input order &#8212;
+        <code>{:ok, 1}</code> is <code>:enqueued</code>, <code>{:ok, 0}</code> is <code>:duplicate</code>, and the
+        <code>EMQKIND</code> server error is <code>{:error, :kind}</code>. Three properties make this correct, and the
+        interactive in the hero is each of them made concrete.</p>
+        <p><strong>Admit by kind.</strong> The first line checks the id&#8217;s three-byte namespace; the queue admits
+        jobs, so a non-<code>JOB</code> id is refused with <code>EMQKIND</code> before any write.</p>
+        <p><strong>Idempotent on retry.</strong> The <code>EXISTS</code> check returns <code>0</code> for an id already
+        on the queue, writing nothing. A dropped reply that triggers a client retry never double-admits the order
+        &#8212; the branded id is the idempotency key (R2.01&#8217;s idempotency-key technique).</p>
+        <p><strong>Never a torn write.</strong> The <code>HSET</code> row and the <code>ZADD</code> pending entry run
+        inside one script, so the order&#8217;s row and its pending position land together or not at all &#8212; the
+        atomic precondition R2.01 is built to hold.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>EVAL</code> runs a Lua script as one atomic step:
+      the script executes to completion before the next command, so a multi-key transition needs no transaction retry
+      loop &#8212; <a href="https://valkey.io/commands/eval/" rel="noopener">valkey.io/commands/eval</a>.</p>
+    </section>
+
+    <section id="lighter">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Why the heavier machinery is unnecessary here</h2>
+        <span class="ssrc">R2.02 &#183; R2.03 &#183; R2.04</span>
+      </div>
+      <div class="prose">
+        <p>The script is the serialization. Because Valkey runs one Lua script to completion before the next command,
+        the admission is already mutually exclusive without a separate lock. Each of the chapter&#8217;s heavier tools
+        is unnecessary for this admission &#8212; not because they are wrong, but because the co-located atomic script
+        already does their work:</p>
+        <p><strong>No per-order distributed lock</strong>
+        (<a href="/redis-patterns/coordination/distributed-locking">R2.02</a>). A <code>SET NX PX</code> lock with a
+        fencing token exists to serialize a read-modify-write that spans several round trips. Admission is one round
+        trip; the script already serializes it, so a lock would only add a lease to renew and a failure mode to handle.
+        EchoMQ&#8217;s lease and <code>attempts</code> fence belong to the <em>claim</em> of a pending job, not its
+        admission.</p>
+        <p><strong>No multi-master Redlock</strong>
+        (<a href="/redis-patterns/coordination/redlock">R2.03</a>). Redlock buys mutual exclusion across N independent
+        Redis masters. EchoMQ reads one server clock inside one atomic script over one <code>EchoMQ.Connector</code>;
+        its atomicity comes from the single server running the script, not from a majority of masters. Reaching for
+        Redlock here would trade a real guarantee for a weaker, more expensive one.</p>
+        <p><strong>No torn-write detection</strong>
+        (<a href="/redis-patterns/coordination/cross-shard-consistency">R2.04</a>). Cross-shard detection &#8212;
+        version tokens, commit markers &#8212; is the fallback when keys cannot share a slot. The <code>{orders}</code>
+        hash tag co-locates the row and the pending set, so the torn write the detection guards against cannot occur.</p>
+      </div>
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the chapter</span>
+          <p>Five coordination patterns: atomicity (R2.01), locking (R2.02), the Redlock contrast (R2.03), cross-shard
+          detection (R2.04), and co-location (R2.05) &#8212; each the right tool for a different shape of multi-key
+          change.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">this workshop</span>
+          <p>One co-located, idempotent, atomic admission &#8212; <code>EchoMQ.Jobs.enqueue</code>&#8217;s
+          <code>@enqueue</code> over <code>emq:{orders}:*</code> &#8212; that needs none of the heavier machinery,
+          because the script <em>is</em> the serialization.</p>
+        </div>
+      </div>
+      <p class="take">The chapter&#8217;s lightest pattern is the one that holds: co-locate the keys, run one script,
+      and the three heavier coordination tools are not needed for this admission.</p>
+    </section>
+
+    <section id="tag">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The hash tag keeps the multi-key script legal</h2>
+        <span class="ssrc">echo_mq/keyspace.ex:43</span>
+      </div>
+      <div class="prose">
+        <p>On a cluster the two keys must share one slot, or a script touching both raises <code>CROSSSLOT</code>
+        (<a href="/redis-patterns/coordination/hash-tag-colocation">R2.05</a>). The <code>{orders}</code> hash tag
+        arranges that: Valkey hashes only the substring inside the first non-empty <code>{...}</code>, so
+        <code>emq:{orders}:job:&lt;id&gt;</code> and <code>emq:{orders}:pending</code> both hash <code>orders</code> and
+        land on one slot. <code>EchoMQ.Keyspace.slot/1</code> computes this client-side &#8212; CRC16-XMODEM over the
+        hash tag modulo 16384 &#8212; so the connector routes without a server round trip. Toggle the tag and read the
+        real slots the two keys resolve to.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="slotCap">
+        <figcaption id="slotCap"><b>Co-location check &#183; the tag on or off, and the real slot each admission key
+        resolves to.</b> The slot is the live <code>EchoMQ.Keyspace.slot/1</code> computation (CRC16-XMODEM mod 16384;
+        vector <code>slot("123456789") == 12739</code>).</figcaption>
+        <div class="segbar" id="tagSel" role="group" aria-label="Toggle the hash tag on the admission keys">
+          <button type="button" data-tag="on" aria-pressed="true">tag on &#8212; emq:{orders}:*</button>
+          <button type="button" data-tag="off" aria-pressed="false">tag off &#8212; emq:orders:*</button>
+        </div>
+        <svg class="slot" id="slotSvg" viewBox="0 0 460 178" role="img" aria-label="A co-location check over the two admission keys. With the orders hash tag on, the job-row key and the pending key both hash the substring orders and resolve via CRC16-XMODEM modulo 16384 to the same slot, so the multi-key script is legal. With the tag off, each whole key is hashed and the two scatter to two different slots, so a single script over both raises CROSSSLOT and the admission is impossible as one script.">
+          <text class="reflabel" x="20" y="16" id="slotHashLbl">tag on &#8594; Valkey hashes "orders" for every key</text>
+
+          <g class="slotbar colo" id="bRow"><rect x="14" y="26" width="432" height="34" rx="8"></rect></g>
+          <text x="26" y="47" id="lRow">job:&lt;id&gt; &#8594; CRC16("orders") % 16384 = 0000</text>
+
+          <g class="slotbar colo" id="bPend"><rect x="14" y="66" width="432" height="34" rx="8"></rect></g>
+          <text x="26" y="87" id="lPend">pending  &#8594; CRC16("orders") % 16384 = 0000</text>
+
+          <g class="retbox ok" id="slotVerdictBox"><rect x="14" y="112" width="432" height="34" rx="8"></rect></g>
+          <text class="verdict ok" id="slotVerdict" x="26" y="133" font-size="12.5">one slot &#8594; the multi-key script is legal</text>
+        </svg>
+        <div class="readout" id="slotOut" aria-live="polite"><span class="rk">readout &#183;</span> tag on: both keys
+        hash "orders" &#8594; one slot. The multi-key script over the row and the pending set is legal.</div>
+        <p class="take">The tag is the precondition for the atomic admission. Without it the two keys scatter and the
+        admission is not one script &#8212; it is two commands on two nodes, with nothing to make them atomic.</p>
+      </figure>
+
+      <div class="door">
+        <span class="dr">a door, not a depth &#183; &#8594; the EchoMQ course</span>
+        <h3>The full script bundle behind this admission</h3>
+        <p>The admission model &#8212; one Lua script per state transition, the full script bundle (enqueue, browse,
+        pending_size, claim, complete, retry, promote, reap), the EVALSHA / <code>NOSCRIPT</code> dispatch in
+        <code>EchoMQ.Connector.eval/5</code>, and the lease-and-fence claim plane &#8212; is the subject of the
+        dedicated <a href="/echomq"><strong>EchoMQ course</strong></a>, the companion depth course that teaches the
+        protocol in full. The next verb, <code>claim</code>, leases a pending job on the server clock and takes
+        <code>attempts</code> as its fencing token &#8212; R2.02&#8217;s worked form, the move beyond this admission.
+        Return to the <a href="/redis-patterns/coordination">Coordination chapter</a> to continue, and see the
+        <a href="/redis-patterns/overview">Overview</a> for where Valkey sits under the Exchange Platform.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A cluster hashes a key by the substring inside the first
+      non-empty <code>{...}</code> when present, else the whole key, then takes CRC16 modulo 16384 to pick one of the
+      16384 slots &#8212; <a href="https://valkey.io/topics/cluster-spec/" rel="noopener">valkey.io/topics/cluster-spec</a>.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/docs/latest/develop/interact/programmability/eval-intro/" rel="noopener">Redis &mdash; <em>Programmability (EVAL intro)</em></a> &mdash; one Lua script as a single atomic step; <code>EVALSHA</code>/<code>NOSCRIPT</code> dispatch.</li>
+            <li><a href="https://valkey.io/commands/eval/" rel="noopener">Valkey &mdash; <em>EVAL</em></a> &mdash; the command that runs the admission script as one atomic step on the engine.</li>
+            <li><a href="https://valkey.io/topics/cluster-spec/" rel="noopener">Valkey &mdash; <em>Cluster specification</em></a> &mdash; hash tags, the 16384 slots, and the <code>CROSSSLOT</code> that co-location prevents.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; the sorted set, hash, and scripting commands the admission is built from.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/coordination">R2 &#183; Coordination &amp; Consistency</a><span class="rs">the chapter this workshop closes</span></li>
+            <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &#183; Atomic updates</a><span class="rs">the single-script atomic transition this admission is</span></li>
+            <li><a href="/redis-patterns/coordination/distributed-locking">R2.02 &#183; Distributed locking</a><span class="rs">the claim lease and attempts fence this admission does not need</span></li>
+            <li><a href="/redis-patterns/coordination/cross-shard-consistency">R2.04 &#183; Cross-shard consistency</a><span class="rs">the torn write the one-slot script cannot produce</span></li>
+            <li><a href="/redis-patterns/coordination/hash-tag-colocation">R2.05 &#183; Hash-tag co-location</a><span class="rs">the {orders} tag that keeps the multi-key EVAL legal</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the EchoMQ protocol that teaches the full script bundle</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/coordination/hash-tag-colocation"><span class="pk">prev</span>&#8592; R2.05 &#183; Hash-tag co-location</a>
+      <a class="pgx" href="/redis-patterns/coordination"><span class="pk">up</span>R2 &#183; Coordination &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The chapter</p>
+        <a href="/redis-patterns/coordination">R2 &#183; Coordination &amp; Consistency</a>
+        <a href="/redis-patterns/coordination/atomic-updates">R2.01 &#183; Atomic updates</a>
+        <a href="/redis-patterns/coordination/distributed-locking">R2.02 &#183; Distributed locking</a>
+        <a href="/redis-patterns/coordination/redlock">R2.03 &#183; Redlock</a>
+        <a href="/redis-patterns/coordination/cross-shard-consistency">R2.04 &#183; Cross-shard consistency</a>
+        <a href="/redis-patterns/coordination/hash-tag-colocation">R2.05 &#183; Hash-tag co-location</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nn3ub3z9qX</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- interactive 1 — the order admission (pure runEnqueue, the @enqueue logic) ---------- */
+  // Fixed start state: no row, the pending set empty. runEnqueue mirrors @enqueue's branch shape:
+  // kind check (id must start "JOB"), EXISTS duplicate refusal, then the all-or-nothing write
+  // (HSET the row + ZADD pending). It is pure — it returns a NEW state and never mutates its input,
+  // so the readout is exact and "reset" restores the start state with no browser storage.
+  var ROWS = { place: 'JOB0NgWEfAEJfs', place2: 'JOB0NsVQMCRgHI', badkind: 'ORD0NgWEfAEJfs' };
+  function emptyState() { return { rows: {}, pending: [] }; }
+
+  // pure: run one admission of `id` against `state`. Returns {ret, reason, state, wrote, kind}.
+  function runEnqueue(state, id) {
+    // string.sub(ARGV[1],1,3) ~= 'JOB' -> EMQKIND (no write)
+    if (id.slice(0, 3) !== 'JOB') {
+      return { ret: 'err', reason: 'EMQKIND job id must be JOB-namespaced', state: state, wrote: false, kind: 'kind' };
+    }
+    // EXISTS row -> 0 (duplicate, no write)
+    if (state.rows[id]) {
+      return { ret: 0, reason: 'duplicate', state: state, wrote: false, kind: 'dup' };
+    }
+    // HSET row ; ZADD pending 0 id
+    var rows = {}; for (var k in state.rows) { if (state.rows.hasOwnProperty(k)) rows[k] = state.rows[k]; }
+    rows[id] = { state: 'pending', attempts: '0' };
+    var pending = state.pending.concat([id]);
+    return { ret: 1, reason: 'enqueued', state: { rows: rows, pending: pending }, wrote: true, kind: 'ok' };
+  }
+
+  // pure: short id label for the diagram.
+  function shortId(id) { return id.slice(0, 3) + '…' + id.slice(-1); }
+  function rowStr(state) {
+    var ids = Object.keys(state.rows);
+    return ids.length ? (shortId(ids[ids.length - 1]) + ' state=pending attempts=0') : '—';
+  }
+  function pendStr(state) {
+    return state.pending.length
+      ? '{ ' + state.pending.map(shortId).join(', ') + ' } · ' + state.pending.length + ' member' + (state.pending.length > 1 ? 's' : '')
+      : '{ } · 0 members';
+  }
+
+  var cur = emptyState();
+  var vRow = document.getElementById('vRow');
+  var vPend = document.getElementById('vPend');
+  var cRow = document.getElementById('cRow');
+  var cPend = document.getElementById('cPend');
+  var retBox = document.getElementById('retBox');
+  var retVal = document.getElementById('retVal');
+  var actLbl = document.getElementById('actLbl');
+  var effLbl = document.getElementById('effLbl');
+  var enrOut = document.getElementById('enrOut');
+
+  function clearChanged() {
+    [cRow, cPend].forEach(function (c) { if (c) c.classList.remove('changed', 'blocked'); });
+  }
+  function paintState() {
+    if (vRow) vRow.textContent = rowStr(cur);
+    if (vPend) vPend.textContent = pendStr(cur);
+  }
+
+  function applyAction(act) {
+    clearChanged();
+    if (act === 'reset') {
+      cur = emptyState();
+      paintState();
+      if (actLbl) actLbl.textContent = 'action: reset to the start state';
+      if (retBox) { retBox.classList.remove('no', 'ok'); }
+      if (retVal) { retVal.classList.remove('no', 'ok'); retVal.textContent = 'return —'; }
+      if (effLbl) effLbl.textContent = 'effect: state restored — press an action to run @enqueue';
+      if (enrOut) enrOut.innerHTML = '<span class="rk">readout &#183;</span> Reset: no row, the pending set empty. Admit an order to run <code>@enqueue</code>.';
+      return;
+    }
+    var id = ROWS[act];
+    var beforePend = cur.pending.length;
+    var res = runEnqueue(cur, id);
+    cur = res.state;
+    paintState();
+
+    var ok = res.kind === 'ok';
+    if (retBox) { retBox.classList.toggle('ok', ok); retBox.classList.toggle('no', !ok); }
+    if (actLbl) actLbl.textContent = 'action: EVALSHA @enqueue(KEYS, "' + shortId(id) + '", payload)';
+
+    var retText, eff, out;
+    if (res.kind === 'ok') {
+      retText = 'return 1  →  {:ok, :enqueued}';
+      if (cRow) cRow.classList.add('changed');
+      if (cPend) cPend.classList.add('changed');
+      eff = 'effect: HSET the row (state=pending, attempts=0), ZADD pending 0 ' + shortId(id) + ' — one indivisible step';
+      out = '<span class="rk">admit ' + shortId(id) + ' &#183;</span> JOB-namespaced and no existing row &#8594; <code>HSET</code> the row and <code>ZADD</code> it to pending at score 0. <span class="rk">return</span> <b>1</b> &#8594; <code>{:ok, :enqueued}</code>.';
+    } else if (res.kind === 'dup') {
+      retText = 'return 0  →  {:ok, :duplicate}';
+      if (cRow) cRow.classList.add('blocked');
+      eff = 'effect: nothing written — EXISTS found the row (idempotent on retry)';
+      out = '<span class="rk">retry ' + shortId(id) + ' &#183;</span> the row already exists &#8594; return <b>0</b> before any write. The pending set is unchanged (' + beforePend + ' member' + (beforePend === 1 ? '' : 's') + '). <span class="rk">return</span> <b>0</b> &#8594; <code>{:ok, :duplicate}</code>.';
+    } else { // kind
+      retText = "error  →  {:error, :kind}";
+      [cRow, cPend].forEach(function (c) { if (c) c.classList.add('blocked'); });
+      eff = 'effect: nothing written — the id is not JOB-namespaced, refused at the kind check';
+      out = '<span class="rk">admit ' + shortId(id) + ' &#183;</span> the id does not start "JOB" &#8594; <code>EMQKIND</code> before any write. The row and the pending set are unchanged. <span class="rk">return</span> <b>EMQKIND</b> &#8594; <code>{:error, :kind}</code>.';
+    }
+    if (retVal) {
+      retVal.classList.toggle('ok', ok); retVal.classList.toggle('no', !ok);
+      retVal.textContent = retText;
+    }
+    if (effLbl) effLbl.textContent = eff;
+    if (enrOut) enrOut.innerHTML = out;
+  }
+
+  document.querySelectorAll('#enrSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var act = b.getAttribute('data-act');
+      var already = b.getAttribute('aria-pressed') === 'true';
+      document.querySelectorAll('#enrSel button').forEach(function (x) {
+        x.setAttribute('aria-pressed', (!already && x === b) ? 'true' : 'false');
+      });
+      if (already) {
+        b.setAttribute('aria-pressed', 'false');
+      }
+      applyAction(act);
+    });
+  });
+  paintState(); // initial render — correct without interaction
+
+  /* ---------- interactive 2 — co-location check (pure CRC16-XMODEM, the real Keyspace.slot/1) ---------- */
+  // crc16 mirrors EchoMQ.Keyspace.slot/1 (echo/apps/echo_mq/lib/echo_mq/keyspace.ex:43):
+  // CRC16-XMODEM (poly 0x1021, seed 0) over the hash tag — the substring inside the first
+  // non-empty {...}, else the whole key — modulo 16384. Known vector: slot("123456789") == 12739.
+  // The slots are computed here, not stored — the readouts are exact.
+  var SLOTS = 16384;
+  function crc16(s) {
+    var crc = 0;
+    for (var i = 0; i < s.length; i++) {
+      crc = (crc ^ (s.charCodeAt(i) << 8)) & 0xFFFF;
+      for (var j = 0; j < 8; j++) {
+        crc = (crc & 0x8000) !== 0 ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+      }
+    }
+    return crc;
+  }
+  // pure: the hash tag — the substring inside the first non-empty {...}, else the whole key.
+  function hashtag(key) {
+    var a = key.indexOf('{');
+    if (a < 0) return key;
+    var b = key.indexOf('}', a + 1);
+    if (b < 0 || b <= a + 1) return key;
+    return key.slice(a + 1, b);
+  }
+  function slotOf(key) { return crc16(hashtag(key)) % SLOTS; }
+  function pad(n) { n = String(n); while (n.length < 4) n = '0' + n; return n; }
+
+  var KEYS_ON  = { row: 'emq:{orders}:job:JOB0NgWEfAEJfs', pend: 'emq:{orders}:pending' };
+  var KEYS_OFF = { row: 'emq:orders:job:JOB0NgWEfAEJfs',   pend: 'emq:orders:pending' };
+
+  var slotHashLbl = document.getElementById('slotHashLbl');
+  var lRow = document.getElementById('lRow');
+  var lPend = document.getElementById('lPend');
+  var bRow = document.getElementById('bRow');
+  var bPend = document.getElementById('bPend');
+  var slotVerdictBox = document.getElementById('slotVerdictBox');
+  var slotVerdict = document.getElementById('slotVerdict');
+  var slotOut = document.getElementById('slotOut');
+
+  function setTag(on) {
+    var keys = on ? KEYS_ON : KEYS_OFF;
+    var sRow = slotOf(keys.row), sPend = slotOf(keys.pend);
+    var colo = sRow === sPend;
+    if (slotHashLbl) slotHashLbl.textContent = on
+      ? 'tag on → Valkey hashes "orders" for every key'
+      : 'tag off → Valkey hashes each whole key';
+    if (lRow) lRow.textContent = 'job:<id> → CRC16(' + (on ? '"orders"' : 'whole key') + ') % ' + SLOTS + ' = ' + pad(sRow);
+    if (lPend) lPend.textContent = 'pending  → CRC16(' + (on ? '"orders"' : 'whole key') + ') % ' + SLOTS + ' = ' + pad(sPend);
+    [bRow, bPend].forEach(function (bar) {
+      if (bar) { bar.classList.toggle('colo', colo); bar.classList.toggle('miss', !colo); }
+    });
+    if (slotVerdictBox) { slotVerdictBox.classList.toggle('ok', colo); slotVerdictBox.classList.toggle('no', !colo); }
+    if (slotVerdict) {
+      slotVerdict.classList.toggle('ok', colo); slotVerdict.classList.toggle('no', !colo);
+      slotVerdict.textContent = colo
+        ? 'one slot (' + pad(sRow) + ') → the multi-key script is legal'
+        : 'two slots (' + pad(sRow) + ', ' + pad(sPend) + ') → CROSSSLOT';
+    }
+    if (slotOut) slotOut.innerHTML = colo
+      ? '<span class="rk">readout &#183;</span> tag on: both keys hash "orders" &#8594; one slot (' + pad(sRow) + '). The multi-key script over the row and the pending set is legal.'
+      : '<span class="rk">readout &#183;</span> tag off: each whole key is hashed &#8594; two different slots (' + pad(sRow) + ', ' + pad(sPend) + '). A single script over both raises <code>CROSSSLOT</code> — the admission is impossible as one script.';
+  }
+
+  document.querySelectorAll('#tagSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#tagSel button').forEach(function (x) {
+        x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+      });
+      setTag(b.getAttribute('data-tag') === 'on');
+    });
+  });
+  setTag(true); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

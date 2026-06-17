@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E2.01.2 — Every transition &amp; its script · EchoMQ, the protocol in depth · jonnify</title>
+<meta name="description" content="E2.01.2 — every move between states is one atomic Lua script whose filename number is its KEYS arity: moveToActive-11 picks a job up and acquires the lock, moveToFinished-14 completes it (and verifies the lock token first), moveToDelayed-8 retries it with the backoff delay = base * 2^(attempt-1), moveStalledJobsToWait-8 recovers a stalled one. Each runs its steps in one server-side execution, so a job is never half-moved. The closed -1..-11 return codes are the scripts' fixed vocabulary; -2 and -6 are the lock codes.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .warn{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- transition diagram ---- */
+.trg .cell rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.trg .cell.on rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.trg text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.trg .tn{fill:#6fdccf;font-size:11px;font-weight:600}
+.trg .edge{stroke:#2a3252;stroke-width:1.3;fill:none}
+.trg .edge.lit{stroke:#6fdccf;stroke-width:2.4}
+.trg .kc{fill:#f0cd7f;font-size:11px;font-weight:700}
+
+/* ---- error-code decoder diagram ---- */
+.codes .cell rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.codes .cell.on rect{fill:rgba(214,88,79,.18);stroke:#d6584f}
+.codes .cell.lock rect{stroke-dasharray:4 3}
+.codes text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.codes .cn{fill:#f2948c;font-size:11px;font-weight:600}
+.codes .cnm{fill:#d7cfb9;font-size:9px}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/core">core</a><span class="rsep">/</span><a href="/echomq/core/lifecycle">lifecycle</a><span class="rsep">/</span><span class="rcur">every-transition-and-its-script</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core">E2 &middot; Core</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core/lifecycle">The lifecycle</a>
+        <span class="sep">/</span>
+        <span class="here">Every transition &amp; its script</span>
+      </div>
+      <p class="eyebrow">E2.01.2 &middot; The lifecycle &middot; dive 2</p>
+      <h1>Every transition<br>&amp; its <span class="ex">script</span></h1>
+      <p class="lede">Every move between states is one atomic Lua script &mdash; and the number in its filename is the
+        count of keys it touches in one step.</p>
+      <p class="kicker">Four scripts perform the moves the running library makes:
+        <code class="inl">moveToActive-11</code> picks a job up and acquires the lock,
+        <code class="inl">moveToFinished-14</code> completes it, <code class="inl">moveToDelayed-8</code> retries it, and
+        <code class="inl">moveStalledJobsToWait-8</code> recovers a stalled one. Each runs its whole step list in one
+        server-side execution, so a worker never observes a half-moved job. When a script cannot complete, it returns a
+        negative integer from a closed set of eleven. Pick a transition on the right to read its
+        <code class="inl">KEYS</code> arity and atomic step list.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#atomic">Why one atomic script</a>
+        <a href="#each">The four transitions</a>
+        <a href="#codes">The closed return codes</a>
+        <a href="#rule">The Golden Rule</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig trg" aria-labelledby="trgTitle">
+      <h4 id="trgTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A transition &middot; pick one</h4>
+      <div class="controls">
+        <div class="solid-select" id="trSel" role="group" aria-label="Which transition to read">
+          <button type="button" data-tr="active" data-c="echo" class="active" aria-pressed="true">pickup</button>
+          <button type="button" data-tr="finished" data-c="echo" aria-pressed="false">completion</button>
+          <button type="button" data-tr="delayed" data-c="gold" aria-pressed="false">retry</button>
+          <button type="button" data-tr="stalled" data-c="blue" aria-pressed="false">recovery</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 220" role="img" aria-label="Four lifecycle transitions, each from one state to another via a named Lua script: pickup wait to active via moveToActive-11 (11 keys); completion active to completed or failed via moveToFinished-14 (14 keys); retry active to delayed via moveToDelayed-8 (8 keys); recovery active back to wait via moveStalledJobsToWait-8 (8 keys). The selected transition's source and target are highlighted and its KEYS count is shown.">
+        <g><rect x="160" y="14" width="140" height="38" rx="7" fill="rgba(42,161,152,.10)" stroke="#2aa198"></rect></g>
+        <text x="230" y="38" text-anchor="middle" class="tn" id="tr-from">wait</text>
+        <g>
+          <path class="edge" id="te-line" d="M230 52 L230 150"></path>
+        </g>
+        <g class="cell on" id="tr-to-box"><rect x="160" y="150" width="140" height="38" rx="7"></rect></g>
+        <text x="230" y="174" text-anchor="middle" class="tn" id="tr-to">active</text>
+        <text x="330" y="100" class="op" id="tr-script">moveToActive-11</text>
+        <text x="330" y="122" class="kc" id="tr-keys">KEYS = 11</text>
+        <text x="14" y="208" class="cnm">each move = one atomic Lua script · the filename number is its KEYS arity</text>
+      </svg>
+
+      <div class="geo-readout" id="trOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="atomic">
+    <h2>Why one atomic script</h2>
+    <div class="prose">
+      <p>A state transition is several Redis writes — dequeue here, set the lock, push there, publish an event. Run as
+        separate client commands they could interleave: a worker could observe a job in <code class="inl">active</code>
+        with no lock, or in two state sets at once, if a process paused between two writes. EchoMQ runs each transition
+        as <strong>one Lua script Redis executes server-side in a single step</strong>, so the whole step list is
+        atomic — every observer sees the job either fully before or fully after the move, never in between.</p>
+    </div>
+  </section>
+
+  <section id="each">
+    <h2>The four transitions</h2>
+    <div class="prose">
+      <p>Verified against <code class="inl">priv/scripts/</code> and the per-operation functions in
+        <code class="inl">scripts.ex</code>, these are the four moves and the keys each touches.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># transition          script                 KEYS   reached from Elixir</span>
+  pickup              <span class="rdx">moveToActive-11</span>        11     <span class="op">EchoMQ.Scripts.move_to_active/4</span>
+  completion          <span class="rdx">moveToFinished-14</span>      14     <span class="op">EchoMQ.Scripts.move_to_finished/7</span>
+  retry               <span class="rdx">moveToDelayed-8</span>        8      <span class="op">EchoMQ.Scripts.move_to_delayed/6</span>
+  stalled recovery    <span class="rdx">moveStalledJobsToWait-8</span>  8      <span class="cmt">driven by the stalled-checker process</span></pre>
+
+    <div class="prose">
+      <p><strong>Pickup (<code class="inl">moveToActive-11</code>, 11 keys)</strong> — promote due
+        <code class="inl">delayed &rarr; wait</code>, check the rate limiter and the global concurrency, dequeue
+        (<code class="inl">RPOP</code> wait or <code class="inl">ZPOPMIN</code> prioritized),
+        <strong>acquire the lock</strong> (<code class="inl">SET &hellip;:lock &lt;uuid&gt; PX</code>),
+        <code class="inl">LPUSH active</code>, <code class="inl">XADD</code> the <code class="inl">active</code> event,
+        return the job's hash fields.</p>
+      <p><strong>Completion (<code class="inl">moveToFinished-14</code>, 14 keys)</strong> — <strong>verify the lock token
+        first</strong>, <code class="inl">LREM active</code>, <code class="inl">HSET returnvalue</code> or
+        <code class="inl">failedReason</code> + <code class="inl">stacktrace</code>,
+        <code class="inl">ZADD completed</code>/<code class="inl">failed</code> (score = timestamp),
+        <code class="inl">DEL</code> the lock, increment metrics, apply <code class="inl">removeOnComplete</code>/
+        <code class="inl">removeOnFail</code>, update a parent's deps, clean the dedup key,
+        <code class="inl">XTRIM</code> events, optionally return the next job. It is the most complex script in the
+        protocol — roughly 1100 lines with the includes resolved.</p>
+      <p><strong>Retry (<code class="inl">moveToDelayed-8</code>, 8 keys)</strong> — <code class="inl">DEL</code> the
+        lock, compute the backoff <code class="inl">delay = base * 2^(attempt-1)</code> (optional jitter), move
+        <code class="inl">active &rarr; delayed</code> with the new run-at score, increment <code class="inl">atm</code>
+        (attempts made), <code class="inl">XADD</code> the <code class="inl">delayed</code> event.</p>
+      <p><strong>Stalled recovery (<code class="inl">moveStalledJobsToWait-8</code>, 8 keys)</strong> — for each job in
+        <code class="inl">active</code>, check whether the lock exists; <strong>no lock &rArr; stalled</strong>; if
+        <code class="inl">stc &gt;= maxStalledCount</code> move to <code class="inl">failed</code>, else move back to
+        <code class="inl">wait</code> and increment <code class="inl">stc</code>.</p>
+    </div>
+  </section>
+
+  <section id="codes">
+    <h2>The closed return vocabulary</h2>
+    <div class="prose">
+      <p>When a script cannot complete, it returns a negative integer from a closed set — eleven codes, named, never
+        expanded. Two of them are the lock codes <code class="inl">moveToFinished-14</code> emits on its verify step.
+        Pick a code below to read its name.</p>
+    </div>
+
+    <figure class="fig codes" aria-labelledby="codesTitle">
+      <h4 id="codesTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The closed -1 … -11 return codes &middot; pick one</h4>
+      <div class="controls">
+        <div class="solid-select" id="codeSel" role="group" aria-label="Which return code to read">
+          <button type="button" data-code="-1" data-c="gold" class="active" aria-pressed="true">-1</button>
+          <button type="button" data-code="-2" data-c="gold" aria-pressed="false">-2</button>
+          <button type="button" data-code="-3" data-c="gold" aria-pressed="false">-3</button>
+          <button type="button" data-code="-6" data-c="gold" aria-pressed="false">-6</button>
+          <button type="button" data-code="-9" data-c="gold" aria-pressed="false">-9</button>
+          <button type="button" data-code="-11" data-c="gold" aria-pressed="false">-11</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 660 178" role="img" aria-label="The eleven closed return codes minus one through minus eleven, each a box with its code number and short name: JobNotExist, JobLockNotExist, JobNotInState, JobPendingChildren, ParentJobNotExist, JobLockMismatch, ParentJobCannotBeReplaced, JobBelongsToJobScheduler, JobHasFailedChildren, SchedulerJobIdCollision, SchedulerJobSlotsBusy. The two lock codes minus two and minus six are drawn with a dashed border. The selected code is highlighted.">
+        <g class="cell" id="c--1"><rect x="14" y="14" width="206" height="34" rx="6"></rect></g>
+        <text x="24" y="30" class="cn">-1</text><text x="52" y="30" class="cnm">JobNotExist</text>
+        <g class="cell" id="c--5"><rect x="226" y="14" width="206" height="34" rx="6"></rect></g>
+        <text x="236" y="30" class="cn">-5</text><text x="264" y="30" class="cnm">ParentJobNotExist</text>
+        <g class="cell" id="c--9"><rect x="438" y="14" width="206" height="34" rx="6"></rect></g>
+        <text x="448" y="30" class="cn">-9</text><text x="476" y="30" class="cnm">JobHasFailedChildren</text>
+
+        <g class="cell lock" id="c--2"><rect x="14" y="52" width="206" height="34" rx="6"></rect></g>
+        <text x="24" y="68" class="cn">-2</text><text x="52" y="68" class="cnm">JobLockNotExist</text>
+        <g class="cell lock" id="c--6"><rect x="226" y="52" width="206" height="34" rx="6"></rect></g>
+        <text x="236" y="68" class="cn">-6</text><text x="264" y="68" class="cnm">JobLockMismatch</text>
+        <g class="cell" id="c--10"><rect x="438" y="52" width="206" height="34" rx="6"></rect></g>
+        <text x="448" y="68" class="cn">-10</text><text x="480" y="68" class="cnm">SchedulerJobIdCollision</text>
+
+        <g class="cell" id="c--3"><rect x="14" y="90" width="206" height="34" rx="6"></rect></g>
+        <text x="24" y="106" class="cn">-3</text><text x="52" y="106" class="cnm">JobNotInState</text>
+        <g class="cell" id="c--7"><rect x="226" y="90" width="206" height="34" rx="6"></rect></g>
+        <text x="236" y="106" class="cn">-7</text><text x="264" y="106" class="cnm">ParentJobCannotBeReplaced</text>
+        <g class="cell" id="c--11"><rect x="438" y="90" width="206" height="34" rx="6"></rect></g>
+        <text x="448" y="106" class="cn">-11</text><text x="480" y="106" class="cnm">SchedulerJobSlotsBusy</text>
+
+        <g class="cell" id="c--4"><rect x="14" y="128" width="206" height="34" rx="6"></rect></g>
+        <text x="24" y="144" class="cn">-4</text><text x="52" y="144" class="cnm">JobPendingChildren</text>
+        <g class="cell" id="c--8"><rect x="226" y="128" width="206" height="34" rx="6"></rect></g>
+        <text x="236" y="144" class="cn">-8</text><text x="264" y="144" class="cnm">JobBelongsToJobScheduler</text>
+        <text x="448" y="140" class="cnm">closed set · eleven codes · never expanded</text>
+        <text x="448" y="154" class="cnm">dashed = the two lock codes (-2, -6)</text>
+      </svg>
+
+      <div class="geo-readout" id="codesOut" aria-live="polite"></div>
+    </figure>
+    <div class="prose">
+      <p>The two dashed codes are the lock codes: <code class="inl">moveToFinished-14</code> verifies the token before
+        completing, and returns <code class="inl">-2</code> (<code class="inl">JobLockNotExist</code>) when the lock is
+        missing or <code class="inl">-6</code> (<code class="inl">JobLockMismatch</code>) when the token does not match
+        the holder. The full set is the scripts' shared return convention — <strong>the lock protocol dive</strong>
+        reads where <code class="inl">-2</code>/<code class="inl">-6</code> come from.</p>
+    </div>
+  </section>
+
+  <section id="rule">
+    <h2>The Golden Rule &mdash; the script is L2</h2>
+    <div class="prose">
+      <p>A transition's script and its return codes are <strong>L2</strong> — immutable and shared across the three
+        runtimes. <code class="inl">moveToActive-11</code> is eleven keys in a fixed order, performing the same atomic
+        steps, in every runtime; the <code class="inl">-1</code>…<code class="inl">-11</code> codes mean the same thing
+        everywhere. Only the executor that dispatches the script by SHA varies.</p>
+    </div>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the protocol (immutable L2)</span>
+        <p>The transition scripts — <code class="inl">moveToActive-11</code>, <code class="inl">moveToFinished-14</code>,
+          <code class="inl">moveToDelayed-8</code>, <code class="inl">moveStalledJobsToWait-8</code> — and the closed
+          <code class="inl">-1</code>…<code class="inl">-11</code> codes; the same atomic steps and the same codes in
+          every runtime.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">its three runtimes (variable L3)</span>
+        <p>Elixir dispatches them by SHA via <code class="inl">EchoMQ.Scripts</code> over a Redix pool; Go and Node.js
+          load and run the same script files their own way. The script does not move between runtimes; the executor that
+          dispatches it does.</p>
+      </div>
+    </div>
+    <p class="take">Every move is one atomic Lua script whose filename number is its <code class="inl">KEYS</code> arity,
+      and a job is never half-moved. The scripts and the <code class="inl">-1</code>…<code class="inl">-11</code> codes
+      are L2 — the same in every runtime.</p>
+    <p class="note">Next: <a href="/echomq/core/lifecycle/the-lock-protocol">the lock protocol</a> — the
+      <code class="inl">SET &hellip;:lock</code> acquire inside <code class="inl">moveToActive</code>, the
+      <code class="inl">extendLock-2</code> heartbeat, and the token check behind <code class="inl">-2</code>/<code class="inl">-6</code>.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The dispatch that runs each script atomically, and the Redis commands the transitions issue.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://docs.bullmq.io/">BullMQ &mdash; <em>Documentation</em></a> &mdash; the transition scripts and the lifecycle moves they perform.</li>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the load-once, run-by-SHA dispatch every transition script runs under, atomically.</li>
+          <li><a href="https://redis.io/commands/lrem/">Redis &mdash; <em>LREM</em></a> &mdash; the remove-from-active step in <code>moveToFinished</code>.</li>
+          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; the add-to-terminal-set step (completed/failed, scored by timestamp).</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/core/lifecycle">E2.01 &middot; The lifecycle &amp; state machine</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/core/lifecycle/the-eight-states">E2.01.1 &middot; The eight states</a> &mdash; the locations these scripts move between.</li>
+          <li><a href="/echomq/protocol/lua-scripts">E1.03 &middot; The Lua script layer</a> &mdash; how a script is loaded and dispatched by SHA.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns R3 &middot; Reliable queues</a> &mdash; the atomic-move pattern, applied.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/core/lifecycle/the-eight-states"><span aria-hidden="true">&larr;</span>&nbsp; E2.01.1 &middot; The eight states</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/core/lifecycle/the-lock-protocol">E2.01.3 &middot; The lock protocol <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ &mdash; the polyglot job-queue protocol, taught in depth and tracked as it is built.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/core/lifecycle">E2.01 &middot; The lifecycle &amp; state machine</a>
+        <a href="/echomq/core/lifecycle/the-eight-states">E2.01.1 &middot; The eight states</a>
+        <a href="/echomq/core/lifecycle/every-transition-and-its-script">E2.01.2 &middot; Every transition &amp; its script</a>
+        <a href="/echomq/core/lifecycle/the-lock-protocol">E2.01.3 &middot; The lock protocol</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/core">E2 &middot; The core</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: a transition and its script (pure over the real transition table) ---------- */
+  var TR = {
+    active:   { from: 'wait',    to: 'active',         script: 'moveToActive-11',       keys: 11,
+                steps: ['promote due delayed → wait', 'check the rate limiter + global concurrency', 'dequeue (RPOP wait / ZPOPMIN prioritized)', 'acquire the lock (SET …:lock uuid PX)', 'LPUSH active', 'XADD the active event', 'return the job hash fields'],
+                fn: 'EchoMQ.Scripts.move_to_active/4' },
+    finished: { from: 'active',  to: 'completed / failed', script: 'moveToFinished-14', keys: 14,
+                steps: ['verify the lock token first', 'LREM active', 'HSET returnvalue / failedReason + stacktrace', 'ZADD completed/failed (score = timestamp)', 'DEL the lock', 'increment metrics', 'apply removeOnComplete / removeOnFail', 'update a parent’s deps; clean the dedup key', 'XTRIM events; optionally return the next job'],
+                fn: 'EchoMQ.Scripts.move_to_finished/7' },
+    delayed:  { from: 'active',  to: 'delayed',        script: 'moveToDelayed-8',       keys: 8,
+                steps: ['DEL the lock', 'delay = base * 2^(attempt-1) (optional jitter)', 'move active → delayed with the new run-at score', 'increment atm (attempts made)', 'XADD the delayed event'],
+                fn: 'EchoMQ.Scripts.move_to_delayed/6' },
+    stalled:  { from: 'active',  to: 'wait / failed',  script: 'moveStalledJobsToWait-8', keys: 8,
+                steps: ['for each job in active, check whether the lock exists', 'no lock ⇒ stalled', 'if stc >= maxStalledCount → failed', 'else → wait and increment stc'],
+                fn: 'driven by the stalled-checker process' }
+  };
+
+  function renderTr(key) {
+    var d = TR[key];
+    var out = document.getElementById('trOut');
+    if (!d || !out) return;
+    var fromEl = document.getElementById('tr-from');
+    var toEl = document.getElementById('tr-to');
+    var scriptEl = document.getElementById('tr-script');
+    var keysEl = document.getElementById('tr-keys');
+    if (fromEl) fromEl.textContent = d.from;
+    if (toEl) toEl.textContent = d.to;
+    if (scriptEl) scriptEl.textContent = d.script;
+    if (keysEl) keysEl.textContent = 'KEYS = ' + d.keys;
+    var stepList = d.steps.map(function (s, i) { return (i + 1) + '. ' + s; }).join('<br>');
+    out.innerHTML = '<b>' + d.from + ' → ' + d.to + '</b> <span class="dim">via</span> <b>' + d.script + '</b> ' +
+      '<span class="dim">(KEYS ' + d.keys + ')</span><br>' +
+      '<span class="dim">' + d.fn + '</span><br>' +
+      '<span class="dim">atomic steps:</span><br>' + stepList;
+  }
+
+  document.querySelectorAll('#trSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#trSel button').forEach(function (o) {
+        var on = o === b; o.classList.toggle('active', on); o.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      renderTr(b.getAttribute('data-tr'));
+    });
+  });
+  renderTr('active');
+
+  /* ---------- content: the closed -1 … -11 return-code decoder (pure over the closed set) ---------- */
+  var CODES = {
+    '-1':  { name: 'JobNotExist',               gloss: 'the job hash is missing',                          lock: false },
+    '-2':  { name: 'JobLockNotExist',           gloss: 'the job lock is missing',                          lock: true },
+    '-3':  { name: 'JobNotInState',             gloss: 'the job is not in the expected state (e.g. not in active)', lock: false },
+    '-4':  { name: 'JobPendingChildren',        gloss: 'the job still has unfinished children',            lock: false },
+    '-5':  { name: 'ParentJobNotExist',         gloss: 'the named parent job is missing',                  lock: false },
+    '-6':  { name: 'JobLockMismatch',           gloss: 'the lock token does not match the holder',         lock: true },
+    '-7':  { name: 'ParentJobCannotBeReplaced', gloss: 'the parent job is not in a replaceable state',     lock: false },
+    '-8':  { name: 'JobBelongsToJobScheduler',  gloss: 'the job is owned by a job scheduler',              lock: false },
+    '-9':  { name: 'JobHasFailedChildren',      gloss: 'the job has failed children',                      lock: false },
+    '-10': { name: 'SchedulerJobIdCollision',   gloss: 'a scheduler job id collision',                     lock: false },
+    '-11': { name: 'SchedulerJobSlotsBusy',     gloss: 'the scheduler job slots are busy',                 lock: false }
+  };
+  var CODE_KEYS = ['-1','-2','-3','-4','-5','-6','-7','-8','-9','-10','-11'];
+
+  function renderCode(code) {
+    var d = CODES[code];
+    var out = document.getElementById('codesOut');
+    if (!d || !out) return;
+    CODE_KEYS.forEach(function (c) {
+      var el = document.getElementById('c-' + c);
+      if (el) el.classList.toggle('on', c === code);
+    });
+    var lockLine = d.lock
+      ? '<br><span class="warn">a lock code — emitted by moveToFinished-14 on its verify step.</span>'
+      : '<br><span class="dim">one of a closed set of eleven; never expanded.</span>';
+    out.innerHTML = '<b>' + code + '</b> → <b>' + d.name + '</b><br>' +
+      '<span class="dim">' + d.gloss + '</span>' + lockLine;
+  }
+
+  document.querySelectorAll('#codeSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#codeSel button').forEach(function (o) {
+        var on = o === b; o.classList.toggle('active', on); o.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      renderCode(b.getAttribute('data-code'));
+    });
+  });
+  renderCode('-1');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

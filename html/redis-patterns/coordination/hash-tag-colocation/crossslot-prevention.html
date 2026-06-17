@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R2.05.2 · CROSSSLOT prevention · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R2.05.2 — a single command that touches more than one key (MSET, MULTI/EXEC, an EVAL Lua script) requires every key on the same Valkey cluster slot, or the cluster returns the literal (error) CROSSSLOT Keys in request don't hash to the same slot. A single node does not enforce it, so the bug surfaces only on the first cluster deploy. A shared {tag} colocates the keys on one slot and prevents it. EchoMQ's @claim declares emq:{q}:pending and emq:{q}:active and touches emq:{q}:job:<id> — all under the {q} hashtag, so the multi-key EVALSHA stays one atomic call.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- tables ---------- */
+.tbl{margin:0 0 18px;overflow-x:auto}
+.tbl table{border-collapse:collapse;width:100%;font-family:var(--sans);font-size:.88rem}
+.tbl th,.tbl td{text-align:left;padding:.5rem .7rem;border-bottom:1px solid var(--b-line);vertical-align:top}
+.tbl th{color:var(--r-red);font-family:var(--mono);font-weight:700;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase}
+.tbl td code{font-family:var(--mono);font-size:.86em;color:var(--b-ts)}
+.tbl tr:last-child td{border-bottom:0}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+pre.code .kw{color:var(--b-seq)}
+pre.code .str{color:var(--b-node)}
+pre.code .err{color:var(--r-red);font-weight:700}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the CROSSSLOT verdict figure (hover-select) ---------- */
+.verd{width:100%;height:auto;display:block;margin-top:4px}
+.verd .key rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.verd .key.same rect{fill:var(--b-pay-tint);stroke:var(--b-node)}
+.verd .key.cross rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.verd .ktxt{font:12px var(--mono);fill:var(--b-ink)}
+.verd .ttl{font:10.5px var(--mono);fill:var(--b-dim);letter-spacing:.05em;text-transform:uppercase}
+.verd .slt{font:12px var(--mono);font-weight:700}
+.verd .slt.same{fill:var(--b-node)}
+.verd .slt.cross{fill:var(--r-red)}
+.verd .step{cursor:pointer;transition:opacity .18s ease}
+.verd.focus .step{opacity:.3}
+.verd.focus .step.on{opacity:1}
+.verd.focus .step.on rect{stroke-width:2.6}
+.verd .verdict{font:13px var(--mono);font-weight:700}
+.verd .verdict.same{fill:var(--b-node)}
+.verd .verdict.cross{fill:var(--r-red)}
+/* ---------- the claim figure (hover-select over the three declared keys) ---------- */
+.claim{width:100%;height:auto;display:block;margin-top:4px}
+.claim .kk rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.claim .kk.on rect{fill:var(--b-pay-tint);stroke:var(--b-ts)}
+.claim .ktxt{font:11.5px var(--mono);fill:var(--b-ink)}
+.claim .stxt{font:11px var(--mono);fill:var(--b-node);font-weight:700;text-anchor:end}
+.claim .step{cursor:pointer;transition:opacity .18s ease}
+.claim.focus .step{opacity:.32}
+.claim.focus .step.on{opacity:1}
+.claim.focus .step.on rect{stroke-width:2.6}
+.claim .ttl{font:10.5px var(--mono);fill:var(--b-dim);letter-spacing:.05em;text-transform:uppercase}
+.claim .verd{font:12.5px var(--mono);font-weight:700;fill:var(--b-node)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/coordination">coordination</a><span class="rsep">/</span><a href="/redis-patterns/coordination/hash-tag-colocation">hash-tag-colocation</a><span class="rsep">/</span><span class="rcur">crossslot-prevention</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#error">The error</a>
+      <a href="#prevent">Prevention</a>
+      <a href="#commands">Commands</a>
+      <a href="#applied">The claim</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R2.05.2 &#183; Hash-tag co-location &#8212; dive 2</p>
+      <h1>CROSSSLOT <span class="hns">prevention</span>.</h1>
+      <p class="lede">A multi-key command across two slots is refused. A shared tag lands the keys on one slot &#8212;
+      and the command is legal again. <b>Prevention, not recovery.</b></p>
+      <p class="heronote">Grounding: echo/apps/echo_mq/lib/echo_mq/jobs.ex &#183; @claim (jobs.ex:126) +
+      claim/3 (jobs.ex:283) &#8212; KEYS = [emq:{q}:pending, emq:{q}:active], touches emq:{q}:job:&lt;id&gt;, all
+      under the {q} hashtag.</p>
+
+      <figure class="anatomy" aria-labelledby="verdCap">
+        <figcaption id="verdCap"><b>The CROSSSLOT verdict &#8212; a multi-key command runs only when both keys hash
+        to one slot.</b> Pick a command and a tag state; hover or select a key row. The slots are computed by the
+        real client-side slot rule.</figcaption>
+        <div class="segbar" id="cmdSel" role="group" aria-label="The multi-key command to run">
+          <button type="button" data-cmd="MSET" aria-pressed="true">MSET</button>
+          <button type="button" data-cmd="MULTI/EXEC" aria-pressed="false">MULTI/EXEC</button>
+          <button type="button" data-cmd="EVAL" aria-pressed="false">EVAL</button>
+        </div>
+        <div class="segbar" id="tagSel" role="group" aria-label="Whether the two keys share a hash tag">
+          <button type="button" data-tag="off" aria-pressed="true">no shared {tag}</button>
+          <button type="button" data-tag="on" aria-pressed="false">share {u42}</button>
+        </div>
+        <svg class="verd" id="verd" viewBox="0 0 460 188" role="img" aria-label="Two operand keys of a multi-key command, each with the Valkey cluster slot it hashes to. When the two keys do not share a hash tag, user:profile hashes to slot 1391 and user:settings to slot 3618 — two different slots — so the command is refused with the literal error CROSSSLOT Keys in request don't hash to the same slot. When the keys share the u42 hash tag, user:{u42}:profile and user:{u42}:settings both hash only u42 and resolve to slot 11448 — one slot — so the command runs.">
+          <text class="ttl" x="20" y="20" id="cmdHdr">MSET over two keys &#183; cluster mode</text>
+          <g class="step key cross" data-key="A"><rect x="20" y="28" width="420" height="36" rx="7"></rect><text class="ktxt" x="32" y="50" id="keyAName">user:profile</text><text class="slt cross" x="428" y="50" id="slotA" text-anchor="end">slot 1391</text></g>
+          <g class="step key cross" data-key="B"><rect x="20" y="70" width="420" height="36" rx="7"></rect><text class="ktxt" x="32" y="92" id="keyBName">user:settings</text><text class="slt cross" x="428" y="92" id="slotB" text-anchor="end">slot 3618</text></g>
+          <text class="verdict cross" id="verdLine" x="20" y="132">slot 1391 &#8800; 3618 &#8594; refused</text>
+          <text class="ttl" id="verdErr" x="20" y="152" fill="var(--r-red)">(error) CROSSSLOT Keys in request don't hash to the same slot</text>
+        </svg>
+        <div class="readout" id="verdOut" aria-live="polite"><span class="rk">readout &#183;</span> Pick a command
+        and toggle the shared <code>{u42}</code> tag. Without it the keys scatter; with it both hash
+        <code>u42</code> to one slot.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="error">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The CROSSSLOT error</h2>
+        <span class="ssrc">hash-tag-colocation.md.txt &#183; Limitations</span>
+      </div>
+      <div class="prose">
+        <p>Valkey cluster splits the keyspace into 16384 hash slots and gives each slot to a node. A multi-key
+        command can run atomically on one node only, so the cluster enforces a rule before it executes: every key the
+        command names must hash to the same slot. When two keys in one request land on different slots they live on
+        two different nodes, and no single node can run the command. The cluster refuses the whole request:</p>
+      </div>
+      <pre class="code"><span class="kw">MSET</span> user:profile <span class="str">"…"</span> user:settings <span class="str">"…"</span>
+<span class="err">(error) CROSSSLOT Keys in request don't hash to the same slot</span></pre>
+      <div class="prose">
+        <p>The trap is that a single Valkey node does not enforce this. On one node every key is reachable, so
+        <code>MSET</code>, a <code>MULTI</code>/<code>EXEC</code> block, and a multi-key <code>EVAL</code> all run
+        regardless of how the keys hash. The code passes every test on a single node, and the first cluster deploy is
+        where the <code>CROSSSLOT</code> surfaces &#8212; a class of failure that stays invisible until the topology
+        changes underneath working code. The hero figure runs the rule: pick a command, toggle the shared tag, and
+        read back the slots and the verdict.</p>
+      </div>
+      <dl class="deflist">
+        <dt>hash slot</dt><dd>One of 16384 partitions of the keyspace; each owned by one node. A key's slot is <code>CRC16(key) % 16384</code> over the part the cluster hashes.</dd>
+        <dt>same-slot rule</dt><dd>Every key a single multi-key command names must hash to one slot, because the command runs atomically on the one node that owns it.</dd>
+        <dt>CROSSSLOT</dt><dd>The error the cluster returns when a multi-key request spans slots. A single Valkey node never raises it.</dd>
+      </dl>
+    </section>
+
+    <section id="prevent">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Why colocation prevents it</h2>
+        <span class="ssrc">hash-tag-colocation.md.txt &#183; How hash tags work</span>
+      </div>
+      <div class="prose">
+        <p>A key's slot is <code>CRC16(key) % 16384</code> over the whole key &#8212; unless the key carries a hash
+        tag, the first non-empty <code>{…}</code> substring, in which case the cluster hashes only that substring.
+        Two keys that share a tag therefore share a slot, whatever else differs between them. That is the prevention:
+        arrange the related keys behind one tag and the multi-key command never spans a slot boundary.</p>
+      </div>
+      <pre class="code"><span class="cmt"># only the tag substring is hashed -&gt; every {orders} key lands on one slot</span>
+slot(<span class="str">"emq:{orders}:pending"</span>) == <b>105</b>
+emq:<b>{orders}</b>:pending   <span class="cmt">&#8594; slot 105</span>
+emq:<b>{orders}</b>:active    <span class="cmt">&#8594; slot 105</span>
+emq:<b>{orders}</b>:schedule  <span class="cmt">&#8594; slot 105   one slot &#8594; the multi-key claim stays legal</span></pre>
+      <div class="prose">
+        <p>Drop the braces and each key hashes in full, so the keys scatter and the claim raises
+        <code>CROSSSLOT</code>. Colocation is <strong>prevention</strong> &#8212; it removes the failure rather than
+        recovering from it. That is the complement of the previous chapter's detection pattern: detection (R2.04) is
+        the fallback for keys that genuinely cannot share a slot, such as a Valkey key paired with a database row;
+        prevention is the first choice whenever the keys <em>can</em> be colocated.</p>
+      </div>
+      <p class="take">A shared tag forces the related keys onto one slot, so a multi-key command that would span
+      slots stays on a single node. Prevention removes the tear; detection only finds it.</p>
+    </section>
+
+    <section id="commands">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Commands that benefit from colocation</h2>
+        <span class="ssrc">hash-tag-colocation.md.txt &#183; Commands</span>
+      </div>
+      <div class="prose">
+        <p>Every command below requires same-slot keys in cluster mode, and a shared tag is what keeps them legal. A
+        colocated key family turns each one back into a single atomic operation on one node:</p>
+      </div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Command</th><th>Why it needs one slot</th></tr></thead>
+          <tbody>
+            <tr><td><code>MULTI</code>/<code>EXEC</code></td><td>a transaction runs atomically on one node; every key in the block must share a slot.</td></tr>
+            <tr><td><code>WATCH</code></td><td>the optimistic-lock key and the keys the transaction touches must co-locate.</td></tr>
+            <tr><td><code>EVAL</code>/<code>EVALSHA</code></td><td>a Lua script's multiple <code>KEYS</code> must all hash to one slot.</td></tr>
+            <tr><td><code>MGET</code>/<code>MSET</code></td><td>a multi-key read or write spans one node only.</td></tr>
+            <tr><td><code>RENAME</code></td><td>source and destination keys must share a slot.</td></tr>
+            <tr><td><code>COPY</code></td><td>source and destination keys must share a slot.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>In cluster mode every <code>KEYS</code> element of a Lua
+      script must hash to one slot, or the script is refused with <code>CROSSSLOT</code> &#8212; the same rule
+      <code>MSET</code> and <code>MULTI</code>/<code>EXEC</code> obey &#8212;
+      <a href="https://valkey.io/topics/cluster-spec/" rel="noopener">valkey.io/topics/cluster-spec</a>.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>In EchoMQ &#8212; the multi-key claim</h2>
+        <span class="ssrc">jobs.ex:126 &#183; jobs.ex:283</span>
+      </div>
+      <div class="prose">
+        <p>EchoMQ's <code>@claim</code> script (<code>echo/apps/echo_mq/lib/echo_mq/jobs.ex:126</code>) is the worked
+        case. The v2 law is that every key a script touches is declared in <code>KEYS</code>; <code>claim/3</code>
+        (jobs.ex:283) builds the key list and runs the script through <code>EchoMQ.Connector.eval/5</code>
+        (EVALSHA-first). The script touches three keys, and all three are built by <code>Keyspace.queue_key/2</code>,
+        which always braces the queue name &#8212; so all three hash the substring <code>q</code> and answer one slot.
+        Toggle a key in the figure to see which slot it answers.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="claimCap">
+        <figcaption id="claimCap"><b>The three keys of <code>@claim</code> &#8212; all under the
+        <code>{orders}</code> hashtag, all on slot 105.</b> Hover or select a key to read its declared role and the
+        slot it answers.</figcaption>
+        <div class="segbar" id="claimSel" role="group" aria-label="Which declared key of the claim script">
+          <button type="button" data-key="pending" aria-pressed="false">KEYS[1] pending</button>
+          <button type="button" data-key="active" aria-pressed="false">KEYS[2] active</button>
+          <button type="button" data-key="job" aria-pressed="false">job row</button>
+        </div>
+        <svg class="claim" id="claim" viewBox="0 0 460 176" role="img" aria-label="The three keys the EchoMQ claim script touches, each under the orders hashtag. KEYS[1] is emq:{orders}:pending, ZPOPMIN pops the next job, slot 105. KEYS[2] is emq:{orders}:active, ZADD leases it on the server clock, slot 105. The job row emq:{orders}:job:id is HINCRBY attempts and HSET state active, slot 105. All three share the orders tag, so the multi-key EVALSHA stays one atomic call on one slot.">
+          <text class="ttl" x="20" y="20">@claim &#183; declared keys, all hashing "orders"</text>
+          <g class="step kk" data-key="pending"><rect x="20" y="28" width="420" height="32" rx="7"></rect><text class="ktxt" x="32" y="48">KEYS[1]  emq:{orders}:pending   ZPOPMIN</text><text class="stxt" x="428" y="48">slot 105</text></g>
+          <g class="step kk" data-key="active"><rect x="20" y="66" width="420" height="32" rx="7"></rect><text class="ktxt" x="32" y="86">KEYS[2]  emq:{orders}:active    ZADD lease</text><text class="stxt" x="428" y="86">slot 105</text></g>
+          <g class="step kk" data-key="job"><rect x="20" y="104" width="420" height="32" rx="7"></rect><text class="ktxt" x="32" y="124">job row  emq:{orders}:job:&lt;id&gt;  HINCRBY</text><text class="stxt" x="428" y="124">slot 105</text></g>
+          <text class="verd" id="claimVerd" x="20" y="160">3 keys &#8594; 1 slot (105) &#8594; one atomic EVALSHA</text>
+        </svg>
+        <div class="readout" id="claimOut" aria-live="polite"><span class="rk">readout &#183;</span> Pick a key.
+        All three are built by <code>queue_key/2</code>, so all three hash <code>orders</code> and answer slot 105.</div>
+      </figure>
+
+      <pre class="code"><span class="cmt"># claim/3 (jobs.ex:283) — declared keys, all under the {q} hashtag</span>
+keys = [Keyspace.queue_key(queue, <span class="str">"pending"</span>), Keyspace.queue_key(queue, <span class="str">"active"</span>)]
+argv = [Keyspace.queue_key(queue, <span class="str">"job:"</span>), Integer.to_string(lease_ms)]
+Connector.eval(conn, @claim, keys, argv)
+
+<span class="cmt"># @claim (jobs.ex:126) — ZPOPMIN pending, HINCRBY attempts (the fencing token), ZADD active on the server clock</span>
+<span class="kw">local</span> popped = redis.call(<span class="str">'ZPOPMIN'</span>, KEYS[<b>1</b>])    <span class="cmt">-- emq:{q}:pending</span>
+<span class="kw">if</span> #popped == 0 <span class="kw">then return</span> {} <span class="kw">end</span>
+<span class="kw">local</span> id = popped[<b>1</b>]
+<span class="kw">local</span> jk = ARGV[<b>1</b>] .. id                          <span class="cmt">-- emq:{q}:job:&lt;id&gt;</span>
+<span class="kw">local</span> att = redis.call(<span class="str">'HINCRBY'</span>, jk, <span class="str">'attempts'</span>, <b>1</b>)
+redis.call(<span class="str">'HSET'</span>, jk, <span class="str">'state'</span>, <span class="str">'active'</span>)
+<span class="kw">local</span> t = redis.call(<span class="str">'TIME'</span>)
+<span class="kw">local</span> now = t[<b>1</b>] * <b>1000</b> + math.floor(t[<b>2</b>] / <b>1000</b>)
+redis.call(<span class="str">'ZADD'</span>, KEYS[<b>2</b>], now + tonumber(ARGV[<b>2</b>]), id)   <span class="cmt">-- emq:{q}:active</span>
+<span class="kw">return</span> {id, redis.call(<span class="str">'HGET'</span>, jk, <span class="str">'payload'</span>), att}</pre>
+      <div class="prose">
+        <p>The script applies in full or not at all: a job leaves <code>pending</code> (<code>ZPOPMIN</code>), its
+        <code>attempts</code> fencing token is incremented (<code>HINCRBY</code>), and it enters <code>active</code>
+        with a server-clock lease (<code>ZADD … TIME</code>) in one indivisible <code>EVALSHA</code>. Strip the
+        <code>{q}</code> tag and the three keys would scatter, and the claim would raise <code>CROSSSLOT</code>. The
+        braced keyspace is precisely what keeps the multi-key claim legal.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A multi-key command whose keys span slots raises <code>CROSSSLOT</code>. Colocation via a shared
+          <code>{q}</code> tag lands the keys on one slot, so the command is legal again &#8212; prevention, not
+          recovery.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">in EchoMQ</span>
+          <p>The multi-key <code>@claim</code> stays one atomic <code>EVALSHA</code> because
+          <code>Keyspace.queue_key/2</code> colocates <code>emq:{q}:pending</code>, <code>emq:{q}:active</code>, and
+          the job row on one slot.</p>
+        </div>
+      </div>
+
+      <p class="take"><code>CROSSSLOT</code> is the cluster refusing a multi-key command whose keys span slots. A
+      shared hash tag is the prevention: it lands the keys on one slot, which is exactly why the multi-key
+      <code>@claim</code> can be one atomic <code>EVALSHA</code> and never tears.</p>
+
+      <div class="door">
+        <span class="dr">the application &#183; the keyspace, gated against live Valkey</span>
+        <h3>Three keys, one slot &#8212; the claim never tears</h3>
+        <p>The colocation is not assumed &#8212; <code>queue_key/2</code> always braces the queue name, and
+        <code>slot/1</code> computes the slot client-side over CRC16 % 16384
+        (<a href="https://valkey.io/topics/cluster-spec/" rel="noopener">valkey.io/topics/cluster-spec</a>). The
+        committed manuscript record froze the slot-locality:</p>
+        <figure class="frozen">
+          <figcaption>content/bcs3.1.md &#183; the co-location law, slot-locality against live Valkey<span class="tag">frozen</span></figcaption>
+          <pre>emq:{orders}:* &#8212; pending, active, meta, job row   <b>all answer slot 105</b>   <span class="fd">&#8592; one queue, one slot</span>
+emq:{fills}:*                                  <b>slot 4165</b>
+the hashtag IS the queue name &#8212; per-queue scripts are single-slot legal by grammar</pre>
+        </figure>
+      </div>
+
+      <div class="prose">
+        <p>The full Lua bundle, the EVALSHA / NOSCRIPT dispatch, and the version fence the connector negotiates
+        before the first command are the subject of the dedicated <a href="/echomq"><strong>EchoMQ course</strong></a>
+        and the <a href="/bcs/bus/state-machine">BCS state-machine chapter</a>. This dive cites one script as proof
+        of the colocation; it does not teach the bundle.</p>
+      </div>
+
+      <p class="take">Next, R2.05.3 shows how <code>slot/1</code> computes that slot client-side, so the connector
+      routes and partitions without a server round trip &#8212; the same arithmetic the cluster runs, run ahead of
+      time on the client.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/topics/cluster-spec/" rel="noopener">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the 16384 hash slots, hash tags, and the <code>CROSSSLOT</code> rule for multi-key commands that span slots.</li>
+            <li><a href="https://redis.io/docs/latest/develop/interact/programmability/eval-intro/" rel="noopener">Redis &mdash; <em>EVAL / scripting introduction</em></a> &mdash; the requirement that every <code>KEYS</code> element of a Lua script hash to the same slot in cluster mode.</li>
+            <li><a href="https://redis.io/commands/mset/" rel="noopener">Redis &mdash; <em>MSET</em></a> &mdash; a multi-key write that needs all keys on one slot; the simplest command a shared hash tag keeps legal.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/coordination/hash-tag-colocation">R2.05 &#183; Hash-tag co-location</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/coordination/hash-tag-colocation/the-tag-mechanic">R2.05.1 &#183; The tag mechanic</a><span class="rs">the previous dive</span></li>
+            <li><a href="/redis-patterns/coordination/hash-tag-colocation/cluster-auto-detect">R2.05.3 &#183; Cluster auto-detect</a><span class="rs">the next dive</span></li>
+            <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &#183; Atomic updates</a><span class="rs">the single-slot atomic move</span></li>
+            <li><a href="/redis-patterns/coordination/cross-shard-consistency">R2.04 &#183; Cross-shard consistency</a><span class="rs">detecting the tear</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/coordination/hash-tag-colocation/the-tag-mechanic"><span class="pk">previous</span>&#8592; R2.05.1 &#183; The tag mechanic</a>
+      <a class="pgx" href="/redis-patterns/coordination/hash-tag-colocation/cluster-auto-detect"><span class="pk">next</span>R2.05.3 &#183; Cluster auto-detect &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/coordination/hash-tag-colocation/the-tag-mechanic">R2.05.1 &#183; The tag mechanic</a>
+        <a href="/redis-patterns/coordination/hash-tag-colocation/crossslot-prevention">R2.05.2 &#183; CROSSSLOT prevention</a>
+        <a href="/redis-patterns/coordination/hash-tag-colocation/cluster-auto-detect">R2.05.3 &#183; Cluster auto-detect</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nn3uarUo7f</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- the real client-side slot rule (EchoMQ.Keyspace.slot/1, keyspace.ex) ----------
+     hashtag(key) = the substring inside the first non-empty {…}, else the whole key.
+     slot(key) = rem(crc16(hashtag(key), 0), 16384) — CRC16-XMODEM, polynomial 0x1021. Every slot the
+     interactives report is computed here, never stored. */
+  function crc16(s) {
+    var crc = 0;
+    for (var i = 0; i < s.length; i++) {
+      crc = crc ^ ((s.charCodeAt(i) & 0xFF) << 8);
+      crc &= 0xFFFF;
+      for (var b = 0; b < 8; b++) {
+        if (crc & 0x8000) { crc = ((crc << 1) ^ 0x1021) & 0xFFFF; }
+        else { crc = (crc << 1) & 0xFFFF; }
+      }
+    }
+    return crc;
+  }
+  function hashtag(key) {
+    var a = key.indexOf('{');
+    if (a < 0) return key;
+    var b = key.indexOf('}', a + 1);
+    if (b < 0 || b <= a + 1) return key;
+    return key.slice(a + 1, b);
+  }
+  function slot(key) { return crc16(hashtag(key)) % 16384; }
+
+  /* ---------- Interactive 1: the CROSSSLOT verdict (pure over command + tag toggle) ---------- */
+  var state = { cmd: 'MSET', tagged: false };
+  var verd = document.getElementById('verd');
+  var cmdButtons = document.querySelectorAll('#cmdSel button');
+  var tagButtons = document.querySelectorAll('#tagSel button');
+  var verdOut = document.getElementById('verdOut');
+  function verdict() {
+    var keyA = state.tagged ? 'user:{u42}:profile'  : 'user:profile';
+    var keyB = state.tagged ? 'user:{u42}:settings' : 'user:settings';
+    var sA = slot(keyA), sB = slot(keyB), same = sA === sB;
+    return { keyA: keyA, keyB: keyB, sA: sA, sB: sB, same: same };
+  }
+  function renderVerd(hoverKey) {
+    var r = verdict();
+    var idEl = function (id) { return document.getElementById(id); };
+    idEl('cmdHdr').textContent = state.cmd + ' over two keys · cluster mode';
+    idEl('keyAName').textContent = r.keyA;
+    idEl('keyBName').textContent = r.keyB;
+    var slA = idEl('slotA'), slB = idEl('slotB');
+    slA.textContent = 'slot ' + r.sA; slA.setAttribute('class', 'slt ' + (r.same ? 'same' : 'cross'));
+    slB.textContent = 'slot ' + r.sB; slB.setAttribute('class', 'slt ' + (r.same ? 'same' : 'cross'));
+    var cls = r.same ? 'key same' : 'key cross';
+    verd.querySelectorAll('.key').forEach(function (g) {
+      g.setAttribute('class', 'step ' + cls + (g.getAttribute('data-key') === hoverKey ? ' on' : ''));
+    });
+    verd.classList.toggle('focus', !!hoverKey);
+    var vl = idEl('verdLine'), ve = idEl('verdErr');
+    if (r.same) {
+      vl.setAttribute('class', 'verdict same');
+      vl.textContent = 'slot ' + r.sA + ' = ' + r.sB + ' → ' + state.cmd + ' runs (OK)';
+      ve.setAttribute('fill', 'var(--b-dim)');
+      ve.textContent = 'both keys on one node · the multi-key command is legal';
+    } else {
+      vl.setAttribute('class', 'verdict cross');
+      vl.textContent = 'slot ' + r.sA + ' ≠ ' + r.sB + ' → refused';
+      ve.setAttribute('fill', 'var(--r-red)');
+      ve.textContent = "(error) CROSSSLOT Keys in request don't hash to the same slot";
+    }
+    verdOut.innerHTML = '<span class="rk">verdict &#183;</span> ' + (r.same
+      ? (state.cmd + ' over ' + r.keyA + ' + ' + r.keyB + ': both hash "u42" → slot ' + r.sA + '. One slot, one node → the multi-key ' + state.cmd + ' runs (OK).')
+      : (state.cmd + ' over ' + r.keyA + ' + ' + r.keyB + ': slot ' + r.sA + ' ≠ slot ' + r.sB + ' → two nodes. The cluster refuses it: (error) CROSSSLOT Keys in request don\'t hash to the same slot.'));
+  }
+  cmdButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      state.cmd = b.getAttribute('data-cmd');
+      cmdButtons.forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      renderVerd(null);
+    });
+  });
+  tagButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      state.tagged = b.getAttribute('data-tag') === 'on';
+      tagButtons.forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      renderVerd(null);
+    });
+  });
+  if (verd) {
+    verd.querySelectorAll('.key').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { renderVerd(g.getAttribute('data-key')); });
+      g.addEventListener('mouseleave', function () { renderVerd(null); });
+    });
+  }
+  renderVerd(null); // initial render — correct without interaction
+
+  /* ---------- Interactive 2: the three declared keys of @claim (hover-select, pure) ---------- */
+  var QKEYS = {
+    pending: { key: 'emq:{orders}:pending', role: 'KEYS[1] — ZPOPMIN pops the next job by mint order' },
+    active:  { key: 'emq:{orders}:active',  role: 'KEYS[2] — ZADD leases it on the server clock (now + lease_ms)' },
+    job:     { key: 'emq:{orders}:job:<id>', role: 'job row — HINCRBY attempts (the fence), HSET state active' }
+  };
+  var claim = document.getElementById('claim');
+  var claimButtons = document.querySelectorAll('#claimSel button');
+  var claimOut = document.getElementById('claimOut');
+  function describeClaim(which) {
+    var k = QKEYS[which];
+    var s = slot('emq:{orders}:pending'); // 105 — all three share the {orders} tag
+    return k.key + ' → hashes "orders" → slot ' + s + '. ' + k.role + '. All three keys share the {orders} tag, so the multi-key EVALSHA stays one atomic call on one slot.';
+  }
+  function selectClaim(which) {
+    claimButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-key') === which ? 'true' : 'false');
+    });
+    if (claim) {
+      claim.classList.toggle('focus', !!which);
+      claim.querySelectorAll('.kk').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-key') === which);
+      });
+    }
+    if (claimOut) {
+      claimOut.innerHTML = which
+        ? '<span class="rk">key &#183;</span> ' + describeClaim(which)
+        : '<span class="rk">readout &#183;</span> Pick a key. All three are built by <code>queue_key/2</code>, so all three hash <code>orders</code> and answer slot 105.';
+    }
+  }
+  claimButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var which = b.getAttribute('data-key');
+      selectClaim(b.getAttribute('aria-pressed') === 'true' ? null : which);
+    });
+  });
+  if (claim) {
+    claim.querySelectorAll('.kk').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectClaim(g.getAttribute('data-key')); });
+      g.addEventListener('mouseleave', function () { selectClaim(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

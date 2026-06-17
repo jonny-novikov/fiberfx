@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M3 · Best Effort Consistency — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="The availability-first strategy: guarantee a response always, provide consistency as best the network allows. The CDN as the classic example, EchoMesh's market-data near-cache served stale under partition, and per-instrument streams over a globally replicated Tigris edge.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-avail)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the near-cache emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.capsvg{width:100%;height:auto;display:block}
+.capsvg .grp{fill:var(--m-card);stroke:var(--m-line);stroke-width:1.5}
+.capsvg .node{fill:var(--m-cons-tint);stroke:var(--m-cons);stroke-width:1.5}
+.capsvg .node.a{fill:var(--m-avail-tint);stroke:var(--m-avail)}
+.capsvg .glbl{font:12px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .vlbl{font:13px var(--mono);fill:var(--m-ink);text-anchor:middle;font-weight:700}
+.capsvg .link{stroke:var(--m-avail);stroke-width:2.5;fill:none}
+.capsvg .link.cut{stroke:var(--m-edge);stroke-width:2.5;stroke-dasharray:5 5}
+.capsvg .msg{stroke:var(--m-mesh);stroke-width:2;fill:none;marker-end:url(#arw)}
+.capsvg .opn{font:11px var(--mono);fill:var(--m-ink);text-anchor:middle}
+.capsvg .barr{font:13px var(--mono);fill:var(--m-edge);text-anchor:middle;font-weight:700}
+.capsvg .okm{font:13px var(--mono);fill:var(--m-avail);text-anchor:middle;font-weight:700}
+.capsvg .axt{font:11px var(--mono);fill:var(--m-dim)}
+.capsvg g[data-tab]{transition:opacity .18s ease}
+.capsvg.focus g[data-tab]{opacity:.18}
+.capsvg.focus g[data-tab].on{opacity:1}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the strategy duality ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-avail);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-edge)}
+.tri article:nth-child(3){border-top-color:var(--m-cons)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-avail);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the dive map ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pcard{display:block;background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+a.pcard{border-color:var(--m-mesh)}
+a.pcard:hover{border-bottom-color:var(--m-mesh);box-shadow:0 1px 0 var(--m-mesh)}
+.pcard.heart{border-left:3px solid var(--m-mesh)}
+.pcard .bid{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--m-mesh);letter-spacing:.08em}
+.pcard h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.pcard p{font-size:.87rem;color:var(--m-dim)}
+.pcard .meta{display:flex;gap:10px;align-items:center;margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.chip{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-radius:3px;padding:1px 7px}
+.chip.now{background:var(--m-mesh);color:var(--m-card)}
+.chip.soon{background:var(--m-paper);border:1px solid var(--m-line);color:var(--m-dim)}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:86ch;line-height:1.7}
+.booknote b{color:var(--m-mesh)}
+.upnext{margin-top:18px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:14px 18px;font-family:var(--mono);font-size:13.5px;color:var(--m-ink);max-width:86ch;line-height:1.7}
+.upnext b{color:var(--m-mesh)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.pgrid,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.pgrid,.doors{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><span class="rcur">best-effort-consistency</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#strategy">The strategy</a>
+      <a href="#nearcache">Near-cache</a>
+      <a href="#streams">Streams</a>
+      <a href="#dives">Dives</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M3 &#183; Best Effort Consistency</p>
+      <h1>Answer <span class="hns">now</span>, reconcile toward correct.</h1>
+      <p class="lede">The second strategy on the menu, and the deliberate opposite of the first:
+      <b>guarantee a response always, and provide consistency as best the network allows</b> &#8212; the right choice for
+      content served to readers worldwide, where a slightly stale answer is useful and a withheld one is not.</p>
+      <p class="heronote">The classic example is a content delivery network caching close to users; EchoMesh takes the
+      same stance on its market-data feed and its globally replicated retention &#8212; answering from local state and
+      bounding staleness rather than forbidding it, marking a value stale under partition instead of refusing it. Where
+      the consistency-first ledger of M2 blocks rather than diverges, these surfaces diverge within a bound rather than
+      block. The strategy and its examples are settled and external (<a href="#refs">Gilbert &amp; Lynch, Akamai,
+      Valkey, Tigris</a>); EchoMesh's composition is what this course proposes.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>The near-cache, the coherence broadcast, and the per-instrument streams are EchoMesh components built on
+        shipped mechanisms; their assembly into the mesh taught here is the proposed design.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>The near-cache, made visual &#183; a <b>reader</b> holding a local cache, an <b>owner</b> holding
+        the authoritative value, a <b>coherence broadcast</b> between them &#8212; hover a state to walk a fresh read,
+        an invalidation push, a <b>partition</b>, and recovery (the <b>client-side-caching protocol</b> of a
+        Valkey-class store)</figcaption>
+        <svg class="capsvg" id="capsvg" viewBox="0 0 760 240" role="img" aria-label="A reader on the left holds a near-cache; an owner on the right holds the authoritative value, connected by a coherence-broadcast channel. On a fresh read the cached value matches the authoritative value and is served from local memory with no round-trip. On an invalidation push the owner changes the value and pushes an invalidation, the cache flushes the stale entry, and the next read fetches the new value. Under a partition the broadcast channel is cut, so the cache cannot learn of a change and serves its value marked stale rather than withholding it. On recovery a fresh push reconciles the cache and reads return to fresh.">
+          <defs>
+            <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#7b3aa0"></path>
+            </marker>
+          </defs>
+          <!-- the two surfaces -->
+          <rect class="grp" x="40" y="60" width="250" height="120" rx="8"></rect>
+          <rect class="grp" x="470" y="60" width="250" height="120" rx="8"></rect>
+          <text class="glbl" x="165" y="50">reader &#183; near-cache</text>
+          <text class="glbl" x="595" y="50">owner &#183; authoritative</text>
+          <circle class="node a" cx="165" cy="120" r="26"></circle>
+          <circle class="node" cx="595" cy="120" r="26"></circle>
+
+          <!-- the coherence-broadcast channel, healthy by default; the partition cuts it -->
+          <line class="link" id="xlink" x1="291" y1="120" x2="469" y2="120"></line>
+
+          <!-- state: fresh — cache matches the owner, served locally -->
+          <g data-tab="fresh">
+            <text class="vlbl" x="165" y="125">v1</text>
+            <text class="vlbl" x="595" y="125">v1</text>
+            <text class="okm" x="380" y="106">in sync</text>
+            <path class="msg" d="M30 120 L132 120"></path>
+            <text class="opn" x="46" y="106">read</text>
+            <text class="okm" x="165" y="166">served local</text>
+          </g>
+
+          <!-- state: push — the owner changes, an invalidation is pushed -->
+          <g data-tab="push">
+            <text class="vlbl" x="165" y="125">v2</text>
+            <text class="vlbl" x="595" y="125">v2</text>
+            <path class="msg" d="M467 120 L297 120"></path>
+            <text class="opn" x="380" y="106">invalidate</text>
+            <text class="okm" x="165" y="166">flushed &#183; refetched v2</text>
+          </g>
+
+          <!-- state: partition — the channel is cut, the value is served stale -->
+          <g data-tab="partition">
+            <text class="vlbl" x="165" y="125" fill="#b3631c">v2*</text>
+            <text class="vlbl" x="595" y="125">v3</text>
+            <text class="barr" x="380" y="106">&#9889; partition</text>
+            <text class="barr" x="380" y="136">push lost</text>
+            <text class="barr" x="165" y="166">served marked stale</text>
+          </g>
+
+          <!-- state: recover — a fresh push reconciles -->
+          <g data-tab="recover">
+            <text class="vlbl" x="165" y="125">v3</text>
+            <text class="vlbl" x="595" y="125">v3</text>
+            <path class="msg" d="M467 120 L297 120"></path>
+            <text class="okm" x="380" y="106">re-synced</text>
+            <text class="okm" x="165" y="166">back to fresh</text>
+          </g>
+          <!-- the partition marker line, shown when cut (the partition state) -->
+          <line class="link cut" id="xcut" x1="350" y1="48" x2="410" y2="192" style="opacity:0"></line>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">state &#183; hover to walk the near-cache</span>
+          In the common case the reader serves the most recent value from local memory with <b>no round-trip</b>; when
+          the invalidation channel is cut by a partition, it serves the value <span class="vc">marked stale</span>
+          rather than withholding it. Hover a state below to take it one move at a time.
+        </p>
+        <div class="htabs" id="cachew">
+          <div class="htabs-bar" role="tablist" aria-label="The near-cache, state by state">
+            <button type="button" role="tab" data-tab="fresh" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>1 &#183; Fresh read</button>
+            <button type="button" role="tab" data-tab="push" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>2 &#183; Invalidation push</button>
+            <button type="button" role="tab" data-tab="partition" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>3 &#183; Partition</button>
+            <button type="button" role="tab" data-tab="recover" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>4 &#183; Recover</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="fresh" role="tabpanel"><span class="tag a">State 1 &#183; a fresh read.</span> The cached value matches the authoritative value the owner holds. The reader serves it from local memory with no round-trip &#8212; the common case, and the whole point of caching close to the reader.</div>
+            <div class="htabs-p" data-tab="push" role="tabpanel"><span class="tag m">State 2 &#183; an invalidation push.</span> The authoritative value changes. The coherence broadcast pushes an invalidation the moment the key changes; the cache flushes the stale entry, and the next read fetches the new value.</div>
+            <div class="htabs-p" data-tab="partition" role="tabpanel"><span class="tag e">State 3 &#183; a partition.</span> The invalidation channel is cut. The reader cannot be sure its cached value is current, so it serves it marked stale rather than withholding it &#8212; availability over consistency, with the staleness made visible rather than hidden.</div>
+            <div class="htabs-p" data-tab="recover" role="tabpanel"><span class="tag a">State 4 &#183; recovery.</span> Communication resumes, a fresh push reconciles the cache, and reads return to fresh. The cost is bounded staleness for the duration of the partition, never a withheld answer.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a state to walk it; click to pin. Without scripting, all four read in sequence and the figure shows every marker at once.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="strategy">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The strategy</h2>
+        <span class="ssrc">mesh.3.md &#183; Gilbert &amp; Lynch 2012</span>
+      </div>
+      <p class="body">Best-effort consistency makes the opposite commitment to best-effort availability: a response is
+      guaranteed, and consistency is provided as well as it can be without ever blocking. It fits where two conditions
+      hold &#8212; a stale answer is tolerable for a while, and a stopped answer is not &#8212; which is the case for
+      content served to a wide, geographically spread audience.</p>
+      <p class="body">Its classic example is a content delivery network: a CDN caches content at edge servers close to
+      end users to avoid middle-mile bottlenecks, serving from the nearest cache and refreshing on a time-to-live, so a
+      reader may see a value bounded in staleness by the TTL. Naming served through caching, where a resolver answers
+      from a cached record until it expires, is the same pattern. The lesson mirrors the first chapter:
+      <b>availability-first is not a refusal to be correct</b> &#8212; it is a decision to answer now and reconcile
+      toward correctness, choosing availability over consistency when the two collide.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">The commitment</p>
+          <h3>Always answer</h3>
+          <p>A response is guaranteed; consistency is provided as well as the network allows, and never traded for a
+          block. The opposite of the consistency-first surface, which blocks rather than diverges.</p>
+          <p class="note">silence is the failure &#183; <b>availability over consistency</b></p>
+        </article>
+        <article>
+          <p class="cno">The bound</p>
+          <h3>Staleness, not refusal</h3>
+          <p>A reader may see a value bounded in staleness by the TTL or by the partition's duration &#8212; divergence
+          within a bound rather than a withheld answer. The dial that tunes the bound is M4.</p>
+          <p class="note">bounded staleness &#183; <b>diverge within a bound</b></p>
+        </article>
+        <article>
+          <p class="cno">The example</p>
+          <h3>The CDN</h3>
+          <p>Content cached at edge servers close to readers, served from the nearest cache, refreshed on a TTL. Naming
+          served through caching is the same pattern &#8212; both Gilbert and Lynch's catalogue entry.</p>
+          <p class="note">cache close, refresh on TTL &#183; <b>the classic example</b></p>
+        </article>
+      </div>
+      <p class="compose"><b>Why this is the right surface for it:</b> a market-data feed and a globally read archive
+      must always answer, and may answer slightly behind. That is the availability-first shape exactly. The first dive,
+      <b>M3.1</b>, reads the strategy and its CDN example closely.</p>
+    </section>
+
+    <section id="nearcache">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Market data on the near-cache</h2>
+        <span class="ssrc">mesh.3.md &#183; Redis &#183; client-side caching</span>
+      </div>
+      <p class="body">A market-data feed must always answer and may answer slightly behind, which is exactly the
+      availability-first shape. EchoMesh serves it from a near-cache: readers hold a local cache of recent values, and
+      the authoritative value &#8212; computed by the consistency-first book's single owner of M2 &#8212; is kept fresh
+      by a coherence broadcast.</p>
+      <p class="body">The mechanism is the client-side-caching protocol of a Valkey-class store: when a client caches a
+      key, the server remembers it and pushes an invalidation message the moment that key changes, so the cache flushes
+      the stale entry and the next read fetches the new value. In the common case the reader serves the most recent
+      value from local memory with no round-trip; when the invalidation channel is cut by a partition, the reader
+      cannot be sure its cached value is current, so it serves it <b>marked stale</b> rather than withholding it
+      &#8212; availability over consistency, with the staleness made visible rather than hidden.</p>
+      <figure class="frozen">
+        <figcaption>the near-cache, in the common case and under partition<span class="tag">Redis &#183; CLIENT TRACKING</span></figcaption>
+<pre><span class="fd">// the client caches a key; the server remembers it</span>
+reader.cache(<span class="fc">md:AAPL</span>, <span class="fa">v1</span>)   <span class="fd"># a recent value held in local memory</span>
+
+<span class="fd">// common case — the owner changes the value, a push arrives</span>
+owner: md:AAPL &#8594; <span class="fa">v2</span>          <span class="fd"># the single owner of M2 advances the value</span>
+push: invalidate md:AAPL       <span class="fc">flush</span>      <span class="fd"># the cache drops the stale entry...</span>
+reader.read(md:AAPL) &#8594; <span class="fa">v2</span>        <span class="fd"># ...the next read fetches the new value</span>
+
+<span class="fd">// under partition — the push channel is cut</span>
+net: reader &#8212;&#10006;&#8212; owner   <span class="fe">partition</span>          <span class="fd"># the invalidation cannot arrive</span>
+reader.read(md:AAPL) &#8594; <b>v2 + STALE</b>   <span class="fd"># served marked stale, not withheld</span></pre>
+      </figure>
+      <p class="body">The second dive, <b>M3.2</b>, builds the near-cache and the coherence broadcast, and makes the
+      stale-marking under partition concrete.</p>
+    </section>
+
+    <section id="streams">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Streams and the global edge</h2>
+        <span class="ssrc">mesh.3.md &#183; Valkey Streams &#183; Tigris</span>
+      </div>
+      <p class="body">Retention and delivery are the other availability-first surfaces, and EchoMesh splits them across
+      two tiers. Each instrument has its own append-only stream &#8212; a log with auto-generated, time-ordered IDs,
+      appended with one command and tailed by readers or shared across a consumer group, with old entries trimmed to
+      keep memory bounded. The stream is the ordered, replicated record that readers consume without contending with
+      the writer.</p>
+      <p class="body">Deep retention runs on Tigris, a globally distributed, S3-compatible object store that keeps an
+      object close to the region where it was written and replicates it close to the readers who request it, giving
+      low-latency global reads and replacing a CDN with no configuration to manage. Both tiers answer from local or
+      nearby state and accept bounded staleness as the price of <b>always answering</b>.</p>
+      <div class="htabs" id="tierw">
+        <div class="htabs-bar" role="tablist" aria-label="The two availability-first retention tiers">
+          <button type="button" role="tab" data-tab="stream" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>The per-instrument stream</button>
+          <button type="button" role="tab" data-tab="tigris" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>The global edge &#183; Tigris</button>
+          <button type="button" role="tab" data-tab="both" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>Both, the same stance</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="stream" role="tabpanel"><span class="tag a">The per-instrument stream.</span> An append-only log with auto-generated, time-ordered entry IDs: producers append with one command, consumers tail it or share work via a consumer group, and trimming bounds the stream's size. The ordered, replicated record readers consume without contending with the writer.</div>
+          <div class="htabs-p" data-tab="tigris" role="tabpanel"><span class="tag e">The global edge &#183; Tigris.</span> Deep retention on a globally distributed, S3-compatible object store: an object is kept close to the region where it was written and replicated close to the readers who request it, giving low-latency global reads and replacing a CDN with no configuration to manage.</div>
+          <div class="htabs-p" data-tab="both" role="tabpanel"><span class="tag m">Both, the same stance.</span> The stream and the global edge each answer from local or nearby state and accept bounded staleness as the price of always answering &#8212; the availability-first commitment, applied to retention and delivery rather than to a live read.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus a tier to read it; click to pin. Without scripting, all three read in sequence.</p>
+      </div>
+      <p class="compose">The third dive, <b>M3.3</b>, builds the per-instrument streams and the global edge &#8212; the
+      retention and delivery surfaces that answer from nearby state and bound their staleness rather than block.</p>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The three dives</h2>
+        <span class="ssrc">M3.1 &#183; M3.2 &#183; M3.3</span>
+      </div>
+      <p class="body">This landing states the chapter's argument once; each dive takes one movement to the depth a
+      comprehensive treatment needs.</p>
+      <div class="pgrid">
+        <a class="pcard" href="/mesh/best-effort-consistency/availability-first">
+          <span class="bid">M3.1</span>
+          <h3>Availability First</h3>
+          <p>The strategy and its classic example: a content cache spread worldwide, always responsive, consistent in a
+          best-effort sense.</p>
+          <span class="meta"><span>dive</span><span class="chip now">read</span></span>
+        </a>
+        <a class="pcard" href="/mesh/best-effort-consistency/market-data">
+          <span class="bid">M3.2</span>
+          <h3>Market Data on EchoCache</h3>
+          <p>The near-cache and coherence broadcast; serving the most recent value; marked stale under partition.</p>
+          <span class="meta"><span>dive</span><span class="chip now">read</span></span>
+        </a>
+        <a class="pcard" href="/mesh/best-effort-consistency/streams-and-edge">
+          <span class="bid">M3.3</span>
+          <h3>Streams and the Global Edge</h3>
+          <p>Per-instrument streams and globally replicated Tigris storage as availability-first retention and
+          delivery.</p>
+          <span class="meta"><span>dive</span><span class="chip now">read</span></span>
+        </a>
+      </div>
+      <p class="upnext"><b>Up next &#183; M3.1 &#183; Availability First.</b> The first dive reads the strategy and its
+      classic example closely &#8212; a content cache spread worldwide, always responsive, consistent in a best-effort
+      sense &#8212; and sets the stance the near-cache and the global edge both take.</p>
+      <p class="booknote">The chapter mirrors the manuscript <code>mesh.3.md</code>: this landing and three dives. The
+      strategy, the CDN, the client-side-caching invalidation, the append-only stream, and the globally replicated edge
+      are external and settled; <b>EchoMesh's composition is the proposal</b>, taught in forward-looking voice. A dive
+      card becomes a link when its page ships &#8212; and not before.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh">
+          <span class="dr">/mesh</span>
+          <h3>EchoMesh, In Depth &#8212; the course</h3>
+          <p>The landing: the thesis, the four-strategies signature on the CAP spectrum, the stack, and the full chapter
+          map M0&#8211;M8.</p>
+          <p class="dnote"><b>this chapter</b> is M3 &#8212; the availability-first strategy, the opposite of the
+          consistency-first ledger.</p>
+        </a>
+        <a class="door" href="/mesh/impossible">
+          <span class="dr">/mesh/impossible</span>
+          <h3>M1 &#8212; Doing the Impossible</h3>
+          <p>CAP made rigorous: the safety-versus-liveness framing, the two-group proof, and the menu that replaces
+          &#8220;two of three&#8221; with a per-surface design question.</p>
+          <p class="dnote"><b>the proof</b> both strategies answer to &#8212; this chapter's surfaces choose liveness
+          where M2's choose safety.</p>
+        </a>
+        <a class="door" href="/echomq">
+          <span class="dr">/echomq</span>
+          <h3>EchoMQ &#8212; the protocol, in depth</h3>
+          <p>The Valkey-native bus and stream tier, rung by rung: the keyspace, the Lua inventory, the conformance
+          suite.</p>
+          <p class="dnote"><b>the per-instrument streams</b> of this chapter use the stream tier built here &#8212; M3.3
+          doors in.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract, proven by frozen transcripts
+          across five runtimes.</p>
+          <p class="dnote"><b>the identity</b> that keys a cached value and a stream entry rests on the contract built
+          here.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://groups.csail.mit.edu/tds/papers/Gilbert/Brewer2.pdf" rel="noopener">Gilbert &amp; Lynch (2012) &#8212; Perspectives on the CAP Theorem</a><span class="rs">names best-effort consistency &#8212; guarantee a response always, provide consistency as best it can &#8212; as one of the four coping strategies, with a content delivery cache and naming through caching as its examples</span></li>
+          <li><a href="https://dl.acm.org/doi/10.1145/1842733.1842736" rel="noopener">Nygren, Sitaraman &amp; Sun (2010) &#8212; The Akamai Network</a><span class="rs">a content delivery network caches content at edge servers close to end users to avoid middle-mile bottlenecks, serving from the nearest edge with staleness bounded by time-to-live</span></li>
+          <li><a href="https://redis.io/docs/latest/develop/reference/client-side-caching/" rel="noopener">Redis &#8212; Client-side caching (CLIENT TRACKING)</a><span class="rs">when a connection caches a key, the server remembers it and sends an invalidation push when the key changes, so the client flushes the stale entry; a broadcasting mode notifies on key prefixes</span></li>
+          <li><a href="https://valkey.io/topics/streams-intro/" rel="noopener">Valkey &#8212; Streams</a><span class="rs">a stream is an append-only log with auto-generated, time-ordered entry IDs; producers append with XADD, consumers tail with XREAD or share work via consumer groups, and trimming bounds the stream's size</span></li>
+          <li><a href="https://fly.io/docs/tigris/" rel="noopener">Fly.io &#8212; Tigris Global Object Storage</a><span class="rs">a globally distributed, S3-compatible object store that stores an object close to the region where it is written and replicates it close to the requesting user, giving low-latency global reads and replacing a CDN with zero configuration</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/mesh/impossible">M1 &#8212; Doing the Impossible</a><span class="rs">the theorem made rigorous, the proof both the consistency-first and availability-first surfaces answer to</span></li>
+          <li><a href="/mesh/impossible/the-proof">M1.2 &#8212; The Proof, Briefly</a><span class="rs">the two-group partition argument and the corollary that delay alone suffices</span></li>
+          <li><a href="/echomq">EchoMQ &#8212; the protocol, in depth</a><span class="rs">the Valkey-native bus and stream tier the availability-first surfaces use</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the law and the 14-byte identity that keys a cached value and a stream entry</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the engine, the umbrella where the identity library lives, and the Fly deployment chapter</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh"><span class="pk">the course</span>&#8592; EchoMesh, In Depth &#183; the landing</a>
+      <span class="pgx"><span class="pk">next &#183; dive</span>M3.1 &#183; Availability First &#8212; soon</span>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <a href="/mesh/best-effort-availability">M2 &#183; Best Effort Availability</a>
+        <a href="/mesh/best-effort-consistency">M3 &#183; Best Effort Consistency</a>
+        <a href="/mesh/trading">M4 &#183; Trading the Trade</a>
+        <span>M5 &#183; Segmenting<i>soon</i></span>
+        <span>M6 &#183; The Stack<i>soon</i></span>
+        <span>M7 &#183; Transparent Infrastructure<i>soon</i></span>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0HUfO6J6G</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 16:41:59 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the near-cache emulator: the state tabs drive the SVG + an aria-live readout ----------
+     READOUT is a pure function of the state key over fixed data — no network, no storage. The SVG
+     highlights the active state's marker group; the cut line appears once the partition is reached. */
+  var EMIT = {
+    fresh:     { s: "state 1 · fresh read",
+                 h: "The cached value matches the authoritative value the owner holds. The reader serves it from local memory with <b>no round-trip</b>.",
+                 cut: false },
+    push:      { s: "state 2 · invalidation push",
+                 h: "The owner advances the value; the coherence broadcast pushes an invalidation, the cache flushes the stale entry, and the next read <b>fetches the new value</b>.",
+                 cut: false },
+    partition: { s: "state 3 · partition",
+                 h: "The invalidation channel is cut. The reader cannot be sure its value is current, so it serves it <span class='vc'>marked stale</span> rather than withholding it — availability over consistency.",
+                 cut: true },
+    recover:   { s: "state 4 · recover",
+                 h: "Communication resumes, a fresh push reconciles the cache, and reads <b>return to fresh</b>. The cost was bounded staleness, never a withheld answer.",
+                 cut: false }
+  };
+  var capsvg = document.getElementById('capsvg');
+  var emit = document.getElementById('emit');
+  var xcut = document.getElementById('xcut');
+  var xlink = document.getElementById('xlink');
+  wireHtabs(document.getElementById('cachew'), function (key) {
+    var d = EMIT[key];
+    if (emit && d) emit.innerHTML = '<span class="step">' + d.s + '</span>' + d.h;
+    if (xcut) xcut.style.opacity = (d && d.cut) ? '1' : '0';
+    if (xlink) xlink.setAttribute('class', (d && d.cut) ? 'link cut' : 'link');
+    if (!capsvg) return;
+    capsvg.classList.toggle('focus', !!key);
+    capsvg.querySelectorAll('g[data-tab]').forEach(function (g) {
+      g.classList.toggle('on', g.getAttribute('data-tab') === key);
+    });
+  });
+
+  /* the retention-tier tabs are a plain reuse of the same component */
+  wireHtabs(document.getElementById('tierw'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4.02.2 · The upsert, no duplicates · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R4.02.2 — the upsert, no duplicates. A reboot re-registers the same scheduler; the ZSCORE-then-ZADD upsert keeps exactly one registry entry per scheduler key, so a boot adds no duplicate recurring job. EchoMQ's addRepeatableJob-2.lua probes with local prevMillis = rcall('ZSCORE', repeatKey, customKey) and reconciles the stale delayed entry, then storeRepeatableJob runs rcall('ZADD', repeatKey, nextMillis, customKey) — the same member rewrites its score rather than appending a row.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- upsert diagram ---- */
+.up .slot rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.up .slot.hot rect{fill:rgba(212,168,90,.14);stroke:#d4a85a}
+.up .slot.dup rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
+.up text{font-family:var(--sans);fill:#d7cfb9}
+.up .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.up .mem{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
+.up .sc{font-family:var(--mono);font-size:11px;fill:#a7c9b1}
+.up .cmd{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.up .arr{stroke:#2a3252;stroke-width:1.4;fill:none}
+.up .arr.on{stroke:#d4a85a}
+.up .arr.dup{stroke:#d6584f;stroke-dasharray:3 3}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
+.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
+.door a{color:var(--gold-bright)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority/schedulers">schedulers</a><span class="rsep">/</span><span class="rcur">upsert-no-duplicates</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority/schedulers">Schedulers &amp; repeatable jobs</a>
+        <span class="sep">/</span>
+        <span class="here">The upsert, no duplicates</span>
+      </div>
+      <p class="eyebrow">R4.02.2 &middot; dive 2</p>
+      <h1>The upsert, no <span class="ex">duplicates</span></h1>
+      <p class="lede">A reboot re-registers the same scheduler. The <code class="inl">ZSCORE</code>-then-<code class="inl">ZADD</code>
+        upsert keeps exactly one registry entry per scheduler key &mdash; no duplicate recurring job on boot.</p>
+      <p class="kicker">A service that owns recurring schedules registers them at startup, and again on every restart. The
+        upsert probes the registry with <code class="inl">ZSCORE</code> before storing with <code class="inl">ZADD</code>;
+        re-adding the same member rewrites its score rather than appending a row. Run two boots over the same scheduler
+        key on the right and watch the registry stay at one entry.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#naive">The naive add duplicates</a>
+        <a href="#probe">ZSCORE probes, ZADD stores</a>
+        <a href="#applied">In EchoMQ</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig up" aria-labelledby="bootTitle">
+      <h4 id="bootTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Two boots, one scheduler key &middot; upsert stays at one entry, a naive append reaches two</h4>
+      <div class="controls">
+        <div class="solid-select" id="bootSel" role="group" aria-label="Register the same scheduler with the upsert or with a naive append">
+          <button type="button" data-mode="upsert" data-c="gold" class="active" aria-pressed="true">upsert (ZSCORE then ZADD)</button>
+          <button type="button" data-mode="append" data-c="redis" aria-pressed="false">naive append</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 168" role="img" aria-label="Two boots register the same scheduler key sched:reports. With the upsert, the second boot's ZSCORE finds the prior entry, so the ZADD rewrites the one row and the registry holds one entry. With a naive append, the second boot adds a second row and the registry holds two entries, producing a duplicate recurring job. The selected mode sets the registry contents after the second boot.">
+        <text class="ttl" x="30" y="22">emq:{queue}:repeat (ZSET) — after boot 1 and boot 2</text>
+        <g class="slot hot" id="bRow1"><rect x="30" y="32" width="400" height="38" rx="9"></rect></g>
+        <text class="mem" id="bMem1" x="46" y="49">sched:reports</text>
+        <text class="sc" id="bSc1" x="46" y="63">score = next-run millis (boot 1, then rewritten by boot 2)</text>
+        <g class="slot dup" id="bRow2" opacity="0"><rect x="30" y="78" width="400" height="38" rx="9"></rect></g>
+        <text class="mem" id="bMem2" x="46" y="95" opacity="0" fill="#f2948c">sched:reports</text>
+        <text class="sc" id="bSc2" x="46" y="109" opacity="0">score = next-run millis (boot 2 — a SECOND row)</text>
+        <text class="ttl" id="bVerd" x="230" y="140" text-anchor="middle">upsert · ZSCORE found boot 1 → ZADD rewrote it</text>
+        <text class="ttl" id="bVerd2" x="230" y="158" text-anchor="middle" fill="#a7c9b1">registry size: 1 entry — no duplicate</text>
+      </svg>
+
+      <div class="geo-readout" id="bootOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="naive">
+    <h2>The naive add duplicates</h2>
+    <div class="prose">
+      <p>A naive registration appends. Boot once: the registry has one entry. The danger on a re-registration is a
+        <strong>stale second future run</strong> &mdash; a re-registration that recomputed a different next-run time can
+        leave the previous registration's delayed job orphaned in <code class="inl">:delayed</code>, so the schedule
+        fires twice around the boundary. The probe is what finds and reconciles that stale entry before the new one is
+        stored.</p>
+      <p>Switch the figure to the naive append: the second boot adds a second row, and the scheduler now produces two
+        recurring jobs on the same cadence. The upsert is the guard that keeps the registry at one entry per scheduler
+        key and removes the orphaned delayed job.</p>
+    </div>
+    <p class="take">A naive re-registration can leave a second, orphaned future run; the upsert is the guard that keeps
+      one entry per scheduler key and reconciles the stale delayed job.</p>
+  </section>
+
+  <section id="probe">
+    <h2>ZSCORE probes, ZADD stores</h2>
+    <div class="prose">
+      <p>The upsert is two commands. First the probe: <code class="inl">ZSCORE repeatKey customKey</code> returns the
+        prior next-run score if the scheduler key is already registered, or false if it is new. If a prior score is
+        found, the script reconciles the stale delayed entry from the previous registration before storing the new
+        one.</p>
+      <p>Then the store: <code class="inl">ZADD repeatKey nextMillis customKey</code>. Because the member is the
+        scheduler's own key, the <code class="inl">ZADD</code> either inserts a new row or rewrites the existing row's
+        score &mdash; never two rows for one scheduler. The registry's cardinality stays at one entry per scheduler key
+        across every boot.</p>
+    </div>
+    <dl class="deflist">
+      <dt>ZSCORE</dt><dd><code class="inl">ZSCORE repeatKey customKey</code> &mdash; the probe; returns the prior next-run score or false.</dd>
+      <dt>reconcile</dt><dd>If a prior score exists, remove the stale delayed job from the previous registration before re-storing.</dd>
+      <dt>ZADD</dt><dd><code class="inl">ZADD repeatKey nextMillis customKey</code> &mdash; the store; the same member rewrites rather than appends.</dd>
+    </dl>
+    <p class="take">Probe with <code class="inl">ZSCORE</code>, reconcile any stale delayed job, store with
+      <code class="inl">ZADD</code>; the same member keeps the registry at one entry per scheduler key.</p>
+  </section>
+
+  <section id="applied">
+    <h2>In EchoMQ &mdash; the probe in addRepeatableJob</h2>
+    <div class="prose">
+      <p>The real upsert lives in <code class="inl">addRepeatableJob-2.lua</code>. The probe runs before the store
+        reconciles whatever the previous registration left in <code class="inl">:delayed</code>.</p>
+      <pre class="code"><span class="cmt">-- addRepeatableJob-2.lua (real)</span>
+<span class="op">local</span> prevMillis = <span class="rdx">ZSCORE</span> repeatKey customKey   <span class="cmt">-- was this scheduler already registered?</span>
+<span class="op">if</span> prevMillis <span class="op">then</span>
+  <span class="op">local</span> delayedJobId = <span class="str">"repeat:"</span>..customKey..<span class="str">":"</span>..prevMillis
+  <span class="cmt">-- reconcile the stale delayed entry from the prior next-run, then re-store</span>
+<span class="op">end</span>
+
+<span class="cmt">-- storeRepeatableJob (called below) — the store</span>
+<span class="rdx">ZADD</span> repeatKey nextMillis customKey        <span class="cmt">-- one row per scheduler key</span></pre>
+      <p><code class="inl">prevMillis</code> is the prior next-run timestamp. A present <code class="inl">prevMillis</code>
+        means the scheduler key was already in the registry, so the script removes the stale delayed job the previous
+        registration scheduled (<code class="inl">removeJob</code> + <code class="inl">ZREM delayedKey delayedJobId</code>)
+        before <code class="inl">storeRepeatableJob</code> rewrites the registry entry. The result is exactly one
+        <code class="inl">:repeat</code> entry per scheduler key and no orphaned duplicate run. The newer scheduler API
+        does the same thing keyed by a scheduler id &mdash; <code class="inl">storeJobScheduler(...)</code> in
+        <code class="inl">addJobScheduler-11.lua</code> runs
+        <code class="inl">rcall("ZADD", repeatKey, nextMillis, schedulerId)</code> on the same registry sorted set.</p>
+    </div>
+
+    <figure class="fig up" aria-labelledby="seqTitle">
+      <h4 id="seqTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The probe result &middot; ZSCORE returns false (new) or a prior score (re-registered)</h4>
+      <div class="controls">
+        <div class="solid-select" id="pbSel" role="group" aria-label="Whether the scheduler key is new or already registered">
+          <button type="button" data-state="new" data-c="sage" class="active" aria-pressed="true">first registration</button>
+          <button type="button" data-state="seen" data-c="gold" aria-pressed="false">re-registration (already seen)</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 132" role="img" aria-label="A scheduler key sched:reports being registered. On a first registration, ZSCORE returns false, so the ZADD inserts a new row. On a re-registration, ZSCORE returns the prior next-run score, the stale delayed job is reconciled, and the ZADD rewrites the one row. The selected state shows the probe result and the resulting registry action.">
+        <text class="ttl" x="30" y="22" id="pbProbe">ZSCORE emq:{queue}:repeat sched:reports → false (new)</text>
+        <rect class="slot" id="pbReg" x="30" y="34" width="400" height="36" rx="9" style="fill:rgba(123,163,135,.14);stroke:#7ba387"></rect>
+        <text class="mem" id="pbRegTxt" x="46" y="56" fill="#a7c9b1">ZADD inserts sched:reports → one new row</text>
+        <text class="ttl" id="pbVerd" x="230" y="96" text-anchor="middle" fill="#a7c9b1">first registration · ZSCORE false · ZADD inserts</text>
+        <text class="ttl" id="pbVerd2" x="230" y="116" text-anchor="middle" fill="#a39c89">registry size after: 1 entry</text>
+      </svg>
+
+      <div class="geo-readout" id="pbOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>A textbook delayed queue adds a fire-time and forgets it; a scheduler must survive re-registration without
+          re-firing. Probe the registry, then store: the probe is the idempotence and the same member rewrites rather
+          than appends.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p><code class="inl">addRepeatableJob-2.lua</code> runs
+          <code class="inl">local prevMillis = rcall("ZSCORE", repeatKey, customKey)</code>, reconciles the stale
+          delayed job if present, then <code class="inl">storeRepeatableJob</code> runs
+          <code class="inl">rcall("ZADD", repeatKey, nextMillis, customKey)</code> &mdash; one entry per scheduler key,
+          no duplicate on boot.</p>
+      </div>
+    </div>
+
+    <p class="take">The pattern says probe then store so a re-registration rewrites rather than appends; in EchoMQ the
+      probe is <code class="inl">ZSCORE</code> and the store is <code class="inl">ZADD</code>, keeping the
+      <code class="inl">:repeat</code> registry at one entry per scheduler.</p>
+
+    <div class="door">
+      <span class="lbl">Door &middot; not depth</span>
+      The full scheduler-vs-delayed reconciliation &mdash; how a re-registration that changes the cadence retires the
+      old delayed job and how an overlapping boot is serialized &mdash; is the scheduler subsystem the dedicated
+      <strong>EchoMQ course</strong> covers at <a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a>. This dive
+      teaches the <code class="inl">ZSCORE</code>/<code class="inl">ZADD</code> upsert; that course teaches the
+      reconciliation around it.
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The probe that reads the prior score, the store that rewrites rather than appends, the sorted set whose member
+        uniqueness makes the upsert work, and the queue protocol whose registration path EchoMQ ports.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/zscore/">Redis &mdash; <em>ZSCORE</em></a> &mdash; the probe that reads the prior next-run score and makes the add idempotent.</li>
+          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; re-adding the same member rewrites its score rather than appending a row.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; member uniqueness is what keeps the registry at one entry per scheduler.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the repeatable-jobs registration path EchoMQ ports.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority/schedulers">R4.02 &middot; Schedulers &amp; repeatable jobs</a> &mdash; the module hub.</li>
+          <li><a href="/redis-patterns/time-delay-priority/schedulers/cron-vs-interval">R4.02.1 &middot; Cron vs interval</a> &mdash; naming the cadence the upsert stores.</li>
+          <li><a href="/redis-patterns/time-delay-priority/schedulers/start-to-start-cadence">R4.02.3 &middot; Start-to-start cadence</a> &mdash; rewriting the single entry each cycle.</li>
+          <li><a href="/redis-patterns/time-delay-priority/score-as-meaning">R4 &middot; Score as meaning</a> &mdash; the <code>:repeat</code> ZSET in the orientation arc.</li>
+          <li><a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a> &mdash; the EchoMQ course: the scheduler subsystem in depth.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority/schedulers/cron-vs-interval"><span aria-hidden="true">&larr;</span>&nbsp; R4.02.1 &middot; Cron vs interval</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority/schedulers/start-to-start-cadence">R4.02.3 &middot; Start-to-start cadence <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/time-delay-priority/schedulers/cron-vs-interval">R4.02.1 &middot; Cron vs interval</a>
+        <a href="/redis-patterns/time-delay-priority/schedulers/upsert-no-duplicates">R4.02.2 &middot; The upsert, no duplicates</a>
+        <a href="/redis-patterns/time-delay-priority/schedulers/start-to-start-cadence">R4.02.3 &middot; Start-to-start cadence</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/lifecycle">The EchoMQ course &middot; the lifecycle</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: two boots, one scheduler key — upsert vs naive append (pure over mode) ---------- */
+  // Two boots register the same scheduler key sched:reports. With the upsert, boot 2's ZSCORE finds boot 1's entry, so
+  // the ZADD rewrites the one row → registry size 1. With a naive append, boot 2 adds a second row → registry size 2,
+  // a duplicate recurring job. The registry state after boot 2 is a pure function of the mode.
+  function boots(mode) {
+    if (mode === 'append') {
+      return { rows: 2, dup: true,
+        verd: 'naive append · boot 2 added a SECOND row',
+        verd2: 'registry size: 2 entries — duplicate recurring job',
+        verdColor: '#f2948c',
+        text: 'Two boots registered sched:reports with a naive append. Boot 1 added one row; boot 2 appended a second ' +
+          'row instead of probing first. The registry now holds 2 entries for one scheduler key, so the recurring job ' +
+          'fires twice on the same cadence. This is the failure the upsert guards against.' };
+    }
+    return { rows: 1, dup: false,
+      verd: 'upsert · ZSCORE found boot 1 → ZADD rewrote it',
+      verd2: 'registry size: 1 entry — no duplicate',
+      verdColor: '#a7c9b1',
+      text: 'Two boots registered sched:reports with the upsert. Boot 1 added one row. Boot 2 ran ' +
+        'ZSCORE emq:{queue}:repeat sched:reports, found boot 1, reconciled its stale delayed job, then ran ' +
+        'ZADD with the same member — which rewrote the one row rather than appending. The registry holds 1 entry; ' +
+        'no duplicate recurring job.' };
+  }
+  function setBoots(mode) {
+    var r = boots(mode);
+    var row2 = document.getElementById('bRow2'), mem2 = document.getElementById('bMem2'), sc2 = document.getElementById('bSc2'),
+        sc1 = document.getElementById('bSc1'),
+        verd = document.getElementById('bVerd'), verd2 = document.getElementById('bVerd2'), out = document.getElementById('bootOut');
+    var showDup = r.dup ? '1' : '0';
+    if (row2) row2.setAttribute('opacity', showDup);
+    if (mem2) mem2.setAttribute('opacity', showDup);
+    if (sc2) sc2.setAttribute('opacity', showDup);
+    if (sc1) sc1.textContent = r.dup
+      ? 'score = next-run millis (boot 1)'
+      : 'score = next-run millis (boot 1, then rewritten by boot 2)';
+    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', r.dup ? '#f2948c' : '#a39c89'); }
+    if (verd2) { verd2.textContent = r.verd2; verd2.setAttribute('fill', r.verdColor); }
+    if (out) out.textContent = r.text;
+  }
+  document.querySelectorAll('#bootSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var mode = b.getAttribute('data-mode');
+      document.querySelectorAll('#bootSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setBoots(mode);
+    });
+  });
+  setBoots('upsert'); // initial render — correct without interaction
+
+  /* ---------- content: the probe result — ZSCORE false (new) vs a prior score (seen) (pure over state) ---------- */
+  // A scheduler key being registered. ZSCORE returns false on a first registration (ZADD inserts a new row) or the
+  // prior next-run score on a re-registration (the stale delayed job is reconciled, the ZADD rewrites the one row).
+  // The probe result and the registry action are a pure function of the state.
+  function probe(state) {
+    if (state === 'seen') {
+      return { probe: 'ZSCORE emq:{queue}:repeat sched:reports → 1718000000000 (a prior score)',
+        regTxt: 'reconcile stale delayed job, then ZADD rewrites sched:reports → one row',
+        fill: 'rgba(212,168,90,.16)', stroke: '#d4a85a', col: '#f0cd7f',
+        verd: 're-registration · ZSCORE a prior score · ZADD rewrites', verd2: 'registry size after: 1 entry (rewritten)',
+        text: 'Re-registration of sched:reports. ZSCORE returned a prior next-run score, so the scheduler key was already ' +
+          'in the registry. The script reconciled the stale delayed job from the previous registration, then ZADD with ' +
+          'the same member rewrote the one row. The registry size stays at 1 — no duplicate.' };
+    }
+    return { probe: 'ZSCORE emq:{queue}:repeat sched:reports → false (new)',
+      regTxt: 'ZADD inserts sched:reports → one new row',
+      fill: 'rgba(123,163,135,.14)', stroke: '#7ba387', col: '#a7c9b1',
+      verd: 'first registration · ZSCORE false · ZADD inserts', verd2: 'registry size after: 1 entry',
+      text: 'First registration of sched:reports. ZSCORE returned false — the scheduler key is new — so the ZADD inserted ' +
+        'one new row. There was no stale delayed job to reconcile. The registry holds 1 entry for this scheduler.' };
+  }
+  function renderPb(state) {
+    var r = probe(state);
+    var pbProbe = document.getElementById('pbProbe'), reg = document.getElementById('pbReg'),
+        regTxt = document.getElementById('pbRegTxt'), verd = document.getElementById('pbVerd'),
+        verd2 = document.getElementById('pbVerd2'), out = document.getElementById('pbOut');
+    if (pbProbe) pbProbe.textContent = r.probe;
+    if (reg) reg.setAttribute('style', 'fill:' + r.fill + ';stroke:' + r.stroke);
+    if (regTxt) { regTxt.setAttribute('fill', r.col); regTxt.textContent = r.regTxt; }
+    if (verd) { verd.setAttribute('fill', r.col); verd.textContent = r.verd; }
+    if (verd2) verd2.textContent = r.verd2;
+    if (out) out.textContent = r.text;
+  }
+  document.querySelectorAll('#pbSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var state = b.getAttribute('data-state');
+      document.querySelectorAll('#pbSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderPb(state);
+    });
+  });
+  renderPb('new'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2b(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2b(d.getUTCMonth() + 1) + '-' + pad2b(d.getUTCDate()) + ' ' + pad2b(d.getUTCHours()) + ':' + pad2b(d.getUTCMinutes()) + ':' + pad2b(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

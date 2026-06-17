@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E2.04.1 — The Elixir architecture · EchoMQ, the protocol in depth · jonnify</title>
+<meta name="description" content="E2.04.1 — The Elixir reference runtime's L3/L4. EchoMQ-Elixir (echo/apps/echomq v1.3.0) is library-only: it ships no Application and no supervision tree of its own; the host supervises the Worker and RedisConnection. EchoMQ.Worker computes available_slots = concurrency - map_size(active_jobs) and runs one BEAM process per job via Task.async. The fetch step runs one atomic moveToActive-11.lua via Scripts.move_to_active/4. EchoMQ.LockManager renews every held lock with one Process.send_after timer per worker, batched through extendLocks-1.lua. EchoMQ.RedisConnection is a NimblePool pool; every script dispatches via execute_raw/4 EVALSHA-first. All L3/L4 — the wire underneath is the shared protocol.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.geo-readout .warn{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.rng{display:flex;flex-direction:column;gap:.3rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim)}
+.rng input[type=range]{width:230px;accent-color:var(--echo)}
+.rng .val{font-family:var(--mono);color:var(--echo-bright);font-size:.84rem}
+
+/* ---- slots diagram ---- */
+.slots .slot rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.slots .slot.busy rect{fill:rgba(42,161,152,.2);stroke:#2aa198}
+.slots .slot.free rect{fill:rgba(212,168,90,.12);stroke:#d4a85a}
+.slots text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+
+/* ---- ownership diagram ---- */
+.own .obox rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.own .obox.host rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.own .obox.lib rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.own text{font-family:var(--sans);fill:#d7cfb9}
+.own .ot{font-family:var(--mono);fill:#a39c89;font-size:11px}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .kw{color:var(--blue-bright)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- the 2.0 fork (the break callout — EchoMQ leaves the BullMQ wire) ---- */
+.fork{margin:1.7rem 0 0;border:1px solid var(--burgundy);border-radius:16px;
+  background:linear-gradient(180deg,rgba(196,80,76,.10),rgba(10,14,26,.3));
+  padding:clamp(1rem,2.4vw,1.5rem)}
+.fork .dl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--burgundy);margin:0 0 .6rem}
+.fork p{margin:0;font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure)}
+.fork a{color:var(--gold-bright);font-weight:600}
+.fork a:hover{color:var(--cream)}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.backlinks{font-family:var(--mono);font-size:.76rem;color:var(--cream-dim);margin:1.2rem 0 0;display:flex;flex-wrap:wrap;gap:.4rem 1rem}
+.backlinks a{color:var(--gold)}
+.backlinks .mv{color:var(--echo-bright)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/core">core</a><span class="rsep">/</span><a href="/echomq/core/runtimes">runtimes</a><span class="rsep">/</span><span class="rcur">the-elixir-architecture</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core">E2 &middot; Core</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core/runtimes">The three runtimes</a>
+        <span class="sep">/</span>
+        <span class="here">The Elixir architecture</span>
+      </div>
+      <p class="eyebrow">E2.04.1 &middot; The three runtimes &middot; dive 1</p>
+      <h1>The Elixir <span class="ex">architecture</span></h1>
+      <p class="lede">The reference runtime: library-only, host-supervised, one BEAM process per job, and one timer per
+        worker.</p>
+      <p class="kicker">EchoMQ-Elixir (<code class="inl">echo/apps/echomq</code> v<code class="inl">1.3.0</code>) ships
+        <strong>no Application and no supervision tree of its own</strong> — the host supervises the
+        <code class="inl">Worker</code> and the <code class="inl">RedisConnection</code>. Above the wire it is all
+        L3/L4: <code class="inl">available_slots = concurrency - map_size(active_jobs)</code>, one
+        <code class="inl">Task.async</code> process per running job, one
+        <code class="inl">Process.send_after</code> lock-renewal timer per worker, a NimblePool connection, and
+        <code class="inl">EVALSHA</code>-first dispatch. Move the concurrency on the right to read the worker's slot
+        math.</p>
+      <p class="backlinks">
+        <span class="mv">Movement I · Core (as-built)</span>
+        <a href="/redis-patterns/queues">← redis-patterns R3</a>
+      </p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#library">Library-only</a>
+        <a href="#slots">The slot math</a>
+        <a href="#renew">One timer per worker</a>
+        <a href="#dispatch">EVALSHA dispatch</a>
+        <a href="#rule">The Golden Rule</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig slots" aria-labelledby="slotTitle">
+      <h4 id="slotTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">available_slots &middot; set the worker concurrency</h4>
+      <div class="controls">
+        <label class="rng">
+          <span>worker concurrency <span class="val" id="cVal">10</span></span>
+          <input type="range" id="cRng" min="1" max="16" step="1" value="10" aria-label="Worker concurrency">
+        </label>
+      </div>
+
+      <svg viewBox="0 0 480 150" role="img" aria-label="A worker's concurrency slots. Some slots hold a running job (a BEAM process started by Task.async); the rest are free. The free-slot count is concurrency minus the number of active jobs; the worker fetches that many jobs each cycle.">
+        <text x="20" y="24" style="font-family:var(--mono);fill:#a39c89;font-size:11px">slots = concurrency; busy = active_jobs; free = available_slots</text>
+        <g id="slotRow"></g>
+      </svg>
+
+      <div class="geo-readout" id="slotOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="library">
+    <h2>Library-only, host-supervised</h2>
+    <div class="prose">
+      <p>EchoMQ-Elixir ships <strong>no <code class="inl">Application</code> and no supervision tree of its own</strong>.
+        The host application supervises the runtime's processes as children. The <code class="inl">EchoMQ.Worker</code>
+        moduledoc shows the host wiring:</p>
+
+      <pre class="code"><span class="cmt"># in the HOST application's supervision tree</span>
+children = [
+  {EchoMQ.RedisConnection, name: <span class="str">:redis</span>, url: <span class="str">"redis://localhost:6379"</span>},
+  {EchoMQ.Worker,
+    name: <span class="str">:my_worker</span>, queue: <span class="str">"my_queue"</span>, connection: <span class="str">:redis</span>,
+    processor: <span class="op">&amp;MyApp.Jobs.process/1</span>, concurrency: <span class="res">10</span>}
+]</pre>
+
+      <p>There is no <code class="inl">EchoMQ.Application</code> to start; the worker and the connection pool are children
+        the host owns. The in-tree <code class="inl">EchoMQ.RedisConnection</code> (<code class="inl">use Supervisor</code>)
+        is the connection-pool internal — not a queue supervision tree. Pick a process below to read who owns it.</p>
+    </div>
+
+    <figure class="fig own" aria-labelledby="ownTitle">
+      <h4 id="ownTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Who supervises what &middot; pick a process</h4>
+      <div class="controls">
+        <div class="solid-select" role="group" aria-label="Pick a process">
+          <button type="button" id="ow-worker" data-c="echo" class="active">EchoMQ.Worker</button>
+          <button type="button" id="ow-conn" data-c="echo">RedisConnection pool</button>
+          <button type="button" id="ow-task" data-c="echo">a job Task</button>
+          <button type="button" id="ow-app" data-c="sage">an EchoMQ.Application</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 660 120" role="img" aria-label="Two supervision owners: the host application and the EchoMQ library. Selecting a process highlights the box that owns it. The host supervises the Worker and the RedisConnection pool; the worker owns its job Tasks; an EchoMQ.Application does not exist.">
+        <g class="obox host" id="box-host"><rect x="20" y="24" width="300" height="72" rx="9"></rect></g>
+        <text x="34" y="52" class="ot" style="fill:#a7c9b1">the HOST application</text>
+        <text x="34" y="74" class="ot">supervises Worker + RedisConnection</text>
+        <g class="obox" id="box-lib"><rect x="345" y="24" width="295" height="72" rx="9"></rect></g>
+        <text x="359" y="52" class="ot" style="fill:#6fdccf">the EchoMQ library</text>
+        <text x="359" y="74" class="ot">no Application; Worker owns job Tasks</text>
+      </svg>
+
+      <div class="geo-readout" id="ownOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">EchoMQ-Elixir is a library, not an app. It owns no supervision tree; the host supervises the worker
+      and the connection pool, and the worker owns each job's Task.</p>
+  </section>
+
+  <section id="slots">
+    <h2>One BEAM process per job</h2>
+    <div class="prose">
+      <p><code class="inl">EchoMQ.Worker</code> is a <code class="inl">GenServer</code> with
+        <code class="inl">@default_concurrency 1</code>. On each fetch cycle it computes its spare capacity directly,
+        then fetches that many jobs:</p>
+
+      <pre class="code"><span class="cmt"># worker.ex — the slot math, then a process per fetched job</span>
+available_slots = state.concurrency - <span class="op">map_size</span>(state.active_jobs)
+
+<span class="kw">if</span> available_slots &gt; <span class="res">0</span> <span class="kw">do</span>
+  fetch_and_process_jobs(state, available_slots)
+<span class="kw">end</span></pre>
+
+      <p>For every available slot it fetches a job and runs the processor in its own process via
+        <code class="inl">Task.async</code> — <strong>one BEAM process per running job</strong>:</p>
+
+      <pre class="code">task =
+  Task.<span class="op">async</span>(<span class="kw">fn</span> -&gt;
+    run_processor(processor_fn, job, worker_pid, telemetry_mod, telemetry_metadata)
+  <span class="kw">end</span>)
+active_jobs = <span class="op">Map.put</span>(state.active_jobs, job.id, {job, task.ref})</pre>
+
+      <p>A crash in one job's process does not take down the worker or its siblings — the OTP isolation Elixir buys for
+        free. Node, by contrast, runs concurrency on a single event loop, and Go runs goroutines; each runtime's
+        concurrency model is its own L3.</p>
+    </div>
+    <p class="take">Concurrency is the slot count; <code class="inl">available_slots</code> is the count minus the active
+      jobs; each fetched job runs in its own <code class="inl">Task.async</code> process. The wire underneath is the
+      same in every runtime.</p>
+  </section>
+
+  <section id="renew">
+    <h2>One timer per worker</h2>
+    <div class="prose">
+      <p><code class="inl">EchoMQ.LockManager</code> keeps every held lock fresh with <strong>one</strong>
+        <code class="inl">Process.send_after(:extend_locks)</code> timer per worker — not one per job. When the worker
+        picks a job up it calls <code class="inl">LockManager.track_job(manager, job_id, token)</code>; when the timer
+        fires, <code class="inl">handle_info(:extend_locks, state)</code> scans the tracked jobs and batch-renews the due
+        ones in a single <code class="inl">Scripts.extend_locks/5</code> call over
+        <code class="inl">extendLocks-1.lua</code> (one stalled key, all ids and tokens packed into
+        <code class="inl">ARGV</code>):</p>
+
+      <pre class="code"><span class="cmt"># lock_manager.ex — one timer, one batched script call</span>
+<span class="kw">def</span> handle_info(<span class="str">:extend_locks</span>, state) <span class="kw">do</span>
+  <span class="cmt"># scan tracked_jobs, select those past the half-window threshold,</span>
+  <span class="cmt"># then renew them all at once:</span>
+  Scripts.<span class="op">extend_locks</span>(state.connection, state.keys, job_ids, tokens, state.lock_duration)
+  Process.<span class="op">send_after</span>(<span class="op">self</span>(), <span class="str">:extend_locks</span>, interval)   <span class="cmt"># re-arm the one timer</span>
+<span class="kw">end</span></pre>
+
+      <p>The renewal cost is flat — one timer, one round-trip — no matter how many jobs the worker holds. The full
+        threshold-scan mechanics are in <a href="/echomq/core/lock-management/one-timer-not-n">E2.03.1 · one timer, not
+        N</a>; the architectural point here is that lock renewal is one process, one timer, in the Elixir runtime.</p>
+    </div>
+    <dl class="deflist">
+      <dt>concurrency</dt><dd>default 1 &mdash; the worker's slot count (<code class="inl">@default_concurrency</code>).</dd>
+      <dt>per-job process</dt><dd>one <code class="inl">Task.async</code> BEAM process per running job.</dd>
+      <dt>lock renewal</dt><dd>one <code class="inl">Process.send_after</code> timer per worker, batched through <code class="inl">extendLocks-1.lua</code>.</dd>
+    </dl>
+  </section>
+
+  <section id="dispatch">
+    <h2>A pooled connection and EVALSHA dispatch</h2>
+    <div class="prose">
+      <p><code class="inl">EchoMQ.RedisConnection</code> is a NimblePool-backed pool
+        (<code class="inl">use Supervisor</code>) exposing <code class="inl">command/3</code> and
+        <code class="inl">pipeline/3</code>. Every script runs through
+        <code class="inl">EchoMQ.Scripts.execute_raw/4</code>, which dispatches <strong>EVALSHA first</strong> and falls
+        back to EVAL on a NOSCRIPT error:</p>
+
+      <pre class="code"><span class="cmt"># scripts.ex — EVALSHA, then reload + EVAL on NOSCRIPT</span>
+<span class="kw">def</span> execute_raw(conn, script, keys, args) <span class="kw">do</span>
+  <span class="cmt"># num_keys = length(keys); encoded_args = pack(args)</span>
+  <span class="kw">case</span> RedisConnection.<span class="op">command</span>(conn, [<span class="str">"EVALSHA"</span>, sha, num_keys | keys ++ encoded_args]) <span class="kw">do</span>
+    {:error, %Redix.Error{message: <span class="str">"NOSCRIPT"</span> &lt;&gt; _}} -&gt; <span class="cmt"># reload, then EVAL</span>
+    result -&gt; result
+  <span class="kw">end</span>
+<span class="kw">end</span></pre>
+
+      <p>EVALSHA sends the script's SHA, not its body, so a cached script costs one short round-trip. The same scripts
+        run in Go (which caches via <code class="inl">redis.NewScript</code>) and in Node — the dispatch strategy above
+        them is each runtime's own L3.</p>
+    </div>
+    <p class="take">A NimblePool connection and EVALSHA-first dispatch are the Elixir runtime's L3 — the scripts they
+      run are L2, the same in every runtime.</p>
+  </section>
+
+  <section id="rule">
+    <h2>The Golden Rule &mdash; the architecture is L3/L4</h2>
+    <div class="prose">
+      <p>Every choice on this page — library-only, host-supervised, one BEAM process per job, one renewal timer per
+        worker, a NimblePool connection, EVALSHA dispatch — is <strong>L3/L4</strong>, the Elixir runtime's own. The
+        <code class="inl">emq:</code> keyspace it writes (<strong>L1</strong>) and the scripts it runs
+        (<code class="inl">moveToActive-11.lua</code>, <code class="inl">extendLocks-1.lua</code> — <strong>L2</strong>)
+        are frozen and shared. Go and Node drive the same wire their own way.</p>
+    </div>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the protocol (immutable L1/L2)</span>
+        <p>The <code class="inl">emq:</code> keyspace and the field names (<strong>L1</strong>);
+          <code class="inl">moveToActive-11.lua</code> and <code class="inl">extendLocks-1.lua</code>
+          (<strong>L2</strong>) — the same in every runtime.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">its Elixir runtime (variable L3/L4)</span>
+        <p>A host-supervised, library-only set of OTP processes — one BEAM process per job via
+          <code class="inl">Task.async</code>, one <code class="inl">LockManager</code> timer per worker, a NimblePool
+          connection, <code class="inl">EVALSHA</code> dispatch. Go and Node drive the same scripts their own way.</p>
+      </div>
+    </div>
+    <p class="take">The Elixir runtime is the reference: it owns no supervision tree, runs one BEAM process per job,
+      renews every lock with one timer, and dispatches every script via EVALSHA. All of that is L3/L4 — the wire
+      underneath is the shared protocol.</p>
+    <p class="note">Next: the Go port speaks the same wire, but it is partial.
+      <a href="/echomq/core/runtimes/the-go-gaps">E2.04.2 · the Go gaps</a> names what differs honestly.</p>
+
+    <div class="fork">
+      <p class="dl">The 2.0 fork — EchoMQ leaves the BullMQ wire</p>
+      <p>The architecture above drives the <strong>v1 line (frozen at 1.3.0)</strong> — the
+        <code class="inl">emq:</code> keyspace and the BullMQ scripts.
+        <a href="/echomq/core/runtimes/cross-runtime-interop">emq.1 ships</a> EchoMQ 2.0, and this same OTP shape drives
+        the v2 wire: the worker still fetches via one atomic script and the <code class="inl">LockManager</code> still
+        renews with one timer, but the scripts now declare every key in <code class="inl">KEYS[]</code> and write the
+        <code class="inl">emq:{q}:&hellip;</code> keyspace the core hashtags transparently — so the reference runtime is
+        the first to speak v2. The host-supervised, library-only design does not change; only the wire it drives.</p>
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The worker fetch loop, the lock-renewal protocol, and the cached-script dispatch the reference runtime drives.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://docs.bullmq.io/">BullMQ &mdash; <em>Documentation</em></a> &mdash; the worker fetch loop, the lock-renewal protocol, and the scripts this runtime drives.</li>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the cached-script dispatch <code>execute_raw/4</code> uses, EVALSHA-first with an EVAL fallback.</li>
+          <li><a href="https://redis.io/docs/">Redis &mdash; <em>Documentation</em></a> &mdash; the command reference for the scripts the worker runs.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/core/runtimes">E2.04 &middot; The three runtimes &amp; interop</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/core/runtimes/the-go-gaps">E2.04.2 &middot; The Go gaps</a> &mdash; the Go port's honest status, contrasted with this reference.</li>
+          <li><a href="/echomq/core/lock-management/one-timer-not-n">E2.03.1 &middot; One timer, not N</a> &mdash; the one-timer LockManager in full.</li>
+          <li><a href="/echomq/core/jobs-queues-workers">E2.02 &middot; Jobs, queues &amp; workers</a> &mdash; the worker fetch loop and the job model.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns R3 &middot; Reliable queues</a> &mdash; the pattern this runtime applies.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/core/runtimes"><span aria-hidden="true">&larr;</span>&nbsp; E2.04 &middot; The three runtimes</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/core/runtimes/the-go-gaps">E2.04.2 &middot; The Go gaps <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ &mdash; the polyglot job-queue protocol, taught in depth and tracked as it is built.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/core/runtimes">E2.04 &middot; The three runtimes</a>
+        <a href="/echomq/core/runtimes/the-elixir-architecture">E2.04.1 &middot; The Elixir architecture</a>
+        <a href="/echomq/core/runtimes/the-go-gaps">E2.04.2 &middot; The Go gaps</a>
+        <a href="/echomq/core/runtimes/cross-runtime-interop">E2.04.3 &middot; Cross-runtime interop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/core">E2 &middot; The core</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the worker slot math (pure over a concurrency) ---------- */
+  var ACTIVE = 4; /* a fixed number of jobs already running this cycle */
+  function availableSlots(concurrency, active) { return Math.max(0, concurrency - active); }
+
+  function renderSlots(concurrency) {
+    var cVal = document.getElementById('cVal');
+    var row = document.getElementById('slotRow');
+    var out = document.getElementById('slotOut');
+    if (cVal) cVal.textContent = concurrency;
+    var active = Math.min(ACTIVE, concurrency);
+    var free = availableSlots(concurrency, active);
+
+    if (row) {
+      var svgns = 'http://www.w3.org/2000/svg';
+      while (row.firstChild) row.removeChild(row.firstChild);
+      var x0 = 20, w = 26, gap = 4, y = 48;
+      for (var i = 0; i < concurrency; i++) {
+        var g = document.createElementNS(svgns, 'g');
+        g.setAttribute('class', 'slot ' + (i < active ? 'busy' : 'free'));
+        var r = document.createElementNS(svgns, 'rect');
+        r.setAttribute('x', String(x0 + i * (w + gap)));
+        r.setAttribute('y', String(y));
+        r.setAttribute('width', String(w));
+        r.setAttribute('height', '34');
+        r.setAttribute('rx', '6');
+        g.appendChild(r);
+        row.appendChild(g);
+      }
+    }
+
+    if (out) {
+      out.innerHTML = 'concurrency <b>' + concurrency + '</b> &middot; active_jobs <b>' + active + '</b><br>' +
+        '<span class="ok">available_slots = ' + concurrency + ' - ' + active + ' = ' + free + '</span><br>' +
+        '<span class="dim">the worker fetches ' + free + ' job(s) this cycle, each in its own Task.async process.</span>';
+    }
+  }
+  var cRng = document.getElementById('cRng');
+  if (cRng) cRng.addEventListener('input', function () { renderSlots(parseInt(this.value, 10)); });
+  renderSlots(10);
+
+  /* ---------- content: the supervision-ownership picker (pure over a fixed map) ---------- */
+  var OWNERS = {
+    worker: { owner: 'host', label: 'EchoMQ.Worker', note: 'a child of the HOST supervision tree — the library starts no Application' },
+    conn:   { owner: 'host', label: 'EchoMQ.RedisConnection pool', note: 'a child of the HOST; the use Supervisor inside it is the pool internal, not a queue tree' },
+    task:   { owner: 'lib',  label: 'a job Task', note: 'started by the worker via Task.async — the worker owns its job processes' },
+    app:    { owner: 'none', label: 'an EchoMQ.Application', note: 'does not exist — EchoMQ-Elixir is library-only' }
+  };
+  var OW_ORDER = ['worker', 'conn', 'task', 'app'];
+
+  function ownerOf(key) { return OWNERS[key]; }
+
+  function renderOwn(key) {
+    var out = document.getElementById('ownOut');
+    OW_ORDER.forEach(function (k) {
+      var btn = document.getElementById('ow-' + k);
+      if (btn) btn.classList.toggle('active', k === key);
+    });
+    var rec = ownerOf(key);
+    var hostBox = document.getElementById('box-host');
+    var libBox = document.getElementById('box-lib');
+    if (hostBox) hostBox.classList.toggle('host', rec.owner === 'host');
+    if (hostBox && rec.owner !== 'host') hostBox.classList.remove('host');
+    if (libBox) libBox.classList.toggle('lib', rec.owner === 'lib');
+    if (libBox && rec.owner !== 'lib') libBox.classList.remove('lib');
+
+    if (out && rec) {
+      var who = rec.owner === 'host' ? '<span class="ok">supervised by the HOST application</span>'
+        : rec.owner === 'lib' ? '<span class="ok">owned by the EchoMQ.Worker (its own Task)</span>'
+        : '<span class="warn">no owner — it does not exist</span>';
+      out.innerHTML = '<b>' + rec.label + '</b><br>' + who + '<br><span class="dim">' + rec.note + '</span>';
+    }
+  }
+  OW_ORDER.forEach(function (k) {
+    var btn = document.getElementById('ow-' + k);
+    if (btn) btn.addEventListener('click', function () { renderOwn(k); });
+  });
+  renderOwn('worker');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

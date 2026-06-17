@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M3.1 · Availability First — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="Best-effort consistency, the deliberate inverse of the consistency-first strategy: answer always, and provide consistency as well as possible without ever blocking. The stance to take where a stale answer is useful and a withheld one is not. The classic example is a content delivery network caching at edge servers close to users, freshness bounded by a time-to-live; naming served through caching is the same pattern in a different domain. The discipline that makes answer-now-reconcile-later acceptable is that the staleness is bounded, not unbounded. EchoMesh places its market-data feed and its globally replicated retention on this side of the trade — design, with the surfaces proposed in the next two dives.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-avail);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-avail)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the edge-cache emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.capsvg{width:100%;height:auto;display:block}
+.capsvg .grp{fill:var(--m-card);stroke:var(--m-line);stroke-width:1.5}
+.capsvg .node{fill:var(--m-avail-tint);stroke:var(--m-avail);stroke-width:1.5}
+.capsvg .node.o{fill:var(--m-cons-tint);stroke:var(--m-cons)}
+.capsvg .glbl{font:12px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .vlbl{font:13px var(--mono);fill:var(--m-ink);text-anchor:middle;font-weight:700}
+.capsvg .link{stroke:var(--m-avail);stroke-width:2.5;fill:none}
+.capsvg .link.cut{stroke:var(--m-edge);stroke-width:2.5;stroke-dasharray:5 5}
+.capsvg .msg{stroke:var(--m-mesh);stroke-width:2;fill:none;marker-end:url(#arw)}
+.capsvg .msg.a{stroke:var(--m-avail)}
+.capsvg .msg.c{stroke:var(--m-cons)}
+.capsvg .msg.late{stroke:var(--m-dim);stroke-width:2;stroke-dasharray:3 4}
+.capsvg .opn{font:11px var(--mono);fill:var(--m-ink);text-anchor:middle}
+.capsvg .barr{font:13px var(--mono);fill:var(--m-edge);text-anchor:middle;font-weight:700}
+.capsvg .axt{font:11px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .ckm{font:13px var(--mono);font-weight:700;text-anchor:middle}
+.capsvg .ckm.ok{fill:var(--m-avail)}
+.capsvg .ckm.no{fill:var(--m-edge)}
+.capsvg g[data-tab]{transition:opacity .18s ease}
+.capsvg.focus g[data-tab]{opacity:.18}
+.capsvg.focus g[data-tab].on{opacity:1}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the property duality / thesis ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-avail);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-edge)}
+.tri article:nth-child(3){border-top-color:var(--m-mesh)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the two-example compare ---------- */
+.cmp{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:6px}
+.cmp article{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px}
+.cmp article.cdn{border-left:3px solid var(--m-avail)}
+.cmp article.dns{border-left:3px solid var(--m-edge)}
+.cmp .ck{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.cmp article.cdn .ck{color:var(--m-avail)}
+.cmp article.dns .ck{color:var(--m-edge)}
+.cmp h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.cmp p{font-size:.9rem;color:var(--m-ink)}
+.cmp .ex{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);border-top:1px dashed var(--m-line);padding-top:9px}
+.cmp .ex b{color:var(--m-ink)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-avail);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-avail)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-avail);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-avail)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.doors,.cmp{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.doors,.cmp{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><a href="/mesh/best-effort-consistency">best-effort-consistency</a><span class="rsep">/</span><span class="rcur">availability-first</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#strategy">The strategy</a>
+      <a href="#cdn">The CDN</a>
+      <a href="#naming">Naming</a>
+      <a href="#trade">Buys and costs</a>
+      <a href="#stands">EchoMesh</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M3.1 &#183; Best Effort Consistency</p>
+      <h1>Availability <span class="hns">first</span>.</h1>
+      <p class="lede">The second strategy, and the deliberate inverse of the first. Best-effort consistency makes one
+      commitment without qualification &#8212; <b>every request receives a response</b> &#8212; and treats consistency as
+      the thing to provide as well as it can, without ever blocking. The stance to take where a stale answer is useful and
+      a withheld one is not.</p>
+      <p class="heronote">No measurement here: this dive reads a strategy and its example, not a benchmark. Two primary
+      sources carry it (<a href="#refs">Gilbert &amp; Lynch 2012, which names the strategy and its examples, and Nygren,
+      Sitaraman &amp; Sun 2010, the description of the Akamai content delivery network</a>). The strategy and the system
+      are external and settled; where EchoMesh places its surfaces is named as design and built in the dives that follow.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>The strategy and the content-delivery example are external and settled. That EchoMesh's market-data feed and
+        globally replicated retention take the availability-first side is the course's proposal &#8212; built on shipped
+        technology (the CDN, client-side caching, and the rest are settled), with the near-cache and global edge developed
+        in M3.2 and M3.3 and the shipped-versus-proposed line drawn in full at M8.2.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>Best-effort consistency, walked one move at a time &#183; a reader served from the <b>nearest edge</b>,
+        a refresh from <b>origin</b> on TTL expiry, and the partition that cuts the refresh &#8212; hover a step to take it
+        to the <b>availability-first answer</b>: serve now, bounded-stale, reconcile on heal (the content-delivery example
+        of <b>Gilbert &amp; Lynch 2012</b>, after <b>Nygren, Sitaraman &amp; Sun 2010</b>)</figcaption>
+        <svg class="capsvg" id="capsvg" viewBox="0 0 760 270" role="img" aria-label="A content delivery network: an origin server on the left holds the authoritative value, an edge cache on the right sits close to the reader. A reader requests an object and the edge serves it from its cache immediately, without waiting on the origin. While the time-to-live is unexpired the cached value is current. When the TTL expires the edge refreshes from origin and adopts the new value. If the network between edge and origin is cut, the edge cannot refresh, so it continues to answer the reader from its cached value, which is bounded-stale by at most roughly its TTL rather than withheld. When the network heals, the next refresh reconciles the edge toward the origin's current value. The delivery path answers now and reconciles toward correctness, never blocking.">
+          <defs>
+            <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#7b3aa0"></path>
+            </marker>
+          </defs>
+          <!-- origin + edge frames -->
+          <rect class="grp" x="40" y="62" width="220" height="116" rx="8"></rect>
+          <rect class="grp" x="500" y="62" width="220" height="116" rx="8"></rect>
+          <text class="glbl" x="150" y="52">origin (authority)</text>
+          <text class="glbl" x="610" y="52">edge cache (near the reader)</text>
+          <circle class="node o" cx="150" cy="120" r="24"></circle>
+          <circle class="node" cx="610" cy="120" r="24"></circle>
+          <text class="opn" x="150" y="156">origin holds v2</text>
+          <text class="opn" x="610" y="156">reader is here</text>
+
+          <!-- the edge-to-origin refresh link, healthy by default; the partition cuts it -->
+          <line class="link" id="xlink" x1="260" y1="120" x2="500" y2="120"></line>
+
+          <!-- step: serve — the edge answers the reader from cache, now -->
+          <g data-tab="serve">
+            <text class="vlbl" x="150" y="125">v1</text>
+            <text class="vlbl" x="610" y="125">v1</text>
+            <path class="msg a" d="M730 120 L644 120"></path>
+            <text class="opn" x="715" y="106">read</text>
+            <path class="msg a" d="M644 138 L730 138"></path>
+            <text class="ckm ok" x="610" y="206">served from cache &#8212; now</text>
+          </g>
+
+          <!-- step: ttl — the cached value is current while the TTL is unexpired -->
+          <g data-tab="ttl">
+            <text class="vlbl" x="150" y="125">v1</text>
+            <text class="vlbl" x="610" y="125">v1</text>
+            <text class="axt" x="610" y="200">TTL unexpired</text>
+            <text class="ckm ok" x="610" y="220">cached value is current</text>
+          </g>
+
+          <!-- step: refresh — TTL expires, the edge refreshes from origin -->
+          <g data-tab="refresh">
+            <text class="vlbl" x="150" y="125">v2</text>
+            <text class="vlbl" x="610" y="125">v2</text>
+            <path class="msg c" d="M262 120 L498 120"></path>
+            <text class="axt" x="380" y="110">TTL expired &#8594; refresh from origin</text>
+            <text class="ckm ok" x="610" y="206">edge adopts v2</text>
+          </g>
+
+          <!-- step: partition — the refresh path is cut, the edge keeps answering -->
+          <g data-tab="partition">
+            <text class="vlbl" x="150" y="125">v2</text>
+            <text class="vlbl" x="610" y="125" fill="#b3631c">v1?</text>
+            <text class="barr" x="380" y="114">&#9889; refresh path cut</text>
+            <path class="msg a" d="M730 120 L644 120"></path>
+            <text class="opn" x="715" y="106">read</text>
+            <text class="ckm no" x="610" y="206">answers v1 &#8212; bounded-stale</text>
+            <text class="ckm no" x="610" y="224">never withholds</text>
+          </g>
+
+          <!-- step: reconcile — the network heals, the next refresh catches up -->
+          <g data-tab="reconcile">
+            <text class="vlbl" x="150" y="125">v2</text>
+            <text class="vlbl" x="610" y="125">v2</text>
+            <path class="msg c" d="M262 120 L498 120"></path>
+            <text class="axt" x="380" y="110">network heals &#8594; next refresh</text>
+            <text class="ckm ok" x="610" y="206">reconciled toward v2</text>
+          </g>
+          <!-- the partition marker line, shown when cut -->
+          <line class="link cut" id="xcut" x1="350" y1="50" x2="410" y2="190" style="opacity:0"></line>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">step &#183; hover to walk the strategy</span>
+          The edge serves the reader <b>from cache, now</b>; on TTL expiry it refreshes from origin; and when a partition
+          cuts the refresh it <span class="vc">keeps answering bounded-stale</span> rather than withholding, then
+          <span class="vc">reconciles on heal</span>. Hover a step below to take it one move at a time.
+        </p>
+        <div class="htabs" id="cdnw">
+          <div class="htabs-bar" role="tablist" aria-label="The availability-first delivery path, step by step">
+            <button type="button" role="tab" data-tab="serve" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>1 &#183; Serve from the edge</button>
+            <button type="button" role="tab" data-tab="ttl" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>2 &#183; TTL unexpired</button>
+            <button type="button" role="tab" data-tab="refresh" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>3 &#183; Refresh on expiry</button>
+            <button type="button" role="tab" data-tab="partition" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>4 &#183; Partition</button>
+            <button type="button" role="tab" data-tab="reconcile" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>5 &#183; Reconcile on heal</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="serve" role="tabpanel"><span class="tag a">Step 1 &#183; the edge answers, now.</span> A reader requests an object and the nearest edge serves it from cache immediately, without waiting on the distant origin. Proximity to the reader is what buys the speed &#8212; the request never crosses the middle mile.</div>
+            <div class="htabs-p" data-tab="ttl" role="tabpanel"><span class="tag a">Step 2 &#183; the TTL is unexpired.</span> A time-to-live governs freshness. While the TTL has not expired the edge holds the cached value and treats it as current, so the reader sees a value behind by at most roughly the TTL.</div>
+            <div class="htabs-p" data-tab="refresh" role="tabpanel"><span class="tag c">Step 3 &#183; refresh on expiry.</span> When the TTL expires the edge refreshes from origin and adopts the new authoritative value. On the healthy network this keeps the staleness window short.</div>
+            <div class="htabs-p" data-tab="partition" role="tabpanel"><span class="tag e">Step 4 &#183; a partition cuts the refresh.</span> If the path to origin is unreachable the edge cannot refresh. It <b>continues to answer the reader</b> from its cached value, bounded-stale by at most roughly its TTL, rather than withholding the response &#8212; availability over consistency, the choice the theorem forces.</div>
+            <div class="htabs-p" data-tab="reconcile" role="tabpanel"><span class="tag c">Step 5 &#183; reconcile on heal.</span> When the network heals, the next refresh reconciles the edge toward the origin's current value. The path answered now and let correctness catch up &#8212; answer now, reconcile later.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a step to walk it; click to pin. Without scripting, all five read in sequence and the figure shows every marker at once.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="strategy">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The strategy stated</h2>
+        <span class="ssrc">mesh.3.1.md &#183; Gilbert &amp; Lynch 2012</span>
+      </div>
+      <p class="body">Best-effort consistency makes one commitment without qualification &#8212; <b>every request receives
+      a response</b> &#8212; and treats consistency as the thing to provide as well as possible rather than to guarantee.
+      It fits where two conditions hold: a stale answer is tolerable for a bounded time, so serving slightly behind is
+      acceptable, and a stopped answer is not, so withholding a response is the worse failure. Content served to a wide,
+      geographically spread audience usually meets both.</p>
+      <p class="body">Read against the theorem, the strategy is the explicit choice of availability over consistency when a
+      partition forces the two apart: the surface answers from whatever local state it has rather than refusing, accepting
+      that the answer may be behind. The proof that there is no way to be both correct and available under the partition is
+      <a href="/mesh/impossible/the-proof">M1.2</a>. The strategy does not pretend the staleness never happens; it
+      <b>bounds it</b> and makes it the tolerable outcome when it does.</p>
+      <p class="body">It is the deliberate inverse of the consistency-first strategy of <b>M2</b>, which blocks rather than
+      diverges. Set the same partition in front of each surface and they answer in opposite ways &#8212; one keeps serving
+      and reconciles, the other withholds until it is certain.</p>
+      <figure class="frozen">
+        <figcaption>the strategy, stated as a contract<span class="tag">Gilbert &amp; Lynch 2012</span></figcaption>
+<pre><span class="fd">// best-effort consistency &#8212; the availability-first strategy</span>
+guarantee: <span class="fa">a response, always</span>          <span class="fd"># the one unqualified commitment</span>
+provide:   <span class="fc">consistency, as best it can</span>   <span class="fd"># best effort, not a guarantee</span>
+
+<span class="fd">// it fits where, and only where:</span>
+  a stale answer is <b>tolerable</b> for a bounded time   <span class="fd"># serving slightly behind is acceptable</span>
+  a stopped answer is <b>not</b>                          <span class="fe">withholding is the worse failure</span>
+
+<span class="fd">// under a partition that forces the choice:</span>
+answer from local state &#8594; <span class="fe">may be behind</span>   <span class="fd"># availability over consistency</span>
+<span class="fd">// the bound on how far behind is the discipline that makes it acceptable</span></pre>
+      </figure>
+    </section>
+
+    <section id="cdn">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The classic example &#8212; a content delivery network</h2>
+        <span class="ssrc">mesh.3.1.md &#183; Nygren, Sitaraman &amp; Sun 2010</span>
+      </div>
+      <p class="body">The example Gilbert and Lynch give is a content delivery cache, and Akamai is its canonical
+      realization. A content delivery network improves performance by caching content at edge servers <b>close to end
+      users</b>, so a request is served from the nearest edge rather than from a distant origin, avoiding the middle-mile
+      bottlenecks that make the open Internet slow and variable.</p>
+      <p class="body">The architecture is deliberately, heavily distributed &#8212; tens of thousands of servers across
+      hundreds of networks worldwide &#8212; because proximity to the reader is what buys both speed and the ability to keep
+      answering when any one origin or path is unreachable. Freshness is managed by a <b>time-to-live</b>: an edge serves a
+      cached object until its TTL expires and then refreshes from origin, so a reader may see a value that is behind by at
+      most roughly its TTL, and in practice low TTLs keep that window short while resolver caching downstream can widen it.</p>
+      <p class="body">The delivery path is availability-first by construction: it answers from the edge, now, and
+      reconciles toward the origin's current value on the next refresh. The emulator above walks exactly this path, and the
+      one move that defines the strategy is the partition step &#8212; the edge keeps answering bounded-stale rather than
+      withholding.</p>
+      <figure class="frozen">
+        <figcaption>the edge under a refresh-path cut<span class="tag">Nygren, Sitaraman &amp; Sun 2010</span></figcaption>
+<pre><span class="fd">// caching at edge servers close to end users avoids the middle mile</span>
+read(obj)         <span class="fd">&#8594;</span> edge.<b>cache</b>     <span class="fd"># served from the nearest edge, now</span>
+freshness          = governed by a <span class="fc">time-to-live</span>   <span class="fd"># behind by at most roughly the TTL</span>
+ttl expires       <span class="fd">&#8594;</span> refresh(origin)  <span class="fd"># adopts the origin's current value</span>
+
+<span class="fd">// when the refresh path is cut:</span>
+net: edge &#8212;&#10006;&#8212; origin   <span class="fe">partition</span>        <span class="fd"># the edge cannot refresh</span>
+read(obj)         <span class="fd">&#8594;</span> <span class="fe">cached, bounded-stale</span>   <span class="fd"># keeps answering &#8212; never withholds</span>
+net heals         <span class="fd">&#8594;</span> next refresh    <span class="fd"># reconciles toward the current value</span></pre>
+      </figure>
+    </section>
+
+    <section id="naming">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Naming served through caching</h2>
+        <span class="ssrc">mesh.3.1.md &#183; Gilbert &amp; Lynch 2012</span>
+      </div>
+      <p class="body">The second example Gilbert and Lynch name is naming served through caching, and it is the same
+      pattern in a different domain. A name resolver answers a lookup from a cached record until that record's lifetime
+      expires, then refreshes; between refreshes it may hand back a value that has since changed at the authority, trading
+      strong consistency for the ability to answer immediately and locally.</p>
+      <p class="body">The trade is identical to the content delivery network's &#8212; proximity and a guaranteed answer in
+      exchange for bounded staleness &#8212; and naming it twice, in content and in naming, is how the 2012 paper shows the
+      strategy is <b>general rather than a quirk of one system</b>. Both are surfaces that answer from a cache and let
+      correctness catch up. Set the two side by side to see the one strategy under two domains.</p>
+      <div class="cmp">
+        <article class="cdn">
+          <p class="ck">Content &#183; the CDN</p>
+          <h3>A cached object near the reader</h3>
+          <p>An edge serves a cached object from close to the user, behind by at most roughly its TTL, and refreshes from
+          origin when the TTL expires. Proximity buys speed and the ability to keep answering.</p>
+          <p class="ex"><b>traded:</b> strong consistency &#183; <b>for:</b> proximity, speed, an answer always</p>
+        </article>
+        <article class="dns">
+          <p class="ck">Naming &#183; through caching</p>
+          <h3>A cached record at a resolver</h3>
+          <p>A resolver answers a lookup from a cached record until its lifetime expires, then refreshes; between
+          refreshes it may hand back a value that has since changed at the authority.</p>
+          <p class="ex"><b>traded:</b> strong consistency &#183; <b>for:</b> an immediate, local answer</p>
+        </article>
+      </div>
+      <div class="htabs" id="generalw">
+        <div class="htabs-bar" role="tablist" aria-label="One strategy, two domains, against the consistency-first inverse">
+          <button type="button" role="tab" data-tab="content" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>Content (the CDN)</button>
+          <button type="button" role="tab" data-tab="naming" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>Naming (caching)</button>
+          <button type="button" role="tab" data-tab="general" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>Why named twice</button>
+          <button type="button" role="tab" data-tab="inverse" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>The inverse (M2)</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="content" role="tabpanel"><span class="tag a">Content delivery is the first reading.</span> An edge serves a cached object from close to the reader, behind by at most roughly its TTL, refreshing from origin on expiry. It answers now and reconciles later &#8212; availability over consistency, made acceptable by a bounded staleness window.</div>
+          <div class="htabs-p" data-tab="naming" role="tabpanel"><span class="tag e">Naming is the same pattern in a different domain.</span> A resolver answers a lookup from a cached record until its lifetime expires, then refreshes; between refreshes it may hand back a value that has since changed at the authority. The trade is identical to the CDN's: proximity and a guaranteed answer for bounded staleness.</div>
+          <div class="htabs-p" data-tab="general" role="tabpanel"><span class="tag m">Naming it twice shows it is general.</span> Gilbert and Lynch give content and naming as two examples of the one strategy &#8212; best-effort consistency is not a quirk of one system but a coping strategy that recurs wherever a stale answer is useful and a withheld one is not.</div>
+          <div class="htabs-p" data-tab="inverse" role="tabpanel"><span class="tag c">M2 is the deliberate inverse.</span> The consistency-first surfaces of M2 block rather than diverge: under the same partition they withhold until they are certain, paying latency to never be wrong. Best-effort consistency answers and may be behind. Two opposite answers to the one forced choice &#8212; placed on purpose, per surface.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus a panel to read it; click to pin. Without scripting, all four read in sequence. The third panel is the point: named twice, the strategy is general.</p>
+      </div>
+    </section>
+
+    <section id="trade">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>What &#8220;answer now, reconcile later&#8221; buys, and costs</h2>
+        <span class="ssrc">mesh.3.1.md &#183; the trade, named fairly</span>
+      </div>
+      <p class="body">The shape of the strategy is an immediate local answer backed by an eventual refresh. The win is that
+      the surface is always responsive and fast, because it serves from nearby state and never waits on a distant authority
+      or a quorum. The cost is the mirror image and must be named: a reader can observe a <b>stale value</b>, one that the
+      authority has already moved past, for as long as the refresh interval allows.</p>
+      <p class="body">The discipline that makes this acceptable is that the staleness is <b>bounded, not unbounded</b>
+      &#8212; a TTL, an invalidation, or a reconciliation on heal caps how far behind a reader can be &#8212; and bounded
+      staleness is a contract a reader can reason about, where unbounded staleness is not. So availability-first is not a
+      license to be arbitrarily wrong; it is a commitment to answer now and to be no more than a stated amount behind, with
+      the amount tunable per surface, which is the subject of <b>M4</b>.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">The win</p>
+          <h3>Always responsive</h3>
+          <p>The surface answers from nearby state and never waits on a distant authority or a quorum. Fast, and available
+          even when an origin or a path is unreachable.</p>
+          <p class="note">serve from local state &#183; <b>no wait, no quorum</b></p>
+        </article>
+        <article>
+          <p class="cno">The cost</p>
+          <h3>An observable stale value</h3>
+          <p>A reader can see a value the authority has already moved past, for as long as the refresh interval allows. The
+          mirror image of the win, named plainly rather than hidden.</p>
+          <p class="note">behind by a refresh interval &#183; <b>named, not hidden</b></p>
+        </article>
+        <article>
+          <p class="cno">The discipline</p>
+          <h3>Bounded, not unbounded</h3>
+          <p>A TTL, an invalidation, or a reconciliation on heal caps how far behind a reader can be. Bounded staleness is
+          a contract; the bound is tunable per surface.</p>
+          <p class="note">the bound is the contract &#183; <b>M4 tunes it</b></p>
+        </article>
+      </div>
+      <p class="compose"><b>The line that keeps the strategy honest:</b> availability-first is a commitment to answer now
+      and to be no more than a <b>stated amount behind</b>, not a license to be arbitrarily wrong. The amount is the
+      staleness budget, set per surface &#8212; the subject of <b>M4</b>, where the trade stops being a binary and becomes a
+      dial.</p>
+    </section>
+
+    <section id="stands">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Where EchoMesh stands</h2>
+        <span class="ssrc">mesh.3.1.md &#183; proposed placement</span>
+      </div>
+      <p class="body">EchoMesh's market-data feed and its globally replicated retention are best-effort-consistency
+      surfaces: always answering, bounded in staleness, reconciling toward the authoritative value rather than blocking.
+      The feed serves recent values from a near-cache kept fresh by a coherence broadcast, and marks a value stale rather
+      than withholding it when a partition cuts the refresh &#8212; built in <b>M3.2</b>.</p>
+      <p class="body">Retention and delivery run on per-instrument streams and a globally replicated object store that
+      answer from local or nearby state &#8212; built in <b>M3.3</b>. Each makes the availability-first choice the strategy
+      describes, and each makes it <b>deliberately</b>, as the counterpart to the consistency-first surfaces of <b>M2</b>
+      that block rather than diverge.</p>
+      <p class="compose">The strategy and the example are external and settled. EchoMesh's placement of its feed and
+      retention on this side of the trade is <b>design</b>; the near-cache, coherence broadcast, and global edge that
+      implement it are the proposal the next two dives develop &#8212; all run on shipped technology and are separated from
+      the proposed composition at <b>M8.2</b>.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh/best-effort-consistency">
+          <span class="dr">/mesh/best-effort-consistency</span>
+          <h3>M3 &#8212; Best Effort Consistency</h3>
+          <p>The chapter landing: the availability-first strategy and the surfaces that take it &#8212; the strategy here,
+          the near-cache next, the streams and edge after.</p>
+          <p class="dnote"><b>this dive</b> is M3.1, the strategy; the near-cache is M3.2, the streams and edge M3.3.</p>
+        </a>
+        <a class="door" href="/echomq">
+          <span class="dr">/echomq</span>
+          <h3>EchoMQ &#8212; the protocol, in depth</h3>
+          <p>The Valkey-native bus and stream tier, rung by rung: the keyspace, the Lua inventory, the conformance
+          suite.</p>
+          <p class="dnote"><b>the availability-first</b> feed and retention surfaces door here for their bus and stream
+          tier &#8212; M3.2 and M3.3.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract, proven by frozen transcripts
+          across five runtimes.</p>
+          <p class="dnote"><b>the seam</b> that holds an availability-first surface against a consistency-first one rests on
+          this identity contract.</p>
+        </a>
+        <a class="door" href="/elixir">
+          <span class="dr">/elixir</span>
+          <h3>Functional Programming in Elixir</h3>
+          <p>The engine and the umbrella where the identity library lives, through to the Fly deployment chapter that puts
+          the surfaces on machines.</p>
+          <p class="dnote"><b>the near-cache and edge</b> of M3.2 and M3.3 are processes on the BEAM &#8212; the runtime
+          this course rests on.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://groups.csail.mit.edu/tds/papers/Gilbert/Brewer2.pdf" rel="noopener">Gilbert &amp; Lynch (2012) &#8212; Perspectives on the CAP Theorem</a><span class="rs">names best-effort consistency &#8212; guarantee a response always, provide consistency as best it can &#8212; and gives a content delivery cache and naming served through caching as its examples, both trading strong consistency for proximity and speed</span></li>
+          <li><a href="https://dl.acm.org/doi/10.1145/1842733.1842736" rel="noopener">Nygren, Sitaraman &amp; Sun (2010) &#8212; The Akamai Network</a><span class="rs">a highly distributed content delivery network caches content at edge servers close to end users to avoid middle-mile bottlenecks, serving from the nearest edge with freshness bounded by a time-to-live</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh/best-effort-consistency">M3 &#8212; Best Effort Consistency</a><span class="rs">the chapter landing: the availability-first strategy and the surfaces that take it</span></li>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/echomq">EchoMQ &#8212; the protocol, in depth</a><span class="rs">the Valkey-native bus and stream tier the availability-first surfaces use</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the law and the 14-byte identity contract the segmentation seam rests on</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the engine, the umbrella where the identity library lives, and the Fly deployment chapter</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh/best-effort-consistency"><span class="pk">the chapter</span>&#8592; M3 &#183; Best Effort Consistency</a>
+      <a class="pgx" href="/mesh/best-effort-consistency/market-data"><span class="pk">next &#183; dive</span>M3.2 &#183; Market Data on EchoCache &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <span>M2 &#183; Best Effort Availability<i>soon</i></span>
+        <a href="/mesh/best-effort-consistency">M3 &#183; Best Effort Consistency</a>
+        <span>M4 &#183; Trading the Trade<i>soon</i></span>
+        <span>M5 &#183; Segmenting<i>soon</i></span>
+        <span>M6 &#183; The Stack<i>soon</i></span>
+        <span>M7 &#183; Transparent Infrastructure<i>soon</i></span>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0JV7v9jqC</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 17:10:04 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the edge-cache emulator: the delivery-path tabs drive the SVG + an aria-live readout ----------
+     READOUT is a pure function of the step key over fixed data — no network, no storage. The SVG
+     highlights the active step's marker group; the cut line appears once the partition is reached. */
+  var EMIT = {
+    serve:     { s: "step 1 · serve from the edge",
+                 h: "A reader requests an object and the nearest <b>edge</b> serves it from cache immediately, without waiting on the distant origin. Proximity buys the speed.",
+                 cut: false },
+    ttl:       { s: "step 2 · TTL unexpired",
+                 h: "A <b>time-to-live</b> governs freshness. While it has not expired the edge treats the cached value as current — the reader is behind by at most roughly the TTL.",
+                 cut: false },
+    refresh:   { s: "step 3 · refresh on expiry",
+                 h: "When the TTL expires the edge <b>refreshes from origin</b> and adopts the new authoritative value. On the healthy network this keeps the staleness window short.",
+                 cut: false },
+    partition: { s: "step 4 · partition cuts the refresh",
+                 h: "The path to origin is unreachable, so the edge cannot refresh. It <span class='vc'>keeps answering bounded-stale</span> rather than <span class='vc'>withholding</span> — availability over consistency, the choice the theorem forces.",
+                 cut: true },
+    reconcile: { s: "step 5 · reconcile on heal",
+                 h: "When the network heals, the next refresh <span class='vc'>reconciles the edge toward the current value</span>. The path answered now and let correctness catch up.",
+                 cut: false }
+  };
+  var capsvg = document.getElementById('capsvg');
+  var emit = document.getElementById('emit');
+  var xcut = document.getElementById('xcut');
+  var xlink = document.getElementById('xlink');
+  wireHtabs(document.getElementById('cdnw'), function (key) {
+    var d = EMIT[key];
+    if (emit && d) emit.innerHTML = '<span class="step">' + d.s + '</span>' + d.h;
+    if (xcut) xcut.style.opacity = (d && d.cut) ? '1' : '0';
+    if (xlink) xlink.setAttribute('class', (d && d.cut) ? 'link cut' : 'link');
+    if (!capsvg) return;
+    capsvg.classList.toggle('focus', !!key);
+    capsvg.querySelectorAll('g[data-tab]').forEach(function (g) {
+      g.classList.toggle('on', g.getAttribute('data-tab') === key);
+    });
+  });
+
+  /* the one-strategy-two-domains tabs are a plain reuse of the same component */
+  wireHtabs(document.getElementById('generalw'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

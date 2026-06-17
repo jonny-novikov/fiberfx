@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The four sets · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="A job's whole position in its life is which sorted set its branded id is a member of: pending, active, schedule, dead. The members ARE the ids, so byte order is mint order and the queue needs no second index. Real EchoMQ.Jobs code — browse/3 (ZRANGE REV BYLEX) and pending_size/2 (ZCARD) — with a four-sets inspector.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.ctl{display:flex;flex-direction:column;gap:.35rem;font-family:var(--sans)}
+.ctl label{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cream-dim)}
+.ctl input[type=range]{width:190px;accent-color:var(--echo)}
+.ctl .val{font-family:var(--mono);font-size:.9rem;color:var(--echo-bright)}
+
+/* ---- four-sets svg ---- */
+.fs .box rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.fs .box.sel rect{fill:rgba(42,161,152,.14);stroke:#2aa198}
+.fs text{font-family:var(--sans);fill:#d7cfb9}
+.fs .bid{font-family:var(--mono);fill:#a39c89;font-size:10px}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/queue">queue</a><span class="rsep">/</span><a href="/echomq/queue/the-lifecycle">the-lifecycle</a><span class="rsep">/</span><span class="rcur">the-four-sets</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue">The Queue</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue/the-lifecycle">The lifecycle</a>
+        <span class="sep">/</span>
+        <span class="here">The four sets</span>
+      </nav>
+      <p class="eyebrow">The lifecycle &middot; dive 01</p>
+      <h1>The <span class="ex">four sets</span></h1>
+      <p class="lede">A job's whole position in its life is which sorted set its id is a member of.</p>
+      <p class="kicker">There are four — <code class="inl">pending</code>, <code class="inl">active</code>,
+        <code class="inl">schedule</code>, <code class="inl">dead</code> — and the member is <strong>the branded id
+        itself</strong>, not a pointer to it. Because the id is a branded Snowflake (a <code class="inl">JOB</code>
+        namespace over a time-ordered 11-char Base62 part, 14 bytes), <strong>byte order is mint order</strong> — so a
+        set ordered lexically by member is a queue ordered oldest-first by construction, with <strong>no second
+        index</strong> to maintain. Pick a set on the right, then read how <code class="inl">browse/3</code> and
+        <code class="inl">pending_size/2</code> read it.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#keys">The keys</a>
+        <a href="#browse">Browse needs no index</a>
+        <a href="#inspect">Inspect the sets</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig fs" aria-labelledby="fsTitle">
+      <h4 id="fsTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The four sets &middot; pick one</h4>
+      <div class="controls">
+        <div class="solid-select" id="fsSel" role="group" aria-label="Which set to inspect">
+          <button type="button" data-set="pending" data-c="echo" class="active" aria-pressed="true">pending</button>
+          <button type="button" data-set="active" data-c="echo" aria-pressed="false">active</button>
+          <button type="button" data-set="schedule" data-c="echo" aria-pressed="false">schedule</button>
+          <button type="button" data-set="dead" data-c="echo" aria-pressed="false">dead</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 200" role="img" aria-label="Four sorted sets stacked: pending, active, schedule, dead. Each holds branded job ids as members; the score column differs by set — score 0 for pending and dead, the lease deadline for active, the run-at instant for schedule. The selected set is highlighted in the EchoMQ accent.">
+        <g class="box sel" id="b-pending"><rect x="14" y="14" width="432" height="40" rx="9"></rect></g>
+        <text x="34" y="32" font-size="13">pending</text>
+        <text x="34" y="47" class="bid">emq:{q}:pending</text>
+        <text x="446" y="32" text-anchor="end" font-size="11" fill="#a39c89">score 0 · mint order</text>
+
+        <g class="box" id="b-active"><rect x="14" y="60" width="432" height="40" rx="9"></rect></g>
+        <text x="34" y="78" font-size="13">active</text>
+        <text x="34" y="93" class="bid">emq:{q}:active</text>
+        <text x="446" y="78" text-anchor="end" font-size="11" fill="#a39c89">score = lease deadline</text>
+
+        <g class="box" id="b-schedule"><rect x="14" y="106" width="432" height="40" rx="9"></rect></g>
+        <text x="34" y="124" font-size="13">schedule</text>
+        <text x="34" y="139" class="bid">emq:{q}:schedule</text>
+        <text x="446" y="124" text-anchor="end" font-size="11" fill="#a39c89">score = run-at instant</text>
+
+        <g class="box" id="b-dead"><rect x="14" y="152" width="432" height="40" rx="9"></rect></g>
+        <text x="34" y="170" font-size="13">dead</text>
+        <text x="34" y="185" class="bid">emq:{q}:dead</text>
+        <text x="446" y="170" text-anchor="end" font-size="11" fill="#a39c89">score 0 · the morgue</text>
+      </svg>
+      <div class="geo-readout" id="fsOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="keys">
+    <h2>The keys are built by the keyspace, not the data</h2>
+    <div class="prose">
+      <p>Every set key comes from <code class="inl">EchoMQ.Keyspace.queue_key/2</code>, which composes
+        <code class="inl">emq:{</code> + the queue + <code class="inl">}:</code> + the type. The per-queue
+        <code class="inl">{q}</code> is a cluster hashtag, so all four of one queue's sets land on <strong>one
+        slot</strong> — which is what lets one Lua script touch them in a single atomic transition. The row key is the
+        same builder, and it <strong>gates the id</strong> before composing: a malformed id raises before it ever reaches
+        the wire.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Keyspace</span>
+<span class="cmt"># queue_key builds emq:{q}:&lt;type&gt;. The braces are a cluster hashtag: every key</span>
+<span class="cmt"># of one queue hashes on the {q} substring, so pending / active / schedule / dead</span>
+<span class="cmt"># all land on ONE slot — which is what lets one Lua script touch them atomically.</span>
+<span class="op">def</span> <span class="fn">queue_key</span>(queue, type) <span class="op">when</span> is_binary(queue) <span class="op">and</span> is_binary(type),
+  <span class="op">do</span>: IO.<span class="fn">iodata_to_binary</span>([<span class="str">"emq:{"</span>, queue, <span class="str">"}:"</span>, type])
+
+<span class="cmt"># job_key gates the id BEFORE it ever reaches a key. A malformed id raises here,</span>
+<span class="cmt"># never reaching the wire — the row key cannot be forged from bad data.</span>
+<span class="op">def</span> <span class="fn">job_key</span>(queue, branded) <span class="op">when</span> is_binary(branded) <span class="op">do</span>
+  <span class="op">if</span> EchoData.BrandedId.<span class="fn">valid?</span>(branded) <span class="op">do</span>
+    <span class="fn">queue_key</span>(queue, <span class="str">"job:"</span>) &lt;&gt; branded   <span class="cmt"># emq:{q}:job:&lt;id&gt;</span>
+  <span class="op">else</span>
+    <span class="op">raise</span> ArgumentError, <span class="str">"job_key requires a valid branded id"</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>The grammar is <code class="inl">emq:{q}:job:&lt;id&gt;</code> for the row and <code class="inl">emq:{q}:&lt;type&gt;</code>
+        for the four sets. The id is the member of a set; the same gated id composes the row key. One queue, one slot, one
+        grammar.</p>
+    </div>
+    <p class="take">A job's state is not a column to read — it is a set to be a member of. The keyspace builds the four
+      addresses; the id is what lives at them.</p>
+  </section>
+
+  <section id="browse">
+    <h2>Mint order is byte order, so browse needs no index</h2>
+    <div class="prose">
+      <p>Because the member is the id, and the id sorts by its own bytes (mint order), the newest-first browse is a plain
+        lexical range over the set — reverse, by member, no score sort and no auxiliary structure. The depth is one
+        count. The set already holds the answer; the read only asks it.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs</span>
+<span class="cmt"># browse the pending set newest-first. The members ARE the ids, ordered by their</span>
+<span class="cmt"># own bytes (mint order), so ZRANGE ... REV BYLEX walks newest-to-oldest with no</span>
+<span class="cmt"># second index. + and - are the lexical max / min bounds.</span>
+<span class="op">def</span> <span class="fn">browse</span>(conn, queue, n) <span class="op">when</span> is_integer(n) <span class="op">and</span> n &gt; <span class="res">0</span> <span class="op">do</span>
+  key = Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"pending"</span>)
+  Connector.<span class="fn">command</span>(conn, [<span class="str">"ZRANGE"</span>, key, <span class="str">"+"</span>, <span class="str">"-"</span>, <span class="str">"BYLEX"</span>, <span class="str">"REV"</span>, <span class="str">"LIMIT"</span>, <span class="str">"0"</span>, Integer.<span class="fn">to_string</span>(n)])
+<span class="op">end</span>
+
+<span class="cmt"># depth is one count. ZCARD over the pending set — no scan, no index.</span>
+<span class="op">def</span> <span class="fn">pending_size</span>(conn, queue) <span class="op">do</span>
+  Connector.<span class="fn">command</span>(conn, [<span class="str">"ZCARD"</span>, Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"pending"</span>)])
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><code class="inl">browse/3</code> returns the <code class="inl">n</code> newest pending ids;
+        <code class="inl">pending_size/2</code> returns the pending depth. Neither maintains anything — there is no
+        "newest" index to keep in step with the set, because the set's own member order <em>is</em> the order.</p>
+    </div>
+    <p class="note">A second index is a thing that can drift. By making the id the member and the bytes the order, the
+      queue has nothing to keep in sync — the one structure is both the membership and the order.</p>
+  </section>
+
+  <section id="inspect">
+    <h2>Inspect the sets</h2>
+    <div class="prose">
+      <p>Here is a fixed pending set of five jobs, in mint order. Run <code class="inl">browse/3</code> for a given
+        <code class="inl">n</code> and read the actual <code class="inl">ZRANGE … REV BYLEX</code> slice it returns
+        (newest first), and the <code class="inl">ZCARD</code> the depth reads. The model is the real read logic over this
+        fixed set — pure, no network.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="inspTitle">
+      <h4 id="inspTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">browse/3 over a fixed pending set &middot; choose n</h4>
+      <div class="controls">
+        <div class="ctl">
+          <label for="nRange">n (how many newest)</label>
+          <input type="range" id="nRange" min="1" max="5" step="1" value="3">
+          <span class="val" id="nVal">3</span>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 96" role="img" aria-label="The pending sorted set with five branded job ids in mint order, oldest at the left. The browse window selects the newest n, taken from the right.">
+        <rect x="14" y="16" width="452" height="64" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="240" y="36" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a39c89">emq:{q}:pending (ZSET, score 0) — mint order, oldest left</text>
+        <text id="insp-mem" x="240" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#6fdccf">·</text>
+      </svg>
+      <div class="geo-readout" id="inspOut" aria-live="polite"></div>
+    </figure>
+    <p class="note">The browse takes the newest <code class="inl">n</code> from the high end of the lexical order
+      (<code class="inl">REV</code> from <code class="inl">+</code>). Nothing was sorted at read time — the set was already
+      in mint order because the members are the ids.</p>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A job's state is encoded by <strong>which collection it lives in</strong>, not a status column — so a move
+          between states is a move between sets. <a href="/redis-patterns/queues/states-as-locations">States as
+          locations</a> teaches it; <a href="/redis-patterns/queues">Reliable Queues</a> is the chapter.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p>Four sorted sets keyed by <code class="inl">queue_key/2</code>, members the branded ids, so byte order is mint
+          order and <code class="inl">browse/3</code> + <code class="inl">pending_size/2</code> read the set with no
+          second index.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: let the location be the state. The implementation makes the member the id too — so
+      the one structure carries the membership <em>and</em> the order.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; the set is the state, the id is the member</h2>
+    <div class="prose">
+      <p>A job lives in one of four sorted sets, and its id is the member. The branded id's bytes are mint order, so the
+        set is oldest-first by construction; <code class="inl">browse/3</code> reads it with
+        <code class="inl">ZRANGE … REV BYLEX</code> and <code class="inl">pending_size/2</code> with
+        <code class="inl">ZCARD</code>, neither needing a second index. The next dive reads how a job leaves the pending
+        set: the claim, the lease, and the fencing token.</p>
+    </div>
+    <p class="note">Next in the lifecycle: <strong>Claim &amp; the lease</strong> &mdash; the <code class="inl">@claim</code>
+      transition, the active-set score that IS the lease deadline, and <code class="inl">attempts</code> as the fencing
+      token.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the set-as-state and the index-free browse are grounded, and the commands the reads use.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/zrangebylex/">Valkey &mdash; <em>ZRANGEBYLEX</em></a> &mdash; the lexical range the newest-first browse runs.</li>
+          <li><a href="https://valkey.io/commands/zcard/">Valkey &mdash; <em>ZCARD</em></a> &mdash; the set cardinality the pending depth reads.</li>
+          <li><a href="https://valkey.io/commands/zadd/">Valkey &mdash; <em>ZADD</em></a> &mdash; the member-and-score insertion every set is built with.</li>
+          <li><a href="https://valkey.io/docs/">Valkey &mdash; <em>Documentation</em></a> &mdash; the substrate of record the sets live in.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/queue/the-lifecycle">The lifecycle</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/queue/the-lifecycle/claim-and-the-lease">Claim &amp; the lease</a> &mdash; how a job leaves the pending set.</li>
+          <li><a href="/echomq/protocol/immutability-and-branded-ids">Immutability &amp; branded ids</a> &mdash; the id whose bytes are mint order.</li>
+          <li><a href="/redis-patterns/queues/states-as-locations">redis-patterns &middot; States as locations</a> &mdash; state is the set you live in.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns &middot; Reliable Queues</a> &mdash; the chapter the pattern is in.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/queue/the-lifecycle"><span aria-hidden="true">&larr;</span>&nbsp; The lifecycle</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/queue/the-lifecycle/claim-and-the-lease">Claim &amp; the lease <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/queue/the-lifecycle">The lifecycle</a>
+        <a href="/echomq/queue/the-lifecycle/the-four-sets">The four sets</a>
+        <a href="/echomq/queue/the-lifecycle/claim-and-the-lease">Claim &amp; the lease</a>
+        <a href="/echomq/queue/the-lifecycle/completion-and-recovery">Completion &amp; recovery</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the four sets (pure lookup over a fixed dataset) ---------- */
+  var SETS = {
+    pending:  { key: 'emq:{q}:pending',  member: 'branded job id', score: '0', meaning: 'every member at score 0, so the set is ordered lexically by member — which is mint order, oldest first' },
+    active:   { key: 'emq:{q}:active',   member: 'branded job id', score: 'now + lease', meaning: 'the score is the lease DEADLINE on the server clock, so the active set is an index of leases ordered by expiry' },
+    schedule: { key: 'emq:{q}:schedule', member: 'branded job id', score: 'run-at ms', meaning: 'the score is the run-at instant; @promote releases members whose run-at is in the past back to pending' },
+    dead:     { key: 'emq:{q}:dead',     member: 'branded job id', score: '0', meaning: 'the morgue — the only finished-and-retained state; the row keeps its last_error for inspection' }
+  };
+  var ORDER = ['pending', 'active', 'schedule', 'dead'];
+  function setSet(key) {
+    ORDER.forEach(function (k) {
+      var g = document.getElementById('b-' + k);
+      if (g) g.classList.toggle('sel', k === key);
+    });
+    var s = SETS[key];
+    var out = document.getElementById('fsOut');
+    if (out) {
+      out.innerHTML = '<b>' + s.key + '</b><br><span class="dim">member:</span> ' + s.member +
+        ' &middot; <span class="dim">score:</span> ' + s.score +
+        '<br><span class="dim">' + s.meaning + '</span>';
+    }
+  }
+  document.querySelectorAll('#fsSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-set');
+      document.querySelectorAll('#fsSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setSet(key);
+    });
+  });
+  setSet('pending'); // initial render — correct without interaction
+
+  /* ---------- content: browse/3 over a fixed pending set (real read logic) ---------- */
+  /* Five branded job ids in MINT ORDER (oldest first). A branded id's bytes sort
+     by mint, so this lexical order is the mint order. browse/3 runs ZRANGE + - REV
+     BYLEX LIMIT 0 n: take the newest n from the high (right) end. Pure over this
+     fixed set — no network. pending_size/2 is ZCARD = the length. */
+  var PENDING = ['JOB0KHTOWnG01', 'JOB0KHTOWnG02', 'JOB0KHTOWnG03', 'JOB0KHTOWnG04', 'JOB0KHTOWnG05'];
+  function browse(n) {
+    // ZRANGE + - REV BYLEX LIMIT 0 n: newest-first, so the last n of the mint order, reversed.
+    return PENDING.slice(Math.max(0, PENDING.length - n)).slice().reverse();
+  }
+  function renderBrowse(n) {
+    var memEl = document.getElementById('insp-mem');
+    var out = document.getElementById('inspOut');
+    var nVal = document.getElementById('nVal');
+    if (nVal) nVal.textContent = String(n);
+    if (memEl) memEl.textContent = PENDING.join('  ');
+    if (!out) return;
+    var got = browse(n);
+    out.innerHTML = 'pending_size/2 &rarr; ZCARD = <b>' + PENDING.length + '</b>' +
+      '<br>browse/3 (n=' + n + ') &rarr; ZRANGE + - REV BYLEX LIMIT 0 ' + n +
+      '<br><span class="ok">[' + got.join(', ') + ']</span>' +
+      '<br><span class="dim">the newest ' + n + ', taken from the high end of the mint order — no sort, no index</span>';
+  }
+  var nRange = document.getElementById('nRange');
+  if (nRange) {
+    nRange.addEventListener('input', function () { renderBrowse(parseInt(nRange.value, 10)); });
+    renderBrowse(parseInt(nRange.value, 10)); // initial render — correct without interaction
+  }
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

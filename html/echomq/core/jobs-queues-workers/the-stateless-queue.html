@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E2.02.2 — The stateless queue · EchoMQ, the protocol in depth · jonnify</title>
+<meta name="description" content="E2.02.2 — the queue is stateless: there is no in-memory queue object that holds jobs. EchoMQ.Queue.add/4 has two clauses — an atom/pid convenience wrapper, and the stateless binary path that needs only a string name and a :connection, because Redis holds the wait LIST, the delayed/prioritized ZSETs, and the job hashes. The add runs the matching add* Lua script — addStandardJob-9, addDelayedJob-6, addPrioritizedJob-9 — atomically. What survives a process restart: the jobs, because Redis owns them. The keys are the queue.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .warn{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- restart diagram ---- */
+.rgrid .cell rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.rgrid .cell.gone rect{fill:rgba(196,80,76,.14);stroke:#c4504c}
+.rgrid .cell.kept rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.rgrid text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.rgrid .ri{fill:#6fdccf;font-size:11px;font-weight:600}
+
+/* ---- script diagram ---- */
+.sdiag .cell rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.sdiag .cell.on rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.sdiag text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.sdiag .rn{fill:#6fdccf;font-size:11px;font-weight:600}
+.sdiag .edge{stroke:#2a3252;stroke-width:1.3;fill:none}
+.sdiag .edge.lit{stroke:#6fdccf;stroke-width:2.2}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/core">core</a><span class="rsep">/</span><a href="/echomq/core/jobs-queues-workers">jobs-queues-workers</a><span class="rsep">/</span><span class="rcur">the-stateless-queue</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core">E2 &middot; Core</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core/jobs-queues-workers">Jobs, queues &amp; workers</a>
+        <span class="sep">/</span>
+        <span class="here">The stateless queue</span>
+      </div>
+      <p class="eyebrow">E2.02.2 &middot; Jobs, queues &amp; workers &middot; dive 2</p>
+      <h1>The stateless <span class="ex">queue</span></h1>
+      <p class="lede">There is no in-memory queue object that holds jobs &mdash; Redis holds all the state.</p>
+      <p class="kicker"><code class="inl">EchoMQ.Queue.add("emails", "send", %{...}, connection: :redis)</code> works with a
+        string name and a connection &mdash; no stateful process &mdash; because Redis holds the queue state: the
+        <code class="inl">wait</code> LIST, the <code class="inl">delayed</code> and <code class="inl">prioritized</code>
+        ZSETs, and the job hashes. Toggle the queue on the right between "a stateful object holds the jobs" and "Redis holds
+        the state" to read what survives a process restart.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#clauses">Two clauses, one stateless path</a>
+        <a href="#script">The add runs the matching script</a>
+        <a href="#restart">What survives a restart</a>
+        <a href="#rule">The keys are the queue</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig rgrid" aria-labelledby="restartTitle">
+      <h4 id="restartTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Who holds the jobs? &middot; restart the process</h4>
+      <div class="controls">
+        <div class="solid-select" id="ownerSel" role="group" aria-label="Where the queue state lives">
+          <button type="button" data-owner="object" data-c="gold" aria-pressed="false">a stateful object holds the jobs</button>
+          <button type="button" data-owner="redis" data-c="echo" class="active" aria-pressed="true">Redis holds the state</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 150" role="img" aria-label="A comparison of where a queue's jobs live across a process restart. With a stateful object the jobs are in memory and lost on restart; with Redis the jobs are in the wait list and zsets and survive. The chosen model is highlighted, marking which boxes are kept and which are gone after a restart.">
+        <g class="cell" id="o-mem"><rect x="14" y="14" width="200" height="50" rx="8"></rect></g>
+        <text x="24" y="34" class="ri">in-memory job list</text><text x="24" y="52">the caller's process</text>
+        <g class="cell" id="o-redis"><rect x="246" y="14" width="200" height="50" rx="8"></rect></g>
+        <text x="256" y="34" class="ri">emq:{q}:wait LIST</text><text x="256" y="52">+ :delayed / :prioritized</text>
+        <g><rect x="14" y="78" width="432" height="36" rx="8" fill="none" stroke="#2a3252" stroke-dasharray="3 3"></rect></g>
+        <text x="24" y="100" class="ri" id="restart-label">— process restarts —</text>
+        <text x="14" y="134">a stateful object loses memory on restart · Redis persists across it</text>
+      </svg>
+
+      <div class="geo-readout" id="ownerOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="clauses">
+    <h2>Two clauses, one stateless path</h2>
+    <div class="prose">
+      <p><code class="inl">EchoMQ.Queue.add(queue, name, data, opts \\ [])</code> (arity 4) has two verified clauses. The
+        atom/pid clause is a convenience wrapper around a named or pid Queue process; the binary clause is the real shape of
+        the queue &mdash; a name, a connection, and nothing held in memory.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoMQ.Queue.add/4 — two clauses (lib/echomq/queue.ex, verified)</span>
+
+<span class="cmt"># convenience: a named or pid Queue process</span>
+<span class="fn">def</span> <span class="res">add</span>(queue, name, data, opts) <span class="fn">when</span> is_atom(queue) <span class="op">or</span> is_pid(queue) <span class="fn">do</span>
+  GenServer.call(queue, {<span class="str">:add</span>, name, data, opts})
+<span class="fn">end</span>
+
+<span class="cmt"># the stateless path: a string name + a connection is the whole queue</span>
+<span class="fn">def</span> <span class="res">add</span>(queue, name, data, opts) <span class="fn">when</span> is_binary(queue) <span class="fn">do</span>
+  conn   = Keyword.fetch!(opts, <span class="str">:connection</span>)
+  prefix = opts[<span class="str">:prefix</span>] <span class="op">||</span> <span class="str">"bull"</span>
+  ctx    = <span class="rdx">Keys.new</span>(queue, prefix: prefix)
+  job    = <span class="rdx">Job.new</span>(queue, name, data, opts)
+  add_job(conn, ctx, job)
+<span class="fn">end</span></pre>
+
+    <div class="prose">
+      <p>The binary clause holds no jobs. It reads the <code class="inl">:connection</code>, builds a key context with
+        <code class="inl">Keys.new/2</code>, builds the Job with <code class="inl">Job.new/4</code> (E2.02.1), and hands both
+        to <code class="inl">add_job/3</code>. Nothing about the queue lives in the caller &mdash;
+        <code class="inl">add("emails", …, connection: :redis)</code> is a coordinate, not a container.</p>
+    </div>
+  </section>
+
+  <section id="script">
+    <h2>The add runs the matching script</h2>
+    <div class="prose">
+      <p><code class="inl">add/4</code> builds a Job and runs the add* Lua script that matches its target. Each script
+        atomically writes the job hash and pushes the job id onto the right state key, so an add is one atomic step &mdash;
+        the hash and the membership land together or not at all. Pick a target to read its script.</p>
+    </div>
+
+    <figure class="fig sdiag" aria-labelledby="sTitle">
+      <h4 id="sTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">add/4 → the matching add* script &middot; pick a target</h4>
+      <div class="controls">
+        <div class="solid-select" id="scriptSel" role="group" aria-label="Which add target">
+          <button type="button" data-target="standard" data-c="echo" class="active" aria-pressed="true">standard</button>
+          <button type="button" data-target="delayed" data-c="blue" aria-pressed="false">delayed</button>
+          <button type="button" data-target="prioritized" data-c="gold" aria-pressed="false">prioritized</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 660 170" role="img" aria-label="An add call selecting one of three add scripts by target. A standard job uses addStandardJob-9 onto the wait list; a delayed job uses addDelayedJob-6 onto the delayed zset; a prioritized job uses addPrioritizedJob-9 onto the prioritized zset. The chosen script and the key it writes are highlighted.">
+        <g><rect x="14" y="65" width="120" height="40" rx="8" fill="rgba(42,161,152,.10)" stroke="#2aa198"></rect></g>
+        <text x="74" y="89" text-anchor="middle" class="rn">add/4</text>
+        <g>
+          <path class="edge" id="s-standard" d="M134 85 L300 30"></path>
+          <path class="edge" id="s-delayed" d="M134 85 L300 85"></path>
+          <path class="edge" id="s-prioritized" d="M134 85 L300 140"></path>
+        </g>
+        <g class="cell" id="c-standard"><rect x="300" y="12" width="346" height="34" rx="7"></rect></g>
+        <text x="310" y="33" class="rn">addStandardJob-9</text><text x="470" y="33">→ emq:{q}:wait LIST</text>
+        <g class="cell" id="c-delayed"><rect x="300" y="68" width="346" height="34" rx="7"></rect></g>
+        <text x="310" y="89" class="rn">addDelayedJob-6</text><text x="460" y="89">→ emq:{q}:delayed ZSET</text>
+        <g class="cell" id="c-prioritized"><rect x="300" y="124" width="346" height="34" rx="7"></rect></g>
+        <text x="310" y="145" class="rn">addPrioritizedJob-9</text><text x="490" y="145">→ :prioritized ZSET</text>
+      </svg>
+
+      <div class="geo-readout" id="scriptOut" aria-live="polite"></div>
+    </figure>
+    <p class="take"><code class="inl">add_bulk/3</code> adds many jobs atomically in one MULTI/EXEC transaction. Whether
+      one job or many, the write is atomic &mdash; the hash and the state-key membership are never half-applied.</p>
+  </section>
+
+  <section id="restart">
+    <h2>What survives a restart</h2>
+    <div class="prose">
+      <p>The interactive above is the whole point made concrete. A stateful object loses its in-memory job list when its
+        process restarts; the jobs are gone. Redis loses nothing: the jobs persist in
+        <code class="inl">emq:{queue}:wait</code> and the ZSETs, because Redis owns the durable state. A fresh
+        <code class="inl">add/4</code> call against the same name and connection re-attaches to the very same keys.</p>
+      <p>This is why the queue can be stateless. The durable thing is Redis, not the caller &mdash; so the caller can be a
+        bare function call with no process behind it.</p>
+    </div>
+  </section>
+
+  <section id="rule">
+    <h2>The keys are the queue &mdash; L1/L2</h2>
+    <div class="prose">
+      <p>The Redis keys that <em>are</em> the queue &mdash; the <code class="inl">wait</code> LIST and the
+        <code class="inl">delayed</code> / <code class="inl">prioritized</code> ZSETs &mdash; are <strong>L1</strong>, and the
+        add* scripts that write them are <strong>L2</strong>. Both are frozen across runtimes. The component that calls them
+        is L3/L4, and each runtime has its own.</p>
+    </div>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the protocol (immutable L1/L2)</span>
+        <p>The keys that are the queue &mdash; <code class="inl">emq:{q}:wait</code> (LIST),
+          <code class="inl">emq:{q}:delayed</code> / <code class="inl">:prioritized</code> (ZSETs) &mdash; and the add*
+          scripts that write them. Frozen in every runtime.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">its three runtimes (variable L3/L4)</span>
+        <p>Elixir's thin stateless <code class="inl">Queue.add/4</code>, Go's <code class="inl">queue.Add</code>, Node's
+          <code class="inl">queue.add</code> &mdash; each a thin call onto the same keys and the same scripts. No runtime
+          holds the queue; Redis does.</p>
+      </div>
+    </div>
+    <p class="take">A queue name is a coordinate, not a container. The component is disposable; the keys are the queue.</p>
+    <p class="note">Next: <a href="/echomq/core/jobs-queues-workers/the-worker-fetch-loop">the worker fetch loop</a> &mdash;
+      the GenServer that pulls these jobs back off the keys, one atomic pickup at a time.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The Redis keys that hold the queue, and the BullMQ add API the stateless path mirrors.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://docs.bullmq.io/">BullMQ &mdash; <em>Documentation</em></a> &mdash; the queue API and the add scripts.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>Home</em></a> &mdash; the project EchoMQ implements.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/lists/">Redis &mdash; <em>Lists</em></a> &mdash; the wait LIST a standard add pushes onto.</li>
+          <li><a href="https://redis.io/commands/lpush/">Redis &mdash; <em>LPUSH</em></a> &mdash; the push that admits a job to the queue.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/core/jobs-queues-workers">E2.02 &middot; Jobs, queues &amp; workers</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/core/jobs-queues-workers/the-job-model">E2.02.1 &middot; The job model</a> &mdash; the job the queue admits.</li>
+          <li><a href="/echomq/core/jobs-queues-workers/the-worker-fetch-loop">E2.02.3 &middot; The worker fetch loop</a> &mdash; the worker that pulls from it.</li>
+          <li><a href="/echomq/core/lifecycle/the-eight-states">E2.01.1 &middot; The eight states</a> &mdash; the state keys the add writes to.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns R3 &middot; Reliable queues</a> &mdash; the queue-as-keys pattern, applied.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/core/jobs-queues-workers/the-job-model"><span aria-hidden="true">&larr;</span>&nbsp; E2.02.1 &middot; The job model</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/core/jobs-queues-workers/the-worker-fetch-loop">E2.02.3 &middot; The worker fetch loop <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ &mdash; the polyglot job-queue protocol, taught in depth and tracked as it is built.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/core/jobs-queues-workers">E2.02 &middot; Jobs, queues &amp; workers</a>
+        <a href="/echomq/core/jobs-queues-workers/the-job-model">E2.02.1 &middot; The job model</a>
+        <a href="/echomq/core/jobs-queues-workers/the-stateless-queue">E2.02.2 &middot; The stateless queue</a>
+        <a href="/echomq/core/jobs-queues-workers/the-worker-fetch-loop">E2.02.3 &middot; The worker fetch loop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/core">E2 &middot; The core</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: who holds the jobs across a restart (pure over the two ownership models) ---------- */
+  var OWNER = {
+    object: {
+      label: 'a stateful object holds the jobs',
+      kept: [],
+      gone: ['o-mem'],
+      line: 'the in-memory job list is lost on restart — the jobs are gone',
+      cls: 'warn'
+    },
+    redis: {
+      label: 'Redis holds the state',
+      kept: ['o-redis'],
+      gone: [],
+      line: 'the jobs persist in emq:{q}:wait and the zsets; a fresh add/4 re-attaches to the same keys',
+      cls: 'ok'
+    }
+  };
+  var OWNER_CELLS = ['o-mem', 'o-redis'];
+
+  function renderOwner(which) {
+    var d = OWNER[which];
+    var out = document.getElementById('ownerOut');
+    if (!d || !out) return;
+    OWNER_CELLS.forEach(function (c) {
+      var el = document.getElementById(c);
+      if (el) { el.classList.remove('gone', 'kept'); }
+    });
+    d.gone.forEach(function (c) { var el = document.getElementById(c); if (el) el.classList.add('gone'); });
+    d.kept.forEach(function (c) { var el = document.getElementById(c); if (el) el.classList.add('kept'); });
+    out.innerHTML = '<b>' + d.label + '</b><br>' +
+      '<span class="dim">after a process restart:</span> <span class="' + d.cls + '">' + d.line + '</span><br>' +
+      '<span class="dim">EchoMQ.Queue.add/4 needs only a string name + a connection because Redis owns the durable state.</span>';
+  }
+
+  document.querySelectorAll('#ownerSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#ownerSel button').forEach(function (o) {
+        var on = o === b; o.classList.toggle('active', on); o.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      renderOwner(b.getAttribute('data-owner'));
+    });
+  });
+  renderOwner('redis');
+
+  /* ---------- content: add/4 → the matching add* script (pure over the script table) ---------- */
+  var SCRIPT = {
+    standard:    { cond: 'no delay, no priority', script: 'addStandardJob-9',    key: 'emq:{q}:wait (LIST)',        edge: 's-standard',    cell: 'c-standard' },
+    delayed:     { cond: 'delay > 0',             script: 'addDelayedJob-6',     key: 'emq:{q}:delayed (ZSET)',     edge: 's-delayed',     cell: 'c-delayed' },
+    prioritized: { cond: 'priority > 0',          script: 'addPrioritizedJob-9', key: 'emq:{q}:prioritized (ZSET)', edge: 's-prioritized', cell: 'c-prioritized' }
+  };
+  var SCRIPT_KEYS = ['standard', 'delayed', 'prioritized'];
+
+  function renderScript(t) {
+    var d = SCRIPT[t];
+    var out = document.getElementById('scriptOut');
+    if (!d || !out) return;
+    SCRIPT_KEYS.forEach(function (k) {
+      var e = document.getElementById(SCRIPT[k].edge);
+      var c = document.getElementById(SCRIPT[k].cell);
+      if (e) e.classList.toggle('lit', k === t);
+      if (c) c.classList.toggle('on', k === t);
+    });
+    out.innerHTML = '<b>' + d.cond + '</b> <span class="dim">→ script</span> <b>' + d.script + '</b><br>' +
+      '<span class="dim">writes the job hash and pushes the id onto</span> <b>' + d.key + '</b><br>' +
+      '<span class="dim">one atomic step — the hash and the membership land together.</span>';
+  }
+
+  document.querySelectorAll('#scriptSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#scriptSel button').forEach(function (o) {
+        var on = o === b; o.classList.toggle('active', on); o.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      renderScript(b.getAttribute('data-target'));
+    });
+  });
+  renderScript('standard');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

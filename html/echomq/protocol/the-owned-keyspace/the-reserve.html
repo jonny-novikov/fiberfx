@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The reserve · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="The reserve in the EchoMQ keyspace: {emq}: is the core's reserved cross-queue space, built by EchoMQ.Keyspace.reserve/1, holding version_key/0 → {emq}:version. It is first-byte-disjoint from every per-queue emq: key, so a queue named emq cannot collide with it, and {emq} is its own single-slot hashtag. The reserve is where the wire's own state lives — beside every queue, owned by none. All real Elixir, grounded in echo/apps/echo_mq.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:block}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.inputrow{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
+.inputrow label{font-family:var(--sans);font-size:.74rem;letter-spacing:.1em;text-transform:uppercase;color:var(--cream-dim)}
+.inputrow input[type=text]{font-family:var(--mono);font-size:.92rem;color:var(--cream);background:var(--ink);
+  border:1px solid var(--line);border-radius:9px;padding:.5rem .7rem;min-width:13ch}
+.inputrow input[type=text]:focus{outline:none;border-color:var(--gold)}
+
+/* ---- disjoint diagram ---- */
+.bytesviz text{font-family:var(--mono)}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson additions ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.2rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/protocol">protocol</a><span class="rsep">/</span><a href="/echomq/protocol/the-owned-keyspace">the-owned-keyspace</a><span class="rsep">/</span><span class="rcur">the-reserve</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/protocol">The Protocol</a>
+      <span class="sep">/</span>
+      <a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a>
+      <span class="sep">/</span>
+      <span class="here">The reserve</span>
+    </div>
+    <p class="eyebrow">The owned keyspace &middot; dive 03 &middot; the reserve</p>
+    <h1>The <span class="ex">reserve</span></h1>
+    <p class="lede">Some state belongs to the wire, not a queue. It needs a home no queue can occupy.</p>
+    <p class="kicker">Not everything the protocol stores belongs to a queue — the version fence is one record for the
+      whole wire. It needs a home no queue can name. That home is the <strong>reserve</strong>:
+      <code class="inl">{emq}:</code>, built by <code class="inl">EchoMQ.Keyspace.reserve/1</code>, holding
+      <code class="inl">version_key/0</code> → <code class="inl">{emq}:version</code>. The reserve is
+      <strong>first-byte-disjoint</strong> from every per-queue <code class="inl">emq:</code> key — so a queue named
+      <code class="inl">emq</code> still cannot collide with it.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#disjoint">First-byte-disjoint</a>
+      <a href="#reserve">reserve/1 &amp; version_key/0</a>
+      <a href="#fence">The reserve in use</a>
+      <a href="#collide">Can a queue collide?</a>
+      <a href="#bridge">Pattern &rarr; implementation</a>
+      <a href="#refs">References</a>
+    </div>
+
+    <figure class="fig bytesviz" aria-labelledby="bytesFigTitle">
+      <h4 id="bytesFigTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Two spaces &middot; pick one to read its first byte</h4>
+      <div class="controls">
+        <div class="solid-select" id="spaceSel" role="group" aria-label="Which space to inspect">
+          <button type="button" data-space="queue" data-c="echo" class="active" aria-pressed="true">a per-queue key</button>
+          <button type="button" data-space="reserve" data-c="gold" aria-pressed="false">the reserve</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 160" role="img" aria-label="Two key spaces drawn as labelled bars: a per-queue key emq colon open-brace orders close-brace colon pending starting with the letter e, and the reserve open-brace emq close-brace colon version starting with the brace character. The selected space's first byte is highlighted.">
+        <g id="sp-queue">
+          <rect x="20" y="30" width="420" height="40" rx="8" fill="rgba(42,161,152,.13)" stroke="#2aa198"></rect>
+          <rect id="fb-queue" x="20" y="30" width="34" height="40" rx="8" fill="rgba(42,161,152,.4)" stroke="#6fdccf"></rect>
+          <text x="37" y="56" text-anchor="middle" font-size="17" fill="#0a0e1a" font-weight="700">e</text>
+          <text x="240" y="56" text-anchor="middle" font-size="14" fill="#ece4d0">emq:&#123;orders&#125;:pending</text>
+          <text x="20" y="22" font-size="10" fill="#a39c89">per-queue · first byte 'e'</text>
+        </g>
+        <g id="sp-reserve">
+          <rect x="20" y="92" width="420" height="40" rx="8" fill="rgba(212,168,90,.13)" stroke="#d4a85a"></rect>
+          <rect id="fb-reserve" x="20" y="92" width="34" height="40" rx="8" fill="rgba(212,168,90,.4)" stroke="#f0cd7f"></rect>
+          <text x="37" y="118" text-anchor="middle" font-size="17" fill="#0a0e1a" font-weight="700">&#123;</text>
+          <text x="240" y="118" text-anchor="middle" font-size="14" fill="#ece4d0">&#123;emq&#125;:version</text>
+          <text x="20" y="84" font-size="10" fill="#a39c89">reserve · first byte '&#123;'</text>
+        </g>
+      </svg>
+      <div class="geo-readout" id="bytesOut" aria-live="polite"></div>
+    </figure>
+  </section>
+
+  <section id="disjoint">
+    <h2>First-byte-disjoint, by construction</h2>
+    <div class="prose">
+      <p>The reserve exists because some state is the wire's own, shared by every queue and every speaker — and it needs
+        a home that no queue can occupy. The mechanism is simple and total: the reserve and the per-queue space differ in
+        their <strong>first byte</strong>.</p>
+      <p>A per-queue key starts with the literal <code class="inl">emq:</code> — <code class="inl">emq:{orders}:pending</code>
+        begins with the byte <code class="inl">e</code>. A reserve key starts with <code class="inl">{emq}:</code> — it
+        begins with the byte <code class="inl">{</code>. The two spaces can never share a prefix, so a key in one is never
+        mistaken for a key in the other. The reserve is also its own hashtag: <code class="inl">{emq}</code> routes every
+        cross-queue key to one slot, the same way a queue's <code class="inl">{q}</code> does, so the fence is single-slot
+        too.</p>
+    </div>
+    <dl class="deflist">
+      <dt>emq:{q}:&lt;type&gt;</dt><dd>per-queue space — first byte <code class="inl">e</code>; the hashtag is the queue.</dd>
+      <dt>{emq}:&lt;suffix&gt;</dt><dd>the reserve — first byte <code class="inl">{</code>; the hashtag is <code class="inl">emq</code>.</dd>
+    </dl>
+  </section>
+
+  <section id="reserve">
+    <h2>reserve/1 &amp; version_key/0 &mdash; one base, one key in use</h2>
+    <div class="prose">
+      <p>The reserve is a module constant; <code class="inl">reserve/1</code> appends a suffix to it, and
+        <code class="inl">version_key/0</code> is the one reserved key the core uses today — the version fence.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Keyspace</span>
+<span class="cmt"># The reserve is the braced base {emq}: — the cross-queue space, structurally</span>
+<span class="cmt"># disjoint from a queue's emq: prefix (different first byte). reserve/1 builds</span>
+<span class="cmt"># any cross-queue key; version_key/0 is the one in use — the version fence.</span>
+<span class="rdx">@reserve</span> <span class="str">"{emq}:"</span>
+<span class="rdx">@version_key</span> <span class="rdx">@reserve</span> <span class="op">&lt;&gt;</span> <span class="str">"version"</span>
+
+<span class="op">def</span> <span class="fn">reserve</span>(suffix) <span class="op">when</span> is_binary(suffix), <span class="op">do:</span> <span class="rdx">@reserve</span> <span class="op">&lt;&gt;</span> suffix
+
+<span class="op">def</span> <span class="fn">version_key</span>, <span class="op">do:</span> <span class="rdx">@version_key</span></pre>
+
+    <div class="prose">
+      <p>So <code class="inl">version_key()</code> is <code class="inl">{emq}:version</code>, and
+        <code class="inl">reserve("anything")</code> is <code class="inl">{emq}:anything</code>. Every cross-queue key the
+        core will ever need is built from the one reserved base, so there is exactly one place the wire's own state lives
+        — and it is a place no queue can name.</p>
+    </div>
+  </section>
+
+  <section id="fence">
+    <h2>The reserve in use &mdash; the version fence</h2>
+    <div class="prose">
+      <p>The fence is the reserve's reason to exist. The connector reads <code class="inl">{emq}:version</code> before it
+        runs a single command: if the record is absent it claims it (set-if-not-exists, then read it back); if it is
+        present it must match the wire version the connector was built for; a mismatch is fatal. A speaker that does not
+        agree on the wire is refused at boot — the fence is what keeps a stale or foreign client from writing into a
+        keyspace it does not understand.</p>
+      <p>The point here is only <em>where</em> the fence lives: in the reserve, not in any queue. Because
+        <code class="inl">{emq}:version</code> is first-byte-disjoint from every queue's keys, no queue's traffic can
+        ever touch it, and no queue can be created that would shadow it. The mechanism of the check — how the version is
+        compared, and the constant it is compared against — is the next module,
+        <a href="/echomq/protocol/immutability-and-branded-ids">Immutability &amp; branded ids</a>.</p>
+    </div>
+  </section>
+
+  <section id="collide">
+    <h2>Can a queue collide with the reserve?</h2>
+    <div class="prose">
+      <p>The obvious worry: what if a caller names a queue <code class="inl">emq</code>? Type any queue name below. The
+        page builds its <code class="inl">pending</code> key the way <code class="inl">queue_key/2</code> does and prints
+        the reserve key beside it, then compares their first bytes. A per-queue key always starts <code class="inl">e</code>;
+        the reserve always starts <code class="inl">{</code> — so even the queue named <code class="inl">emq</code>, whose
+        key is <code class="inl">emq:{emq}:pending</code>, cannot collide with <code class="inl">{emq}:version</code>.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="collideFigTitle">
+      <h4 id="collideFigTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">queue_key vs the reserve &middot; do they collide?</h4>
+      <div class="controls">
+        <div class="inputrow">
+          <label for="qIn">queue</label>
+          <input type="text" id="qIn" value="emq" autocomplete="off" spellcheck="false" maxlength="32" aria-label="queue name">
+        </div>
+      </div>
+      <div class="geo-readout" id="collideOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">The reserve is disjoint by its first byte, not by a rule a caller could break. A queue named
+      <code class="inl">emq</code> is harmless: its keys still start <code class="inl">e</code>, and the reserve still
+      starts <code class="inl">{</code>.</p>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &rarr; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>Reserve a disjoint key prefix for system-owned state, so application keys and infrastructure keys can never
+          collide — a namespace partition by construction rather than by convention.
+          <a href="/redis-patterns/coordination/hash-tag-colocation">Redis Patterns Applied R2.05</a> works the keyspace
+          discipline this rests on.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">EchoMQ.Keyspace.reserve/1</code> builds the <code class="inl">{emq}:</code> base,
+          first-byte-disjoint from any queue's <code class="inl">emq:</code>, so the version fence at
+          <code class="inl">{emq}:version</code> has a home no queue can occupy — and its own single-slot hashtag.</p>
+      </div>
+    </div>
+    <p class="take">A reserved prefix is only safe if it cannot be reached from the application space.
+      <code class="inl">{emq}:</code> earns that by a structural property — a different first byte — not by asking callers
+      to avoid a name.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; beside every queue, owned by none</h2>
+    <div class="prose">
+      <p>The reserve is <code class="inl">{emq}:</code> — the cross-queue space, built by <code class="inl">reserve/1</code>,
+        holding <code class="inl">version_key/0</code> → <code class="inl">{emq}:version</code>. It is first-byte-disjoint
+        from every per-queue <code class="inl">emq:</code> key, so a queue named <code class="inl">emq</code> cannot collide
+        with it, and it is its own single-slot hashtag. The reserve is where the wire's own state lives. With the grammar,
+        the slot, and the reserve in hand, the <em>where</em> of the protocol is complete; the next module reads the
+        <em>what</em> — the record hash.</p>
+    </div>
+    <p class="note">Next in The Protocol: <strong>The record hash</strong> — the job HASH at the job key and the field
+      names that are part of the wire.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the reserve's store and the fence's claim are documented.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/docs/">Valkey &mdash; <em>Documentation</em></a> &mdash; the store the reserve and the fence live in; the substrate of record.</li>
+          <li><a href="https://valkey.io/commands/set/">Valkey &mdash; <em>SET (with NX)</em></a> &mdash; the set-if-not-exists the fence uses to claim the version record once.</li>
+          <li><a href="https://redis.io/docs/">Redis &mdash; <em>Keyspace &amp; cluster hash tags</em></a> &mdash; the hashtag rule that makes <code>{emq}</code> its own slot.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/protocol/the-owned-keyspace/the-braced-grammar">The braced grammar</a> &mdash; the per-queue grammar the reserve sits beside.</li>
+          <li><a href="/echomq/protocol/the-owned-keyspace/the-hashtag-and-the-slot">The hashtag &amp; the slot</a> &mdash; the slot the reserve is its own hashtag for.</li>
+          <li><a href="/echomq/protocol/immutability-and-branded-ids">Immutability &amp; branded ids</a> &mdash; the version fence the reserve holds, in depth.</li>
+          <li><a href="/redis-patterns/coordination/hash-tag-colocation">redis-patterns R2.05 &middot; Hash-tag co-location</a> &mdash; the near side of the door.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/protocol/the-owned-keyspace/the-hashtag-and-the-slot"><span aria-hidden="true">&larr;</span>&nbsp; The hashtag &amp; the slot</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/protocol/the-owned-keyspace">Back to the module <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This chapter</h4>
+        <a href="/echomq/protocol">The Protocol</a>
+        <a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a>
+        <a href="/echomq/protocol/the-record-hash">The record hash</a>
+        <a href="/echomq/protocol/the-lua-layer">The Lua layer</a>
+        <a href="/echomq/protocol/immutability-and-branded-ids">Immutability &amp; branded ids</a>
+        <a href="/echomq/protocol/workshop">Workshop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/overview">Overview</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: two spaces, first byte (pure over a fixed dataset) ---------- */
+  var SPACES = {
+    queue: { name: 'a per-queue key', sample: 'emq:{orders}:pending', first: 'e', hashtag: 'orders',
+      note: 'every queue key starts with the literal emq: — first byte "e"' },
+    reserve: { name: 'the reserve', sample: '{emq}:version', first: '{', hashtag: 'emq',
+      note: 'every reserve key starts with {emq}: — first byte "{", disjoint from any queue' }
+  };
+  function describeSpace(key) {
+    var s = SPACES[key];
+    return s.name + ' — e.g. ' + s.sample + '. First byte: "' + s.first + '". Hashtag: ' + s.hashtag + '. ' + s.note + '.';
+  }
+  function setSpace(key) {
+    ['queue', 'reserve'].forEach(function (k) {
+      var g = document.getElementById('sp-' + k);
+      if (g) g.setAttribute('opacity', k === key ? '1' : '.4');
+      var fb = document.getElementById('fb-' + k);
+      if (fb) fb.setAttribute('opacity', k === key ? '1' : '0');
+    });
+    var out = document.getElementById('bytesOut');
+    if (out) out.textContent = describeSpace(key);
+  }
+  document.querySelectorAll('#spaceSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-space');
+      document.querySelectorAll('#spaceSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setSpace(key);
+    });
+  });
+  setSpace('queue'); // initial render — correct without interaction
+
+  /* ---------- content: queue_key vs the reserve — do they collide? ---------- */
+  /* queue_key(q,"pending") = "emq:{" <> q <> "}:pending"; the reserve key is
+     "{emq}:version". The two differ in their FIRST byte ('e' vs '{') for every
+     possible q — including q = "emq". Pure string comparison over the input. */
+  var RESERVE_KEY = '{emq}:version';
+  function sanitize(raw) {
+    return (raw || '').replace(/[{}:]/g, '').slice(0, 32) || 'emq';
+  }
+  function showCollide() {
+    var q = sanitize(document.getElementById('qIn').value);
+    var out = document.getElementById('collideOut');
+    if (!out) return;
+    var qkey = 'emq:{' + q + '}:pending';
+    var qFirst = qkey.charAt(0);      // always 'e'
+    var rFirst = RESERVE_KEY.charAt(0); // always '{'
+    var collides = qFirst === rFirst && qkey === RESERVE_KEY;
+    var verdict = collides
+      ? '<b class="bad">COLLIDES</b>'
+      : '<b class="ok">DISJOINT</b>';
+    out.innerHTML =
+      'queue_key("' + q + '", "pending") = <b>' + qkey + '</b>  <span class="dim">first byte "' + qFirst + '"</span><br>' +
+      'reserve → version_key() = <b>' + RESERVE_KEY + '</b>  <span class="dim">first byte "' + rFirst + '"</span><br>' +
+      'first bytes ' + (qFirst === rFirst ? 'match' : 'differ ("' + qFirst + '" ≠ "' + rFirst + '")') + ' → ' + verdict +
+      ' <span class="dim">— even q = "emq" gives emq:{emq}:pending, which starts "e", never "{"</span>';
+  }
+  var qIn = document.getElementById('qIn');
+  if (qIn) qIn.addEventListener('input', showCollide);
+  showCollide(); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

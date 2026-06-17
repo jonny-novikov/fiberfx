@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M2.1 · Consistency First — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="The first strategy on the menu, read closely. Best-effort availability guarantees correctness regardless of the network and optimizes availability for the common case — the stance where partitions are rare and a divergent answer is worse than a delayed one. Its classic example is a coordination service held consistent by a replicated-state-machine vote, realized by the Chubby lock service; EchoMesh assigns its order book and ledger to this side of the trade, but reaches a single ordered history by a single owning writer rather than a quorum.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-cons)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the Chubby-cell emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.capsvg{width:100%;height:auto;display:block}
+.capsvg .cell{fill:var(--m-card);stroke:var(--m-line);stroke-width:1.5}
+.capsvg .repl{fill:var(--m-cons-tint);stroke:var(--m-cons);stroke-width:1.5}
+.capsvg .repl.master{fill:var(--m-mesh-tint);stroke:var(--m-mesh);stroke-width:2.5}
+.capsvg .repl.down{fill:var(--m-paper);stroke:var(--m-dim);stroke-width:1.5;stroke-dasharray:4 4}
+.capsvg .glbl{font:12px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .rlbl{font:11px var(--mono);fill:var(--m-ink);text-anchor:middle;font-weight:700}
+.capsvg .rlbl.down{fill:var(--m-dim)}
+.capsvg .repn{font:10px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .vote{stroke:var(--m-cons);stroke-width:2;fill:none;marker-end:url(#arw)}
+.capsvg .vote.cut{stroke:var(--m-edge);stroke-width:2;stroke-dasharray:5 5;marker-end:none}
+.capsvg .client{stroke:var(--m-mesh);stroke-width:2;fill:none;marker-end:url(#arw)}
+.capsvg .client.refuse{stroke:var(--m-edge);stroke-dasharray:4 4;marker-end:none}
+.capsvg .opn{font:11px var(--mono);fill:var(--m-ink);text-anchor:middle}
+.capsvg .barr{font:13px var(--mono);fill:var(--m-edge);text-anchor:middle;font-weight:700}
+.capsvg .ckm{font:13px var(--mono);font-weight:700;text-anchor:middle}
+.capsvg .ckm.ok{fill:var(--m-avail)}
+.capsvg .ckm.no{fill:var(--m-edge)}
+.capsvg g[data-tab]{transition:opacity .18s ease}
+.capsvg.focus g[data-tab]{opacity:.18}
+.capsvg.focus g[data-tab].on{opacity:1}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the property duality / thesis ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-cons);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-avail)}
+.tri article:nth-child(3){border-top-color:var(--m-mesh)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the two-mechanism compare ---------- */
+.cmp{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:6px}
+.cmp article{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px}
+.cmp article.reg{border-left:3px solid var(--m-cons)}
+.cmp article.con{border-left:3px solid var(--m-mesh)}
+.cmp .ck{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.cmp article.reg .ck{color:var(--m-cons)}
+.cmp article.con .ck{color:var(--m-mesh)}
+.cmp h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.cmp p{font-size:.9rem;color:var(--m-ink)}
+.cmp .ex{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);border-top:1px dashed var(--m-line);padding-top:9px}
+.cmp .ex b{color:var(--m-ink)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.doors,.cmp{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.doors,.cmp{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><a href="/mesh/best-effort-availability">best-effort-availability</a><span class="rsep">/</span><span class="rcur">consistency-first</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#stated">The strategy</a>
+      <a href="#example">The example</a>
+      <a href="#cost">Fast, and its cost</a>
+      <a href="#stands">Where EchoMesh stands</a>
+      <a href="#scope">Real and proposed</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M2.1 &#183; Best Effort Availability</p>
+      <h1>Consistency <span class="hns">first</span>.</h1>
+      <p class="lede">The first strategy, read closely. Best-effort availability makes one promise without
+      qualification &#8212; <b>the system is consistent no matter what the network does</b> &#8212; and treats
+      availability as the thing to optimize rather than to guarantee. It is the stance for data where partitions are
+      rare and a divergent answer is worse than a delayed one.</p>
+      <p class="heronote">No measurement here: this dive reads a strategy and an example, not a benchmark. Two primary
+      sources carry it (<a href="#refs">Gilbert &amp; Lynch 2012, Burrows 2006</a>) &#8212; the catalogue that names the
+      strategy and gives its example, and the Chubby lock service, that example's canonical instance. The strategy and
+      the system are external and settled; where EchoMesh places its surfaces is named as design. The single writer that
+      replaces the vote is the next dive, M2.2.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>The strategy and the example are settled external results. EchoMesh's placement of its order book and ledger
+        on this side of the trade is design, and its choice to reach a single ordered history by a single owning writer
+        rather than a quorum is the course's proposal &#8212; built on shipped technology and separated from the proposed
+        composition at M8.2.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>A Chubby cell of five replicas, walked one move at a time &#183; the consensus-elected <b>master</b>
+        serves a read, replicates to a quorum, then a partition isolates it and the cell <b>refuses rather than
+        diverges</b> &#8212; hover a step to take the common path to its rare guard (the lock service of <b>Burrows
+        2006</b>)</figcaption>
+        <svg class="capsvg" id="capsvg" viewBox="0 0 760 280" role="img" aria-label="A Chubby cell drawn as five replicas in a ring, one of them the consensus-elected master. In the steady state a client request reaches the master, which replicates the result to a quorum of the other replicas and answers; the common path is direct and the consensus machinery is idle. The figure then injects a partition that isolates the master from a majority of the cell. With no quorum reachable, the master cannot confirm a write will survive, and the cell stops serving rather than risk divergence — it refuses the request. The point is that the cell is correct always and available almost always: it gives up availability only when the network forces the choice.">
+          <defs>
+            <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#7b3aa0"></path>
+            </marker>
+          </defs>
+          <!-- cell frame -->
+          <rect class="cell" x="250" y="40" width="320" height="200" rx="10"></rect>
+          <text class="glbl" x="410" y="30">Chubby cell &#183; 5 replicas</text>
+
+          <!-- the five replicas in a ring; r1 is the master -->
+          <circle class="repl master" id="rm" cx="410" cy="80" r="24"></circle>
+          <text class="rlbl" x="410" y="84">r1</text>
+          <text class="repn" x="410" y="58">master</text>
+
+          <circle class="repl" cx="530" cy="135" r="22"></circle>
+          <text class="rlbl" x="530" y="139">r2</text>
+          <circle class="repl" cx="490" cy="205" r="22"></circle>
+          <text class="rlbl" x="490" y="209">r3</text>
+          <circle class="repl" id="r4" cx="330" cy="205" r="22"></circle>
+          <text class="rlbl" id="r4l" x="330" y="209">r4</text>
+          <circle class="repl" id="r5" cx="290" cy="135" r="22"></circle>
+          <text class="rlbl" id="r5l" x="290" y="139">r5</text>
+
+          <!-- step: elect — the cell agrees on one master -->
+          <g data-tab="elect">
+            <path class="vote" d="M410 104 L520 122"></path>
+            <path class="vote" d="M410 104 L482 184"></path>
+            <path class="vote" d="M404 104 L336 184"></path>
+            <path class="vote" d="M392 90 L312 128"></path>
+            <text class="opn" x="410" y="265">consensus elects one master</text>
+          </g>
+
+          <!-- step: serve — the common path, master replicates to a quorum -->
+          <g data-tab="serve">
+            <path class="client" d="M120 80 L384 80"></path>
+            <text class="opn" x="150" y="68">read / write</text>
+            <path class="vote" d="M428 92 L514 126"></path>
+            <path class="vote" d="M424 98 L478 186"></path>
+            <path class="vote" d="M404 104 L336 184"></path>
+            <text class="ckm ok" x="410" y="265">replicated to a quorum &#8212; one ordered history</text>
+          </g>
+
+          <!-- step: partition — the master loses a majority -->
+          <g data-tab="partition">
+            <path class="vote cut" d="M404 104 L336 184"></path>
+            <path class="vote cut" d="M392 90 L312 128"></path>
+            <text class="barr" x="306" y="105">&#9889; partition</text>
+            <text class="barr" x="306" y="123">isolates master</text>
+          </g>
+
+          <!-- step: refuse — no quorum, the cell stops serving -->
+          <g data-tab="refuse">
+            <path class="client refuse" d="M120 80 L384 80"></path>
+            <text class="opn" x="150" y="68">read / write</text>
+            <text class="ckm no" x="410" y="252">no quorum reachable</text>
+            <text class="barr" x="410" y="270">refuses rather than diverges</text>
+          </g>
+          <!-- replicas marked down on the isolated side; toggled by the script -->
+          <circle class="repl down" id="r4d" cx="330" cy="205" r="22" style="opacity:0"></circle>
+          <text class="rlbl down" id="r4dl" x="330" y="209" style="opacity:0">r4</text>
+          <circle class="repl down" id="r5d" cx="290" cy="135" r="22" style="opacity:0"></circle>
+          <text class="rlbl down" id="r5dl" x="290" y="139" style="opacity:0">r5</text>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">step &#183; hover to walk the cell</span>
+          The cell elects one <b>master</b>, the master serves on the direct common path and replicates to a
+          <b>quorum</b>, then a partition isolates it &#8212; with no quorum reachable the cell
+          <span class="vc">refuses rather than diverges</span>. Hover a step below to take it one move at a time.
+        </p>
+        <div class="htabs" id="cellw">
+          <div class="htabs-bar" role="tablist" aria-label="The Chubby cell, step by step">
+            <button type="button" role="tab" data-tab="elect" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>1 &#183; Elect a master</button>
+            <button type="button" role="tab" data-tab="serve" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>2 &#183; Serve, replicate to a quorum</button>
+            <button type="button" role="tab" data-tab="partition" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>3 &#183; Partition</button>
+            <button type="button" role="tab" data-tab="refuse" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>4 &#183; Refuse, not diverge</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="elect" role="tabpanel"><span class="tag m">Step 1 &#183; the cell elects one master.</span> A cell of about five replicas runs a consensus protocol to elect a single master. There is one ordered history because there is one writer for it, and the other replicas follow that history.</div>
+            <div class="htabs-p" data-tab="serve" role="tabpanel"><span class="tag c">Step 2 &#183; the common path serves.</span> A client is forwarded to the current master, which handles the read or write and replicates the result to a quorum of the other replicas before confirming it will survive. While a stable master is present this path is direct and the consensus machinery is idle.</div>
+            <div class="htabs-p" data-tab="partition" role="tabpanel"><span class="tag e">Step 3 &#183; a partition isolates the master.</span> The network splits and a majority of the cell falls on the far side. The master can no longer reach a quorum, and a server cannot distinguish a partition from a slow link &#8212; it has no way to confirm a write will be durable.</div>
+            <div class="htabs-p" data-tab="refuse" role="tabpanel"><span class="tag e">Step 4 &#183; the cell refuses, it does not diverge.</span> With no quorum reachable the cell <b>stops serving rather than risk divergence</b>. Reliability and availability are the primary goals, and coarse-grained locks held for hours keep the brief unavailability from stalling callers &#8212; the refusal is rare and is the safe outcome when it happens.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a step to walk it; click to pin. Without scripting, all four read in sequence and the figure shows every marker at once.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="stated">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The strategy stated</h2>
+        <span class="ssrc">mesh.2.1.md &#183; Gilbert &amp; Lynch 2012</span>
+      </div>
+      <p class="body">Best-effort availability makes one commitment without qualification &#8212; the system is
+      consistent no matter what the network does &#8212; and treats availability as the thing to optimize rather than to
+      guarantee. It fits where two conditions hold: <b>partitions are rare</b>, so the cost of being unavailable during
+      one is paid seldom, and <b>the data must never diverge</b>, so a stale or conflicting answer is not an acceptable
+      substitute for a slow one. Inside a single data center both conditions usually hold, which is why this is the
+      stance for data that must be correct above all.</p>
+      <p class="body">Read against the theorem, the strategy is the explicit choice of consistency over availability when
+      a partition forces the two apart: under a partition the surface refuses rather than answers, because answering
+      risks being wrong, and the proof in M1.2 is what says there is no third option. The strategy does not pretend the
+      refusal never happens; it arranges for it to happen rarely and to be the safe outcome when it does. The strategy is
+      named here; the proof it answers to is the dive linked from the doors below.</p>
+      <div class="htabs" id="anatomy">
+        <div class="htabs-bar" role="tablist" aria-label="The anatomy of best-effort availability">
+          <button type="button" role="tab" data-tab="promise" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>The promise</button>
+          <button type="button" role="tab" data-tab="optimize" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>What it optimizes</button>
+          <button type="button" role="tab" data-tab="fit" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>Where it fits</button>
+          <button type="button" role="tab" data-tab="partition" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>Under a partition</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="promise" role="tabpanel"><span class="tag c">The unqualified promise.</span> The system is consistent regardless of the network &#8212; the data never diverges. Correctness is the thing held fixed; nothing the network does is allowed to produce a wrong answer.</div>
+          <div class="htabs-p" data-tab="optimize" role="tabpanel"><span class="tag a">Availability is optimized, not guaranteed.</span> Availability is treated as the quantity to make as high as the network allows, not as a property promised in every execution. The aim is to be available almost all the time, not all of the time.</div>
+          <div class="htabs-p" data-tab="fit" role="tabpanel"><span class="tag e">Two conditions for the fit.</span> Partitions are rare, so the seldom-paid unavailability is affordable; and the data must never diverge, so a delayed answer is preferable to a divergent one. Inside a single data center both usually hold.</div>
+          <div class="htabs-p" data-tab="partition" role="tabpanel"><span class="tag m">The forced choice resolved.</span> When a partition forces consistency and availability apart, the surface chooses consistency: it <b>refuses rather than answers</b>, because answering from the wrong side risks being wrong. The refusal is the safe outcome, arranged to be rare.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus a panel to read it; click to pin. Without scripting, all four read in sequence.</p>
+      </div>
+    </section>
+
+    <section id="example">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The classic example &#8212; a coordination service</h2>
+        <span class="ssrc">mesh.2.1.md &#183; Gilbert &amp; Lynch 2012 &#183; Burrows 2006</span>
+      </div>
+      <p class="body">The example Gilbert and Lynch give is a coordination and lock service held consistent by a
+      replicated-state-machine protocol, and Chubby is its canonical realization. A Chubby cell is a small set of
+      replicas &#8212; typically five &#8212; that run a consensus protocol to elect a master; the master handles every
+      read and write and replicates the result to the other replicas, so all of them agree on a single ordered history.
+      Clients find the replicas through DNS and are forwarded to the current master.</p>
+      <p class="body">The service stays available as long as it can maintain a master and a quorum of replicas behind it;
+      when it cannot &#8212; a partition that isolates the master, or the loss of too many replicas &#8212; it stops
+      serving rather than risk divergence. Two design choices keep that refusal cheap. Chubby serves <b>coarse-grained
+      locks</b>, held for hours or days rather than seconds, so lock-acquisition is rare relative to client work and the
+      brief unavailability of the lock server does not stall its callers; and the paper is candid that reliability and
+      availability are the primary goals, with throughput and storage secondary. The service is consistency-first, and it
+      is available almost all the time &#8212; the two are not in tension except when the network forces the choice.</p>
+      <figure class="frozen">
+        <figcaption>a Chubby cell &#183; one ordered history by a replicated vote<span class="tag">Burrows 2006 &#183; OSDI '06</span></figcaption>
+<pre><span class="fd">// a cell of ~5 replicas; consensus elects one master</span>
+cell      = { r1, r2, r3, r4, r5 }       <span class="fd"># typically five replicas</span>
+master    = <span class="fc">elect(cell)</span>                  <span class="fd"># a consensus protocol picks one</span>
+
+<span class="fd">// the master serves every read and write, then replicates:</span>
+master.write(lock, owner) <span class="fd">&#8594;</span> replicate(<span class="fc">quorum</span>) <span class="fd">&#8594;</span> <b>ack</b>
+<span class="fd">//   one ordered history, because there is one writer for it</span>
+
+<span class="fd">// available while a master + a quorum hold; otherwise:</span>
+when no quorum reachable  <span class="fe">refuse</span>           <span class="fd"># stop serving, do not diverge</span>
+
+<span class="fd">// coarse-grained locks (hours, not seconds) keep callers</span>
+<span class="fd">// from stalling on the brief unavailability:</span> <b>reliability &amp; availability are the primary goals.</b></pre>
+      </figure>
+    </section>
+
+    <section id="cost">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>What &#8220;fast in the common case&#8221; buys, and costs</h2>
+        <span class="ssrc">mesh.2.1.md &#183; Burrows 2006</span>
+      </div>
+      <p class="body">The shape of the strategy is a <b>fast common path guarded by an expensive rare one</b>. While a
+      stable master is present, requests take the direct path and the consensus machinery is idle; the vote matters only
+      at election time and when the network misbehaves. That is what lets a consistency-first service feel responsive
+      most of the time.</p>
+      <p class="body">The cost is the one the proof's corollary names: keeping replicas in agreement requires
+      coordination, and coordination is a price paid on the common, healthy network as well as in the rare partition,
+      because the master must replicate to a quorum before it can be sure a write will survive. So consistency-first is
+      <b>not free even when nothing breaks</b> &#8212; it carries a standing coordination cost, examined as the everyday
+      price of the trade in M1.2. The strategy is worth it precisely where correctness is non-negotiable and the
+      coordination cost is affordable, which is the case for the surfaces EchoMesh assigns to it.</p>
+      <figure class="frozen">
+        <figcaption>the standing coordination cost &#183; paid on the healthy network too<span class="tag">mesh.2.1.md &#183; Burrows 2006</span></figcaption>
+<pre><span class="fd">// the common path is direct; the consensus machinery is idle</span>
+while <span class="fa">stable master present</span>:
+    request <span class="fd">&#8594;</span> master <span class="fd">&#8594;</span> answer        <span class="fd"># responsive most of the time</span>
+
+<span class="fd">// but every write still pays a coordination round-trip,</span>
+<span class="fd">// even when the network is perfectly healthy:</span>
+master.write(...) <span class="fd">&#8594;</span> replicate(<span class="fc">quorum</span>) <span class="fd">&#8594;</span> <b>ack</b>
+<span class="fd">//                    ^^^^^^^^^^^^^^^^^^ the standing cost</span>
+
+<span class="fe">consistency-first is not free even when nothing breaks.</span></pre>
+      </figure>
+      <p class="compose"><b>What EchoMesh carries from the cost:</b> the everyday price of strong consistency is the
+      coordination round-trip on the healthy network, not only the rare partition. That standing cost is the reason
+      EchoMesh's consistency-first surfaces are built to be correct cheaply rather than by waiting &#8212; the mechanism
+      <b>M2.2</b> takes up next.</p>
+    </section>
+
+    <section id="stands">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Where EchoMesh stands</h2>
+        <span class="ssrc">mesh.2.1.md &#183; proposed surfaces</span>
+      </div>
+      <p class="body">EchoMesh's order book and regulated ledger are best-effort-availability surfaces: correct always,
+      available almost always, refusing rather than diverging when the network forces the choice. Where EchoMesh departs
+      from the example is the mechanism for reaching consistency. Chubby keeps a single ordered history by a
+      <b>replicated vote</b> &#8212; a quorum of replicas agreeing under Paxos &#8212; and pays a coordination round-trip
+      to do it.</p>
+      <p class="body">EchoMesh keeps a single ordered history per instrument by <b>ownership</b> instead: one process owns
+      the instrument and is its only writer, so there is one history because there is one writer, with no quorum to
+      assemble and no per-request vote to pay. The two stances answer the theorem the same way &#8212; consistency over
+      availability under partition &#8212; but reach consistency by different means, and the difference is the subject of
+      the next dive. The mechanism EchoMesh uses is built and contrasted with the quorum in M2.2.</p>
+      <p class="body">Set the two mechanisms side by side: both produce one ordered history, but one pays a vote per
+      request and the other has no vote to pay because there is only one writer.</p>
+      <div class="cmp">
+        <article class="reg">
+          <p class="ck">The example &#183; Chubby</p>
+          <h3>One history by a replicated vote</h3>
+          <p>A consensus-elected master replicates each write to a quorum of about five replicas under Paxos. The
+          history is single because the replicas agree on one order.</p>
+          <p class="ex"><b>cost:</b> a coordination round-trip per write, paid on the healthy network too</p>
+        </article>
+        <article class="con">
+          <p class="ck">EchoMesh &#183; proposed</p>
+          <h3>One history by a single owning writer</h3>
+          <p>One process owns the instrument and is its only writer. The history is single because there is one writer
+          for it &#8212; no quorum to assemble, no per-request vote.</p>
+          <p class="ex"><b>cost:</b> none per request &#183; the failure and recovery of that writer is built in M2.2</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="scope">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Real and proposed, candidly</h2>
+        <span class="ssrc">mesh.2.1.md &#183; shipped vs proposed</span>
+      </div>
+      <p class="body">The strategy and the example are external and settled &#8212; best-effort availability is Gilbert
+      and Lynch's catalogue entry, and Chubby is Burrows' lock service, consistent by a Paxos-backed master and available
+      when it can hold a quorum. EchoMesh's placement of its book and ledger on this side of the trade is design, and its
+      choice to reach consistency by a single owning writer rather than a quorum is the proposal this chapter develops;
+      both run on shipped technology and are separated from the proposed composition at M8.2.</p>
+      <p class="body">This dive reads the strategy and one example; it does not build EchoMesh's surfaces. It treats
+      Chubby as the canonical instance of the example, not as the only one &#8212; the replicated-state-machine pattern
+      appears in many coordination services. The single writer is M2.2 and the ledger is M2.3; the standing coordination
+      cost named here is examined as the everyday price of consistency in M1.2.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">Settled</p>
+          <h3>The strategy and the example</h3>
+          <p>Best-effort availability is the catalogue entry; Chubby is the canonical realization of its example,
+          consistent by a Paxos-backed master and available when it holds a quorum.</p>
+          <p class="note">external results &#183; <b>Gilbert &amp; Lynch 2012, Burrows 2006</b></p>
+        </article>
+        <article>
+          <p class="cno">Design</p>
+          <h3>The surfaces placed here</h3>
+          <p>EchoMesh assigns its order book and regulated ledger to this side of the trade &#8212; correct always,
+          available almost always, refusing rather than diverging under partition.</p>
+          <p class="note">a placement, not a benchmark &#183; <b>per surface</b></p>
+        </article>
+        <article>
+          <p class="cno">Proposed</p>
+          <h3>The single owning writer</h3>
+          <p>Reaching one ordered history by ownership rather than a quorum is the proposal this chapter develops &#8212;
+          built on shipped technology, composed at M8.2.</p>
+          <p class="note">the mechanism &#183; <b>built in M2.2</b></p>
+        </article>
+      </div>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh/best-effort-availability">
+          <span class="dr">/mesh/best-effort-availability</span>
+          <h3>M2 &#8212; Best Effort Availability</h3>
+          <p>The chapter landing: the strategy that guarantees correctness regardless of the network, its two EchoMesh
+          surfaces &#8212; the order book and the ledger &#8212; and the single owning writer that replaces the vote.</p>
+          <p class="dnote"><b>this dive</b> is M2.1, the strategy; the single writer is M2.2 and the ledger is M2.3.</p>
+        </a>
+        <a class="door" href="/mesh/impossible/the-proof">
+          <span class="dr">/mesh/impossible/the-proof</span>
+          <h3>M1.2 &#8212; The Proof, Briefly</h3>
+          <p>The argument that forces the consistency-or-availability choice, in brief but in full shape, with its
+          consensus sibling and the corollary's everyday coordination cost.</p>
+          <p class="dnote"><b>the third option</b> this strategy declines does not exist &#8212; the proof here is what
+          says so.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract, proven by frozen transcripts
+          across five runtimes.</p>
+          <p class="dnote"><b>the single owning writer</b> of M2.2 names what it owns by this identity contract.</p>
+        </a>
+        <a class="door" href="/elixir">
+          <span class="dr">/elixir</span>
+          <h3>Functional Programming in Elixir</h3>
+          <p>The engine and the umbrella where the identity library lives, through to the Fly deployment chapter that
+          puts the surfaces on machines.</p>
+          <p class="dnote"><b>the single owning writer</b> is a process on the BEAM &#8212; the runtime this course taught
+          here.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://groups.csail.mit.edu/tds/papers/Gilbert/Brewer2.pdf" rel="noopener">Gilbert &amp; Lynch (2012) &#8212; Perspectives on the CAP Theorem</a><span class="rs">names best-effort availability &#8212; guarantee consistency regardless of the network, optimize availability for the common case &#8212; and gives a coordination-and-lock service kept consistent by a replicated-state-machine protocol as its example</span></li>
+          <li><a href="https://research.google.com/archive/chubby-osdi06.pdf" rel="noopener">Burrows (2006) &#8212; The Chubby Lock Service for Loosely-Coupled Distributed Systems</a><span class="rs">a cell of about five replicas uses consensus to elect a master that serves reads and writes replicated to the others; coarse-grained locks keep clients from stalling under brief unavailability; the service refuses rather than diverges when it cannot hold a quorum, with reliability and availability its primary goals</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh/best-effort-availability">M2 &#8212; Best Effort Availability</a><span class="rs">the chapter landing: the strategy and its two EchoMesh surfaces, the order book and the ledger</span></li>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/mesh/impossible/the-proof">M1.2 &#8212; The Proof, Briefly</a><span class="rs">the argument that forces the consistency-or-availability choice this strategy answers to</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the law and the 14-byte identity contract the single-writer surfaces rest on</span></li>
+          <li><a href="/echomq">EchoMQ &#8212; the protocol, in depth</a><span class="rs">the Valkey-native bus and stream tier the availability-first counterpart uses</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the engine where the single owning writer is a process on the BEAM</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh/best-effort-availability"><span class="pk">the chapter</span>&#8592; M2 &#183; Best Effort Availability</a>
+      <a class="pgx" href="/mesh/best-effort-availability/single-writer"><span class="pk">next &#183; dive</span>M2.2 &#183; The Single Writer, Not the Quorum &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <a href="/mesh/best-effort-availability">M2 &#183; Best Effort Availability</a>
+        <span>M3 &#183; Best Effort Consistency<i>soon</i></span>
+        <span>M4 &#183; Trading the Trade<i>soon</i></span>
+        <span>M5 &#183; Segmenting<i>soon</i></span>
+        <span>M6 &#183; The Stack<i>soon</i></span>
+        <span>M7 &#183; Transparent Infrastructure<i>soon</i></span>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0I96D7YDw</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 16:51:06 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the Chubby-cell emulator: the cell-walk tabs drive the SVG + an aria-live readout ----------
+     READOUT is a pure function of the step key over fixed data — no network, no storage. The SVG
+     highlights the active step's marker group; the two far-side replicas are marked down once the
+     partition isolates the master, and the master node loses its master ring on refuse. */
+  var EMIT = {
+    elect:     { s: "step 1 · elect a master",
+                 h: "A cell of about five replicas runs a consensus protocol to elect a single <b>master</b>. There is one ordered history because there is one writer for it; the other replicas follow that history.",
+                 down: false, masterDown: false },
+    serve:     { s: "step 2 · serve, replicate to a quorum",
+                 h: "A client is forwarded to the current master, which serves the read or write and <b>replicates to a quorum</b> before confirming. While a stable master is present the common path is direct and the consensus machinery is idle.",
+                 down: false, masterDown: false },
+    partition: { s: "step 3 · partition",
+                 h: "The network splits and a majority of the cell falls on the far side. The master can no longer reach a quorum, and a server <span class='vc'>cannot distinguish a partition from a slow link</span>.",
+                 down: true, masterDown: false },
+    refuse:    { s: "step 4 · refuse, not diverge",
+                 h: "With no quorum reachable the cell <span class='vc'>stops serving rather than risk divergence</span>. Coarse-grained locks keep callers from stalling on the brief, rare unavailability — the refusal is the safe outcome.",
+                 down: true, masterDown: true }
+  };
+  var capsvg = document.getElementById('capsvg');
+  var emit = document.getElementById('emit');
+  var rm = document.getElementById('rm');
+  var downEls = ['r4d', 'r4dl', 'r5d', 'r5dl'].map(function (id) { return document.getElementById(id); });
+  var liveEls = [document.getElementById('r4'), document.getElementById('r4l'),
+                 document.getElementById('r5'), document.getElementById('r5l')];
+  wireHtabs(document.getElementById('cellw'), function (key) {
+    var d = EMIT[key];
+    if (emit && d) emit.innerHTML = '<span class="step">' + d.s + '</span>' + d.h;
+    downEls.forEach(function (el) { if (el) el.style.opacity = (d && d.down) ? '1' : '0'; });
+    liveEls.forEach(function (el) { if (el) el.style.opacity = (d && d.down) ? '0' : '1'; });
+    if (rm) rm.setAttribute('class', (d && d.masterDown) ? 'repl repl down' : 'repl master');
+    if (!capsvg) return;
+    capsvg.classList.toggle('focus', !!key);
+    capsvg.querySelectorAll('g[data-tab]').forEach(function (g) {
+      g.classList.toggle('on', g.getAttribute('data-tab') === key);
+    });
+  });
+
+  /* the strategy-anatomy tabs are a plain reuse of the same component */
+  wireHtabs(document.getElementById('anatomy'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

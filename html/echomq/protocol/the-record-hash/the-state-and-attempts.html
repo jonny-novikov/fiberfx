@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The state and attempts · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="Two of the three record fields carry the job's machinery. state is the lifecycle position, rewritten by each atomic transition (@enqueue pending, @claim active, @schedule scheduled, @retry dead). attempts is the retry count and the fencing token: @claim mints it with HINCRBY, and a stale token is refused EMQSTALE on complete or retry. The named handle EchoMQ.Jobs.claim/3, the @claim body, and two interactives.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(2.4rem,6vw,4.4rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- state machine diagram ---- */
+.sm .node rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+.sm .node.sel rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.sm .node text{font-family:var(--mono);fill:#ece4d0;font-size:12px}
+.sm .edge{stroke:#2a3252;stroke-width:1.4;fill:none}
+.sm .elbl{font-family:var(--mono);fill:#a39c89;font-size:10px}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- footer ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/protocol">protocol</a><span class="rsep">/</span><a href="/echomq/protocol/the-record-hash">the-record-hash</a><span class="rsep">/</span><span class="rcur">the-state-and-attempts</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/protocol">The Protocol</a>
+        <span class="sep">/</span>
+        <a href="/echomq/protocol/the-record-hash">The record hash</a>
+        <span class="sep">/</span>
+        <span class="here">The state and attempts</span>
+      </div>
+      <p class="eyebrow">The record hash &middot; dive 02 &middot; the machinery</p>
+      <h1>The state and <span class="ex">attempts</span></h1>
+      <p class="lede">One field says where the job is. One field counts the tries — and fences the work.</p>
+      <p class="kicker">Two of the three record fields carry the job's machinery.
+        <code class="inl">state</code> is the <strong>lifecycle position</strong> &mdash; one field holds where the job
+        is, and each atomic transition rewrites it. <code class="inl">attempts</code> is the <strong>retry count</strong>
+        and, at the same time, the <strong>fencing token</strong>: claim increments it and hands the new value to the
+        worker, and every later transition refuses a call whose token no longer matches. Pick a transition on the right
+        to read the state it writes.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#state">state — the lifecycle</a>
+        <a href="#attempts">attempts — the fence</a>
+        <a href="#fence">The fencing check</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig sm" aria-labelledby="smTitle">
+      <h4 id="smTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The state field &middot; pick a transition</h4>
+      <div class="controls">
+        <div class="solid-select" id="transSel" role="group" aria-label="Which transition writes the state field">
+          <button type="button" data-trans="enqueue" data-c="echo" class="active" aria-pressed="true">@enqueue</button>
+          <button type="button" data-trans="claim" data-c="echo" aria-pressed="false">@claim</button>
+          <button type="button" data-trans="schedule" data-c="echo" aria-pressed="false">@schedule</button>
+          <button type="button" data-trans="retry" data-c="gold" aria-pressed="false">@retry</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 200" role="img" aria-label="The state field as a small machine. Four boxes labelled pending, active, scheduled, dead, joined by labelled edges: enqueue writes pending, claim writes active, schedule writes scheduled, retry writes dead or scheduled. The state the selected transition writes is highlighted in the EchoMQ accent.">
+        <g class="node" id="n-pending"><rect x="24" y="80" width="96" height="40" rx="9"></rect><text x="72" y="105" text-anchor="middle">pending</text></g>
+        <g class="node" id="n-active"><rect x="182" y="80" width="96" height="40" rx="9"></rect><text x="230" y="105" text-anchor="middle">active</text></g>
+        <g class="node" id="n-scheduled"><rect x="340" y="22" width="96" height="40" rx="9"></rect><text x="388" y="47" text-anchor="middle">scheduled</text></g>
+        <g class="node" id="n-dead"><rect x="340" y="138" width="96" height="40" rx="9"></rect><text x="388" y="163" text-anchor="middle">dead</text></g>
+        <g class="edge"><path d="M120 100 L182 100"></path></g>
+        <text class="elbl" x="151" y="92" text-anchor="middle">claim</text>
+        <g class="edge"><path d="M278 92 L340 52"></path></g>
+        <text class="elbl" x="300" y="62" text-anchor="middle">retry · backoff</text>
+        <g class="edge"><path d="M278 108 L340 152"></path></g>
+        <text class="elbl" x="300" y="142" text-anchor="middle">retry · at max</text>
+        <g class="edge"><path d="M388 138 L388 70" stroke-dasharray="4 3"></path></g>
+        <text class="elbl" x="408" y="106" text-anchor="start">promote</text>
+        <text class="elbl" x="24" y="150">@enqueue → pending (born here)</text>
+      </svg>
+
+      <div class="geo-readout" id="transOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="state">
+    <h2>state &mdash; the lifecycle, in one field</h2>
+    <div class="prose">
+      <p>The <code class="inl">state</code> field holds where the job is, and nothing else holds it. There is no separate
+        status table, no set membership that has to agree with a flag: the one field is the answer, and each atomic
+        transition rewrites it as part of the same script that moves the job between sets.</p>
+      <p><code class="inl">@enqueue</code> writes <code class="inl">"pending"</code>; <code class="inl">@claim</code>
+        writes <code class="inl">"active"</code>; <code class="inl">@schedule</code> writes
+        <code class="inl">"scheduled"</code> for a delayed or backed-off job; <code class="inl">@retry</code> writes
+        <code class="inl">"dead"</code> at the attempt ceiling or <code class="inl">"scheduled"</code> for another try;
+        <code class="inl">reprocess</code> returns a <code class="inl">"dead"</code> job to <code class="inl">"pending"</code>.
+        Because the field is written inside the transition's own script, the position can never disagree with where the
+        job actually is.</p>
+    </div>
+    <p class="take">One field is the lifecycle position. Each transition rewrites it atomically, so the field and the
+      job's real place never drift.</p>
+  </section>
+
+  <section id="attempts">
+    <h2>attempts &mdash; the retry count and the token</h2>
+    <div class="prose">
+      <p>The <code class="inl">attempts</code> field counts how many times the job has been claimed, and the same
+        counter is the worker's <strong>fencing token</strong>. <strong>Beat one</strong> is the named handle:
+        <code class="inl">EchoMQ.Jobs.claim/3</code> pops the oldest pending id, then runs the
+        <code class="inl">@claim</code> script.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs</span>
+<span class="cmt"># claim pops the oldest pending id and runs @claim. KEYS = [pending, active];</span>
+<span class="cmt"># ARGV carries the queue base and the lease. The script returns {id, payload,</span>
+<span class="cmt"># attempts} — the attempts value IS the worker's fencing token for this lease.</span>
+<span class="op">def</span> <span class="fn">claim</span>(conn, queue, lease_ms) <span class="op">when</span> is_integer(lease_ms) <span class="op">and</span> lease_ms &gt; <span class="res">0</span> <span class="op">do</span>
+  keys = [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"pending"</span>), Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"active"</span>)]
+  argv = [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"job:"</span>), Integer.<span class="fn">to_string</span>(lease_ms)]
+
+  <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@claim</span>, keys, argv) <span class="op">do</span>
+    {<span class="str">:ok</span>, []} -&gt; <span class="str">:empty</span>
+    {<span class="str">:ok</span>, [id, payload, att]} -&gt; {<span class="str">:ok</span>, {id, payload, att}}
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><strong>Beat two</strong> is the script body. <code class="inl">@claim</code> increments
+        <code class="inl">attempts</code> with <code class="inl">HINCRBY</code> &mdash; the returned value is the token
+        &mdash; sets <code class="inl">state</code> to <code class="inl">"active"</code>, leases the id on the active set
+        at the server clock, and returns the id, the payload, and the new attempts.</p>
+    </div>
+
+    <pre class="code"><span class="cmt">-- the @claim script — mint the token, lease on the server clock</span>
+<span class="cmt">-- Pop the oldest pending id; an empty set ends the claim.</span>
+<span class="op">local</span> popped = redis.call(<span class="str">'ZPOPMIN'</span>, <span class="rdx">KEYS[1]</span>)
+<span class="op">if</span> #popped == <span class="res">0</span> <span class="op">then</span> <span class="op">return</span> {} <span class="op">end</span>
+<span class="op">local</span> id = popped[<span class="res">1</span>]
+<span class="op">local</span> jk = <span class="rdx">ARGV[1]</span> .. id
+<span class="cmt">-- HINCRBY mints the token: the new attempts value fences this lease.</span>
+<span class="op">local</span> att = redis.call(<span class="str">'HINCRBY'</span>, jk, <span class="str">'attempts'</span>, <span class="res">1</span>)
+<span class="cmt">-- The lifecycle field moves to "active" in the same atomic step.</span>
+redis.call(<span class="str">'HSET'</span>, jk, <span class="str">'state'</span>, <span class="str">'active'</span>)
+<span class="cmt">-- The lease is the active-set score: now + lease_ms, on the SERVER clock.</span>
+<span class="op">local</span> t = redis.call(<span class="str">'TIME'</span>)
+<span class="op">local</span> now = t[<span class="res">1</span>] * <span class="res">1000</span> + math.floor(t[<span class="res">2</span>] / <span class="res">1000</span>)
+redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[2]</span>, now + tonumber(<span class="rdx">ARGV[2]</span>), id)
+<span class="op">return</span> {id, redis.call(<span class="str">'HGET'</span>, jk, <span class="str">'payload'</span>), att}</pre>
+
+    <div class="prose">
+      <p>So the retry count and the lease generation are the same number. If a worker stalls past its lease, the reaper
+        returns the job to pending; the next claim bumps <code class="inl">attempts</code> again, minting a new token.
+        The first worker's token is now stale &mdash; one field, two jobs.</p>
+    </div>
+    <p class="take"><code class="inl">attempts</code> is the retry count and the fencing token at once: claim mints it
+      with <code class="inl">HINCRBY</code>, and a new claim invalidates the old token.</p>
+  </section>
+
+  <section id="fence">
+    <h2>The fencing check</h2>
+    <div class="prose">
+      <p>Completion is token-fenced. <code class="inl">@complete</code> reads <code class="inl">attempts</code> off the
+        row and compares it to the token the worker holds; a mismatch is refused with the
+        <code class="inl">EMQSTALE</code> wire class, so a worker whose lease expired cannot complete a job another
+        worker now owns. Run the check against the sample row, whose current token is <code class="inl">2</code>.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="fenceTitle">
+      <h4 id="fenceTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">complete with a token &middot; the row's attempts is 2</h4>
+      <div class="controls">
+        <div class="solid-select" id="tokSel" role="group" aria-label="Which token does the worker hold">
+          <button type="button" data-tok="2" data-c="echo" class="active">token 2 (current holder)</button>
+          <button type="button" data-tok="1" data-c="gold">token 1 (reaped, re-claimed)</button>
+          <button type="button" data-tok="3" data-c="gold">token 3 (never issued)</button>
+        </div>
+      </div>
+      <div class="geo-readout" id="fenceOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>Carry control state in the entity's own fields, and let one counter serve two roles when the roles are one
+          fact &mdash; the attempt count and the lease generation are the same number.
+          <strong>Redis Patterns Applied &middot; Data Modeling &amp; Memory (R7)</strong> teaches the move;
+          <a href="/redis-patterns">Redis Patterns Applied</a> opens the door and
+          <a href="/redis-patterns/overview/patterns-become-protocol">Patterns become protocol</a> is the near side.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">state</code> is the lifecycle position the transitions rewrite;
+          <code class="inl">attempts</code> is the retry fence and the token <code class="inl">@claim</code> mints with
+          <code class="inl">HINCRBY</code> and <code class="inl">@complete</code> checks with
+          <code class="inl">att ~= ARGV[2]</code>.</p>
+      </div>
+    </div>
+    <p class="take">The token is the row's <code class="inl">attempts</code>. A current token completes; a stale one is
+      refused <code class="inl">EMQSTALE</code> &mdash; the field that counts tries is the field that fences them.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap</h2>
+    <div class="prose">
+      <p><code class="inl">state</code> holds the job's lifecycle position, rewritten by each atomic transition so the
+        field never drifts from where the job is. <code class="inl">attempts</code> is the retry count and the fencing
+        token: <code class="inl">@claim</code> mints it with <code class="inl">HINCRBY</code>, and
+        <code class="inl">@complete</code> refuses a stale token with <code class="inl">EMQSTALE</code>. Two fields carry
+        the machinery; the third is the cargo, the next dive's subject.</p>
+    </div>
+    <p class="note">Next in this module: <a href="/echomq/protocol/the-record-hash/the-payload">The payload</a> &mdash;
+      the caller's opaque cargo, stored and returned verbatim and never read by the wire.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the writes behind the lifecycle field and the fencing token are documented.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/hincrby/">Valkey &mdash; <em>HINCRBY</em></a> &mdash; the atomic increment that mints the fencing token.</li>
+          <li><a href="https://valkey.io/commands/hset/">Valkey &mdash; <em>HSET</em></a> &mdash; the write each transition uses to set <code>state</code>.</li>
+          <li><a href="https://valkey.io/docs/">Valkey &mdash; <em>Documentation</em></a> &mdash; the substrate of record.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/protocol/the-record-hash">The record hash</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/protocol/the-record-hash/the-hash-and-its-fields">The hash and its fields</a> &mdash; the previous dive.</li>
+          <li><a href="/echomq/protocol/the-record-hash/the-payload">The payload</a> &mdash; the next dive.</li>
+          <li><a href="/echomq/protocol">The Protocol</a> &mdash; the chapter landing.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/protocol/the-record-hash/the-hash-and-its-fields"><span aria-hidden="true">&larr;</span>&nbsp; The hash and its fields</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/protocol/the-record-hash/the-payload">The payload <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This chapter</h4>
+        <a href="/echomq/protocol">The Protocol</a>
+        <a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a>
+        <a href="/echomq/protocol/the-record-hash">The record hash</a>
+        <a href="/echomq/protocol/the-lua-layer">The Lua layer</a>
+        <a href="/echomq/protocol/immutability-and-branded-ids">Immutability &amp; branded ids</a>
+        <a href="/echomq/protocol/workshop">Workshop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/overview">Overview</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero interactive: state written by each transition (pure over a fixed dataset) ---------- */
+  var TRANS = {
+    enqueue: { handle: '@enqueue', writes: 'pending', node: 'pending',
+      note: 'a job is born "pending" and entered into the pending set at score zero' },
+    claim: { handle: '@claim', writes: 'active', node: 'active',
+      note: 'the same script HINCRBYs attempts (the token) and leases the id on the active set' },
+    schedule: { handle: '@schedule', writes: 'scheduled', node: 'scheduled',
+      note: 'a delayed or backed-off job parks on the schedule set until promote releases it' },
+    retry: { handle: '@retry', writes: 'dead (at max) or scheduled (backoff)', node: 'dead',
+      note: 'at the attempt ceiling the job moves "dead"; below it, it re-schedules for another try' }
+  };
+  var NODES = ['pending', 'active', 'scheduled', 'dead'];
+  function describeTrans(key) {
+    var t = TRANS[key];
+    return t.handle + ' writes state = "' + t.writes + '". ' + t.note + '.';
+  }
+  function setTrans(key) {
+    var t = TRANS[key];
+    NODES.forEach(function (n) {
+      var g = document.getElementById('n-' + n);
+      if (g) g.classList.toggle('sel', n === t.node);
+    });
+    var out = document.getElementById('transOut');
+    if (out) out.textContent = describeTrans(key);
+  }
+  document.querySelectorAll('#transSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-trans');
+      document.querySelectorAll('#transSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setTrans(key);
+    });
+  });
+  setTrans('enqueue'); // initial render — correct without interaction
+
+  /* ---------- content interactive: the fencing check (pure: compare token to the row's attempts) ---------- */
+  /* The row's current attempts is 2 (claimed twice). @complete compares the
+     worker's token to the row's attempts; only an exact match completes. */
+  var ROW_ATTEMPTS = 2;
+  var TOK_NOTE = {
+    '2': 'the current holder — its token equals the row',
+    '1': 'a worker reaped after its lease expired; the job was re-claimed, bumping attempts to 2, so this token is stale',
+    '3': 'a value never issued for this row (attempts only reaches 2)'
+  };
+  function describeFence(tok) {
+    var n = parseInt(tok, 10);
+    if (n === ROW_ATTEMPTS) {
+      return 'complete(token=' + tok + ') vs row attempts=' + ROW_ATTEMPTS + ' → <b class="ok">:ok</b>.  ' +
+        '<span class="dim">' + TOK_NOTE[tok] + '. The row retires.</span>';
+    }
+    return 'complete(token=' + tok + ') vs row attempts=' + ROW_ATTEMPTS + ' → <b class="bad">EMQSTALE</b> (refused).  ' +
+      '<span class="dim">' + TOK_NOTE[tok] + '. Nothing changes — the token does not match.</span>';
+  }
+  function setFence(tok) {
+    var out = document.getElementById('fenceOut');
+    if (out) out.innerHTML = describeFence(tok);
+  }
+  document.querySelectorAll('#tokSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var tok = b.getAttribute('data-tok');
+      document.querySelectorAll('#tokSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setFence(tok);
+    });
+  });
+  setFence('2'); // initial render — correct without interaction (the current holder)
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

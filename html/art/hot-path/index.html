@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A6 · The Hot Path — LMAX on the BEAM · The Art of BCS · jonnify</title>
+<meta name="description" content="The Art of BCS, Part VI: the matching engine, the hot path where orders meet and fills are made. The LMAX architecture and its Disruptor stated fairly, then translated to the BEAM — the bounded ring (EchoCache.Ring), the single-writer book, the pure decider (Exchange.Decider) — with the lock-free machinery deliberately dropped, latency held by construction, and strategies expressed as the same pure-decider pattern the core is.">
+<style>
+/* ============ The Art of BCS identity — the architect's blueprint ============
+   The senior continuation of /bcs. The contract-sheet FAMILY (light paper,
+   mono-forward, numbered sections, frozen-transcript evidence) adapted into its
+   own palette: cool blueprint paper, architect-indigo lead, availability-green,
+   EchoMesh-violet, edge-amber. NOT the dark-editorial system; NOT the warm
+   oxide-red /bcs sheet cloned verbatim. */
+:root{
+  --a-paper:#e9edf1;
+  --a-card:#f9fafc;
+  --a-ink:#18222e;
+  --a-dim:#5b6775;
+  --a-line:#c7d1dc;
+  --a-arc:#2a4f8f;     /* architect indigo — the house lead   */
+  --a-avail:#1f7a5e;   /* availability green — the nines       */
+  --a-mesh:#7b3aa0;    /* EchoMesh violet — the heart          */
+  --a-edge:#b3631c;    /* edge amber — the line drawn outside  */
+  --a-arc-tint:#dde6f3;
+  --a-mesh-tint:#ece1f3;
+  --a-avail-tint:#d7ece4;
+  --a-edge-tint:#f1e3d2;
+  --a-term-bg:#121a22;
+  --a-term-fg:#cdd8e0;
+  --a-term-dim:#728390;
+  --a-term-ok:#8fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--a-paper);color:var(--a-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--a-arc);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--a-arc)}
+a:focus-visible{outline:2px solid var(--a-arc);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#e3e9ef;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--a-line);background:var(--a-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--a-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--a-arc)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--a-dim);background:var(--a-paper);border:1px solid var(--a-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--a-dim);border-bottom:none}
+.route-tag a:hover{color:var(--a-arc)}
+.route-tag .rsep{color:var(--a-line);margin:0 1px}
+.route-tag .rcur{color:var(--a-arc);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--a-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--a-ink)}
+
+/* ---------- the nines rule device ---------- */
+.ninerule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.ninerule i{height:4px;border-radius:2px;background:var(--a-arc-tint)}
+.ninerule i:nth-child(-n+2){background:var(--a-edge-tint);box-shadow:inset 0 0 0 1px var(--a-edge)}
+.ninerule i:nth-child(n+3):nth-child(-n+10){box-shadow:inset 0 0 0 1px var(--a-arc)}
+.ninerule i:nth-child(n+11){background:var(--a-avail-tint);box-shadow:inset 0 0 0 1px var(--a-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--a-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--a-arc);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--a-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--a-ink)}
+.body{font-size:.98rem;color:var(--a-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--a-arc);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--a-arc)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--a-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--a-arc)}
+
+/* ---------- the hot-path flow figure ---------- */
+.calc{background:var(--a-card);border:1px solid var(--a-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.calc figcaption{font-family:var(--mono);font-size:12.5px;color:var(--a-dim);margin-bottom:14px}
+.calc figcaption b{color:var(--a-ink)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--a-ink);background:var(--a-paper);border:1px dashed var(--a-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em;margin-top:14px}
+.readout .rk{color:var(--a-dim)}
+.calcsvg{width:100%;height:auto;display:block;margin-top:4px}
+.flowsvg .bx{fill:var(--a-card);stroke:var(--a-line);stroke-width:1.5}
+.flowsvg .bx.ring{fill:var(--a-edge-tint);stroke:var(--a-edge)}
+.flowsvg .bx.book{fill:var(--a-arc-tint);stroke:var(--a-arc)}
+.flowsvg .bx.dec{fill:var(--a-mesh-tint);stroke:var(--a-mesh)}
+.flowsvg .bx.sel{stroke-width:3}
+.flowsvg .bx.ring.sel{filter:drop-shadow(0 0 0 var(--a-edge))}
+.flowsvg .ln{stroke:var(--a-dim);stroke-width:1.5;fill:none;opacity:.35}
+.flowsvg .ln.sel{stroke:var(--a-arc);opacity:1;stroke-width:2.5}
+.flowsvg .arrh{fill:var(--a-dim);opacity:.5}
+.flowsvg .arrh.sel{fill:var(--a-arc);opacity:1}
+.flowsvg .lblc{font:700 12.5px var(--mono);text-anchor:middle}
+.flowsvg .lblc.ring{fill:var(--a-edge)}
+.flowsvg .lblc.book{fill:var(--a-arc)}
+.flowsvg .lblc.dec{fill:var(--a-mesh)}
+.flowsvg .lbl{font:11px var(--mono);fill:var(--a-ink);text-anchor:middle}
+.flowsvg .sub{font:10px var(--mono);fill:var(--a-dim);text-anchor:middle}
+.flowsvg .cap{font:11px var(--mono);fill:var(--a-dim);text-anchor:middle}
+.flowsvg .slot{fill:var(--a-card);stroke:var(--a-edge);stroke-width:1}
+.flowsvg .slot.fill{fill:var(--a-edge)}
+.flowsvg .fact{fill:var(--a-mesh);opacity:0}
+.flowsvg .fact.show{opacity:1}
+
+/* ---------- the transfer/drop triptych ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--a-card);border:1px solid var(--a-line);border-top:3px solid var(--a-arc);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--a-edge)}
+.tri article:nth-child(3){border-top-color:var(--a-mesh)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--a-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--a-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--a-dim)}
+.tri .note b{color:var(--a-arc);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--a-dim);max-width:84ch}
+.compose b{color:var(--a-ink)}
+
+/* ---------- the price-time priority interactive ---------- */
+.subbar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.subbar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--a-line);background:var(--a-card);color:var(--a-ink);cursor:pointer;text-align:left}
+.subbar button:focus-visible{outline:2px solid var(--a-arc);outline-offset:2px}
+.subbar button[aria-pressed="true"]{border-color:var(--a-ink);background:var(--a-ink);color:var(--a-paper)}
+.subbar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline;background:var(--a-arc)}
+.ringgrid{display:grid;grid-template-columns:1.05fr 1fr;gap:18px;align-items:start}
+.ladsvg{width:100%;height:auto;display:block}
+.ladsvg .lvl{fill:var(--a-card);stroke:var(--a-line);stroke-width:1}
+.ladsvg .ord{fill:var(--a-arc-tint);stroke:var(--a-arc);stroke-width:1.5}
+.ladsvg .ord.hit{fill:var(--a-avail-tint);stroke:var(--a-avail);stroke-width:2.5}
+.ladsvg .ord.next{fill:var(--a-edge-tint);stroke:var(--a-edge);stroke-width:2;stroke-dasharray:4 3}
+.ladsvg .oid{font:10px var(--mono);fill:var(--a-ink);text-anchor:start}
+.ladsvg .plbl{font:700 11px var(--mono);fill:var(--a-ink);text-anchor:end}
+.ladsvg .hd{font:700 11px var(--mono);fill:var(--a-dim);text-anchor:middle}
+.ladsvg .cap{font:10px var(--mono);fill:var(--a-dim);text-anchor:start}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--a-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0c1218}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--a-term-dim);padding:9px 14px;border-bottom:1px solid #222c34}
+.frozen figcaption .tag{margin-left:auto;color:var(--a-term-bg);background:var(--a-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--a-term-fg)}
+.frozen pre b{color:var(--a-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--a-term-dim)}
+
+/* ---------- the dive map ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pcard{display:block;background:var(--a-card);border:1px solid var(--a-line);border-radius:var(--rad);padding:18px;color:var(--a-ink)}
+a.pcard{border-color:var(--a-arc)}
+a.pcard:hover{border-bottom-color:var(--a-arc);box-shadow:0 1px 0 var(--a-arc)}
+.pcard .bid{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--a-arc);letter-spacing:.08em}
+.pcard h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.pcard p{font-size:.87rem;color:var(--a-dim)}
+.pcard .meta{display:flex;gap:10px;align-items:center;margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--a-dim)}
+.chip{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-radius:3px;padding:1px 7px}
+.chip.now{background:var(--a-arc);color:var(--a-card)}
+.chip.soon{background:var(--a-paper);border:1px solid var(--a-line);color:var(--a-dim)}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--a-dim);max-width:86ch;line-height:1.7}
+.booknote b{color:var(--a-arc)}
+
+/* ---------- the doors (course-to-course references) ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--a-card);border:1px solid var(--a-line);border-left:3px solid var(--a-arc);border-radius:var(--rad);padding:18px;color:var(--a-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--a-arc)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--a-arc);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--a-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--a-ink);border-top:1px dashed var(--a-line);padding-top:9px}
+.door .dnote b{color:var(--a-arc)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--a-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--a-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--a-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--a-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--a-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--a-line);background:var(--a-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--a-ink);font-size:15px}
+.foot-logo .bdot{color:var(--a-arc)}
+.foot-tag{font-size:.86rem;color:var(--a-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--a-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--a-ink);padding:2px 0}
+.foot-links span{color:var(--a-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--a-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--a-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--a-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--a-dim);cursor:pointer;border:1px dashed var(--a-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--a-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--a-arc)}
+.stamp:focus-visible{outline:2px solid var(--a-arc);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--a-term-bg);color:var(--a-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--a-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.props,.pgrid{grid-template-columns:1fr 1fr}
+  .doors,.ringgrid{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.props,.pgrid{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>art</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/art">art</a><span class="rsep">/</span><span class="rcur">hot-path</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#prior-art">The prior art</a>
+      <a href="#transfer">Transfer &amp; drop</a>
+      <a href="#latency">Latency</a>
+      <a href="#strategies">Strategies</a>
+      <a href="#dives">The dives</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">A6 · The Hot Path — LMAX on the BEAM · The Art of BCS</p>
+      <h1>The way to remove writer contention<br>is to <span class="hns">not have writers</span>.</h1>
+      <p class="lede">Part VI is the turn from refusal to construction. Parts II through V removed the constellation
+      member by member; this chapter builds the thing that takes their place &#8212; the matching engine, the hot path
+      where orders meet and fills are made. The pattern it builds on is the one a financial exchange already proved at
+      the limit: the <b>LMAX architecture and its Disruptor</b>. State that prior art fairly, name what transfers to the
+      BEAM and what is dropped, and the core falls out as <b>one bounded ring, one process, one pure function</b>.</p>
+      <p class="heronote">The senior continuation of <a href="/bcs">/bcs</a>, whose as-built ring and identity law sit
+      beneath the price-time priority here. Each figure is verbatim from the manuscript (<code>art6.md</code>), its
+      cited sources, or the worked exemplar (<code>exchange.patterns.md</code> and the shipped <code>Exchange.*</code>
+      rungs). The LMAX number is LMAX&#8217;s own, named as prior art &#8212; not a claim about this exemplar.</p>
+
+      <figure class="calc">
+        <figcaption>The hot path, one stage at a time &#183; step the path a command takes from the door to a fact
+        (the built core of <b>art6.md</b>, &#8220;latency by construction&#8221;). A command enters the bounded ring,
+        the single-writer book drains it and calls the decider, and the decider emits fills as facts &#8212; one buffer,
+        one process, one pure function, no lock on any path.</figcaption>
+        <div class="subbar" id="flowbar" role="group" aria-label="Step the hot path">
+          <button type="button" data-st="ring" aria-pressed="false"><span class="sw"></span>1 &#183; Admit at the ring</button>
+          <button type="button" data-st="book" aria-pressed="false"><span class="sw"></span>2 &#183; Drain in the book</button>
+          <button type="button" data-st="dec" aria-pressed="false"><span class="sw"></span>3 &#183; Decide a fact</button>
+        </div>
+        <svg class="calcsvg flowsvg" id="flowsvg" viewBox="0 0 760 220" role="img" aria-label="The exchange hot path as three stages left to right. Stage one: a command enters EchoCache.Ring, a bounded buffer that answers ok or dropped with the drop counted. Stage two: the single-writer book, one process per instrument, drains the ring in order and is the book's only mutator. Stage three: Exchange.Decider, a pure function, folds the command against the book and emits fills as facts. Stepping a stage highlights that box and the arrow leading into it.">
+          <text class="cap" x="120" y="16">the door &#183; admission</text>
+          <text class="cap" x="380" y="16">the seat &#183; one writer</text>
+          <text class="cap" x="640" y="16">the rule &#183; pure</text>
+          <!-- stage 1: the ring -->
+          <rect class="bx ring" id="bx-ring" x="30" y="46" width="180" height="120" rx="5"></rect>
+          <text class="lblc ring" x="120" y="70">EchoCache.Ring</text>
+          <text class="lbl" x="120" y="88">bounded buffer</text>
+          <rect class="slot" id="sl-0" x="52" y="104" width="22" height="22" rx="2"></rect>
+          <rect class="slot" id="sl-1" x="80" y="104" width="22" height="22" rx="2"></rect>
+          <rect class="slot" id="sl-2" x="108" y="104" width="22" height="22" rx="2"></rect>
+          <rect class="slot" id="sl-3" x="136" y="104" width="22" height="22" rx="2"></rect>
+          <rect class="slot" id="sl-4" x="164" y="104" width="22" height="22" rx="2"></rect>
+          <text class="sub" x="120" y="150">:ok or :dropped, counted</text>
+          <!-- arrow 1->2 -->
+          <path class="ln" id="ln-book" d="M210 106 L250 106"></path>
+          <path class="arrh" id="ah-book" d="M250 100 L264 106 L250 112 z"></path>
+          <!-- stage 2: the book -->
+          <rect class="bx book" id="bx-book" x="290" y="46" width="180" height="120" rx="5"></rect>
+          <text class="lblc book" x="380" y="70">the book</text>
+          <text class="lbl" x="380" y="88">one process / instrument</text>
+          <text class="sub" x="380" y="112">drains in order</text>
+          <text class="sub" x="380" y="128">the only mutator</text>
+          <text class="sub" x="380" y="150">waits, never spins</text>
+          <!-- arrow 2->3 -->
+          <path class="ln" id="ln-dec" d="M470 106 L510 106"></path>
+          <path class="arrh" id="ah-dec" d="M510 100 L524 106 L510 112 z"></path>
+          <!-- stage 3: the decider -->
+          <rect class="bx dec" id="bx-dec" x="550" y="46" width="180" height="120" rx="5"></rect>
+          <text class="lblc dec" x="640" y="70">Exchange.Decider</text>
+          <text class="lbl" x="640" y="88">pure function</text>
+          <text class="sub" x="640" y="112">decide(cmd, state)</text>
+          <text class="sub" x="640" y="128">&#8594; fills as facts</text>
+          <circle class="fact" id="fact-a" cx="612" cy="148" r="5"></circle>
+          <circle class="fact" id="fact-b" cx="640" cy="148" r="5"></circle>
+          <circle class="fact" id="fact-c" cx="668" cy="148" r="5"></circle>
+        </svg>
+        <div class="readout" id="flowReadout" aria-live="polite"><span class="rk">readout &#183;</span> Step the path
+        above. A command enters <code>EchoCache.Ring</code>, the single-writer book drains it and calls
+        <code>Exchange.Decider</code>, and the decider emits fills as facts &#8212; one bounded buffer, one process, one
+        pure function, with no lock to contend on any stage.</div>
+      </figure>
+    </section>
+
+    <div class="ninerule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="prior-art">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>State the prior art fairly</h2>
+        <span class="ssrc">art6.md &#183; what this chapter builds on</span>
+      </div>
+      <p class="body">The prior art is real and well-made, and it is stated first, from its own source. <b>LMAX</b> is a
+      retail financial trading platform whose Business Logic Processor handled, in its published account, six million
+      orders per second on a single thread &#8212; running entirely in-memory using event sourcing, surrounded by
+      <b>Disruptors</b>, a concurrency component implementing a network of queues that operate without locks. The
+      Disruptor itself is a pre-allocated, bounded ring buffer: producers add and consumers process, all memory
+      allocated on startup, the ring sized as a power of two so a bit-mask replaces the remainder operation, designed to
+      be cache-friendly and lock-free on modern hardware.</p>
+      <p class="body">The design&#8217;s central conclusion is the one this chapter inherits, and it generalizes past the
+      hardware that produced it: the single biggest limit on a hot path is having multiple writers contend for a value,
+      and the way to remove it is to not have them. That conclusion is the chapter&#8217;s starting point &#8212; not a
+      claim the runtime invented, but one the runtime realizes by a different mechanism.</p>
+      <figure class="frozen">
+        <figcaption>the prior art, from its own account &#183; the LMAX figure named as LMAX&#8217;s, not as this exemplar&#8217;s<span class="tag">from art6.md</span></figcaption>
+<pre>LMAX Business Logic Processor   6,000,000 orders/sec on a <b>single thread</b>   <span class="fd">&#8592; in-memory, event-sourced</span>
+the Disruptor                   a pre-allocated, bounded ring buffer
+                                power-of-two size, bit-mask for the remainder   <span class="fd">&#8592; cache-friendly, lock-free</span>
+the conclusion inherited        the limit is <b>multiple writers contending</b>
+                                the cure is to <b>not have them</b>             <span class="fd">&#8592; the chapter&#8217;s starting point</span></pre>
+      </figure>
+      <p class="body">One line on provenance, because the course&#8217;s discipline depends on it. The six-million figure
+      is LMAX&#8217;s own published number for its own platform; it appears here as prior art the chapter translates, not
+      as a measurement of this exemplar. The figures that <em>are</em> this exemplar&#8217;s &#8212; the codec cost, the
+      reconcile, the gate counts &#8212; are committed transcripts the three dives quote, never asserted on this
+      landing.</p>
+    </section>
+
+    <section id="transfer">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>What transfers, and what is dropped</h2>
+        <span class="ssrc">art6.md &#183; the chapter&#8217;s discipline</span>
+      </div>
+      <p class="body">The translation to the BEAM keeps the principles and drops the machinery, and saying which is
+      which is the chapter&#8217;s discipline. What transfers is the <b>shape</b>; what is dropped is the part the
+      BEAM&#8217;s own model makes unnecessary. The seat does not contend, because there is no second writer to contend
+      with &#8212; the single-writer principle is a process by construction, not a configuration to enforce.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">Transfers whole</p>
+          <h3>The shape of the path</h3>
+          <p>A bounded ring at the door for back-pressure, a single writer for the business logic, state held in memory
+          and rebuilt by replaying events, and the mechanical-sympathy habit of pre-allocating rather than allocating on
+          the path. The principle is LMAX&#8217;s.</p>
+          <p class="note">the architecture <b>carries over</b> intact</p>
+        </article>
+        <article>
+          <p class="cno">Dropped, deliberately</p>
+          <h3>The lock-free machinery</h3>
+          <p>Busy-spin waiting, shared-memory sequence barriers, multi-consumer coordination &#8212; the Disruptor&#8217;s
+          machinery exists to share one ring across several JVM threads without locks. On the BEAM none of it is needed,
+          because the seat is a process, not a pinned thread.</p>
+          <p class="note">the JVM-thread machinery is <b>not required</b></p>
+        </article>
+        <article>
+          <p class="cno">The realization</p>
+          <h3>A process, not a thread</h3>
+          <p>One process owns the book, is its only mutator, and waits without spinning because the scheduler preempts
+          it. <code>EchoCache.Ring</code> is therefore an admission buffer that provides back-pressure, not an
+          inter-thread channel.</p>
+          <p class="note">the principle is LMAX&#8217;s; the realization is the <b>runtime&#8217;s</b></p>
+        </article>
+      </div>
+      <p class="compose">Read together: the <b>shape</b> transfers, the <b>machinery</b> drops, and the
+      <b>single-writer seat</b> is a process by construction &#8212; so the contention the Disruptor engineers away is
+      not engineered away here, it is structurally absent.</p>
+    </section>
+
+    <section id="latency">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Latency by construction, and the built core</h2>
+        <span class="ssrc">art6.md &#183; the admission-reconcile invariant</span>
+      </div>
+      <p class="body">The hot path holds a microsecond budget not by tuning but by shape: <b>one bounded buffer, one
+      process, and one pure function</b>, so there is no lock to contend, no queue to swell unobserved, and no shared
+      state to coordinate. Overload is a typed answer at the door rather than a latency discovered downstream &#8212; the
+      <b>admission-reconcile invariant</b>, where accepted equals applied plus counted drops, so nothing is lost
+      silently and overload is a number. The core that realizes this is built and gated: <code>Exchange.Gateway</code>
+      parses untrusted input once into typed commands carrying branded ids and integer money, <code>Exchange.OrderBook</code>
+      is a pure price-time ladder, and <code>Exchange.Decider</code> emits fills as facts.</p>
+      <figure class="frozen">
+        <figcaption>the admission-reconcile invariant &#183; overload as a number at the door, not a latency downstream<span class="tag">from art6.md</span></figcaption>
+<pre>the invariant     accepted = applied + counted drops              <span class="fd">&#8592; nothing lost silently</span>
+the door          <code>EchoCache.Ring.publish/2</code> &#8594; <b>:ok</b> | <b>:dropped</b>     <span class="fd">&#8592; the drop is counted, not hidden</span>
+overload          a typed answer at admission, a reported stat     <span class="fd">&#8592; not a page discovered at 3 a.m.</span>
+the budget held by shape   one buffer &#183; one process &#183; one pure function   <span class="fd">&#8592; no lock, no swell, no shared state</span></pre>
+      </figure>
+      <p class="body">Price-time priority falls out of the branded id&#8217;s byte order, so the core needs no clock to
+      break ties: the id is minted at admission, mint order is sequence, and the same order holds in every store by the
+      byte-sort theorem. Select two resting orders at one price to read which fills first, and why the answer is the
+      mint order rather than a separate timestamp.</p>
+      <div class="subbar" id="ptbar" role="group" aria-label="Pick a price-time question">
+        <button type="button" data-pt="same" aria-pressed="false"><span class="sw"></span>Two orders, same price</button>
+        <button type="button" data-pt="better" aria-pressed="false"><span class="sw"></span>A better price arrives</button>
+        <button type="button" data-pt="noclock" aria-pressed="false"><span class="sw"></span>Why no clock</button>
+      </div>
+      <div class="ringgrid">
+        <svg class="ladsvg" id="ladsvg" viewBox="0 0 300 230" role="img" aria-label="A price-time order ladder for the bid side of one book. Three price levels descend from 101 to 99. At the top level, 101, two resting orders rest in mint order — the one minted first sits ahead of the one minted later. Price ranks first, then mint order within a price. A selection highlights which order an incoming sell would fill against and why.">
+          <text class="hd" x="150" y="16">bid ladder &#183; one book</text>
+          <text class="cap" x="14" y="34">price &#8595;</text>
+          <text class="cap" x="150" y="34">resting orders, in mint order &#8594;</text>
+          <!-- level 101 -->
+          <rect class="lvl" x="14" y="44" width="272" height="46" rx="3"></rect>
+          <text class="plbl" x="62" y="71">101</text>
+          <rect class="ord" id="o-a" x="80" y="52" width="92" height="30" rx="3"></rect>
+          <text class="oid" x="88" y="71">ART…aa &#183; t0</text>
+          <rect class="ord" id="o-b" x="184" y="52" width="92" height="30" rx="3"></rect>
+          <text class="oid" x="192" y="71">ART…ab &#183; t1</text>
+          <!-- level 100 -->
+          <rect class="lvl" x="14" y="96" width="272" height="46" rx="3"></rect>
+          <text class="plbl" x="62" y="123">100</text>
+          <rect class="ord" id="o-c" x="80" y="104" width="92" height="30" rx="3"></rect>
+          <text class="oid" x="88" y="123">ART…ac &#183; t2</text>
+          <!-- level 99 -->
+          <rect class="lvl" x="14" y="148" width="272" height="46" rx="3"></rect>
+          <text class="plbl" x="62" y="175">99</text>
+          <rect class="ord" id="o-d" x="80" y="156" width="92" height="30" rx="3"></rect>
+          <text class="oid" x="88" y="175">ART…ad &#183; t3</text>
+          <text class="cap" x="14" y="214">t0 &#8804; t1 &#8804; t2 &#8804; t3 is the mint order &#8212; the id&#8217;s own byte order</text>
+        </svg>
+        <div class="readout" id="ptReadout" aria-live="polite"><span class="rk">readout &#183;</span> Select a question
+        above. On the bid ladder, price ranks first and mint order breaks the tie within a price &#8212; the order minted
+        first fills first. The rank is the branded id&#8217;s own byte order, so the book needs no separate clock to
+        rank two equal-priced orders.</div>
+      </div>
+    </section>
+
+    <section id="strategies">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Strategies on the same pattern</h2>
+        <span class="ssrc">art6.md &#183; the layer above the engine</span>
+      </div>
+      <p class="body">The layer above the engine is the engine&#8217;s own pattern applied again: a strategy is a
+      <b>pure decider that emits intents</b>, arranged as a four-stage <b>signal&#8211;sizing&#8211;risk&#8211;execution</b>
+      pipeline, with risk expressed as gating deciders and the kill switch realized as the <b>lane verbs the bus already
+      has</b>. Route a strategy&#8217;s intents through its own bus group and the committed pause, resume, and limit
+      controls become its kill switch, throttle, and slow restart &#8212; no new mechanism, the bus&#8217;s own.</p>
+      <p class="body">Because a strategy is the same decide-then-evolve shape as the matching core, its evaluation is not
+      a separate simulator but the one implementation replayed over recorded input. A backtest is <b>the system run
+      again</b>, not a second system written to approximate it &#8212; so a strategy that passes its backtest and a
+      strategy that runs in production are the same code on the same fold, which is the property the pattern was chosen
+      to buy.</p>
+      <figure class="frozen">
+        <figcaption>the strategy layer &#183; the engine&#8217;s pattern applied one level up<span class="tag">from art6.md</span></figcaption>
+<pre>a strategy is        a <b>pure decider</b> that emits intents          <span class="fd">&#8592; the matching core&#8217;s own shape</span>
+the pipeline         signal &#8594; sizing &#8594; risk &#8594; execution        <span class="fd">&#8592; four stages, composed by events</span>
+risk                 <b>gating deciders</b> &#8212; pre-trade checks       <span class="fd">&#8592; a gate emits the intent or refuses it</span>
+the kill switch      the bus&#8217;s <b>lane verbs</b>: pause / resume / limit   <span class="fd">&#8592; the off button already exists</span>
+evaluation           the one implementation <b>replayed</b>            <span class="fd">&#8592; a backtest is the system run again</span></pre>
+      </figure>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The three dives</h2>
+        <span class="ssrc">A6.1 &#8211; A6.3</span>
+      </div>
+      <div class="pgrid">
+        <div class="pcard">
+          <span class="bid">A6.1</span>
+          <h3>The Disruptor Seat, Named Precisely</h3>
+          <p>The LMAX shape translated to the BEAM &#8212; the bounded ring, the single-writer process, the pure decider,
+          sequence as the branded mint order &#8212; with the parts that transfer kept and the parts that do not
+          deliberately dropped.</p>
+          <span class="meta"><span>the seat</span><span class="chip soon">soon</span></span>
+        </div>
+        <div class="pcard">
+          <span class="bid">A6.2</span>
+          <h3>Latency by Construction, and the Built Core</h3>
+          <p>Why one buffer, one process, and one pure function hold the budget; the admission-reconcile invariant; and
+          the shipped <code>Exchange.Gateway</code>, <code>OrderBook</code>, and <code>Decider</code> with their
+          committed gates, price-time priority by mint order.</p>
+          <span class="meta"><span>the built core</span><span class="chip soon">soon</span></span>
+        </div>
+        <div class="pcard">
+          <span class="bid">A6.3</span>
+          <h3>Strategies on the Decider</h3>
+          <p>A strategy as a pure decider, the four-stage signal&#8211;sizing&#8211;risk&#8211;execution pipeline, the
+          kill switch as the bus&#8217;s lane verbs, and evaluation as the one implementation replayed over recorded
+          input.</p>
+          <span class="meta"><span>the layer above</span><span class="chip soon">soon</span></span>
+        </div>
+      </div>
+      <p class="booknote">The dives are cumulative: the first names the seat precisely and fixes what transfers; the
+      second works the built core and quotes its committed gates; the third lifts the same pattern one level up to
+      strategies. Up next, <b>Part VII draws the line at the durable and regulated edge</b> &#8212; what the runtime
+      does not subsume. A dive card becomes a link when its page ships.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The doors — the sibling courses</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The foundation: the as-built ring and the 14-byte branded contract whose byte order is the mint order
+          price-time priority falls out of, taught in depth.</p>
+          <p class="dnote"><b>the ring doors here</b> &#8212; the bounded buffer and the identity law beneath price-time
+          priority (the ring, B4.3) are on /bcs.</p>
+        </a>
+        <a class="door" href="/echomq">
+          <span class="dr">/echomq</span>
+          <h3>EchoMQ — the protocol, in depth</h3>
+          <p>The bus whose committed pause, resume, and limit lane verbs become a strategy&#8217;s kill switch, throttle,
+          and slow restart &#8212; rung by rung, the keyspace and the Lua inventory.</p>
+          <p class="dnote"><b>the lane verbs door here</b> &#8212; the kill switch is the bus&#8217;s own controls,
+          taught in full on /echomq.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://martinfowler.com/articles/lmax.html" rel="noopener">Fowler, M. &#8212; The LMAX Architecture (2011)</a><span class="rs">the Business Logic Processor that handled six million orders per second on a single thread, running entirely in-memory with event sourcing and surrounded by Disruptors &#8212; the prior art this chapter translates to the BEAM</span></li>
+          <li><a href="https://lmax-exchange.github.io/disruptor/disruptor.html" rel="noopener">LMAX &#8212; Disruptor: High Performance Alternative to Bounded Queues</a><span class="rs">the Disruptor&#8217;s own technical paper: a pre-allocated, bounded ring buffer, power-of-two sized so a bit-mask replaces the remainder, designed to be cache-friendly and lock-free and to remove queue-contention costs</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/art">The Art of BCS — A0 · Orientation</a><span class="rs">the course landing, the credo, the runtime, and the map</span></li>
+          <li><a href="/art/thesis">The Art of BCS — A1 · The Thesis</a><span class="rs">the floor this chapter stands on: the single-writer seat and the branded identity</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the as-built ring and the identity law beneath price-time priority (the ring, B4.3)</span></li>
+          <li><a href="/echomq">EchoMQ — the protocol, in depth</a><span class="rs">the bus whose lane verbs realize the strategy kill switch</span></li>
+          <li><a href="/redis-patterns">Redis Patterns Applied</a><span class="rs">the Valkey substrate patterns under the bus and the cache</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the BEAM process and scheduler beneath the single-writer seat, and the umbrella the exemplar is built in</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/art"><span class="pk">the course</span>&#8592; The Art of BCS &#183; the map</a>
+      <span class="pgx"><span class="pk">next &#183; first dive</span>A6.1 &#183; The Disruptor Seat, Named Precisely &#8212; soon</span>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="The Art of BCS — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>art</span>
+        <p class="foot-tag">The Art of BCS &#8212; the architect&#8217;s case for owning the runtime, built part by
+        part to EchoMesh, every figure from a committed source.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/art">A0 &#183; Orientation</a>
+        <a href="/art/thesis">A1 &#183; The Thesis</a>
+        <span>A2 &#183; No Coordinator<i>soon</i></span>
+        <span>A3 &#183; No Log Broker<i>soon</i></span>
+        <span>A4 &#183; No Message Broker<i>soon</i></span>
+        <span>A5 &#183; No Orchestrator<i>soon</i></span>
+        <a href="/art/hot-path">A6 &#183; The Hot Path</a>
+        <span>A7 &#183; Durable Edge<i>soon</i></span>
+        <span>A8 &#183; EchoMesh<i>soon</i></span>
+        <span>A9 &#183; EchoMesh in Depth<i>soon</i></span>
+        <span>A10 &#183; The Whole Picture<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/art">The Art of BCS — this course</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">ART0NzmLEk3zuq</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 09:26:03 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the hot-path stepper
+       (pure stage lookup over the art6.md built core; highlights the SVG box + inbound arrow; no storage) ---------- */
+  var STAGES = {
+    ring: 'Admit at the ring · the command enters <code>EchoCache.Ring</code>, a bounded buffer. ' +
+          '<code>publish/2</code> answers <b>:ok</b> when there is room and <b>:dropped</b> when there is not, with ' +
+          'the drop counted — admission control as a typed answer at the door, not a latency discovered downstream.',
+    book: 'Drain in the book · one process per instrument drains the ring in order. It is the book’s <b>only ' +
+          'mutator</b>, so there is no second writer to contend with, and it waits without spinning because the ' +
+          'scheduler preempts it. The single-writer seat is a process by construction, not a lock to enforce.',
+    dec:  'Decide a fact · the book calls <code>Exchange.Decider</code>, a <b>pure function</b>: given the command ' +
+          'and the current book state it returns the fills that follow as facts, never a mutation. State is the fold ' +
+          'of those facts, so replay reproduces the book and every fill is explainable at its sequence.'
+  };
+  var DEFAULT_FLOW = '<span class="rk">readout ·</span> Step the path above. A command enters ' +
+    '<code>EchoCache.Ring</code>, the single-writer book drains it and calls <code>Exchange.Decider</code>, and the ' +
+    'decider emits fills as facts — one bounded buffer, one process, one pure function, with no lock to contend on any stage.';
+  var STAGE_KEYS = ['ring', 'book', 'dec'];
+  // each stage: the box id, the inbound-arrow line+head ids (ring has none), and the slots/facts to light
+  var STAGE_FX = {
+    ring: { box: 'bx-ring', ln: null, ah: null, slots: ['sl-0', 'sl-1', 'sl-2'], facts: [] },
+    book: { box: 'bx-book', ln: 'ln-book', ah: 'ah-book', slots: [], facts: [] },
+    dec:  { box: 'bx-dec', ln: 'ln-dec', ah: 'ah-dec', slots: [], facts: ['fact-a', 'fact-b', 'fact-c'] }
+  };
+  function setClass(id, cls, on) { var el = document.getElementById(id); if (el) el.classList.toggle(cls, on); }
+  function paintFlow(active) {
+    STAGE_KEYS.forEach(function (k) {
+      var fx = STAGE_FX[k];
+      var on = (k === active);
+      setClass(fx.box, 'sel', on);
+      if (fx.ln) setClass(fx.ln, 'sel', on);
+      if (fx.ah) setClass(fx.ah, 'sel', on);
+      fx.slots.forEach(function (s) { setClass(s, 'fill', on); });
+      fx.facts.forEach(function (f) { setClass(f, 'show', on); });
+    });
+  }
+  var flowBtns = document.querySelectorAll('#flowbar button');
+  var flowReadout = document.getElementById('flowReadout');
+  flowBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-st');
+      var already = b.getAttribute('aria-pressed') === 'true';
+      flowBtns.forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+      if (already || !STAGES[key]) {
+        paintFlow(null);
+        flowReadout.innerHTML = DEFAULT_FLOW;
+        return;
+      }
+      b.setAttribute('aria-pressed', 'true');
+      paintFlow(key);
+      flowReadout.innerHTML = '<span class="rk">readout ·</span> ' + STAGES[key];
+    });
+  });
+
+  /* ---------- Interactive 2: price-time priority by the branded mint order
+       (pure lookup over a fixed bid ladder; lights the order an incoming sell fills first; no storage) ---------- */
+  // Fixed bid ladder: level 101 has two resting orders in mint order (o-a before o-b); 100 and 99 below.
+  var PT = {
+    same: {
+      hit: 'o-a', next: 'o-b',
+      text: 'Two orders, same price · at 101, <b>ART…aa</b> was minted before <b>ART…ab</b>, so it sits ahead. An ' +
+            'incoming sell that crosses 101 fills <b>ART…aa first</b>, then ART…ab — price ranks first, mint order ' +
+            'breaks the tie within the price. No timestamp is consulted; the order’s own id carries its place in line.'
+    },
+    better: {
+      hit: 'o-a', next: null,
+      text: 'A better price arrives · 101 is the best bid, so it fills before 100 or 99 regardless of when those were ' +
+            'minted. Within 101, <b>ART…aa</b> (minted first) is still ahead of ART…ab. Price dominates; mint order ' +
+            'is the tie-break <b>inside</b> a price, never across prices.'
+    },
+    noclock: {
+      hit: 'o-a', next: 'o-b',
+      text: 'Why no clock · the id is minted at admission and mint order <em>is</em> sequence, so the rank within a ' +
+            'price is the branded id’s own byte order — <b>ART…aa &#8804; ART…ab</b>. The same order holds in every ' +
+            'store by the byte-sort theorem, so the book breaks ties by the id it already has, with no separate ' +
+            'timestamp to keep in sync.'
+    }
+  };
+  var DEFAULT_PT = '<span class="rk">readout ·</span> Select a question above. On the bid ladder, price ranks first ' +
+    'and mint order breaks the tie within a price — the order minted first fills first. The rank is the branded id’s ' +
+    'own byte order, so the book needs no separate clock to rank two equal-priced orders.';
+  var PT_ORDERS = ['o-a', 'o-b', 'o-c', 'o-d'];
+  function paintPt(res) {
+    PT_ORDERS.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('hit', 'next');
+      if (res) {
+        if (id === res.hit) el.classList.add('hit');
+        else if (id === res.next) el.classList.add('next');
+      }
+    });
+  }
+  var ptBtns = document.querySelectorAll('#ptbar button');
+  var ptReadout = document.getElementById('ptReadout');
+  ptBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-pt');
+      var already = b.getAttribute('aria-pressed') === 'true';
+      ptBtns.forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+      if (already || !PT[key]) {
+        paintPt(null);
+        ptReadout.innerHTML = DEFAULT_PT;
+        return;
+      }
+      b.setAttribute('aria-pressed', 'true');
+      paintPt(PT[key]);
+      ptReadout.innerHTML = '<span class="rk">readout ·</span> ' + PT[key].text;
+    });
+  });
+
+  /* ---------- Branded Snowflake decoder (the page's own ART stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

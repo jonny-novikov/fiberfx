@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R3.01.1 · List as wait + active — Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R3.01.1 · The LIST is the queue primitive a reliable queue rests on: LPUSH at the head, RPOP at the tail, FIFO. A reliable queue is two named lists — emq:{queue}:wait and emq:{queue}:active — and a job that moves between them; its position names its state. Grounded in EchoMQ's EchoMQ.Keys.wait/1 and EchoMQ.Keys.active/1, the two lists moveToActive-11.lua's RPOPLPUSH moves a job between.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- list diagram ---- */
+.lst .cell rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.lst .cell.hot rect{fill:rgba(212,168,90,.14);stroke:#d4a85a}
+.lst .cell.sage rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
+.lst text{font-family:var(--sans);fill:#d7cfb9}
+.lst .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.lst .val{font-family:var(--mono);font-size:13px;font-weight:700;fill:#f0cd7f}
+.lst .end{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.lst .arr{stroke:#2a3252;stroke-width:1.4;fill:none;transition:stroke .18s ease}
+.lst .arr.on{stroke:#d4a85a}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
+.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
+.door a{color:var(--gold-bright)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><a href="/redis-patterns/queues/processing-list">processing-list</a><span class="rsep">/</span><span class="rcur">list-wait-active</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/queues/processing-list">Processing list</a>
+        <span class="sep">/</span>
+        <span class="here">List as wait + active</span>
+      </div>
+      <p class="eyebrow">R3.01.1 &middot; dive 1</p>
+      <h1>List as wait + <span class="ex">active</span></h1>
+      <p class="lede">A queue is a list used one way: push at one end, pop at the other. A reliable queue is two such
+        lists &mdash; and a job that moves between them.</p>
+      <p class="kicker">Everything in a reliable queue rests on the Redis LIST. Push at the head with
+        <code class="inl">LPUSH</code>, pop at the tail with <code class="inl">RPOP</code>, and the order out matches
+        the order in &mdash; FIFO, with no extra structure. A reliable queue names two such lists, a waiting list and an
+        in-flight list, and a job lives in exactly one of them; its position is its state. Push jobs into the waiting
+        list on the right and pop them in FIFO order &mdash; the readout shows the contents, head, and tail.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#queue">A list is a queue</a>
+        <a href="#two">Two named lists</a>
+        <a href="#move">The move between</a>
+        <a href="#applied">In EchoMQ</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig lst" aria-labelledby="lstTitle">
+      <h4 id="lstTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">LPUSH head, RPOP tail &middot; FIFO over jobs 5, 6, 7</h4>
+      <div class="controls">
+        <div class="solid-select" id="opSel" role="group" aria-label="Push a job to the head or pop a job from the tail">
+          <button type="button" data-op="push" data-c="gold" class="active" aria-pressed="true">LPUSH (head)</button>
+          <button type="button" data-op="pop" data-c="sage" aria-pressed="false">RPOP (tail)</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 168" role="img" aria-label="A list with a head on the left and a tail on the right. LPUSH adds a job at the head; RPOP removes a job from the tail. Pushing 5, 6, 7 then popping returns 5 first, then 6, then 7 — the order out matches the order in, FIFO. The readout shows the current contents, head, and tail.">
+        <text class="ttl" x="30" y="26">work (LIST)</text>
+        <text class="end" x="30" y="120">head &middot; LPUSH</text>
+        <text class="end" x="430" y="120" text-anchor="end">tail &middot; RPOP</text>
+        <g class="cell" id="c0"><rect x="30" y="40" width="64" height="46" rx="9"></rect></g>
+        <text class="val" id="v0" x="62" y="68" text-anchor="middle">&mdash;</text>
+        <g class="cell" id="c1"><rect x="104" y="40" width="64" height="46" rx="9"></rect></g>
+        <text class="val" id="v1" x="136" y="68" text-anchor="middle">&mdash;</text>
+        <g class="cell" id="c2"><rect x="178" y="40" width="64" height="46" rx="9"></rect></g>
+        <text class="val" id="v2" x="210" y="68" text-anchor="middle">&mdash;</text>
+        <g class="cell" id="c3"><rect x="252" y="40" width="64" height="46" rx="9"></rect></g>
+        <text class="val" id="v3" x="284" y="68" text-anchor="middle">&mdash;</text>
+        <path class="arr on" id="arrHead" d="M30 100 L94 100"></path>
+        <path class="arr on" id="arrTail" d="M430 100 L366 100"></path>
+        <text class="ttl" id="lstVerd" x="230" y="150" text-anchor="middle">push 5, 6, 7 to the head; the tail holds the oldest</text>
+      </svg>
+
+      <div class="geo-readout" id="lstOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="queue">
+    <h2>A list is a queue</h2>
+    <div class="prose">
+      <p>A Redis LIST is an ordered sequence of strings with cheap push and pop at both ends. Treat one end as the head
+        and the other as the tail, push at the head and pop at the tail, and the list becomes a first-in-first-out
+        queue. <code class="inl">LPUSH key value</code> prepends to the head; <code class="inl">RPOP key</code> removes
+        from the tail. A job pushed first is popped first.</p>
+      <pre class="code"><span class="op">LPUSH</span> work <span class="res">5</span>      <span class="cmt"># head: [5]</span>
+<span class="op">LPUSH</span> work <span class="res">6</span>      <span class="cmt"># head: [6, 5]</span>
+<span class="op">LPUSH</span> work <span class="res">7</span>      <span class="cmt"># head: [7, 6, 5]</span>
+<span class="op">RPOP</span>  work        <span class="cmt"># -&gt; 5   (the oldest, popped from the tail)</span>
+<span class="op">RPOP</span>  work        <span class="cmt"># -&gt; 6</span></pre>
+      <p>The list holds the order for free. The producer pushes at the head; the consumer pops at the tail; the list
+        keeps the sequence between them. A queue is not a separate data structure &mdash; it is a list used with a push
+        at one end and a pop at the other.</p>
+    </div>
+    <p class="take">A queue is a list used one way: push at the head, pop at the tail, and the order out matches the order
+      in &mdash; FIFO, with no extra structure.</p>
+  </section>
+
+  <section id="two">
+    <h2>wait and active are two named lists</h2>
+    <div class="prose">
+      <p>A reliable queue does not use one list &mdash; it uses two. The first is the <strong>waiting</strong> list:
+        jobs a producer has enqueued and no worker has yet taken. The second is the <strong>active</strong> (in-flight)
+        list: jobs a worker has taken and is processing. A job lives in exactly one of them at a time, and its position
+        names its state. A job in the waiting list is waiting; a job in the active list is being worked.</p>
+      <p>The two lists are named keys. EchoMQ names them with a queue prefix:
+        <code class="inl">emq:{queue}:wait</code> is the waiting list and <code class="inl">emq:{queue}:active</code>
+        is the in-flight list, where <code class="inl">{queue}</code> stands in for the queue name. The job does not
+        change &mdash; it is the same string id &mdash; but which list holds it changes, and that change is the state
+        transition. Reading a job's state is asking which list it is in.</p>
+      <pre class="code"><span class="rdx">emq:{queue}:wait</span>    (LIST)   <span class="cmt"># jobs enqueued, not yet taken</span>
+<span class="rdx">emq:{queue}:active</span>  (LIST)   <span class="cmt"># jobs taken by a worker, in flight</span></pre>
+    </div>
+
+    <dl class="deflist">
+      <dt>waiting list</dt><dd>The list a producer enqueues into &mdash; EchoMQ's <code class="inl">emq:{queue}:wait</code>. A job here is waiting for a worker.</dd>
+      <dt>in-flight list</dt><dd>The list a worker moves a job <em>into</em> for processing &mdash; EchoMQ's <code class="inl">emq:{queue}:active</code>. A job here is being worked, and a crash leaves it here, recoverable.</dd>
+      <dt>state = location</dt><dd>A job's state is which list holds it. The transition is the move between the two lists.</dd>
+    </dl>
+
+    <p class="take">A reliable queue is two named lists, a waiting one and an in-flight one; a job lives in exactly one,
+      and its location is its state.</p>
+  </section>
+
+  <section id="move">
+    <h2>The move between the two lists</h2>
+    <div class="prose">
+      <p>Taking a job for work means moving it out of the waiting list and into the active list. Doing that as two
+        separate commands &mdash; pop from <code class="inl">wait</code>, then push to <code class="inl">active</code>
+        &mdash; opens a gap: between the two, the job is in neither list, and a crash there drops it. The next dive is
+        exactly that gap and the single command that closes it. For now, hold the shape: two named lists, and a job that
+        belongs to whichever one currently holds it.</p>
+      <p>A per-worker variant gives each worker its own in-flight list (<code class="inl">processing:worker1</code>,
+        <code class="inl">processing:worker2</code>), so a recovery monitor can attribute a parked job to the worker
+        that holds it. The lists are still LISTs, and the move is still a move between two of them &mdash; only the
+        destination is now worker-specific. The third dive builds on that.</p>
+    </div>
+
+    <figure class="fig lst" aria-labelledby="twoTitle">
+      <h4 id="twoTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A job's state is its list &middot; job 7 in wait, then in active</h4>
+      <div class="controls">
+        <div class="solid-select" id="stateSel" role="group" aria-label="Whether job 7 is waiting or being worked">
+          <button type="button" data-state="wait" data-c="gold" class="active" aria-pressed="true">job 7 is waiting</button>
+          <button type="button" data-state="active" data-c="sage" aria-pressed="false">job 7 is being worked</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 150" role="img" aria-label="Two named lists side by side: emq:{queue}:wait and emq:{queue}:active. When job 7 is waiting, it sits in the wait list. When it is being worked, it sits in the active list. The same job id, a different list — the list it is in is its state.">
+        <text class="ttl" x="30" y="26">emq:{queue}:wait</text>
+        <g class="cell" id="sWait"><rect x="30" y="36" width="150" height="48" rx="10"></rect></g>
+        <text class="val" id="sWaitV" x="105" y="65" text-anchor="middle">7</text>
+        <text class="ttl" x="280" y="26">emq:{queue}:active</text>
+        <g class="cell" id="sActive"><rect x="280" y="36" width="150" height="48" rx="10"></rect></g>
+        <text class="val" id="sActiveV" x="355" y="65" text-anchor="middle">&mdash;</text>
+        <path class="arr" id="sArr" d="M180 60 L280 60"></path>
+        <text class="ttl" id="stateVerd" x="230" y="120" text-anchor="middle">job 7 is in wait &middot; its state is waiting</text>
+      </svg>
+
+      <div class="geo-readout" id="stateOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">The move that takes a job for work is a move between two lists; doing it in two commands opens a gap,
+      and closing that gap is the next dive.</p>
+  </section>
+
+  <section id="applied">
+    <h2>In EchoMQ &mdash; the two named lists</h2>
+    <div class="prose">
+      <p>EchoMQ names the two lists in real code, in <code class="inl">echo/apps/echomq</code>.
+        <code class="inl">EchoMQ.Keys.wait/1</code> builds <code class="inl">"#{base(ctx)}:wait"</code> &rarr;
+        <code class="inl">emq:{queue}:wait</code>, and <code class="inl">EchoMQ.Keys.active/1</code> builds
+        <code class="inl">"#{base(ctx)}:active"</code> &rarr; <code class="inl">emq:{queue}:active</code>. A new job is
+        pushed to the waiting list; a worker that takes a job moves it into the active list. The move itself is
+        <code class="inl">moveToActive-11.lua</code>'s <code class="inl">rcall("RPOPLPUSH", waitKey, activeKey)</code>
+        &mdash; the job leaves the <code class="inl">wait</code> LIST and lands in the <code class="inl">active</code>
+        LIST as one command.</p>
+      <pre class="code"><span class="cmt">-- moveToActive-11.lua — the two lists, named (real)</span>
+<span class="op">local</span> waitKey = KEYS[<span class="res">1</span>]      <span class="cmt">-- emq:{queue}:wait   (EchoMQ.Keys.wait/1)</span>
+<span class="op">local</span> activeKey = KEYS[<span class="res">2</span>]    <span class="cmt">-- emq:{queue}:active (EchoMQ.Keys.active/1)</span>
+<span class="op">local</span> jobId = <span class="fn gold">rcall</span>(<span class="str">"RPOPLPUSH"</span>, waitKey, activeKey)  <span class="cmt">-- wait -&gt; active</span></pre>
+      <p><code class="inl">{queue}</code> is a documentation placeholder for the queue name &mdash; the real builder is
+        <code class="inl">EchoMQ.Keys.base/1</code> (<code class="inl">"#{prefix}:#{name}"</code>), so the queue
+        <code class="inl">my_queue</code> yields <code class="inl">emq:my_queue:wait</code>. It is not the cluster
+        hash-tag <code class="inl">{tag}</code> that forces slot colocation; it is the queue name standing in for
+        readability.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>A reliable queue is two named LISTs &mdash; a waiting list and an in-flight list &mdash; and a job whose
+          state is which of them holds it.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p><code class="inl">EchoMQ.Keys.wait/1</code> builds <code class="inl">emq:{queue}:wait</code> and
+          <code class="inl">EchoMQ.Keys.active/1</code> builds <code class="inl">emq:{queue}:active</code>; the move
+          between them is <code class="inl">moveToActive-11.lua</code>'s <code class="inl">RPOPLPUSH</code>.</p>
+      </div>
+    </div>
+
+    <p class="take">A reliable queue is two named lists and a move between them; EchoMQ's
+      <code class="inl">wait/1</code> and <code class="inl">active/1</code> keys are exactly those two lists.</p>
+
+    <div class="door">
+      <span class="lbl">Door &middot; not depth</span>
+      The full key layout &mdash; the prioritized set, the delayed set, the stalled set, and the event stream the worker
+      path touches alongside <code class="inl">wait</code> and <code class="inl">active</code> &mdash; is the dedicated
+      <strong>EchoMQ course</strong>. From here, this dive opens onto <a href="/echomq/core">E2 &middot; the engine</a>
+      &mdash; the as-built library and its full set of keys. This dive teaches the two-list primitive; that course
+      teaches the whole layout.
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The Redis list type and its two push/pop ends, and the queue layout EchoMQ ports.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/lists/">Redis &mdash; <em>Lists</em></a> &mdash; the list type and its push/pop ends, the list-as-queue primitive everything rests on.</li>
+          <li><a href="https://redis.io/commands/lpush/">Redis &mdash; <em>LPUSH</em></a> &mdash; prepend a job to the head of a list.</li>
+          <li><a href="https://redis.io/commands/rpop/">Redis &mdash; <em>RPOP</em></a> &mdash; remove and return a job from the tail of a list.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the wait/active list layout EchoMQ ports.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/queues/processing-list">R3.01 &middot; Processing list</a> &mdash; the module hub: the in-flight move.</li>
+          <li><a href="/redis-patterns/queues/processing-list/lmove-rpoplpush">R3.01.2 &middot; LMOVE / RPOPLPUSH</a> &mdash; the single command that moves a job between the two lists without a gap.</li>
+          <li><a href="/redis-patterns/queues/processing-list/the-in-flight-list">R3.01.3 &middot; The in-flight list</a> &mdash; <code>active</code> read as the recovery ledger.</li>
+          <li><a href="/redis-patterns/queues/the-reliable-queue">R3 &middot; The reliable queue</a> &mdash; the three guarantees in one place.</li>
+          <li><a href="/echomq/core">E2 &middot; the engine</a> &mdash; the dedicated EchoMQ course: the worker fetch loop in depth.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/queues/processing-list"><span aria-hidden="true">&larr;</span>&nbsp; R3.01 &middot; Processing list</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/queues/processing-list/lmove-rpoplpush">R3.01.2 &middot; LMOVE / RPOPLPUSH <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/queues/processing-list">R3.01 &middot; Processing list</a>
+        <a href="/redis-patterns/queues/processing-list/lmove-rpoplpush">R3.01.2 &middot; LMOVE / RPOPLPUSH</a>
+        <a href="/redis-patterns/queues/processing-list/the-in-flight-list">R3.01.3 &middot; The in-flight list</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/core">The EchoMQ course &middot; the engine</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: LPUSH/RPOP FIFO over jobs 5,6,7 (pure over a list state) ---------- */
+  // The list starts empty. LPUSH prepends to the head; RPOP removes from the tail. Pushing 5,6,7 then popping returns
+  // 5 first (FIFO). The list contents after each op are a pure function of the op sequence; the readout is pure over
+  // the current list.
+  var GOLD = '#f0cd7f', SAGE = '#a7c9b1', DIM = '#a39c89';
+  var SEQ = [5, 6, 7]; // the jobs to push, in order
+  // pure: a list (head-first array) + op -> next list
+  function apply(list, op, pushPtr) {
+    if (op === 'push') {
+      if (pushPtr >= SEQ.length) return { list: list, note: 'all of 5, 6, 7 are pushed' };
+      return { list: [SEQ[pushPtr]].concat(list), note: 'LPUSH ' + SEQ[pushPtr] + ' to the head' };
+    }
+    if (list.length === 0) return { list: list, note: 'the list is empty — RPOP returns nil' };
+    var tail = list[list.length - 1];
+    return { list: list.slice(0, list.length - 1), note: 'RPOP returns ' + tail + ' (the oldest) from the tail' };
+  }
+  // pure: list -> readout text
+  function describe(list, note) {
+    if (list.length === 0) {
+      return note + '. Contents: [] (empty). Head: —, tail: —.';
+    }
+    var head = list[0], tail = list[list.length - 1];
+    return note + '. Contents (head→tail): [' + list.join(', ') + ']. Head: ' + head + ', tail: ' + tail +
+      '. RPOP would return ' + tail + ' next — the oldest pushed, FIFO.';
+  }
+  var theList = [], pushPtr = 0;
+  function paint() {
+    // render up to four cells from the head
+    for (var i = 0; i < 4; i++) {
+      var cell = document.getElementById('c' + i), v = document.getElementById('v' + i);
+      if (!cell || !v) continue;
+      if (i < theList.length) {
+        v.textContent = String(theList[i]);
+        cell.classList.add('hot'); cell.style.opacity = '1';
+      } else {
+        v.textContent = '—';
+        cell.classList.remove('hot'); cell.style.opacity = '.4';
+      }
+    }
+    var verd = document.getElementById('lstVerd');
+    if (verd) verd.textContent = theList.length
+      ? 'tail (rightmost) is the oldest — RPOP returns it next'
+      : 'the list is empty';
+  }
+  function setOp(op) {
+    var r = apply(theList, op, pushPtr);
+    theList = r.list;
+    if (op === 'push' && pushPtr < SEQ.length) pushPtr++;
+    paint();
+    var out = document.getElementById('lstOut');
+    if (out) out.textContent = describe(theList, r.note);
+  }
+  document.querySelectorAll('#opSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var op = b.getAttribute('data-op');
+      document.querySelectorAll('#opSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setOp(op);
+    });
+  });
+  // initial render: pre-fill 5,6,7 so the static state already shows a populated FIFO list
+  (function seed() {
+    theList = [7, 6, 5]; pushPtr = SEQ.length;
+    paint();
+    var out = document.getElementById('lstOut');
+    if (out) out.textContent = describe(theList, 'pushed 5, 6, 7 to the head');
+  })();
+
+  /* ---------- content: state = location — job 7 in wait, then active (pure over the state) ---------- */
+  // The same job id 7 sits in exactly one of two named lists. Its state is which list holds it: wait -> waiting,
+  // active -> being worked. The cells and readout are a pure function of the selected state.
+  function stateView(state) {
+    if (state === 'active') {
+      return {
+        wait: '—', active: '7', lit: 'active',
+        verd: 'job 7 is in active · its state is being worked',
+        text: 'Job 7 is in emq:{queue}:active. The same job id, now in the in-flight list — its state is being ' +
+          'worked. A crash here leaves it in active, recoverable.'
+      };
+    }
+    return {
+      wait: '7', active: '—', lit: 'wait',
+      verd: 'job 7 is in wait · its state is waiting',
+      text: 'Job 7 is in emq:{queue}:wait. The same job id sits in the waiting list — its state is waiting for a ' +
+        'worker. Taking it for work moves it into emq:{queue}:active.'
+    };
+  }
+  function setState(state) {
+    var r = stateView(state);
+    var sWait = document.getElementById('sWait'), sActive = document.getElementById('sActive'),
+        sWaitV = document.getElementById('sWaitV'), sActiveV = document.getElementById('sActiveV'),
+        sArr = document.getElementById('sArr'), verd = document.getElementById('stateVerd'),
+        out = document.getElementById('stateOut');
+    if (sWaitV) sWaitV.textContent = r.wait;
+    if (sActiveV) sActiveV.textContent = r.active;
+    if (sWait) { sWait.classList.remove('hot', 'sage'); if (r.lit === 'wait') sWait.classList.add('hot'); }
+    if (sActive) { sActive.classList.remove('hot', 'sage'); if (r.lit === 'active') sActive.classList.add('sage'); }
+    if (sArr) sArr.classList.toggle('on', r.lit === 'active');
+    if (verd) verd.textContent = r.verd;
+    if (out) out.textContent = r.text;
+  }
+  document.querySelectorAll('#stateSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var state = b.getAttribute('data-state');
+      document.querySelectorAll('#stateSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setState(state);
+    });
+  });
+  setState('wait'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

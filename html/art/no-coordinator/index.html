@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A2 · Why You Don't Need a Coordinator — ZooKeeper subsumed · The Art of BCS · jonnify</title>
+<meta name="description" content="The Art of BCS, Part II: a coordinator is a separate service a distributed system runs because it cannot coordinate itself. ZooKeeper supplies leader election, membership, and configuration; the BEAM answers each in three substitutions — distributed Erlang, the single-writer principle, and the audited placement hash — so the separate service falls away.">
+<style>
+/* ============ The Art of BCS identity — the architect's blueprint ============
+   The senior continuation of /bcs. The contract-sheet FAMILY (light paper,
+   mono-forward, numbered sections, frozen-transcript evidence) adapted into its
+   own palette: cool blueprint paper, architect-indigo lead, availability-green,
+   EchoMesh-violet, edge-amber. NOT the dark-editorial system; NOT the warm
+   oxide-red /bcs sheet cloned verbatim. */
+:root{
+  --a-paper:#e9edf1;
+  --a-card:#f9fafc;
+  --a-ink:#18222e;
+  --a-dim:#5b6775;
+  --a-line:#c7d1dc;
+  --a-arc:#2a4f8f;     /* architect indigo — the house lead   */
+  --a-avail:#1f7a5e;   /* availability green — the nines       */
+  --a-mesh:#7b3aa0;    /* EchoMesh violet — the heart          */
+  --a-edge:#b3631c;    /* edge amber — the line drawn outside  */
+  --a-arc-tint:#dde6f3;
+  --a-mesh-tint:#ece1f3;
+  --a-avail-tint:#d7ece4;
+  --a-edge-tint:#f1e3d2;
+  --a-term-bg:#121a22;
+  --a-term-fg:#cdd8e0;
+  --a-term-dim:#728390;
+  --a-term-ok:#8fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--a-paper);color:var(--a-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--a-arc);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--a-arc)}
+a:focus-visible{outline:2px solid var(--a-arc);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#e3e9ef;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--a-line);background:var(--a-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--a-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--a-arc)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--a-dim);background:var(--a-paper);border:1px solid var(--a-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--a-dim);border-bottom:none}
+.route-tag a:hover{color:var(--a-arc)}
+.route-tag .rsep{color:var(--a-line);margin:0 1px}
+.route-tag .rcur{color:var(--a-arc);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--a-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--a-ink)}
+
+/* ---------- the nines rule device ---------- */
+.ninerule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.ninerule i{height:4px;border-radius:2px;background:var(--a-arc-tint)}
+.ninerule i:nth-child(-n+2){background:var(--a-edge-tint);box-shadow:inset 0 0 0 1px var(--a-edge)}
+.ninerule i:nth-child(n+3):nth-child(-n+10){box-shadow:inset 0 0 0 1px var(--a-arc)}
+.ninerule i:nth-child(n+11){background:var(--a-avail-tint);box-shadow:inset 0 0 0 1px var(--a-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--a-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--a-arc);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--a-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--a-ink)}
+.body{font-size:.98rem;color:var(--a-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--a-arc);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--a-arc)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--a-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--a-arc)}
+
+/* ---------- the substitution mapper figure ---------- */
+.calc{background:var(--a-card);border:1px solid var(--a-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.calc figcaption{font-family:var(--mono);font-size:12.5px;color:var(--a-dim);margin-bottom:14px}
+.calc figcaption b{color:var(--a-ink)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--a-ink);background:var(--a-paper);border:1px dashed var(--a-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em;margin-top:14px}
+.readout .rk{color:var(--a-dim)}
+.calcsvg{width:100%;height:auto;display:block;margin-top:4px}
+.schemsvg .bx{fill:var(--a-card);stroke:var(--a-line);stroke-width:1.5}
+.schemsvg .bx.zk{fill:var(--a-edge-tint);stroke:var(--a-edge)}
+.schemsvg .bx.rt{fill:var(--a-arc-tint);stroke:var(--a-arc)}
+.schemsvg .bx.sel{fill:var(--a-avail-tint);stroke:var(--a-avail);stroke-width:2.5}
+.schemsvg .ln{stroke:var(--a-dim);stroke-width:1.5;fill:none;opacity:.35}
+.schemsvg .ln.sel{stroke:var(--a-avail);opacity:1;stroke-width:2.5}
+.schemsvg .arrh{fill:var(--a-dim);opacity:.5}
+.schemsvg .arrh.sel{fill:var(--a-avail);opacity:1}
+.schemsvg .lbl{font:11px var(--mono);fill:var(--a-ink);text-anchor:middle}
+.schemsvg .lblc{font:700 12px var(--mono);text-anchor:middle}
+.schemsvg .lblc.zk{fill:var(--a-edge)}
+.schemsvg .lblc.rt{fill:var(--a-arc)}
+.schemsvg .cap{font:11px var(--mono);text-anchor:middle}
+.schemsvg .cap.conv{fill:var(--a-edge)}
+.schemsvg .cap.this{fill:var(--a-avail)}
+.schemsvg .sub{font:10px var(--mono);fill:var(--a-dim);text-anchor:middle}
+
+/* ---------- the three substitutions triptych ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--a-card);border:1px solid var(--a-line);border-top:3px solid var(--a-arc);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--a-edge)}
+.tri article:nth-child(3){border-top-color:var(--a-avail)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--a-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--a-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--a-dim)}
+.tri .note b{color:var(--a-arc);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--a-dim);max-width:84ch}
+.compose b{color:var(--a-ink)}
+
+/* ---------- the ring placement interactive ---------- */
+.subbar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.subbar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--a-line);background:var(--a-card);color:var(--a-ink);cursor:pointer;text-align:left}
+.subbar button:focus-visible{outline:2px solid var(--a-arc);outline-offset:2px}
+.subbar button[aria-pressed="true"]{border-color:var(--a-ink);background:var(--a-ink);color:var(--a-paper)}
+.subbar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline;background:var(--a-arc)}
+.ringgrid{display:grid;grid-template-columns:1.1fr 1fr;gap:18px;align-items:start}
+.ringsvg{width:100%;height:auto;display:block}
+.ringsvg .node{fill:var(--a-arc-tint);stroke:var(--a-arc);stroke-width:1.5}
+.ringsvg .node.down{fill:var(--a-edge-tint);stroke:var(--a-edge);stroke-dasharray:4 3}
+.ringsvg .node.own{fill:var(--a-avail-tint);stroke:var(--a-avail);stroke-width:2.5}
+.ringsvg .rim{fill:none;stroke:var(--a-line);stroke-width:2}
+.ringsvg .nlbl{font:700 11px var(--mono);text-anchor:middle;fill:var(--a-ink)}
+.ringsvg .book{fill:var(--a-arc);stroke:none}
+.ringsvg .book.down{fill:var(--a-edge)}
+.ringsvg .blbl{font:10px var(--mono);text-anchor:middle;fill:var(--a-ink)}
+
+/* ---------- frozen / derived-arithmetic evidence ---------- */
+.frozen{background:var(--a-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0c1218}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--a-term-dim);padding:9px 14px;border-bottom:1px solid #222c34}
+.frozen figcaption .tag{margin-left:auto;color:var(--a-term-bg);background:var(--a-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--a-term-fg)}
+.frozen pre b{color:var(--a-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--a-term-dim)}
+
+/* ---------- the dive map ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pcard{display:block;background:var(--a-card);border:1px solid var(--a-line);border-radius:var(--rad);padding:18px;color:var(--a-ink)}
+a.pcard{border-color:var(--a-arc)}
+a.pcard:hover{border-bottom-color:var(--a-arc);box-shadow:0 1px 0 var(--a-arc)}
+.pcard .bid{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--a-arc);letter-spacing:.08em}
+.pcard h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.pcard p{font-size:.87rem;color:var(--a-dim)}
+.pcard .meta{display:flex;gap:10px;align-items:center;margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--a-dim)}
+.chip{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-radius:3px;padding:1px 7px}
+.chip.now{background:var(--a-arc);color:var(--a-card)}
+.chip.soon{background:var(--a-paper);border:1px solid var(--a-line);color:var(--a-dim)}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--a-dim);max-width:86ch;line-height:1.7}
+.booknote b{color:var(--a-arc)}
+
+/* ---------- the doors (course-to-course references) ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--a-card);border:1px solid var(--a-line);border-left:3px solid var(--a-arc);border-radius:var(--rad);padding:18px;color:var(--a-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--a-arc)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--a-arc);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--a-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--a-ink);border-top:1px dashed var(--a-line);padding-top:9px}
+.door .dnote b{color:var(--a-arc)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--a-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--a-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--a-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--a-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--a-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--a-line);background:var(--a-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--a-ink);font-size:15px}
+.foot-logo .bdot{color:var(--a-arc)}
+.foot-tag{font-size:.86rem;color:var(--a-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--a-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--a-ink);padding:2px 0}
+.foot-links span{color:var(--a-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--a-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--a-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--a-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--a-dim);cursor:pointer;border:1px dashed var(--a-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--a-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--a-arc)}
+.stamp:focus-visible{outline:2px solid var(--a-arc);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--a-term-bg);color:var(--a-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--a-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.props,.pgrid{grid-template-columns:1fr 1fr}
+  .doors,.ringgrid{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.props,.pgrid{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>art</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/art">art</a><span class="rsep">/</span><span class="rcur">no-coordinator</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#argument">The argument</a>
+      <a href="#substitutions">Three substitutions</a>
+      <a href="#ring">The ring</a>
+      <a href="#line">The line</a>
+      <a href="#dives">The dives</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">A2 · Why You Don&#8217;t Need a Coordinator — The Art of BCS</p>
+      <h1>A coordinator coordinates a system<br>that <span class="hns">cannot coordinate itself</span>.</h1>
+      <p class="lede">Part II is the first of the four arguments. A coordinator &#8212; Apache ZooKeeper as the canonical
+      instance &#8212; is a separate service a distributed system runs to reach the agreements it cannot reach on its
+      own: <b>leader election, membership, and configuration</b>. The BEAM already provides those agreements, so for a
+      single-organization, soft-real-time system the separate service is what falls away. Coordination is a runtime
+      property, not an acquired daemon.</p>
+      <p class="heronote">The senior continuation of <a href="/bcs">/bcs</a>, whose audited placement hash this chapter
+      computes against. Each figure here is verbatim from the manuscript (<code>art2.md</code>) or a cited source. The
+      claim is narrow on purpose: distributed Erlang is itself coordination, and the regulated ledger&#8217;s consensus
+      stays a database&#8217;s, outside the runtime by design.</p>
+
+      <figure class="calc">
+        <figcaption>The coordinator&#8217;s three jobs, and the runtime substitution that holds each &#183; select a job
+        to trace it to its substitution (the three substitutions of <b>art2.md</b>, &#8220;the runtime&#8217;s answer&#8221;).
+        ZooKeeper supplies the agreements at left; the runtime answers each at right with no separate coordinator.</figcaption>
+        <div class="subbar" id="mapbar" role="group" aria-label="Pick one of the coordinator's three jobs">
+          <button type="button" data-job="elect" aria-pressed="false"><span class="sw"></span>Leader election</button>
+          <button type="button" data-job="member" aria-pressed="false"><span class="sw"></span>Membership &amp; discovery</button>
+          <button type="button" data-job="config" aria-pressed="false"><span class="sw"></span>Configuration &amp; placement</button>
+        </div>
+        <svg class="calcsvg schemsvg" id="mapsvg" viewBox="0 0 760 250" role="img" aria-label="A mapping schematic. On the left, a ZooKeeper coordinator box supplies three jobs — leader election, membership and discovery, and configuration and placement. On the right, the runtime answers each: leader election is removed by the single-writer principle, membership and discovery is distributed Erlang, and configuration and placement is the audited hash32. Selecting a job at the top highlights the line from that ZooKeeper job to its runtime substitution.">
+          <text class="cap conv" x="150" y="16">the coordinator &#183; ZooKeeper</text>
+          <text class="cap this" x="610" y="16">the runtime &#183; the substitution</text>
+          <rect class="bx zk" x="30" y="42" width="240" height="166" rx="4"></rect>
+          <text class="lblc zk" x="150" y="62">ZOOKEEPER</text>
+          <rect class="bx" id="zk-elect" x="48" y="78" width="204" height="32" rx="3"></rect><text class="lbl" x="150" y="98">leader election</text>
+          <rect class="bx" id="zk-member" x="48" y="118" width="204" height="32" rx="3"></rect><text class="lbl" x="150" y="138">membership &amp; discovery</text>
+          <rect class="bx" id="zk-config" x="48" y="158" width="204" height="32" rx="3"></rect><text class="lbl" x="150" y="178">configuration &amp; placement</text>
+          <path class="ln" id="ln-elect" d="M270 94 L490 94"></path><path class="arrh" id="ah-elect" d="M490 88 L504 94 L490 100 z"></path>
+          <path class="ln" id="ln-member" d="M270 134 L490 134"></path><path class="arrh" id="ah-member" d="M490 128 L504 134 L490 140 z"></path>
+          <path class="ln" id="ln-config" d="M270 174 L490 174"></path><path class="arrh" id="ah-config" d="M490 168 L504 174 L490 180 z"></path>
+          <rect class="bx rt" x="508" y="78" width="222" height="32" rx="3" id="rt-elect"></rect><text class="lbl" x="619" y="93">single-writer principle</text><text class="sub" x="619" y="105">election removed, not held</text>
+          <rect class="bx rt" x="508" y="118" width="222" height="32" rx="3" id="rt-member"></rect><text class="lbl" x="619" y="133">distributed Erlang</text><text class="sub" x="619" y="145">the runtime&#8217;s own layer</text>
+          <rect class="bx rt" x="508" y="158" width="222" height="32" rx="3" id="rt-config"></rect><text class="lbl" x="619" y="173">audited hash32</text><text class="sub" x="619" y="185">computed, not handed out</text>
+        </svg>
+        <div class="readout" id="mapReadout" aria-live="polite"><span class="rk">readout &#183;</span> Select a job
+        above. Each of ZooKeeper&#8217;s three jobs traces to one runtime substitution &#8212; election is removed by the
+        single-writer principle, membership is distributed Erlang, placement is the audited <code>hash32</code> &#8212;
+        none a separate coordinator on any path.</div>
+      </figure>
+    </section>
+
+    <div class="ninerule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="argument">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>State the coordinator fairly</h2>
+        <span class="ssrc">art2.md &#183; what this chapter argues</span>
+      </div>
+      <p class="body">A coordinator is a real and well-made thing. ZooKeeper, the canonical instance, is a centralized
+      service that supplies the agreements a distributed system cannot reach on its own &#8212; <b>leader election,
+      membership, configuration, group services</b>, and the distributed locks built on them. For more than a decade it
+      was the service a generation of distributed systems leaned on for exactly those agreements. The claim of this
+      chapter is not that the agreements are unnecessary; it is that the BEAM already provides them, so the separate
+      service is what falls away.</p>
+      <p class="body">The strongest evidence is the industry&#8217;s own movement, and it leads here because it is not
+      the runtime&#8217;s partisans making the case. Kafka removed its dependency on ZooKeeper, folding the
+      coordinator&#8217;s metadata and election into an internal Raft metadata quorum (<b>KRaft</b>), so that the only
+      thing needed to run Kafka is Kafka. Consolidating coordination into the system rather than a separate coordinator
+      is the BEAM&#8217;s posture, and the runtime has held it since long before the systems now converging on it
+      existed.</p>
+      <figure class="frozen">
+        <figcaption>the convergence, stated as a count &#183; what each footprint runs to coordinate one cluster<span class="tag">from art2.md</span></figcaption>
+<pre>coordinated by a service   app + ZooKeeper ensemble        <span class="fd">&#8592; election, membership, configuration</span>
+                           separate coordinator to operate = <b>1</b>   <span class="fd">&#8592; its own quorum, its own failure domain</span>
+Kafka, after KIP-500       the broker + an internal Raft quorum (KRaft)
+                           separate coordinator to operate = <b>0</b>   <span class="fd">&#8592; the only thing needed to run Kafka is Kafka</span>
+this architecture          the runtime &#8212; distributed Erlang, single-writer, audited hash
+                           separate coordinator on the path = <b>0</b>   <span class="fd">&#8592; coordination is a runtime property</span></pre>
+      </figure>
+    </section>
+
+    <section id="substitutions">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The runtime&#8217;s answer, in three substitutions</h2>
+        <span class="ssrc">art2.md &#183; the three dives</span>
+      </div>
+      <p class="body">What replaces the coordinator is not one thing but three, and naming each keeps the refusal from
+      leaving a hole. Each substitution is the subject of one dive of this chapter.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">Substitution one</p>
+          <h3>Membership &amp; discovery &#8594; distributed Erlang</h3>
+          <p>The runtime&#8217;s built-in model lets a program run across machines, with processes on different nodes
+          addressing each other by the same message-passing they use locally. The service that told a cluster who its
+          members were is the runtime&#8217;s own distribution layer.</p>
+          <p class="note">the role a coordinator&#8217;s membership protocol filled, held by the <b>runtime</b></p>
+        </article>
+        <article>
+          <p class="cno">Substitution two</p>
+          <h3>Election &#8594; removed by the single-writer principle</h3>
+          <p>The hardest coordinator job &#8212; electing a writer per shard &#8212; is removed rather than replaced.
+          The single-writer principle gives each aggregate exactly one owning process, so there is no contest to resolve
+          and nothing to elect.</p>
+          <p class="note">a job that does not happen needs <b>no election</b> to settle it</p>
+        </article>
+        <article>
+          <p class="cno">Substitution three</p>
+          <h3>Configuration &amp; placement &#8594; the audited <code>hash32</code></h3>
+          <p>Which node owns which instrument is the canon&#8217;s audited hash &#8212; a function any holder of the
+          branded id computes, not a routing table a coordinator hands out. It closes the seam the snowflake&#8217;s own
+          history left when it chose worker numbers through a coordinator.</p>
+          <p class="note">placement is <b>computed</b>, doored to <a href="/bcs">/bcs</a> for the audit</p>
+        </article>
+      </div>
+      <p class="compose">Read together, the three close every job the coordinator did: <b>membership</b> the runtime
+      supplies, <b>election</b> the single-writer principle removes, <b>placement</b> the audited hash computes &#8212;
+      so nothing is left for a separate service to hold.</p>
+    </section>
+
+    <section id="ring">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Placement without a routing table</h2>
+        <span class="ssrc">art2.md &#183; the partition cost</span>
+      </div>
+      <p class="body">The third dive works the case: one book per instrument, placed by a consistent ring over the
+      audited hash. Any holder of the branded id computes the owner &#8212; no coordinator hands out a table. Select an
+      event to read where a book sits, and what happens to its owner under a network partition.</p>
+      <div class="subbar" id="ringbar" role="group" aria-label="Pick a placement event">
+        <button type="button" data-ev="place" aria-pressed="false"><span class="sw"></span>Place a book</button>
+        <button type="button" data-ev="route" aria-pressed="false"><span class="sw"></span>Route an order</button>
+        <button type="button" data-ev="lost" aria-pressed="false"><span class="sw"></span>Owner node lost</button>
+      </div>
+      <div class="ringgrid">
+        <svg class="ringsvg" id="ringsvg" viewBox="0 0 300 250" role="img" aria-label="A consistent-hash ring with three runtime nodes — node a, node b, and node c — arranged on a circle. A book for the instrument is placed at the point the audited hash maps it to, and owned by the next node clockwise. When the owning node is lost it is drawn dashed, and the book it owned refuses rather than fail over to a second writer.">
+          <circle class="rim" cx="150" cy="120" r="84"></circle>
+          <circle class="node" id="n-a" cx="150" cy="36" r="22"></circle><text class="nlbl" x="150" y="40">node a</text>
+          <circle class="node" id="n-b" cx="223" cy="162" r="22"></circle><text class="nlbl" x="223" y="166">node b</text>
+          <circle class="node" id="n-c" cx="77" cy="162" r="22"></circle><text class="nlbl" x="77" y="166">node c</text>
+          <circle class="book" id="bk" cx="215" cy="78" r="6"></circle>
+          <text class="blbl" id="bklbl" x="215" y="64">BTC&#8209;PERP</text>
+        </svg>
+        <div class="readout" id="ringReadout" aria-live="polite"><span class="rk">readout &#183;</span> Select an event
+        above. The book for an instrument is placed at the point the audited <code>hash32</code> maps its branded id to,
+        and owned by the next node clockwise &#8212; computed by anyone holding the id, with no routing table from a
+        coordinator.</div>
+      </div>
+    </section>
+
+    <section id="line">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The line this chapter draws</h2>
+        <span class="ssrc">art2.md &#183; the line, and the named exit</span>
+      </div>
+      <p class="body">The claim is narrow on purpose, and candor about its edge is part of the argument. This chapter
+      does not say a distributed system needs no coordination at all: <b>distributed Erlang is itself a coordination
+      mechanism</b>, with its own membership protocol and failure modes, and consensus still lives where it must &#8212;
+      the regulated ledger&#8217;s transactional guarantees, drawn outside the runtime in a later chapter, remain a
+      database&#8217;s. What the chapter retires is the separate coordinator service for a single-organization,
+      soft-real-time system whose sharded state has one owner per shard and whose placement is computed.</p>
+      <p class="body">And it states a price plainly rather than hide it. Under a network partition the architecture is
+      designed for consistency in matching, so a book whose owning node is unreachable <b>refuses rather than risk a
+      second writer</b>. The exit is named too: a system that needs cross-shard consensus, multi-writer agreement, or
+      dynamic
+      configuration distributed to many independent consumers has reached the envelope where an external coordinator
+      earns its place.</p>
+      <figure class="frozen">
+        <figcaption>the line, drawn both ways &#183; what the runtime holds, and the exit where a coordinator returns<span class="tag">from art2.md</span></figcaption>
+<pre>retired here     a separate coordinator for one organization&#8217;s sharded, soft-real-time state
+                 one owner per shard, placement computed       <span class="fd">&#8592; no contest to elect, no table to hand out</span>
+the partition cost  owner node unreachable &#8594; the book <b>refuses</b>  <span class="fd">&#8592; consistency for matching, never a second writer</span>
+the named exit   cross-shard consensus &#183; multi-writer agreement &#183; config to many consumers
+                 an external coordinator <b>earns its place</b>     <span class="fd">&#8592; the envelope past which the claim stops</span></pre>
+      </figure>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The three dives</h2>
+        <span class="ssrc">A2.1 &#8211; A2.3</span>
+      </div>
+      <div class="pgrid">
+        <div class="pcard">
+          <span class="bid">A2.1</span>
+          <h3>What a Coordinator Is For</h3>
+          <p>The coordinator&#8217;s role stated from its own documentation &#8212; leader election, membership,
+          configuration &#8212; and the industry&#8217;s move off it (Kafka&#8217;s internal Raft quorum) read as the
+          convergence it is.</p>
+          <span class="meta"><span>the role</span><span class="chip soon">soon</span></span>
+        </div>
+        <div class="pcard">
+          <span class="bid">A2.2</span>
+          <h3>Coordination as a Runtime Property</h3>
+          <p>The three substitutions in the runtime&#8217;s own terms &#8212; distributed Erlang for membership and
+          discovery, the single-writer principle for the election that does not happen, and the audited hash for
+          placement.</p>
+          <span class="meta"><span>the substitutions</span><span class="chip soon">soon</span></span>
+        </div>
+        <div class="pcard">
+          <span class="bid">A2.3</span>
+          <h3>The Exchange Without a Coordinator</h3>
+          <p>The worked case &#8212; one book per instrument placed by a consistent ring over the audited hash, orders
+          routed to the owner, a book handed off when a node is lost, and matching refusing under the consistency rule,
+          with no external coordinator on any path.</p>
+          <span class="meta"><span>the worked case</span><span class="chip soon">soon</span></span>
+        </div>
+      </div>
+      <p class="booknote">The dives are cumulative: the first states the coordinator&#8217;s role and reads the
+      industry off it; the second names the three substitutions; the third works them on the exchange&#8217;s book
+      placement and failover. Up next, <b>Part III takes the second member of the constellation &#8212; the log
+      broker</b>. A dive card becomes a link when its page ships.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The doors — the sibling courses</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The foundation: the law, the 14-byte branded contract, and the audited placement hash this chapter
+          computes against rather than ask a coordinator for.</p>
+          <p class="dnote"><b>placement doors here</b> &#8212; the audited <code>hash32</code> that closes the seam the
+          snowflake&#8217;s worker-number history left, in depth on /bcs.</p>
+        </a>
+        <a class="door" href="/elixir">
+          <span class="dr">/elixir</span>
+          <h3>Functional Programming in Elixir</h3>
+          <p>Distributed Erlang in depth: the runtime&#8217;s built-in model for running a program across machines, and
+          the umbrella and Fly deployment chapter the substitution rests on.</p>
+          <p class="dnote"><b>membership doors here</b> &#8212; the distribution layer that holds discovery is the
+          runtime&#8217;s own, taught in full on /elixir.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://www.confluent.io/learn/zookeeper-kafka/" rel="noopener">Confluent &#8212; ZooKeeper and Apache Kafka</a><span class="rs">the coordinator: centralized cluster metadata, leader election, group membership, and configuration &#8212; the role it filled for Kafka for over a decade</span></li>
+          <li><a href="https://developer.confluent.io/learn/kraft/" rel="noopener">Apache Kafka &#8212; KIP-500 / KRaft</a><span class="rs">replacing the ZooKeeper dependency with an internal Raft metadata quorum, so the only thing needed to run Kafka is Kafka</span></li>
+          <li><a href="https://www.erlang-solutions.com/blog/beam-jvm-virtual-machines-comparing-and-contrasting/" rel="noopener">Erlang Solutions &#8212; BEAM and JVM Virtual Machines</a><span class="rs">the BEAM&#8217;s built-in model for running a program across machines transparently &#8212; the runtime&#8217;s own membership, discovery, and distribution</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/art">The Art of BCS — A0 · Orientation</a><span class="rs">the course landing, the credo, the runtime, and the map</span></li>
+          <li><a href="/art/thesis">The Art of BCS — A1 · The Thesis</a><span class="rs">the floor this chapter stands on: the runtime holds the four roles</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the law, the branded contract, and the audited placement hash</span></li>
+          <li><a href="/echomq">EchoMQ — the protocol, in depth</a><span class="rs">the substrate beneath the bus</span></li>
+          <li><a href="/redis-patterns">Redis Patterns Applied</a><span class="rs">the Valkey substrate patterns under the cache</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">distributed Erlang, the engine, the umbrella, and the Fly deployment chapter</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/art"><span class="pk">the course</span>&#8592; The Art of BCS &#183; the map</a>
+      <span class="pgx"><span class="pk">next &#183; first dive</span>A2.1 &#183; What a Coordinator Is For &#8212; soon</span>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="The Art of BCS — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>art</span>
+        <p class="foot-tag">The Art of BCS &#8212; the architect&#8217;s case for owning the runtime, built part by
+        part to EchoMesh, every figure from a committed source.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/art">A0 &#183; Orientation</a>
+        <a href="/art/thesis">A1 &#183; The Thesis</a>
+        <a href="/art/no-coordinator">A2 &#183; No Coordinator</a>
+        <span>A3 &#183; No Log Broker<i>soon</i></span>
+        <span>A4 &#183; No Message Broker<i>soon</i></span>
+        <span>A5 &#183; No Orchestrator<i>soon</i></span>
+        <span>A6 &#183; The Hot Path<i>soon</i></span>
+        <span>A7 &#183; Durable Edge<i>soon</i></span>
+        <span>A8 &#183; EchoMesh<i>soon</i></span>
+        <span>A9 &#183; EchoMesh in Depth<i>soon</i></span>
+        <span>A10 &#183; The Whole Picture<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/art">The Art of BCS — this course</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">ART0Nzkynce4OW</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 09:07:00 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the coordinator-job → substitution mapper
+       (pure lookup over the art2.md three substitutions; highlights the SVG line; no storage) ---------- */
+  var SUBS = {
+    elect: 'Leader election · the coordinator’s hardest job is electing a writer per shard. The runtime ' +
+           'does not hold it — it is <b>removed</b> by the single-writer principle: each aggregate has exactly ' +
+           'one owning process, so there is no contest to resolve and nothing to elect.',
+    member: 'Membership &amp; discovery · the service that told a cluster who its members were is the ' +
+            'runtime’s own <b>distributed Erlang</b> — a built-in model that lets a program run across ' +
+            'machines, processes on different nodes addressing each other by the same message-passing they use locally.',
+    config: 'Configuration &amp; placement · which node owns which instrument is the canon’s <b>audited ' +
+            '<code>hash32</code></b>, a function any holder of the branded id computes — not a routing table a ' +
+            'coordinator hands out. It closes the seam the snowflake left when it chose worker numbers through a ' +
+            'coordinator.'
+  };
+  var DEFAULT_MAP = '<span class="rk">readout ·</span> Select a job above. Each of ZooKeeper’s three jobs ' +
+    'traces to one runtime substitution — election is removed by the single-writer principle, membership is ' +
+    'distributed Erlang, placement is the audited <code>hash32</code> — none a separate coordinator on any path.';
+  var ROWS = ['elect', 'member', 'config'];
+  function paintMap(active) {
+    ROWS.forEach(function (k) {
+      var on = (k === active);
+      var zk = document.getElementById('zk-' + k);
+      var rt = document.getElementById('rt-' + k);
+      var ln = document.getElementById('ln-' + k);
+      var ah = document.getElementById('ah-' + k);
+      if (zk) zk.classList.toggle('sel', on);
+      if (rt) rt.classList.toggle('sel', on);
+      if (ln) ln.classList.toggle('sel', on);
+      if (ah) ah.classList.toggle('sel', on);
+    });
+  }
+  var mapBtns = document.querySelectorAll('#mapbar button');
+  var mapReadout = document.getElementById('mapReadout');
+  mapBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-job');
+      var already = b.getAttribute('aria-pressed') === 'true';
+      mapBtns.forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+      if (already || !SUBS[key]) {
+        paintMap(null);
+        mapReadout.innerHTML = DEFAULT_MAP;
+        return;
+      }
+      b.setAttribute('aria-pressed', 'true');
+      paintMap(key);
+      mapReadout.innerHTML = '<span class="rk">readout ·</span> ' + SUBS[key];
+    });
+  });
+
+  /* ---------- Interactive 2: the consistent-ring placement walk
+       (pure functions over a fixed 3-node ring; no storage) ---------- */
+  // Fixed ring: three nodes at angles, the book placed at a fixed hash point owned by the next node clockwise.
+  var NODES = { a: { id: 'n-a', cx: 150, cy: 36 }, b: { id: 'n-b', cx: 223, cy: 162 }, c: { id: 'n-c', cx: 77, cy: 162 } };
+  // The audited hash maps BTC-PERP to a point between node a and node b; the owner is the next node clockwise: node b.
+  var OWNER = 'b';
+  var EVENTS = {
+    place: {
+      owner: OWNER, down: false,
+      text: 'Place a book · the audited <code>hash32</code> maps BTC‑PERP’s branded id to a point on ' +
+            'the ring, and the owner is the next node <b>clockwise</b> — here <b>node b</b>. Any holder of the ' +
+            'id computes the same owner; no coordinator hands out a table.'
+    },
+    route: {
+      owner: OWNER, down: false,
+      text: 'Route an order · a venue holding the order computes <code>hash32</code> over the same branded id, ' +
+            'reaches the same owner — <b>node b</b> — and sends the command there. Placement and routing ' +
+            'agree by construction because both are the same computed function, not a shared lookup.'
+    },
+    lost: {
+      owner: OWNER, down: true,
+      text: 'Owner node lost · node b is unreachable under a partition. The architecture is designed for ' +
+            'consistency in matching, so the book <b>refuses rather than risk a second writer</b>. The price is named plainly: a ' +
+            'reachable book keeps matching; this one waits for its owner rather than fail over to a contested one.'
+    }
+  };
+  var DEFAULT_RING = '<span class="rk">readout ·</span> Select an event above. The book for an instrument is ' +
+    'placed at the point the audited <code>hash32</code> maps its branded id to, and owned by the next node ' +
+    'clockwise — computed by anyone holding the id, with no routing table from a coordinator.';
+  function paintRing(ev) {
+    ['a', 'b', 'c'].forEach(function (k) {
+      var el = document.getElementById(NODES[k].id);
+      if (!el) return;
+      el.classList.remove('own', 'down');
+      if (ev) {
+        if (k === ev.owner && ev.down) el.classList.add('down');
+        else if (k === ev.owner) el.classList.add('own');
+      }
+    });
+    var bk = document.getElementById('bk');
+    if (bk) bk.classList.toggle('down', !!(ev && ev.down));
+  }
+  var ringBtns = document.querySelectorAll('#ringbar button');
+  var ringReadout = document.getElementById('ringReadout');
+  ringBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-ev');
+      var already = b.getAttribute('aria-pressed') === 'true';
+      ringBtns.forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+      if (already || !EVENTS[key]) {
+        paintRing(null);
+        ringReadout.innerHTML = DEFAULT_RING;
+        return;
+      }
+      b.setAttribute('aria-pressed', 'true');
+      paintRing(EVENTS[key]);
+      ringReadout.innerHTML = '<span class="rk">readout ·</span> ' + EVENTS[key].text;
+    });
+  });
+
+  /* ---------- Branded Snowflake decoder (the page's own ART stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

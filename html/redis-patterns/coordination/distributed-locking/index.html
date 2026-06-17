@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R2.02 — Distributed locking · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R2.02 module hub: mutual exclusion across distributed processes with SET key value NX PX timeout — one-command atomic acquisition, token-checked safe release, and lease extension. Three dives, grounded in the honest applied form: EchoMQ has no SET NX PX mutex — its lock is the claim lease (ZADD active scored now + lease_ms on the server clock), attempts is the fencing token, and the consumer's reaper returns an expired lease to pending.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- the course map ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:82ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the lock-race figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.lrace{width:100%;height:auto;display:block;margin-top:4px}
+.lrace .node rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.lrace .node.lock rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.lrace .nlbl{font:12px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.lrace .nsub{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.lrace .step{cursor:pointer;transition:opacity .18s ease}
+.lrace .step .edge{stroke:var(--b-dim);stroke-width:1.6;fill:none}
+.lrace .step .elbl{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.lrace .step.win .edge{stroke:var(--b-node)}
+.lrace .step.win .elbl{fill:var(--b-node)}
+.lrace .step.lose .edge{stroke:var(--r-red);stroke-dasharray:3 3}
+.lrace .step.lose .elbl{fill:var(--r-red)}
+.lrace.focus .step{opacity:.22}
+.lrace.focus .step.on{opacity:1}
+.lrace.focus .step.on .edge{stroke-width:2.8}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/coordination">coordination</a><span class="rsep">/</span><span class="rcur">distributed-locking</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#basic">Basic lock</a>
+      <a href="#options">NX, PX, token</a>
+      <a href="#release">Safe release</a>
+      <a href="#extend">Extend</a>
+      <a href="#dives">Dives</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R2.02 &#183; Coordination &#8212; module hub</p>
+      <h1>Distributed <span class="hns">locking</span>.</h1>
+      <p class="lede">Implement mutual exclusion across distributed processes using SET key value NX PX timeout for
+      atomic lock acquisition with automatic expiration. Two workers reach for one resource; <b>only one may
+      hold it</b>, and a crashed holder must not deadlock the rest.</p>
+      <p class="heronote">Grounding: echo/apps/echo_mq &#183; Jobs.claim/3 &#183; Jobs.reap/2 &#183; the @claim script
+      &#8212; the honest applied form: EchoMQ has no SET NX PX mutex; its lock is the claim lease and the fence is
+      <code>attempts</code>.</p>
+
+      <figure class="anatomy" aria-labelledby="raceCap">
+        <figcaption id="raceCap"><b>Four workers race one lock &#8212; with PX the lease frees a crash, without it the
+        crash deadlocks.</b> Hover a worker to light its path and read the result.</figcaption>
+        <div class="segbar" id="raceSel" role="group" aria-label="Select a worker's outcome in the lock race">
+          <button type="button" data-w="win" aria-pressed="false">worker A &#183; OK</button>
+          <button type="button" data-w="b" aria-pressed="false">worker B &#183; nil</button>
+          <button type="button" data-w="c" aria-pressed="false">worker C &#183; nil</button>
+          <button type="button" data-w="d" aria-pressed="false">worker D &#183; nil</button>
+        </div>
+        <svg class="lrace" id="lrace" viewBox="0 0 460 230" role="img" aria-label="Four workers on the left each run SET resource:lock NX PX against one lock key on the right. Worker A finds the key absent, writes its token, and returns OK. Workers B, C, and D find the key present and return nil. Hover a worker to light its path and read its result.">
+          <g class="node"><rect x="20" y="14" width="120" height="34" rx="8"></rect><text class="nlbl" x="80" y="35">worker A</text></g>
+          <g class="node"><rect x="20" y="58" width="120" height="34" rx="8"></rect><text class="nlbl" x="80" y="79">worker B</text></g>
+          <g class="node"><rect x="20" y="102" width="120" height="34" rx="8"></rect><text class="nlbl" x="80" y="123">worker C</text></g>
+          <g class="node"><rect x="20" y="146" width="120" height="34" rx="8"></rect><text class="nlbl" x="80" y="167">worker D</text></g>
+
+          <g class="node lock"><rect x="300" y="78" width="140" height="56" rx="8"></rect><text class="nlbl" x="370" y="102">resource:lock</text><text class="nsub" x="370" y="120" id="lockState">held by A</text></g>
+
+          <g class="step win" data-w="win"><path class="edge" d="M140 31 L300 96"></path><text class="elbl" x="220" y="56">OK</text></g>
+          <g class="step lose" data-w="b"><path class="edge" d="M140 75 L300 102"></path><text class="elbl" x="220" y="80">nil</text></g>
+          <g class="step lose" data-w="c"><path class="edge" d="M140 119 L300 110"></path><text class="elbl" x="220" y="128">nil</text></g>
+          <g class="step lose" data-w="d"><path class="edge" d="M140 163 L300 118"></path><text class="elbl" x="220" y="158">nil</text></g>
+        </svg>
+        <div class="readout" id="raceOut" aria-live="polite"><span class="rk">readout &#183;</span> Four workers run
+        <code>SET resource:lock &lt;token&gt; NX PX 30000</code> at once. The key is absent for exactly one; it writes
+        its token and gets OK, the rest get nil. Hover a worker to read its outcome.</div>
+        <p class="booknote">Static verdicts &#8212; worker A &#8594; <code>SET … NX</code> finds the key absent, writes,
+        OK &#183; B, C, D &#8594; the key is now present, <code>nil</code> &#183; with <code>PX</code>, A's crash frees
+        the lock on lease expiry &#183; without <code>PX</code>, A's crash holds it forever, a deadlock.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="basic">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The basic lock</h2>
+        <span class="ssrc">distributed-locking.md.txt &#183; The Basic Lock</span>
+      </div>
+      <div class="prose">
+        <p>A Valkey lock is the <code>SET</code> command with two options and a token. It sets the key only if it does
+        not exist, attaches an expiry, and stores a value that names this acquisition. If the command returns OK, the
+        lock was acquired; if it returns nil, another client already holds it.</p>
+      </div>
+      <pre class="code">SET resource:lock <b>&lt;token&gt;</b> NX PX 30000   <span class="cmt"># OK = acquired · nil = held by another client</span></pre>
+      <div class="prose">
+        <p>The whole acquire is one command. Nothing runs between the existence check and the write, so two clients
+        cannot both walk away believing they hold the lock. The figure above races a fixed set of workers at the same
+        lock and reports who wins.</p>
+      </div>
+      <p class="take">One command admits one holder; the rest get nil. With <code>PX</code> a crashed holder releases on
+      its own &#8212; without it, the crash is a deadlock.</p>
+    </section>
+
+    <section id="options">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Why NX, PX, and a token</h2>
+        <span class="ssrc">distributed-locking.md.txt &#183; Why These Options Matter</span>
+      </div>
+      <div class="prose">
+        <ul>
+          <li><strong>NX (not exists)</strong> admits exactly one holder. If two clients run the command at the same
+          instant, only one receives OK; the other receives nil and knows the lock is taken.</li>
+          <li><strong>PX (expiry)</strong> makes the lock mortal. If the holder crashes without releasing, the lease
+          expires on its own. A lock with no expiry is held until a process clears it by hand, so a crash becomes a
+          deadlock.</li>
+          <li><strong>The token</strong> &#8212; a random value, typically a UUID &#8212; names this acquisition. It is
+          what makes release safe: a holder deletes the lock only when the stored token still matches its own.</li>
+        </ul>
+      </div>
+      <p class="take">Three pieces, three guarantees: one holder, a mortal lock, and an owner the release can check.</p>
+    </section>
+
+    <section id="release">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Releasing the lock safely</h2>
+        <span class="ssrc">distributed-locking.md.txt &#183; Safe Lock Release</span>
+      </div>
+      <div class="prose">
+        <p>Never release a lock with a bare <code>DEL</code>. A blind delete risks removing a different client's lock.
+        The hazard runs in five steps: client A acquires with token <code>abc</code>; A runs long and the lease
+        expires; client B acquires with token <code>xyz</code>; A finishes and runs <code>DEL</code>; A has now
+        deleted B's lock. The safe release is a Lua script that checks the token before deleting, so the check and the
+        delete are one atomic unit.</p>
+      </div>
+      <pre class="code">if redis.call(<b>"get"</b>, KEYS[1]) == ARGV[1] then
+  return redis.call(<b>"del"</b>, KEYS[1])
+else
+  return 0
+end</pre>
+      <div class="prose">
+        <p>Run it with <code>EVAL &lt;script&gt; 1 resource:lock abc-token-123</code>. The lock is deleted only when the
+        token matches, so a late delete from a stale holder becomes a no-op rather than a wrong delete. The second dive
+        builds this release and the fencing argument that follows from it.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A Lua script runs to completion with no command
+      interleaved, so the <code>GET</code>-then-<code>DEL</code> check is indivisible &#8212;
+      <a href="https://valkey.io/topics/programmability/" rel="noopener">valkey.io/topics/programmability</a>.</p>
+    </section>
+
+    <section id="extend">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Lifecycle &amp; extending the lease</h2>
+        <span class="ssrc">distributed-locking.md.txt &#183; Lifecycle &#183; Extending</span>
+      </div>
+      <div class="prose">
+        <p>The full sequence is five steps: <strong>generate</strong> a unique token; <strong>acquire</strong> with
+        <code>SET resource:lock &lt;token&gt; NX PX 30000</code>; <strong>check the result</strong> (OK &#8594;
+        proceed, nil &#8594; another client holds it); <strong>do the work</strong>; <strong>release</strong> with the
+        token-checked script. When acquisition fails, a client has three options &#8212; retry with backoff, fail
+        immediately, or block and poll until the lock frees.</p>
+        <p>For work that may run longer than the TTL, the holder extends the lock before it expires &#8212; and only if
+        it still owns the lock. The script resets the TTL only when the stored token still matches, so a holder that
+        has already lost the lock cannot extend a lease that is no longer its own. The shape is the safe release with
+        <code>pexpire</code> in place of <code>del</code>. The third dive scales this renewal to many jobs at once.</p>
+      </div>
+      <p class="take">Generate, acquire, check, work, release &#8212; and for a long job, renew the lease while the
+      token still matches.</p>
+    </section>
+
+    <section id="limits">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Limitations &amp; common mistakes</h2>
+        <span class="ssrc">distributed-locking.md.txt &#183; Limitations &#183; Mistakes</span>
+      </div>
+      <div class="prose">
+        <p>Single-instance locking has one structural limitation. If the master fails after a client acquires a lock
+        but before the lock replicates, the lock can be lost during failover &#8212; and two clients can then both
+        hold it at once. Applications that need a stronger guarantee reach for the <strong>Redlock
+        algorithm</strong> (locks from several independent instances), a consensus system such as etcd or ZooKeeper, or
+        a design that tolerates the rare violation by making the protected operation idempotent. Redlock is the
+        contrast taught in the next module; this one stays on the single-instance lock and points forward.</p>
+        <p>Three mistakes recur, and each turns the lock into a deadlock or a wrong delete: <strong>no expiry</strong>
+        (<code>SET lock token NX</code> holds forever on a crash); <strong>a bare <code>DEL</code> for release</strong>
+        (may delete another client's lock); and <strong>a non-atomic acquire</strong> &#8212; separate
+        <code>SETNX</code> then <code>EXPIRE</code> is a race, where a crash between the two leaves a lock with no
+        expiry, a deadlock. Always use the combined <code>SET</code> with <code>NX</code> and <code>PX</code>.</p>
+      </div>
+      <pre class="code">SETNX lock token    <span class="cmt"># if the process crashes here...</span>
+EXPIRE lock 30      <span class="cmt"># ...the lock never gets an expiry — deadlock</span></pre>
+      <p class="take">One command, or a race: the atomic <code>SET … NX PX</code> is the only acquire that cannot crash
+      into a deadlock.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>When to use &#8212; and the claim lease</h2>
+        <span class="ssrc">echo_mq/jobs.ex:283 &#183; claim/3</span>
+      </div>
+      <div class="prose">
+        <p><strong>Use a lock when</strong> coordinating access to an external resource, preventing duplicate job
+        execution, electing a leader, or serializing updates to shared state. <strong>Avoid it when</strong>
+        contention would be severe, when absolute correctness is required (reach for consensus), or when the protected
+        resource already handles concurrent access safely.</p>
+        <p>EchoMQ does not implement a <code>SET NX PX</code> mutex at all. Its mutual exclusion is the <strong>claim
+        lease</strong>: a job leased to exactly one worker for <code>lease_ms</code>, on the server clock, with the
+        attempt count as the fence. <code>EchoMQ.Jobs.claim/3</code> runs the <code>@claim</code> script, which
+        <code>ZPOPMIN</code>s the oldest pending id and in the same atomic step does two locking moves &#8212; it
+        increments the fence and leases the job into the <code>active</code> set scored on the server's own clock.</p>
+      </div>
+      <pre class="code"><span class="cmt"># echo/apps/echo_mq/lib/echo_mq/jobs.ex — the @claim script (jobs.ex:126), leasing in one atomic step.</span>
+local att = redis.call(<b>'HINCRBY'</b>, jk, 'attempts', 1)        <span class="cmt"># the fencing token, +1 per grant</span>
+redis.call('HSET', jk, 'state', 'active')
+local t = redis.call('TIME')
+local now = t[1] * 1000 + math.floor(t[2] / 1000)
+redis.call(<b>'ZADD'</b>, KEYS[2], now + tonumber(ARGV[2]), id)   <span class="cmt"># KEYS[2] = emq:{q}:active, scored now + lease_ms</span></pre>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>The lease deadline is read inside the script with
+      <code>TIME</code>, not the client's clock, so a worker's clock drift cannot misprice a lease &#8212;
+      <a href="https://valkey.io/commands/zadd/" rel="noopener">valkey.io/commands/zadd</a>.</p>
+
+      <div class="door">
+        <span class="dr">the consumer &#183; the claim lease, against live Valkey</span>
+        <h3>The lease, the fence, and the reaper</h3>
+        <p>The lock is the lease-scored <code>active</code> set, not a string mutex &#8212; <code>ZADD</code> writes the
+        deadline (<a href="https://valkey.io/commands/zadd/" rel="noopener">valkey.io/commands/zadd</a>) and the
+        <code>emq:{q}:active</code> hashtag keeps it on one slot. <code>EchoMQ.Consumer</code> runs
+        <code>Jobs.reap/2</code> on its beat to return an expired lease to pending; the committed manuscript line names
+        the keyspace:</p>
+        <figure class="frozen">
+          <figcaption>content/bcs3.1.md &#183; the v2 keyspace, the lease set among the per-queue keys<span class="tag">frozen</span></figcaption>
+          <pre>emq:{orders}:pending          <span class="fd">&#8592; score 0, mint order</span>
+emq:{orders}:job:ORD0NgWEfAEJfs   <span class="fd">&#8592; the three-field row: state, attempts, payload</span>
+<b>{emq}:version</b> | <b>{emq}:locks</b>      <span class="fd">&#8592; 17 bytes before the payload</span></pre>
+        </figure>
+      </div>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>The three dives</h2>
+        <span class="ssrc">acquire &#8594; fence &#8594; renew</span>
+      </div>
+      <div class="prose">
+        <p>Each dive takes one part of the lock, following the source in order: the atomic acquire, the fence that makes
+        a stale writer harmless, and the renewal that keeps a long lease alive. Read them in order &#8212; the acquire
+        first, the <code>attempts</code> fence second, the reaper-backed renewal third.</p>
+      </div>
+
+      <div class="mods" style="margin-top:6px">
+        <a class="mod" href="/redis-patterns/coordination/distributed-locking/set-nx-px">
+          <div class="top"><span class="num">R2.02.1</span><span class="pill built">built</span></div>
+          <p class="t">SET NX PX</p>
+          <p class="o">The atomic acquire: <code>NX</code> admits one holder, <code>PX</code> keeps the lock mortal, the
+          random token enables safe release &#8212; against the <code>SETNX</code>+<code>EXPIRE</code> race. The applied
+          form is the lease-scored <code>active</code> set, no mutex.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/coordination/distributed-locking/fencing-tokens">
+          <div class="top"><span class="num">R2.02.2</span><span class="pill built">built</span></div>
+          <p class="t">Fencing tokens</p>
+          <p class="o">Why the token makes release safe, then the monotonic fencing token a resource uses to reject a
+          stale writer. The real one: EchoMQ's <code>attempts</code>, refused at <code>@complete</code> /
+          <code>@retry</code> with <code>EMQSTALE</code>.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/coordination/distributed-locking/lease-renewal">
+          <div class="top"><span class="num">R2.02.3</span><span class="pill built">built</span></div>
+          <p class="t">Lease renewal</p>
+          <p class="o">The generic one-timer renewal, then the honest applied form: the consumer holds the lease for
+          <code>:lease_ms</code> and <code>Jobs.reap</code> returns an expired lease to pending on the server clock.</p>
+        </a>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A lock makes one holder own a resource at a time: <code>SET … NX PX</code> admits one holder and bounds
+          the hold, the token makes release safe, and a token-checked <code>PEXPIRE</code> keeps a long lease alive.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">the claim lease in EchoMQ</span>
+          <p><code>@claim</code> leases the job into <code>emq:{q}:active</code> scored <code>now + lease_ms</code> on
+          the server clock; <code>attempts</code> (<code>HINCRBY</code>) is the fence, refused at <code>@complete</code>
+          with <code>EMQSTALE</code>; <code>Jobs.reap</code> recovers an expired lease.</p>
+        </div>
+      </div>
+      <p class="take">A one-command lock with a mortal lease; EchoMQ makes it a server-clock claim lease, fenced by a
+      monotone <code>attempts</code> and recovered by a reaper &#8212; no mutex needed.</p>
+
+      <p class="booknote">After R2.02, the Coordination chapter continues with the Redlock contrast, cross-shard
+      consistency, and hash-tag colocation, closing with a workshop that makes an Exchange Platform order placement
+      atomic across runtimes. Return to the <a href="/redis-patterns/coordination">Coordination chapter</a> to
+      continue, or open the <a href="/redis-patterns/overview">Overview</a> for where Valkey sits under the Exchange
+      Platform.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;8</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/docs/latest/develop/use/patterns/distributed-locks/" rel="noopener">Redis &mdash; <em>Distributed Locks</em></a> &mdash; the single-instance lock, the token-checked release, and where Redlock begins.</li>
+            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; the <code>NX</code>/<code>PX</code>/<code>GET</code>/<code>XX</code> options behind the one-command acquire and extend.</li>
+            <li><a href="https://valkey.io/topics/programmability/" rel="noopener">Valkey &mdash; <em>Programmability</em></a> &mdash; why the claim's <code>HINCRBY</code> + <code>ZADD</code> and the token-checked release run atomically as one script.</li>
+            <li><a href="https://antirez.com/" rel="noopener">Sanfilippo, S. &mdash; <em>antirez weblog</em></a> &mdash; the Redis creator on locks, leases, and treating expiry as a safety bound rather than a correctness guarantee.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/coordination/distributed-locking/set-nx-px">R2.02.1 &#183; SET NX PX</a><span class="rs">the atomic acquire</span></li>
+            <li><a href="/redis-patterns/coordination/distributed-locking/fencing-tokens">R2.02.2 &#183; Fencing tokens</a><span class="rs">the attempts fence</span></li>
+            <li><a href="/redis-patterns/coordination/distributed-locking/lease-renewal">R2.02.3 &#183; Lease renewal</a><span class="rs">the reaper</span></li>
+            <li><a href="/redis-patterns/coordination">R2 &#183; Coordination</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the EchoMQ protocol &#183; the worker-side lock plane</span></li>
+            <li><a href="/elixir/pragmatic/state">/elixir &#183; State</a><span class="rs">the functional-Elixir craft behind the consumer loop</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/coordination"><span class="pk">up</span>&#8592; R2 &#183; Coordination</a>
+      <a class="pgx" href="/redis-patterns/coordination/distributed-locking/set-nx-px"><span class="pk">next</span>R2.02.1 &#183; SET NX PX &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/coordination/distributed-locking/set-nx-px">R2.02.1 &#183; SET NX PX</a>
+        <a href="/redis-patterns/coordination/distributed-locking/fencing-tokens">R2.02.2 &#183; Fencing tokens</a>
+        <a href="/redis-patterns/coordination/distributed-locking/lease-renewal">R2.02.3 &#183; Lease renewal</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive: the lock race (pure lookup over a fixed roster) ---------- */
+  // Fixed dataset: four workers issue SET resource:lock <token> NX PX 30000 at once; A finds the key absent.
+  var WORKERS = {
+    'win': { id: 'worker A', token: 't1', ok: true,  note: 'finds the key absent, writes token "t1", returns OK — the sole holder. With PX, if A crashes the lease expires and a waiting worker proceeds; without PX, A holds it forever and the rest deadlock.' },
+    'b':   { id: 'worker B', token: 't2', ok: false, note: 'finds the key now present (A holds it), returns nil. B waits, retries, or fails — it does not hold the lock.' },
+    'c':   { id: 'worker C', token: 't3', ok: false, note: 'finds the key now present (A holds it), returns nil. C waits, retries, or fails — it does not hold the lock.' },
+    'd':   { id: 'worker D', token: 't4', ok: false, note: 'finds the key now present (A holds it), returns nil. D waits, retries, or fails — it does not hold the lock.' }
+  };
+  // pure: worker key -> readout HTML
+  function describeWorker(w) {
+    var s = WORKERS[w];
+    return '<span class="rk">worker &#183;</span> ' + s.id + ' &#183; <code>SET resource:lock ' + s.token + ' NX PX 30000</code><br>' +
+      '<span class="rk">result &#183;</span> <b>' + (s.ok ? 'OK (holds lock)' : 'nil') + '</b> &#183; ' + s.note;
+  }
+  var lrace = document.getElementById('lrace');
+  var raceButtons = document.querySelectorAll('#raceSel button');
+  var raceOut = document.getElementById('raceOut');
+  // pure: highlight a worker in the diagram, sync the buttons, fill the readout — hover or click.
+  function selectWorker(w) {
+    raceButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-w') === w ? 'true' : 'false');
+    });
+    if (lrace) {
+      lrace.classList.toggle('focus', !!w);
+      lrace.querySelectorAll('.step').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-w') === w);
+      });
+    }
+    if (raceOut) {
+      raceOut.innerHTML = w
+        ? describeWorker(w)
+        : '<span class="rk">readout &#183;</span> Four workers run <code>SET resource:lock &lt;token&gt; NX PX 30000</code> at once. The key is absent for exactly one; it writes its token and gets OK, the rest get nil. Hover a worker to read its outcome.';
+    }
+  }
+  raceButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var w = b.getAttribute('data-w');
+      selectWorker(b.getAttribute('aria-pressed') === 'true' ? null : w);
+    });
+  });
+  if (lrace) {
+    lrace.querySelectorAll('.step').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectWorker(g.getAttribute('data-w')); });
+      g.addEventListener('mouseleave', function () { selectWorker(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

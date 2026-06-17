@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The protocol below the line · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="Why the three pillars interoperate and any runtime can speak them: the protocol lives below the language line. The layer stack — L0 Valkey, L1 keys+fields, L2 Lua, L3 executor, L4 API — with the shared line between L2 and L3, made concrete on a real key (EchoMQ.Keyspace.queue_key/2 → emq:{q}:<type>, the {q} hashtag) and a real script (the EchoMQ.Jobs @enqueue handle, then its commented Lua body and the KEYS/ARGV contract).">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- layer stack diagram ---- */
+.stack .layer rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+.stack .layer.imm rect{fill:rgba(42,161,152,.13);stroke:#2aa198}
+.stack .layer.ext rect{stroke-dasharray:5 4;opacity:.85}
+.stack text{font-family:var(--sans);fill:#d7cfb9}
+.stack .lid{font-family:var(--mono);fill:#a39c89;font-size:12px}
+.stack .lbl{font-family:var(--mono);fill:#a39c89;font-size:11px}
+.stack .ln{stroke:#2a3252;stroke-width:1.4;fill:none}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/overview">overview</a><span class="rsep">/</span><span class="rcur">the-protocol-below-the-line</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+    /* field-line demonstrator */
+    .fieldsel{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+    .fieldsel .grp{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+    .fieldsel .glabel{font-family:var(--sans);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--cream-dim);margin-right:.2rem}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/overview">Overview</a>
+        <span class="sep">/</span>
+        <span class="here">The protocol below the line</span>
+      </div>
+      <p class="eyebrow">Overview &middot; dive 02 &middot; why</p>
+      <h1>The protocol <span class="ex">below the line</span></h1>
+      <p class="lede">One line. Below it the keys and the Lua are shared and fixed; above it, the language is yours.</p>
+      <p class="kicker">The three pillars interoperate, and any runtime can drive them, for one reason: the protocol
+        lives <strong>below the language line</strong>. Read EchoMQ as a stack &mdash; <strong>L0</strong> Valkey,
+        <strong>L1</strong> the keys and field names, <strong>L2</strong> the atomic Lua, <strong>L3</strong> the
+        executor, <strong>L4</strong> the API. The shared line falls between <strong>L2 and L3</strong>. Pick a layer
+        on the right to read its scope and whether it is shared. This dive draws the line on a real key and a real
+        script; the full key taxonomy and the script inventory are <a href="/echomq/protocol">The Protocol</a>.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#stack">The stack</a>
+        <a href="#key">The line, on a real key</a>
+        <a href="#script">The line, on a real script</a>
+        <a href="#fields">Change a field, who breaks?</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig stack" aria-labelledby="stackTitle">
+      <h4 id="stackTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The layer stack &middot; pick a layer</h4>
+      <div class="controls">
+        <div class="solid-select" id="layerSel" role="group" aria-label="Which layer to inspect">
+          <button type="button" data-layer="L4" data-c="blue" aria-pressed="false">L4 &middot; API</button>
+          <button type="button" data-layer="L3" data-c="blue" aria-pressed="false">L3 &middot; executor</button>
+          <button type="button" data-layer="L2" data-c="echo" class="active" aria-pressed="true">L2 &middot; Lua</button>
+          <button type="button" data-layer="L1" data-c="echo" aria-pressed="false">L1 &middot; keys</button>
+          <button type="button" data-layer="L0" data-c="gold" aria-pressed="false">L0 &middot; Valkey</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 280" role="img" aria-label="A stack of five layers, top to bottom: L4 Language API (EchoMQ.Jobs.enqueue), L3 Script Executor (EVALSHA, the SHA cache), then a dashed line marking the shared boundary, then L2 Lua Scripts and L1 Keys and field names (both shared by every runtime, drawn in the EchoMQ accent), then L0 Valkey (external, dashed border). The selected layer is highlighted by opacity.">
+        <g class="layer" id="g-L4"><rect x="60" y="14" width="340" height="38" rx="8"></rect></g>
+        <text x="78" y="38" class="lid">L4</text>
+        <text x="230" y="38" text-anchor="middle" font-size="13">Language API &middot; EchoMQ.Jobs.enqueue</text>
+
+        <g class="layer" id="g-L3"><rect x="60" y="58" width="340" height="38" rx="8"></rect></g>
+        <text x="78" y="82" class="lid">L3</text>
+        <text x="230" y="82" text-anchor="middle" font-size="13">Script Executor &middot; EVALSHA, the SHA cache</text>
+
+        <line class="ln" x1="60" y1="106" x2="400" y2="106" stroke="#2aa198" stroke-dasharray="4 3"></line>
+        <text class="lbl" x="230" y="120" text-anchor="middle" fill="#6fdccf">— shared below this line —</text>
+
+        <g class="layer imm" id="g-L2"><rect x="60" y="128" width="340" height="38" rx="8"></rect></g>
+        <text x="78" y="152" class="lid">L2</text>
+        <text x="230" y="152" text-anchor="middle" font-size="13">Lua Scripts &middot; the atomic state machine</text>
+
+        <g class="layer imm" id="g-L1"><rect x="60" y="172" width="340" height="38" rx="8"></rect></g>
+        <text x="78" y="196" class="lid">L1</text>
+        <text x="230" y="196" text-anchor="middle" font-size="13">Keys &amp; fields &middot; emq:&#123;q&#125;:&lt;type&gt;, state/attempts/payload</text>
+
+        <g class="layer ext" id="g-L0"><rect x="60" y="222" width="340" height="38" rx="8"></rect></g>
+        <text x="78" y="246" class="lid">L0</text>
+        <text x="230" y="246" text-anchor="middle" font-size="13">Valkey &middot; the engine (external)</text>
+      </svg>
+
+      <div class="geo-readout" id="layerOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="stack">
+    <h2>The stack, and where the line falls</h2>
+    <div class="prose">
+      <p>What makes one wire serve three pillars, in any language? A line. EchoMQ reads as a stack. <strong>L0</strong>
+        is Valkey itself &mdash; the engine the system runs on, but does not contain. <strong>L1</strong> is the data
+        layer: which key holds which structure, and what the field names are. <strong>L2</strong> is the set of atomic
+        Lua scripts that move a record between states. Together, L1 and L2 are the protocol &mdash; a Valkey data
+        convention plus the scripts that operate on it.</p>
+      <p><strong>L3</strong> is the script executor: the code that loads each script once and runs it by SHA with
+        <code class="inl">EVALSHA</code>, reloading on a <code class="inl">NOSCRIPT</code> miss.
+        <strong>L4</strong> is the language API a caller invokes &mdash; <code class="inl">EchoMQ.Jobs.enqueue/4</code>
+        in the canonical Elixir. L3 and L4 are where a runtime is free to differ. The whole point of the model is that
+        the freedom is confined to those two layers: the shared line falls <strong>between L2 and L3</strong>.</p>
+    </div>
+    <dl class="deflist">
+      <dt>L4 &middot; API</dt><dd>The language method a caller invokes. Method names, parameter order, and return types vary per runtime.</dd>
+      <dt>L3 &middot; executor</dt><dd>The code that loads scripts and runs them by SHA. Connection pooling and the EVALSHA/NOSCRIPT cache vary per runtime.</dd>
+      <dt>L2 &middot; Lua</dt><dd>The atomic scripts that change record state. Every key declared in <code class="inl">KEYS[]</code>. Shared by everything that speaks the wire.</dd>
+      <dt>L1 &middot; keys</dt><dd>The keys (<code class="inl">emq:{q}:&lt;type&gt;</code>) and the field names (<code class="inl">state</code>, <code class="inl">attempts</code>, <code class="inl">payload</code>). One agreed convention. Shared.</dd>
+      <dt>L0 &middot; Valkey</dt><dd>The engine itself. External &mdash; standalone or Cluster.</dd>
+    </dl>
+    <p class="note">This dive draws the line on one key and one script. The full key taxonomy and the Lua inventory are
+      the subject of <strong>The Protocol</strong> &mdash; the next chapter, on the <a href="/echomq">course map</a>.</p>
+  </section>
+
+  <section id="key">
+    <h2>The line, on a real key</h2>
+    <div class="prose">
+      <p>The data layer is concrete: a real key the system builds for every queue. <code class="inl">EchoMQ.Keyspace.queue_key/2</code>
+        composes the per-queue key <code class="inl">emq:{q}:&lt;type&gt;</code> &mdash; the literal
+        <code class="inl">emq:</code>, the queue name wrapped in braces, then the type suffix.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Keyspace</span>
+<span class="cmt"># Per-queue keys are emq:{q}:&lt;type&gt;. The braces are not decoration —</span>
+<span class="cmt"># they are the cluster hashtag, and they pin every key of one queue to</span>
+<span class="cmt"># one slot.</span>
+<span class="op">def</span> <span class="fn">queue_key</span>(queue, type) <span class="op">when</span> is_binary(queue) <span class="op">and</span> is_binary(type),
+  <span class="op">do:</span> IO.<span class="fn">iodata_to_binary</span>([<span class="str">"emq:{"</span>, queue, <span class="str">"}:"</span>, type])</pre>
+
+    <div class="prose">
+      <p>The <code class="inl">{q}</code> is the <strong>hashtag</strong>. A Valkey cluster routes a key by a CRC16 of
+        the substring inside the first <code class="inl">{...}</code>, so wrapping the queue name pins every key of that
+        queue &mdash; <code class="inl">emq:{orders}:pending</code>, <code class="inl">emq:{orders}:active</code>,
+        <code class="inl">emq:{orders}:job:&lt;id&gt;</code> &mdash; to <strong>one slot</strong>. One atomic script can
+        touch the pending set, the active set, and the job row in a single round because they are guaranteed
+        co-resident. That key format is <strong>L1</strong>: the same wherever the protocol runs. Change the literal
+        <code class="inl">emq:</code>, or move the braces, and you are speaking a different wire.</p>
+    </div>
+  </section>
+
+  <section id="script">
+    <h2>The line, on a real script &mdash; two beats</h2>
+    <div class="prose">
+      <p>The state transitions are <strong>L2</strong>. They are not application code that happens to touch Valkey
+        &mdash; they are server-side Lua that runs <em>inside</em> the engine, atomically. The discipline that makes
+        them portable: every key a script touches is <strong>declared in <code class="inl">KEYS[]</code></strong>;
+        <code class="inl">ARGV</code> carries values only. Read the enqueue transition in two beats.</p>
+      <p><strong>Beat one &mdash; the named handle.</strong> <code class="inl">EchoMQ.Jobs.enqueue/4</code> builds the
+        two keys it will touch and runs the <code class="inl">@enqueue</code> script through the connector. The keys are
+        built host-side, by the keyspace; the script receives them declared.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs</span>
+<span class="cmt"># The host builds the two keys the script touches — the job row and the</span>
+<span class="cmt"># pending set — and hands them in declared. The connector runs @enqueue</span>
+<span class="cmt"># EVALSHA-first (load-on-NOSCRIPT once). KEYS = [row, pending]; the values</span>
+<span class="cmt"># (the id and the payload) ride ARGV.</span>
+<span class="op">def</span> <span class="fn">enqueue</span>(conn, queue, job_id, payload) <span class="op">when</span> is_binary(job_id) <span class="op">and</span> is_binary(payload) <span class="op">do</span>
+  keys = [Keyspace.<span class="fn">job_key</span>(queue, job_id), Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"pending"</span>)]
+
+  <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@enqueue</span>, keys, [job_id, payload]) <span class="op">do</span>
+    {<span class="str">:ok</span>, <span class="res">1</span>} -&gt; {<span class="str">:ok</span>, <span class="str">:enqueued</span>}
+    {<span class="str">:ok</span>, <span class="res">0</span>} -&gt; {<span class="str">:ok</span>, <span class="str">:duplicate</span>}
+    {<span class="str">:error</span>, {<span class="str">:server</span>, <span class="str">"EMQKIND"</span> &lt;&gt; _}} -&gt; {<span class="str">:error</span>, <span class="str">:kind</span>}
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><strong>Beat two &mdash; the script body.</strong> <code class="inl">@enqueue</code> is the protocol: admit by
+        kind, refuse a duplicate, write the row, insert the pending entry &mdash; one atomic step.
+        <code class="inl">KEYS[1]</code> is the job row, <code class="inl">KEYS[2]</code> the pending set;
+        <code class="inl">ARGV[1]</code> is the branded id, <code class="inl">ARGV[2]</code> the payload.</p>
+    </div>
+
+    <pre class="code"><span class="cmt">-- the @enqueue script (L2) — one atomic transition, every key declared</span>
+<span class="cmt">-- The branded-id gate: the id must be JOB-namespaced, refused at the wire.</span>
+<span class="op">if</span> string.sub(<span class="rdx">ARGV[1]</span>, <span class="res">1</span>, <span class="res">3</span>) ~= <span class="str">'JOB'</span> <span class="op">then</span>
+  <span class="op">return</span> redis.error_reply(<span class="str">'EMQKIND job id must be JOB-namespaced'</span>)
+<span class="op">end</span>
+<span class="cmt">-- Idempotent: a row that already exists is a no-op (a duplicate enqueue).</span>
+<span class="op">if</span> redis.call(<span class="str">'EXISTS'</span>, <span class="rdx">KEYS[1]</span>) == <span class="res">1</span> <span class="op">then</span>
+  <span class="op">return</span> <span class="res">0</span>
+<span class="op">end</span>
+<span class="cmt">-- The three-field row: state, attempts, payload — the shape every speaker reads.</span>
+redis.call(<span class="str">'HSET'</span>, <span class="rdx">KEYS[1]</span>, <span class="str">'state'</span>, <span class="str">'pending'</span>, <span class="str">'attempts'</span>, <span class="str">'0'</span>, <span class="str">'payload'</span>, <span class="rdx">ARGV[2]</span>)
+<span class="cmt">-- The pending set: the id is the member, so byte order is mint order.</span>
+redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[2]</span>, <span class="res">0</span>, <span class="rdx">ARGV[1]</span>)
+<span class="op">return</span> <span class="res">1</span></pre>
+
+    <div class="prose">
+      <p>What the excerpt shows is the boundary: the <code class="inl">KEYS</code>/<code class="inl">ARGV</code>
+        contract, the branded-id gate, the three named fields. None of it is language-specific. The executor that runs
+        it &mdash; load-once, run-by-SHA &mdash; is <strong>L3</strong>, above the line, and each runtime writes that
+        its own way.</p>
+      <p>Because the keys and the Lua are the whole agreement, any runtime that speaks them is a peer &mdash; so EchoMQ
+        is supported in, and ported to, other runtimes; the depth of this course is the canonical one, Elixir.</p>
+    </div>
+    <p class="take">Draw the line between L2 and L3, and a Valkey convention becomes a protocol three pillars share and
+      any runtime can speak. Below it: one key format, one set of declared-key scripts. Above it: your language.</p>
+  </section>
+
+  <section id="fields">
+    <h2>Why L1 and L2 are fixed &mdash; change a field, who breaks?</h2>
+    <div class="prose">
+      <p>The fields <code class="inl">state</code>, <code class="inl">attempts</code>, <code class="inl">payload</code>
+        are L1, and so is the key prefix. They are the contract, not an implementation detail. Rename
+        <code class="inl">payload</code> to <code class="inl">data</code> in one runtime's executor and that runtime's
+        <code class="inl">@enqueue</code> writes a field nobody else reads &mdash; every other speaker reads
+        <code class="inl">payload</code> and finds nothing. The data is not lost; it is invisible across the wire. The
+        same is true of the key: change <code class="inl">emq:</code> and your jobs land in a keyspace no other speaker
+        looks in. The L4 verb is the opposite &mdash; it is above the line, so renaming it breaks nothing. Make one
+        change below the line and read who can still find the row.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="fieldTitle">
+      <h4 id="fieldTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Change one thing &middot; who can still read the job?</h4>
+      <div class="controls">
+        <div class="fieldsel" id="changeSel" role="group" aria-label="What to change">
+          <div class="grp">
+            <span class="glabel">below the line</span>
+            <div class="solid-select">
+              <button type="button" data-change="key" data-c="echo">rename the key prefix (L1)</button>
+              <button type="button" data-change="field" data-c="echo">rename the payload field (L1)</button>
+              <button type="button" data-change="script" data-c="echo">change the KEYS contract (L2)</button>
+            </div>
+          </div>
+          <div class="grp">
+            <span class="glabel">above the line</span>
+            <div class="solid-select">
+              <button type="button" data-change="verb" data-c="blue" class="active">rename the L4 verb</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="geo-readout" id="changeOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A Valkey convention becomes a protocol when the agreement is pushed below the line &mdash; the keys plus the
+          atomic scripts &mdash; and the runtime is left above it. <a href="/redis-patterns">Redis Patterns Applied</a>
+          teaches that move; this is the system that applies it.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">EchoMQ.Keyspace.queue_key/2</code> fixes the key <code class="inl">emq:{q}:&lt;type&gt;</code>
+          with the <code class="inl">{q}</code> hashtag; the <code class="inl">@enqueue</code> script fixes the
+          transition with every key declared in <code class="inl">KEYS[]</code>. L1 and L2, shared and fixed.</p>
+      </div>
+    </div>
+    <p class="take">Below the line is the contract; above it is the code. A field rename below the line makes the row
+      invisible to every other speaker; an L4 rename above it changes nothing on the wire.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; the line, the key, the script</h2>
+    <div class="prose">
+      <p>The protocol below the line is the keys and the Lua. <code class="inl">EchoMQ.Keyspace.queue_key/2</code>
+        builds <code class="inl">emq:{q}:&lt;type&gt;</code>, where the <code class="inl">{q}</code> hashtag pins one queue
+        to one slot so one atomic script can touch its sets and rows together. <code class="inl">EchoMQ.Jobs</code>'s
+        <code class="inl">@enqueue</code> script declares every key it touches in <code class="inl">KEYS[]</code>, gates
+        the branded id, and writes the three-field row and the pending entry atomically. That shared substrate &mdash;
+        L1 and L2 &mdash; is fixed; the executor (L3) and the API (L4) are the runtime's own. The next dive reads where
+        EchoMQ lands: the door from Redis Patterns Applied and the BCS family.</p>
+    </div>
+    <p class="note">Next in the Overview: <strong>The door &amp; the BCS family</strong> &mdash; the bidirectional
+      Redis-Patterns door, and what owning the queue, the bus, and the cache means for the systems built on them.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the layer model is grounded, and where the keyspace and scripting layers are documented.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/docs/">Valkey &mdash; <em>Documentation</em></a> &mdash; the BSD-licensed, foundation-governed store EchoMQ is backed by; the substrate of record.</li>
+          <li><a href="https://valkey.io/commands/evalsha/">Valkey &mdash; <em>EVALSHA</em></a> &mdash; the load-once, run-by-SHA dispatch the L3 executor uses to run an L2 script.</li>
+          <li><a href="https://redis.io/docs/">Redis &mdash; <em>Keyspace &amp; hash tags</em></a> &mdash; cluster key routing by the hashtag inside <code>{...}</code>, the L1 mechanism the <code>{q}</code> brace uses.</li>
+          <li><a href="https://www.dragonflydb.io/docs/managing-dragonfly/flags">DragonflyDB &mdash; <em>Server flags</em></a> &mdash; <code>--lock_on_hashtags</code>: the thread-per-shard placement the declared-key, per-queue-hashtag keyspace is built for.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/overview">Overview</a> &mdash; the chapter this dive belongs to; the three pillars over one wire.</li>
+          <li><a href="/echomq/protocol">The Protocol</a> &mdash; the owned keyspace, the record hash, and the Lua layer in depth (the next chapter the line opens onto).</li>
+          <li><a href="/redis-patterns/overview/patterns-become-protocol">redis-patterns &middot; Patterns become protocol</a> &mdash; the near side of the door: the move from convention to protocol.</li>
+          <li><a href="/bcs">The Branded Component System</a> &mdash; the architecture EchoMQ is the bus of; the branded id the <code>@enqueue</code> gate enforces is its identity contract.</li>
+          <li><a href="/echomq">Course home</a> &mdash; the full six-chapter map.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/overview/the-three-pillars"><span aria-hidden="true">&larr;</span>&nbsp; The three pillars</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/overview/the-door">The door &amp; the BCS family <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This chapter</h4>
+        <a href="/echomq/overview">Overview</a>
+        <a href="/echomq/overview/the-three-pillars">The three pillars</a>
+        <a href="/echomq/overview/the-protocol-below-the-line">The protocol below the line</a>
+        <a href="/echomq/overview/the-door">The door &amp; the BCS family</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/protocol">The Protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the layer stack (pure over a fixed dataset) ---------- */
+  var LAYERS = {
+    L4: { name: 'Language API', scope: 'EchoMQ.Jobs.enqueue', shared: false, note: 'each language exposes its own method names and types' },
+    L3: { name: 'Script Executor', scope: 'EVALSHA, the SHA cache', shared: false, note: 'each runtime loads and dispatches the scripts its own way' },
+    L2: { name: 'Lua Scripts', scope: 'the atomic state machine', shared: true, note: 'declared-key scripts (every key in KEYS[]), run by SHA — identical wherever the protocol runs' },
+    L1: { name: 'Keys & fields', scope: 'emq:{q}:<type>, state/attempts/payload', shared: true, note: 'one key format under emq:{q}:, one set of field names' },
+    L0: { name: 'Valkey', scope: 'the engine, Cluster-ready', shared: false, external: true, note: 'external to EchoMQ — the store the scripts run inside' }
+  };
+  var ORDER = ['L4', 'L3', 'L2', 'L1', 'L0'];
+
+  function describeLayer(key) {
+    var L = LAYERS[key];
+    var status = L.external ? 'external (not part of EchoMQ)' : (L.shared ? 'SHARED — below the line, fixed for every runtime' : 'language-specific — above the line, varies per runtime');
+    return key + ' ' + L.name + ' — scope: ' + L.scope + '. Status: ' + status + '. ' + L.note + '.';
+  }
+  function setLayer(key) {
+    ORDER.forEach(function (k) {
+      var g = document.getElementById('g-' + k);
+      if (g) g.setAttribute('opacity', k === key ? '1' : (k === 'L0' ? '.5' : '.62'));
+    });
+    var out = document.getElementById('layerOut');
+    if (out) out.textContent = describeLayer(key);
+  }
+  document.querySelectorAll('#layerSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-layer');
+      document.querySelectorAll('#layerSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setLayer(key);
+    });
+  });
+  setLayer('L2'); // initial render — correct without interaction
+
+  /* ---------- content: change one thing, who can still read the job? ---------- */
+  /* Three speakers all read the row at emq:{q}:job:<id> with fields
+     state/attempts/payload, via a script whose KEYS are the row + pending set.
+     A change BELOW the line (the key prefix, a field name, the KEYS contract)
+     desyncs the changer from the rest; a change ABOVE the line (the L4 verb)
+     touches nothing on the wire. Pure over this fixed model. */
+  var SPEAKERS = ['Elixir (canonical)', 'a Go peer', 'a Node peer'];
+  var CHANGES = {
+    key: {
+      line: 'below', label: 'rename the key prefix emq: → mq: (L1)',
+      verdict: 'BREAKS', readers: '0 of 3 — every speaker still looks under emq:{q}:; the renamed jobs land in a keyspace nobody reads',
+      why: 'the key is the address; change it and the row is invisible across the wire (not lost — unfindable)'
+    },
+    field: {
+      line: 'below', label: 'rename the payload field → data (L1)',
+      verdict: 'BREAKS', readers: '0 of 3 — claim returns the row, but every speaker reads the payload field and finds nothing',
+      why: 'the field names are the contract; one renamer writes a field nobody else reads'
+    },
+    script: {
+      line: 'below', label: 'drop KEYS[2] (pending) from the @enqueue contract (L2)',
+      verdict: 'BREAKS', readers: '0 of 3 — the row is written but never enters the pending set, so no speaker ever claims it',
+      why: 'the KEYS/ARGV contract is part of the protocol; an undeclared key is also unportable to a thread-per-shard engine'
+    },
+    verb: {
+      line: 'above', label: 'rename the L4 verb enqueue → push',
+      verdict: 'HOLDS', readers: '3 of 3 — the wire is untouched; every speaker reads the same row written the same way',
+      why: 'the verb is above the line; the keys and the script it runs are unchanged'
+    }
+  };
+  function describeChange(key) {
+    var c = CHANGES[key];
+    var tag = c.verdict === 'HOLDS'
+      ? '<b class="ok">' + c.verdict + '</b>'
+      : '<b class="bad">' + c.verdict + '</b>';
+    return 'Change (' + c.line + ' the line): ' + c.label + '.  Wire ' + tag +
+      '.  <span class="dim">Readers:</span> ' + c.readers + '.  <span class="dim">Why:</span> ' + c.why + '.';
+  }
+  function setChange(key) {
+    var out = document.getElementById('changeOut');
+    if (out) out.innerHTML = describeChange(key);
+  }
+  document.querySelectorAll('#changeSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-change');
+      document.querySelectorAll('#changeSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setChange(key);
+    });
+  });
+  setChange('verb'); // initial render — correct without interaction (shows the line holds above it)
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

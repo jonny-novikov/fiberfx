@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4.03.2 · FIFO within a tier · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R4.03.2 — FIFO within a tier. Two jobs of the same priority share the same high 32 bits of the composite score; the tie is broken by the low 32 bits, the arrival counter from INCR pc. Because the counter rises by one per add, the earliest-arriving job carries the smaller counter and so the smaller score: strict FIFO within the tier. Verified in getPriorityScore's prioCounter = rcall INCR priorityCounterKey, with EchoMQ.Keys.pc/1 the priority counter passed as KEYS[9] in EchoMQ.Scripts.add_prioritized_job/4 running addPrioritizedJob-9.lua.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- tier / fifo diagram ---- */
+.tf .slot rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.tf .slot.head rect{fill:rgba(214,88,79,.18);stroke:#d6584f}
+.tf .slot.tied rect{fill:rgba(212,168,90,.16);stroke:#d4a85a;stroke-dasharray:4 3}
+.tf text{font-family:var(--sans);fill:#d7cfb9}
+.tf .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.tf .job{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
+.tf .sc{font-family:var(--mono);font-size:9px;fill:#a39c89}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
+.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
+.door a{color:var(--gold-bright)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority/priority-scores">priority-scores</a><span class="rsep">/</span><span class="rcur">fifo-within-tier</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority/priority-scores">Priority with composite scores</a>
+        <span class="sep">/</span>
+        <span class="here">FIFO within a tier</span>
+      </div>
+      <p class="eyebrow">R4.03.2 &middot; dive 2</p>
+      <h1>FIFO within a <span class="ex">tier</span></h1>
+      <p class="lede">Two jobs of the same priority share the same high bits. The tie is broken by the low bits &mdash;
+        the <code class="inl">INCR pc</code> arrival counter &mdash; so the earliest arrival carries the smaller
+        score.</p>
+      <p class="kicker">A priority tier is a band of equal high bits. Inside that band the order is whatever the low bits
+        say. This dive shows what fills the low bits &mdash; a monotonically rising arrival counter &mdash; and why it
+        is the right tie-breaker. Toggle the counter on the right onto three same-priority jobs and watch their scores
+        order them in the sequence they arrived.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#tie">The tie a single field leaves</a>
+        <a href="#counter">The counter breaks the tie</a>
+        <a href="#why">Why the counter, not the clock</a>
+        <a href="#applied">In EchoMQ</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig tf" aria-labelledby="ftTitle">
+      <h4 id="ftTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Three same-priority jobs &middot; the counter orders them FIFO</h4>
+      <div class="controls">
+        <div class="solid-select" id="ftSel" role="group" aria-label="Score the three jobs by the composite score or by priority alone">
+          <button type="button" data-mode="composite" data-c="redis" class="active" aria-pressed="true">with INCR pc counter</button>
+          <button type="button" data-mode="priority" data-c="gold" aria-pressed="false">priority only</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 150" role="img" aria-label="Three jobs all of priority 1, added in order. With the INCR pc counter the set assigns counters 1, 2, 3, so the scores rise in arrival order and the head is the first to arrive. With priority only, all three tie at the same score and the set falls back to member order, losing arrival order. The toggle switches between the two and the readout names the order.">
+        <text class="ttl" x="30" y="22">three jobs, all priority 1 — ordered by composite score</text>
+        <g id="ftSlots"></g>
+        <text class="ttl" id="ftVerd" x="230" y="138" text-anchor="middle">—</text>
+      </svg>
+
+      <div class="geo-readout" id="ftOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="tie">
+    <h2>The tie a single field leaves</h2>
+    <div class="prose">
+      <p>Score a job by its priority alone and every job in a tier gets the identical score. A sorted set keeps
+        equal-score members in lexicographic order of the member, which for a job is its id &mdash; not its arrival
+        order. So a priority-only score loses arrival order inside a tier: two jobs added in sequence can come out in id
+        order, which is arbitrary.</p>
+      <pre class="code"><span class="rdx">ZADD</span> prioritized <span class="res">1</span> <span class="str">"job:zeta"</span>    <span class="cmt"># arrived first</span>
+<span class="rdx">ZADD</span> prioritized <span class="res">1</span> <span class="str">"job:alpha"</span>   <span class="cmt"># arrived second</span>
+<span class="cmt"># Equal scores → ordered by member: alpha before zeta — arrival order lost</span></pre>
+      <p>A queue user expects first-in-first-out within a tier. A priority-only score cannot give it.</p>
+    </div>
+    <p class="take">A priority-only score ties every job in a tier, and the set falls back to member order &mdash; the
+      job id, not arrival order &mdash; so first-in-first-out is lost without a tie-breaker.</p>
+  </section>
+
+  <section id="counter">
+    <h2>The counter breaks the tie</h2>
+    <div class="prose">
+      <p>EchoMQ fills the low thirty-two bits with an arrival counter &mdash; the value of
+        <code class="inl">INCR pc</code>, taken inside the same script that scores the job.</p>
+      <pre class="code"><span class="cmt">-- inside getPriorityScore (included by addPrioritizedJob-9) — real</span>
+<span class="op">local</span> prioCounter = <span class="fn">rcall</span>(<span class="str">"INCR"</span>, priorityCounterKey)
+<span class="op">return</span> priority * <span class="res">0x100000000</span> + prioCounter % <span class="res">0x100000000</span></pre>
+      <p><code class="inl">INCR</code> returns the new value after incrementing, atomically. Each prioritized add reads a
+        fresh counter, one larger than the last. So within a tier the first add gets the smaller counter, the second a
+        larger one, and so on. The low bits now carry arrival order, and because they sit below the tier bits they break
+        the tie without disturbing it.</p>
+      <p>The result is FIFO within the tier. Three jobs of priority 1, added in order, take counters
+        <code class="inl">1</code>, <code class="inl">2</code>, <code class="inl">3</code>; their composite scores rise
+        in the same order; the set keeps them head-first by arrival. The hero figure toggles the
+        <code class="inl">INCR pc</code> counter on and off, and the priority-only mode shows the three tie and fall
+        back to member order.</p>
+    </div>
+    <p class="take">The low bits are filled by <code class="inl">INCR pc</code> &mdash; a fresh, larger counter per add
+      &mdash; so same-tier jobs get rising scores in arrival order, breaking the tie without touching the tier.</p>
+  </section>
+
+  <section id="why">
+    <h2>Why the counter, not the clock</h2>
+    <div class="prose">
+      <p>A timestamp could order arrivals too, but it ties when two jobs arrive in the same millisecond &mdash; the same
+        problem the delayed score solves with a low-bit shift. The <code class="inl">INCR pc</code> counter never ties:
+        it rises by exactly one per add, atomically, regardless of clock resolution. Two jobs added in the same
+        millisecond still get two different counters, so the within-tier order is total and deterministic. The counter
+        is a logical clock for arrivals, immune to wall-clock collisions.</p>
+    </div>
+
+    <figure class="fig tf" aria-labelledby="clkTitle">
+      <h4 id="clkTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Same millisecond, two jobs &middot; counter vs timestamp</h4>
+      <div class="controls">
+        <div class="solid-select" id="whSel" role="group" aria-label="Order two same-millisecond jobs by the INCR counter or by a millisecond timestamp">
+          <button type="button" data-key="counter" data-c="sage" class="active" aria-pressed="true">INCR pc counter</button>
+          <button type="button" data-key="clock" data-c="blue" aria-pressed="false">millisecond timestamp</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 150" role="img" aria-label="Two jobs added in the same millisecond. Ordered by the INCR counter they get distinct values 1 and 2 and keep arrival order. Ordered by a millisecond timestamp they get the identical value and tie, falling back to member order. The toggle switches the tie-breaker and the readout reports whether the order is total or tied.">
+        <text class="ttl" x="30" y="22">two jobs added the same millisecond</text>
+        <g><rect class="bit" x="36" y="40" width="180" height="44" rx="8" fill="#10162b" stroke="#2a3252"></rect>
+          <text class="job" id="whA" x="126" y="60" text-anchor="middle">—</text>
+          <text class="sc" id="whAk" x="126" y="76" text-anchor="middle">—</text></g>
+        <g><rect class="bit" x="244" y="40" width="180" height="44" rx="8" fill="#10162b" stroke="#2a3252"></rect>
+          <text class="job" id="whB" x="334" y="60" text-anchor="middle">—</text>
+          <text class="sc" id="whBk" x="334" y="76" text-anchor="middle">—</text></g>
+        <text class="ttl" id="whVerd" x="230" y="118" text-anchor="middle">—</text>
+      </svg>
+
+      <div class="geo-readout" id="whOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">A timestamp ties when two jobs land on the same millisecond; the <code class="inl">INCR pc</code>
+      counter rises by one per add and never ties, so the within-tier order is total and deterministic.</p>
+  </section>
+
+  <section id="applied">
+    <h2>In EchoMQ &mdash; the arrival counter, in real code</h2>
+    <div class="prose">
+      <p>The counter key is <code class="inl">EchoMQ.Keys.pc/1</code> &rarr; <code class="inl">emq:{queue}:pc</code>,
+        documented as the priority counter. It is passed as <code class="inl">KEYS[9]</code> via
+        <code class="inl">Keys.pc(ctx)</code> in <code class="inl">EchoMQ.Scripts.add_prioritized_job/4</code>, which runs
+        <code class="inl">addPrioritizedJob-9.lua</code>. Inside, <code class="inl">getPriorityScore</code> reads
+        <code class="inl">rcall("INCR", priorityCounterKey)</code> and folds it into the low thirty-two bits of the
+        score, then <code class="inl">rcall("ZADD", prioritizedKey, score, jobId)</code> adds the job.</p>
+      <pre class="code"><span class="cmt">-- EchoMQ.Scripts.add_prioritized_job/4 passes Keys.pc(ctx) as KEYS[9] (real)</span>
+<span class="op">local</span> prioCounter = <span class="fn">rcall</span>(<span class="str">"INCR"</span>, priorityCounterKey)        <span class="cmt">-- the next arrival number</span>
+<span class="op">local</span> score = priority * <span class="res">0x100000000</span> + prioCounter % <span class="res">0x100000000</span>
+<span class="fn">rcall</span>(<span class="str">"ZADD"</span>, prioritizedKey, score, jobId)             <span class="cmt">-- arrival order kept in the low bits</span></pre>
+      <p>Every prioritized add takes its arrival number from the same counter, so the whole prioritized set shares one
+        consistent arrival order. The counter is the difference between "this tier" and "this tier, in arrival order".</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>A textbook sorted set breaks an equal-score tie with lexicographic member order &mdash; arbitrary for a job
+          id.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p><code class="inl">getPriorityScore</code> breaks the within-tier tie with the
+          <code class="inl">INCR pc</code> arrival counter packed into the low thirty-two bits, so same-priority jobs
+          come out in the order they arrived: strict FIFO inside the tier, with no second structure.</p>
+      </div>
+    </div>
+
+    <p class="take">A sorted set's equal-score tie falls back to member order; the <code class="inl">INCR pc</code>
+      counter in the low bits replaces that with arrival order, so a tier serves first-in-first-out.</p>
+
+    <div class="door">
+      <span class="lbl">Door &middot; not depth</span>
+      How a group orders the jobs it owns, and how arrival fairness holds across many groups, is the subject of the
+      dedicated <strong>EchoMQ course</strong>. The intra-group priority and control plane are
+      <a href="/echomq/groups">E4 &middot; Groups</a>. This dive teaches the within-tier counter; that course teaches
+      the groups that share it.
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The atomic increment behind the arrival counter, the write that places a job in its tier and arrival slot, the
+        equal-score tie the counter removes, and the queue protocol EchoMQ ports.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/incr/">Redis &mdash; <em>INCR</em></a> &mdash; the atomic increment behind the arrival counter; returns the new value, one larger each call.</li>
+          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; score a member by its composite score; the write that places a job in its tier and arrival slot.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; equal-score members fall back to member order, the tie the counter removes.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the prioritized-jobs protocol EchoMQ ports, where the Lua scripts are the protocol.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority/priority-scores">R4.03 &middot; Priority with composite scores</a> &mdash; the module hub.</li>
+          <li><a href="/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score">R4.03.1 &middot; Packing two keys in one score</a> &mdash; the previous dive: the tier in the high bits, the counter in the low.</li>
+          <li><a href="/redis-patterns/time-delay-priority/priority-scores/zpopmin">R4.03.3 &middot; ZPOPMIN</a> &mdash; the next dive: the smallest-score pop that returns the FIFO head.</li>
+          <li><a href="/redis-patterns/time-delay-priority/delayed-queue/score-is-fire-time">R4.01.1 &middot; The score is the fire-time</a> &mdash; the low-bit shift that orders within a millisecond.</li>
+          <li><a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a> &mdash; the chapter.</li>
+          <li><a href="/echomq/groups">E4 &middot; Groups</a> &mdash; the dedicated EchoMQ course: intra-group priority in depth.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score"><span aria-hidden="true">&larr;</span>&nbsp; R4.03.1 &middot; Packing two keys in one score</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority/priority-scores/zpopmin">R4.03.3 &middot; ZPOPMIN <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score">R4.03.1 &middot; Packing two keys in one score</a>
+        <a href="/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier">R4.03.2 &middot; FIFO within a tier</a>
+        <a href="/redis-patterns/time-delay-priority/priority-scores/zpopmin">R4.03.3 &middot; ZPOPMIN</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/groups">The EchoMQ course &middot; groups</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var SHIFT = 0x100000000; // 2^32
+
+  /* ---------- hero: three same-priority jobs — the counter orders them FIFO (pure over mode) ---------- */
+  // Three jobs all priority 1, added in arrival order, taking INCR pc counters 1, 2, 3. With the counter the composite
+  // scores rise in arrival order. With "priority only" all three score the same (priority alone) and tie, falling back
+  // to member (id) order — here the ids are deliberately out of arrival order to show the loss.
+  var TJOBS = [
+    { id: 'order-7', arr: 1 }, { id: 'order-3', arr: 2 }, { id: 'order-9', arr: 3 }
+  ];
+  // pure: mode -> { slots:[{id,arr,score,head}], order:[ids] }
+  function tierOrder(mode) {
+    var rows;
+    if (mode === 'priority') {
+      // score = priority (1) only → all tie → member (id) order
+      rows = TJOBS.map(function (j) { return { id: j.id, arr: j.arr, score: 1 }; })
+        .sort(function (a, b) { return a.id < b.id ? -1 : 1; });
+    } else {
+      // composite: priority 1 × SHIFT + arrival counter
+      rows = TJOBS.map(function (j) { return { id: j.id, arr: j.arr, score: 1 * SHIFT + j.arr }; })
+        .sort(function (a, b) { return a.score - b.score; });
+    }
+    var slots = rows.map(function (r, i) { return { id: r.id, arr: r.arr, score: r.score, head: i === 0 }; });
+    return { slots: slots, order: rows.map(function (r) { return r.id; }) };
+  }
+  function renderFt(mode) {
+    var r = tierOrder(mode);
+    var g = document.getElementById('ftSlots');
+    if (g) {
+      var frag = '';
+      for (var i = 0; i < r.slots.length; i++) {
+        var s = r.slots[i];
+        var x = 44 + i * 130;
+        var cls = s.head ? 'head' : (mode === 'priority' ? 'tied' : '');
+        frag += '<g class="slot ' + cls + '"><rect x="' + x + '" y="38" width="116" height="46" rx="9"></rect>' +
+          '<text class="job" x="' + (x + 58) + '" y="58" text-anchor="middle">' + s.id + '</text>' +
+          '<text class="sc" x="' + (x + 58) + '" y="74" text-anchor="middle">arr ' + s.arr + ' · score ' + s.score + '</text></g>';
+      }
+      g.innerHTML = frag;
+    }
+    var verd = document.getElementById('ftVerd'), out = document.getElementById('ftOut');
+    var ord = r.order.join(' → ');
+    if (verd) verd.textContent = 'pop order: ' + ord;
+    if (out) {
+      if (mode === 'priority') {
+        out.textContent = 'mode = priority only. All three jobs are priority 1, so a priority-alone score ties them at ' +
+          '1. The set falls back to member (id) order: ' + ord + ' — by id, not by arrival. The job that arrived first ' +
+          '(arr 1) is not necessarily first out.';
+      } else {
+        out.textContent = 'mode = composite. Each job takes an INCR pc counter on add: arr 1, 2, 3. The composite ' +
+          'scores are 1 × 0x100000000 + counter, rising in arrival order, so the pop order is ' + ord + ' — strict FIFO ' +
+          'within the tier, the first to arrive out first.';
+      }
+    }
+  }
+  document.querySelectorAll('#ftSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var mode = b.getAttribute('data-mode');
+      document.querySelectorAll('#ftSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderFt(mode);
+    });
+  });
+  renderFt('composite'); // initial render — correct without interaction
+
+  /* ---------- content: same millisecond, two jobs — counter vs timestamp (pure over key) ---------- */
+  // Two jobs added in the same millisecond. By the INCR counter they get 1 and 2 (a total order). By a millisecond
+  // timestamp they get the identical value and tie. Pure over the chosen key.
+  var MS = 1706649005000;
+  // pure: key -> { aK, bK, total, text }
+  function tieBreak(key) {
+    if (key === 'clock') {
+      return {
+        aK: MS, bK: MS, total: false,
+        text: 'Tie-breaker = millisecond timestamp. Both jobs were added at ms ' + MS + ', so both get the identical ' +
+          'value ' + MS + '. They tie, and the set falls back to member order — arrival order is lost. A timestamp ' +
+          'cannot separate two adds inside one millisecond.'
+      };
+    }
+    return {
+      aK: 1, bK: 2, total: true,
+      text: 'Tie-breaker = INCR pc counter. The first add takes counter 1, the second counter 2 — distinct, even ' +
+        'though both landed on ms ' + MS + '. The order is total: job A (counter 1) before job B (counter 2). The ' +
+        'counter is a logical arrival clock, immune to wall-clock collisions.'
+    };
+  }
+  function renderWh(key) {
+    var r = tieBreak(key);
+    var a = document.getElementById('whA'), ak = document.getElementById('whAk'),
+        b = document.getElementById('whB'), bk = document.getElementById('whBk'),
+        verd = document.getElementById('whVerd'), out = document.getElementById('whOut');
+    if (a) a.textContent = 'job A'; if (b) b.textContent = 'job B';
+    if (ak) ak.textContent = (key === 'clock' ? 'ts ' : 'ctr ') + r.aK;
+    if (bk) bk.textContent = (key === 'clock' ? 'ts ' : 'ctr ') + r.bK;
+    if (verd) verd.textContent = r.total ? 'A < B → total order kept' : 'A = B → tied, order lost';
+    if (out) out.textContent = r.text;
+  }
+  document.querySelectorAll('#whSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-key');
+      document.querySelectorAll('#whSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderWh(key);
+    });
+  });
+  renderWh('counter'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

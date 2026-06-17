@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The branded-id gate · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="A job's identity is a 14-byte branded id — a three-letter namespace and an eleven-character Base62 Snowflake — and for a job the namespace is JOB. The @enqueue script checks it first: string.sub(ARGV[1], 1, 3) compared to JOB, the wrong namespace refused with EMQKIND before a row is written. The two-beat extract (the EchoMQ.Jobs.enqueue/4 handle then the commented Lua body), a 14-byte decoder, and a gate simulator, all grounded in echo/apps/echo_mq and echo/apps/echo_data.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/protocol">protocol</a><span class="rsep">/</span><a href="/echomq/protocol/immutability-and-branded-ids">immutability-and-branded-ids</a><span class="rsep">/</span><span class="rcur">the-branded-id-gate</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+    /* byte-layout strip */
+    .idbytes{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/protocol">The Protocol</a>
+        <span class="sep">/</span>
+        <a href="/echomq/protocol/immutability-and-branded-ids">Immutability &amp; branded ids</a>
+        <span class="sep">/</span>
+        <span class="here">The branded-id gate</span>
+      </div>
+      <p class="eyebrow">Immutability &middot; dive 02 &middot; how</p>
+      <h1>The branded-id <span class="ex">gate</span></h1>
+      <p class="lede">A job's id is a 14-byte branded Snowflake, and the wire checks it before a row exists.</p>
+      <p class="kicker">A caller does not pick a job's id. It is a <strong>14-byte branded id</strong>: a three-letter
+        uppercase namespace, then eleven characters of Base62 Snowflake. For a job the namespace is
+        <code class="inl">JOB</code>, and the <code class="inl">@enqueue</code> script checks it first — it reads the
+        first three bytes and refuses anything that is not <code class="inl">JOB</code>, with the
+        <code class="inl">EMQKIND</code> error class, before <code class="inl">EXISTS</code>, before
+        <code class="inl">HSET</code>. Identity is enforced on the server, in Lua, as part of the same atomic step that
+        writes the row. Decode a real id on the right, then read the gate that admits it.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#decode">Decode a 14-byte id</a>
+        <a href="#gate">The gate, in two beats</a>
+        <a href="#sim">The gate, byte by byte</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig" aria-labelledby="decTitle">
+      <h4 id="decTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The 14-byte branded id &middot; pick one to decode</h4>
+      <div class="controls">
+        <div class="solid-select" id="idSel" role="group" aria-label="Which branded id to decode">
+          <button type="button" data-id="JOB0KHTOWnGLuC" data-c="echo" class="active">a JOB id</button>
+          <button type="button" data-id="USR0KHTOWnGLuC" data-c="blue">a USR id</button>
+          <button type="button" data-id="job-42" data-c="gold">a bare "job-42"</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 150" role="img" aria-label="The 14-byte branded id layout: three namespace bytes followed by eleven Base62 bytes encoding a Snowflake, which unpacks into a 41-bit timestamp, a 10-bit node, and a 12-bit sequence. The namespace block is what the gate reads.">
+        <text x="230" y="20" text-anchor="middle" font-family="Manrope,sans-serif" font-size="12" fill="#a39c89">14 bytes = 3 namespace + 11 Base62(snowflake)</text>
+        <g id="ns-block"><rect x="24" y="32" width="96" height="40" rx="7" fill="rgba(42,161,152,.18)" stroke="#2aa198"></rect><text x="72" y="50" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#6fdccf" id="ns-text">JOB</text><text x="72" y="65" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#a39c89">namespace ·3</text></g>
+        <rect x="128" y="32" width="308" height="40" rx="7" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="282" y="50" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#ece4d0" id="b62-text">0KHTOWnGLuC</text>
+        <text x="282" y="65" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#a39c89">Base62(snowflake) ·11</text>
+        <g stroke="#2a3252" stroke-width="1.2" fill="none"><path d="M282 72 L282 92"></path></g>
+        <rect x="128" y="94" width="308" height="38" rx="7" fill="rgba(16,22,43,.5)" stroke="#2a3252"></rect>
+        <text x="190" y="113" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#9fc0ea">ts ·41</text>
+        <text x="282" y="113" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#a7c9b1">node ·10</text>
+        <text x="374" y="113" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#f0cd7f">seq ·12</text>
+        <text x="282" y="127" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#a39c89">snowflake = ts &lt;&lt; 22 | node &lt;&lt; 12 | seq</text>
+      </svg>
+      <div class="geo-readout" id="decOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="decode">
+    <h2>Identity is not a number the caller picks</h2>
+    <div class="prose">
+      <p>A job's id is a <strong>14-byte branded id</strong>: a three-letter uppercase namespace concatenated with an
+        eleven-character Base62 encoding of a Snowflake. The layout is fixed — three plus eleven, always fourteen — and
+        the Snowflake itself packs a 41-bit timestamp, a 10-bit node, and a 12-bit sequence
+        (<code class="inl">ts &lt;&lt; 22 | node &lt;&lt; 12 | seq</code>) against a fixed epoch. For a job, the namespace is
+        <code class="inl">JOB</code>.</p>
+      <p>The decoder above takes a real id apart: the namespace, the Snowflake, and the unpacked timestamp, node, and
+        sequence — and the gate verdict. A <code class="inl">JOB</code> id is admitted; a
+        <code class="inl">USR</code> id is the right shape but the wrong namespace, so the gate refuses it; a bare
+        <code class="inl">"job-42"</code> is not a branded id at all. The branding is not a label — it is what the
+        <code class="inl">@enqueue</code> script tests before the id may enter the job keyspace.</p>
+    </div>
+  </section>
+
+  <section id="gate">
+    <h2>The gate, in two beats</h2>
+    <div class="prose">
+      <p><strong>Beat one &mdash; the named handle.</strong> <code class="inl">EchoMQ.Jobs.enqueue/4</code> builds the
+        declared keys and runs the <code class="inl">@enqueue</code> script through the connector, then maps the server's
+        verdict back to a typed result — including the <code class="inl">EMQKIND</code> refusal the gate produces, which
+        becomes <code class="inl">{:error, :kind}</code>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs</span>
+<span class="cmt"># The host builds the declared keys and runs @enqueue. The server's verdict</span>
+<span class="cmt"># is mapped: 1 enqueued, 0 a duplicate, and an EMQKIND error reply (the</span>
+<span class="cmt"># branded-id gate firing) becomes the typed {:error, :kind}.</span>
+<span class="op">def</span> <span class="fn">enqueue</span>(conn, queue, job_id, payload) <span class="op">when</span> is_binary(job_id) <span class="op">and</span> is_binary(payload) <span class="op">do</span>
+  keys = [Keyspace.<span class="fn">job_key</span>(queue, job_id), Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"pending"</span>)]
+
+  <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@enqueue</span>, keys, [job_id, payload]) <span class="op">do</span>
+    {<span class="str">:ok</span>, <span class="res">1</span>} -&gt; {<span class="str">:ok</span>, <span class="str">:enqueued</span>}
+    {<span class="str">:ok</span>, <span class="res">0</span>} -&gt; {<span class="str">:ok</span>, <span class="str">:duplicate</span>}
+    {<span class="str">:error</span>, {<span class="str">:server</span>, <span class="str">"EMQKIND"</span> &lt;&gt; _}} -&gt; {<span class="str">:error</span>, <span class="str">:kind</span>}
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><strong>Beat two &mdash; the gate, in the script body.</strong> The first statement of
+        <code class="inl">@enqueue</code> is the namespace check. <code class="inl">ARGV[1]</code> is the 14-byte id;
+        <code class="inl">string.sub(ARGV[1], 1, 3)</code> is its first three bytes. Not
+        <code class="inl">'JOB'</code> → <code class="inl">redis.error_reply('EMQKIND …')</code>, and the script stops
+        before the idempotency check, before the row write, before the pending insert.</p>
+    </div>
+
+    <pre class="code"><span class="cmt">-- the @enqueue script — the branded-id gate is the first statement</span>
+<span class="cmt">-- ARGV[1] is the 14-byte branded id. Its first three bytes are the</span>
+<span class="cmt">-- namespace. A job id must be JOB-namespaced; anything else is refused at</span>
+<span class="cmt">-- the wire, before a row exists.</span>
+<span class="op">if</span> string.sub(<span class="rdx">ARGV[1]</span>, <span class="res">1</span>, <span class="res">3</span>) ~= <span class="str">'JOB'</span> <span class="op">then</span>
+  <span class="op">return</span> redis.error_reply(<span class="str">'EMQKIND job id must be JOB-namespaced'</span>)
+<span class="op">end</span>
+<span class="cmt">-- only a JOB-namespaced id reaches the idempotency check and the row write</span>
+<span class="op">if</span> redis.call(<span class="str">'EXISTS'</span>, <span class="rdx">KEYS[1]</span>) == <span class="res">1</span> <span class="op">then</span>
+  <span class="op">return</span> <span class="res">0</span>
+<span class="op">end</span>
+redis.call(<span class="str">'HSET'</span>, <span class="rdx">KEYS[1]</span>, <span class="str">'state'</span>, <span class="str">'pending'</span>, <span class="str">'attempts'</span>, <span class="str">'0'</span>, <span class="str">'payload'</span>, <span class="rdx">ARGV[2]</span>)
+redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[2]</span>, <span class="res">0</span>, <span class="rdx">ARGV[1]</span>)
+<span class="op">return</span> <span class="res">1</span></pre>
+
+    <div class="prose">
+      <p>A second gate runs earlier, host-side: <code class="inl">EchoMQ.Keyspace.job_key/2</code> calls
+        <code class="inl">EchoData.BrandedId.valid?/1</code> and raises on an ill-formed id, so a malformed id never even
+        reaches the key builder. The Lua gate is the wire's own check — the one that holds for every speaker in any
+        runtime, because it lives in the shared script, not in one runtime's host code. Two gates, one for shape (host)
+        and one for namespace (wire), and the row is written only past both.</p>
+    </div>
+    <p class="take">A job id is a 14-byte branded Snowflake under <code class="inl">JOB</code>, and the gate is the first
+      line of <code class="inl">@enqueue</code> — three bytes compared, the wrong namespace refused with
+      <code class="inl">EMQKIND</code> before any write.</p>
+  </section>
+
+  <section id="sim">
+    <h2>The gate, byte by byte</h2>
+    <div class="prose">
+      <p>The gate is one comparison: <code class="inl">string.sub(id, 1, 3)</code> against
+        <code class="inl">'JOB'</code>. Pick a candidate id and read the exact bytes the script reads and the verdict it
+        returns — admitted, or refused with <code class="inl">EMQKIND</code> before a row exists.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="simTitle">
+      <h4 id="simTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">string.sub(id, 1, 3) ~= 'JOB' &middot; pick a candidate</h4>
+      <div class="controls">
+        <div class="solid-select" id="simSel" role="group" aria-label="Which candidate id">
+          <button type="button" data-cand="JOB0KHTOWnGLuC" data-c="echo" class="active">JOB0KHTOWnGLuC</button>
+          <button type="button" data-cand="USR0KHTOWnGLuC" data-c="blue">USR0KHTOWnGLuC</button>
+          <button type="button" data-cand="CRS0KHTOWnGLuC" data-c="blue">CRS0KHTOWnGLuC</button>
+          <button type="button" data-cand="job0KHTOWnGLuC" data-c="gold">job0KHTOWnGLuC</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 124" role="img" aria-label="The gate reads the first three bytes of the candidate id and compares them to JOB. A match passes to the row write; a mismatch returns the EMQKIND error and stops.">
+        <rect x="24" y="24" width="120" height="40" rx="7" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="84" y="42" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#ece4d0" id="sim-sub">JOB</text>
+        <text x="84" y="57" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#a39c89">sub(id,1,3)</text>
+        <text x="172" y="48" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="14" fill="#a39c89" id="sim-op">==</text>
+        <rect x="200" y="24" width="84" height="40" rx="7" fill="rgba(42,161,152,.18)" stroke="#2aa198"></rect>
+        <text x="242" y="48" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#6fdccf">'JOB'</text>
+        <g stroke="#2a3252" stroke-width="1.2" fill="none"><path d="M284 44 L320 44"></path></g>
+        <rect id="sim-verdict-box" x="320" y="24" width="116" height="40" rx="7" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="378" y="48" text-anchor="middle" font-family="Manrope,sans-serif" font-size="12" fill="#ece4d0" id="sim-verdict">admitted</text>
+        <text x="230" y="96" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#a39c89" id="sim-trail">match → EXISTS → HSET → ZADD → return 1</text>
+      </svg>
+      <div class="geo-readout" id="simOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="bridge" id="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A branded key carries its type in its bytes, and the atomic script that touches it can check that type before
+          it acts. <a href="/redis-patterns/coordination">Coordination</a> teaches the atomic check-then-act move the
+          gate is an instance of.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">@enqueue</code>'s first statement is
+          <code class="inl">string.sub(ARGV[1], 1, 3) ~= 'JOB'</code> → <code class="inl">EMQKIND</code>; the 14-byte id
+          is <code class="inl">JOB</code> + a Base62 Snowflake; <code class="inl">Keyspace.job_key/2</code> gates the
+          shape again host-side via <code class="inl">valid?/1</code>.</p>
+      </div>
+    </div>
+    <p class="take">Identity is checked in the shared script, not in one runtime's host code, so the gate holds for every
+      speaker of the wire.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; the gate and the id</h2>
+    <div class="prose">
+      <p>A job id is a 14-byte branded Snowflake under <code class="inl">JOB</code>:
+        <code class="inl">EchoData.BrandedId</code> fixes the layout (three namespace bytes + eleven Base62 bytes), and
+        the <code class="inl">@enqueue</code> script's first line — <code class="inl">string.sub(ARGV[1], 1, 3) ~=
+        'JOB'</code> — refuses the wrong namespace with <code class="inl">EMQKIND</code> before any write.
+        <code class="inl">Keyspace.job_key/2</code> gates the shape host-side as well. The next dive reads the third
+        guard — how a whole connection is fenced before it can touch the store.</p>
+    </div>
+    <p class="note">Next in this module: <strong>The version fence</strong> &mdash; the
+      <code class="inl">{emq}:version</code> reserved key the connector claims or verifies before its first command.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the branded-id contract and the scripting that enforces it are documented.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the load-once, run-by-SHA dispatch that runs the gate atomically inside the engine.</li>
+          <li><a href="https://valkey.io/docs/">Valkey &mdash; <em>Documentation</em></a> &mdash; the substrate of record, and its server-side Lua semantics.</li>
+          <li><a href="https://valkey.io/commands/hset/">Valkey &mdash; <em>HSET</em></a> &mdash; the row write that only a gated id reaches.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/protocol/the-lua-layer">The Lua layer</a> &mdash; the script layer the gate is the first statement of.</li>
+          <li><a href="/echomq/protocol/immutability-and-branded-ids/the-immutable-line">The immutable line</a> &mdash; the previous dive: the fixed line.</li>
+          <li><a href="/echomq/protocol/immutability-and-branded-ids/the-version-fence">The version fence</a> &mdash; the next dive: the connection's fence.</li>
+          <li><a href="/bcs">The Branded Component System</a> &mdash; where the 14-byte branded id is the identity contract.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/protocol/immutability-and-branded-ids/the-immutable-line"><span aria-hidden="true">&larr;</span>&nbsp; The immutable line</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/protocol/immutability-and-branded-ids/the-version-fence">The version fence <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This chapter</h4>
+        <a href="/echomq/protocol">The Protocol</a>
+        <a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a>
+        <a href="/echomq/protocol/the-record-hash">The record hash</a>
+        <a href="/echomq/protocol/the-lua-layer">The Lua layer</a>
+        <a href="/echomq/protocol/immutability-and-branded-ids">Immutability &amp; branded ids</a>
+        <a href="/echomq/protocol/workshop">Workshop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/protocol">The Protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- shared: the branded-id codec (pure) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  /* a valid branded id is exactly 14 bytes: 3 uppercase + 11 Base62 */
+  function isUpper3(s) { return /^[A-Z]{3}$/.test(s); }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    if (!isUpper3(ns)) return null;
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  /* the gate as the script applies it: the first three bytes must equal 'JOB' */
+  function gateVerdict(id) { return id.slice(0, 3) === 'JOB' ? 'admit' : 'refuse'; }
+
+  /* ---------- hero: decode a 14-byte id ---------- */
+  function renderDecode(id) {
+    var out = document.getElementById('decOut');
+    if (!out) return;
+    var info = decodeBranded(id);
+    var nsEl = document.getElementById('ns-text');
+    var b62El = document.getElementById('b62-text');
+    if (info) {
+      if (nsEl) nsEl.textContent = info.ns;
+      if (b62El) b62El.textContent = id.slice(3);
+      var v = gateVerdict(id);
+      var tag = v === 'admit'
+        ? '<b class="ok">admitted</b> — the namespace is JOB'
+        : '<b class="bad">refused (EMQKIND)</b> — the namespace is ' + info.ns + ', not JOB';
+      out.innerHTML = 'id <b>' + id + '</b> (14 bytes)<br>' +
+        '<span class="dim">namespace:</span> ' + info.ns + '  ·  <span class="dim">snowflake:</span> ' + info.snow + '<br>' +
+        '<span class="dim">ts:</span> ' + info.ts + '  ·  <span class="dim">node:</span> ' + info.node + '  ·  <span class="dim">seq:</span> ' + info.seq + '<br>' +
+        'gate: ' + tag + '.';
+    } else {
+      if (nsEl) nsEl.textContent = '—';
+      if (b62El) b62El.textContent = '(not 14 bytes)';
+      out.innerHTML = 'id <b>' + id + '</b> — <b class="bad">not a branded id</b>: a branded id is exactly 14 bytes (3 uppercase + 11 Base62). The host gate (Keyspace.job_key/2 → BrandedId.valid?/1) raises before the wire is even reached.';
+    }
+  }
+  document.querySelectorAll('#idSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#idSel button').forEach(function (x) {
+        var on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      renderDecode(b.getAttribute('data-id'));
+    });
+  });
+  renderDecode('JOB0KHTOWnGLuC');
+
+  /* ---------- content: the gate, byte by byte ---------- */
+  function renderSim(id) {
+    var sub = id.slice(0, 3);
+    var v = gateVerdict(id);
+    var subEl = document.getElementById('sim-sub');
+    var opEl = document.getElementById('sim-op');
+    var box = document.getElementById('sim-verdict-box');
+    var vEl = document.getElementById('sim-verdict');
+    var trail = document.getElementById('sim-trail');
+    if (subEl) subEl.textContent = sub;
+    if (opEl) opEl.textContent = v === 'admit' ? '==' : '~=';
+    if (box) box.setAttribute('stroke', v === 'admit' ? '#7ba387' : '#c4504c');
+    if (vEl) { vEl.textContent = v === 'admit' ? 'admitted' : 'EMQKIND'; vEl.setAttribute('fill', v === 'admit' ? '#a7c9b1' : '#f2948c'); }
+    if (trail) trail.textContent = v === 'admit'
+      ? 'match → EXISTS → HSET → ZADD → return 1'
+      : 'mismatch → return redis.error_reply(EMQKIND) — no row written';
+    var out = document.getElementById('simOut');
+    if (out) {
+      out.innerHTML = v === 'admit'
+        ? 'string.sub("' + id + '", 1, 3) = <b>' + sub + '</b> == \'JOB\' → <b class="ok">admitted</b>; the script proceeds to the row write.'
+        : 'string.sub("' + id + '", 1, 3) = <b>' + sub + '</b> ~= \'JOB\' → <b class="bad">refused (EMQKIND)</b>; the script returns before EXISTS, before HSET — no row exists.';
+    }
+  }
+  document.querySelectorAll('#simSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#simSel button').forEach(function (x) {
+        var on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      renderSim(b.getAttribute('data-cand'));
+    });
+  });
+  renderSim('JOB0KHTOWnGLuC');
+
+  /* ---------- Branded Snowflake decoder (stamp) ---------- */
+  function decodeStamp(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var sinfo = decodeStamp(idEl.textContent.trim());
+    if (sinfo) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', sinfo.ns); put('st-snow', sinfo.snow); put('st-node', sinfo.node); put('st-seq', sinfo.seq); put('st-ts', sinfo.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

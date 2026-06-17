@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B4.1.3 · The Jittered Clock · BCS · jonnify</title>
+<meta name="description" content="Rows filled together must not expire together, or the TTL itself schedules the next herd. Every insert draws its expiry from ttl ± ttl·jitter — E5 gates the spread (400 rows filled in 24 ms expire 138 ms apart at jitter 0.2, while the zero-jitter control spreads 5 ms across a 4 ms fill) and the sweeper (swept 400, table size 0); E6 gates the bound: size capped at 100 of 100, 101 fills served their callers and skipped the insert.">
+<style>
+/* ============ The BCS identity — the contract sheet ============
+   Copied from the B0 exemplar (html/bcs/index.html). Light
+   engineering-document aesthetic; monospace-forward; the 3/11 id
+   rhythm; transcript evidence blocks. Not the dark-editorial system
+   of the sibling courses. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;      /* namespace — oxide red   */
+  --b-ts:#20618e;      /* timestamp — drafting blue */
+  --b-node:#2e7d5b;    /* node — verdigris        */
+  --b-seq:#7d4e8f;     /* sequence — violet       */
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--b-ns)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--b-ns);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the 3/11 rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--b-ns-tint)}
+.idrule i:nth-child(-n+3){box-shadow:inset 0 0 0 1px var(--b-ns)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--b-ns);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:62ch;color:var(--b-ink)}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--b-ns);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--b-ns)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:70ch}
+
+/* ---------- the anatomy figure (interactive) ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.anat{width:100%;height:auto;display:block}
+.anat .edge{stroke:var(--b-line);stroke-width:2}
+.anat .node{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.anat .node.first{stroke:var(--b-ns)}
+.anat .bar{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.5}
+.anat .bar.hot{fill:var(--b-ns-tint);stroke:var(--b-ns)}
+.anat .bar.wait{fill:none;stroke:var(--b-dim);stroke-dasharray:5 4}
+.anat .nid{font:700 15px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.anat .nlbl{font:11px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.anat .nlbl.left{text-anchor:start}
+.anat g[data-seg]{cursor:pointer;transition:opacity .18s ease}
+.anat.focus g[data-seg]{opacity:.3}
+.anat.focus g[data-seg].on{opacity:1}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:72ch;margin-bottom:22px}
+
+/* ---------- code figures (page addition) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+
+/* ---------- the module / chapter cards ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pcard{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+a.pcard{border-color:var(--b-ns)}
+a.pcard:hover{border-bottom-color:var(--b-ns);box-shadow:0 1px 0 var(--b-ns)}
+.pcard .bid{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--b-ns);letter-spacing:.08em}
+.pcard h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.pcard p{font-size:.88rem;color:var(--b-dim)}
+.pcard .meta{display:flex;gap:10px;align-items:center;margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.chip{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-radius:3px;padding:1px 7px}
+.chip.now{background:var(--b-ns);color:var(--b-card)}
+.chip.soon{background:var(--b-paper);border:1px solid var(--b-line);color:var(--b-dim)}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:80ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--b-ns)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--b-ns)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .pgrid,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .pgrid,.doors{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>bcs</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/bcs">bcs</a><span class="rsep">/</span><a href="/bcs/cache">cache</a><span class="rsep">/</span><a href="/bcs/cache/cache-aside">cache-aside</a><span class="rsep">/</span><span class="rcur">the-jittered-clock</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#transcript">Transcript</a>
+      <a href="#sweeper">The sweeper</a>
+      <a href="#bound">The bound</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">B4.1 · dive 3 — the jittered clock</p>
+      <h1>Rows filled together must not expire <span class="hns">together</span>.</h1>
+      <p class="lede">If a cohort of rows expires at one instant, the TTL itself schedules the next herd. Every
+      insert draws its expiry from <code>ttl &#177; ttl&#183;jitter</code>, and the committed drill shows the
+      spread doing its work: <b>400 rows filled in 24 ms expire 138 ms apart at jitter 0.2</b> — no
+      synchronized re-herd — while the zero-jitter cohort spreads only its own fill walltime, <b>the control
+      that proves the treatment</b>. The sweeper then reclaims on its tick, and the size bound degrades to
+      pass-through, never to failure.</p>
+      <p class="heronote">Source: content/bcs4.1.md, quoting <code>bcs_rung_4_1_check.out</code>; the module is
+      committed at <code>runtimes/elixir/lib/echo_cache/table.ex</code>.</p>
+
+      <figure class="anatomy">
+        <figcaption><b>The jitter spread, to scale.</b> The two committed cohorts and the sweeper's tick on one
+        millisecond axis — bar widths are computed live from the record's figures. Select a row.</figcaption>
+        <svg class="anat" id="anat" viewBox="0 0 980 230" role="img" aria-label="Three rows on one millisecond scale: at jitter 0.2, 400 rows filled in 24 ms expire 138 ms apart; at jitter 0.0, the cohort spreads 5 ms across a 4 ms fill; and the sweeper's 100 ms tick reclaims the whole cohort — swept 400, table size 0.">
+          <g data-seg="j02">
+            <text class="nlbl left" x="14" y="40">jitter 0.2</text>
+            <rect class="bar hot" id="bar-fill02" x="240" y="24" width="104" height="26" rx="3"></rect>
+            <rect class="bar" id="bar-spread02" x="344" y="24" width="596" height="26" rx="3"></rect>
+            <text class="nlbl left" x="240" y="68">fill 24 ms &#183; expiry spread 138 ms — no synchronized re-herd</text>
+          </g>
+          <g data-seg="j00">
+            <text class="nlbl left" x="14" y="116">jitter 0.0</text>
+            <rect class="bar hot" id="bar-fill00" x="240" y="100" width="17" height="26" rx="3"></rect>
+            <rect class="bar" id="bar-spread00" x="257" y="100" width="22" height="26" rx="3"></rect>
+            <text class="nlbl left" x="240" y="144">fill 4 ms &#183; spread 5 ms — jitter added nothing there</text>
+          </g>
+          <g data-seg="sweep">
+            <text class="nlbl left" x="14" y="192">the sweeper</text>
+            <rect class="bar wait" id="bar-tick" x="240" y="176" width="432" height="26" rx="3"></rect>
+            <text class="nlbl left" x="240" y="220">a 100 ms tick &#183; swept 400, table size 0</text>
+          </g>
+        </svg>
+        <div class="segbar" id="segbar" role="group" aria-label="Select a cohort or the sweeper">
+          <button type="button" data-seg="j02" aria-pressed="false">jitter 0.2</button>
+          <button type="button" data-seg="j00" aria-pressed="false">jitter 0.0</button>
+          <button type="button" data-seg="sweep" aria-pressed="false">the sweeper</button>
+        </div>
+        <div class="readout" id="readout" aria-live="polite"><span class="rk">readout &#183;</span> Select a
+        row. Two cohorts of 400 rows each — the treatment and its control — and the tick that reclaims the
+        cohort; the lines are frozen in &#167;1 below.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="transcript">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The transcript</h2>
+        <span class="ssrc">bcs_rung_4_1_check.out &#183; verbatim &#183; this dive reads the jitter and bound lines</span>
+      </div>
+      <figure class="frozen">
+        <figcaption>content/echo_data/runtimes/elixir/bcs_rung_4_1_check.out &#183; the slice this dive reads<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd">&#8230;</span>
+derive (jitter): <span class="fd">ttl 300 ms at jitter 0.2 spreads expiry uniformly across plus-minus 60 ms -- 400 rows filled in one fast pass should spread at least 70 ms beyond their fill walltime, approaching 120; a jitter 0.0 cohort's spread can never exceed its own fill walltime -- jitter adds nothing; the sweeper on a 100 ms tick then reclaims the whole cohort without a single read</span>
+E5 jitter ok <span class="fd">-- 400 rows filled in 24 ms expire 138 ms apart at jitter 0.2 -- no synchronized re-herd -- while the jitter 0.0 cohort spreads 5 ms across a 4 ms fill: jitter added nothing there; the sweeper then reclaimed the whole cohort on its tick (swept 400, table size 0) with not one read paying the cleanup</span>
+derive (bound): <span class="fd">refdata declares max_size 100 with a 60 s ttl, so nothing expires to reclaim -- 49 more fills fit beside the 51 live rows, then every further fill must serve its caller and skip the insert</span>
+E6 bound ok <span class="fd">-- the declaration holds: size capped at 100 of 100, 101 fills served their callers and skipped the insert -- a full cache is a stat, never an error -- and the writer path lands one value in both layers</span>
+<b>PASS 6/6</b></pre>
+      </figure>
+      <p class="ethic">The elided lines hold the header, E1–E2, and the herd and speed drills — dive 1 and
+      dive 2 read them, and the <a href="/bcs/cache/cache-aside">module hub</a> freezes the record whole. The
+      zero-jitter cohort is the record's own control: its spread can never exceed its own fill walltime, so the
+      138 ms spread of the treated cohort is the jitter's work and nothing else's.</p>
+    </section>
+
+    <section id="sweeper">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The sweeper, and two clocks</h2>
+        <span class="ssrc">content/bcs4.1.md &#183; What &#183; Decisions &#183; When</span>
+      </div>
+      <p class="ethic">Dead rows leave whether or not anyone reads them again. The sweeper reclaims on its tick
+      — the committed line: <code>the sweeper then reclaimed the whole cohort on its tick (swept 400, table
+      size 0) with not one read paying the cleanup</code> — a one-pass <code>select_delete</code> over the
+      table. Valkey does the same on its side with on-access and active expiration — two layers each keeping
+      their own house.</p>
+      <p class="ethic">The decision is the series' two-clocks law, now in the cache: L1 expiry runs on the
+      BEAM's monotonic clock; L2 expiry runs on the server's clock via <code>PX</code>. Each layer is sovereign
+      over its own staleness, and neither trusts the other's watch. From the chapter's When: size the jitter to
+      the herd you fear — 0.1–0.2 spreads a cohort across a fifth of its TTL, which is enough to turn a
+      synchronized re-fill into a trickle.</p>
+    </section>
+
+    <section id="bound">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The bound</h2>
+        <span class="ssrc">content/bcs4.1.md &#183; The bound &#183; Boundaries</span>
+      </div>
+      <p class="ethic">A full cache is a stat, never an error. With <code>max_size 100</code> declared and
+      nothing expired to reclaim, the record shows <code>size capped at 100 of 100, 101 fills served their
+      callers and skipped the insert</code> — every caller got its value, the table held its declaration, and
+      the overflow is visible in <code>full_skips</code> rather than in anyone's latency alarm. No eviction
+      cleverness in this chapter: "an LRU would tax every read with touch-tracking", and the read path's purity
+      is the product. Smarter eviction, if ever wanted, is a follow-up knob under its own gate.</p>
+      <p class="ethic">The boundaries travel with the gate: this chapter's staleness bound is the TTL and
+      nothing sharper — a write elsewhere becomes visible here only when the clock says so, and surfaces that
+      cannot accept that wait for the versioned invalidation of <strong>B4.2 &#183; Coherence by Mint
+      Time</strong>. The L1 is per-node by design — two nodes warm independently, and cross-node agreement is
+      exactly the coherence problem this chapter does not claim to solve.</p>
+
+      <figure class="anatomy">
+        <figcaption><b>The bound walk.</b> Four committed stations from the record's bound drill — the live sum
+        of the cohort is computed at the second station. Every figure is the derive line's or E6's.</figcaption>
+        <div class="segbar" id="boundbar" role="group" aria-label="Walk the bound drill">
+          <button type="button" data-op="cohort" aria-pressed="false">the cohort</button>
+          <button type="button" data-op="cap" aria-pressed="false">fill to the bound</button>
+          <button type="button" data-op="past" aria-pressed="false">past the bound</button>
+          <button type="button" data-op="writer" aria-pressed="false">the writer</button>
+        </div>
+        <div class="readout" id="boundout" aria-live="polite"><span class="rk">readout &#183;</span> Walk the
+        drill. A declared bound of 100, 51 live rows, and nothing expiring to reclaim — the declaration holds
+        at every station.</div>
+        <p class="booknote">Static record — the walk in the committed order: <code>refdata declares max_size
+        100 with a 60 s ttl</code> &#183; 49 more fills fit beside the 51 live rows &#183; <code>size capped
+        at 100 of 100</code> &#183; <code>101 fills served their callers and skipped the insert</code> &#183;
+        <code>the writer path lands one value in both layers</code>.</p>
+      </figure>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://www.erlang.org/doc/apps/stdlib/ets.html" rel="noopener">Erlang/OTP — ets</a><span class="rs">select_delete match-specification deletion: the sweeper's one-pass reclaim</span></li>
+          <li><a href="https://valkey.io/commands/expire/" rel="noopener">Valkey — EXPIRE</a><span class="rs">expiration semantics and the server's two reclamation paths, on-access and active cycles</span></li>
+          <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey — SET</a><span class="rs">the PX option: the L2 row written with its expiry in one command</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/bcs/cache/cache-aside">B4.1 — Cache-Aside at ETS Speed</a><span class="rs">the module hub; the full rung in context</span></li>
+          <li><a href="/bcs/cache">B4 — EchoCache</a><span class="rs">the chapter landing</span></li>
+          <li><a href="/bcs/bus">B3 — The Bus</a><span class="rs">the volatile substrate beside the cache</span></li>
+          <li><a href="/bcs/elixir-core/property-stores">B2.2 — Property Stores</a><span class="rs">the owners the TTL shields</span></li>
+          <li><a href="/redis-patterns">Redis Patterns Applied</a><span class="rs">the caching substrate patterns</span></li>
+          <li><a href="/echomq">EchoMQ — the course</a><span class="rs">the bus protocol in rung-level depth</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/bcs/cache/cache-aside/one-fill-per-herd"><span class="pk">previous</span>&#8592; B4.1.2 &#183; One Fill per Herd</a>
+      <a class="pgx" href="/bcs/cache/cache-aside"><span class="pk">next</span>B4.1 &#183; back to the hub &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="BCS — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>bcs</span>
+        <p class="foot-tag">The Branded Component System — boundaries around systems, identity as a contract,
+        every figure from a frozen transcript.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/bcs">B0 &#183; Orientation</a>
+        <a href="/bcs/ideas">B1 &#183; Ideas Behind</a>
+        <a href="/bcs/elixir-core">B2 &#183; The Elixir BCS Core</a>
+        <a href="/bcs/bus">B3 &#183; The Bus</a>
+        <a href="/bcs/cache">B4 &#183; EchoCache</a>
+        <span>B5 &#183; Go<i>soon</i></span>
+        <span>B6 &#183; Node 22+<i>soon</i></span>
+        <span>B7 &#183; Production on Fly<i>soon</i></span>
+        <span>B8 &#183; The Trading System<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/bcs">BCS — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">BCS0NvpbiuzNaK</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-13 00:21:20 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the jitter spread, to scale (bars computed from the committed figures) ---------- */
+  var COHORTS = {
+    j02: { fillMs: 24, spreadMs: 138 },
+    j00: { fillMs: 4, spreadMs: 5 },
+    tickMs: 100
+  };
+  var AXIS_MS = COHORTS.j02.fillMs + COHORTS.j02.spreadMs;  /* the longest row: 24 + 138 */
+  var AXIS_PX = 700;
+
+  function msToPx(ms) { return Math.max(2, Math.round(ms / AXIS_MS * AXIS_PX)); }
+
+  function setBar(id, x, ms) {
+    var el = document.getElementById(id);
+    if (el) {
+      el.setAttribute('x', String(x));
+      el.setAttribute('width', String(msToPx(ms)));
+    }
+  }
+  var X0 = 240;
+  setBar('bar-fill02', X0, COHORTS.j02.fillMs);
+  setBar('bar-spread02', X0 + msToPx(COHORTS.j02.fillMs), COHORTS.j02.spreadMs);
+  setBar('bar-fill00', X0, COHORTS.j00.fillMs);
+  setBar('bar-spread00', X0 + msToPx(COHORTS.j00.fillMs), COHORTS.j00.spreadMs);
+  setBar('bar-tick', X0, COHORTS.tickMs);
+
+  var ROWS = {
+    j02: '<span class="rk">verbatim, E5 &#183;</span> <code>400 rows filled in 24 ms expire 138 ms apart at ' +
+      'jitter 0.2 -- no synchronized re-herd</code><br><span class="rk">derived first &#183;</span> ' +
+      '<code>ttl 300 ms at jitter 0.2 spreads expiry uniformly across plus-minus 60 ms -- 400 rows filled in ' +
+      'one fast pass should spread at least 70 ms beyond their fill walltime, approaching 120</code>',
+    j00: '<span class="rk">the control, verbatim E5 &#183;</span> <code>while the jitter 0.0 cohort spreads ' +
+      '5 ms across a 4 ms fill: jitter added nothing there</code><br><span class="rk">why it proves the ' +
+      'treatment &#183;</span> <code>' + "a jitter 0.0 cohort's spread can never exceed its own fill " +
+      'walltime -- jitter adds nothing</code> &#8212; so the treated spread is the jitter&#8217;s work.',
+    sweep: '<span class="rk">verbatim, E5 &#183;</span> <code>the sweeper then reclaimed the whole cohort on ' +
+      'its tick (swept 400, table size 0) with not one read paying the cleanup</code><br>' +
+      '<span class="rk">derived first &#183;</span> <code>the sweeper on a 100 ms tick then reclaims the ' +
+      'whole cohort without a single read</code>'
+  };
+
+  var anat = document.getElementById('anat');
+  var readout = document.getElementById('readout');
+  var buttons = document.querySelectorAll('#segbar button');
+
+  function select(seg) {
+    buttons.forEach(function (b) {
+      var on = b.getAttribute('data-seg') === seg;
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    if (anat) {
+      anat.classList.toggle('focus', !!seg);
+      anat.querySelectorAll('g[data-seg]').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-seg') === seg);
+      });
+    }
+    if (readout && seg && ROWS[seg]) {
+      readout.innerHTML = ROWS[seg];
+    }
+  }
+
+  buttons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var seg = b.getAttribute('data-seg');
+      var already = b.getAttribute('aria-pressed') === 'true';
+      select(already ? null : seg);
+    });
+  });
+  if (anat) {
+    anat.querySelectorAll('g[data-seg]').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { select(g.getAttribute('data-seg')); });
+      g.addEventListener('mouseleave', function () { select(null); });
+    });
+  }
+
+  /* ---------- Interactive 2: the bound walk (pure lookup; the cohort sum computed live) ---------- */
+  var LIVE_ROWS = 51;
+  var FILLS_THAT_FIT = 49;
+
+  var BOUND = {
+    cohort: '<span class="rk">verbatim, derive (bound) &#183;</span> <code>refdata declares max_size 100 ' +
+      'with a 60 s ttl, so nothing expires to reclaim -- 49 more fills fit beside the 51 live rows, then ' +
+      'every further fill must serve its caller and skip the insert</code>',
+    cap: '<span class="rk">the sum, computed &#183;</span> ' + LIVE_ROWS + ' live rows + ' + FILLS_THAT_FIT +
+      ' fills = <code>' + (LIVE_ROWS + FILLS_THAT_FIT) + '</code><br><span class="rk">verbatim, E6 &#183;' +
+      '</span> <code>size capped at 100 of 100</code> &#8212; the declaration holds.',
+    past: '<span class="rk">verbatim, E6 &#183;</span> <code>101 fills served their callers and skipped the ' +
+      'insert -- a full cache is a stat, never an error</code><br><span class="rk">where it shows &#183;' +
+      '</span> the overflow is visible in <code>full_skips</code> rather than in anyone&#8217;s latency alarm.',
+    writer: '<span class="rk">verbatim, E6 &#183;</span> <code>the writer path lands one value in both ' +
+      'layers</code> &#8212; the put travels the same two-layer discipline as the fill.'
+  };
+
+  var boundout = document.getElementById('boundout');
+  var boundButtons = document.querySelectorAll('#boundbar button');
+  boundButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      boundButtons.forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      var station = BOUND[b.getAttribute('data-op')];
+      if (boundout && station) { boundout.innerHTML = station; }
+    });
+  });
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

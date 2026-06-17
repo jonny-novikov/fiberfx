@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R2.05.1 · The tag mechanic · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R2.05.1 — Valkey cluster hashes only the substring inside the first non-empty {…} and ignores the rest of the key, so emq:{orders}:pending and emq:{orders}:active share a slot. The exact rule from EchoMQ.Keyspace.hashtag/1 and slot/1: first '{', the next '}', non-empty span, then CRC16-XMODEM(substring) % 16384 — the placement footguns traced over the real client-side slot function, with the vector slot('123456789') == 12739.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+pre.code .kw{color:var(--b-seq)}
+pre.code .str{color:var(--b-node)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the extraction trace figure (hover-select) ---------- */
+.trace{width:100%;height:auto;display:block;margin-top:4px}
+.trace .keyrow rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.trace .keyrow.same rect{fill:var(--b-pay-tint);stroke:var(--b-node)}
+.trace .keyrow.miss rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.trace .klbl{font:12px var(--mono);fill:var(--b-ink)}
+.trace .slbl{font:12px var(--mono);fill:var(--b-dim);text-anchor:end}
+.trace .keyrow.same .slbl{fill:var(--b-node);font-weight:700}
+.trace .keyrow.miss .slbl{fill:var(--r-red);font-weight:700}
+.trace .step{cursor:pointer;transition:opacity .18s ease}
+.trace.focus .step{opacity:.28}
+.trace.focus .step.on{opacity:1}
+.trace.focus .step.on rect{stroke-width:2.6}
+/* ---------- the co-location checker figure (hover-select) ---------- */
+.colo{width:100%;height:auto;display:block;margin-top:4px}
+.colo .kb rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.colo .kb.same rect{fill:var(--b-pay-tint);stroke:var(--b-node)}
+.colo .kb.cross rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.colo .ctxt{font:12px var(--mono);fill:var(--b-ink)}
+.colo .ttl{font:10.5px var(--mono);fill:var(--b-dim);letter-spacing:.05em;text-transform:uppercase}
+.colo .slt{font:12px var(--mono);font-weight:700}
+.colo .slt.same{fill:var(--b-node)}
+.colo .slt.cross{fill:var(--r-red)}
+.colo .step{cursor:pointer;transition:opacity .18s ease}
+.colo.focus .step{opacity:.3}
+.colo.focus .step.on{opacity:1}
+.colo.focus .step.on rect{stroke-width:2.6}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/coordination">coordination</a><span class="rsep">/</span><a href="/redis-patterns/coordination/hash-tag-colocation">hash-tag-colocation</a><span class="rsep">/</span><span class="rcur">the-tag-mechanic</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#only">Only the tag</a>
+      <a href="#rule">The exact rule</a>
+      <a href="#footguns">Footguns</a>
+      <a href="#applied">In EchoMQ</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R2.05.1 &#183; Hash-tag co-location &#8212; dive 1</p>
+      <h1>The tag <span class="hns">mechanic</span>.</h1>
+      <p class="lede">Valkey cluster hashes only the substring inside the first non-empty <code>{…}</code>.
+      Everything else in the key is ignored for placement, so <b>emq:{orders}:pending and emq:{orders}:active share
+      one slot</b>.</p>
+      <p class="heronote">Grounding: echo/apps/echo_mq/lib/echo_mq/keyspace.ex &#183; hashtag/1 + slot/1 (the
+      client-side CRC16-XMODEM % 16384) &#183; queue_key/2 &#183; vector slot("123456789") == 12739.</p>
+
+      <figure class="anatomy" aria-labelledby="traceCap">
+        <figcaption id="traceCap"><b>The extraction trace &#8212; first brace, next brace, the substring, then
+        CRC16 % 16384.</b> Each key shape is checked against the reference <code>user:{123}:settings</code> on
+        slot 5970. Hover or select a row.</figcaption>
+        <div class="segbar" id="keySel" role="group" aria-label="Pick a key to trace through slot/1">
+          <button type="button" data-k="user:{123}:profile" aria-pressed="false">user:{123}:profile</button>
+          <button type="button" data-k="{user:123}:profile" aria-pressed="false">{user:123}:profile</button>
+          <button type="button" data-k="user:123:{profile}" aria-pressed="false">user:123:{profile}</button>
+          <button type="button" data-k="user:123:profile" aria-pressed="false">user:123:profile</button>
+          <button type="button" data-k="key:{}:suffix" aria-pressed="false">key:{}:suffix</button>
+          <button type="button" data-k="{a}:{b}:key" aria-pressed="false">{a}:{b}:key</button>
+        </div>
+        <svg class="trace" id="trace" viewBox="0 0 460 220" role="img" aria-label="An extraction trace over slot/1. The reference key user:{123}:settings hashes 123 and lands on slot 5970. For each candidate key shape the figure shows the substring slot/1 hashes — the first non-empty brace span, or the whole key when there is none — and the real CRC16 modulo 16384 slot it resolves to, and whether it co-locates with the reference. user:{123}:profile hashes 123 to slot 5970 and co-locates; {user:123}:profile hashes user:123 to slot 12893; user:123:{profile} hashes profile to slot 16237; user:123:profile and key:{}:suffix have no usable tag and hash the whole key; {a}:{b}:key hashes a to slot 15495.">
+          <text x="20" y="22" font-family="var(--mono)" font-size="12" fill="var(--b-dim)">reference  user:{123}:settings  &#8594;  hashes "123"  &#8594;  slot 5970</text>
+          <g class="step keyrow" data-k="user:{123}:profile"><rect x="20" y="30" width="420" height="28" rx="6"></rect><text class="klbl" x="32" y="48">user:{123}:profile</text><text class="slbl" x="428" y="48">first { at 5, } at 9 &#183; "123" &#183; slot 5970</text></g>
+          <g class="step keyrow" data-k="{user:123}:profile"><rect x="20" y="62" width="420" height="28" rx="6"></rect><text class="klbl" x="32" y="80">{user:123}:profile</text><text class="slbl" x="428" y="80">first { at 0, } at 9 &#183; "user:123" &#183; slot 12893</text></g>
+          <g class="step keyrow" data-k="user:123:{profile}"><rect x="20" y="94" width="420" height="28" rx="6"></rect><text class="klbl" x="32" y="112">user:123:{profile}</text><text class="slbl" x="428" y="112">first { at 9, } at 17 &#183; "profile" &#183; slot 16237</text></g>
+          <g class="step keyrow" data-k="user:123:profile"><rect x="20" y="126" width="420" height="28" rx="6"></rect><text class="klbl" x="32" y="144">user:123:profile</text><text class="slbl" x="428" y="144">no { &#183; whole key &#183; slot 8490</text></g>
+          <g class="step keyrow" data-k="key:{}:suffix"><rect x="20" y="158" width="420" height="28" rx="6"></rect><text class="klbl" x="32" y="176">key:{}:suffix</text><text class="slbl" x="428" y="176">empty {} &#183; whole key &#183; slot 14786</text></g>
+          <g class="step keyrow" data-k="{a}:{b}:key"><rect x="20" y="190" width="420" height="28" rx="6"></rect><text class="klbl" x="32" y="208">{a}:{b}:key</text><text class="slbl" x="428" y="208">first { at 0, } at 2 &#183; "a" &#183; slot 15495</text></g>
+        </svg>
+        <div class="readout" id="traceOut" aria-live="polite"><span class="rk">readout &#183;</span> Pick a key
+        shape to trace. <code>hashtag/1</code> takes the first non-empty <code>{tag}</code>; <code>slot/1</code> runs
+        CRC16-XMODEM % 16384 over it.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="only">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Only the tag is hashed</h2>
+        <span class="ssrc">hash-tag-colocation.md.txt &#183; How hash tags work</span>
+      </div>
+      <div class="prose">
+        <p>Valkey cluster computes a key's slot from a CRC16 of its bytes, modulo 16384. The hash tag changes the
+        <em>input</em> to that CRC16. When a key holds a non-empty substring between a <code>{</code> and the next
+        <code>}</code>, the cluster hashes that substring alone; the prefix, the suffix, and the colons are ignored
+        for slot placement.</p>
+      </div>
+      <pre class="code"><span class="kw">SET</span> user:<b>{123}</b>:profile  &#8230;   <span class="cmt"># hashes "123"</span>
+<span class="kw">SET</span> user:<b>{123}</b>:settings &#8230;   <span class="cmt"># hashes "123"</span>
+<span class="kw">SET</span> user:<b>{123}</b>:sessions &#8230;   <span class="cmt"># hashes "123"  -&gt; all on one slot</span></pre>
+      <div class="prose">
+        <p>That is the whole point of the tag: it lets an application name related keys distinctly while guaranteeing
+        they co-locate. Strip the braces and each full key hashes on its own, the three keys scatter across three
+        slots, and a multi-key command over them raises <code>CROSSSLOT</code>. The braces are the lever; the
+        substring between them is what Valkey actually hashes.</p>
+      </div>
+      <p class="take">A hash tag swaps the hash input from the whole key to one substring &#8212; so keys that differ
+      everywhere except inside the braces still land on the same slot.</p>
+    </section>
+
+    <section id="rule">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The exact rule</h2>
+        <span class="ssrc">keyspace.ex &#183; hashtag/1 + slot/1</span>
+      </div>
+      <div class="prose">
+        <p><code>EchoMQ.Keyspace</code> states the rule precisely. <code>hashtag/1</code> scans for the first
+        <code>{</code>, then for the next <code>}</code>, and returns the substring between them only when that
+        substring is non-empty &#8212; otherwise it returns the whole key. <code>slot/1</code> then runs
+        CRC16-XMODEM over that substring, modulo 16384:</p>
+      </div>
+      <pre class="code"><span class="cmt"># echo/apps/echo_mq/lib/echo_mq/keyspace.ex</span>
+<span class="kw">def</span> slot(key) <span class="kw">when</span> is_binary(key), <span class="kw">do</span>: rem(crc16(hashtag(key), <b>0</b>), <b>16384</b>)
+
+<span class="kw">def</span> hashtag(key) <span class="kw">do</span>
+  <span class="kw">with</span> [_, rest] &lt;- :binary.split(key, <span class="str">"{"</span>),
+       [tag, _] <span class="kw">when</span> tag != <span class="str">""</span> &lt;- :binary.split(rest, <span class="str">"}"</span>) <span class="kw">do</span>
+    tag
+  <span class="kw">else</span>
+    _ -&gt; key
+  <span class="kw">end</span>
+<span class="kw">end</span></pre>
+      <div class="prose">
+        <p>In words, three steps, then the modulo: find the first <code>{</code>; from there find the next
+        <code>}</code>; if a <code>}</code> exists and the span between the braces is non-empty, the hashed substring
+        is exactly that span, otherwise it is the whole key. The slot is then
+        <code>CRC16(substring) % 16384</code>. The <code>crc16/2</code> in the same module is a real inline Elixir
+        XMODEM with polynomial <code>0x1021</code> &#8212; the cluster specification's algorithm &#8212; so the slot a
+        client computes matches the slot the cluster assigns. The known vector is asserted in the code:
+        <code>slot("123456789") == 12739</code> (CRC16 <code>0x31C3</code>). The extraction trace in the hero runs
+        this exact rule, so every slot it prints is the slot Valkey would pick.</p>
+      </div>
+      <dl class="deflist">
+        <dt>first '{'</dt><dd>The scan takes the <em>first</em> opening brace and looks no further for a better one. Everything before it is part of the key but not part of the hash.</dd>
+        <dt>next '}'</dt><dd>The closing brace is the first one <em>after</em> that opening brace. The span between them is the candidate substring.</dd>
+        <dt>non-empty</dt><dd>An empty span (<code>{}</code>) is rejected; the rule falls back to hashing the whole key. Only a non-empty tag changes the slot.</dd>
+      </dl>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A Valkey cluster hash tag hashes only the substring in
+      the first non-empty <code>{...}</code>, then takes <code>CRC16 % 16384</code> &#8212; the same algorithm
+      <code>slot/1</code> runs client-side &#8212; <a href="https://valkey.io/topics/cluster-spec/" rel="noopener">valkey.io/topics/cluster-spec</a>.</p>
+    </section>
+
+    <section id="footguns">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Placement rules and footguns</h2>
+        <span class="ssrc">hash-tag-colocation.md.txt &#183; Placement Rules</span>
+      </div>
+      <div class="prose">
+        <p>The rule is short, but three placements catch people out. Each follows directly from &ldquo;first brace,
+        then the next closing brace, non-empty.&rdquo;</p>
+        <p><strong>The first <code>{</code> wins.</strong> <code>{user:123}:profile</code> hashes
+        <code>user:123</code> (slot 12893), not <code>123</code>. The scan takes the first opening brace and stops,
+        so it will <em>not</em> co-locate with <code>user:{123}:settings</code> (slot 5970).</p>
+        <p><strong>Braces in the wrong place hash the wrong thing.</strong> <code>user:123:{profile}</code> hashes
+        <code>profile</code> (slot 16237). It is a valid tag, but it tags the suffix, so it scatters away from the
+        <code>user:{123}:*</code> family. The convention that avoids this: put the entity id in the tag, at the same
+        position in every related key.</p>
+        <p><strong>An empty tag <code>{}</code> hashes the whole key.</strong> <code>key:{}:suffix</code> has a
+        <code>{</code> immediately followed by a <code>}</code>, so the span is empty; the rule falls back to hashing
+        the entire key (slot 14786). <strong>And with multiple tags, only the first is used</strong> &#8212;
+        <code>{a}:{b}:key</code> hashes <code>a</code> (slot 15495) and ignores <code>{b}</code>.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="coloCap">
+        <figcaption id="coloCap"><b>The co-location checker &#8212; do two keys share a slot?</b> Key A is fixed at
+        <code>user:{123}:profile</code> on slot 5970. Pick key B; hover or select a row.</figcaption>
+        <div class="segbar" id="coloSel" role="group" aria-label="Pick the second key to compare against user:{123}:profile">
+          <button type="button" data-k="user:{123}:settings" aria-pressed="false">user:{123}:settings</button>
+          <button type="button" data-k="user:123:settings" aria-pressed="false">user:123:settings</button>
+          <button type="button" data-k="order:{123}:items" aria-pressed="false">order:{123}:items</button>
+        </div>
+        <svg class="colo" id="colo" viewBox="0 0 460 168" role="img" aria-label="A co-location checker. Key A is fixed at user:{123}:profile on slot 5970, hashing 123. Key B is the one you pick. user:{123}:settings hashes 123 to slot 5970, the same slot, so a multi-key command over both is legal. user:123:settings has no braces and hashes the whole key to slot 9984, a different slot, so a command raises CROSSSLOT. order:{123}:items hashes 123 and also lands on slot 5970 — the same slot as a different entity, because co-location is keyed on the tag substring, not the entity.">
+          <text class="ttl" x="20" y="22">key A (fixed)</text>
+          <g class="kb same"><rect x="20" y="30" width="200" height="46" rx="7"></rect></g>
+          <text class="ctxt" x="32" y="52">user:{123}:profile</text>
+          <text class="slt same" x="32" y="69">slot 5970 &#183; "123"</text>
+          <text class="ttl" x="240" y="22">key B (chosen)</text>
+          <g class="step kb same" data-k="user:{123}:settings"><rect x="240" y="30" width="200" height="46" rx="7"></rect><text class="ctxt" x="252" y="52">user:{123}:settings</text><text class="slt same" x="252" y="69">slot 5970 &#183; "123"</text></g>
+          <g class="step kb cross" data-k="user:123:settings"><rect x="240" y="84" width="200" height="0" rx="7"></rect></g>
+          <text class="slt" id="verdLine" x="20" y="108" font-size="14" fill="var(--b-node)">5970 == 5970 &#8212; same slot</text>
+          <text class="ttl" id="verdSub" x="20" y="130">a multi-key MULTI/EXEC or Lua over both stays legal</text>
+        </svg>
+        <div class="readout" id="coloOut" aria-live="polite"><span class="rk">readout &#183;</span> Pick key B.
+        Same slot only when the hashed substrings match.</div>
+        <p class="booknote">Static verdicts &#8212; user:{123}:settings &#8594; slot 5970, same, legal &#183;
+        user:123:settings &#8594; slot 9984, CROSSSLOT &#183; order:{123}:items &#8594; slot 5970 (a different entity
+        colliding because both tags spell 123).</p>
+      </figure>
+
+      <p class="take">Same slot only when the hashed substrings match: a brace in the wrong place, an empty tag, or a
+      second tag all break co-location and turn a multi-key command into a <code>CROSSSLOT</code> error.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>In EchoMQ &#8212; the mechanic behind <code>emq:{q}:</code></h2>
+        <span class="ssrc">keyspace.ex &#183; bcs3.1</span>
+      </div>
+      <div class="prose">
+        <p>This is the mechanic behind every EchoMQ queue key. <code>EchoMQ.Keyspace.queue_key/2</code>
+        (<code>echo/apps/echo_mq/lib/echo_mq/keyspace.ex</code>) wraps the queue name in a hash tag, returning
+        <code>"emq:{" &lt;&gt; q &lt;&gt; "}:" &lt;&gt; type</code>. So <code>emq:{orders}:pending</code>,
+        <code>emq:{orders}:active</code>, <code>emq:{orders}:schedule</code>, and a job's own row
+        <code>emq:{orders}:job:ORD0NgWEfAEJfs</code> all hash the substring <code>orders</code> &#8212; the whole
+        queue lives on one slot. <strong>The hashtag is the queue name.</strong> That single slot is exactly what
+        lets a per-queue multi-key Lua transition run as one atomic call, computed by the same <code>slot/1</code>
+        this dive traces.</p>
+      </div>
+
+      <div class="door">
+        <span class="dr">the application &#183; the keyspace, gated against live Valkey</span>
+        <h3>Every key of one queue answers one slot</h3>
+        <p>The co-location is not assumed &#8212; <code>queue_key/2</code> always braces the queue name, and
+        <code>slot/1</code> computes the slot client-side over CRC16 % 16384
+        (<a href="https://valkey.io/topics/cluster-spec/" rel="noopener">valkey.io/topics/cluster-spec</a>). The
+        committed manuscript record froze the consequence:</p>
+        <figure class="frozen">
+          <figcaption>content/bcs3.1.md &#183; the co-location law, slot-locality against live Valkey<span class="tag">frozen</span></figcaption>
+          <pre>the hashtag IS the queue name
+emq:{orders}:* &#8212; pending, active, meta, job row   <b>all answer slot 105</b>
+emq:{fills}:*                                  <b>slot 4165</b>
+vector  slot("123456789")                      <b>12739</b>   <span class="fd">&#8592; the client-side CRC16</span></pre>
+        </figure>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Valkey hashes only the <code>{tag}</code> substring, so wrapping the shared part of related keys forces
+          them onto one slot &#8212; <code>CRC16(substring) % 16384</code>.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">in EchoMQ</span>
+          <p><code>Keyspace.queue_key/2</code> returns <code>emq:{q}:&lt;type&gt;</code>, so a queue's pending,
+          active, and job-row keys share the <code>{q}</code> tag and answer one slot; <code>slot/1</code> computes
+          it client-side with the vector <code>slot("123456789") == 12739</code> asserted.</p>
+        </div>
+      </div>
+
+      <p class="take">Wrapping the queue name in <code>{q}</code> is what colocates every <code>emq:{q}:*</code> key
+      &#8212; the same first-non-empty-brace rule, computed by the real <code>slot/1</code>.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Recap &#8212; first brace, then the slot</h2>
+        <span class="ssrc">next &#8594; R2.05.2</span>
+      </div>
+      <div class="prose">
+        <p>The tag selects the substring Valkey hashes: first <code>{</code>, the next <code>}</code>, non-empty
+        &#8212; or the whole key. <code>slot/1</code> turns that substring into a slot over CRC16-XMODEM % 16384.
+        This dive showed a queue's keys <em>can</em> share a slot. The next dive shows what that buys &#8212; why a
+        multi-key command off one slot raises <code>CROSSSLOT</code>, and how the <code>{q}</code> tag keeps a
+        queue's multi-key claim legal.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/topics/cluster-spec/" rel="noopener">Valkey &mdash; <em>Cluster specification</em></a> &mdash; hash tags, the 16384 slots, and the <code>{…}</code> rule: the first non-empty brace span, else the whole key.</li>
+            <li><a href="https://valkey.io/commands/cluster-keyslot/" rel="noopener">Valkey &mdash; <em>CLUSTER KEYSLOT</em></a> &mdash; the command that returns a key's slot, the live equivalent of the client-side <code>slot/1</code> traced here.</li>
+            <li><a href="https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/" rel="noopener">Redis &mdash; <em>Cluster specification</em></a> &mdash; the CRC16 slot model and the single-slot <code>MULTI</code>/<code>EXEC</code> atomicity co-location keeps legal.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/coordination/hash-tag-colocation">R2.05 &#183; Hash-tag co-location</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/coordination/hash-tag-colocation/crossslot-prevention">R2.05.2 &#183; CROSSSLOT prevention</a><span class="rs">the next dive</span></li>
+            <li><a href="/redis-patterns/coordination/cross-shard-consistency">R2.04 &#183; Cross-shard consistency</a><span class="rs">detecting the tear</span></li>
+            <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &#183; Atomic updates</a><span class="rs">the single-slot atomic move</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the emq:{q}: keyspace in depth</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/coordination/hash-tag-colocation"><span class="pk">up</span>&#8592; R2.05 &#183; Hash-tag co-location</a>
+      <a class="pgx" href="/redis-patterns/coordination/hash-tag-colocation/crossslot-prevention"><span class="pk">next</span>R2.05.2 &#183; CROSSSLOT prevention &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/coordination/hash-tag-colocation/the-tag-mechanic">R2.05.1 &#183; The tag mechanic</a>
+        <a href="/redis-patterns/coordination/hash-tag-colocation/crossslot-prevention">R2.05.2 &#183; CROSSSLOT prevention</a>
+        <a href="/redis-patterns/coordination/hash-tag-colocation/cluster-auto-detect">R2.05.3 &#183; Cluster auto-detect</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nn3ualFdGE</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- the real client-side slot rule (EchoMQ.Keyspace.slot/1, keyspace.ex) ----------
+     hashtag(key) = the substring inside the first non-empty {…}, else the whole key.
+     slot(key) = rem(crc16(hashtag(key), 0), 16384) — CRC16-XMODEM, polynomial 0x1021, the cluster
+     specification's algorithm. Vector asserted in the module: slot("123456789") == 12739. Every slot
+     here is computed, never stored. */
+  function crc16(s) {
+    var crc = 0;
+    for (var i = 0; i < s.length; i++) {
+      crc = crc ^ ((s.charCodeAt(i) & 0xFF) << 8);
+      crc &= 0xFFFF;
+      for (var b = 0; b < 8; b++) {
+        if (crc & 0x8000) { crc = ((crc << 1) ^ 0x1021) & 0xFFFF; }
+        else { crc = (crc << 1) & 0xFFFF; }
+      }
+    }
+    return crc;
+  }
+  function tagBounds(key) {
+    var open = key.indexOf('{');
+    if (open < 0) return null;
+    var close = key.indexOf('}', open + 1);
+    if (close < 0 || close <= open + 1) return null; // no '}' or empty {} -> whole key
+    return { open: open, close: close, start: open + 1, end: close };
+  }
+  function hashtag(key) { var t = tagBounds(key); return t ? key.slice(t.start, t.end) : key; }
+  function slot(key) { return crc16(hashtag(key)) % 16384; }
+
+  var REF_SLOT = slot('user:{123}:settings'); // 5970
+
+  /* ---------- Interactive 1: the extraction trace (hover-select, pure) ---------- */
+  function traceText(key) {
+    var t = tagBounds(key), tagged = t !== null, sub = hashtag(key), s = slot(key);
+    if (tagged) {
+      return key + " -> first '{' at index " + t.open + ", next '}' at index " + t.close +
+        ' -> substring "' + sub + '" (non-empty) -> CRC16("' + sub + '") % 16384 = ' + s + '.';
+    }
+    var why = (key.indexOf('{') < 0) ? "no '{' present"
+      : (key.indexOf('}', key.indexOf('{') + 1) < 0 ? "no closing '}'" : 'empty tag {}');
+    return key + ' -> ' + why + ' -> no usable tag -> hashes the whole key "' + key + '" -> CRC16 % 16384 = ' + s + '.';
+  }
+  var trace = document.getElementById('trace');
+  var keyButtons = document.querySelectorAll('#keySel button');
+  var traceOut = document.getElementById('traceOut');
+  function selectKey(key) {
+    keyButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-k') === key ? 'true' : 'false');
+    });
+    if (trace) {
+      trace.classList.toggle('focus', !!key);
+      trace.querySelectorAll('.keyrow').forEach(function (g) {
+        var k = g.getAttribute('data-k');
+        g.classList.toggle('on', k === key);
+        var co = slot(k) === REF_SLOT;
+        g.classList.toggle('same', co); g.classList.toggle('miss', !co);
+      });
+    }
+    if (traceOut) {
+      traceOut.innerHTML = key
+        ? '<span class="rk">key &#183;</span> ' + traceText(key)
+        : '<span class="rk">readout &#183;</span> Pick a key shape to trace. <code>hashtag/1</code> takes the first non-empty <code>{tag}</code>; <code>slot/1</code> runs CRC16-XMODEM % 16384 over it.';
+    }
+  }
+  keyButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-k');
+      selectKey(b.getAttribute('aria-pressed') === 'true' ? null : key);
+    });
+  });
+  if (trace) {
+    trace.querySelectorAll('.keyrow').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectKey(g.getAttribute('data-k')); });
+      g.addEventListener('mouseleave', function () { selectKey(null); });
+      var co = slot(g.getAttribute('data-k')) === REF_SLOT;
+      g.classList.toggle('same', co); g.classList.toggle('miss', !co);
+    });
+  }
+
+  /* ---------- Interactive 2: the co-location checker (hover-select, pure) ---------- */
+  var KEY_A = 'user:{123}:profile', SLOT_A = slot(KEY_A); // 5970
+  var colo = document.getElementById('colo');
+  var coloButtons = document.querySelectorAll('#coloSel button');
+  var coloOut = document.getElementById('coloOut');
+  var verdLine = document.getElementById('verdLine'), verdSub = document.getElementById('verdSub');
+  function compareText(keyB) {
+    var sub = hashtag(keyB), tagged = tagBounds(keyB) !== null, sB = slot(keyB), same = sB === SLOT_A;
+    var hashNote = tagged ? ('hashes "' + sub + '"') : ('no braces -> hashes the whole key "' + keyB + '"');
+    if (same) {
+      return KEY_A + ' (slot ' + SLOT_A + ') vs ' + keyB + ' (' + hashNote + ' -> slot ' + sB +
+        '). Same slot ' + sB + ' -> a multi-key MULTI/EXEC or Lua over both stays legal.';
+    }
+    return KEY_A + ' (slot ' + SLOT_A + ') vs ' + keyB + ' (' + hashNote + ' -> slot ' + sB +
+      '). Slots differ (' + SLOT_A + ' vs ' + sB + ') -> a multi-key command raises CROSSSLOT (R2.04 detects the tear).';
+  }
+  function selectColo(keyB) {
+    coloButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-k') === keyB ? 'true' : 'false');
+    });
+    var same = keyB ? (slot(keyB) === SLOT_A) : true;
+    if (colo) {
+      colo.classList.toggle('focus', !!keyB);
+      colo.querySelectorAll('.step').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-k') === keyB);
+      });
+    }
+    if (verdLine) {
+      verdLine.textContent = keyB
+        ? (same ? (SLOT_A + ' == ' + slot(keyB) + ' — same slot') : (SLOT_A + ' ≠ ' + slot(keyB) + ' — CROSSSLOT'))
+        : (SLOT_A + ' == ' + SLOT_A + ' — same slot');
+      verdLine.setAttribute('fill', same ? 'var(--b-node)' : 'var(--r-red)');
+    }
+    if (verdSub) verdSub.textContent = same
+      ? 'a multi-key MULTI/EXEC or Lua over both stays legal'
+      : 'a multi-key command raises CROSSSLOT (R2.04 detects the tear)';
+    if (coloOut) {
+      coloOut.innerHTML = keyB
+        ? '<span class="rk">compare &#183;</span> ' + compareText(keyB)
+        : '<span class="rk">readout &#183;</span> Pick key B. Same slot only when the hashed substrings match.';
+    }
+  }
+  coloButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var keyB = b.getAttribute('data-k');
+      selectColo(b.getAttribute('aria-pressed') === 'true' ? null : keyB);
+    });
+  });
+  if (colo) {
+    colo.querySelectorAll('.step').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectColo(g.getAttribute('data-k')); });
+      g.addEventListener('mouseleave', function () { selectColo(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

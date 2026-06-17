@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redis Patterns Applied — a jonnify course</title>
+<meta name="description" content="Thirty Redis design patterns, taught applied — each grounded in the real BCS build: EchoMQ backed by Valkey, the emq:{q}: keyspace, EchoCache in front, the Exchange Platform the worked consumer. Real keys, commands, and atomic Lua scripts, quoted verbatim from committed records.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.cta-row{display:flex;flex-wrap:wrap;gap:12px;margin-top:20px}
+.btn{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.02em;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:var(--rad);border:1px solid var(--r-red);color:var(--b-card);background:var(--r-red)}
+.btn:hover{background:#c64a41;border-bottom-color:var(--r-red)}
+.btn.ghost{background:transparent;color:var(--r-red);border-color:var(--b-line)}
+.btn.ghost:hover{border-color:var(--r-red);color:var(--r-red)}
+.hero-motif{margin-top:28px;width:100%;height:auto;display:block}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- the course map ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.chap{padding:28px 0 6px}
+.chap-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;padding-bottom:10px;border-bottom:1px solid var(--b-line);margin-bottom:16px}
+.chap-head .cid{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.chap-head h3{font-family:var(--mono);font-size:1.05rem}
+.chap-head .chap-link{font-family:var(--mono);font-size:12.5px;margin-left:auto}
+.chap-head .c-one{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);flex-basis:100%;margin-top:2px}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.mod.work{border-left:3px solid var(--r-red)}
+.mod.work .num::after{content:" · workshop";color:var(--b-dim)}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:82ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><span class="rcur">redis-patterns</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#read">How to read</a>
+      <a href="#evidence">Evidence</a>
+      <a href="#map">The map</a>
+      <a href="#doors">Doors</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">A jonnify course</p>
+      <h1>Redis Patterns,<br><span class="hns">Applied</span>.</h1>
+      <p class="lede">The judgement layer above the command reference — thirty Redis design patterns, each shown
+      working in a real system. Taught as problem &#8594; solution &#8594; trade-off &#8594; when-to-use, then
+      shown where the <b>BCS architecture</b> applies it.</p>
+      <p class="heronote">The running system: <b>EchoMQ</b> backed by <b>Valkey</b>, Valkey under the hood,
+      <b>EchoCache</b> in front. The worked examples are real keys, commands, and atomic Lua scripts — quoted
+      verbatim from committed records, not plausible ones.</p>
+      <div class="cta-row">
+        <a class="btn" href="/redis-patterns/caching">Begin &#183; R1 Caching <span aria-hidden="true">&#8594;</span></a>
+        <a class="btn ghost" href="/redis-patterns/overview">Start with the overview</a>
+      </div>
+
+      <svg class="hero-motif" viewBox="0 0 1000 96" role="img" aria-label="A pipeline of three Redis workloads: a cache, a queue, and a stream.">
+        <line x1="40" y1="48" x2="960" y2="48" stroke="#d9d2bf" stroke-width="2" fill="none" stroke-dasharray="6 9"></line>
+        <g fill="none" stroke="#d6584f" stroke-width="1.5">
+          <circle cx="190" cy="48" r="27"></circle>
+          <circle cx="500" cy="48" r="27"></circle>
+          <circle cx="810" cy="48" r="27"></circle>
+        </g>
+        <g stroke="#d6584f" stroke-width="2" fill="none">
+          <rect x="178" y="40" width="24" height="16" rx="3"></rect>
+          <line x1="190" y1="40" x2="190" y2="56"></line>
+        </g>
+        <g stroke="#d6584f" stroke-width="2">
+          <line x1="488" y1="42" x2="512" y2="42"></line>
+          <line x1="488" y1="48" x2="512" y2="48"></line>
+          <line x1="488" y1="54" x2="512" y2="54"></line>
+        </g>
+        <g stroke="#d6584f" stroke-width="2">
+          <line x1="798" y1="38" x2="798" y2="58"></line>
+          <line x1="806" y1="38" x2="806" y2="58"></line>
+          <line x1="814" y1="38" x2="814" y2="58"></line>
+          <line x1="822" y1="38" x2="822" y2="58"></line>
+        </g>
+        <g font-family="ui-monospace, monospace" font-size="11" fill="#68705f" text-anchor="middle">
+          <text x="190" y="86">cache</text>
+          <text x="500" y="86">queue</text>
+          <text x="810" y="86">stream</text>
+        </g>
+        <g fill="#68705f">
+          <path d="M330 42 l12 6 l-12 6 z"></path>
+          <path d="M640 42 l12 6 l-12 6 z"></path>
+        </g>
+      </svg>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="read">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>How to read this</h2>
+        <span class="ssrc">the running system: the BCS build</span>
+      </div>
+      <div class="prose">
+        <p>Each chapter teaches a family of Redis patterns. A pattern is a single unit: the problem it solves, the
+        Valkey structures and commands that solve it, the trade-off it accepts, and the workload it fits. The
+        claim of the course is that knowing the commands is not enough &#8212; the same engineer reaches for a
+        single-node &#8220;distributed lock&#8221; a failover silently breaks, or a fixed-window rate limiter with
+        a boundary burst. The fix is <strong>grounding</strong>: every pattern is shown applied in a real system,
+        so the worked example is verifiable.</p>
+        <p>The running system is the <strong>BCS build</strong>. <strong>EchoMQ</strong> is the bus between
+        systems, and it owns its protocol: the braced <code>emq:{q}:</code> keyspace, every Lua key declared or
+        root-derived, the wire version <code>echomq:2.0.0</code> behind a two-way typed boot fence &#8212;
+        <strong>backed by Valkey</strong>, the current stable line, an enforced conformance gate. The atomic Lua
+        scripts <em>are</em> the protocol: a corpus of Redis patterns made owned, declared code. <strong>EchoCache</strong>
+        is the near-cache in front of it &#8212; branded keys, an L1 of ETS tables over the shared L2 Valkey,
+        coherence by mint time. The worked consumer of both is the <strong>Exchange Platform</strong> &#8212; the
+        trading system these patterns are applied inside (<code>echo/apps/exchange</code>); where a chapter&#8217;s
+        deeper implementation belongs to the protocol itself, it doors forward to the dedicated EchoMQ course.</p>
+        <p><strong>A scope note.</strong> The engine is <strong>Valkey</strong> &#8212; the current stable line,
+        the substrate the EchoMQ connector is gated against. Where a pattern depends on a specific command, the
+        lesson names it.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="groundTitle">
+        <figcaption id="groundTitle">The grounding &#183; pick a pattern family to read its real EchoMQ / EchoCache artifact</figcaption>
+        <div class="segbar" id="groundSel" role="group" aria-label="Pattern families">
+          <button type="button" data-fam="cache" aria-pressed="false">Caching</button>
+          <button type="button" data-fam="coord" aria-pressed="false">Coordination</button>
+          <button type="button" data-fam="queue" aria-pressed="false">Queues</button>
+          <button type="button" data-fam="time" aria-pressed="false">Time &amp; priority</button>
+          <button type="button" data-fam="stream" aria-pressed="false">Streams</button>
+          <button type="button" data-fam="flow" aria-pressed="false">Flow control</button>
+        </div>
+        <div class="readout" id="groundOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a
+        family. Every pattern points at a real artifact &#8212; a Valkey key, a command, or an atomic Lua move
+        &#8212; that you can read and run.</div>
+      </figure>
+      <p class="take">No pattern is taught in the abstract. Each one points at a committed artifact &#8212; the
+      braced <code>emq:{q}:</code> keyspace, the claim script, the four sorted sets, or an EchoCache figure
+      &#8212; quoted verbatim from the record.</p>
+    </section>
+
+    <section id="evidence">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The evidence ethic</h2>
+        <span class="ssrc">committed outputs, quoted verbatim</span>
+      </div>
+      <p class="ethic">Every claim in the course is backed by a committed record &#8212; a frozen transcript
+      quoted verbatim. A number that is not in a committed output does not appear on a page. The EchoMQ connector
+      &#8212; the production Valkey client at <code>echo/apps/echo_wire</code> &#8212; pipelines as its primitive:</p>
+      <figure class="frozen">
+        <figcaption>EchoMQ.Connector &#183; the production Valkey client (echo/apps/echo_wire) &#183; figures content/bcsA.md<span class="tag">frozen</span></figcaption>
+        <pre>fence claimed                 echomq:2.0.0   <span class="fd">&#8592; typed, fatal on mismatch</span>
+sequential INCR               29456 ops/s
+pipelined SET                 <b>454483 ops/s</b>   <span class="fd">&#8592; fifteen times the sequential figure, same socket</span>
+pipelined EVALSHA             161192 ops/s   <span class="fd">&#8592; declared-keys law at speed</span>
+script_loads                  1              <span class="fd">&#8592; exactly one NOSCRIPT load</span>
+10000-command pipeline        returned 1..10000 in order</pre>
+      </figure>
+    </section>
+
+    <section id="map">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The map</h2>
+        <span class="ssrc">R1&#8211;R8 &#183; sequenced along the EchoMQ build</span>
+      </div>
+      <div class="prose">
+        <p>The full course, chapter by chapter. The patterns are sequenced along the EchoMQ build &#8212;
+        coordination, then queues, then time, streams, flow, and operations &#8212; so the catalog doubles as a
+        guided build of the BCS Redis tier. The module that closes each chapter is its workshop.</p>
+      </div>
+      <div class="legend">
+        <span><span class="pill live">live</span> chapter front door</span>
+        <span><span class="pill built">built</span> lesson ready</span>
+        <span><span class="pill planned">planned</span> drafted, on the way</span>
+        <span><span class="pill soon">soon</span> specified</span>
+      </div>
+
+      <section class="chap"><div class="chap-head"><span class="cid">R1</span><h3>Caching</h3><a class="chap-link" href="/redis-patterns/caching">Open chapter &#8594;</a><p class="c-one">The read path: serving reads fast and keeping the cache consistent on writes. &#8594; EchoCache</p></div><div class="mods"><a class="mod" href="/redis-patterns/caching/cache-aside"><div class="top"><span class="num">R1.01</span><span class="pill built">built</span></div><p class="t">Cache-aside (lazy loading)</p><p class="o">On miss, fetch and populate; on write, invalidate.</p></a><a class="mod" href="/redis-patterns/caching/write-through"><div class="top"><span class="num">R1.02</span><span class="pill built">built</span></div><p class="t">Write-through</p><p class="o">Write to cache and database synchronously so reads are fresh.</p></a><a class="mod" href="/redis-patterns/caching/write-behind"><div class="top"><span class="num">R1.03</span><span class="pill built">built</span></div><p class="t">Write-behind (write-back)</p><p class="o">Write to Valkey and sync to the database asynchronously.</p></a><a class="mod" href="/redis-patterns/caching/client-side-caching"><div class="top"><span class="num">R1.04</span><span class="pill built">built</span></div><p class="t">Server-assisted client-side caching</p><p class="o">Cache in app memory; the server pushes invalidations.</p></a><a class="mod" href="/redis-patterns/caching/cache-stampede-prevention"><div class="top"><span class="num">R1.05</span><span class="pill built">built</span></div><p class="t">Cache stampede prevention</p><p class="o">Stop a thundering herd regenerating one expired key.</p></a><a class="mod" href="/redis-patterns/caching/session-management"><div class="top"><span class="num">R1.06</span><span class="pill built">built</span></div><p class="t">Session management</p><p class="o">Store sessions with TTL expiry.</p></a><a class="mod work" href="/redis-patterns/caching/workshop"><div class="top"><span class="num">R1.07</span><span class="pill built">built</span></div><p class="t">Workshop</p><p class="o">Cache the catalog tier end to end.</p></a></div></section>
+      <section class="chap"><div class="chap-head"><span class="cid">R2</span><h3>Coordination &amp; Consistency</h3><a class="chap-link" href="/redis-patterns/coordination">Open chapter &#8594;</a><p class="c-one">Atomicity first &#8212; the foundation every later chapter builds on. &#8594; EchoMQ</p></div><div class="mods"><a class="mod" href="/redis-patterns/coordination/atomic-updates"><div class="top"><span class="num">R2.01</span><span class="pill built">built</span></div><p class="t">Atomic updates</p><p class="o">Read-modify-write without a race; every state move is one inline Lua script.</p></a><a class="mod" href="/redis-patterns/coordination/distributed-locking"><div class="top"><span class="num">R2.02</span><span class="pill built">built</span></div><p class="t">Distributed locking</p><p class="o">The claim lease and its attempts fencing token admit one holder.</p></a><a class="mod" href="/redis-patterns/coordination/redlock"><div class="top"><span class="num">R2.03</span><span class="pill built">built</span></div><p class="t">The Redlock algorithm</p><p class="o">A majority-of-N multi-master lock &#8212; a contrast with the single-Valkey lease.</p></a><a class="mod" href="/redis-patterns/coordination/cross-shard-consistency"><div class="top"><span class="num">R2.04</span><span class="pill built">built</span></div><p class="t">Cross-shard consistency</p><p class="o">Keep a multi-key change on one slot so it cannot tear.</p></a><a class="mod" href="/redis-patterns/coordination/hash-tag-colocation"><div class="top"><span class="num">R2.05</span><span class="pill built">built</span></div><p class="t">Hash-tag co-location</p><p class="o">Force related keys to one cluster slot &#8212; the hashtag is the queue name.</p></a><a class="mod work" href="/redis-patterns/coordination/workshop"><div class="top"><span class="num">R2.06</span><span class="pill built">built</span></div><p class="t">Workshop</p><p class="o">Make an Exchange Platform order placement atomic across runtimes.</p></a></div></section>
+      <section class="chap"><div class="chap-head"><span class="cid">R3</span><h3>Reliable Queues</h3><a class="chap-link" href="/redis-patterns/queues">Open chapter &#8594;</a><p class="c-one">Wait, active, done, recover &#8212; the heart of EchoMQ, the densest grounding in the course. &#8594; EchoMQ</p></div><div class="mods"><a class="mod" href="/redis-patterns/queues/processing-list"><div class="top"><span class="num">R3.01</span><span class="pill built">built</span></div><p class="t">The processing list</p><p class="o">Move a job out of pending into an in-flight roster, so a crash is recoverable.</p></a><a class="mod" href="/redis-patterns/queues/at-least-once"><div class="top"><span class="num">R3.02</span><span class="pill built">built</span></div><p class="t">At-least-once &amp; idempotency</p><p class="o">Delivery guarantees and why consumers must be idempotent.</p></a><a class="mod" href="/redis-patterns/queues/stalled-recovery"><div class="top"><span class="num">R3.03</span><span class="pill built">built</span></div><p class="t">Stalled-job recovery</p><p class="o">Reclaim jobs whose worker died &#8212; one zset scan on the server&#8217;s clock.</p></a><a class="mod" href="/redis-patterns/queues/atomic-state-machine"><div class="top"><span class="num">R3.04</span><span class="pill built">built</span></div><p class="t">The atomic state machine</p><p class="o">The whole lifecycle as one Lua transition.</p></a><a class="mod" href="/redis-patterns/queues/blocking-vs-polling"><div class="top"><span class="num">R3.05</span><span class="pill built">built</span></div><p class="t">Blocking vs polling</p><p class="o">Park, don&#8217;t poll &#8212; a waiting consumer costs zero commands.</p></a><a class="mod work" href="/redis-patterns/queues/workshop"><div class="top"><span class="num">R3.06</span><span class="pill built">built</span></div><p class="t">Workshop</p><p class="o">A reliable enrollment-job queue.</p></a></div></section>
+      <section class="chap"><div class="chap-head"><span class="cid">R4</span><h3>Time, Delay &amp; Priority</h3><a class="chap-link" href="/redis-patterns/time-delay-priority">Open chapter &#8594;</a><p class="c-one">The sorted set as a clock &#8212; a timer wheel and a priority ladder. &#8594; EchoMQ</p></div><div class="mods"><a class="mod" href="/redis-patterns/time-delay-priority/delayed-queue"><div class="top"><span class="num">R4.01</span><span class="pill built">built</span></div><p class="t">The delayed queue</p><p class="o">Score a job by its fire-time on the schedule set, sweep by score.</p></a><a class="mod" href="/redis-patterns/time-delay-priority/schedulers"><div class="top"><span class="num">R4.02</span><span class="pill built">built</span></div><p class="t">Schedulers &amp; repeatable jobs</p><p class="o">Recurring jobs via cron or interval, upserted without duplicates.</p></a><a class="mod" href="/redis-patterns/time-delay-priority/priority-scores"><div class="top"><span class="num">R4.03</span><span class="pill built">built</span></div><p class="t">Priority with composite scores</p><p class="o">Pack priority and arrival into one sorted-set score.</p></a><a class="mod" href="/redis-patterns/time-delay-priority/backoff-retry"><div class="top"><span class="num">R4.04</span><span class="pill built">built</span></div><p class="t">Backoff &amp; retry</p><p class="o">Exponential backoff with jitter on the schedule set.</p></a><a class="mod" href="/redis-patterns/time-delay-priority/leaderboards"><div class="top"><span class="num">R4.05</span><span class="pill built">built</span></div><p class="t">Leaderboards</p><p class="o">Real-time rankings with the same ZSET machinery.</p></a><a class="mod work" href="/redis-patterns/time-delay-priority/workshop"><div class="top"><span class="num">R4.06</span><span class="pill built">built</span></div><p class="t">Workshop</p><p class="o">Schedule the notification and digest jobs.</p></a></div></section>
+      <section class="chap"><div class="chap-head"><span class="cid">R5</span><h3>Streams &amp; Events</h3><span class="chap-link" style="color:var(--b-dim)">soon</span><p class="c-one">The durable log &#8212; observability and event-driven coordination. &#8594; EchoMQ</p></div><div class="mods"><div class="mod"><div class="top"><span class="num">R5.01</span><span class="pill soon">soon</span></div><p class="t">Event sourcing on Streams</p><p class="o">The append-only log is the source of truth; state is its replay.</p></div><div class="mod"><div class="top"><span class="num">R5.02</span><span class="pill soon">soon</span></div><p class="t">Stream consumer patterns</p><p class="o">Block, batch, trim, resume; consumer groups.</p></div><div class="mod"><div class="top"><span class="num">R5.03</span><span class="pill soon">soon</span></div><p class="t">Pub/Sub vs Streams</p><p class="o">Fire-and-forget vs durable, and how to choose.</p></div><div class="mod"><div class="top"><span class="num">R5.04</span><span class="pill soon">soon</span></div><p class="t">Custom events &amp; projections</p><p class="o">Domain events and windowed projections on one stream.</p></div><div class="mod work"><div class="top"><span class="num">R5.05</span><span class="pill soon">soon</span></div><p class="t">Workshop</p><p class="o">A live activity feed.</p></div></div></section>
+      <section class="chap"><div class="chap-head"><span class="cid">R6</span><h3>Flow Control &amp; Scale</h3><span class="chap-link" style="color:var(--b-dim)">soon</span><p class="c-one">Staying stable under load &#8212; limiting, fairness, batching, concurrency. &#8594; EchoMQ</p></div><div class="mods"><div class="mod"><div class="top"><span class="num">R6.01</span><span class="pill soon">soon</span></div><p class="t">Rate limiting</p><p class="o">Fixed/sliding window and token/leaky bucket, enforced globally.</p></div><div class="mod"><div class="top"><span class="num">R6.02</span><span class="pill soon">soon</span></div><p class="t">Priorities &amp; fairness</p><p class="o">Starvation and how to avoid it.</p></div><div class="mod"><div class="top"><span class="num">R6.03</span><span class="pill soon">soon</span></div><p class="t">Groups &amp; multi-tenant fairness</p><p class="o">Round-robin fairness with a per-group semaphore.</p></div><div class="mod"><div class="top"><span class="num">R6.04</span><span class="pill soon">soon</span></div><p class="t">Batches &amp; pipelining</p><p class="o">One round-trip, all-or-nothing bulk enqueue.</p></div><div class="mod"><div class="top"><span class="num">R6.05</span><span class="pill soon">soon</span></div><p class="t">Worker concurrency</p><p class="o">The fetch ceiling and how to plan capacity.</p></div><div class="mod work"><div class="top"><span class="num">R6.06</span><span class="pill soon">soon</span></div><p class="t">Workshop</p><p class="o">Rate-limit and fairly schedule the API and jobs.</p></div></div></section>
+      <section class="chap"><div class="chap-head"><span class="cid">R7</span><h3>Data Modeling &amp; Memory</h3><span class="chap-link" style="color:var(--b-dim)">soon</span><p class="c-one">How data lives in RAM &#8212; the modeling family and the BCS read-models.</p></div><div class="mods"><div class="mod"><div class="top"><span class="num">R7.01</span><span class="pill soon">soon</span></div><p class="t">Redis as a primary database</p><p class="o">The store as the system of record, not a cache.</p></div><div class="mod"><div class="top"><span class="num">R7.02</span><span class="pill soon">soon</span></div><p class="t">Memory optimization</p><p class="o">Compact encodings and short fields.</p></div><div class="mod"><div class="top"><span class="num">R7.03</span><span class="pill soon">soon</span></div><p class="t">Probabilistic data structures</p><p class="o">Trade accuracy for memory &#8212; a contrast with exact dedup.</p></div><div class="mod"><div class="top"><span class="num">R7.04</span><span class="pill soon">soon</span></div><p class="t">Bitmaps</p><p class="o">Millions of boolean flags in minimal memory.</p></div><div class="mod"><div class="top"><span class="num">R7.05</span><span class="pill soon">soon</span></div><p class="t">Vectors &amp; similarity search</p><p class="o">Native vector sets for semantic search.</p></div><div class="mod"><div class="top"><span class="num">R7.06</span><span class="pill soon">soon</span></div><p class="t">Geospatial</p><p class="o">Locations and radius queries on a geohash sorted set.</p></div><div class="mod work"><div class="top"><span class="num">R7.07</span><span class="pill soon">soon</span></div><p class="t">Workshop</p><p class="o">The dashboard read-models.</p></div></div></section>
+      <section class="chap"><div class="chap-head"><span class="cid">R8</span><h3>Production &amp; Operations</h3><span class="chap-link" style="color:var(--b-dim)">soon</span><p class="c-one">Running the tier at scale &#8212; case studies and operational discipline; the capstone. &#8594; EchoMQ</p></div><div class="mods"><div class="mod"><div class="top"><span class="num">R8.01</span><span class="pill soon">soon</span></div><p class="t">Linux kernel tuning</p><p class="o">Kernel settings that prevent latency spikes and persistence failures.</p></div><div class="mod"><div class="top"><span class="num">R8.02</span><span class="pill soon">soon</span></div><p class="t">Persistence, pooling &amp; failover</p><p class="o">Operating the store as a system of record in production.</p></div><div class="mod"><div class="top"><span class="num">R8.03</span><span class="pill soon">soon</span></div><p class="t">Pinterest: task queues &amp; partitioning</p><p class="o">Functional partitioning and list-based reliable queues at scale.</p></div><div class="mod"><div class="top"><span class="num">R8.04</span><span class="pill soon">soon</span></div><p class="t">Twitter/X: internals &amp; custom structures</p><p class="o">Customizations that became core.</p></div><div class="mod"><div class="top"><span class="num">R8.05</span><span class="pill soon">soon</span></div><p class="t">Uber: resilience &amp; staggered sharding</p><p class="o">Staggered sharding, circuit breakers, graceful degradation.</p></div><div class="mod"><div class="top"><span class="num">R8.06</span><span class="pill soon">soon</span></div><p class="t">Operating EchoMQ</p><p class="o">Pooling, cluster co-location, metrics and tracing in production.</p></div><div class="mod work"><div class="top"><span class="num">R8.07</span><span class="pill soon">soon</span></div><p class="t">Capstone &#8212; the door to EchoMQ</p><p class="o">What the dedicated EchoMQ course teaches next.</p></div></div></section>
+
+      <p class="booknote">A module card becomes a link when its pages ship. R1&#8211;R4 are built; R5&#8211;R8 are
+      specified. The chapters are sequenced as the EchoMQ build, so the catalog doubles as a guided tour of the
+      BCS Redis tier.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The doors</h2>
+        <span class="ssrc">the sibling courses</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/echomq">
+          <span class="dr">/echomq</span>
+          <h3>EchoMQ — the protocol, in depth</h3>
+          <p>The bus, taught rung by rung: the <code>emq:{q}:</code> keyspace, the Lua inventory, conformance on Valkey.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The architecture EchoMQ and EchoCache are built inside: systems, identities, the contract.</p>
+        </a>
+        <a class="door" href="/elixir">
+          <span class="dr">/elixir</span>
+          <h3>Functional Programming in Elixir</h3>
+          <p>The functional-Elixir and OTP craft behind the echo umbrella &#8212; where EchoMQ, EchoCache, and the Exchange Platform are built.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://redis.io/docs/" rel="noopener">Redis — Documentation</a><span class="rs">the command reference and data-type guides the patterns draw on</span></li>
+          <li><a href="https://valkey.io/topics/" rel="noopener">Valkey — Topics</a><span class="rs">the engine the EchoMQ connector is gated against</span></li>
+          <li><a href="https://valkey.io/topics/programmability/" rel="noopener">Valkey — Programmability</a><span class="rs">EVALSHA, atomic scripts, the declared-keys discipline the bus rides</span></li>
+          <li><a href="https://llmstxt.org/" rel="noopener">llmstxt.org — the llms.txt convention</a><span class="rs">the machine-readable map format the course follows</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/redis-patterns/overview">R0 — Overview</a><span class="rs">where Valkey sits in the BCS build, and the reading protocol</span></li>
+          <li><a href="/redis-patterns/caching">R1 — Caching</a><span class="rs">the read path, the first chapter</span></li>
+          <li><a href="/echomq">EchoMQ — the course</a><span class="rs">the protocol in depth, the far side of the door</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the architecture these patterns run inside</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <span class="pgx"><span class="pk">here</span>Redis Patterns Applied — the course home</span>
+      <a class="pgx" href="/redis-patterns/overview"><span class="pk">start</span>R0 · Overview &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        BCS build: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/redis-patterns/caching">R1 &#183; Caching</a>
+        <a href="/redis-patterns/coordination">R2 &#183; Coordination</a>
+        <a href="/redis-patterns/queues">R3 &#183; Reliable Queues</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &#183; Time, Delay &amp; Priority</a>
+        <span>R5 &#183; Streams &amp; Events<i>soon</i></span>
+        <span>R6 &#183; Flow Control<i>soon</i></span>
+        <span>R7 &#183; Data Modeling<i>soon</i></span>
+        <span>R8 &#183; Production &amp; Operations<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive: the grounding map (pure lookup, no storage) ---------- */
+  var FAM = {
+    cache: '<b>EchoCache</b> &#183; the L1/L2 near-cache. An L1 of ETS tables in front of the shared L2 Valkey; a ' +
+           'hit returns in <code>762 ns</code> against <code>31 us</code> for an L2 GET &#8212; 40 times cheaper. ' +
+           'Coherence is a 29-byte message about a name, minted at a version. <span class="rk">(bcs4.1, bcs4.2)</span>',
+    coord: '<b>The claim script</b> &#183; one transition, one Lua script. ZPOPMIN off <code>emq:{q}:pending</code>, ' +
+           '<code>HINCRBY</code> the <code>attempts</code> counter, set the lease deadline on <code>emq:{q}:active</code>. ' +
+           'The <code>attempts</code> counter is the fencing token every later transition verifies. <span class="rk">(bcs3.3)</span>',
+    queue: '<b>Four sorted sets, one job hash</b> &#183; <code>emq:{q}:pending</code> (score-zero, FIFO + browse), ' +
+           '<code>emq:{q}:active</code> (lease-scored), <code>emq:{q}:schedule</code> (run-at), <code>emq:{q}:dead</code>. ' +
+           'The job is a three-field hash &#8212; <code>state, attempts, payload</code> &#8212; and nothing more. <span class="rk">(bcs3.2, bcs3.3)</span>',
+    time: '<b>The schedule set as a clock</b> &#183; a delayed job is scored by its run-at on <code>emq:{q}:schedule</code>; ' +
+          'the <code>promote</code> verb sweeps due jobs to <code>pending</code> by score. The sorted set is the timer wheel. ' +
+          '<span class="rk">(bcs3.3)</span>',
+    stream: '<b>The durable log</b> &#183; an append-only log keyed by time, read by range and by consumer group. ' +
+            'EchoMQ&#8217;s own event layer is a planned extension; this chapter teaches the Valkey streams pattern it ' +
+            'builds on. <span class="rk">(living status)</span>',
+    flow: '<b>Park, don&#8217;t poll</b> &#183; a consumer with no work parks on the wake fabric at <code>0 commands</code> ' +
+          'rather than busy-polling; per-group concurrency and pause/resume bound the load. <span class="rk">(bcs3.md, bcs4.md)</span>'
+  };
+
+  var buttons = document.querySelectorAll('#groundSel button');
+  var groundOut = document.getElementById('groundOut');
+
+  function pick(fam) {
+    buttons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-fam') === fam ? 'true' : 'false');
+    });
+    if (groundOut && fam && FAM[fam]) {
+      groundOut.innerHTML = '<span class="rk">readout &#183;</span> ' + FAM[fam];
+    }
+  }
+  buttons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var fam = b.getAttribute('data-fam');
+      var already = b.getAttribute('aria-pressed') === 'true';
+      pick(already ? null : fam);
+      if (already && groundOut) {
+        groundOut.innerHTML = '<span class="rk">readout &#183;</span> Select a family. Every pattern points at a ' +
+          'real artifact &#8212; a Valkey key, a command, or an atomic Lua move &#8212; that you can read and run.';
+      }
+    });
+  });
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

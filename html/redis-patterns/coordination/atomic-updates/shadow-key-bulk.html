@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R2.01.3 · Shadow key + bulk · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R2.01.3 — build the new value in a temporary key, then an atomic RENAME, so a concurrent read returns the old complete value or the new complete value, never a partial one. RENAME preserves the TTL; for bulk admission EchoMQ.Jobs.enqueue_many/3 does SCRIPT LOAD once then pipelines EVALSHA per item, per-item verdicts in input order. The full pipeline model is the dedicated EchoMQ course.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.fold{display:flex;align-items:center;gap:14px;margin:6px 0 12px;font-family:var(--mono);font-size:13px;color:var(--b-dim)}
+.fold label{min-width:6.5rem;color:var(--b-ink)}
+.fold input[type=range]{flex:1;accent-color:var(--r-red);height:2px}
+.fold .val{color:var(--r-red);font-weight:700;min-width:2rem;text-align:right}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the swap figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.swap{width:100%;height:auto;display:block;margin-top:4px}
+.swap .node rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.swap .node.live rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.swap .nlbl{font:12px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.swap .nsub{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.swap .mode{cursor:pointer;transition:opacity .18s ease}
+.swap .mode .edge{stroke:var(--b-dim);stroke-width:1.6;fill:none}
+.swap .mode .elbl{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.swap .mode.shadow .edge{stroke:var(--b-node)}
+.swap .mode.shadow .elbl{fill:var(--b-node)}
+.swap .mode.inplace .edge{stroke:var(--r-red)}
+.swap .mode.inplace .elbl{fill:var(--r-red)}
+.swap.focus .mode{opacity:.2}
+.swap.focus .mode.on{opacity:1}
+.swap.focus .mode.on .edge{stroke-width:2.8}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/coordination">coordination</a><span class="rsep">/</span><a href="/redis-patterns/coordination/atomic-updates">atomic-updates</a><span class="rsep">/</span><span class="rcur">shadow-key-bulk</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#window">The window</a>
+      <a href="#rename">RENAME</a>
+      <a href="#bulk">Bulk admission</a>
+      <a href="#bridge">On EchoMQ</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R2.01.3 &#183; Atomic updates &#8212; dive 3</p>
+      <h1>Swap whole, or admit <span class="hns">whole</span>.</h1>
+      <p class="lede">Build the new value in a temporary key, then one atomic <code>RENAME</code>. A read returns the
+      old complete value or the new complete value &#8212; never a half-built one. The batch sibling admits many items
+      in one wire flush.</p>
+      <p class="heronote">Grounding: echo_mq/lib/echo_mq/jobs.ex:100 &#183; enqueue_many/3 &#8212; SCRIPT LOAD once,
+      then pipelined EVALSHA per item via EchoMQ.Connector.pipeline/3. Committed figure: bcsA.md.</p>
+
+      <figure class="anatomy" aria-labelledby="swapCap">
+        <figcaption id="swapCap"><b>A concurrent read &#8212; in-place vs shadow + RENAME.</b> Select a mode to light
+        its path and read whether the poll catches a partial value.</figcaption>
+        <div class="segbar" id="swapSel" role="group" aria-label="Run the update in place or with a shadow key and RENAME">
+          <button type="button" data-mode="shadow" aria-pressed="false">shadow + RENAME</button>
+          <button type="button" data-mode="inplace" aria-pressed="false">in place</button>
+        </div>
+        <svg class="swap" id="swap" viewBox="0 0 460 210" role="img" aria-label="A writer updates a three-field value on the left while a reader on the right polls the live key. In place, the writer touches the live key one field at a time, so the reader's poll can return a two-of-three partial value. With a shadow key the writer builds the new value in a temporary key and swaps it in with one atomic RENAME, so the poll always returns a three-of-three complete value. The selected mode lights its path.">
+          <g class="node"><rect x="22" y="78" width="104" height="48" rx="8"></rect><text class="nlbl" x="74" y="100">writer</text><text class="nsub" x="74" y="116">3 field writes</text></g>
+          <g class="node live"><rect x="178" y="36" width="118" height="48" rx="8"></rect><text class="nlbl" x="237" y="58">live key</text><text class="nsub" x="237" y="74" id="liveState">3 of 3 fields</text></g>
+          <g class="node"><rect x="178" y="124" width="118" height="44" rx="8"></rect><text class="nlbl" x="237" y="146">tmp:key</text><text class="nsub" x="237" y="161" id="tmpState">staging</text></g>
+          <g class="node"><rect x="346" y="36" width="92" height="48" rx="8"></rect><text class="nlbl" x="392" y="58">reader</text><text class="nsub" x="392" y="74" id="readerCnt">polls live</text></g>
+
+          <g class="mode shadow" data-mode="shadow">
+            <path class="edge" d="M126 108 L178 146"></path>
+            <path class="edge" d="M237 124 L237 84"></path>
+            <path class="edge" d="M296 60 L346 60"></path>
+            <text class="elbl" x="160" y="190">build in tmp, then RENAME &#8212; read is complete</text>
+          </g>
+          <g class="mode inplace" data-mode="inplace">
+            <path class="edge" d="M126 90 L178 64"></path>
+            <path class="edge" d="M296 60 L346 60"></path>
+            <text class="elbl" x="237" y="200">HSET on the live key &#8212; a poll can catch 2 of 3</text>
+          </g>
+        </svg>
+        <div class="readout" id="swapOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a mode.
+        Shadow + RENAME keeps the live key complete; an in-place update can leave a poll a two-of-three partial.</div>
+        <p class="booknote">Static verdicts &#8212; shadow + RENAME &#8594; build in tmp, swap whole, the read returns
+        old-complete or new-complete, partial: no &#183; in place &#8594; HSET field by field, a poll after the second
+        write returns 2 of 3, partial: yes.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="window">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The partial-update window</h2>
+        <span class="ssrc">atomic-updates.md.txt &#183; Pattern 3</span>
+      </div>
+      <div class="prose">
+        <p>A value built field by field is readable between the writes. Update three fields in place &#8212;
+        <code>HSET … field1</code>, <code>HSET … field2</code>, <code>HSET … field3</code> &#8212; and a read landing
+        after the second write returns two new fields and one old one. That two-of-three state is never a value the
+        application meant to publish; it is an artifact of the write being three commands instead of one. The more
+        fields, the wider the window.</p>
+        <p>The shadow key closes it. Build the whole new value in a temporary key, off to the side, which no reader of
+        the live key reads; then make the temporary key the live key in a single atomic step. A read either runs
+        before the swap and returns the old complete value, or after it and returns the new complete value. There is no
+        instant at which the live key holds a mix of the two.</p>
+      </div>
+      <dl class="deflist">
+        <dt>tmp:key</dt><dd>The shadow key. The new value is assembled here; no reader of the live key reads it.</dd>
+        <dt>the window</dt><dd>The span between the first and last in-place write, where a read returns a partial value.</dd>
+        <dt>RENAME tmp final</dt><dd>The atomic swap. The temporary key becomes the live key in one indivisible step.</dd>
+        <dt>complete value</dt><dd>Old-complete before the swap, new-complete after it; the live key never holds a mix.</dd>
+      </dl>
+      <p class="take">The single-key conditional alternative &#8212; a Lua script that runs the read-branch-write with
+      nothing interleaved &#8212; is the sibling dive,
+      <a href="/redis-patterns/coordination/atomic-updates/lua-for-logic">R2.01.2 &#183; Lua for logic</a>.</p>
+    </section>
+
+    <section id="rename">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Build aside, then RENAME</h2>
+        <span class="ssrc">atomic-updates.md.txt &#183; Shadow Key</span>
+      </div>
+      <div class="prose">
+        <p>The move is two phases: assemble in <code>tmp:key</code>, then <code>RENAME tmp:key final:key</code>. The
+        build writes touch the temporary key, which no reader of the live key reads, so the in-progress state is
+        never observable. The swap is the only command that touches the live key, and it is indivisible.</p>
+      </div>
+      <pre class="code"><span class="cmt"># Phase 1 — build the new value in a temporary key, as many writes as it takes</span>
+<b>DEL</b> tmp:user:123:cache
+<b>HSET</b> tmp:user:123:cache field1 value1
+<b>HSET</b> tmp:user:123:cache field2 value2
+<b>HSET</b> tmp:user:123:cache field3 value3
+
+<span class="cmt"># Phase 2 — atomic swap: the temporary key becomes the live key</span>
+<b>RENAME</b> tmp:user:123:cache user:123:cache</pre>
+      <div class="prose">
+        <p>A read of <code>user:123:cache</code> returns the old complete value or the new complete value, never a
+        partial one. <code>RENAME</code> carries the source key&#8217;s TTL to the destination; <code>EXPIRE</code>
+        after the rename sets a fresh one, or <code>COPY … REPLACE</code> (Redis 6.2+) keeps the staging key. Both keys
+        of a <code>RENAME</code> or <code>COPY</code> must live in the same cluster slot &#8212; a cross-slot rename is
+        rejected. Hash tags co-locate them, the same colocation requirement multi-key WATCH carries.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>RENAME</code> is atomic and carries the source TTL;
+      both keys must hash to one slot, so a cross-slot rename is rejected &#8212;
+      <a href="https://valkey.io/commands/rename/" rel="noopener">valkey.io/commands/rename</a>.</p>
+      <p class="take">Build the value where no reader of the live key reads, then flip it in with one <code>RENAME</code>: the live key
+      goes from old-complete to new-complete with no partial state between.</p>
+    </section>
+
+    <section id="bulk">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Bulk admission: SCRIPT LOAD once, then pipeline EVALSHA</h2>
+        <span class="ssrc">echo_mq/jobs.ex:100 &#183; bcsA.md</span>
+      </div>
+      <div class="prose">
+        <p>The whole-value swap has a batch sibling: apply many independent writes in one wire flush. The classic Redis
+        form is <code>MULTI</code>/<code>EXEC</code> &#8212; queue every command, then run the queue with nothing
+        interleaved. EchoMQ takes a sharper form for bulk admission: one <code>SCRIPT LOAD</code> to prime the script
+        cache, then a pipelined <code>EVALSHA</code> per item, so each admission is the same single atomic
+        <code>@enqueue</code> script and the whole list rides one wire flush.</p>
+        <p><code>EchoMQ.Jobs.enqueue_many/3</code> (jobs.ex:100) loads the <code>@enqueue</code> source once, builds one
+        <code>EVALSHA</code> command per <code>{id, payload}</code> pair, and runs the list through
+        <code>EchoMQ.Connector.pipeline/3</code>. The per-item verdicts return in input order:</p>
+      </div>
+      <pre class="code"><span class="cmt"># enqueue_many/3 (echo_mq/lib/echo_mq/jobs.ex:100) — SCRIPT LOAD once, then pipeline EVALSHA per item.</span>
+<b>def</b> enqueue_many(conn, queue, pairs) <b>when</b> is_list(pairs) <b>do</b>
+  {:ok, _} = Connector.command(conn, [<b>"SCRIPT"</b>, <b>"LOAD"</b>, @enqueue.source])
+
+  cmds =
+    <b>for</b> {id, payload} &lt;- pairs <b>do</b>
+      [<b>"EVALSHA"</b>, @enqueue.sha, "2",
+       Keyspace.job_key(queue, id), Keyspace.queue_key(queue, "pending"),
+       id, payload]
+    <b>end</b>
+
+  <b>with</b> {:ok, results} &lt;- Connector.pipeline(conn, cmds) <b>do</b>
+    {:ok, Enum.map(results, <b>fn</b>
+      1 -> :enqueued
+      0 -> :duplicate
+      {:error_reply, "EMQKIND" &lt;> _} -> {:error, :kind}
+    <b>end</b>)}
+  <b>end</b>
+<b>end</b></pre>
+      <div class="prose">
+        <p>Each item is the same atomic <code>@enqueue</code> script &#8212; kind check, <code>EXISTS</code> duplicate
+        refusal, <code>HSET</code> the row, <code>ZADD</code> pending &#8212; so the per-item verdicts
+        (<code>:enqueued</code>, <code>:duplicate</code>, <code>{:error, :kind}</code>) line up with the input. Every
+        key shares the queue&#8217;s <code>{q}</code> hashtag, so every pipelined <code>EVALSHA</code> is single-slot
+        legal.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="batchCap">
+        <figcaption id="batchCap"><b>Admit a batch in one wire flush &#8212; SCRIPT LOAD once, then EVALSHA per item.</b>
+        Select an outcome and set the batch size; the readout names the verdicts.</figcaption>
+        <div class="segbar" id="batchSel" role="group" aria-label="Which batch outcome to run">
+          <button type="button" data-out="clean" aria-pressed="false">all fresh ids</button>
+          <button type="button" data-out="dup" aria-pressed="false">one id already enqueued</button>
+        </div>
+        <div class="fold">
+          <label for="batchN">jobs in batch</label>
+          <input type="range" id="batchN" min="1" max="8" step="1" value="5">
+          <span class="val" id="batchNVal">5</span>
+        </div>
+        <div class="readout" id="batchOut" aria-live="polite"><span class="rk">readout &#183;</span> Select an outcome.
+        All fresh ids return <code>:enqueued</code>; a repeated id returns <code>:duplicate</code> in its input
+        position.</div>
+        <p class="booknote">Static verdicts &#8212; all fresh ids &#8594; one SCRIPT LOAD, then N pipelined EVALSHA, all
+        <code>:enqueued</code> &#183; one id already enqueued &#8594; that position returns <code>:duplicate</code>, the
+        row untouched; the rest <code>:enqueued</code>; verdicts in input order.</p>
+      </figure>
+
+      <figure class="frozen">
+        <figcaption>content/bcsA.md &#183; the script path, against Valkey on :6390<span class="tag">frozen</span></figcaption>
+        <pre>script path                   <b>script_loads=1</b>   <span class="fd">&#8592; one SCRIPT LOAD, then EVALSHA from cache</span>
+pipelined EVALSHA             <b>161192</b> ops/s   <span class="fd">&#8592; the declared-keys law at speed</span>
+slot law                      emq:{orders}:* &#8594; slot 105 == 105</pre>
+      </figure>
+
+      <p class="take">Swap one whole value with <code>RENAME</code>, or admit a whole batch with <code>SCRIPT LOAD</code>
+      + pipelined <code>EVALSHA</code> &#8212; a reader never returns part of a value, a consumer never returns part of a
+      batch.</p>
+    </section>
+
+    <section id="bridge">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The pattern, and its application</h2>
+        <span class="ssrc">echo_mq/jobs.ex</span>
+      </div>
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Commit the whole value, or the whole set of writes, in one step. <code>RENAME</code> swaps one value
+          atomically; the script cache pipelines a batch in one wire flush. Both refuse the partial state.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>EchoMQ.Jobs.enqueue_many/3</code> does <code>SCRIPT LOAD</code> once then pipelines
+          <code>EVALSHA</code> per item (echo_mq/lib/echo_mq/jobs.ex) &#8212; each item the same atomic
+          <code>@enqueue</code> script, per-item verdicts in input order.</p>
+        </div>
+      </div>
+      <p class="take">Swap one whole value, or admit a whole batch; both refuse the partial state, and EchoMQ&#8217;s
+      bulk admission proves it.</p>
+
+      <div class="door">
+        <span class="dr">the door &#183; the EchoMQ course</span>
+        <h3>The full pipeline model is the next course</h3>
+        <p>The full pipeline model &#8212; the <code>SCRIPT LOAD</code> preflight, the EVALSHA/NOSCRIPT dispatch, the
+        per-item verdict mapping, and the <code>echomq:2.0.0</code> version fence &#8212; is the dedicated
+        <a href="/echomq">EchoMQ course</a>. This dive cites one bulk admission path as proof the pattern is real; the
+        depth is the next course. The functional-Elixir &amp; OTP craft behind the echo umbrella is the
+        <a href="/elixir">/elixir course</a>.</p>
+      </div>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Recap &#8212; swap whole, or admit whole</h2>
+        <span class="ssrc">back &#8594; R2.01</span>
+      </div>
+      <div class="prose">
+        <p>A value written field by field is readable mid-update; the shadow key removes the window by assembling the new
+        value in <code>tmp:key</code> and swapping it in with one atomic <code>RENAME</code> &#8212; a read returns
+        old-complete or new-complete, never partial. <code>RENAME</code> carries the source TTL. At batch scale, EchoMQ
+        admits many jobs in one wire flush: <code>enqueue_many/3</code> does <code>SCRIPT LOAD</code> once then pipelines
+        <code>EVALSHA</code> per item, each the same atomic <code>@enqueue</code> script, verdicts in input order. The
+        hub gathers the three tools and the primitives that round them out.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/rename/" rel="noopener">Valkey &mdash; <em>RENAME</em></a> &mdash; atomically rename a key to a destination, carrying the source TTL; the whole-value swap.</li>
+            <li><a href="https://redis.io/docs/latest/develop/interact/transactions/" rel="noopener">Redis &mdash; <em>Transactions</em></a> &mdash; <code>MULTI</code>/<code>EXEC</code> queue a batch and run it all-or-none with nothing interleaved.</li>
+            <li><a href="https://valkey.io/commands/evalsha/" rel="noopener">Valkey &mdash; <em>EVALSHA</em></a> &mdash; run a cached script by its SHA1; the pipelined call the bulk admission flushes per item.</li>
+            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; write a value with options; the per-field write the shadow build replaces with one atomic swap.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &#183; Atomic updates</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/coordination/atomic-updates/lua-for-logic">R2.01.2 &#183; Lua for logic</a><span class="rs">the sibling RMW tool, the script as the lock</span></li>
+            <li><a href="/redis-patterns/coordination">R2 &#183; Coordination</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the EchoMQ protocol, the bulk pipeline in depth</span></li>
+            <li><a href="/elixir">/elixir</a><span class="rs">the functional-Elixir &amp; OTP craft behind the echo umbrella</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/coordination/atomic-updates/lua-for-logic"><span class="pk">previous</span>&#8592; R2.01.2 &#183; Lua for logic</a>
+      <a class="pgx" href="/redis-patterns/coordination/atomic-updates"><span class="pk">up</span>R2.01 &#183; Atomic updates &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/coordination/atomic-updates/watch-multi-exec">R2.01.1 &#183; WATCH / MULTI / EXEC</a>
+        <a href="/redis-patterns/coordination/atomic-updates/lua-for-logic">R2.01.2 &#183; Lua for logic</a>
+        <a href="/redis-patterns/coordination/atomic-updates/shadow-key-bulk">R2.01.3 &#183; Shadow key + bulk</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the swap — in-place vs shadow + RENAME (pure over a fixed schedule) ---------- */
+  // pure: mode -> { partial, text, live, tmp, reader }
+  function runSwap(mode) {
+    if (mode === 'shadow') {
+      return {
+        partial: false, live: '3 of 3 (swapped)', tmp: 'built 3 of 3', reader: 'reads complete',
+        text: 'Shadow + RENAME. The writer builds all 3 fields in tmp:key, then RENAME tmp:key user:123. The reader ' +
+          'polls the live key mid-build: tmp is not the live key, so the poll returns the old 3-of-3 value. After the ' +
+          'RENAME the live key is new-complete. A concurrent read returned a partial value: no.'
+      };
+    }
+    return {
+      partial: true, live: '2 of 3 (mid-write)', tmp: 'unused', reader: 'reads partial',
+      text: 'In place. The writer runs HSET field1, field2, field3 on the live key one at a time. The reader polls ' +
+        'after field2 lands: the live key holds 2 new fields and 1 old field — a 2-of-3 partial. A concurrent read ' +
+        'returned a partial value: yes.'
+    };
+  }
+  var swap = document.getElementById('swap');
+  var swapButtons = document.querySelectorAll('#swapSel button');
+  var swapOut = document.getElementById('swapOut');
+  var liveState = document.getElementById('liveState'), tmpState = document.getElementById('tmpState'), readerCnt = document.getElementById('readerCnt');
+  // pure: highlight the chosen mode, sync the buttons, fill the readout — hover or click.
+  function selectSwap(mode) {
+    swapButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-mode') === mode ? 'true' : 'false');
+    });
+    if (swap) {
+      swap.classList.toggle('focus', !!mode);
+      swap.querySelectorAll('.mode').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-mode') === mode);
+      });
+    }
+    var r = mode ? runSwap(mode) : null;
+    if (liveState) liveState.textContent = r ? r.live : '3 of 3 fields';
+    if (tmpState) tmpState.textContent = r ? r.tmp : 'staging';
+    if (readerCnt) readerCnt.textContent = r ? r.reader : 'polls live';
+    if (swapOut) {
+      swapOut.innerHTML = r
+        ? '<span class="rk">mode &#183;</span> ' + r.text
+        : '<span class="rk">readout &#183;</span> Select a mode. Shadow + RENAME keeps the live key complete; an in-place update can leave a poll a two-of-three partial.';
+    }
+  }
+  swapButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var mode = b.getAttribute('data-mode');
+      selectSwap(b.getAttribute('aria-pressed') === 'true' ? null : mode);
+    });
+  });
+  if (swap) {
+    swap.querySelectorAll('.mode').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectSwap(g.getAttribute('data-mode')); });
+      g.addEventListener('mouseleave', function () { selectSwap(null); });
+    });
+  }
+
+  /* ---------- Interactive 2: bulk admission — SCRIPT LOAD once, pipeline EVALSHA (pure over a fixed dataset) ---------- */
+  // pure: (n, outcome) -> readout text. With a duplicate, position 3 (or last) is already enqueued.
+  function runBatch(n, outcome) {
+    if (outcome === 'dup') {
+      var at = Math.min(3, n);
+      var verdicts = [];
+      for (var i = 1; i <= n; i++) verdicts.push(i === at ? ':duplicate' : ':enqueued');
+      return 'SCRIPT LOAD @enqueue (once); ' + n + ' pipelined EVALSHA. Item ' + at + ' carries an id already ' +
+        'enqueued, so its @enqueue hits EXISTS and returns 0 -> :duplicate; its row is untouched. Verdicts in input ' +
+        'order: [' + verdicts.join(', ') + ']. Jobs enqueued: ' + (n - 1) + '.';
+    }
+    var all = [];
+    for (var j = 0; j < n; j++) all.push(':enqueued');
+    return 'SCRIPT LOAD @enqueue (once); ' + n + ' pipelined EVALSHA, each the same atomic script over co-located ' +
+      'emq:{orders}:* keys. Verdicts in input order: [' + all.join(', ') + ']. Jobs enqueued: ' + n + ' (all). ' +
+      'script_loads=1.';
+  }
+  var batchButtons = document.querySelectorAll('#batchSel button');
+  var batchN = document.getElementById('batchN'), batchNVal = document.getElementById('batchNVal');
+  var batchOut = document.getElementById('batchOut');
+  var batchCur = null;
+  function renderBatch() {
+    var n = batchN ? parseInt(batchN.value, 10) : 5;
+    if (batchNVal) batchNVal.textContent = String(n);
+    if (batchOut) {
+      batchOut.innerHTML = batchCur
+        ? '<span class="rk">outcome &#183;</span> ' + runBatch(n, batchCur)
+        : '<span class="rk">readout &#183;</span> Select an outcome. All fresh ids return :enqueued; a repeated id returns :duplicate in its input position.';
+    }
+  }
+  batchButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var out = b.getAttribute('data-out');
+      batchCur = (b.getAttribute('aria-pressed') === 'true') ? null : out;
+      batchButtons.forEach(function (x) { x.setAttribute('aria-pressed', (batchCur && x.getAttribute('data-out') === batchCur) ? 'true' : 'false'); });
+      renderBatch();
+    });
+  });
+  if (batchN) batchN.addEventListener('input', renderBatch);
+  renderBatch(); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R1.02.3 · The latency cost · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R1.02.3 — the latency cost of write-through: every write pays for the L2 round-trip on the hot path, and either layer can fail. EchoCache.Table.put is a synchronous GenServer.call that waits for the L2 SET; an L1 hit is 762 ns against a 31 us L2 GET (40 times cheaper, bcs4.1). The trade against write-behind's deferred database write. The engine is Valkey.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+.slider{display:flex;align-items:center;gap:14px;margin:6px 0;font-family:var(--mono);font-size:13px}
+.slider label{min-width:8.5rem;color:var(--b-ink)}
+.slider input[type=range]{flex:1;accent-color:var(--r-red);height:3px}
+.slider .val{min-width:4rem;text-align:right;color:var(--r-red);font-weight:700}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:7px 16px;font-family:var(--mono);font-size:13px;margin:0 0 18px}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+  .deflist dd{margin-bottom:8px}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the latency-budget figure (light palette) ---------- */
+.latbar{width:100%;height:auto;display:block;margin-top:4px}
+.latbar .track{fill:var(--b-paper);stroke:var(--b-line);stroke-width:1.2}
+.latbar .seg{transition:width .18s ease, x .18s ease}
+.latbar .cache{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.2}
+.latbar .db{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.2}
+.latbar .enq{fill:#dcebdd;stroke:var(--b-node);stroke-width:1.2}
+.latbar .rl{font:10.5px var(--mono);fill:var(--b-dim)}
+.latbar .tot{font:11px var(--mono);fill:var(--b-ink);font-weight:700}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/caching">caching</a><span class="rsep">/</span><a href="/redis-patterns/caching/write-through">write-through</a><span class="rsep">/</span><span class="rcur">latency-cost</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#budget">The budget</a>
+      <a href="#failure">When a layer fails</a>
+      <a href="#apply">On EchoCache</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R1.02.3 &#183; Write-through &#8212; dive 3</p>
+      <h1>The latency <span class="hns">cost</span>.</h1>
+      <p class="lede">The freshness guarantee is not free: every write pays for the L2 round-trip on the hot path, and
+      either layer can fail.</p>
+      <p class="heronote">Grounding: the synchronous GenServer.call({:put, &#8230;}, 10_000) (table.ex) +
+      content/bcs4.1.md (762 ns vs 31 us) &#8212; the engine is Valkey.</p>
+
+      <figure class="anatomy" aria-labelledby="budCap">
+        <figcaption id="budCap"><b>Set the latencies.</b> Move the two sliders to read the write-through total against
+        write-behind&#8217;s deferred database write.</figcaption>
+        <div class="slider">
+          <label for="cacheLat">L1 + L2 cache</label>
+          <input type="range" id="cacheLat" min="1" max="10" step="1" value="2" aria-describedby="budOut">
+          <span class="val" id="cacheLatV">2 ms</span>
+        </div>
+        <div class="slider">
+          <label for="dbLat">db UPDATE</label>
+          <input type="range" id="dbLat" min="2" max="40" step="2" value="16" aria-describedby="budOut">
+          <span class="val" id="dbLatV">16 ms</span>
+        </div>
+        <svg class="latbar" id="latbar" viewBox="0 0 460 150" role="img" aria-label="Two horizontal bars compare write latency. The write-through bar is the cache write plus the database update, because both run before the call returns. The write-behind bar is the cache write plus a small local record, because the database write is deferred off the hot path. As the latencies are adjusted, the bars resize.">
+          <text class="rl" x="10" y="38">write-through</text>
+          <rect class="track" x="10" y="46" width="440" height="22" rx="6"></rect>
+          <rect class="seg cache" id="bar-cache-wt" x="10" y="46" width="22" height="22" rx="6"></rect>
+          <rect class="seg db" id="bar-db-wt" x="32" y="46" width="160" height="22"></rect>
+          <text class="tot" id="wt-total" x="200" y="62">18 ms</text>
+
+          <text class="rl" x="10" y="106">write-behind</text>
+          <rect class="track" x="10" y="114" width="440" height="22" rx="6"></rect>
+          <rect class="seg cache" id="bar-cache-wb" x="10" y="114" width="22" height="22" rx="6"></rect>
+          <rect class="seg enq" id="bar-q-wb" x="32" y="114" width="11" height="22"></rect>
+          <text class="tot" id="wb-total" x="50" y="130">3 ms</text>
+        </svg>
+        <div class="readout" id="budOut" aria-live="polite"></div>
+        <p class="booknote">The cache term is one ETS write (sub-microsecond) plus the L2 <code>SET</code>
+        round-trip &#8212; an L1 hit is <code>762 ns</code> against a <code>31 us</code> L2 <code>GET</code>
+        (<code>40 times cheaper</code>, content/bcs4.1.md).</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="budget">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Every write pays for both layers</h2>
+        <span class="ssrc">write-through.md.txt &#183; Disadvantages</span>
+      </div>
+      <div class="prose">
+        <p><code>EchoCache.Table.put</code> is a synchronous
+        <code>GenServer.call(name, {:put, id, value, version}, 10_000)</code>: the caller blocks until the owner has
+        set the L2 Valkey row and inserted into the L1 ETS table. The L1 insert is cheap &#8212; an ETS write is
+        sub-microsecond &#8212; but the L2 <code>SET</code> is a network round-trip, the larger term, and write-through
+        puts it on every write. The committed figures size the gap: an L1 hit is <code>762 ns</code>, an L2
+        <code>GET</code> is <code>31 us</code> &#8212; the L1 hit is <code>40 times cheaper</code> than the round trip
+        (<code>content/bcs4.1.md</code>). Write-through pays that L2 cost on the write path rather than deferring it.</p>
+        <p>This is the trade write-behind makes differently. Write-behind writes the L1 cache, records the change
+        locally, and returns &#8212; so its hot-path latency is the cache write plus a small local record, and the
+        database catches up afterwards over the bus. Write-behind is faster on the write and risks losing the buffered
+        write if the process dies before it drains; write-through is slower on the write and never loses the source
+        write, because it does not return until the source has it.</p>
+      </div>
+      <dl class="deflist">
+        <dt>hot path</dt><dd>The latency the caller waits on. Write-through puts the L2 round-trip on it; write-behind puts only the L1 write plus a local record.</dd>
+        <dt>write latency</dt><dd>For write-through, the L2 <code>SET</code> round-trip + the L1 <code>insert</code>. For write-behind, the L1 write + a small local record.</dd>
+        <dt>durability</dt><dd>Write-through never loses the source write &#8212; it returns only after the source has it. Write-behind can lose a buffered write on a crash.</dd>
+        <dt>trade</dt><dd>Write-through buys freshness and durability with latency; write-behind buys latency with a window of risk.</dd>
+      </dl>
+    </section>
+
+    <section id="failure">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>When one layer fails</h2>
+        <span class="ssrc">write-through.md.txt &#183; Handling Partial Failures</span>
+      </div>
+      <div class="prose">
+        <p>Writing two layers in sequence means there are two ways to fail, and the order determines what state is left
+        behind. With the source written first and the cache second, a source failure stops the write before the cache
+        changes, and a cache failure after a source success is reported rather than hidden behind a stale value. Pick a
+        failure to see the state it leaves and how it is reported.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="failCap">
+        <figcaption id="failCap"><b>Pick a failure.</b> Select which layer fails to read the state it leaves and how
+        the put clause reports it.</figcaption>
+        <div class="segbar" id="failSel" role="group" aria-label="Which layer fails">
+          <button type="button" data-fail="db" aria-pressed="false">the source write fails</button>
+          <button type="button" data-fail="cache" aria-pressed="false">the L2 cache write fails</button>
+          <button type="button" data-fail="none" aria-pressed="false">both succeed</button>
+        </div>
+        <div class="readout" id="failOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a failure.
+        The source is written first, so its failure stops the write before the cache changes.</div>
+        <p class="booknote">Static verdicts &#8212; source fails &#8594; both unchanged, the write is failed &#183;
+        L2 fails &#8594; the strict <code>{:ok, "OK"} = &#8230;</code> match fails the call, no stale success &#183;
+        both succeed &#8594; match holds, L1 insert runs, reply <code>:ok</code>.</p>
+      </figure>
+
+      <p class="take">Writing the source first bounds the damage: a source failure never leaves the cache ahead of the
+      source, and the strict <code>{:ok, "OK"} = &#8230;</code> match means a non-OK L2 reply fails the call, not a
+      stale success.</p>
+    </section>
+
+    <section id="apply">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The cost on EchoCache</h2>
+        <span class="ssrc">table.ex &#183; the synchronous call &#183; verbatim</span>
+      </div>
+      <div class="prose">
+        <p>On EchoCache&#8217;s write path, <code>EchoCache.Table.put</code> sets the L2 Valkey row, inserts into the
+        L1 ETS table, and returns once both are done &#8212; all inside one <code>GenServer.call</code>. A caller that
+        updates an instrument row waits for the L2 round-trip, and reads the fresh value back immediately. If the L2
+        <code>SET</code> does not answer <code>{:ok, "OK"}</code>, the match fails the call rather than reporting
+        success with a stale cache.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_cache/lib/echo_cache/table.ex &#183; put/4 and its call &#183; verbatim<span class="tag">as-built</span></figcaption>
+        <pre>def put(name, id, value, &lt;&lt;_::binary-14&gt;&gt; = version) when is_binary(value) do
+  <span class="fd"># ... gate the kind ...</span>
+  <b>GenServer.call(name, {:put, id, value, version}, 10_000)</b>   <span class="fd">&#8592; synchronous: the caller waits</span>
+end
+
+<span class="fd"># handle_call({:put, …}):</span>
+<b>{:ok, "OK"}</b> = Connector.command(state.conn,
+  ["SET", l2, version &lt;&gt; value, "PX", ttl])                 <span class="fd">&#8592; the L2 round-trip; a non-OK reply fails the call</span>
+insert(state, id, value, version)                            <span class="fd">&#8592; L1 insert, after the SET landed</span>
+<span class="fd"># write latency = L2 SET round-trip + L1 insert   (both on the hot path)</span></pre>
+      </figure>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>The L2 <code>SET</code> is one round-trip to the engine;
+      the committed connector gate measured the round trip against live Valkey, where an L1 hit is
+      <code>762 ns</code> and an L2 <code>GET</code> is <code>31 us</code> &#8212;
+      <a href="https://valkey.io/topics/" rel="noopener">valkey.io/topics</a>.</p>
+
+      <div class="door">
+        <span class="dr">the application &#183; the deferred-write alternative</span>
+        <h3>Where the write-behind write goes instead</h3>
+        <p>The latency-cheaper alternative does not pay the L2 round-trip on the hot path: it records the change
+        locally and lets the bus carry the apply at-least-once. The bus is the EchoMQ protocol &#8212; its fair lanes
+        carry the deferred write, taught in depth at <a href="/echomq">/echomq</a>, and the cache itself is the
+        EchoCache manuscript, <a href="/bcs">/bcs</a> Part IV.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the cost</span>
+          <p>Pay for both writes on the hot path, in a fixed order, and report a failure rather than hide it &#8212;
+          buying read-after-write freshness and durability with write latency.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoCache application</span>
+          <p>The synchronous <code>GenServer.call({:put, &#8230;}, 10_000)</code> blocks for the L2 round-trip; the
+          strict <code>{:ok, "OK"} = &#8230;</code> match makes a non-OK reply a failed call, never a silent stale
+          value.</p>
+        </div>
+      </div>
+      <p class="take">Write-through trades write latency and a second point of failure for the consistency guarantee.
+      The write-heavy, stale-tolerant alternative is write-behind &#8212; the next module.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Recap &#8212; the price of the guarantee</h2>
+        <span class="ssrc">the synchronous call</span>
+      </div>
+      <div class="prose">
+        <p>Write-through&#8217;s freshness costs the L2 round-trip on the hot path: the write latency is the L2
+        <code>SET</code> plus the L1 <code>insert</code>, both inside one synchronous call. Writing the source first
+        bounds the failure modes &#8212; the cache is never left ahead of the source, and a non-OK L2 reply fails the
+        call rather than hiding behind a stale value. Where write throughput matters more than a few milliseconds of
+        freshness, write-behind defers the database write instead. That is the next module.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; the L2 write whose round-trip is added to every write-through write.</li>
+            <li><a href="https://valkey.io/topics/" rel="noopener">Valkey &mdash; <em>Topics</em></a> &mdash; the engine the L2 layer runs on; the live line is Valkey, the round-trip the figures measured.</li>
+            <li><a href="https://redis.io/commands/set" rel="noopener">Redis &mdash; <em>SET</em></a> &mdash; the string write-path command and its <code>PX</code> expiry.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; the persistence and durability options behind the cost and durability trade.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/caching/write-through">R1.02 &#183; Write-through</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/caching/write-through/consistency">R1.02.2 &#183; The consistency guarantee</a><span class="rs">the previous dive</span></li>
+            <li><a href="/redis-patterns/caching/write-through/dual-write">R1.02.1 &#183; The synchronous dual write</a><span class="rs">the write that costs this latency</span></li>
+            <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter; R1.03 Write-behind is the cheaper alternative</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the bus the write-behind write defers the database write onto</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/redis-patterns/caching/write-through/consistency"><span class="pk">previous</span>&#8592; R1.02.2 &#183; The consistency guarantee</a>
+      <a class="pgx" href="/redis-patterns/caching/write-through"><span class="pk">up</span>R1.02 &#183; Write-through hub &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/caching/write-through/dual-write">R1.02.1 &#183; The synchronous dual write</a>
+        <a href="/redis-patterns/caching/write-through/consistency">R1.02.2 &#183; The consistency guarantee</a>
+        <a href="/redis-patterns/caching/write-through/latency-cost">R1.02.3 &#183; The latency cost</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the latency budget (pure over two slider inputs) ---------- */
+  var ENQUEUE = 1;       // a small fixed local-record cost for write-behind, in ms
+  var SCALE = 11;        // px per ms, for the bars
+  var BAR_X = 10;
+  // pure: cache and db latency -> the two totals
+  function budget(cacheMs, dbMs) {
+    return {
+      writeThrough: cacheMs + dbMs,     // both writes on the hot path
+      writeBehind: cacheMs + ENQUEUE    // cache write + local record; db deferred
+    };
+  }
+  // pure: budget -> readout text
+  function describeBudget(cacheMs, dbMs) {
+    var b = budget(cacheMs, dbMs);
+    var saved = b.writeThrough - b.writeBehind;
+    return 'cache write ' + cacheMs + ' ms + db UPDATE ' + dbMs + ' ms. ' +
+      'write-through write: ' + b.writeThrough + ' ms (both on the hot path). ' +
+      'write-behind write: ' + b.writeBehind + ' ms (cache + ' + ENQUEUE + ' ms local record; db deferred). ' +
+      'write-through costs ' + saved + ' ms more, and never loses the source write.';
+  }
+  var cacheR = document.getElementById('cacheLat'), dbR = document.getElementById('dbLat');
+  var cacheV = document.getElementById('cacheLatV'), dbV = document.getElementById('dbLatV');
+  var budOut = document.getElementById('budOut');
+  function clampW(w) { return Math.max(8, Math.min(w, 430)); }
+  function setBudget() {
+    var c = parseInt(cacheR.value, 10), d = parseInt(dbR.value, 10);
+    if (cacheV) cacheV.textContent = c + ' ms';
+    if (dbV) dbV.textContent = d + ' ms';
+    var b = budget(c, d);
+    var cw = clampW(c * SCALE), dw = clampW(d * SCALE);
+    var bcw = document.getElementById('bar-cache-wt'), bdw = document.getElementById('bar-db-wt'), wtT = document.getElementById('wt-total');
+    if (bcw) bcw.setAttribute('width', cw);
+    if (bdw) { bdw.setAttribute('x', BAR_X + cw); bdw.setAttribute('width', dw); }
+    if (wtT) { wtT.setAttribute('x', Math.min(BAR_X + cw + dw + 6, 432)); wtT.textContent = b.writeThrough + ' ms'; }
+    var qw = clampW(ENQUEUE * SCALE);
+    var bcwb = document.getElementById('bar-cache-wb'), bqwb = document.getElementById('bar-q-wb'), wbT = document.getElementById('wb-total');
+    if (bcwb) bcwb.setAttribute('width', cw);
+    if (bqwb) { bqwb.setAttribute('x', BAR_X + cw); bqwb.setAttribute('width', qw); }
+    if (wbT) { wbT.setAttribute('x', BAR_X + cw + qw + 6); wbT.textContent = b.writeBehind + ' ms'; }
+    if (budOut) budOut.innerHTML = '<span class="rk">readout &#183;</span> ' + describeBudget(c, d);
+  }
+  if (cacheR) cacheR.addEventListener('input', setBudget);
+  if (dbR) dbR.addEventListener('input', setBudget);
+  setBudget(); // initial render — correct without interaction
+
+  /* ---------- Interactive 2: pick a failure (pure over a fixed dataset) ---------- */
+  var FAILURES = {
+    db:    { state: 'source unchanged, cache unchanged', report: 'a failed write', why: 'the source is written first, so its failure stops the write before the cache changes' },
+    cache: { state: 'source updated, L2 SET failed', report: 'a failed write (the {:ok, "OK"} = … match fails)', why: 'the put clause matches {:ok, "OK"} strictly; a non-OK L2 reply fails the call rather than reporting a stale success — the next read takes a miss and re-reads the source' },
+    none:  { state: 'source updated, both layers updated', report: '{:reply, :ok}', why: 'the match held, the L1 insert ran, and both writes landed before the call returned' }
+  };
+  // pure: failure key -> readout text
+  function describeFailure(f) {
+    var x = FAILURES[f];
+    return 'Outcome: ' + x.state + '. Reported as: ' + x.report + '. Why: ' + x.why + '.';
+  }
+  var failButtons = document.querySelectorAll('#failSel button');
+  var failOut = document.getElementById('failOut');
+  function setFailure(f) {
+    failButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-fail') === f ? 'true' : 'false');
+    });
+    if (failOut) failOut.innerHTML = '<span class="rk">readout &#183;</span> ' + describeFailure(f);
+  }
+  failButtons.forEach(function (b) {
+    b.addEventListener('click', function () { setFailure(b.getAttribute('data-fail')); });
+  });
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

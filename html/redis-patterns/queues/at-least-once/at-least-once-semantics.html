@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R3.02.1 · At-least-once semantics · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R3.02.1 · Three delivery guarantees bound every queue: at-most-once removes the job before the work (a crash loses it), at-least-once holds it until the acknowledgement (a crash redelivers it), and exactly-once delivery is not achievable. A reliable queue is at-least-once because holding until the ack is the only choice that loses no job — and the finish-then-crash-before-ack window makes a duplicate structural. Grounded in EchoMQ's moveToActive-11.lua (RPOPLPUSH into emq:{queue}:active under a lock) and moveStalledJobsToWait-8.lua (the recovery that is the redelivery).">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
+.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
+.door a{color:var(--gold-bright)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><a href="/redis-patterns/queues/at-least-once">at-least-once</a><span class="rsep">/</span><span class="rcur">at-least-once-semantics</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+    /* the crash window — a fixed job across the three delivery modes */
+    .gtr .row rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+    .gtr .row.lost rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
+    .gtr .row.run rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
+    .gtr .row.dup rect{fill:rgba(212,168,90,.14);stroke:#d4a85a}
+    .gtr text{font-family:var(--sans);fill:#d7cfb9}
+    .gtr .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+    .gtr .big{font-family:var(--serif-display);font-size:17px;font-weight:600}
+    /* the ack-window timeline */
+    .win .seg rect{fill:#10162b;stroke:#2a3252;transition:.18s ease}
+    .win .seg.on rect{fill:rgba(212,168,90,.16);stroke:#d4a85a}
+    .win text{font-family:var(--mono);fill:#d7cfb9;font-size:11px}
+    .win .cap{font-family:var(--sans);fill:#a39c89;font-size:10px;letter-spacing:.04em;text-transform:uppercase}
+    .win .mark{fill:#f2948c;font-weight:700}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/queues/at-least-once">At-least-once</a>
+        <span class="sep">/</span>
+        <span class="here">At-least-once semantics</span>
+      </div>
+      <p class="eyebrow">R3.02 &middot; dive 1</p>
+      <h1>At-least-once <span class="ex">semantics</span></h1>
+      <p class="lede">One or more times, never zero. A reliable queue holds the job until its acknowledgement &mdash;
+        the only choice that loses no job, and the choice that lets a job run twice.</p>
+      <p class="kicker">Three guarantees bound every queue, set by one decision: does the job leave before the work or
+        after the acknowledgement. At-most-once leaves before, so a crash loses it; at-least-once holds until the
+        acknowledgement, so a crash redelivers it; exactly-once delivery is not on the spectrum at all. Toggle the
+        delivery mode on the right over a fixed run where the worker crashes after the effect, before the
+        acknowledgement, and read messages lost against messages run.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#three">The three guarantees</a>
+        <a href="#why">Why at-least-once</a>
+        <a href="#window">The duplicate window</a>
+        <a href="#applied">In EchoMQ</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig gtr" aria-labelledby="gtrTitle">
+      <h4 id="gtrTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">One run, the worker crashes after the effect &middot; lost vs run, by mode</h4>
+      <div class="controls">
+        <div class="solid-select" id="gtrSel" role="group" aria-label="Which delivery guarantee the queue offers">
+          <button type="button" data-mode="most" data-c="redis" aria-pressed="false">at-most-once</button>
+          <button type="button" data-mode="least" data-c="sage" class="active" aria-pressed="true">at-least-once</button>
+          <button type="button" data-mode="exactly" data-c="blue" aria-pressed="false">exactly-once</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 196" role="img" aria-label="One job, one run where the worker applies the effect then crashes before the acknowledgement. At-most-once removes the job before the work, so the crash loses it: zero messages run, one lost. At-least-once holds the job until the acknowledgement, so the crash redelivers it: the effect runs twice, none lost. Exactly-once is not a deliverable guarantee, shown as unavailable.">
+        <text class="ttl" x="30" y="26">the job &middot; one run, crash after the effect</text>
+        <g class="row" id="rJob"><rect x="30" y="36" width="400" height="44" rx="10"></rect></g>
+        <text class="big" id="rJobT" x="230" y="63" text-anchor="middle">held until ack &middot; crash redelivers</text>
+        <text class="ttl" x="30" y="108">messages lost</text>
+        <text class="big" id="rLost" x="30" y="132" fill="#a7c9b1">0</text>
+        <text class="ttl" x="230" y="108">messages run (the effect)</text>
+        <text class="big" id="rRun" x="230" y="132" fill="#a7c9b1">2</text>
+        <text class="ttl" id="rVerd" x="30" y="170">at-least-once · never lost, possibly twice</text>
+      </svg>
+
+      <div class="geo-readout" id="gtrOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="three">
+    <h2>The three guarantees</h2>
+    <div class="prose">
+      <p>Three delivery guarantees bound every queue design, and the spectrum is set by one decision: when does the job
+        leave the queue, before the work or after the acknowledgement.</p>
+      <p><strong>At-most-once.</strong> The job is removed before the work runs &mdash; <code class="inl">RPOP</code> and
+        process. A crash mid-job loses the job: zero deliveries. The guarantee is that a job is delivered no more than
+        once; the price is that it can be delivered zero times. Acceptable only when a dropped job is harmless.</p>
+      <p><strong>At-least-once.</strong> The job is held until the acknowledgement &mdash; moved into an in-flight list
+        and only removed after the work confirms. A crash mid-job redelivers the job: one delivery or more. The
+        guarantee is that a job is delivered at least once; the price is that it can be delivered twice. This is the
+        reliable queue.</p>
+      <p><strong>Exactly-once.</strong> One delivery and exactly one. This is what everyone wants, and it is not
+        achievable as a <em>delivery</em> guarantee, because the acknowledgement itself can be lost &mdash; the third
+        dive in this module is that argument. What is buildable is an exactly-once <em>effect</em>, by making the
+        consumer idempotent on top of at-least-once delivery.</p>
+    </div>
+    <p class="take">A reliable queue must keep the job until it is acknowledged, so it lands on at-least-once &mdash; the
+      only point on the spectrum that never drops a job.</p>
+  </section>
+
+  <section id="why">
+    <h2>Why the move-under-lock yields at-least-once</h2>
+    <div class="prose">
+      <p>R3.01 moved a job <em>into</em> an in-flight list under a lock instead of popping it out.
+        <code class="inl">LMOVE work active RIGHT LEFT</code> (or the older <code class="inl">RPOPLPUSH</code>) makes
+        the move atomic: the job is in exactly one of the two lists at every instant, never in neither. The lock has a
+        TTL; a healthy worker renews it on a heartbeat. When a worker crashes, the heartbeat stops, the lock expires,
+        and a recovery sweep finds the job still parked in-flight and returns it to the main queue.</p>
+      <p>The recovery path is what makes the queue reliable, and it is precisely why a job can run twice. A job
+        in-flight is never lost &mdash; that is the win. But a job in-flight whose lock expired is redelivered &mdash;
+        that is the cost. The two are the same mechanism viewed from two angles. You cannot keep the recovery and remove
+        the redelivery, because removing the recovery is exactly what loses the job.</p>
+      <pre class="code"><span class="cmt"># at-most-once: the job leaves before the work — a crash loses it</span>
+job = <span class="op">RPOP</span> work             <span class="cmt"># job is out of Redis</span>
+process(job)                <span class="cmt"># crash here → job gone, zero deliveries</span>
+
+<span class="cmt"># at-least-once: the job is held until the acknowledgement — a crash redelivers it</span>
+job = <span class="rdx">LMOVE</span> work active RIGHT LEFT   <span class="cmt"># atomic: held in `active` under a lock</span>
+process(job)                         <span class="cmt"># crash here → job stays in `active`, recoverable</span>
+<span class="op">LREM</span> active 1 job                    <span class="cmt"># acknowledge: remove only after the work confirms</span></pre>
+    </div>
+    <p class="take">Hold the job until the acknowledgement, and a crash leaves it recoverable rather than lost; recover
+      it, and the same job runs again. The recovery is the reliability and the redelivery both.</p>
+  </section>
+
+  <section id="window">
+    <h2>The duplicate window</h2>
+    <div class="prose">
+      <p>The duplicate is not a rare corner; it has a precise window. A worker takes a job into the in-flight list under
+        a lock. It applies the effect &mdash; charges the card, writes the row. Then it crashes <em>after the effect but
+        before the acknowledgement</em> (<code class="inl">LREM</code>). The effect is done; Redis does not record it.
+        The lock expires. The recovery sweep finds a job in-flight with an expired lock and returns it to the main
+        queue. A second worker runs it again. The card is charged twice.</p>
+      <p>This window is irreducible. No reordering closes it: if the acknowledgement comes first, the job leaves the
+        in-flight list before the work, and a crash now loses it (back to at-most-once). The acknowledgement has to come
+        after the work, which means there is always a moment where the work is done and the acknowledgement is not. A
+        crash in that moment redelivers. The window is small, but it is never zero &mdash; and over enough jobs, a
+        never-zero probability fires.</p>
+      <p>Slide the crash point across the run below. Only a crash inside the gap between the effect and the
+        acknowledgement produces a duplicate; a crash before the effect loses nothing run, a crash after the
+        acknowledgement is clean.</p>
+    </div>
+
+    <figure class="fig win" aria-labelledby="winTitle">
+      <h4 id="winTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The crash point across one run &middot; where the duplicate lives</h4>
+      <div class="controls">
+        <div class="fold-ctrl">
+          <label for="winRange">crash at step</label>
+          <input type="range" id="winRange" min="1" max="4" step="1" value="3">
+          <span class="val" id="winVal">3</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 150" role="img" aria-label="A run of four steps: move the job into active, apply the effect, acknowledge with LREM, finish clean. A crash before the effect runs nothing and the job is recovered for a clean re-run. A crash after the effect but before the acknowledgement is the duplicate window: the effect already ran and the recovery runs it again. A crash after the acknowledgement is clean.">
+        <text class="cap" x="20" y="22">one run · four steps · the crash lands on the highlighted step</text>
+        <g class="seg" id="g1"><rect x="20" y="34" width="100" height="40" rx="8"></rect></g>
+        <text x="70" y="58" text-anchor="middle">LMOVE</text>
+        <g class="seg" id="g2"><rect x="128" y="34" width="100" height="40" rx="8"></rect></g>
+        <text x="178" y="58" text-anchor="middle">effect</text>
+        <g class="seg" id="g3"><rect x="236" y="34" width="100" height="40" rx="8"></rect></g>
+        <text x="286" y="58" text-anchor="middle">LREM ack</text>
+        <g class="seg" id="g4"><rect x="344" y="34" width="96" height="40" rx="8"></rect></g>
+        <text x="392" y="58" text-anchor="middle">done</text>
+        <text class="mark" id="winGap" x="178" y="100" text-anchor="middle">↑ the duplicate window</text>
+        <text class="cap" id="winSub" x="20" y="130">a crash here re-runs the effect → the card is charged twice</text>
+      </svg>
+
+      <div class="geo-readout" id="winOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">The duplicate window is the gap between the effect and the acknowledgement, and no reordering closes
+      it: the acknowledgement must follow the work, so a crash between them always redelivers.</p>
+  </section>
+
+  <section id="applied">
+    <h2>In EchoMQ &mdash; the worker path that is at-least-once</h2>
+    <div class="prose">
+      <p>EchoMQ's worker path is at-least-once in real code, in <code class="inl">echo/apps/echomq</code>.
+        <code class="inl">moveToActive-11.lua</code> parks a job in <code class="inl">emq:{queue}:active</code> under a
+        lock &mdash; its body runs <code class="inl">rcall("RPOPLPUSH", waitKey, activeKey)</code>, where
+        <code class="inl">waitKey</code> is <code class="inl">emq:{queue}:wait</code> and
+        <code class="inl">activeKey</code> is <code class="inl">emq:{queue}:active</code>
+        (<code class="inl">EchoMQ.Keys.wait/1</code> and <code class="inl">EchoMQ.Keys.active/1</code>). The job is held
+        in <code class="inl">active</code> until the worker acknowledges it; a crash leaves it there, recoverable.</p>
+      <pre class="code"><span class="cmt">-- the in-flight list and the recovery target — real EchoMQ keys</span>
+<span class="op">def</span> <span class="fn gold">wait</span>(ctx),   <span class="op">do</span>: <span class="str">"#{base(ctx)}:wait"</span>     <span class="cmt"># emq:my_queue:wait — the main queue</span>
+<span class="op">def</span> <span class="fn gold">active</span>(ctx), <span class="op">do</span>: <span class="str">"#{base(ctx)}:active"</span>   <span class="cmt"># held under a lock until acknowledged</span></pre>
+      <p><code class="inl">moveStalledJobsToWait-8.lua</code> is the recovery sweep: for each job in
+        <code class="inl">active</code> whose lock has expired it returns the job to <code class="inl">wait</code> for
+        another worker &mdash; and that return is the redelivery. Held-until-acknowledged plus
+        recover-on-expired-lock is exactly at-least-once: never lost, possibly twice.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>Hold the job until the acknowledgement and recover a crashed one: at-least-once delivery &mdash; never lost,
+          possibly twice. The duplicate is structural, not a defect.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p><code class="inl">moveToActive-11.lua</code> holds the job in <code class="inl">emq:{queue}:active</code>
+          under a lock, and <code class="inl">moveStalledJobsToWait-8.lua</code> returns an expired-lock job to
+          <code class="inl">emq:{queue}:wait</code> &mdash; the redelivery that makes the guarantee at-least-once.</p>
+      </div>
+    </div>
+
+    <p class="take">EchoMQ holds a job in <code class="inl">active</code> until the acknowledgement and returns an
+      expired-lock job to <code class="inl">wait</code>; that is at-least-once in real code &mdash; never lost,
+      possibly twice.</p>
+
+    <div class="door">
+      <span class="lbl">Door &middot; not depth</span>
+      The full worker fetch loop &mdash; the heartbeat manager that renews the lock, the stalled-check coordination
+      across a worker pool, and the polyglot concurrency models &mdash; is the dedicated <strong>EchoMQ course</strong>.
+      From here, R3.02 opens onto <a href="/echomq/core">E2 &middot; the EchoMQ core</a> &mdash; the as-built library
+      and the worker fetch loop. This dive teaches the at-least-once guarantee; that course teaches the engine that
+      ships it.
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the atomic move that holds a job until the acknowledgement is specified, its modern successor, and the
+        queue protocol whose wait/active path EchoMQ ports.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/rpoplpush/">Redis &mdash; <em>RPOPLPUSH</em></a> &mdash; the original atomic move into the in-flight list, held until acknowledged: the heart of at-least-once.</li>
+          <li><a href="https://redis.io/commands/lmove/">Redis &mdash; <em>LMOVE</em></a> &mdash; the modern successor (Redis 6.2+) with explicit <code>RIGHT</code>/<code>LEFT</code> directions.</li>
+          <li><a href="https://redis.io/glossary/redis-queue/">Redis &mdash; <em>Redis queue</em></a> &mdash; the queue and its delivery-guarantee overview.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the wait/active/stalled worker path EchoMQ ports.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/queues/at-least-once">R3.02 &middot; At-least-once</a> &mdash; the module hub.</li>
+          <li><a href="/redis-patterns/queues/at-least-once/idempotent-consumers">R3.02.2 &middot; Idempotent consumers</a> &mdash; the next dive: absorb the duplicate at the consumer.</li>
+          <li><a href="/redis-patterns/queues/at-least-once/why-exactly-once-is-a-lie">R3.02.3 &middot; Why exactly-once is a lie</a> &mdash; why no protocol closes the window.</li>
+          <li><a href="/redis-patterns/queues/the-reliable-queue">R3 &middot; The reliable queue</a> &mdash; the move-under-lock that yields at-least-once.</li>
+          <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &middot; Atomic updates</a> &mdash; the atomic move under the in-flight list.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/queues/at-least-once"><span aria-hidden="true">&larr;</span>&nbsp; R3.02 &middot; At-least-once &middot; hub</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/queues/at-least-once/idempotent-consumers">R3.02.2 &middot; Idempotent consumers <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/queues/at-least-once">R3.02 &middot; At-least-once &middot; hub</a>
+        <a href="/redis-patterns/queues/at-least-once/idempotent-consumers">R3.02.2 &middot; Idempotent consumers</a>
+        <a href="/redis-patterns/queues/at-least-once/why-exactly-once-is-a-lie">R3.02.3 &middot; Why exactly-once is a lie</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/core">The EchoMQ course &middot; the engine</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the three guarantees over one fixed run (pure over mode) ---------- */
+  // One job, one run where the worker applies the effect then crashes before the ack. The outcome (lost, run) is a
+  // pure function of the delivery mode: at-most-once removes before the work so the crash loses it (0 run, 1 lost);
+  // at-least-once holds until the ack so the crash redelivers (2 run, 0 lost); exactly-once is not deliverable.
+  var SAGE = '#a7c9b1', REDIS = '#f2948c', BLUE = '#9fc0ea', DIM = '#a39c89';
+  // pure: mode -> { lost, run, jobState, verd, color, text }
+  function outcome(mode) {
+    if (mode === 'most') {
+      return {
+        lost: 1, run: 0, jobState: 'removed before the work · crash lost it', color: REDIS,
+        verd: 'at-most-once · never a duplicate, but the job can vanish',
+        text: 'At-most-once: the job is removed before the work (RPOP). The worker crashes mid-job, so the job is ' +
+          'lost — 0 effects run, 1 message lost. Never a duplicate; a job can vanish.'
+      };
+    }
+    if (mode === 'exactly') {
+      return {
+        lost: 0, run: 1, jobState: 'not a deliverable guarantee', color: BLUE,
+        verd: 'exactly-once delivery · not on the spectrum — build it as an idempotent effect',
+        text: 'Exactly-once delivery cannot be guaranteed, because the acknowledgement itself can be lost (dive 3). ' +
+          'What is buildable is an exactly-once effect: at-least-once delivery plus an idempotent consumer. The 1 shown ' +
+          'is the effect an idempotent consumer would produce, not a delivery guarantee.'
+      };
+    }
+    return {
+      lost: 0, run: 2, jobState: 'held until ack · crash redelivers', color: SAGE,
+      verd: 'at-least-once · never lost, possibly twice',
+      text: 'At-least-once: the job is held in active until the acknowledgement (LMOVE then LREM). The worker applies ' +
+        'the effect then crashes before the ack, so recovery redelivers and the effect runs twice — 2 effects run, ' +
+        '0 lost. Never lost; possibly twice. The consumer must be idempotent.'
+    };
+  }
+  function setMode(mode) {
+    var r = outcome(mode);
+    var rJobT = document.getElementById('rJobT'), rJob = document.getElementById('rJob'),
+        rLost = document.getElementById('rLost'), rRun = document.getElementById('rRun'),
+        rVerd = document.getElementById('rVerd'), out = document.getElementById('gtrOut');
+    if (rJobT) rJobT.textContent = r.jobState;
+    if (rJob) { rJob.classList.remove('lost', 'run', 'dup'); rJob.classList.add(mode === 'most' ? 'lost' : (mode === 'least' ? 'dup' : 'run')); }
+    if (rLost) { rLost.textContent = String(r.lost); rLost.setAttribute('fill', r.lost > 0 ? REDIS : SAGE); }
+    if (rRun) { rRun.textContent = String(r.run); rRun.setAttribute('fill', r.run === 2 ? '#f0cd7f' : SAGE); }
+    if (rVerd) { rVerd.textContent = r.verd; rVerd.setAttribute('fill', r.color); }
+    if (out) out.textContent = r.text;
+  }
+  document.querySelectorAll('#gtrSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var mode = b.getAttribute('data-mode');
+      document.querySelectorAll('#gtrSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setMode(mode);
+    });
+  });
+  setMode('least'); // initial render — correct without interaction
+
+  /* ---------- content: the crash window across one run (pure over crash step) ---------- */
+  // A run of four steps: 1 LMOVE, 2 effect, 3 LREM ack, 4 done. The outcome of a crash at step s is a pure function:
+  // crash at 1 → nothing run, recovered for a clean re-run; crash at 2 → effect ran but no ack, the duplicate window;
+  // crash at 3 → ack issued, depends on order — modelled as effect done, ack not yet recorded → still the window edge;
+  // crash at 4 → clean. We model the duplicate strictly as crash at step 2 (after effect, before ack).
+  // pure: s -> { window, label, text }
+  function crashAt(s) {
+    if (s === 1) {
+      return { window: false, label: 'crash before the effect → nothing ran; the job is recovered for a clean re-run',
+        text: 'Crash at step 1 (LMOVE done, effect not started). Nothing ran. The job is still in active, recovered, ' +
+          'and re-runs cleanly. No duplicate, no loss.' };
+    }
+    if (s === 2) {
+      return { window: true, label: 'crash after the effect, before the ack → the duplicate window',
+        text: 'Crash at step 2 (effect applied, LREM not issued). The effect ran but Redis has no acknowledgement. ' +
+          'Recovery returns the job to wait and a second worker re-runs the effect → the card is charged twice. This ' +
+          'is the duplicate window.' };
+    }
+    if (s === 3) {
+      return { window: true, label: 'crash during the ack → still inside the window until LREM commits',
+        text: 'Crash at step 3 (LREM in flight). Until the LREM commits, the job is still in active with the effect ' +
+          'already applied, so recovery can still re-run it. The window closes only when the acknowledgement commits.' };
+    }
+    return { window: false, label: 'crash after the ack → clean; the job left active, no re-run',
+      text: 'Crash at step 4 (LREM committed, job removed from active). The acknowledgement is recorded, so recovery ' +
+        'finds nothing to re-run. Clean: one effect, no duplicate.' };
+  }
+  var SEG_GAP = { 1: 'g1', 2: 'g2', 3: 'g3', 4: 'g4' };
+  function setWin(s) {
+    var r = crashAt(s);
+    for (var i = 1; i <= 4; i++) {
+      var g = document.getElementById('g' + i);
+      if (g) g.classList.toggle('on', i === s);
+    }
+    var gap = document.getElementById('winGap'), sub = document.getElementById('winSub'),
+        out = document.getElementById('winOut');
+    if (gap) gap.setAttribute('opacity', r.window ? '1' : '.28');
+    if (sub) sub.textContent = r.label;
+    if (out) out.textContent = r.text;
+  }
+  var winRange = document.getElementById('winRange'), winVal = document.getElementById('winVal');
+  if (winRange) {
+    winRange.addEventListener('input', function () {
+      var s = parseInt(winRange.value, 10);
+      if (winVal) winVal.textContent = String(s);
+      setWin(s);
+    });
+  }
+  setWin(3); // initial render — correct without interaction; step 3 shows the window edge
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

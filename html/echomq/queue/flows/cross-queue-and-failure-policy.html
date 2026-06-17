@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cross-queue &amp; the failure policy · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="A flow child in a different queue lands on a different slot, so a cross-queue add in EchoMQ is host-orchestrated, non-atomic across slots, parent-first, and fail-closed (@hold_parent then @enqueue_flow_child). Its fan-in is eventually-consistent: the child emits to its own-slot flow:outbox and the per-queue Pump sweep delivers the decrement on the parent's slot. The failure policy — fail_parent_on_failure vs ignore_dependency_on_failure — rides the parent_policy token. Real code from echo/apps/echo_mq.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- placement svg ---- */
+.plc .slot rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+.plc .slot.sel rect{fill:rgba(42,161,152,.14);stroke:#2aa198}
+.plc .slot.cross.sel rect{fill:rgba(212,168,90,.14);stroke:#d4a85a}
+.plc text{font-family:var(--sans);fill:#d7cfb9}
+.plc .pid{font-family:var(--mono);fill:#a39c89;font-size:10px}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/queue">queue</a><span class="rsep">/</span><a href="/echomq/queue/flows">flows</a><span class="rsep">/</span><span class="rcur">cross-queue-and-failure-policy</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue">The Queue</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue/flows">Flows</a>
+        <span class="sep">/</span>
+        <span class="here">Cross-queue &amp; the failure policy</span>
+      </nav>
+      <p class="eyebrow">Flows &middot; dive 03</p>
+      <h1>Cross-queue <span class="ex">&amp; the failure policy</span></h1>
+      <p class="lede">A child in another queue lands on another slot — so the add is orchestrated, and the fan-in is delivered.</p>
+      <p class="kicker">When every child shares the parent's queue, the flow lands in one atomic script. When <strong>any</strong>
+        child runs in a <strong>different</strong> queue, its keys live on a <strong>different slot</strong>, and no single
+        script can span two slots. So a cross-queue add is <strong>host-orchestrated, parent-first, fail-closed</strong>,
+        and its fan-in is <strong>eventually-consistent</strong> — delivered by the per-queue Pump sweep, not synchronously
+        at completion. And a flow declares, per child, what a <strong>dead</strong> child means for the parent. Pick a
+        child on the right to see where it lands.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#cross">The cross-queue add</a>
+        <a href="#policy">The failure policy</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig plc" aria-labelledby="plcTitle">
+      <h4 id="plcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Where a child lands &middot; pick one</h4>
+      <div class="controls">
+        <div class="solid-select" id="plcSel" role="group" aria-label="Which child to place">
+          <button type="button" data-child="same" data-c="echo" class="active" aria-pressed="true">child in orders</button>
+          <button type="button" data-child="val" data-c="gold" aria-pressed="false">child in validation</button>
+          <button type="button" data-child="pay" data-c="gold" aria-pressed="false">child in payments</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 180" role="img" aria-label="A parent in the orders queue (one slot) and three children. A child in orders shares the parent's slot and fans in atomically; a child in validation or payments lands on its own slot and fans in through the Pump sweep. The selected child is highlighted — same-slot in the EchoMQ accent, cross-slot in the gold accent.">
+        <g class="slot sel" id="s-same"><rect x="20" y="14" width="420" height="44" rx="9"></rect></g>
+        <text x="40" y="32" class="pid">slot(orders)</text>
+        <text x="240" y="38" text-anchor="middle" font-size="13">parent + same-queue child — one slot, atomic fan-in</text>
+
+        <g class="slot cross" id="s-val"><rect x="20" y="68" width="420" height="44" rx="9"></rect></g>
+        <text x="40" y="86" class="pid">slot(validation)</text>
+        <text x="240" y="92" text-anchor="middle" font-size="13">cross-queue child — its own slot, emits to outbox</text>
+
+        <g class="slot cross" id="s-pay"><rect x="20" y="122" width="420" height="44" rx="9"></rect></g>
+        <text x="40" y="140" class="pid">slot(payments)</text>
+        <text x="240" y="146" text-anchor="middle" font-size="13">cross-queue child — its own slot, emits to outbox</text>
+      </svg>
+      <div class="geo-readout" id="plcOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="cross">
+    <h2>The cross-queue add: parent-first, fail-closed</h2>
+    <div class="prose">
+      <p>A queue's keys are pinned to one slot by the <code class="inl">{q}</code> hashtag —
+        <code class="inl">emq:{q}:...</code>. A child in <code class="inl">validation</code> lands on
+        <code class="inl">slot("validation")</code>; its parent in <code class="inl">orders</code> lands on
+        <code class="inl">slot("orders")</code>. A Lua script may touch only keys on one slot, so the parent's
+        <code class="inl">:dependencies</code> and the cross-queue child's row cannot be written by the same EVAL. The host
+        orchestrates the steps instead.</p>
+      <p><code class="inl">add_cross_queue</code> lands the parent <strong>first</strong> — held, with
+        <code class="inl">:dependencies = N</code> (the total child count) — then each child on its own slot. Parent-first
+        is the safe order: the counter exists before any child can complete and try to deliver, so no delivery ever races
+        an absent counter. A child that fails to land short-circuits and stops; the parent stays <strong>held</strong> —
+        never claimable, never spuriously executed — and the caller retries by id.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Flows (the cross-queue path)</span>
+<span class="cmt"># Host-orchestrated, NON-atomic across slots, parent-first, fail-closed. The</span>
+<span class="cmt"># parent lands HELD first (its :dependencies counter exists before any child can</span>
+<span class="cmt"># complete), then each child lands on ITS OWN slot. A failure at any step returns</span>
+<span class="cmt"># the error and STOPS: the parent stays held, the caller retries by id.</span>
+<span class="op">defp</span> <span class="fn">add_cross_queue</span>(conn, queue, parent_id, parent_payload, children) <span class="op">do</span>
+  n = <span class="fn">length</span>(children)
+  parent_key = Keyspace.<span class="fn">job_key</span>(queue, parent_id)
+
+  <span class="op">with</span> {<span class="str">:ok</span>, <span class="res">1</span>} &lt;-
+         <span class="fn">hold</span>(
+           Connector.<span class="fn">eval</span>(
+             conn,
+             <span class="rdx">@hold_parent</span>,                                       <span class="cmt"># all on the parent's slot {P}</span>
+             [parent_key, parent_key &lt;&gt; <span class="str">":dependencies"</span>],
+             [parent_id, parent_payload, Integer.<span class="fn">to_string</span>(n)]   <span class="cmt"># N = the TOTAL child count</span>
+           )
+         ),
+       <span class="str">:ok</span> &lt;- <span class="fn">land_children</span>(conn, queue, parent_id, children) <span class="op">do</span>  <span class="cmt"># each child on its own slot</span>
+    {<span class="str">:ok</span>, {parent_id, Enum.<span class="fn">map</span>(children, &amp; &amp;1.id)}}
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>Each child carries its <code class="inl">parent</code> id, and — for a cross-queue child — a
+        <code class="inl">parent_queue</code> field, which names the outbox its completion emits to and the slot the sweep
+        delivers the decrement on. <code class="inl">@hold_parent</code> holds the parent
+        (<code class="inl">state = awaiting_children</code>, the counter set, <strong>not</strong> added to pending);
+        <code class="inl">@enqueue_flow_child</code> lands one child claimable on its own slot.</p>
+      <p><strong>The eventually-consistent fan-in.</strong> A cross-queue child cannot reach its parent's other-slot
+        <code class="inl">:dependencies</code> atomically. So its <code class="inl">@complete</code> <strong>emits</strong>
+        instead: it RPUSHes a completion entry into the child's own-slot outbox
+        <code class="inl">emq:{q}:flow:outbox</code>, atomically with the active-set removal — so a completed cross-queue
+        child always leaves a durable signal (there is no drop window). The decrement is delivered later, on the parent's
+        slot, by the per-queue Pump sweep.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Pump.deliver_flow_completions/3 (the parent-slot half)</span>
+<span class="cmt"># Drain this queue's cross-queue flow outbox and deliver each child's decrement</span>
+<span class="cmt"># to its parent on the PARENT's slot. Read NON-DESTRUCTIVELY, deliver, then trim:</span>
+<span class="cmt"># a crash between read and trim RE-DELIVERS (idempotent via the :processed HSETNX</span>
+<span class="cmt"># guard), never drops — at-least-once becomes effectively-once, no drop window.</span>
+<span class="op">def</span> <span class="fn">deliver_flow_completions</span>(conn, queue, batch) <span class="op">when</span> is_integer(batch) <span class="op">and</span> batch &gt; <span class="res">0</span> <span class="op">do</span>
+  outbox = Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"flow:outbox"</span>)
+
+  <span class="op">case</span> Connector.<span class="fn">command</span>(conn, [<span class="str">"LRANGE"</span>, outbox, <span class="str">"0"</span>, Integer.<span class="fn">to_string</span>(batch - <span class="res">1</span>)]) <span class="op">do</span>
+    {<span class="str">:ok</span>, []} -&gt; {<span class="str">:ok</span>, <span class="res">0</span>}
+    {<span class="str">:ok</span>, entries} <span class="op">when</span> is_list(entries) -&gt;
+      <span class="cmt"># count the CONTIGUOUS delivered prefix; LTRIM removes exactly those,</span>
+      <span class="cmt"># never a not-yet-delivered entry behind a poison one (deliver-before-remove)</span>
+      delivered =
+        Enum.<span class="fn">reduce_while</span>(entries, <span class="res">0</span>, <span class="op">fn</span> entry, acc -&gt;
+          <span class="op">if</span> <span class="fn">deliver_one</span>(conn, entry) == <span class="res">1</span>, <span class="op">do</span>: {<span class="str">:cont</span>, acc + <span class="res">1</span>}, <span class="op">else</span>: {<span class="str">:halt</span>, acc}
+        <span class="op">end</span>)
+
+      <span class="op">if</span> delivered &gt; <span class="res">0</span> <span class="op">do</span>
+        Connector.<span class="fn">command</span>(conn, [<span class="str">"LTRIM"</span>, outbox, Integer.<span class="fn">to_string</span>(delivered), <span class="str">"-1"</span>])
+      <span class="op">end</span>
+
+      {<span class="str">:ok</span>, delivered}
+    _ -&gt; {<span class="str">:ok</span>, <span class="res">0</span>}
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>The deliver runs <code class="inl">@flow_deliver</code> on the parent's slot — an
+        <code class="inl">HSETNX</code>-guarded <code class="inl">DECR</code>, so a re-delivered entry decrements nothing
+        and the parent is released exactly once. A queue that hosts cross-queue children must run a Pump for its parents to
+        be released; the durable outbox survives a Pump-absent window and drains on the next start — delayed, never lost.</p>
+    </div>
+    <p class="take">Cross-queue, the slot boundary forbids one atomic script — so the host lands the flow parent-first and
+      fail-closed, the child emits a durable signal, and the per-queue sweep delivers the decrement. Eventually-consistent,
+      never lost.</p>
+  </section>
+
+  <section id="policy">
+    <h2>The failure policy: fail the parent, or proceed</h2>
+    <div class="prose">
+      <p>A flow declares, per child, what a <strong>dead</strong> child means for the parent:</p>
+      <p><strong>fail_parent_on_failure</strong> — the default. A dead child fails the parent: it is recorded in the
+        parent's <code class="inl">:failed</code>, and the parent moves to <code class="inl">dead</code>.
+        <strong>ignore_dependency_on_failure</strong> — opt-in. A dead child is treated as a satisfied dependency: it is
+        recorded in the parent's <code class="inl">:unsuccessful</code>, <code class="inl">:dependencies</code> is
+        decremented, and the parent proceeds.</p>
+      <p>The policy rides each child row as a <code class="inl">parent_policy</code> token — <code class="inl">'fp'</code> or
+        <code class="inl">'id'</code> — read <strong>host-side</strong> at retry, never as a data-rooted Lua key.
+        <code class="inl">EchoMQ.Jobs.retry/7</code> reads it and drives the failure branch of
+        <code class="inl">@retry</code>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs.parent_fail_of/3 (read host-side at retry)</span>
+<span class="cmt"># Read the dead child's parent + failure policy in one HMGET, returning the shape</span>
+<span class="cmt"># the @retry failure branch is driven by. The token defaults to 'fp' (fail the</span>
+<span class="cmt"># parent) when a child carries no parent_policy — the safe default.</span>
+<span class="op">defp</span> <span class="fn">policy_arm</span>(<span class="str">"id"</span>), <span class="op">do</span>: <span class="str">"id"</span>
+<span class="op">defp</span> <span class="fn">policy_arm</span>(_), <span class="op">do</span>: <span class="str">"fp"</span></pre>
+
+    <div class="prose">
+      <p>A same-queue dead child resolves atomically in the same <code class="inl">@retry</code> EVAL (the parent shares
+        its slot). A cross-queue dead child <strong>emits a fail-entry</strong> into its own-slot outbox; the Pump's
+        <code class="inl">@flow_fail_deliver</code> applies the policy on the parent's slot — <code class="inl">'fp'</code>
+        moves the parent to <code class="inl">dead</code>, <code class="inl">'id'</code> decrements and at zero releases —
+        <code class="inl">HSETNX</code>-guarded, so the parent is failed-or-satisfied exactly once.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="polTitle">
+      <h4 id="polTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A child dies &middot; pick a policy</h4>
+      <div class="controls">
+        <div class="solid-select" id="polSel" role="group" aria-label="The dead child's failure policy">
+          <button type="button" data-pol="fp" data-c="echo" class="active" aria-pressed="true">fail_parent_on_failure ('fp')</button>
+          <button type="button" data-pol="id" data-c="echo" aria-pressed="false">ignore_dependency_on_failure ('id')</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 110" role="img" aria-label="A dead child resolving against its parent under the chosen policy: fail_parent_on_failure records the child in :failed and moves the parent to dead; ignore_dependency_on_failure records it in :unsuccessful, decrements the counter, and the parent proceeds.">
+        <rect x="14" y="16" width="150" height="78" rx="8" fill="rgba(196,80,76,.14)" stroke="#c4504c"></rect>
+        <text x="89" y="40" text-anchor="middle" font-size="12" fill="#f2948c">child · dead</text>
+        <text x="89" y="60" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#a39c89">exhausted retries</text>
+        <text id="pol-arm" x="89" y="78" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#6fdccf">'fp'</text>
+        <g stroke="#2a3252" stroke-width="1.3" fill="none"><path d="M164 55 L300 55"></path></g>
+        <rect x="300" y="16" width="166" height="78" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="383" y="38" text-anchor="middle" font-size="12">the parent</text>
+        <text id="pol-rec" x="383" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#6fdccf">records in :failed</text>
+        <text id="pol-out" x="383" y="78" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#f2948c">parent → dead</text>
+      </svg>
+      <div class="geo-readout" id="polOut" aria-live="polite"></div>
+    </figure>
+    <p class="note">The token is consulted only on a child's <em>death</em> (a retry past max attempts), never on its
+      completion — so a flow runs the same on the happy path under either policy. A child naming both flags resolves to
+      <code class="inl">ignore_dependency_on_failure</code>: proceeding is the explicit opt-in.</p>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>Composing dependent work across queues with a declared failure policy is the flow-control / orchestration
+          angle, <strong>R6 &middot; Flow control</strong>. The near, resolvable door is
+          <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>: each leg is one reliable-queue job whose death
+          the flow resolves.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">add_cross_queue</code> lands parent-first and fail-closed; the child's
+          <code class="inl">@complete</code> emits to its own-slot outbox; the Pump's
+          <code class="inl">deliver_flow_completions/3</code> delivers on the parent's slot; the
+          <code class="inl">parent_policy</code> token routes a death through <code class="inl">@flow_fail_deliver</code>.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: compose dependent work across queues, and decide what a failed leg means. The
+      implementation is a parent-first fail-closed add, a durable outbox swept by the Pump, and a one-token failure policy.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; the slot boundary, made eventually-consistent</h2>
+    <div class="prose">
+      <p>A cross-queue child lands on a different slot, so the add is host-orchestrated, non-atomic, parent-first,
+        fail-closed, with an eventually-consistent fan-in through the Pump's outbox sweep. The failure policy — fail-parent
+        vs ignore-dependency — rides the <code class="inl">parent_policy</code> token and resolves a dead child either way.
+        That is the whole of flows: a held parent, a counter, atomic where it can be and delivered where it cannot.</p>
+    </div>
+    <p class="note">Back to <a href="/echomq/queue/flows">the Flows hub</a>, or on to the rest of
+      <a href="/echomq/queue">the Queue</a>.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the cross-queue path and the failure policy are grounded, and the commands they use.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/rpush/">Valkey &mdash; <em>RPUSH</em></a> &mdash; the outbox emit a cross-queue child's completion takes.</li>
+          <li><a href="https://valkey.io/commands/decr/">Valkey &mdash; <em>DECR</em></a> &mdash; the decrement the Pump delivers on the parent's slot.</li>
+          <li><a href="https://valkey.io/commands/set/">Valkey &mdash; <em>SET</em></a> &mdash; the <code>:dependencies</code> counter the parent is held with, total child count.</li>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the load-once dispatch the cross-queue scripts run by.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/queue/flows">Flows</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/queue/flows/parent-and-children">Parent and children</a> &mdash; the same-queue atomic add and the fan-in hook.</li>
+          <li><a href="/echomq/queue/flows/reading-the-results">Reading the results</a> &mdash; the three pure reads, including <code>ignored_failures/3</code>.</li>
+          <li><a href="/echomq/protocol">The Protocol</a> &mdash; the per-queue hashtag that pins a queue to one slot.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns &middot; Reliable Queues</a> &mdash; the reliable-queue pattern, the near side of the door.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/queue/flows/reading-the-results"><span aria-hidden="true">&larr;</span>&nbsp; Reading the results</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/queue/flows">Back to Flows <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/queue/flows">Flows</a>
+        <a href="/echomq/queue/flows/parent-and-children">Parent and children</a>
+        <a href="/echomq/queue/flows/reading-the-results">Reading the results</a>
+        <a href="/echomq/queue/flows/cross-queue-and-failure-policy">Cross-queue &amp; failure policy</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: child placement (pure lookup over a fixed dataset) ---------- */
+  /* A parent in `orders`. A child in `orders` shares the parent's slot (atomic
+     fan-in); a child in `validation` or `payments` lands on its own slot
+     (host-orchestrated, eventually-consistent). Pure over this fixed dataset. */
+  var CHILDREN = {
+    same: {
+      where: 'a child in orders (the parent’s queue)',
+      slot: 'slot(orders) — the same slot as the parent',
+      add: 'lands in the one atomic @enqueue_flow with the parent',
+      fanin: 'fans in atomically: its @complete DECRs the parent’s :dependencies in the same EVAL',
+      cross: false
+    },
+    val: {
+      where: 'a child in validation (a different queue)',
+      slot: 'slot(validation) — its own slot, not the parent’s',
+      add: 'lands by @enqueue_flow_child on its own slot, carrying parent + parent_queue',
+      fanin: 'fans in eventually: its @complete RPUSHes to emq:{validation}:flow:outbox; the Pump sweep delivers the decrement on the parent’s slot',
+      cross: true
+    },
+    pay: {
+      where: 'a child in payments (a different queue)',
+      slot: 'slot(payments) — its own slot, not the parent’s',
+      add: 'lands by @enqueue_flow_child on its own slot, carrying parent + parent_queue',
+      fanin: 'fans in eventually: its @complete RPUSHes to emq:{payments}:flow:outbox; the Pump sweep delivers the decrement on the parent’s slot',
+      cross: true
+    }
+  };
+  var CORDER = ['same', 'val', 'pay'];
+  function describeChild(key) {
+    var c = CHILDREN[key];
+    return '<b>' + c.where + '</b><br><span class="dim">slot:</span> ' + c.slot +
+      '<br><span class="dim">add:</span> ' + c.add +
+      '<br><span class="dim">fan-in:</span> ' + c.fanin + '.';
+  }
+  function setChild(key) {
+    CORDER.forEach(function (k) {
+      var g = document.getElementById('s-' + (k === 'same' ? 'same' : k));
+      if (g) g.classList.toggle('sel', k === key);
+    });
+    var out = document.getElementById('plcOut');
+    if (out) out.innerHTML = describeChild(key);
+  }
+  document.querySelectorAll('#plcSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-child');
+      document.querySelectorAll('#plcSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setChild(key);
+    });
+  });
+  setChild('same'); // initial render — correct without interaction
+
+  /* ---------- content: the failure policy (the @retry / @flow_fail_deliver arms over a fixed death) ---------- */
+  /* A flow child has died (exhausted its retries). Under each policy the death
+     resolves differently. Pure over the chosen policy token. */
+  var POLICY = {
+    fp: {
+      token: "'fp'",
+      name: 'fail_parent_on_failure (the default)',
+      records: 'records in :failed',
+      record_full: 'the child is recorded in the parent’s :failed hash with its error',
+      out_svg: 'parent → dead',
+      out_color: '#f2948c',
+      outcome: 'the parent is moved to dead (HSET state dead, ZADD parent dead, ZREM parent pending)',
+      deps: 'the parent’s :dependencies is left as-is — the parent has failed, not proceeded'
+    },
+    id: {
+      token: "'id'",
+      name: 'ignore_dependency_on_failure (opt-in)',
+      records: 'records in :unsuccessful',
+      record_full: 'the child is recorded in the parent’s :unsuccessful hash with its error',
+      out_svg: 'parent proceeds',
+      out_color: '#a7c9b1',
+      outcome: 'the parent proceeds: :dependencies is decremented and, at zero, the parent is released to pending',
+      deps: 'a dead child counts as a satisfied dependency — DECR :dependencies, at zero release'
+    }
+  };
+  function renderPolicy(key) {
+    var p = POLICY[key];
+    var armEl = document.getElementById('pol-arm');
+    var recEl = document.getElementById('pol-rec');
+    var outSvg = document.getElementById('pol-out');
+    if (armEl) armEl.textContent = p.token;
+    if (recEl) recEl.textContent = p.records;
+    if (outSvg) { outSvg.textContent = p.out_svg; outSvg.setAttribute('fill', p.out_color); }
+    var out = document.getElementById('polOut');
+    if (!out) return;
+    var outClass = key === 'fp' ? 'bad' : 'ok';
+    out.innerHTML = '<b>' + p.name + '</b> &rarr; token <b>' + p.token + '</b><br>' +
+      '<span class="dim">' + p.record_full + '</span><br>' +
+      '<span class="dim">outcome:</span> <b class="' + outClass + '">' + p.outcome + '</b><br>' +
+      '<span class="dim">' + p.deps + '</span>';
+  }
+  document.querySelectorAll('#polSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-pol');
+      document.querySelectorAll('#polSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderPolicy(key);
+    });
+  });
+  renderPolicy('fp'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

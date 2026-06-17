@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M7 · Transparent Infrastructure — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="Infrastructure is transparent when it does not appear in the code: the same umbrella on a laptop and a multi-region cluster, FLAME work on subsecond ephemeral Fly Machines, and placement computed by hashing a branded identity onto a consistent-hashing ring. Three settled mechanisms; the proposed use is EchoMesh's, and the implementation stays small because the design carried the weight.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-mesh)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the three-mechanisms emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.capsvg{width:100%;height:auto;display:block}
+.capsvg .axis{stroke:var(--m-line);stroke-width:1.5}
+.capsvg .axlbl{font:11px var(--mono);fill:var(--m-dim)}
+.capsvg .ttl{font:12px var(--mono);font-weight:700;fill:var(--m-mesh);text-anchor:middle}
+.capsvg .node{fill:var(--m-card);stroke:var(--m-line);stroke-width:1.5}
+.capsvg .nlbl{font:11px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .prog{fill:var(--m-mesh-tint);stroke:var(--m-mesh);stroke-width:1.5}
+.capsvg .proglbl{font:11px var(--mono);font-weight:700;fill:var(--m-mesh);text-anchor:middle}
+.capsvg .msg{stroke:var(--m-mesh);stroke-width:2;fill:none;marker-end:url(#arrow)}
+.capsvg .ring{fill:none;stroke:var(--m-line);stroke-width:8}
+.capsvg .arc{fill:none;stroke-width:8}
+.capsvg .arc.own{stroke:var(--m-avail)}
+.capsvg .keylbl{font:11px var(--mono);font-weight:700;fill:var(--m-edge);text-anchor:middle}
+.capsvg .keyline{stroke:var(--m-edge);stroke-width:2;stroke-dasharray:4 3}
+.capsvg .keydot{fill:var(--m-edge)}
+.capsvg .vm{fill:var(--m-avail-tint);stroke:var(--m-avail);stroke-width:1.5}
+.capsvg .vmlbl{font:10px var(--mono);fill:var(--m-avail);text-anchor:middle}
+/* a group is dimmed unless it is the active mechanism */
+.js .capsvg g[data-tab]{opacity:.16;transition:opacity .18s ease}
+.js .capsvg g[data-tab].on{opacity:1}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the property duality / thesis ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-cons);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-edge)}
+.tri article:nth-child(3){border-top-color:var(--m-avail)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the dive map ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pcard{display:block;background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+a.pcard{border-color:var(--m-mesh)}
+a.pcard:hover{border-bottom-color:var(--m-mesh);box-shadow:0 1px 0 var(--m-mesh)}
+.pcard.heart{border-left:3px solid var(--m-mesh)}
+.pcard .bid{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--m-mesh);letter-spacing:.08em}
+.pcard h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.pcard p{font-size:.87rem;color:var(--m-dim)}
+.pcard .meta{display:flex;gap:10px;align-items:center;margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.chip{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-radius:3px;padding:1px 7px}
+.chip.now{background:var(--m-mesh);color:var(--m-card)}
+.chip.soon{background:var(--m-paper);border:1px solid var(--m-line);color:var(--m-dim)}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:86ch;line-height:1.7}
+.booknote b{color:var(--m-mesh)}
+.upnext{margin-top:18px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:14px 18px;font-family:var(--mono);font-size:13.5px;color:var(--m-ink);max-width:86ch;line-height:1.7}
+.upnext b{color:var(--m-mesh)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.pgrid,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.pgrid,.doors{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><span class="rcur">transparent</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#why">Why transparent</a>
+      <a href="#same">Same code</a>
+      <a href="#ephemeral">Ephemeral</a>
+      <a href="#placement">Placement</a>
+      <a href="#dives">Dives</a>
+      <a href="#doors">Doors</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M7 &#183; Transparent Infrastructure</p>
+      <h1>The same code, <span class="hns">everywhere</span>.</h1>
+      <p class="lede">Infrastructure is transparent when it <b>does not appear in the code</b>. A developer writes a
+      process that owns a book, a function that does a unit of work, a rule that says which node owns which instrument
+      &#8212; and none of those name how many machines exist, which regions they sit in, or whether the thing they
+      address is local or a continent away.</p>
+      <p class="heronote">Scale and placement become <b>deployment decisions</b>, not code changes. The mechanisms are
+      external and settled (<a href="#refs">the BEAM's location transparency, FLAME, Fly Machines, consistent
+      hashing</a>); what EchoMesh proposes is the use &#8212; and the claim that it leaves a small implementation because
+      the design carried the weight. This landing states the argument once; the three dives take one mechanism each.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>The use is the proposal of this chapter &#8212; running the surfaces as one umbrella, draining the workers onto
+        ephemeral machines, placing the owners by hashing the branded identity. The mechanisms it builds on are shipped
+        and settled. Its place in the mesh is separated from the shipped substrate at M8.2.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>The three mechanisms that make infrastructure transparent &#183; one program addresses a process the
+        same way whether local or remote, modular work runs on <b>subsecond</b> short-lived machines, and the owner of a
+        key is computed by hashing a <b>branded identity</b> onto a ring. Hover a mechanism to read its picture</figcaption>
+        <svg class="capsvg" id="mechsvg" viewBox="0 0 760 300" role="img" aria-label="Three pictures of transparent infrastructure. First, location transparency: one program sends to a process the same way whether the process is on the same node or on another node — the message arrow is identical. Second, FLAME ephemeral execution: a unit of work is wrapped in a function that launches a short-lived copy of the whole application on a Fly Machine that starts and stops in subsecond time and then vanishes. Third, coordinator-free placement: a branded identity is hashed onto a ring and the owner is the node that owns the arc the hash lands in; adding or removing a node remaps only a small fraction of owners.">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#7b3aa0"></path>
+            </marker>
+          </defs>
+
+          <!-- mechanism 1: location transparency — one send, local or remote -->
+          <g data-tab="local" class="on">
+            <text class="ttl" x="190" y="24">one program &#183; addressing is the same</text>
+            <rect class="prog" x="60" y="44" width="120" height="40" rx="5"></rect>
+            <text class="proglbl" x="120" y="69">the umbrella</text>
+            <!-- a local process on the same node -->
+            <circle class="node" cx="120" cy="150" r="22"></circle>
+            <text class="nlbl" x="120" y="153">local</text>
+            <text class="nlbl" x="120" y="194">same node</text>
+            <path class="msg" d="M120 86 L120 126"></path>
+            <!-- a remote process on another node -->
+            <circle class="node" cx="300" cy="150" r="22"></circle>
+            <text class="nlbl" x="300" y="153">remote</text>
+            <text class="nlbl" x="300" y="194">another node</text>
+            <path class="msg" d="M150 70 C 230 70, 300 96, 300 126"></path>
+            <text class="axlbl" x="190" y="230" text-anchor="middle">the send is unchanged &#183; laptop or cluster</text>
+          </g>
+
+          <!-- mechanism 2: FLAME ephemeral execution — a function on a short-lived whole-app machine -->
+          <g data-tab="flame">
+            <text class="ttl" x="565" y="24">a function &#183; on a short-lived machine</text>
+            <rect class="prog" x="470" y="44" width="190" height="34" rx="5"></rect>
+            <text class="proglbl" x="565" y="66">wrap the work in a function</text>
+            <path class="msg" d="M565 80 L565 104"></path>
+            <!-- three ephemeral whole-app machines launching -->
+            <rect class="vm" x="450" y="112" width="64" height="46" rx="5"></rect>
+            <text class="vmlbl" x="482" y="132">whole app</text>
+            <text class="vmlbl" x="482" y="148">machine</text>
+            <rect class="vm" x="534" y="112" width="64" height="46" rx="5"></rect>
+            <text class="vmlbl" x="566" y="132">whole app</text>
+            <text class="vmlbl" x="566" y="148">machine</text>
+            <rect class="vm" x="618" y="112" width="64" height="46" rx="5"></rect>
+            <text class="vmlbl" x="650" y="132">whole app</text>
+            <text class="vmlbl" x="650" y="148">machine</text>
+            <text class="keylbl" x="565" y="184">start &#183; subsecond</text>
+            <text class="axlbl" x="565" y="208" text-anchor="middle">work done &#8594; the runner is torn down</text>
+            <text class="axlbl" x="565" y="230" text-anchor="middle">launch to absorb &#183; vanish when it clears</text>
+          </g>
+
+          <!-- mechanism 3: coordinator-free placement — hash a branded id onto a ring -->
+          <g data-tab="ring">
+            <text class="ttl" x="380" y="266">a ring &#183; the owner is computed, not assigned</text>
+            <circle class="ring" cx="380" cy="150" r="78"></circle>
+            <!-- the owning arc (top-right): from -30deg to +35deg -->
+            <path class="arc own" d="M447.5 111 A 78 78 0 0 1 444 184"></path>
+            <!-- node markers on the ring -->
+            <circle class="node" cx="447.5" cy="111" r="9"></circle>
+            <text class="nlbl" x="475" y="105" text-anchor="start">node</text>
+            <circle class="node" cx="444" cy="184" r="9"></circle>
+            <circle class="node" cx="316" cy="184" r="9"></circle>
+            <circle class="node" cx="316" cy="111" r="9"></circle>
+            <!-- the branded id hashed onto the arc -->
+            <line class="keyline" x1="380" y1="150" x2="467" y2="146"></line>
+            <circle class="keydot" cx="467" cy="146" r="5"></circle>
+            <text class="keylbl" x="380" y="170" text-anchor="middle">hash(branded id)</text>
+            <text class="axlbl" x="380" y="60" text-anchor="middle">walk clockwise to the owning node</text>
+          </g>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">mechanism &#183; hover to read its picture</span>
+          Infrastructure is transparent through three mechanisms. <b>Location transparency</b> makes the send the same
+          local or remote; <b>FLAME</b> runs work on short-lived whole-app machines; <b>consistent hashing</b> computes
+          the owner from a branded identity with <span class="vc">no coordinator</span>. Hover a mechanism below.
+        </p>
+        <div class="htabs" id="mechw">
+          <div class="htabs-bar" role="tablist" aria-label="The three mechanisms of transparent infrastructure">
+            <button type="button" role="tab" data-tab="local" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>Location transparency</button>
+            <button type="button" role="tab" data-tab="flame" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>FLAME &#183; ephemeral execution</button>
+            <button type="button" role="tab" data-tab="ring" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>Coordinator-free placement</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="local" role="tabpanel"><span class="tag m">Location transparency.</span> A message to a process is the same code whether the process is local or on another node, and supervision spans nodes the same way it spans one. One umbrella &#8212; the supervised processes, the surfaces, the placement rule &#8212; runs <b>unchanged</b> on a single node on a laptop and on a multi-region cluster. The number of nodes is a fact of deployment, not a fact of the code. (BEAM &#8212; refs [1][2].) &#8594; M7.1.</div>
+            <div class="htabs-p" data-tab="flame" role="tabpanel"><span class="tag a">FLAME &#183; ephemeral execution.</span> The FLAME pattern treats the whole application as a lambda: a modular piece of work is wrapped in a function that runs on a short-lived copy of the entire app, with no rewrite and no separate runtime, and the runner is torn down when the work is done. The grain is the Fly Machine &#8212; a fast-launching microVM that starts and stops in <b>subsecond</b> time and can be placed in any region. Work appears, machines launch to absorb it, and they vanish when it clears. (FLAME, Fly Machines &#8212; refs [3][4].) &#8594; M7.2.</div>
+            <div class="htabs-p" data-tab="ring" role="tabpanel"><span class="tag e">Coordinator-free placement.</span> The owner of an instrument is computed by hashing the instrument's branded identity onto a ring and walking clockwise to the node that owns that arc. Adding or removing a node remaps only <b>a small fraction</b> of owners, and no central authority is consulted. The same function computes the owner whether there is one node or a thousand, so the placement logic does not change with scale. (Consistent hashing &#8212; ref [5].) &#8594; M7.3.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a mechanism to light its picture; click to pin. Without scripting, all three read in sequence and the figure shows every mechanism.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="why">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Why transparent</h2>
+        <span class="ssrc">mesh.7.md &#183; the BEAM [1]</span>
+      </div>
+      <p class="body">Transparency here has a precise meaning: <b>the infrastructure does not appear in the code</b>. A
+      developer writes a process that owns an instrument's book, a function that does a unit of work, a rule that says
+      which node owns which instrument &#8212; and none of those mention how many machines exist, which regions they sit
+      in, or whether the thing they address is local or a continent away.</p>
+      <p class="body">Scale and placement become <b>deployment decisions rather than code changes</b>, because the
+      runtime makes addressing a process the same whether it is in the same memory or on another node. The payoff is that
+      the same program is the development environment and the production fleet: there is no separate serverless rewrite,
+      no bespoke runtime to target, no glue to maintain between a small local version and a large deployed one.
+      Infrastructure is a property of the design, not a target to operate alongside it &#8212; that is what transparent
+      means, and the rest of the chapter shows the three mechanisms that make it true.</p>
+      <p class="compose">The three mechanisms are <b>location transparency</b> (the same code, everywhere),
+      <b>ephemeral execution</b> (FLAME on Fly Machines), and <b>coordinator-free placement</b> (a consistent-hashing
+      ring keyed by the branded identity). Each is a dive.</p>
+    </section>
+
+    <section id="same">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The same code, everywhere</h2>
+        <span class="ssrc">mesh.7.md &#183; the BEAM [1] &#183; Chechina 2017 [2]</span>
+      </div>
+      <p class="body">The first mechanism is the runtime's <b>location transparency</b>. One umbrella application &#8212;
+      the supervised processes, the surfaces, the placement rule &#8212; runs unchanged on a single node on a laptop and
+      on a multi-region cluster, because a message to a process is the same code whether the process is local or remote,
+      and supervision spans nodes the same way it spans one. The developer does not write one program for the laptop and
+      another for the fleet; there is one program, and the number of nodes is a fact of deployment.</p>
+      <figure class="frozen">
+        <figcaption>one send &#8212; the address is the same whether the process is local or on another node<span class="tag">the BEAM</span></figcaption>
+<pre><span class="fd"># a message to a process: the same code, local or remote</span>
+send(pid, msg)            <span class="fd"># pid on this node, or a continent away — identical</span>
+
+<span class="fd"># supervision spans nodes the same way it spans one</span>
+supervise(children)       <span class="fc"># one node</span>
+supervise(children)       <span class="fa"># or many — unchanged</span>
+
+<span class="fd"># the number of nodes is a fact of deployment, not of the code</span>
+laptop   &#8594; <b>one node</b>      <span class="fd"># the development environment</span>
+cluster  &#8594; <b>many nodes</b>    <span class="fd"># the production fleet — same program</span></pre>
+      </figure>
+      <p class="compose">The first dive, <b>M7.1</b>, reads the same-code-everywhere property and what it removes &#8212;
+      the BEAM's location transparency, one umbrella on a laptop and a multi-region cluster.</p>
+    </section>
+
+    <section id="ephemeral">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>A million ephemeral machines</h2>
+        <span class="ssrc">mesh.7.md &#183; FLAME [3] &#183; Fly Machines [4]</span>
+      </div>
+      <p class="body">The second mechanism is <b>ephemeral execution</b>. The FLAME pattern &#8212; Fleeting Lambda
+      Application for Modular Execution &#8212; treats the whole application as a lambda: a modular piece of work is
+      wrapped in a function that runs on a short-lived copy of the entire app, with no rewrite and no separate runtime,
+      and the runner is torn down when the work is done.</p>
+      <p class="body">The grain it runs on is the <b>Fly Machine</b> &#8212; a fast-launching microVM that starts and
+      stops in subsecond time, stops when its program exits, and can be placed in any region. EchoMesh drains its worker
+      fleet, including the Go workers, onto these machines: work appears, machines launch to absorb it, and they vanish
+      when it clears.</p>
+      <figure class="frozen">
+        <figcaption>FLAME &#8212; wrap the work, run a whole-app copy, tear it down<span class="tag">FLAME &#183; Fly Machines</span></figcaption>
+<pre><span class="fd">// FLAME: the whole application is the lambda</span>
+FLAME.call(<span class="fc">Pool</span>, fn -&gt; do_the_work() end)
+  <span class="fd"># wrap existing code in a function — no rewrite, no bespoke runtime</span>
+
+<span class="fa"># the runner: a short-lived copy of the entire app</span>
+launch   &#8594; whole-app machine    <span class="fe"># start: subsecond</span>
+run      &#8594; the wrapped function
+exit     &#8594; <b>torn down</b>           <span class="fd"># stops when its program exits</span>
+
+<span class="fd"># the worker fleet, drained onto ephemeral compute</span>
+work appears  &#8594; machines <b>launch</b> to absorb it
+work clears   &#8594; machines <b>vanish</b>            <span class="fa"># placeable in any region</span></pre>
+      </figure>
+      <p class="compose">The second dive, <b>M7.2</b>, builds ephemeral execution on FLAME and Fly Machines &#8212; the
+      whole application on short-lived machines, the Go worker fleet drained on ephemeral compute.</p>
+    </section>
+
+    <section id="placement">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Placement without a coordinator</h2>
+        <span class="ssrc">mesh.7.md &#183; Karger 1997 [5] &#183; the branded identity</span>
+      </div>
+      <p class="body">The third mechanism is <b>coordinator-free placement</b>. Which node owns a given instrument is
+      computed by hashing the instrument's branded identity onto a ring and walking to the node that owns that arc
+      &#8212; consistent hashing, in which adding or removing a node remaps only a small fraction of owners and no central
+      authority is consulted to decide who owns what.</p>
+      <p class="body">The same function computes the owner whether there is one node or a thousand, so the placement
+      logic does not change with scale, which is the last thing that would otherwise leak infrastructure into the
+      code.</p>
+      <figure class="frozen">
+        <figcaption>the ring &#8212; the owner is computed from the identity, not assigned by a coordinator<span class="tag">consistent hashing</span></figcaption>
+<pre><span class="fd"># map keys and nodes onto a ring; a key&#39;s owner is the next node clockwise</span>
+owner(id) = walk_clockwise(<span class="fe">hash(branded_id)</span>)
+  <span class="fd"># deterministic — no central authority is consulted</span>
+
+<span class="fd"># the same function at any scale</span>
+nodes = 1      &#8594; <b>owner(id)</b>    <span class="fc"># the laptop</span>
+nodes = 1000   &#8594; <b>owner(id)</b>    <span class="fa"># the fleet — unchanged code</span>
+
+<span class="fd"># add or remove a node:</span>
+ring change   &#8594; remap <b>a small fraction</b> of owners   <span class="fa"># not all</span></pre>
+      </figure>
+      <p class="compose">The third dive, <b>M7.3</b>, builds placement on the ring and the branded identity, and closes
+      the argument that infrastructure is a transparent property.</p>
+    </section>
+
+    <section id="enough">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Good design adds value faster than it adds cost</h2>
+        <span class="ssrc">mesh.7.md &#183; the bridge to M8</span>
+      </div>
+      <p class="body">Put the three together and the second question answers itself. The implementation EchoMesh needs
+      is <b>small</b> &#8212; a supervised process that owns a book, a function wrapped for FLAME, a hash of an identity
+      onto a ring &#8212; because the hard work was done by the design, not the code.</p>
+      <p class="body">Segmentation decided which surface takes which trade; the seam kept the surfaces coherent; the
+      owned runtime supplied coordination, ordering, and supervision as language properties; transparent placement
+      removed scale from the code. What remains to write is ordinary, and it is enough, because a correct architecture
+      does not need a large implementation to express it.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">The design carries it</p>
+          <h3>Segmentation, the seam, the runtime</h3>
+          <p>By the time each surface has its trade, the identity holds the surfaces coherent, and the runtime supplies
+          coordination and ordering, the weight is already borne.</p>
+          <p class="note">decided before the code &#183; <b>the architecture</b></p>
+        </article>
+        <article>
+          <p class="cno">The code that remains</p>
+          <h3>A handful of ordinary things</h3>
+          <p>A supervised process that owns a book, a function wrapped for FLAME, a hash of an identity onto a ring. None
+          of them name the fleet.</p>
+          <p class="note">small, on purpose &#183; <b>ordinary parts</b></p>
+        </article>
+        <article>
+          <p class="cno">The note it ends on</p>
+          <h3>Small is the point</h3>
+          <p>A correct architecture does not need a large implementation to express it. That is the bridge to M8, where
+          the small implementation and the whole architecture are met as one thing.</p>
+          <p class="note">the bridge &#183; <b>EchoMesh as one</b></p>
+        </article>
+      </div>
+      <p class="compose"><b>The smallness is the proposal&#39;s claim:</b> the use this chapter proposes &#8212; one
+      umbrella, ephemeral machines, hashed placement &#8212; leaves a small implementation because segmentation, the
+      seam, and the owned runtime did the work first. That note opens the next chapter, <b>M8</b>, where EchoMesh is
+      finally met as one thing.</p>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The three dives</h2>
+        <span class="ssrc">M7.1 &#183; M7.2 &#183; M7.3</span>
+      </div>
+      <p class="body">This landing states the chapter's argument once; each dive takes one mechanism to the depth a
+      comprehensive treatment needs.</p>
+      <div class="pgrid">
+        <a class="pcard" href="/mesh/transparent/same-code">
+          <span class="bid">M7.1</span>
+          <h3>The Same Code, Everywhere</h3>
+          <p>One umbrella that runs unchanged on a laptop and a multi-region cluster; the BEAM's location
+          transparency.</p>
+          <span class="meta"><span>dive</span><span class="chip now">read</span></span>
+        </a>
+        <a class="pcard" href="/mesh/transparent/ephemeral-machines">
+          <span class="bid">M7.2</span>
+          <h3>A Million Ephemeral Machines</h3>
+          <p>The FLAME pattern; the whole application on short-lived machines; the Go worker fleet drained on ephemeral
+          compute; Fly Machines as the grain.</p>
+          <span class="meta"><span>dive</span><span class="chip now">read</span></span>
+        </a>
+        <a class="pcard" href="/mesh/transparent/placement">
+          <span class="bid">M7.3</span>
+          <h3>Placement Without a Coordinator</h3>
+          <p>The consistent-hashing ring and branded-id placement that work the same at any scale; infrastructure as a
+          transparent property.</p>
+          <span class="meta"><span>dive</span><span class="chip now">read</span></span>
+        </a>
+      </div>
+      <p class="upnext"><b>Up next &#183; M7.1 &#183; The Same Code, Everywhere.</b> The first dive reads the
+      same-code-everywhere property closely: a message to a process is the same code whether the process is local or
+      remote, supervision spans nodes the same way it spans one, and one umbrella runs unchanged on a laptop and a
+      multi-region cluster &#8212; with the number of nodes a fact of deployment, not of the code.</p>
+      <p class="booknote">The chapter mirrors the manuscript <code>mesh.7.md</code>: this landing and three dives. The
+      mechanisms are external and settled; <b>the use is what EchoMesh proposes</b>, taught in forward-looking voice and
+      separated from the shipped substrate at M8.2. A dive card becomes a link when its page ships &#8212; and not
+      before.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh">
+          <span class="dr">/mesh</span>
+          <h3>EchoMesh, In Depth &#8212; the course</h3>
+          <p>The landing: the thesis, the four-strategies signature on the CAP spectrum, the stack, and the full chapter
+          map M0&#8211;M8.</p>
+          <p class="dnote"><b>this chapter</b> is M7 &#8212; infrastructure made a transparent property of the design.</p>
+        </a>
+        <a class="door" href="/elixir">
+          <span class="dr">/elixir</span>
+          <h3>Functional Programming in Elixir</h3>
+          <p>The engine, the umbrella where the identity library lives, and the chapter that deploys it to Fly &#8212;
+          the runtime this chapter's transparency builds on.</p>
+          <p class="dnote"><b>the runtime</b> whose location transparency makes the same code run everywhere, and the Fly
+          deployment behind ephemeral machines.</p>
+        </a>
+        <a class="door" href="/echomq">
+          <span class="dr">/echomq</span>
+          <h3>EchoMQ &#8212; the protocol</h3>
+          <p>The owned Valkey-native job system &#8212; the Queue, the Bus, and the Cache &#8212; with the worker tier
+          this chapter drains onto ephemeral compute.</p>
+          <p class="dnote"><b>the worker tier</b> EchoMesh proposes to drain onto FLAME runners on Fly Machines.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract, proven by frozen transcripts
+          across five runtimes.</p>
+          <p class="dnote"><b>the placement key</b> &#8212; the branded identity hashed onto the ring is the same contract
+          that is the segmentation seam.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;8</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://www.erlang-solutions.com/blog/beam-jvm-virtual-machines-comparing-and-contrasting/" rel="noopener">Erlang Solutions &#8212; The BEAM: Erlang and Elixir&#39;s virtual machine</a><span class="rs">message passing is location-transparent: the code to send to a process is the same whether the process is local or on another node, so one program addresses its parts the same way at any scale</span></li>
+          <li><a href="https://arxiv.org/pdf/1704.07234" rel="noopener">Chechina, N. et al. (2017) &#8212; Scaling Reliably: Improving the Scalability of the Erlang Distributed Actor Platform</a><span class="rs">supervision trees and process registration span nodes and hosts, so the same supervised program runs on one node or many without change</span></li>
+          <li><a href="https://fly.io/blog/rethinking-serverless-with-flame/" rel="noopener">McCord, C. (2023) &#8212; Rethinking Serverless with FLAME (The Fly Blog)</a><span class="rs">FLAME &#8212; Fleeting Lambda Application for Modular Execution &#8212; treats the entire application as a lambda whose modular parts run on short-lived infrastructure: wrap existing code in a function, run it on a temporary copy of the whole app, and tear the runner down, with no rewrites or bespoke runtimes</span></li>
+          <li><a href="https://fly.io/docs/machines/" rel="noopener">Fly.io &#8212; Fly Machines</a><span class="rs">fast-launching VMs that start and stop at subsecond speeds, stop automatically when their program exits, provide ephemeral storage by default, and can be placed in any region through a REST API</span></li>
+          <li><a href="https://dl.acm.org/doi/10.1145/258533.258660" rel="noopener">Karger, D. et al. (1997) &#8212; Consistent Hashing and Random Trees (STOC 1997)</a><span class="rs">maps keys and nodes onto a ring and assigns each key to the next node clockwise, so adding or removing a node remaps only a fraction of keys and the owner of a key is computed deterministically without a central coordinator</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map M0&#8211;M8</span></li>
+          <li><a href="/mesh/trading">M4 &#8212; Trading Consistency for Availability</a><span class="rs">the dial the segmented architecture places per surface &#8212; the trade this chapter removes from the code</span></li>
+          <li><a href="/mesh/best-effort-availability">M2 &#8212; Best Effort Availability</a><span class="rs">the availability-first end of the dial &#8212; surfaces that always answer and reconcile afterward</span></li>
+          <li><a href="/mesh/best-effort-consistency">M3 &#8212; Best Effort Consistency</a><span class="rs">the consistency-first end of the dial &#8212; a single owning writer per instrument</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the law and the 14-byte identity contract that is both the segmentation seam and the placement key hashed onto the ring</span></li>
+          <li><a href="/echomq">EchoMQ &#8212; the protocol</a><span class="rs">the owned Valkey-native job system whose worker tier the mesh proposes to drain onto ephemeral machines</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the engine, the umbrella where the identity library lives, and the Fly deployment chapter</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh"><span class="pk">the course</span>&#8592; EchoMesh, In Depth &#183; the landing</a>
+      <a class="pgx" href="/mesh/transparent/same-code"><span class="pk">next &#183; dive</span>M7.1 &#183; The Same Code, Everywhere &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <a href="/mesh/best-effort-availability">M2 &#183; Best Effort Availability</a>
+        <a href="/mesh/best-effort-consistency">M3 &#183; Best Effort Consistency</a>
+        <a href="/mesh/trading">M4 &#183; Trading the Trade</a>
+        <a href="/mesh/segmenting">M5 &#183; Segmenting</a>
+        <a href="/mesh/stack">M6 &#183; The Stack</a>
+        <a href="/mesh/transparent">M7 &#183; Transparent Infrastructure</a>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0Mtp7zDSS</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 17:57:38 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the three-mechanisms emulator: the tabs drive the SVG groups + an aria-live readout ----------
+     Each mechanism is a pure entry over fixed data — no network, no storage. Hovering a tab
+     lights the matching SVG group (the data-tab group) and writes the qualitative readout. Magnitudes
+     are qualitative (small / subsecond / a small fraction / unchanged / same); the only literals
+     are figures verbatim in mesh.7.md or its cited sources. */
+  var MECH = {
+    local: { s: "mechanism · location transparency",
+             h: "A message to a process is the <b>same code</b> whether the process is local or on another node, and supervision spans nodes the same way it spans one. One umbrella runs <span class='vc'>unchanged</span> on a laptop and a multi-region cluster — the number of nodes is a fact of deployment. (BEAM — refs [1][2].)" },
+    flame: { s: "mechanism · FLAME ephemeral execution",
+             h: "Work is wrapped in a function that runs on a short-lived copy of the <b>whole app</b>, then the runner is torn down. The grain is the Fly Machine — a microVM that starts and stops in <span class='vc'>subsecond</span> time and can be placed in any region. Machines launch to absorb work and vanish when it clears. (FLAME, Fly Machines — refs [3][4].)" },
+    ring:  { s: "mechanism · coordinator-free placement",
+             h: "The owner of an instrument is computed by hashing its <b>branded identity</b> onto a ring and walking clockwise to the owning node — <span class='vc'>no coordinator</span>. Adding or removing a node remaps only a small fraction of owners, and the same function computes the owner whether there is one node or a thousand. (Consistent hashing — ref [5].)" }
+  };
+
+  var emit = document.getElementById('emit');
+  var svg = document.getElementById('mechsvg');
+  var groups = svg ? Array.prototype.slice.call(svg.querySelectorAll('g[data-tab]')) : [];
+
+  wireHtabs(document.getElementById('mechw'), function (key) {
+    var m = MECH[key];
+    if (!m) return;
+    if (emit) emit.innerHTML = '<span class="step">' + m.s + '</span>' + m.h;
+    groups.forEach(function (g) {
+      g.classList.toggle('on', g.getAttribute('data-tab') === key);
+    });
+  });
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

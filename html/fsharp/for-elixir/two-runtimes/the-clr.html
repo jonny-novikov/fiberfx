@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C3.01.2 · The CLR — managed execution &amp; the type system — F# In Depth</title>
+<meta name="description" content="The .NET CLR on the same four axes as the BEAM: managed execution with a JIT compiler, one shared generational garbage collector (gen 0/1/2), OS threads scheduled by the operating system plus a thread pool, and async/Task for cooperative concurrency. The concurrency unit is a thread, not a process; F#'s actor is the MailboxProcessor over async. Verified F# async returning 42 and the value-vs-reference type facts. Dive C3.01.2 of the F# In Depth course.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --fsharp:#b48ee0; --fsharp-bright:#d2b8f5;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(180,142,224,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--fsharp-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--fsharp-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="fsharp"]{background:var(--fsharp-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--fsharp-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .err{color:var(--burgundy)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--fsharp-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pill / legend ---- */
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--fsharp-bright);border-color:var(--fsharp)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- references ---- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.refs li{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.45}
+.refs li a{color:var(--cream-soft)}
+.refs li a:hover{color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.fs .lbl{color:var(--fsharp-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--fsharp-bright);
+  border:1px solid var(--fsharp);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.note.warn{border-left-color:var(--burgundy)}
+.note code.inl{color:var(--cream-soft)}
+pre.code .rdx{background:rgba(180,142,224,.18);border-radius:4px;padding:0 .18em;color:var(--fsharp-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+
+/* ---- Elixir → F# side-by-side ---- */
+.cmp{margin:1.2rem 0 0}
+.cmp .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:1rem 0 .35rem;color:var(--cream-dim)}
+.cmp .lbl.ex{color:var(--sage-bright)}
+.cmp .lbl.fs{color:var(--fsharp-bright)}
+.cmp .lbl:first-child{margin-top:0}
+pre.code .ex{color:var(--sage-bright)}
+
+/* ---- the CLR-stages svg (this dive) ---- */
+.clr-node rect{transition:fill .2s ease, stroke .2s ease}
+.clr-node{cursor:pointer}
+.clr-node .cl{font-family:var(--sans);font-weight:600;fill:var(--cream-soft)}
+.clr-node:hover rect{stroke:var(--cream-dim)}
+.clr-node.active rect{fill:var(--ink-3);stroke:var(--fsharp-bright)}
+.clr-node.active .cl{fill:var(--fsharp-bright)}
+.clr-node:focus{outline:none}
+.clr-node:focus-visible rect{stroke:var(--gold-bright)}
+.clr-flow{stroke:var(--line);stroke-width:2;fill:none;stroke-dasharray:6 9}
+@media (prefers-reduced-motion: no-preference){
+  .clr-flow{animation:clrflow 1.6s linear infinite}
+}
+@keyframes clrflow{to{stroke-dashoffset:-30}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/fsharp">jonnify<span class="dot"></span><span class="sub">fsharp</span></a>
+    <nav>
+      <a href="/fsharp">F# In Depth</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/fsharp">fsharp</a><span class="rsep">/</span><a href="/fsharp/for-elixir">for-elixir</a><span class="rsep">/</span><a href="/fsharp/for-elixir/two-runtimes">two-runtimes</a><span class="rsep">/</span><span class="rcur">the-clr</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/fsharp">F# In Depth</a><span class="sep">/</span><a href="/fsharp/for-elixir">C3 · F# for Elixir developers</a><span class="sep">/</span><a href="/fsharp/for-elixir/two-runtimes">C3.01 · Two functional runtimes</a><span class="sep">/</span><span class="here">C3.01.2 · The CLR</span>
+    </nav>
+    <p class="eyebrow">Dive C3.01.2</p>
+    <h1>The CLR — <span class="ex">managed execution</span></h1>
+    <p class="lede">A managed runtime for many languages, with one shared heap and one shared scheduler under the OS.</p>
+    <p class="kicker">F# runs on the .NET <strong>Common Language Runtime</strong>. Read on the same four axes as the
+      BEAM, it answers each differently. Code does not run as native instructions directly: F# compiles to a
+      common <strong>intermediate language</strong>, which the CLR's <strong>JIT</strong> compiler turns into
+      machine code as methods first run. Memory is reclaimed by <strong>one shared generational garbage
+      collector</strong> for the whole process — not a collector per anything. The concurrency unit is the
+      <strong>OS thread</strong>, and because threads are comparatively expensive, .NET multiplexes work over a
+      <strong>thread pool</strong>; <code class="inl">async</code> and <code class="inl">Task</code> let many
+      logical operations share few threads. And the runtime enforces a <strong>common type system</strong> — F#'s
+      static types are checked once at compile time and again, structurally, by the CLR. F#'s actor is the
+      <code class="inl">MailboxProcessor</code>, one object on this shared runtime.</p>
+    <div class="cta-row">
+      <a class="btn" href="#explore">Trace a method <span aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="/fsharp/for-elixir/two-runtimes">Module hub</a>
+    </div>
+  </section>
+
+  <!-- ===================== MANAGED EXECUTION ===================== -->
+  <section id="managed">
+    <div class="dive-head">
+      <span class="dive-tag">C3.01.2 · part 1</span>
+      <h2>Source → IL → JIT → machine code</h2>
+    </div>
+    <div class="prose">
+      <p>"Managed" means the runtime, not your code, owns execution and memory. The F# compiler emits
+        <strong>IL</strong> — a portable instruction set — into an assembly. At run time the CLR's JIT compiles each
+        method to native code the first time it is called, then caches it. The same runtime hosts C#, F#, and VB,
+        which is why F# can call any .NET library: they all compile to the one IL and share the one type system.
+        The BEAM is also a managed VM, but it executes its own bytecode and is built around the process model rather
+        than a shared heap.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: a value-typed addition; the CLR JIT-compiles the method on first call. Verified in FSI."><span class="cmt">// F# — compiles to IL, JIT-compiled by the CLR on first call</span>
+<span class="op">let</span> add a b = a + b
+<span class="cmt">// val add: a: int -&gt; b: int -&gt; int</span>
+
+add 20 22
+<span class="cmt">// val it : int = 42</span></pre>
+
+    <dl class="deflist">
+      <dt>CLR</dt><dd>the Common Language Runtime: the managed virtual machine that loads assemblies, JIT-compiles IL, and runs it.</dd>
+      <dt>IL</dt><dd>intermediate language — the portable instruction set every .NET language compiles to; the shared layer that makes interop work.</dd>
+      <dt>JIT</dt><dd>just-in-time compilation: IL becomes native machine code as methods first execute, then is cached.</dd>
+      <dt>type system</dt><dd>the common type system the runtime enforces; F#'s static types live on top of it and are checked at compile time.</dd>
+    </dl>
+  </section>
+
+  <!-- ===================== THE SHARED GC ===================== -->
+  <section id="gc">
+    <div class="dive-head">
+      <span class="dive-tag">C3.01.2 · part 2</span>
+      <h2>One generational heap, not one per process</h2>
+    </div>
+    <div class="prose">
+      <p>The CLR collects garbage with a <strong>generational</strong> collector over a heap shared by the whole
+        process. Objects are allocated in <em>generation 0</em>; those that survive a collection are promoted to
+        gen 1, then gen 2, on the observation that most objects die young. The trade is the mirror of the BEAM's:
+        the BEAM gives each process its own small heap, so a collection touches one process; the CLR keeps one
+        heap, so a collection reasons about the whole program at once. There is no per-actor heap to reclaim
+        independently.</p>
+      <p>One consequence shows up in the type system. The CLR distinguishes <strong>value types</strong> (such as
+        <code class="inl">int</code>, allocated inline, often on the stack) from <strong>reference types</strong>
+        (such as <code class="inl">string</code> and records, allocated on the managed heap and tracked by the GC).
+        Which one a value is decides whether it is garbage to collect — a distinction the BEAM does not surface to
+        the programmer.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: value types versus reference types on the CLR, with verified FSI output."><span class="cmt">// F# — value types vs reference types (what the GC tracks)</span>
+typeof&lt;int&gt;.IsValueType        <span class="cmt">// val it : bool = true   — inline, not GC-tracked</span>
+typeof&lt;string&gt;.IsValueType     <span class="cmt">// val it : bool = false  — heap, GC-tracked</span></pre>
+
+    <div class="note">A practical F# note: large or long-lived allocations land in gen 2 and are collected less
+      often, so a pipeline that churns short-lived values stays in gen 0 where collection is cheapest. The
+      BEAM developer's instinct — "spin up a process, let its heap go when it dies" — has no direct CLR analog; the
+      shared collector reclaims by reachability, not by actor lifetime.</div>
+  </section>
+
+  <!-- ===================== THREADS & ASYNC ===================== -->
+  <section id="async">
+    <div class="dive-head">
+      <span class="dive-tag">C3.01.2 · part 3</span>
+      <h2>Threads, the pool, and async</h2>
+    </div>
+    <div class="prose">
+      <p>The CLR's concurrency unit is the OS thread, scheduled by the operating system. A thread is far heavier
+        than a BEAM process, so creating one per logical task does not scale the way spawning processes does.
+        Instead .NET keeps a <strong>thread pool</strong> and runs short work items on it, and F#'s
+        <code class="inl">async</code> (and the underlying <code class="inl">Task</code>) lets many logical
+        operations <em>share</em> a small number of threads: an <code class="inl">async</code> that awaits I/O
+        releases its thread back to the pool until the result arrives. The model is cooperative, not preemptive —
+        progress happens at <code class="inl">await</code>/<code class="inl">let!</code> points.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: an async workflow composing two awaited results on the thread pool. Verified output 42."><span class="cmt">// F# — async over the thread pool</span>
+<span class="op">let</span> work () = async {
+    <span class="op">let!</span> a = async { <span class="op">return</span> 20 }
+    <span class="op">let!</span> b = async { <span class="op">return</span> 22 }
+    <span class="op">return</span> a + b }
+
+work () |&gt; Async.RunSynchronously
+<span class="cmt">// val it : int = 42</span></pre>
+
+    <div class="note warn">This is the axis where the two runtimes feel most different. The BEAM schedules millions
+      of preemptive processes for you; the CLR asks you to model concurrency with <code class="inl">async</code> /
+      <code class="inl">Task</code> over a bounded pool. The <code class="inl">MailboxProcessor</code> wraps this
+      into an actor — a mailbox and a receive loop — but it is one object on the shared runtime, not a supervised
+      process.</div>
+  </section>
+
+  <!-- ===================== INTERACTIVE: THE CLR PIPELINE ===================== -->
+  <section id="explore">
+    <h2>Trace a value through the CLR</h2>
+    <div class="prose">
+      <p>Select a stage. The diagram marks where execution is; the readout names what the CLR does at that stage
+        and how it differs from the BEAM's answer on the same axis. The pipeline is the everyday path of F# code:
+        compile to IL, JIT to native, allocate on the shared heap, and run concurrency over threads.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="clrTitle">
+      <h4 id="clrTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The managed pipeline · select a stage</h4>
+
+      <svg viewBox="0 0 1080 180" role="img" aria-label="Four CLR stages left to right: F# source, IL in an assembly, JIT to native code, and run on threads with a shared heap. Select one for detail.">
+        <line x1="170" y1="70" x2="910" y2="70" class="clr-flow"></line>
+
+        <g class="clr-node active" data-k="src" role="button" tabindex="0" aria-label="Stage: F# source">
+          <rect x="30" y="40" width="200" height="60" rx="14" fill="#10162b" stroke="#2a3252"></rect>
+          <text class="cl" x="130" y="68" text-anchor="middle" font-size="13">F# source</text>
+          <text x="130" y="88" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a39c89">let add a b</text>
+        </g>
+        <g class="clr-node" data-k="il" role="button" tabindex="0" aria-label="Stage: IL assembly">
+          <rect x="270" y="40" width="200" height="60" rx="14" fill="#10162b" stroke="#2a3252"></rect>
+          <text class="cl" x="370" y="68" text-anchor="middle" font-size="13">IL · assembly</text>
+          <text x="370" y="88" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a39c89">portable</text>
+        </g>
+        <g class="clr-node" data-k="jit" role="button" tabindex="0" aria-label="Stage: JIT to native">
+          <rect x="510" y="40" width="200" height="60" rx="14" fill="#10162b" stroke="#2a3252"></rect>
+          <text class="cl" x="610" y="68" text-anchor="middle" font-size="13">JIT → native</text>
+          <text x="610" y="88" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a39c89">on first call</text>
+        </g>
+        <g class="clr-node" data-k="run" role="button" tabindex="0" aria-label="Stage: run on threads, shared heap">
+          <rect x="750" y="40" width="220" height="60" rx="14" fill="#10162b" stroke="#2a3252"></rect>
+          <text class="cl" x="860" y="68" text-anchor="middle" font-size="13">run · threads</text>
+          <text x="860" y="88" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a39c89">shared heap + pool</text>
+        </g>
+
+        <text x="130" y="128" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#d2b8f5">static types</text>
+        <text x="610" y="128" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#d2b8f5">managed</text>
+        <text x="860" y="128" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">async / Task</text>
+      </svg>
+
+      <div class="geo-readout" id="clrOut" aria-live="polite">
+        <span class="dim">F# source ·</span> the compiler checks static types and emits IL. <span class="dim">Vs the BEAM:</span> Elixir compiles to BEAM bytecode and resolves types at run time.</div>
+    </figure>
+
+    <table class="axtbl optgrid" style="width:100%;border-collapse:collapse;margin-top:1rem;font-family:var(--mono);font-size:.84rem">
+      <caption style="font-family:var(--sans);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cream-dim);text-align:left;margin-bottom:.5rem">Without JavaScript: the four stages, both runtimes</caption>
+      <thead><tr>
+        <th style="font-family:var(--sans);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);text-align:left;padding:.4rem .7rem;border-bottom:1px solid var(--line)">stage</th>
+        <th style="font-family:var(--sans);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);text-align:left;padding:.4rem .7rem;border-bottom:1px solid var(--line)">CLR (F#)</th>
+        <th style="font-family:var(--sans);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);text-align:left;padding:.4rem .7rem;border-bottom:1px solid var(--line)">BEAM (Elixir)</th>
+      </tr></thead>
+      <tbody>
+        <tr id="clr-src"><td style="padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--cream-soft)">F# source</td><td style="padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--fsharp-bright)">static types checked at compile</td><td style="padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--sage-bright)">dynamic, checked at run time</td></tr>
+        <tr id="clr-il"><td style="padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--cream-soft)">IL · assembly</td><td style="padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--fsharp-bright)">portable IL, shared by all .NET languages</td><td style="padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--sage-bright)">BEAM bytecode</td></tr>
+        <tr id="clr-jit"><td style="padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--cream-soft)">JIT → native</td><td style="padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--fsharp-bright)">JIT-compiled to machine code on first call</td><td style="padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--sage-bright)">bytecode interpreted, with JIT on modern BEAM</td></tr>
+        <tr id="clr-run"><td style="padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--cream-soft)">run</td><td style="padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--fsharp-bright)">threads + pool, one shared generational GC</td><td style="padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--sage-bright)">processes, GC per process</td></tr>
+      </tbody>
+    </table>
+    <p class="take">The CLR owns one heap, one set of threads, and one type system for the whole process. The BEAM
+      owns many small heaps and many cheap processes. F# is at home on the first — and the
+      <code class="inl">MailboxProcessor</code> is how it draws an actor on it.</p>
+  </section>
+
+  <!-- ===================== THE THREAD ===================== -->
+  <section id="thread">
+    <h2>Where this leads</h2>
+    <div class="prose">
+      <p>Both runtimes are now named on the same four axes. The last dive reads them together — what carries over
+        from the BEAM unchanged, what F# gains from the type system, and the one capability, OTP-style supervision,
+        that the CLR leaves to the program to build.</p>
+    </div>
+    <div class="toc-mini" aria-label="Continue in this module">
+      <a href="/fsharp/for-elixir/two-runtimes">↑ C3.01 · Two functional runtimes</a>
+      <a href="/fsharp/for-elixir/two-runtimes/the-beam">↩ C3.01.1 · The BEAM you know</a>
+      <a href="/fsharp/for-elixir/two-runtimes/what-carries-over">C3.01.3 · What carries over →</a>
+    </div>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://learn.microsoft.com/dotnet/">Microsoft &mdash; <em>.NET documentation</em></a> &mdash; the CLR, managed execution, the JIT, generational garbage collection, and the threading model.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/">Microsoft &mdash; <em>F# documentation</em></a> &mdash; <code class="inl">async</code> workflows and value vs reference types in F#.</li>
+          <li><a href="https://fsharp.github.io/fsharp-core-docs/">FSharp.Core API reference</a> &mdash; the <code class="inl">Async</code> module and <code class="inl">MailboxProcessor</code>.</li>
+          <li><a href="https://fsharp.org/">The F# Software Foundation</a> &mdash; F# on the .NET runtime.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/fsharp/history/dotnet-clr">C0.2 &mdash; The .NET runtime &amp; the open-source turn</a> &mdash; the CLR's history and the common type system, in depth.</li>
+          <li><a href="/fsharp/for-elixir/two-runtimes/the-beam">C3.01.1 &mdash; The BEAM you know</a> &mdash; the same four axes, the process VM.</li>
+          <li><a href="/elixir/course/beam-evolution">Elixir &mdash; The BEAM's evolution</a> &mdash; the runtime contrasted here.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/fsharp/for-elixir/two-runtimes/the-beam"><span aria-hidden="true">←</span> C3.01.1 The BEAM you know</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/fsharp/for-elixir/two-runtimes/what-carries-over">Next · C3.01.3 What carries over <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="F# In Depth — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/fsharp">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">F# In Depth &mdash; the ML-family language on .NET, taught from first principles to a real DevOps tool shipped in F#.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/fsharp/for-elixir">C3 &middot; F# for Elixir developers</a>
+        <a href="/fsharp/for-elixir/two-runtimes">C3.01 &middot; Two functional runtimes — the BEAM &amp; the CLR</a>
+        <a href="#refs">References</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/fsharp">Course home</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Interactive: the CLR pipeline (pure lookup) ---------- */
+  var STAGE = {
+    src: { label: "F# source",
+           clr: "the compiler checks static types and emits IL",
+           beam: "Elixir compiles to BEAM bytecode and resolves types at run time" },
+    il:  { label: "IL · assembly",
+           clr: "portable intermediate language, shared by C#, F#, and VB — the layer that makes interop work",
+           beam: "BEAM bytecode, specific to the BEAM" },
+    jit: { label: "JIT → native",
+           clr: "the JIT compiles IL to machine code the first time each method runs, then caches it",
+           beam: "bytecode is interpreted, with a JIT on the modern BEAM" },
+    run: { label: "run",
+           clr: "execution on OS threads and the thread pool, with one shared generational garbage collector",
+           beam: "execution on lightweight processes, each with its own heap and garbage collector" }
+  };
+
+  var nodes = Array.prototype.slice.call(document.querySelectorAll('.clr-node'));
+  var out = document.getElementById('clrOut');
+
+  function selectStage(k) {
+    var s = STAGE[k];
+    if (!s) return;
+    nodes.forEach(function (n) {
+      var on = n.getAttribute('data-k') === k;
+      n.classList.toggle('active', on);
+      n.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    ['src', 'il', 'jit', 'run'].forEach(function (key) {
+      var row = document.getElementById('clr-' + key);
+      if (row) row.style.background = (key === k) ? 'rgba(212,168,90,.08)' : '';
+    });
+    if (out) {
+      out.innerHTML = '<span class="dim">' + s.label + ' ·</span> ' + s.clr +
+        '. <span class="dim">Vs the BEAM:</span> ' + s.beam + '.';
+    }
+  }
+
+  nodes.forEach(function (n) {
+    var go = function () { selectStage(n.getAttribute('data-k')); };
+    n.addEventListener('click', go);
+    n.addEventListener('mouseenter', go);
+    n.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); go(); }
+    });
+  });
+  if (nodes.length) selectStage('src');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R1.02 — Write-through · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R1.02 module hub: write-through caching. Every write goes to the cache and the database in one synchronous step, so a read immediately after a write is always fresh. Grounded in EchoCache.Table.put — SET … PX to the L2 Valkey row then insert into the L1 ETS table, framed with the write's mint-time version. Three dives: the synchronous dual write, the consistency guarantee, and the latency cost.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- the module map ---------- */
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:82ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the write-path figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.wpath{width:100%;height:auto;display:block;margin-top:4px}
+.wpath .node{cursor:pointer;transition:opacity .18s ease}
+.wpath .node rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.wpath .node.l1 rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.wpath .node.ret rect{fill:var(--b-card);stroke:var(--b-node);stroke-width:1.5}
+.wpath .nlbl{font:12px var(--mono);fill:var(--b-ink)}
+.wpath .nsub{font:10.5px var(--mono);fill:var(--b-dim)}
+.wpath .flow{stroke:var(--b-line);stroke-width:1.6;fill:none}
+.wpath .flbl{font:10.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.wpath.focus .node{opacity:.32}
+.wpath.focus .node.on{opacity:1}
+.wpath.focus .node.on rect{stroke-width:2.6}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/caching">caching</a><span class="rsep">/</span><span class="rcur">write-through</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#how">How it works</a>
+      <a href="#commands">Commands</a>
+      <a href="#dives">The dives</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R1.02 &#183; Caching &#8212; module hub</p>
+      <h1>Write-<span class="hns">through</span>.</h1>
+      <p class="lede">Maintain cache-database consistency by synchronously writing to both the cache and the database
+      before returning success &#8212; <b>so reads always hit the cache with fresh data</b>.</p>
+      <p class="heronote">Grounding: echo/apps/echo_cache &#183; EchoCache.Table.put &#183; content/bcs4.1.md &#8212;
+      every figure verbatim from a committed record; the engine is Valkey.</p>
+
+      <figure class="anatomy" aria-labelledby="wpCap">
+        <figcaption id="wpCap"><b>One write, both layers.</b> Select a stage of the write to read what it does and
+        whether the call has returned.</figcaption>
+        <div class="segbar" id="wpSel" role="group" aria-label="Select a write stage">
+          <button type="button" data-stage="l2" aria-pressed="false">L2 &#183; SET PX</button>
+          <button type="button" data-stage="l1" aria-pressed="false">L1 &#183; insert</button>
+          <button type="button" data-stage="ret" aria-pressed="false">return</button>
+          <button type="button" data-stage="read" aria-pressed="false">later read</button>
+        </div>
+        <svg class="wpath" id="wpath" viewBox="0 0 460 250" role="img" aria-label="A write from EchoCache.Table.put reaches the L2 Valkey row with SET PX, then inserts into the L1 ETS table, then returns ok; both are written before the call returns. A later read is served fresh from the L1 cache. Select a stage to highlight it; its detail appears in the readout.">
+          <g class="node" data-stage="put"><rect x="150" y="14" width="160" height="40" rx="6"></rect><text class="nlbl" x="170" y="32">Table.put</text><text class="nsub" x="170" y="46">one GenServer.call</text></g>
+
+          <path class="flow" d="M200 54 L110 96"></path>
+          <path class="flow" d="M260 54 L350 96"></path>
+          <text class="flbl" x="135" y="80">SET PX</text>
+          <text class="flbl" x="325" y="80">insert</text>
+
+          <g class="node" data-stage="l2"><rect x="34" y="98" width="160" height="42" rx="6"></rect><text class="nlbl" x="52" y="117">L2 &#183; Valkey row</text><text class="nsub" x="52" y="132">version &lt;&gt; value, PX</text></g>
+          <g class="node l1" data-stage="l1"><rect x="266" y="98" width="160" height="42" rx="6"></rect><text class="nlbl" x="284" y="117">L1 &#183; ETS table</text><text class="nsub" x="284" y="132">insert(id, value, ver)</text></g>
+
+          <text class="flbl" x="230" y="162">both land before the call returns</text>
+          <path class="flow" d="M114 140 L230 188"></path>
+          <path class="flow" d="M346 140 L230 188"></path>
+          <g class="node ret" data-stage="ret"><rect x="150" y="190" width="160" height="38" rx="6"></rect><text class="nlbl" x="170" y="214">return &#183; :ok</text></g>
+
+          <g class="node" data-stage="read"><rect x="334" y="190" width="120" height="38" rx="6"></rect><text class="nlbl" x="350" y="209">later read</text><text class="nsub" x="350" y="223">fetch &#8594; :hit</text></g>
+        </svg>
+        <div class="readout" id="wpOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a stage. The
+        L2 row and the L1 table are both written in one synchronous call; the read after it is fresh by construction.</div>
+        <p class="booknote">Static verdicts &#8212; L2 SET PX &#8594; value + TTL atomically (the larger latency term)
+        &#183; L1 insert &#8594; sub-microsecond, same call &#183; return &#8594; only after both land &#183; later
+        read &#8594; served fresh from L1 (<code>762 ns</code>).</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="how">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>How it works</h2>
+        <span class="ssrc">write-through.md.txt &#183; How It Works</span>
+      </div>
+      <div class="prose">
+        <p>When a write occurs, three steps run in order. <strong>The application writes the data to the cache.</strong>
+        <strong>The application writes the same data to the database.</strong> <strong>Only after both writes succeed
+        does the operation complete.</strong> The cache and the database are always updated together, which keeps them
+        consistent with each other.</p>
+        <p>A write-through cache treats the two stores as one write target. When a value changes, the writer sets the
+        cache with <code>SET &#8230; PX</code> and the database with an update, and the write does not return until both
+        are done. Because the cache was updated on the same path as the source, a read that follows serves the cached
+        value and matches the database. This is the trade against cache-aside, which fills the cache lazily on a read
+        miss and drops it on a write: a cheaper, single-store write, but a window where the cache is stale or empty.</p>
+      </div>
+      <p class="take">The cache and the database move together on the write. A read after the write serves a value that
+      is, by construction, never behind the source.</p>
+    </section>
+
+    <section id="commands">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The commands the write uses</h2>
+        <span class="ssrc">write-through.md.txt &#183; Redis Commands Used</span>
+      </div>
+      <div class="prose">
+        <p>A write-through operation is a single cache write followed immediately by the corresponding database write,
+        and the application returns success only after both complete. The cache half is one command:
+        <code>SET &#8230; PX</code> sets the value and the millisecond TTL together &#8212; atomically.</p>
+      </div>
+      <pre class="code"><b>SET</b> ecc:{instruments}:AST0NgWEfAEJfs "&lt;version&gt;&lt;value&gt;" PX 300000   <span style="color:var(--b-dim)"># cache: value + TTL, atomically</span>
+UPDATE instruments ... WHERE id = ...                              <span style="color:var(--b-dim)"># the corresponding database write</span>
+<span style="color:var(--b-dim)"># return success only after both acknowledge</span></pre>
+      <div class="prose">
+        <p>The key is the cache&#8217;s own form <code>ecc:{&lt;table&gt;}:&lt;id&gt;</code>
+        (<code>EchoCache.Keyspace.key/2</code>): a fresh prefix beside <code>emq:</code>, with the table name
+        hash-tagged in braces so every key of one cache lands in one cluster slot. The value is framed
+        <code>version &lt;&gt; value</code> &#8212; a 14-byte branded version prefix in front of the bytes &#8212; so a
+        later coherence message can compare newer-wins. The cache half of a write-through write is one command; the
+        dual-write dive takes that command apart.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>SET key value PX &lt;ms&gt;</code> sets the value
+      and the TTL in one atomic command. A separate <code>EXPIRE</code> after <code>SET</code> leaves an immortal key
+      if the process dies between the two &#8212;
+      <a href="https://valkey.io/commands/set/" rel="noopener">valkey.io/commands/set</a>.</p>
+    </section>
+
+    <section id="tradeoffs">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Advantages and disadvantages</h2>
+        <span class="ssrc">write-through.md.txt &#183; Advantages / Disadvantages</span>
+      </div>
+      <div class="prose">
+        <p><strong>Advantages.</strong></p>
+        <ul>
+          <li><strong>Strong consistency</strong> &#8212; the cache always reflects the latest data. There is no
+          window where the cache holds stale information, because the cache write is on the same path as the database
+          write.</li>
+          <li><strong>Fast reads after writes</strong> &#8212; data written is immediately available for the next
+          read. The L1 ETS hit it serves is <code>40 times cheaper</code> than the L2 round trip
+          (<code>content/bcs4.1.md</code>).</li>
+          <li><strong>Simpler cache invalidation</strong> &#8212; because writes go through the cache, there is no need
+          to explicitly invalidate keys after a database update.</li>
+        </ul>
+        <p><strong>Disadvantages.</strong></p>
+        <ul>
+          <li><strong>Increased write latency</strong> &#8212; the write is not complete until both the cache and the
+          database acknowledge, so the total latency is at least the sum. The latency dive measures this against
+          write-behind.</li>
+          <li><strong>Cache pollution</strong> &#8212; data that is written but rarely read still occupies cache
+          memory, and can evict more valuable, frequently-read data.</li>
+          <li><strong>Failure complexity</strong> &#8212; if the database write fails after the cache write succeeds,
+          the two stores disagree. The application has to handle partial failures carefully.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="partial">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Handling partial failures</h2>
+        <span class="ssrc">write-through.md.txt &#183; Handling Partial Failures</span>
+      </div>
+      <div class="prose">
+        <p>The safest approach is to write to the database first. <strong>Write to the database.</strong> <strong>If
+        that succeeds, write to the cache.</strong> <strong>If the cache write fails, report it rather than reporting
+        success with a stale cache.</strong> This way the database &#8212; the source of truth &#8212; is always
+        correct, and a later cache miss reads fresh data from the database. The latency dive walks each failure path
+        and the state it leaves.</p>
+      </div>
+      <p class="take">Write the database first, and a partial failure can never leave the cache ahead of the source of
+      truth. The worst case is a cache miss, not a wrong answer.</p>
+    </section>
+
+    <section id="when">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>When to use &#8212; and when to avoid</h2>
+        <span class="ssrc">write-through.md.txt &#183; When to Use / Avoid</span>
+      </div>
+      <div class="prose">
+        <p><strong>Use write-through when</strong> strong consistency between cache and database is required,
+        write-then-immediately-read patterns are common, the write-latency overhead is acceptable, and the dataset is
+        relatively small so cache pollution is less of a concern.</p>
+        <p><strong>Avoid it when</strong> write latency is critical, most data is written but rarely read, or the
+        system needs to tolerate cache failures without affecting write operations. A write-heavy, stale-tolerant
+        workload reaches for write-behind instead &#8212; the next module.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="wlCap">
+        <figcaption id="wlCap"><b>Size the choice for a workload.</b> Select a workload to read which strategy fits
+        and what a write-through write costs in a fixed model.</figcaption>
+        <div class="segbar" id="wlSel" role="group" aria-label="Which workload to size">
+          <button type="button" data-wl="read" aria-pressed="false">read-after-write critical</button>
+          <button type="button" data-wl="balanced" aria-pressed="false">balanced read/write</button>
+          <button type="button" data-wl="writeheavy" aria-pressed="false">write-heavy, stale-tolerant</button>
+        </div>
+        <div class="readout" id="wlOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a workload.
+        Write-through fits one that reads its own writes and cannot tolerate a stale window.</div>
+        <p class="booknote">Fixed cost model &#8212; one cache write &#8776; 1 unit, one database write &#8776; 8
+        units; a write-through write pays both on the hot path.</p>
+      </figure>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The three dives</h2>
+        <span class="ssrc">the write &#8594; the guarantee &#8594; the cost</span>
+      </div>
+      <div class="prose">
+        <p>Each dive takes one part of write-through, in the arc <em>the write &#8594; the guarantee &#8594; the
+        cost</em>: the dual write that touches both layers, the read-after-write freshness it buys, and the latency
+        every write pays for it. Read them in order &#8212; the synchronous dual write starts.</p>
+      </div>
+
+      <div class="mods" style="margin-top:6px">
+        <a class="mod" href="/redis-patterns/caching/write-through/dual-write">
+          <div class="top"><span class="num">R1.02.1</span><span class="pill built">built</span></div>
+          <p class="t">The synchronous dual write</p>
+          <p class="o">One write reaches both layers: <code>SET &#8230; PX</code> to the L2 Valkey row and an
+          <code>insert</code> into the L1 ETS table, together, before the write returns.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/caching/write-through/consistency">
+          <div class="top"><span class="num">R1.02.2</span><span class="pill built">built</span></div>
+          <p class="t">The consistency guarantee</p>
+          <p class="o">Why the next read cannot be stale: both layers were set under one TTL, framed with the write&#8217;s
+          mint-time version, so a read-after-write serves the value that write produced.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/caching/write-through/latency-cost">
+          <div class="top"><span class="num">R1.02.3</span><span class="pill built">built</span></div>
+          <p class="t">The latency cost</p>
+          <p class="o">The synchronous <code>GenServer.call</code> waits for the L2 <code>SET</code> round-trip &#8212;
+          the trade against write-behind&#8217;s deferred database write.</p>
+        </a>
+      </div>
+
+      <div class="door">
+        <span class="dr">the application &#183; the put clause, against live Valkey</span>
+        <h3>SET PX then insert &#8212; both layers, one call</h3>
+        <p>The dual write is not an aspiration &#8212; it is the <code>handle_call({:put, &#8230;})</code> clause in
+        the as-built table: set the L2 row with the value and TTL atomically, then insert into L1, on the one call.</p>
+        <figure class="frozen">
+          <figcaption>echo/apps/echo_cache/lib/echo_cache/table.ex &#183; handle_call({:put, &#8230;})<span class="tag">as-built</span></figcaption>
+          <pre>l2 = Keyspace.key(state.table, id)            <span class="fd">&#8592; "ecc:{instruments}:AST0NgWEfAEJfs"</span>
+{:ok, "OK"} =
+  Connector.command(state.conn, [
+    "SET", l2, <b>version &lt;&gt; value</b>, "PX",      <span class="fd">&#8592; L2 Valkey: value + TTL, atomically</span>
+    Integer.to_string(state.spec.ttl_ms)
+  ])
+insert(state, id, value, version)             <span class="fd">&#8592; L1 ETS, on the same call</span>
+{:reply, :ok, state}                          <span class="fd">&#8592; returns only after both land</span></pre>
+        </figure>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">write-through</span>
+          <p>Write the cache and the source in one synchronous step, so a read after a write is always fresh &#8212;
+          at the cost of a second write on every change.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoCache application</span>
+          <p><code>EchoCache.Table.put</code> runs <code>SET &#8230; PX</code> to the L2 Valkey row then
+          <code>insert</code> into the L1 ETS table, both inside one synchronous <code>GenServer.call</code>; reads
+          are always fresh.</p>
+        </div>
+      </div>
+      <p class="take">Three dives, one pattern: the synchronous write that touches both layers, the read-after-write
+      freshness it guarantees, and the latency it costs to keep that promise.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; <code>SET key value PX &lt;ms&gt;</code> sets value and TTL atomically; the L2 write-path command.</li>
+            <li><a href="https://valkey.io/topics/" rel="noopener">Valkey &mdash; <em>Topics</em></a> &mdash; the engine EchoCache&#8217;s L2 layer is written against; the live line is Valkey.</li>
+            <li><a href="https://redis.io/commands/set" rel="noopener">Redis &mdash; <em>SET</em></a> &mdash; the string write-path command and its <code>EX</code>/<code>PX</code> expiry options.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; the data structures and commands the cache write is built from.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/caching/write-through/dual-write">R1.02.1 &#183; The synchronous dual write</a><span class="rs">the write that touches both layers</span></li>
+            <li><a href="/redis-patterns/caching/write-through/consistency">R1.02.2 &#183; The consistency guarantee</a><span class="rs">read-after-write freshness</span></li>
+            <li><a href="/redis-patterns/caching/write-through/latency-cost">R1.02.3 &#183; The latency cost</a><span class="rs">the price of the guarantee</span></li>
+            <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the bus behind the at-least-once coherence lane</span></li>
+            <li><a href="/bcs">/bcs</a><span class="rs">the EchoCache manuscript, Part IV</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/caching"><span class="pk">up</span>&#8592; R1 &#183; Caching</a>
+      <a class="pgx" href="/redis-patterns/caching/write-through/dual-write"><span class="pk">next</span>R1.02.1 &#183; The synchronous dual write &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/caching/write-through/dual-write">R1.02.1 &#183; The synchronous dual write</a>
+        <a href="/redis-patterns/caching/write-through/consistency">R1.02.2 &#183; The consistency guarantee</a>
+        <a href="/redis-patterns/caching/write-through/latency-cost">R1.02.3 &#183; The latency cost</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the write path (pure lookup over a fixed dataset) ---------- */
+  var STAGES = {
+    l2:   { name: 'L2 · the Valkey row', detail: 'SET ecc:{instruments}:<id> version<>value PX ttl_ms — value and TTL set atomically, on the server’s clock; the larger latency term.', done: 'the call has NOT returned' },
+    l1:   { name: 'L1 · the ETS table', detail: 'insert(state, id, value, version) — a sub-microsecond ETS write, on the same call as the L2 SET.', done: 'the call has NOT returned' },
+    ret:  { name: 'return · :ok', detail: 'the put clause replies :ok only after both the L2 SET answered {:ok, "OK"} and the L1 insert ran.', done: 'the call returns now' },
+    read: { name: 'a later read', detail: 'fetch reads the L1 row in the caller’s process — a hit at 762 ns, the value the write produced.', done: 'served fresh from L1' },
+    put:  { name: 'Table.put', detail: 'one synchronous GenServer.call carries the whole dual write — the L2 SET, then the L1 insert.', done: 'the call is in flight' }
+  };
+  // pure: stage key -> readout text
+  function describeStage(key) {
+    var s = STAGES[key];
+    return s.name + ' — ' + s.detail + ' (' + s.done + ').';
+  }
+  var wpath = document.getElementById('wpath');
+  var wpButtons = document.querySelectorAll('#wpSel button');
+  var wpOut = document.getElementById('wpOut');
+  // pure: highlight a node, sync the buttons, fill the readout — hover or click.
+  function selectStage(key) {
+    wpButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-stage') === key ? 'true' : 'false');
+    });
+    if (wpath) {
+      wpath.classList.toggle('focus', !!key);
+      wpath.querySelectorAll('.node').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-stage') === key);
+      });
+    }
+    if (wpOut) {
+      wpOut.innerHTML = key
+        ? '<span class="rk">readout &#183;</span> ' + describeStage(key)
+        : '<span class="rk">readout &#183;</span> Select a stage. The L2 row and the L1 table are both written in one synchronous call; the read after it is fresh by construction.';
+    }
+  }
+  wpButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-stage');
+      selectStage(b.getAttribute('aria-pressed') === 'true' ? null : key);
+    });
+  });
+  if (wpath) {
+    wpath.querySelectorAll('.node').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectStage(g.getAttribute('data-stage')); });
+      g.addEventListener('mouseleave', function () { selectStage(null); });
+    });
+  }
+
+  /* ---------- Interactive 2: size a workload (pure over a fixed cost model) ---------- */
+  // fixed unit cost model: one cache write ~ 1 unit, one database write ~ 8 units.
+  var CACHE_W = 1, DB_W = 8;
+  var WORKLOADS = {
+    read:       { label: 'read-after-write critical',  stale: 'unacceptable', fit: 'write-through', why: 'the next read must match the write' },
+    balanced:   { label: 'balanced read/write',        stale: 'a brief window is acceptable', fit: 'cache-aside', why: 'the cheaper single-store write wins when staleness is tolerable' },
+    writeheavy: { label: 'write-heavy, stale-tolerant', stale: 'acceptable for a short lag', fit: 'write-behind', why: 'defer the database write off the hot path' }
+  };
+  // pure: cost of a synchronous dual write in the fixed model
+  function dualWriteCost() { return CACHE_W + DB_W; }
+  // pure: workload key -> readout text
+  function sizeWorkload(wl) {
+    var w = WORKLOADS[wl];
+    var cost = dualWriteCost();
+    return 'Workload: ' + w.label + '. Stale read: ' + w.stale + '. Best fit: ' + w.fit +
+      ' — ' + w.why + '. A write-through write costs ' + cost + ' units (' + CACHE_W +
+      ' cache + ' + DB_W + ' database); both must complete before it returns.';
+  }
+  var wlButtons = document.querySelectorAll('#wlSel button');
+  var wlOut = document.getElementById('wlOut');
+  function setWorkload(wl) {
+    wlButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-wl') === wl ? 'true' : 'false');
+    });
+    if (wlOut) wlOut.innerHTML = '<span class="rk">readout &#183;</span> ' + sizeWorkload(wl);
+  }
+  wlButtons.forEach(function (b) {
+    b.addEventListener('click', function () { setWorkload(b.getAttribute('data-wl')); });
+  });
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

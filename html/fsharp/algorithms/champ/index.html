@@ -1,0 +1,873 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C4.06 · CHAMP maps — F# In Depth</title>
+<meta name="description" content="A CHAMP — Compressed Hash-Array Mapped Prefix-tree — is the compressed successor to the HAMT (C4.05), re-derived in F# at parity with the Elixir course's E4.06. Each node splits its slots into two bitmaps and two densely packed arrays — one for inline entries, one for sub-nodes — found by popcount. That separation buys cache-friendly iteration and one canonical shape per map. Module C4.06 of the F# In Depth course — three dives: the CHAMP layout, iteration, and HAMT vs CHAMP. Grounded in the echo_fs port, whose Store.Rows Map stands in for the production branded CHAMP.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --fsharp:#b48ee0; --fsharp-bright:#d2b8f5;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(180,142,224,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--fsharp-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--fsharp-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem);
+  display:grid;grid-template-columns:minmax(0,1.04fr) minmax(0,.96fr);
+  grid-template-areas:"copy art" "lede lede";
+  gap:clamp(2rem,4vw,3.2rem);align-items:start}
+.hero-copy{min-width:0;grid-area:copy}
+.hero-art{min-width:0;grid-area:art}
+.hero-lede{min-width:0;grid-area:lede}
+@media (max-width:900px){.hero{grid-template-columns:1fr;grid-template-areas:"copy" "lede" "art"}}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+
+/* ---- hero concept figure (CHAMP node: popcount index probe) ---- */
+.hero-fig{margin:0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.4rem)}
+.hero-fig figcaption{margin:0 0 .9rem}
+.hero-fig .fc-lbl{font-family:var(--sans);font-size:.72rem;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--cream-dim);margin:0}
+.hero-fig svg{display:block;width:100%;height:auto}
+.hp-ctrls{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-top:1rem}
+.hp-btn{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;
+  display:inline-flex;align-items:center;gap:.4rem;padding:.5rem .95rem;border-radius:10px;
+  color:var(--fsharp-bright);background:var(--ink-2);border:1px solid var(--fsharp);
+  transition:background .16s ease, color .16s ease, transform .16s ease}
+.hp-btn:hover{background:var(--fsharp-bright);color:var(--ink);transform:translateY(-2px)}
+.hp-btn.active{background:var(--fsharp-bright);color:var(--ink)}
+.hp-btn.ghost{color:var(--cream-dim);border-color:var(--line)}
+.hp-btn.ghost:hover{background:var(--ink);color:var(--cream);border-color:var(--cream-dim);transform:none}
+.hp-cap{font-family:var(--mono);font-size:.82rem;color:var(--cream-dim);
+  margin:.95rem 0 0;line-height:1.5}
+.hp-cap .lst{color:var(--sage-bright)}
+.hp-cap .ohint{color:var(--gold-bright)}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="fsharp"]{background:var(--fsharp-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--fsharp-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .err{color:var(--burgundy)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--fsharp-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- arc svg ---- */
+.arc-node rect{transition:fill .2s ease, stroke .2s ease}
+.arc-node{cursor:pointer}
+.arc-node .num{font-family:var(--serif-display);font-weight:600;fill:var(--cream)}
+.arc-node .nm{font-family:var(--sans);font-weight:600;fill:var(--cream-dim);letter-spacing:.02em}
+.arc-node:hover rect{stroke:var(--cream-dim)}
+.arc-node.active rect{fill:var(--ink-3);stroke:var(--fsharp-bright)}
+.arc-node.active .num{fill:var(--gold-bright)}
+.arc-node.active .nm{fill:var(--fsharp-bright)}
+.arc-node:focus{outline:none}
+.arc-node:focus-visible rect{stroke:var(--gold-bright)}
+.arc-flow{stroke:var(--line);stroke-width:2;fill:none;stroke-dasharray:6 9}
+.arc-arrow{fill:var(--cream-dim)}
+@media (prefers-reduced-motion: no-preference){
+  .arc-flow{animation:flow 1.6s linear infinite}
+}
+@keyframes flow{to{stroke-dashoffset:-30}}
+.arc-readout{margin-top:1.1rem}
+.arc-readout .nm{font-family:var(--serif-display);font-size:1.5rem;color:var(--cream);font-weight:600}
+.arc-readout .one{font-family:var(--serif);color:var(--cream-soft);margin:.25rem 0 .5rem;max-width:60ch}
+.arc-readout .meta{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;align-items:center}
+.arc-readout .meta b{color:var(--gold)}
+.arc-open{margin-top:.7rem;font-family:var(--sans);font-size:.9rem}
+.arc-open .muted{color:var(--cream-dim)}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--fsharp-bright);border-color:var(--fsharp)}
+.chap{padding-top:2.2rem}
+.chap:first-of-type{padding-top:.4rem}
+.chap-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem 1rem;
+  padding-bottom:.6rem;border-bottom:1px solid var(--line);margin-bottom:1.1rem}
+.chap-head .cid{font-family:var(--mono);font-size:.95rem;color:var(--gold)}
+.chap-head h3{margin:0}
+.chap-head .c-one{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);
+  flex-basis:100%;margin-top:.1rem}
+.chap-head .chap-link{font-family:var(--sans);font-size:.82rem;margin-left:auto}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+.mod.is-quiet{opacity:.66;border-style:dashed}
+.mod.is-quiet .t{color:var(--cream-soft)}
+.mod.lab{border-left:2px solid var(--fsharp)}
+.mod.lab .num::after{content:" · lab";color:var(--fsharp-bright)}
+.dives{list-style:none;margin:.6rem 0 0;padding:.6rem 0 0;border-top:1px dashed var(--line);
+  font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);display:grid;gap:.3rem}
+.dives li{display:flex;gap:.5rem}
+.dives .dn{font-family:var(--mono);color:var(--gold);min-width:3.6rem}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- references ---- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.refs li{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.45}
+.refs li a{color:var(--cream-soft)}
+.refs li a:hover{color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.fs .lbl{color:var(--fsharp-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--fsharp-bright);
+  border:1px solid var(--fsharp);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.note.warn{border-left-color:var(--burgundy)}
+.note code.inl{color:var(--cream-soft)}
+pre.code .rdx{background:rgba(180,142,224,.18);border-radius:4px;padding:0 .18em;color:var(--fsharp-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+
+/* ---- Elixir → F# side-by-side (stacked .lbl + pre.code) ---- */
+.cmp{margin:1.2rem 0 0}
+.cmp .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:1rem 0 .35rem;color:var(--cream-dim)}
+.cmp .lbl.ex{color:var(--sage-bright)}
+.cmp .lbl.fs{color:var(--fsharp-bright)}
+.cmp .lbl:first-child{margin-top:0}
+pre.code .ex{color:var(--sage-bright)}
+
+/* ---- EchoMQ-in-F# block ---- */
+.emq{margin:1.6rem 0 0;border:1px solid var(--line);border-left:3px solid var(--fsharp);
+  border-radius:14px;background:linear-gradient(180deg,rgba(28,22,42,.5),rgba(10,14,26,.3));
+  padding:clamp(1.1rem,2.4vw,1.5rem)}
+.emq .emq-h{font-family:var(--sans);font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--fsharp-bright);margin:0 0 .7rem;display:inline-flex;align-items:center;gap:.5rem}
+.emq .emq-h::before{content:"";width:18px;height:1px;background:var(--fsharp);display:inline-block}
+.emq p{margin:0 0 .8rem;font-family:var(--serif);color:var(--cream-soft)}
+.emq p:last-child{margin-bottom:0}
+.emq .src{font-family:var(--mono);font-size:.78rem;color:var(--cream-dim)}
+.emq .status{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);
+  border-top:1px dashed var(--line);margin-top:.9rem;padding-top:.7rem}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the module</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/fsharp">jonnify<span class="dot"></span><span class="sub">fsharp</span></a>
+    <nav>
+      <a href="/fsharp">F# In Depth</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/fsharp">fsharp</a><span class="rsep">/</span><a href="/fsharp/algorithms">algorithms</a><span class="rsep">/</span><span class="rcur">champ</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <div class="hero-copy">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/fsharp">F# In Depth</a><span class="sep">/</span><a href="/fsharp/algorithms">C4 · Algorithms &amp; Data Structures</a><span class="sep">/</span><span class="here">C4.06 · CHAMP maps</span>
+      </nav>
+      <p class="eyebrow">Module C4.06</p>
+      <h1>CHAMP <span class="ex">maps</span></h1>
+      <p class="lede">The same lookup as a HAMT, a smaller node, and one canonical shape per map — the structure a persistent registry calls for.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#node">Inside a CHAMP node</a>
+        <a href="#dives">The three dives</a>
+        <a href="#echomq">EchoMQ in F#</a>
+        <a href="#refs">References</a>
+      </div>
+    </div>
+
+    <div class="hero-art">
+      <figure class="hero-fig" aria-labelledby="hpTitle">
+        <figcaption>
+          <p class="fc-lbl" id="hpTitle">popcount finds a slot's index</p>
+        </figcaption>
+        <svg viewBox="0 0 340 250" role="img" aria-label="A CHAMP datamap bitmap of eight visible slots, three of them set. Selecting a set slot computes its dense-array index as the population count of the set bits below it.">
+          <text x="20" y="26" font-family="JetBrains Mono, monospace" font-size="12" fill="#a7c9b1">datamap (8 of 32 slots)</text>
+          <g id="hpBits"><!-- bit cells injected by JS; static fallback below --></g>
+          <!-- static fallback (no JS): bits 1, 3, 6 set -->
+          <g id="hpBitsStatic">
+            <rect x="20" y="38" width="32" height="30" rx="5" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+            <rect x="56" y="38" width="32" height="30" rx="5" fill="#1a2230" stroke="#a7c9b1" stroke-width="2.2"></rect>
+            <rect x="92" y="38" width="32" height="30" rx="5" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+            <rect x="128" y="38" width="32" height="30" rx="5" fill="#1a2230" stroke="#a7c9b1" stroke-width="2.2"></rect>
+            <rect x="164" y="38" width="32" height="30" rx="5" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+            <rect x="200" y="38" width="32" height="30" rx="5" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+            <rect x="236" y="38" width="32" height="30" rx="5" fill="#1a2230" stroke="#a7c9b1" stroke-width="2.2"></rect>
+            <rect x="272" y="38" width="32" height="30" rx="5" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+            <text x="36" y="84" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b7494">0</text>
+            <text x="72" y="84" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a7c9b1">1</text>
+            <text x="108" y="84" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b7494">2</text>
+            <text x="144" y="84" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a7c9b1">3</text>
+            <text x="180" y="84" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b7494">4</text>
+            <text x="216" y="84" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b7494">5</text>
+            <text x="252" y="84" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a7c9b1">6</text>
+            <text x="288" y="84" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b7494">7</text>
+          </g>
+
+          <text x="20" y="118" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.08em" fill="#6b7494">data array (packed, no gaps)</text>
+          <g id="hpArr">
+            <rect x="20" y="128" width="42" height="22" rx="5" fill="#10162b" stroke="#a7c9b1" stroke-width="2"></rect>
+            <text x="41" y="143" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#cdb8f0">[0]</text>
+            <rect x="66" y="128" width="42" height="22" rx="5" fill="#10162b" stroke="#a7c9b1" stroke-width="2"></rect>
+            <text x="87" y="143" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#cdb8f0">[1]</text>
+            <rect x="112" y="128" width="42" height="22" rx="5" fill="#10162b" stroke="#a7c9b1" stroke-width="2"></rect>
+            <text x="133" y="143" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#cdb8f0">[2]</text>
+          </g>
+
+          <g id="hpReadout">
+            <rect x="20" y="172" width="300" height="58" rx="9" fill="#241c14" stroke="#f0cd7f" stroke-width="1.4" opacity="0.92"></rect>
+            <text id="hpFormula" x="34" y="194" font-family="JetBrains Mono, monospace" font-size="11" fill="#f0cd7f">select a set slot above</text>
+            <text id="hpExplain" x="34" y="214" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#cdb8f0">dataIndex datamap bit = popcount(datamap &amp; (bit-1))</text>
+          </g>
+        </svg>
+        <div class="hp-ctrls" id="hpCtrls" role="group" aria-label="Select a CHAMP slot">
+          <button type="button" class="hp-btn active" data-slot="1">slot 1</button>
+          <button type="button" class="hp-btn" data-slot="3">slot 3</button>
+          <button type="button" class="hp-btn" data-slot="6">slot 6</button>
+        </div>
+        <p class="hp-cap" id="hpCap" aria-live="polite">
+          <span class="lst">datamap = 0b01001010 · bits 1, 3, 6 set</span><br>
+          <span class="ohint">Pick a set slot. Its position in the packed data array is the count of set bits below it.</span>
+        </p>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===================== WHAT THIS MODULE COVERS ===================== -->
+  <section id="node">
+    <h2>Inside a CHAMP node</h2>
+    <div class="prose">
+      <p>A <strong>CHAMP</strong> — Compressed Hash-Array Mapped Prefix-tree — is the compressed successor to the
+        HAMT of <a href="/fsharp/algorithms">C4.05</a>. It keeps the same <span class="math">O(log&#8323;&#8322; n)</span>
+        lookup but lays each node out differently. Where a HAMT mixes inline entries and child pointers in one
+        array, a CHAMP splits its 32 slots into two groups: the <code class="inl">datamap</code> bitmap marks the
+        slots holding key/value entries, the <code class="inl">nodemap</code> marks the slots holding sub-nodes.
+        Each kind lives in its own packed array, so there are never gaps to skip.</p>
+      <p>This is the F# reflection of the Elixir course's <strong>E4.06</strong>; it re-derives the same three
+        consequences of that split — the layout, cache-friendly iteration, and the canonical shape that makes
+        equality cheap — and adds the F# implementation and cost notes. One difference matters up front: F#'s
+        built-in <code class="inl">Map</code> is a balanced tree, so on .NET a CHAMP is a structure you build, not
+        one <code class="inl">FSharp.Core</code> hands you.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="chTitle">
+      <h4 id="chTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The angle · select one (8 of 32 slots shown)</h4>
+      <div class="controls">
+        <div class="solid-select" id="chSel" role="group" aria-label="The angle">
+          <button type="button" data-k="layout" data-c="sage" class="active" aria-pressed="true">layout</button>
+          <button type="button" data-k="iteration" data-c="blue" aria-pressed="false">iteration</button>
+          <button type="button" data-k="equality" data-c="gold" aria-pressed="false">equality</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 216" role="img" aria-label="A CHAMP node: a datamap bitmap points to a packed array of entries, and a nodemap bitmap points to a packed array of sub-nodes; no slot is empty.">
+        <rect x="16" y="16" width="688" height="184" rx="14" fill="#10162b" stroke="#2a3252" stroke-width="1.4"></rect>
+
+        <text x="36" y="52" font-family="JetBrains Mono, monospace" font-size="11.5" fill="#a7c9b1">datamap</text>
+        <rect x="110" y="38" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="132" y="38" width="20" height="20" rx="4" fill="#1a2230" stroke="#a7c9b1" stroke-width="2"></rect>
+        <rect x="154" y="38" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="176" y="38" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="198" y="38" width="20" height="20" rx="4" fill="#1a2230" stroke="#a7c9b1" stroke-width="2"></rect>
+        <rect x="220" y="38" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="242" y="38" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="264" y="38" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="300" y="53" font-family="JetBrains Mono, monospace" font-size="13" fill="#5a6688">&rarr;</text>
+        <text x="330" y="30" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.1em" fill="#6b7494">entries (packed)</text>
+        <rect id="chDataArr" x="330" y="38" width="120" height="20" rx="5" fill="#1a2230" stroke="#a7c9b1" stroke-width="2.4"></rect>
+        <line x1="390" y1="38" x2="390" y2="58" stroke="#0f1626" stroke-width="1.4"></line>
+        <text x="360" y="53" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#cdb8f0">k&rarr;v</text>
+        <text x="420" y="53" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#cdb8f0">k&rarr;v</text>
+
+        <text x="36" y="130" font-family="JetBrains Mono, monospace" font-size="11.5" fill="#9fc0ea">nodemap</text>
+        <rect x="110" y="116" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="132" y="116" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="154" y="116" width="20" height="20" rx="4" fill="#16203a" stroke="#9fc0ea" stroke-width="2"></rect>
+        <rect x="176" y="116" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="198" y="116" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="220" y="116" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <rect x="242" y="116" width="20" height="20" rx="4" fill="#16203a" stroke="#9fc0ea" stroke-width="2"></rect>
+        <rect x="264" y="116" width="20" height="20" rx="4" fill="#10162b" stroke="#3a4263" stroke-width="1.3"></rect>
+        <text x="300" y="131" font-family="JetBrains Mono, monospace" font-size="13" fill="#5a6688">&rarr;</text>
+        <text x="330" y="108" font-family="Manrope, sans-serif" font-size="9.5" letter-spacing="0.1em" fill="#6b7494">sub-nodes (packed)</text>
+        <rect id="chNodeArr" x="330" y="116" width="120" height="20" rx="5" fill="#16203a" stroke="#9fc0ea" stroke-width="2.4"></rect>
+        <line x1="390" y1="116" x2="390" y2="136" stroke="#0f1626" stroke-width="1.4"></line>
+        <text x="360" y="131" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9fc0ea">&#9679;</text>
+        <text x="420" y="131" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9fc0ea">&#9679;</text>
+
+        <g id="chBadge" opacity="0">
+          <rect x="486" y="74" width="200" height="44" rx="10" fill="#241c14" stroke="#f0cd7f" stroke-width="1.8"></rect>
+          <text x="586" y="92" text-anchor="middle" font-family="Manrope, sans-serif" font-size="11" fill="#f0cd7f">canonical form</text>
+          <text x="586" y="108" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="#cdb8f0">one shape per map</text>
+        </g>
+
+        <text id="chCaption" x="360" y="186" text-anchor="middle" font-family="Manrope, sans-serif" font-size="10.5" fill="#a7c9b1">two bitmaps, two packed arrays — no empty slots</text>
+      </svg>
+
+      <pre class="code" id="chCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="chOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">role: <span id="chRole" style="color:var(--sage-bright)">two bitmaps, two dense arrays</span></p>
+    </figure>
+    <p class="take">The split is the whole idea. Keeping entries apart from sub-nodes, each packed with no gaps,
+      is what makes a CHAMP smaller than a HAMT, quicker to walk, and canonical — the three dives take each
+      consequence in turn.</p>
+  </section>
+
+  <!-- ===================== THE DIVES ===================== -->
+  <section id="dives">
+    <h2>The three dives</h2>
+    <div class="prose">
+      <p>In order: how a node is laid out, why iteration is cache-friendly, and how the canonical shape makes the
+        HAMT→CHAMP improvement concrete — each tied to the persistent registry the F# bus port keeps. Every
+        <code class="inl">// val it:</code> echo in the dives was produced by <code class="inl">dotnet fsi</code>.</p>
+    </div>
+    <div class="legend">
+      <span><span class="pill live">live</span> module hub</span>
+      <span><span class="pill built">built</span> dive ready</span>
+      <span><span class="pill soon">soon</span> specified</span>
+    </div>
+    <div class="chap">
+      <div class="mods">
+        <a class="mod" href="/fsharp/algorithms/champ/champ-layout">
+          <div class="top"><span class="num">C4.06.1</span><span class="pill built">built</span></div>
+          <p class="t">The CHAMP layout</p>
+          <p class="o">Two bitmaps — <code class="inl">datamap</code> and <code class="inl">nodemap</code> — and two packed arrays, with a slot's position found by <code class="inl">popcount</code>.</p>
+          <ul class="dives"><li><span class="dn">layout</span><span>the registry a queue needs: a branded-key&rarr;row persistent map</span></li></ul>
+        </a>
+        <a class="mod" href="/fsharp/algorithms/champ/iteration">
+          <div class="top"><span class="num">C4.06.2</span><span class="pill built">built</span></div>
+          <p class="t">Iteration</p>
+          <p class="o">Contiguous entries walk linearly in a fixed canonical order, with far fewer cache misses than a HAMT's interleaved slots.</p>
+          <ul class="dives"><li><span class="dn">iteration</span><span>browsing the registry; how <code class="inl">Store</code> exposes its rows</span></li></ul>
+        </a>
+        <a class="mod" href="/fsharp/algorithms/champ/hamt-vs-champ">
+          <div class="top"><span class="num">C4.06.3</span><span class="pill built">built</span></div>
+          <p class="t">HAMT vs CHAMP</p>
+          <p class="o">The improvement over <a href="/fsharp/algorithms">C4.05</a>, why the bus's registry calls for CHAMP, and the swap-in-behind-the-same-surface discipline.</p>
+          <ul class="dives"><li><span class="dn">compare</span><span>the same lookup, a smaller node, a canonical shape</span></li></ul>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ECHOMQ IN F# ===================== -->
+  <section id="echomq">
+    <h2>EchoMQ in F#</h2>
+    <p class="take">Status &mdash; <code class="inl">echo_fs</code> is an in-memory model. The EchoMQ protocol &mdash; the Lua transitions executing on a Valkey wire &mdash; is <strong>not implemented</strong> (there is no Lua and no Valkey client in the code); that is the coming-soon transport (<code class="inl">EchoMQ.Connector</code>). This block shows how the model uses the structure, not a running bus.</p>
+    <div class="prose">
+      <p>The bus needs a registry: every job's row, reachable by its identity, persistent so an edit returns a new
+        map and leaves the old one intact. That is what a CHAMP is for. The F# port — <code class="inl">echo_fs</code>,
+        the skeleton of the Elixir <code class="inl">echo/apps/echo_mq</code> bus — declares the registry as a
+        <code class="inl">Map</code> keyed by the branded id, and keeps the surface ready for the compact CHAMP to
+        slot in behind it.</p>
+    </div>
+
+    <div class="emq">
+      <p class="emq-h">EchoMQ in F# · the registry</p>
+      <p>In <code class="inl">echo_fs/EchoMQ/Store.fs</code>, a queue's state holds its rows as a persistent map
+        keyed by the branded id:</p>
+      <pre class="code"><span class="cmt">// echo_fs/EchoMQ/Store.fs — "Rows are a Map keyed by branded id"</span>
+<span class="op">type</span> QueueState =
+    { Rows: Map&lt;<span class="fn sage">string</span>, <span class="fn">Job</span>&gt;
+      Pending: Set&lt;<span class="fn sage">string</span>&gt;
+      <span class="cmt">// ... schedule, active, dead, paused, counts</span> }</pre>
+      <p>That <code class="inl">Rows: Map&lt;string, Job&gt;</code> is an F# balanced tree <strong>today</strong>. It
+        stands in for the production branded CHAMP. The honest framing the port&rsquo;s own README states:
+        the in-memory <code class="inl">Store</code> stands in for the branded CHAMP behind the same
+        <code class="inl">enqueue/claim/complete/retry/promote/reap</code> surface, <em>&ldquo;so the durable backing
+        swaps in with no caller change&rdquo;</em>.</p>
+      <p class="status"><strong>Living status.</strong> The production Elixir bus is backed by a branded CHAMP;
+        <code class="inl">echo_fs</code> does <strong>not</strong> implement a CHAMP yet — its <code class="inl">Store.Rows</code>
+        is a <code class="inl">Map</code> standing in for it. The compact CHAMP and the Valkey transport
+        (<code class="inl">EchoMQ.Connector</code>, listed <em>coming soon</em> in the README) land next, behind
+        the same surface.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">C4.05 · the HAMT</p>
+        <p>One bitmap, one array per node, mixing entries and children — the persistent map underneath F#&rsquo;s tree.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell fs">
+        <p class="lbl">C4.06 · the CHAMP</p>
+        <p>Two bitmaps, two packed arrays — canonical, smaller, faster to walk: the compact form the registry becomes.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://fsharp.github.io/fsharp-core-docs/">FSharp.Core API reference</a> &mdash; the <code class="inl">Map</code> module (a balanced tree), <code class="inl">Map.add</code> / <code class="inl">tryFind</code> / <code class="inl">fold</code>.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/">Microsoft &mdash; <em>F# documentation</em></a> &mdash; discriminated unions, records, and arrays for modelling a node.</li>
+          <li><a href="https://fsharp.org/">The F# Software Foundation</a> &mdash; F# on the .NET runtime.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/">Microsoft &mdash; <em>.NET documentation</em></a> &mdash; <code class="inl">System.Numerics.BitOperations.PopCount</code>, the cost model on the CLR.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/elixir/algorithms/champ">Elixir &mdash; E4.06 · CHAMP maps</a> &mdash; the parity sibling this module reflects.</li>
+          <li><a href="/fsharp/algorithms">C4 &mdash; Algorithms &amp; Data Structures</a> &mdash; the chapter, and C4.05 the HAMT this builds on.</li>
+          <li><a href="/fsharp/language/unions-and-records">C1.06 &mdash; Discriminated unions &amp; records</a> &mdash; how the node is modelled.</li>
+          <li><a href="/fsharp/algorithms/champ/champ-layout">C4.06.1 &mdash; The CHAMP layout</a> &mdash; start here.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/fsharp/algorithms"><span aria-hidden="true">&larr;</span> C4 · Algorithms &amp; Data Structures</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/fsharp/algorithms/champ/champ-layout">Begin · C4.06.1 The CHAMP layout <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="F# In Depth — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/fsharp">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">F# In Depth &mdash; the ML-family language on .NET, taught from first principles to a real DevOps tool shipped in F#.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/fsharp/algorithms">C4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/fsharp/algorithms/champ">C4.06 &middot; CHAMP maps</a>
+        <a href="#refs">References</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/fsharp">Course home</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var SAGE = '#a7c9b1', BLUE = '#9fc0ea', GOLD = '#f0cd7f', DIMSTK = '#3a4263';
+  function set(id, attr, v) { var e = document.getElementById(id); if (e) e.setAttribute(attr, String(v)); }
+
+  /* ---------- the angle selector (pure lookup over the node) ---------- */
+  var CASES = {
+    layout: {
+      dataStroke: SAGE, dataW: '2.4', nodeStroke: BLUE, nodeW: '2.4', badge: 0,
+      caption: 'two bitmaps, two packed arrays — no empty slots', captionFill: SAGE,
+      role: 'two bitmaps, two dense arrays', roleFill: SAGE,
+      code: '<span class="op">type</span> Champ&lt;<span class="fn">\'K</span>,<span class="fn">\'V</span>&gt; =\n    | Leaf <span class="op">of</span> hash: int * key: <span class="fn">\'K</span> * value: <span class="fn">\'V</span>\n    | Node <span class="op">of</span> datamap: int * nodemap: int * data: (<span class="fn">\'K</span> * <span class="fn">\'V</span>)[] * nodes: Champ&lt;<span class="fn">\'K</span>,<span class="fn">\'V</span>&gt;[]\n<span class="cmt">// datamap marks entry slots; nodemap marks child slots; arrays hold no gaps</span>',
+      out: 'A CHAMP node keeps <b style="color:var(--sage-bright)">two bitmaps and two packed arrays</b>. The datamap marks which slots hold inline entries, the nodemap which hold children, and each array stores only the present items &mdash; no empty cells to skip.'
+    },
+    iteration: {
+      dataStroke: SAGE, dataW: '2.6', nodeStroke: DIMSTK, nodeW: '1.4', badge: 0,
+      caption: 'entries sit contiguously — walk them directly', captionFill: BLUE,
+      role: 'entries stored contiguously', roleFill: BLUE,
+      code: '<span class="cmt">// entries are contiguous, so a walk reads them linearly, then descends</span>\nnode <span class="op">|></span> <span class="fn sage">Array</span>.<span class="fn">fold</span> step acc      <span class="cmt">// this node, canonical order</span>\n<span class="cmt">// FSharp.Core Map walks the same way: Map.fold / Map.toList in key order</span>',
+      out: 'Because entries are <b style="color:var(--blue-bright)">contiguous</b> and separate from child pointers, iteration sweeps the entry array in a fixed, canonical order, then descends &mdash; far fewer cache misses than a HAMT&rsquo;s interleaved layout.'
+    },
+    equality: {
+      dataStroke: SAGE, dataW: '2', nodeStroke: BLUE, nodeW: '2', badge: 1,
+      caption: 'one canonical shape per map', captionFill: GOLD,
+      role: 'one canonical shape per map', roleFill: GOLD,
+      code: '<span class="cmt">// a canonical shape means equal maps are structurally identical</span>\n<span class="op">let</span> a = <span class="fn sage">Map</span>.<span class="fn">empty</span> <span class="op">|></span> <span class="fn sage">Map</span>.<span class="fn">add</span> <span class="res">1</span> <span class="str">"a"</span> <span class="op">|></span> <span class="fn sage">Map</span>.<span class="fn">add</span> <span class="res">2</span> <span class="str">"b"</span>\n<span class="op">let</span> b = <span class="fn sage">Map</span>.<span class="fn">empty</span> <span class="op">|></span> <span class="fn sage">Map</span>.<span class="fn">add</span> <span class="res">2</span> <span class="str">"b"</span> <span class="op">|></span> <span class="fn sage">Map</span>.<span class="fn">add</span> <span class="res">1</span> <span class="str">"a"</span>\na = b   <span class="cmt">// val it: bool = true   (order-independent)</span>',
+      out: 'CHAMP keeps <b style="color:var(--gold-bright)">one canonical shape</b> for a given set of entries, so two equal maps are identical trees. Equality and hashing can short-circuit on shared sub-trees, and a one-entry change touches only its path.'
+    }
+  };
+  function pick(k) {
+    var c = CASES[k]; if (!c) return;
+    document.querySelectorAll('#chSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    set('chDataArr', 'stroke', c.dataStroke); set('chDataArr', 'stroke-width', c.dataW);
+    set('chNodeArr', 'stroke', c.nodeStroke); set('chNodeArr', 'stroke-width', c.nodeW);
+    set('chBadge', 'opacity', c.badge);
+    var t;
+    t = document.getElementById('chCaption'); if (t) { t.textContent = c.caption; t.setAttribute('fill', c.captionFill); }
+    t = document.getElementById('chRole'); if (t) { t.textContent = c.role; t.style.color = c.roleFill; }
+    t = document.getElementById('chCode'); if (t) t.innerHTML = c.code;
+    t = document.getElementById('chOut'); if (t) t.innerHTML = c.out;
+  }
+  document.querySelectorAll('#chSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('layout');
+
+  /* ---------- hero: popcount index probe (pure function over a fixed datamap) ---------- */
+  (function () {
+    var SVGNS = 'http://www.w3.org/2000/svg';
+    var SLOTS = 8;
+    var SET = [1, 3, 6];                 // the set bits of the fixed datamap
+    var datamap = 0;
+    SET.forEach(function (i) { datamap |= (1 << i); });
+
+    // pure: popcount of the set bits strictly below `bit`
+    function popcount(x) { x = x >>> 0; var n = 0; while (x) { x &= (x - 1); n++; } return n; }
+    function dataIndex(dm, bit) { return popcount(dm & (bit - 1)); }
+
+    var bitsG = document.getElementById('hpBits');
+    var bitsStatic = document.getElementById('hpBitsStatic');
+    var arr = document.getElementById('hpArr');
+    var formula = document.getElementById('hpFormula');
+    var explain = document.getElementById('hpExplain');
+    var cap = document.getElementById('hpCap');
+    var ctrls = document.getElementById('hpCtrls');
+    if (!bitsG || !arr || !formula || !ctrls || !cap) return;
+
+    // JS enhances: hide the static fallback, draw interactive bit cells
+    if (bitsStatic) bitsStatic.setAttribute('opacity', '0');
+
+    function el(name, attrs, text) {
+      var n = document.createElementNS(SVGNS, name), k;
+      for (k in attrs) { if (Object.prototype.hasOwnProperty.call(attrs, k)) n.setAttribute(k, attrs[k]); }
+      if (text != null) n.textContent = text;
+      return n;
+    }
+    function clear(g) { while (g.firstChild) g.removeChild(g.firstChild); }
+
+    function render(selected) {
+      clear(bitsG);
+      for (var i = 0; i < SLOTS; i++) {
+        var on = (datamap & (1 << i)) !== 0;
+        var isSel = i === selected;
+        bitsG.appendChild(el('rect', {
+          x: 20 + i * 36, y: 38, width: 32, height: 30, rx: 5,
+          fill: isSel ? '#3a2c12' : (on ? '#1a2230' : '#10162b'),
+          stroke: isSel ? '#f0cd7f' : (on ? '#a7c9b1' : '#3a4263'),
+          'stroke-width': isSel ? 2.6 : (on ? 2.2 : 1.3)
+        }));
+        bitsG.appendChild(el('text', {
+          x: 36 + i * 36, y: 84, 'text-anchor': 'middle',
+          'font-family': 'JetBrains Mono, monospace', 'font-size': 9,
+          fill: on ? (isSel ? '#f0cd7f' : '#a7c9b1') : '#6b7494'
+        }, String(i)));
+      }
+      // packed data array: one cell per set bit, in slot order
+      clear(arr);
+      arr.appendChild(el('text', { x: 20, y: 122, 'font-family': 'Manrope, sans-serif', 'font-size': 9.5, 'letter-spacing': '0.08em', fill: '#6b7494' }, 'data array (packed, no gaps)'));
+      var idx = 0, x = 20;
+      for (var s = 0; s < SLOTS; s++) {
+        if ((datamap & (1 << s)) === 0) continue;
+        var here = (s === selected);
+        var g = el('g', {});
+        g.appendChild(el('rect', { x: x, y: 128, width: 42, height: 22, rx: 5, fill: here ? '#3a2c12' : '#10162b', stroke: here ? '#f0cd7f' : '#a7c9b1', 'stroke-width': here ? 2.6 : 2 }));
+        g.appendChild(el('text', { x: x + 21, y: 143, 'text-anchor': 'middle', 'font-family': 'JetBrains Mono, monospace', 'font-size': 10, fill: here ? '#f0cd7f' : '#cdb8f0' }, '[' + idx + ']'));
+        arr.appendChild(g);
+        idx++; x += 46;
+      }
+    }
+
+    function show(slot) {
+      var bit = 1 << slot;
+      var i = dataIndex(datamap, slot);
+      render(slot);
+      if (formula) formula.textContent = 'dataIndex 0b' + datamap.toString(2).padStart(8, '0') + ' (slot ' + slot + ') = ' + i;
+      if (explain) explain.textContent = 'popcount(datamap & (bit-1)) = ' + i + '  → data[' + i + ']';
+      if (cap) {
+        cap.innerHTML = '<span class="lst">datamap = 0b' + datamap.toString(2).padStart(8, '0') + ' · bits 1, 3, 6 set</span><br>' +
+          '<span class="ohint">Slot ' + slot + ' is the <b style="color:var(--gold-bright)">' + (i + 1) + (i === 0 ? 'st' : (i === 1 ? 'nd' : (i === 2 ? 'rd' : 'th'))) + '</b> set bit; its packed index is data[' + i + '].</span>';
+      }
+      Array.prototype.slice.call(ctrls.querySelectorAll('.hp-btn')).forEach(function (b) {
+        var on = parseInt(b.getAttribute('data-slot'), 10) === slot;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+
+    Array.prototype.slice.call(ctrls.querySelectorAll('.hp-btn')).forEach(function (b) {
+      b.addEventListener('click', function () { show(parseInt(b.getAttribute('data-slot'), 10)); });
+    });
+    show(1);
+  })();
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

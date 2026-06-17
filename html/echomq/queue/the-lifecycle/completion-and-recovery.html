@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Completion &amp; recovery · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="A claimed job leaves the active set in one of four token-fenced ways: @complete retires it, @retry parks it on the schedule set with a delay or dead-letters it at max attempts, @reap returns a lapsed lease to pending on the server clock, and reprocess_job re-enters a dead job. Real EchoMQ.Jobs code in two beats, with a token-fence inspector.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- exit selector svg ---- */
+.exit .arc rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+.exit .arc.on rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.exit text{font-family:var(--sans);fill:#d7cfb9}
+.exit .arc.on text.lab{fill:#ece4d0}
+.exit .eid{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.exit .flow{stroke:#2a3252;stroke-width:1.4;fill:none}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/queue">queue</a><span class="rsep">/</span><a href="/echomq/queue/the-lifecycle">the-lifecycle</a><span class="rsep">/</span><span class="rcur">completion-and-recovery</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue">The Queue</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue/the-lifecycle">The lifecycle</a>
+        <span class="sep">/</span>
+        <span class="here">Completion &amp; recovery</span>
+      </nav>
+      <p class="eyebrow">The lifecycle &middot; dive 03</p>
+      <h1>Completion <span class="ex">&amp; recovery</span></h1>
+      <p class="lede">A claimed job leaves the active set exactly four ways — and each is token-fenced.</p>
+      <p class="kicker">Success retires the job (<code class="inl">@complete</code>); a failure parks it for a delayed
+        retry or, at max attempts, dead-letters it (<code class="inl">@retry</code>); a lapsed lease returns it to
+        pending on the server clock (<code class="inl">@reap</code>); and a dead job can be re-entered
+        (<code class="inl">reprocess_job/3</code>). The thread through all of it is the <strong>fencing token</strong>:
+        only the holder of the current <code class="inl">attempts</code> value may retire or extend the job. Pick an exit
+        on the right, then read the two beats and the recovery transitions.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#beats">Complete, in two beats</a>
+        <a href="#recovery">The recovery transitions</a>
+        <a href="#inspect">The token fence</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig exit" aria-labelledby="exitTitle">
+      <h4 id="exitTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">How a claimed job leaves active &middot; pick an exit</h4>
+      <div class="controls">
+        <div class="solid-select" id="exitSel" role="group" aria-label="Which exit from the active set">
+          <button type="button" data-exit="complete" data-c="echo" class="active" aria-pressed="true">complete</button>
+          <button type="button" data-exit="scheduled" data-c="echo" aria-pressed="false">retry → scheduled</button>
+          <button type="button" data-exit="dead" data-c="echo" aria-pressed="false">retry → dead</button>
+          <button type="button" data-exit="reap" data-c="echo" aria-pressed="false">reap → pending</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 230" role="img" aria-label="A job in the active set with four exits: complete to done (row deleted), retry to the schedule set, retry to the dead set at max attempts, and reap back to pending when the lease lapses. The selected exit is highlighted in the EchoMQ accent.">
+        <g class="arc"><rect x="170" y="14" width="120" height="40" rx="9" fill="rgba(16,22,43,.7)" stroke="#2a3252"></rect></g>
+        <text x="230" y="32" text-anchor="middle" font-size="13" fill="#d7cfb9">active</text>
+        <text x="230" y="47" text-anchor="middle" class="eid">the claimed job</text>
+
+        <path class="flow" d="M230 54 L230 84"></path>
+        <path class="flow" d="M230 54 Q120 70 90 96"></path>
+        <path class="flow" d="M230 54 Q360 70 380 96"></path>
+        <path class="flow" d="M230 54 Q70 110 60 150 Q60 180 150 188"></path>
+
+        <g class="arc on" id="x-complete"><rect x="170" y="84" width="120" height="38" rx="9"></rect></g>
+        <text x="230" y="103" text-anchor="middle" class="lab" font-size="12">done</text>
+        <text x="230" y="117" text-anchor="middle" class="eid">@complete · row DEL</text>
+
+        <g class="arc" id="x-scheduled"><rect x="14" y="96" width="120" height="38" rx="9"></rect></g>
+        <text x="74" y="115" text-anchor="middle" class="lab" font-size="12">schedule</text>
+        <text x="74" y="129" text-anchor="middle" class="eid">@retry · delay</text>
+
+        <g class="arc" id="x-dead"><rect x="326" y="96" width="120" height="38" rx="9"></rect></g>
+        <text x="386" y="115" text-anchor="middle" class="lab" font-size="12">dead</text>
+        <text x="386" y="129" text-anchor="middle" class="eid">@retry · max</text>
+
+        <g class="arc" id="x-reap"><rect x="100" y="176" width="120" height="38" rx="9"></rect></g>
+        <text x="160" y="195" text-anchor="middle" class="lab" font-size="12">pending</text>
+        <text x="160" y="209" text-anchor="middle" class="eid">@reap · lapsed</text>
+      </svg>
+      <div class="geo-readout" id="exitOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="beats">
+    <h2>Complete, in two beats</h2>
+    <div class="prose">
+      <p><strong>Beat one — the handle.</strong> <code class="inl">complete/4</code> builds the active set and the row
+        key, passes the id and the token, and maps the reply. (The same script carries a fan-in hook for flows; a
+        non-flow completion runs the two-key call shown here.)</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs (non-flow completion shape)</span>
+<span class="cmt"># complete/4 is the handle. KEYS = [active, row]; ARGV[1] is the id, ARGV[2] the</span>
+<span class="cmt"># attempts token the worker holds, ARGV[3] the queue base. Only the current token</span>
+<span class="cmt"># holder may retire the job — a stale token answers {:error, :stale}.</span>
+keys = [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"active"</span>), Keyspace.<span class="fn">job_key</span>(queue, job_id)]
+argv = [job_id, Integer.<span class="fn">to_string</span>(token), Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">""</span>)]
+
+<span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@complete</span>, keys, argv) <span class="op">do</span>
+  {<span class="str">:ok</span>, <span class="res">1</span>} -&gt; <span class="str">:ok</span>
+  {<span class="str">:ok</span>, <span class="res">0</span>} -&gt; {<span class="str">:error</span>, <span class="str">:gone</span>}                              <span class="cmt"># the row was already gone</span>
+  {<span class="str">:error</span>, {<span class="str">:server</span>, <span class="str">"EMQSTALE"</span> &lt;&gt; _}} -&gt; {<span class="str">:error</span>, <span class="str">:stale</span>} <span class="cmt"># a non-current token holder</span>
+  other -&gt; other
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><strong>Beat two — the script body (the token fence).</strong> <code class="inl">@complete</code> reads
+        <code class="inl">attempts</code>, refuses a token mismatch, removes the active member, and — on the non-flow path
+        — retires the row and bumps the metric. The token check is what makes a redelivered or stale completion a no-op.</p>
+    </div>
+
+    <pre class="code"><span class="cmt">-- the @complete script — the token fence + the terminal (non-flow path)</span>
+<span class="cmt">-- Read the row's attempts. If the row is gone, return 0 (the handle's :gone).</span>
+<span class="op">local</span> att = redis.call(<span class="str">'HGET'</span>, <span class="rdx">KEYS[2]</span>, <span class="str">'attempts'</span>)
+<span class="op">if</span> not att <span class="op">then</span> <span class="op">return</span> <span class="res">0</span> <span class="op">end</span>
+<span class="cmt">-- The fence: the caller must present the CURRENT attempts token. A stale holder</span>
+<span class="cmt">-- (an old claim that was reaped and re-claimed) presents an older number and is</span>
+<span class="cmt">-- refused — its completion changes nothing.</span>
+<span class="op">if</span> att ~= <span class="rdx">ARGV[2]</span> <span class="op">then</span>
+  <span class="op">return</span> redis.error_reply(<span class="str">'EMQSTALE complete token mismatch'</span>)
+<span class="op">end</span>
+<span class="op">local</span> p = <span class="rdx">ARGV[3]</span>                              <span class="cmt">-- the queue base, "emq:{q}:"</span>
+<span class="cmt">-- Remove the active member; was_active is 1 if it was present (the normal case).</span>
+<span class="op">local</span> was_active = redis.call(<span class="str">'ZREM'</span>, <span class="rdx">KEYS[1]</span>, <span class="rdx">ARGV[1]</span>)
+<span class="cmt">-- Retire the row and count the completion. The row is deleted — a completed job</span>
+<span class="cmt">-- leaves no row behind; the metric is the durable trace.</span>
+redis.call(<span class="str">'DEL'</span>, <span class="rdx">KEYS[2]</span>)
+redis.call(<span class="str">'HINCRBY'</span>, p .. <span class="str">'metrics:completed'</span>, <span class="str">'count'</span>, <span class="res">1</span>)
+<span class="op">return</span> <span class="res">1</span></pre>
+
+    <p class="take">Completion is not "delete the job." It is: prove you hold the current token, then retire the active
+      member and the row in one atomic step — so a stale worker waking up late cannot un-retire a job that was already
+      recovered and re-run.</p>
+  </section>
+
+  <section id="recovery">
+    <h2>The recovery transitions</h2>
+    <div class="prose">
+      <p><strong><code class="inl">@retry</code> parks or dead-letters</strong>, token-fenced. Below max attempts it
+        schedules with a <strong>literal</strong> delay (the backoff curve is computed above the wire); at max it
+        dead-letters with <code class="inl">last_error</code>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt">-- the @retry script — record the error, then park or dead-letter (core path)</span>
+<span class="cmt">-- att is the row's attempts (read and token-checked above); p is the queue base.</span>
+<span class="op">local</span> p = <span class="rdx">ARGV[6]</span>
+redis.call(<span class="str">'HSET'</span>, <span class="rdx">KEYS[4]</span>, <span class="str">'last_error'</span>, <span class="rdx">ARGV[5]</span>)
+<span class="op">if</span> tonumber(att) &gt;= tonumber(<span class="rdx">ARGV[4]</span>) <span class="op">then</span>          <span class="cmt">-- at or past max attempts</span>
+  redis.call(<span class="str">'HSET'</span>, <span class="rdx">KEYS[4]</span>, <span class="str">'state'</span>, <span class="str">'dead'</span>)
+  redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[3]</span>, <span class="res">0</span>, <span class="rdx">ARGV[1]</span>)           <span class="cmt">-- into the morgue</span>
+  redis.call(<span class="str">'HINCRBY'</span>, p .. <span class="str">'metrics:failed'</span>, <span class="str">'count'</span>, <span class="res">1</span>)
+  <span class="op">return</span> <span class="str">'dead'</span>
+<span class="op">end</span>
+<span class="op">local</span> t = redis.call(<span class="str">'TIME'</span>)
+<span class="op">local</span> now = t[<span class="res">1</span>] * <span class="res">1000</span> + math.floor(t[<span class="res">2</span>] / <span class="res">1000</span>)
+redis.call(<span class="str">'HSET'</span>, <span class="rdx">KEYS[4]</span>, <span class="str">'state'</span>, <span class="str">'scheduled'</span>)
+redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[2]</span>, now + tonumber(<span class="rdx">ARGV[3]</span>), <span class="rdx">ARGV[1]</span>)  <span class="cmt">-- park with a literal delay</span>
+<span class="op">return</span> <span class="str">'scheduled'</span></pre>
+
+    <div class="prose">
+      <p><strong><code class="inl">@reap</code> is crash recovery on the server clock.</strong> It range-queries the
+        active set for members whose lease score is in the past and returns each to pending — no heartbeat, no worker
+        liveness check. The active-set score IS the deadline, so "which leases lapsed" is a range query.</p>
+    </div>
+
+    <pre class="code"><span class="cmt">-- the @reap script — return expired leases to pending (server-clock recovery)</span>
+<span class="op">local</span> p = <span class="rdx">ARGV[1]</span>                              <span class="cmt">-- the queue base, "emq:{q}:"</span>
+<span class="op">local</span> t = redis.call(<span class="str">'TIME'</span>)
+<span class="op">local</span> now = t[<span class="res">1</span>] * <span class="res">1000</span> + math.floor(t[<span class="res">2</span>] / <span class="res">1000</span>)
+<span class="cmt">-- Any active member scored at/below now has a LAPSED lease (the claimant is gone</span>
+<span class="cmt">-- or stuck). The active-set score IS the deadline, so this is a range query.</span>
+<span class="op">local</span> exp = redis.call(<span class="str">'ZRANGEBYSCORE'</span>, <span class="rdx">KEYS[1]</span>, <span class="str">'-inf'</span>, now, <span class="str">'LIMIT'</span>, <span class="res">0</span>, <span class="res">100</span>)
+<span class="op">for</span> _, id <span class="op">in</span> ipairs(exp) <span class="op">do</span>
+  redis.call(<span class="str">'ZREM'</span>, <span class="rdx">KEYS[1]</span>, id)                   <span class="cmt">-- out of active</span>
+  redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[2]</span>, <span class="res">0</span>, id)                <span class="cmt">-- back to pending (non-grouped path)</span>
+  redis.call(<span class="str">'HSET'</span>, p .. <span class="str">'job:'</span> .. id, <span class="str">'state'</span>, <span class="str">'pending'</span>)
+<span class="op">end</span>
+<span class="op">return</span> #exp</pre>
+
+    <div class="prose">
+      <p><strong><code class="inl">reprocess_job/3</code> re-enters a dead job</strong> — and refuses one that is not
+        dead. A dead job is the only finished-and-retained state, so this is the "retry a failed job" surface.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs</span>
+<span class="cmt"># reprocess_job/3 moves a dead job back to pending: clear last_error, set</span>
+<span class="cmt"># state = pending, ZADD pending. The script refuses a job NOT in the morgue with</span>
+<span class="cmt"># {:error, :not_dead}, and a missing job with {:error, :gone}.</span>
+<span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@reprocess</span>, keys, [job_id]) <span class="op">do</span>
+  {<span class="str">:ok</span>, <span class="res">1</span>} -&gt; <span class="str">:ok</span>
+  {<span class="str">:ok</span>, <span class="res">-1</span>} -&gt; {<span class="str">:error</span>, <span class="str">:gone</span>}
+  {<span class="str">:error</span>, {<span class="str">:server</span>, <span class="str">"EMQSTATE"</span> &lt;&gt; _}} -&gt; {<span class="str">:error</span>, <span class="str">:not_dead</span>}
+  other -&gt; other
+<span class="op">end</span></pre>
+
+    <p class="note">The four exits share one structure: the active-set member is removed, the row is rewritten or deleted,
+      and the id moves to the set its new state names. Recovery is not special-cased — it is the same set arithmetic,
+      driven by the server clock instead of a worker call.</p>
+  </section>
+
+  <section id="inspect">
+    <h2>The token fence</h2>
+    <div class="prose">
+      <p>The job's current <code class="inl">attempts</code> is <strong>2</strong> (it was claimed twice — reaped once,
+        re-claimed). Present a token and read the verdict: the matching token completes; any other is refused with
+        <code class="inl">{:error, :stale}</code> (the <code class="inl">EMQSTALE</code> wire class). This is the same
+        check <code class="inl">@complete</code>, <code class="inl">@retry</code>, and the lease-extension verb all share.
+        The model is the real fence comparison over a fixed row — pure, no network.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="fenceTitle">
+      <h4 id="fenceTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Present a token &middot; the row's attempts is 2</h4>
+      <div class="controls">
+        <div class="solid-select" id="fenceSel" role="group" aria-label="Which token to present">
+          <button type="button" data-tok="2" data-c="echo" class="active" aria-pressed="true">token 2 (current)</button>
+          <button type="button" data-tok="1" data-c="gold" aria-pressed="false">token 1 (stale)</button>
+          <button type="button" data-tok="3" data-c="gold" aria-pressed="false">token 3 (wrong)</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 92" role="img" aria-label="A job row whose attempts field holds the current token value 2. A presented token is compared against it: equal completes, unequal is refused as stale.">
+        <rect x="14" y="16" width="220" height="60" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="124" y="40" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a39c89">row attempts (the fence)</text>
+        <text x="124" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="16" fill="#6fdccf">2</text>
+        <rect x="246" y="16" width="220" height="60" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="356" y="40" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a39c89">presented token</text>
+        <text id="fence-tok" x="356" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="16" fill="#6fdccf">2</text>
+      </svg>
+      <div class="geo-readout" id="fenceOut" aria-live="polite"></div>
+    </figure>
+    <p class="note">A stale token is exactly the scenario the lease creates: a worker was reaped (its job returned to
+      pending and re-claimed, bumping <code class="inl">attempts</code>), then wakes up and tries to complete. Its token
+      is now behind the row, so the fence refuses it — the job that was recovered and re-run is not double-finished.</p>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A reliable queue confirms work atomically and recovers a crashed worker's job from a visibility timeout, so
+          nothing is lost or double-run. <a href="/redis-patterns/queues/the-reliable-queue">The reliable queue</a> and
+          <a href="/redis-patterns/queues/states-as-locations">States as locations</a> teach the move.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">@complete</code> token-fences the terminal; <code class="inl">@retry</code> parks or
+          dead-letters with <code class="inl">last_error</code>; <code class="inl">@reap</code> returns lapsed leases to
+          pending on the server clock; <code class="inl">reprocess_job/3</code> re-enters a dead job.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: confirm atomically and recover from a timeout. The implementation makes the
+      <code class="inl">attempts</code> token the confirmation and the active-set score the timeout — so completion and
+      recovery are the same arithmetic seen from two clocks.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; four exits, one fence</h2>
+    <div class="prose">
+      <p>A claimed job leaves the active set by <code class="inl">@complete</code> (token-fenced retirement),
+        <code class="inl">@retry</code> (schedule with a literal delay, or dead at max attempts with
+        <code class="inl">last_error</code>), or <code class="inl">@reap</code> (a lapsed lease returns to pending on the
+        server clock); a dead job re-enters via <code class="inl">reprocess_job/3</code>. The fencing token —
+        <code class="inl">attempts</code> — is what keeps a stale worker from double-finishing a recovered job. That
+        closes the lifecycle: enqueue, claim, complete, and recover, all four sets and one row.</p>
+    </div>
+    <p class="note">Next in the Queue: <strong>Jobs, lanes &amp; the consumer</strong> &mdash; the producer, fair claiming
+      across identities, and the supervised loop that parks instead of polling.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the token-fenced terminal and the recovery transitions are grounded, and the commands the bodies use.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/zrangebyscore/">Valkey &mdash; <em>ZRANGEBYSCORE</em></a> &mdash; the expired-lease range the reaper reads.</li>
+          <li><a href="https://valkey.io/commands/zrem/">Valkey &mdash; <em>ZREM</em></a> &mdash; the active-set removal every exit performs.</li>
+          <li><a href="https://valkey.io/commands/zadd/">Valkey &mdash; <em>ZADD</em></a> &mdash; the schedule / morgue / pending insertions the transitions write.</li>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the load-once dispatch each transition runs by SHA.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/queue/the-lifecycle">The lifecycle</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/queue/the-lifecycle/claim-and-the-lease">Claim &amp; the lease</a> &mdash; the lease and the token this fence checks.</li>
+          <li><a href="/echomq/queue/the-lifecycle/the-four-sets">The four sets</a> &mdash; the sets a job moves between.</li>
+          <li><a href="/echomq/protocol/the-lua-layer">The Lua layer</a> &mdash; the scripts the transitions are.</li>
+          <li><a href="/redis-patterns/queues/the-reliable-queue">redis-patterns &middot; The reliable queue</a> &mdash; confirm-and-recover, the pattern this implements.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/queue/the-lifecycle/claim-and-the-lease"><span aria-hidden="true">&larr;</span>&nbsp; Claim &amp; the lease</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/queue/the-lifecycle">The lifecycle <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/queue/the-lifecycle">The lifecycle</a>
+        <a href="/echomq/queue/the-lifecycle/the-four-sets">The four sets</a>
+        <a href="/echomq/queue/the-lifecycle/claim-and-the-lease">Claim &amp; the lease</a>
+        <a href="/echomq/queue/the-lifecycle/completion-and-recovery">Completion &amp; recovery</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the exit selector (pure lookup over a fixed dataset) ---------- */
+  /* The four ways a claimed job leaves the active set, each naming the script, the
+     destination set, the row state, and the metric (if any). Pure over this fixed
+     dataset — no network. */
+  var EXITS = {
+    complete:  { box: 'x-complete', script: '@complete', dest: 'done (row deleted)', state: '(row deleted)', metric: 'metrics:completed +1',
+      detail: 'the attempts token matches: ZREM active, DEL the row — a completed job leaves no row; a stale token is refused (EMQSTALE)' },
+    scheduled: { box: 'x-scheduled', script: '@retry', dest: 'schedule', state: 'scheduled', metric: '—',
+      detail: 'below max attempts: HSET last_error, ZREM active, HSET state scheduled, ZADD schedule at now + delay (a literal delay) — @promote returns it when due' },
+    dead:      { box: 'x-dead', script: '@retry', dest: 'dead', state: 'dead', metric: 'metrics:failed +1',
+      detail: 'at max attempts: HSET last_error, HSET state dead, ZADD dead — the morgue keeps last_error for inspection; reprocess_job/3 can re-enter it' },
+    reap:      { box: 'x-reap', script: '@reap', dest: 'pending', state: 'pending', metric: '—',
+      detail: 'the active-set score is in the past, so the lease lapsed: ZREM active, ZADD pending — crash recovery on the server clock, no heartbeat or worker call' }
+  };
+  var BOXES = ['x-complete', 'x-scheduled', 'x-dead', 'x-reap'];
+  function setExit(key) {
+    var e = EXITS[key];
+    BOXES.forEach(function (id) {
+      var g = document.getElementById(id);
+      if (g) g.classList.toggle('on', id === e.box);
+    });
+    var out = document.getElementById('exitOut');
+    if (out) {
+      out.innerHTML = '<b>' + e.script + '</b> &middot; active &rarr; <span class="ok">' + e.dest + '</span>' +
+        '<br>row state <b>' + e.state + '</b> &middot; metric ' + e.metric +
+        '<br><span class="dim">' + e.detail + '</span>';
+    }
+  }
+  document.querySelectorAll('#exitSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-exit');
+      document.querySelectorAll('#exitSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setExit(key);
+    });
+  });
+  setExit('complete'); // initial render — correct without interaction
+
+  /* ---------- content: the token fence (the real @complete comparison) ---------- */
+  /* The row's attempts (the fence) is fixed at 2. @complete / @retry / extend_lock
+     all check `att ~= ARGV[2]` (string compare): equal -> proceed, unequal ->
+     EMQSTALE. Pure function of the presented token. */
+  var FENCE = 2;
+  function present(tok) {
+    var tokEl = document.getElementById('fence-tok');
+    var out = document.getElementById('fenceOut');
+    if (tokEl) tokEl.textContent = String(tok);
+    if (!out) return;
+    if (tok === FENCE) {
+      out.innerHTML = 'present token <b>' + tok + '</b> vs row attempts <b>' + FENCE + '</b> &rarr; equal' +
+        '<br>@complete &rarr; ZREM active, DEL row &rarr; <span class="ok">:ok</span>' +
+        '<br><span class="dim">the current holder retires the job</span>';
+    } else {
+      var why = tok < FENCE
+        ? 'this token is behind the row — the job was reaped and re-claimed, bumping attempts'
+        : 'this token is ahead of the row — it was never the value the claim minted';
+      out.innerHTML = 'present token <b>' + tok + '</b> vs row attempts <b>' + FENCE + '</b> &rarr; <span class="bad">not equal</span>' +
+        '<br>@complete &rarr; <span class="bad">EMQSTALE</span> &rarr; <span class="bad">{:error, :stale}</span> &middot; nothing changes' +
+        '<br><span class="dim">' + why + '</span>';
+    }
+  }
+  document.querySelectorAll('#fenceSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var tok = parseInt(b.getAttribute('data-tok'), 10);
+      document.querySelectorAll('#fenceSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      present(tok);
+    });
+  });
+  present(2); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

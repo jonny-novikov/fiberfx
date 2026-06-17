@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C2.03.1 · From null to Option — F# In Depth</title>
+<meta name="description" content="F# types have no null. A value that may be missing has type Option<'T> — Some v or None — and a match must cover both, so the unhandled-null bug stops compiling. The C# contrast: a nullable reference string? FindName(int id) and the ?. / ?? guard dance. Verified: Map.tryFind, Option.defaultValue, Option.ofObj. Dive C2.03.1 of the F# In Depth course.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --fsharp:#b48ee0; --fsharp-bright:#d2b8f5;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(180,142,224,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--fsharp-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--fsharp-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="fsharp"]{background:var(--fsharp-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--fsharp-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .err{color:var(--burgundy)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--fsharp-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pill / legend ---- */
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--fsharp-bright);border-color:var(--fsharp)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- references ---- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.refs li{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.45}
+.refs li a{color:var(--cream-soft)}
+.refs li a:hover{color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.fs .lbl{color:var(--fsharp-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--fsharp-bright);
+  border:1px solid var(--fsharp);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.note.warn{border-left-color:var(--burgundy)}
+.note code.inl{color:var(--cream-soft)}
+pre.code .rdx{background:rgba(180,142,224,.18);border-radius:4px;padding:0 .18em;color:var(--fsharp-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+
+/* ---- C# → F# side-by-side (stacked .lbl + pre.code; this batch) ---- */
+.cmp{margin:1.2rem 0 0}
+.cmp .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:1rem 0 .35rem;color:var(--cream-dim)}
+.cmp .lbl.cs{color:var(--blue-bright)}
+.cmp .lbl.fs{color:var(--fsharp-bright)}
+.cmp .lbl:first-child{margin-top:0}
+pre.code .cs{color:var(--blue-bright)}
+
+/* ---- the option rails svg (this batch) ---- */
+.trk-some{stroke:var(--sage);stroke-width:3;fill:none}
+.trk-none{stroke:var(--cream-dim);stroke-width:3;fill:none}
+.trk-dim{stroke:var(--line);stroke-width:3;fill:none}
+.trk-token{fill:var(--gold-bright);stroke:var(--ink);stroke-width:1.5}
+@media (prefers-reduced-motion: no-preference){
+  .trk-live{animation:trkflow 1.5s linear infinite}
+}
+.trk-live{stroke-dasharray:5 8}
+@keyframes trkflow{to{stroke-dashoffset:-26}}
+.optgrid{width:100%;border-collapse:collapse;margin-top:1rem;font-family:var(--mono);font-size:.86rem}
+.optgrid caption{font-family:var(--sans);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--cream-dim);text-align:left;margin-bottom:.5rem}
+.optgrid th{font-family:var(--sans);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--gold);text-align:left;padding:.4rem .7rem;border-bottom:1px solid var(--line)}
+.optgrid td{padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--cream-soft)}
+.optgrid td .ok{color:var(--sage-bright)}
+.optgrid td .err{color:var(--cream-dim)}
+.optgrid tr.on td{background:rgba(180,142,224,.08)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/fsharp">jonnify<span class="dot"></span><span class="sub">fsharp</span></a>
+    <nav>
+      <a href="/fsharp">F# In Depth</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/fsharp">fsharp</a><span class="rsep">/</span><a href="/fsharp/for-csharp">for-csharp</a><span class="rsep">/</span><a href="/fsharp/for-csharp/option-and-result">option-and-result</a><span class="rsep">/</span><span class="rcur">null-to-option</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/fsharp">F# In Depth</a><span class="sep">/</span><a href="/fsharp/for-csharp">C2 · F# for C# developers</a><span class="sep">/</span><a href="/fsharp/for-csharp/option-and-result">C2.03 · From null to Option, from exceptions to Result</a><span class="sep">/</span><span class="here">C2.03.1 · From null to Option</span>
+    </nav>
+    <p class="eyebrow">Dive C2.03.1</p>
+    <h1>From null <span class="ex">to Option</span></h1>
+    <p class="lede">There is no null to forget. Absence is a value the compiler makes you read.</p>
+    <p class="kicker">In C#, a reference can be <code class="inl">null</code>, and the type does not warn you: a method
+      returning <code class="inl">string</code> might hand back <code class="inl">null</code>, and the dereference
+      that follows throws a <code class="inl">NullReferenceException</code> at runtime. F# removes
+      <code class="inl">null</code> from its own types. A value that might be absent has type
+      <code class="inl">Option&lt;'T&gt;</code> — a two-case union, <code class="inl">Some v</code> when present and
+      <code class="inl">None</code> when not. To read it, you <code class="inl">match</code>, and because the match
+      must be total, the compiler will not let you ignore the <code class="inl">None</code> case. The missing-value
+      bug moves from a runtime crash to a thing that does not compile.</p>
+    <div class="cta-row">
+      <a class="btn" href="#explore">Explore a lookup <span aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="/fsharp/for-csharp/option-and-result">Module hub</a>
+    </div>
+  </section>
+
+  <!-- ===================== THE TYPE ===================== -->
+  <section id="the-type">
+    <div class="dive-head">
+      <span class="dive-tag">C2.03.1 · part 1</span>
+      <h2>Some of 'T, or None</h2>
+    </div>
+    <div class="prose">
+      <p><code class="inl">Option</code> is a union with one type parameter and two cases. Its declaration in
+        FSharp.Core is the two constructors below: <code class="inl">Some</code> wraps a present value;
+        <code class="inl">None</code> carries nothing. A function whose answer might be absent returns one, and the
+        signature says so — <code class="inl">int -&gt; string option</code> reads as "give me an id, get back a
+        name that might not be there."</p>
+    </div>
+
+    <pre class="code" aria-label="The Option union: Some wraps a value, None carries nothing."><span class="op">type</span> Option&lt;<span class="op">'T</span>&gt; =
+    | Some <span class="op">of</span> <span class="op">'T</span>
+    | None</pre>
+
+    <div class="prose">
+      <p>A lookup over a map is the everyday case. <code class="inl">Map.tryFind</code> returns
+        <code class="inl">Some</code> when the key is present and <code class="inl">None</code> when it is not — the
+        name's <code class="inl">try</code> prefix is the F# convention for "returns an
+        <code class="inl">Option</code> instead of throwing." The caller reads it with a
+        <code class="inl">match</code> that names both outcomes.</p>
+    </div>
+
+    <pre class="code" aria-label="findName looks up a name and returns an Option, with verified FSI echoes."><span class="op">let</span> users = Map [ (1, <span class="res">"Ada"</span>); (2, <span class="res">"Grace"</span>); (3, <span class="res">"Edsger"</span>) ]
+<span class="op">let</span> findName id = Map.tryFind id users
+<span class="cmt">// val findName : int -> string option</span>
+
+findName 2                        <span class="cmt">// val it : string option = Some "Grace"</span>
+findName 9                        <span class="cmt">// val it : string option = None</span></pre>
+
+    <dl class="deflist">
+      <dt>Option&lt;'T&gt;</dt><dd>a union: <code class="inl">Some of 'T</code> when a value is present, <code class="inl">None</code> when absent.</dd>
+      <dt>None</dt><dd>one value, no payload — the typed stand-in for "missing", with no way to dereference it by accident.</dd>
+      <dt>tryFind</dt><dd>the <code class="inl">try</code> prefix marks a function that returns an <code class="inl">Option</code> rather than throwing on a miss.</dd>
+      <dt>vs. null</dt><dd><code class="inl">null</code> is any reference and shows in no type; <code class="inl">None</code> is a value of a named option type the caller must handle.</dd>
+    </dl>
+  </section>
+
+  <!-- ===================== THE C# CONTRAST ===================== -->
+  <section id="contrast">
+    <div class="dive-head">
+      <span class="dive-tag">C2.03.1 · part 2</span>
+      <h2>The C# the reader knows, beside the F#</h2>
+    </div>
+    <div class="prose">
+      <p>In C#, the same lookup returns a nullable reference, <code class="inl">string?</code>. The
+        <code class="inl">?</code> is a hint to the analyzer, not a wall: the code still compiles if the caller
+        forgets to check, and the <code class="inl">?.</code> and <code class="inl">??</code> operators are a
+        convention for guarding, not a requirement. The F# version returns an <code class="inl">Option</code>, and the
+        <code class="inl">match</code> is the wall — leave out <code class="inl">None</code> and the compiler reports
+        an incomplete match.</p>
+    </div>
+
+    <div class="cmp">
+      <p class="lbl cs">C# — a nullable reference and the guard dance</p>
+      <pre class="code" aria-label="C# returns a nullable string; the caller guards with ?. and ??."><span class="cs">string?</span> FindName(<span class="cs">int</span> id) =>
+    _byId.TryGetValue(id, <span class="op">out</span> <span class="cs">var</span> n) ? n : <span class="op">null</span>;
+
+<span class="cmt">// the caller must remember to guard — nothing forces it:</span>
+<span class="cs">var</span> shown = FindName(9)?.ToUpper() ?? <span class="res">"unknown"</span>;   <span class="cmt">// "unknown"</span>
+<span class="cs">var</span> oops  = FindName(9).ToUpper();                  <span class="cmt">// compiles, throws NullReferenceException</span></pre>
+      <p class="lbl fs">F# — an Option and a total match</p>
+      <pre class="code" aria-label="F# returns an Option; the caller matches Some and None, with verified FSI echoes."><span class="op">let</span> shown =
+    <span class="op">match</span> findName 9 <span class="op">with</span>
+    | Some n -> n.ToUpper()
+    | None   -> <span class="res">"unknown"</span>
+<span class="cmt">// val shown : string = "unknown"</span>
+<span class="cmt">// omit the None arm and the compiler reports FS0025: incomplete match</span></pre>
+    </div>
+
+    <div class="prose">
+      <p>Two helpers fold the match into one call when the shape is routine.
+        <code class="inl">Option.defaultValue</code> supplies a fallback for <code class="inl">None</code> —
+        the F# answer to <code class="inl">??</code>. <code class="inl">Option.map</code> transforms the value inside a
+        <code class="inl">Some</code> and leaves <code class="inl">None</code> alone — the F# answer to
+        <code class="inl">?.</code>. Both are total, so neither can skip the absent case.</p>
+    </div>
+
+    <pre class="code" aria-label="Option.defaultValue and Option.map with verified FSI echoes."><span class="cmt">// defaultValue: a fallback for None — like ?? </span>
+Option.defaultValue 0 (Some 5)    <span class="cmt">// val it : int = 5</span>
+findName 9 |&gt; Option.defaultValue <span class="res">"unknown"</span>   <span class="cmt">// val it : string = "unknown"</span>
+
+<span class="cmt">// map: transform a Some, leave a None — like ?. </span>
+findName 1 |&gt; Option.map (<span class="op">fun</span> n -> n.ToUpper())   <span class="cmt">// val it : string option = Some "ADA"</span>
+findName 9 |&gt; Option.map (<span class="op">fun</span> n -> n.ToUpper())   <span class="cmt">// val it : string option = None</span></pre>
+  </section>
+
+  <!-- ===================== INTERACTIVE: THE LOOKUP ===================== -->
+  <section id="explore">
+    <h2>Explore <code class="inl" style="font-size:.82em">findName id</code></h2>
+    <div class="prose">
+      <p>Pick an id. <code class="inl">findName</code> looks it up in the fixed map and lands on one of two
+        outcomes: the <span style="color:var(--sage-bright)">Some</span> rail, carrying the name, when the id is a
+        key; the <span style="color:var(--cream-soft)">None</span> rail, carrying nothing, when it is not. The
+        readout shows the exact FSI value, and — below it — what the caller's <code class="inl">match</code> must
+        return for that case. The <code class="inl">None</code> arm is never optional.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="optTitle">
+      <h4 id="optTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">findName id · a Some rail and a None rail</h4>
+
+      <div class="controls">
+        <div class="solid-select" role="group" aria-label="Choose an id to look up">
+          <button type="button" class="opt-btn active" data-k="2" data-c="fsharp" aria-pressed="true">id 2</button>
+          <button type="button" class="opt-btn" data-k="1" data-c="fsharp" aria-pressed="false">id 1</button>
+          <button type="button" class="opt-btn" data-k="9" data-c="fsharp" aria-pressed="false">id 9</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 1080 220" role="img" aria-label="A two-rail diagram: findName sends an id onto the upper green Some rail carrying the looked-up name, or the lower grey None rail carrying nothing.">
+        <!-- stage labels -->
+        <text x="120" y="28" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#a39c89">id</text>
+        <text x="470" y="28" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#a39c89">Map.tryFind</text>
+        <text x="900" y="28" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#a39c89">string option</text>
+
+        <!-- the Some (upper) rail -->
+        <path id="optSomeTrack" class="trk-dim" d="M170 92 L380 92 L500 92 L820 92"></path>
+        <!-- the None (lower) rail -->
+        <path id="optNoneTrack" class="trk-dim" d="M170 92 L300 92 L420 168 L820 168"></path>
+
+        <!-- input node -->
+        <g>
+          <rect x="60" y="70" width="110" height="44" rx="11" fill="#161d38" stroke="#d4a85a"></rect>
+          <text id="optInputLbl" x="115" y="97" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#f0cd7f">2</text>
+        </g>
+        <!-- the lookup switch -->
+        <g>
+          <rect x="400" y="68" width="140" height="48" rx="12" fill="#10162b" stroke="#b48ee0"></rect>
+          <text x="470" y="89" text-anchor="middle" font-family="Manrope, sans-serif" font-size="11" fill="#d2b8f5">key in map ?</text>
+          <text x="470" y="106" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#a39c89">Some · / · None</text>
+        </g>
+        <!-- the Some terminal (upper) -->
+        <g>
+          <rect x="820" y="70" width="200" height="44" rx="11" fill="#161d38" stroke="#7ba387"></rect>
+          <text id="optSomeLbl" x="920" y="97" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#a7c9b1">Some "Grace"</text>
+        </g>
+        <!-- the None terminal (lower) -->
+        <g>
+          <rect x="820" y="146" width="200" height="44" rx="11" fill="#161d38" stroke="#a39c89"></rect>
+          <text id="optNoneLbl" x="920" y="173" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#d7cfb9">None</text>
+        </g>
+
+        <!-- the travelling token -->
+        <circle id="optToken" class="trk-token" cx="115" cy="92" r="9"></circle>
+      </svg>
+
+      <div class="geo-readout" id="optOut" aria-live="polite">
+        <span class="dim">id = 2 ·</span> findName 2 <span class="dim">=</span> <span style="color:var(--sage-bright)">Some "Grace"</span> <span class="dim">· the match returns</span> "Grace"</div>
+    </figure>
+
+    <table class="optgrid">
+      <caption>Without JavaScript: the same three lookups, by hand</caption>
+      <thead><tr><th>id</th><th>findName id</th><th>the match returns</th></tr></thead>
+      <tbody>
+        <tr id="row-2" class="on"><td>2</td><td><span class="ok">Some "Grace"</span></td><td>"Grace"</td></tr>
+        <tr id="row-1"><td>1</td><td><span class="ok">Some "Ada"</span></td><td>"Ada"</td></tr>
+        <tr id="row-9"><td>9</td><td><span class="err">None</span></td><td>"unknown"</td></tr>
+      </tbody>
+    </table>
+    <p class="take">The two rails are one type, read one way. The <code class="inl">None</code> rail is not an error
+      and not an exception — it is a value, and the <code class="inl">match</code> that reads it cannot pretend it is
+      not there.</p>
+  </section>
+
+  <!-- ===================== THE SHIFT ===================== -->
+  <section id="shift">
+    <div class="dive-head">
+      <span class="dive-tag">C2.03.1 · part 3</span>
+      <h2>Why the compiler can now help</h2>
+    </div>
+    <div class="prose">
+      <p>The gain is not a new way to spell <code class="inl">null</code>. It is that absence now has a type the
+        compiler tracks. When a value is <code class="inl">string option</code>, every use must account for both
+        cases before it can reach the <code class="inl">string</code> inside — the language has no operation that
+        pulls the value out of a <code class="inl">None</code>. The class of bug that ships as a
+        <code class="inl">NullReferenceException</code> in production becomes an incomplete-match warning at the
+        keyboard.</p>
+    </div>
+
+    <div class="note">F# can still see a <code class="inl">null</code> when it comes from .NET — a C# library may hand
+      one back. That <code class="inl">null</code> lives only at the boundary, and dive C2.03.3 converts it to an
+      <code class="inl">Option</code> with <code class="inl">Option.ofObj</code> the moment it crosses into F#.</div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">C# habit</p>
+        <p><code class="inl">null</code> for a missing reference, guarded by convention with <code class="inl">?.</code> and <code class="inl">??</code> — the compiler does not insist.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="cell fs">
+        <p class="lbl">F# form</p>
+        <p><code class="inl">Some</code> / <code class="inl">None</code>, read by a total <code class="inl">match</code> or folded with <code class="inl">Option.defaultValue</code> · <code class="inl">map</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== THE THREAD ===================== -->
+  <section id="thread">
+    <h2>Where this leads</h2>
+    <div class="prose">
+      <p><code class="inl">Option</code> records <em>that</em> a value is missing. When a step can fail and the
+        reason for the failure matters, the answer is a sibling type that carries that reason on its failing side —
+        <code class="inl">Result</code> — and that is the next dive. The seam where C#'s
+        <code class="inl">null</code> and throws cross into F# is the dive after.</p>
+    </div>
+    <div class="toc-mini" aria-label="Continue in this module">
+      <a href="/fsharp/for-csharp/option-and-result">↑ C2.03 · From null to Option, from exceptions to Result</a>
+      <a href="/fsharp/for-csharp/option-and-result/exceptions-to-result">C2.03.2 · From exceptions to Result →</a>
+      <a href="/fsharp/for-csharp/option-and-result/interop-boundary">C2.03.3 · The interop boundary</a>
+    </div>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/">Microsoft &mdash; <em>F# documentation</em></a> &mdash; options, and the guidance on null in F#.</li>
+          <li><a href="https://fsharp.github.io/fsharp-core-docs/">FSharp.Core API reference</a> &mdash; the <code class="inl">Option</code> module: <code class="inl">tryFind</code>'s siblings, <code class="inl">defaultValue</code>, <code class="inl">map</code>, <code class="inl">ofObj</code>.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/">Microsoft &mdash; <em>.NET documentation</em></a> &mdash; nullable reference types and the <code class="inl">?.</code> / <code class="inl">??</code> operators in C#.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/fsharp/for-csharp/option-and-result/exceptions-to-result">C2.03.2 &mdash; From exceptions to Result</a> &mdash; the same shape with a reason on the failing side.</li>
+          <li><a href="/fsharp/language/option-result">C1.08 &mdash; Option, Result &amp; railway-oriented errors</a> &mdash; <code class="inl">Option</code> in language depth.</li>
+          <li><a href="/elixir/functional/pure">Elixir &mdash; Purity</a> &mdash; the BEAM's <code class="inl">{:ok, v}</code> / <code class="inl">:error</code>, returned rather than raised.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/fsharp/for-csharp/option-and-result"><span aria-hidden="true">←</span> C2.03 · Module hub</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/fsharp/for-csharp/option-and-result/exceptions-to-result">Next · C2.03.2 From exceptions to Result <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="F# In Depth — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/fsharp">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">F# In Depth &mdash; the ML-family language on .NET, taught from first principles to a real DevOps tool shipped in F#.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/fsharp/for-csharp">C2 &middot; F# for C# developers</a>
+        <a href="/fsharp/for-csharp/option-and-result">C2.03 &middot; From null to Option, from exceptions to Result</a>
+        <a href="#refs">References</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/fsharp">Course home</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Interactive: the lookup (pure over a fixed map) ---------- */
+  // users = Map [ (1,"Ada"); (2,"Grace"); (3,"Edsger") ]
+  // findName 2 -> Some "Grace" ; findName 1 -> Some "Ada" ; findName 9 -> None
+  var OPT = {
+    "2": { some: true, name: "Grace", lbl: "Some \"Grace\"", ret: "\"Grace\"" },
+    "1": { some: true, name: "Ada",   lbl: "Some \"Ada\"",   ret: "\"Ada\"" },
+    "9": { some: false, lbl: "None",  ret: "\"unknown\"" }
+  };
+
+  var someTrack = document.getElementById('optSomeTrack');
+  var noneTrack = document.getElementById('optNoneTrack');
+  var token = document.getElementById('optToken');
+  var inputLbl = document.getElementById('optInputLbl');
+  var someLbl = document.getElementById('optSomeLbl');
+  var noneLbl = document.getElementById('optNoneLbl');
+  var out = document.getElementById('optOut');
+  var btns = Array.prototype.slice.call(document.querySelectorAll('.opt-btn'));
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function select(k) {
+    var r = OPT[k];
+    if (!r) return;
+    btns.forEach(function (b) {
+      var on = b.getAttribute('data-k') === k;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    [['2', 'row-2'], ['1', 'row-1'], ['9', 'row-9']].forEach(function (pair) {
+      var row = document.getElementById(pair[1]);
+      if (row) row.classList.toggle('on', pair[0] === k);
+    });
+    if (inputLbl) inputLbl.textContent = k;
+    if (someTrack && noneTrack) {
+      someTrack.setAttribute('class', r.some ? 'trk-some' + (reduce ? '' : ' trk-live') : 'trk-dim');
+      noneTrack.setAttribute('class', r.some ? 'trk-dim' : 'trk-none' + (reduce ? '' : ' trk-live'));
+    }
+    if (someLbl) someLbl.textContent = r.some ? r.lbl : "Some …";
+    if (noneLbl) noneLbl.textContent = r.some ? "None" : "None";
+    if (token) {
+      token.setAttribute('cx', '920');
+      token.setAttribute('cy', r.some ? '92' : '168');
+    }
+    if (out) {
+      var col = r.some ? 'var(--sage-bright)' : 'var(--cream-soft)';
+      out.innerHTML = '<span class="dim">id = ' + k + ' ·</span> findName ' + k +
+        ' <span class="dim">=</span> <span style="color:' + col + '">' + r.lbl +
+        '</span> <span class="dim">· the match returns</span> ' + r.ret;
+    }
+  }
+
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () { select(b.getAttribute('data-k')); });
+  });
+  if (btns.length) select('2');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

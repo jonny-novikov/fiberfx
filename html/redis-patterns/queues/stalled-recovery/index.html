@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R3.03 · Stalled recovery — Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R3.03 module hub: reclaim a job whose worker died. A recovery sweep finds the in-flight job with no live worker and returns it to wait. The lease replaces the source's timeout — lock gone means worker died means job stalled. Mark before recover gives a momentary stall one grace pass. The detect-and-move must be one step. Grounded in EchoMQ's move_stalled_jobs_to_wait/4 running moveStalledJobsToWait-8.lua, an eight-key atomic sweep, with the Go port's StalledChecker as the cautionary contrast.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- sweep diagram ---- */
+.swp .list rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.swp .list.hot rect{fill:rgba(212,168,90,.12);stroke:#d4a85a}
+.swp .list.done rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
+.swp .job rect{fill:#161d38;stroke:#2a3252;transition:.18s ease}
+.swp .job.live rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.swp .job.stall rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
+.swp text{font-family:var(--sans);fill:#d7cfb9}
+.swp .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.swp .jt{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
+.swp .lk{font-family:var(--mono);font-size:10px}
+.swp .arr{stroke:#5a87c4;stroke-width:1.4;fill:none;stroke-dasharray:3 3}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- when-to-use table ---- */
+.tbl{width:100%;border-collapse:collapse;margin:1.2rem 0 0;font-family:var(--sans);font-size:.9rem}
+.tbl th,.tbl td{text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);font-weight:700}
+.tbl td{color:var(--cream-soft)}
+.tbl td code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+.tbl tr:last-child td{border-bottom:0}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--redis-bright);border-color:var(--redis)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+
+/* ---- door ---- */
+.door{margin:1.7rem 0 0;border:1px solid var(--redis);border-radius:16px;
+  background:linear-gradient(180deg,rgba(214,88,79,.10),rgba(10,14,26,.3));
+  padding:clamp(1rem,2.4vw,1.5rem)}
+.door .dl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--redis-bright);margin:0 0 .6rem}
+.door p{margin:0;font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure)}
+.door a{color:var(--redis-bright);font-weight:600}
+.door a:hover{color:var(--cream)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--redis-bright);
+  border:1px solid var(--redis);border-radius:999px;padding:.16rem .55rem}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the module</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><span class="rcur">stalled-recovery</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/redis-patterns">Redis Patterns</a>
+      <span class="sep">/</span>
+      <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+      <span class="sep">/</span>
+      <span class="here">Stalled recovery</span>
+    </div>
+    <p class="eyebrow">R3.03 &middot; Reliable Queues</p>
+    <h1>Stalled <span class="ex">recovery</span></h1>
+    <p class="lede">Guarantee at-least-once message delivery using LMOVE to atomically transfer messages to a processing
+      list, enabling recovery if consumers crash before completing work.</p>
+    <p class="kicker">A reliable queue moves a job into an in-flight list under a lock so a crash leaves it parked, not
+      lost. But a parked job is only half the guarantee &mdash; something must come back for it. A recovery sweep finds
+      the in-flight job whose worker died and returns it to <code class="inl">wait</code> for another worker. This module
+      is that sweep: how it detects that a worker died, why it marks a job before it recovers it, and why the
+      detect-and-move must be one indivisible step.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#recovery">Recovery from failures</a>
+      <a href="#lease">The lease</a>
+      <a href="#twophase">Mark, then recover</a>
+      <a href="#atomic">Atomic vs non-atomic</a>
+      <a href="#when">When to use</a>
+      <a href="#dives">Dives</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <section id="recovery">
+    <h2>Recovery from Failures</h2>
+    <div class="prose">
+      <p>The source pattern runs a separate monitor process &mdash; sometimes called a <em>reaper</em> &mdash; that
+        periodically scans the processing queues for stalled messages. For each message the reaper applies a timeout
+        rule: check each processing queue; if a message has been there longer than a timeout (for example, ten minutes),
+        the worker is assumed dead; move the message back to the main queue with
+        <code class="inl">LMOVE processing:worker1 work_queue RIGHT RIGHT</code>. This guarantees at-least-once delivery
+        &mdash; a message may be processed more than once, but it is never lost.</p>
+      <p>EchoMQ keeps the shape of the reaper and sharpens its test. The reaper's test is <em>has this message been
+        in-flight longer than a fixed timeout?</em> &mdash; a coarse proxy for a dead worker that misfires whenever a job
+        legitimately runs long. EchoMQ's test is more precise: <em>does this in-flight job still have a live
+        worker?</em> The answer is a <strong>lock lease</strong>. Each in-flight job holds a lock with a
+        <code class="inl">PX</code> expiry, and a healthy worker renews that lease on a heartbeat. When the worker dies,
+        the heartbeat stops, the lease expires, and the lock is gone. <strong>Lock gone means the worker died means the
+        job stalled.</strong> The timeout becomes a lease, and the lease is exact: it is tied to the worker, not the
+        clock.</p>
+      <p>The sweep below runs over a fixed in-flight set. Toggle a worker dead to drop its lease, then run the sweep: the
+        jobs whose lock is gone move back to <code class="inl">wait</code>, the jobs whose worker is still renewing stay
+        put. The readout reports which jobs are stalled and where each lands.</p>
+    </div>
+
+    <figure class="fig swp" aria-labelledby="swpTitle">
+      <h4 id="swpTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The recovery sweep &middot; three in-flight jobs &mdash; a missing lock is a dead worker</h4>
+      <div class="controls">
+        <div class="solid-select" id="swpSel" role="group" aria-label="Which worker has died, dropping its lock lease">
+          <button type="button" data-dead="none" data-c="sage" class="active" aria-pressed="true">all workers alive</button>
+          <button type="button" data-dead="b" data-c="redis" aria-pressed="false">worker B died</button>
+          <button type="button" data-dead="bc" data-c="redis" aria-pressed="false">B and C died</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 220" role="img" aria-label="Three jobs A, B, and C sit in the active in-flight list, each with a lock lease. When all workers are alive, every lock is present, so the sweep moves nothing. When worker B dies, B's lock is gone and the sweep moves job B back to the wait list. When B and C both die, the sweep moves B and C back to wait. The selected mode marks each job live or stalled and reports where it lands.">
+        <text class="ttl" x="30" y="26">emq:{queue}:active (LIST)</text>
+        <g class="job" id="jA"><rect x="30" y="36" width="120" height="40" rx="9"></rect></g>
+        <text class="jt" x="48" y="61">job A</text>
+        <text class="lk" id="lkA" x="138" y="61" text-anchor="end" fill="#a7c9b1">lock</text>
+        <g class="job" id="jB"><rect x="30" y="84" width="120" height="40" rx="9"></rect></g>
+        <text class="jt" x="48" y="109">job B</text>
+        <text class="lk" id="lkB" x="138" y="109" text-anchor="end" fill="#a7c9b1">lock</text>
+        <g class="job" id="jC"><rect x="30" y="132" width="120" height="40" rx="9"></rect></g>
+        <text class="jt" x="48" y="157">job C</text>
+        <text class="lk" id="lkC" x="138" y="157" text-anchor="end" fill="#a7c9b1">lock</text>
+
+        <text class="ttl" x="318" y="26">emq:{queue}:wait (LIST)</text>
+        <g class="list" id="lWait"><rect x="318" y="36" width="120" height="136" rx="10"></rect></g>
+        <text class="jt" id="waitJobs" x="378" y="108" text-anchor="middle" fill="#a39c89">&mdash;</text>
+
+        <path class="arr" id="arrSweep" d="M150 104 C 240 104, 240 104, 318 104"></path>
+        <text class="ttl" x="200" y="96" text-anchor="middle">moveStalledJobsToWait</text>
+
+        <text class="ttl" id="swpVerd" x="230" y="200" text-anchor="middle">all locks present &middot; the sweep moves nothing</text>
+      </svg>
+
+      <div class="geo-readout" id="swpOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">The source's reaper reclaims a message older than a timeout; EchoMQ reclaims a job whose lock lease is
+      gone. The timeout is a proxy; the lease is tied to the worker exactly.</p>
+  </section>
+
+  <section id="lease">
+    <h2>The lease as the death signal</h2>
+    <div class="prose">
+      <p>A lock that expired is the signal a worker died. The lease (<code class="inl">EchoMQ.Keys.lock/2</code> &rarr;
+        <code class="inl">emq:{queue}:&lt;id&gt;:lock</code>) is a key with a short <code class="inl">PX</code> TTL set
+        when a worker takes a job. A live worker renews it on a heartbeat &mdash; <code class="inl">SET … PX</code>, a
+        lease renewal &mdash; before it can lapse. The renewals run in batch from one timer in
+        <code class="inl">EchoMQ.LockManager</code>, so a pool of workers extends a pool of leases without one timer per
+        job.</p>
+      <pre class="code"><span class="cmt"># the lease: set when a worker takes the job</span>
+<span class="rdx">SET</span> emq:{queue}:&lt;id&gt;:lock &lt;token&gt; <span class="op">PX</span> <span class="res">30000</span>     <span class="cmt"># a 30s lease</span>
+
+<span class="cmt"># the heartbeat: a live worker renews before the lease lapses</span>
+<span class="rdx">SET</span> emq:{queue}:&lt;id&gt;:lock &lt;token&gt; <span class="op">PX</span> <span class="res">30000</span>     <span class="cmt"># pushes the expiry forward, every ~half-lease</span>
+
+<span class="cmt"># the death signal: no renewal -&gt; the TTL runs to 0 -&gt; Redis evicts the key</span>
+<span class="op">EXISTS</span> emq:{queue}:&lt;id&gt;:lock                  <span class="cmt"># 0 means the worker died -&gt; stalled</span></pre>
+      <p>When the worker crashes, the heartbeat stops. No renewal arrives, the TTL runs to zero, and Redis evicts the
+        lock key. The job is now in <code class="inl">active</code> with no live worker. The recovery sweep tests exactly
+        this &mdash; for each job in <code class="inl">active</code>, is the lock key still present? &mdash; and a missing
+        lock is a stalled job. The first dive builds this heartbeat-and-lease picture, and shows why a paused worker that
+        keeps renewing is correctly left alone while a dead one is reclaimed.</p>
+    </div>
+    <p class="take">A lock with a <code class="inl">PX</code> TTL, renewed on a heartbeat, is the liveness signal: the
+      lock is present exactly while a worker is alive, so a missing lock is a stalled job.</p>
+  </section>
+
+  <section id="twophase">
+    <h2>Mark, then recover</h2>
+    <div class="prose">
+      <p>A brief pause is not a dead worker. A worker that misses one heartbeat &mdash; a long GC pause, a slow disk
+        &mdash; may renew on the next tick and finish the job. If the sweep reclaimed a job the instant its lock lapsed,
+        every momentary stall would be redelivered, doubling the work.</p>
+      <p>The fix is a two-phase sweep. The first sweep that finds a job stalled <strong>marks</strong> it: it records the
+        job in a <code class="inl">stalled</code> set rather than reclaiming it on the spot. Only the second sweep that
+        <em>still</em> finds the job stalled <strong>recovers</strong> it. A momentary stall survives one grace pass; a
+        genuinely dead worker is reclaimed on the next sweep. When a job is recovered, its attempt count is incremented
+        and it goes back to <code class="inl">wait</code> &mdash; unless it has now exceeded its maximum attempts, in
+        which case it goes to <code class="inl">failed</code> instead of being retried forever. The second dive walks the
+        mark &rarr; recover &rarr; <code class="inl">wait</code>-or-<code class="inl">failed</code> decision.</p>
+    </div>
+    <p class="take">Mark a stalled job once, recover it only on the next sweep that still finds it stalled: a flicker gets
+      one grace pass, a dead worker is reclaimed, and a chronically stalling job is failed at its attempt ceiling.</p>
+  </section>
+
+  <section id="atomic">
+    <h2>Atomic vs non-atomic recovery</h2>
+    <div class="prose">
+      <p>The recovery sweep must itself be careful. The detect step tests <em>is this job stalled?</em> and the recover
+        step does <em>remove it from <code class="inl">active</code>, push it to <code class="inl">wait</code></em>. If
+        those are two separate round trips, two sweeps running at once can both pass the detect step for the same job and
+        both run the recover step &mdash; the job lands in <code class="inl">wait</code> twice, and its attempt counter is
+        mis-incremented. This is the double-recovery window.</p>
+      <p>The atomic form closes it. <code class="inl">moveStalledJobsToWait-8.lua</code> runs the whole detect-and-move
+        as <strong>one EVALSHA</strong>: the read, the decision, and the writes happen inside Redis's single thread, so
+        no second sweep can interleave. Each stalled job is reclaimed once per sweep, and the attempt count is
+        incremented in the script. The Go port's <code class="inl">StalledChecker</code> does the same work app-side
+        &mdash; <code class="inl">LRANGE active</code>, then per job <code class="inl">EXISTS lock</code>, then
+        <code class="inl">LREM</code>/<code class="inl">LPUSH</code> &mdash; across separate round trips, and increments
+        the attempt count client-side. It is correct until two checkers overlap; then the window opens. The third dive is
+        the centrepiece: it runs the two overlapping checkers and counts the recoveries.</p>
+    </div>
+    <p class="take">Joined as one EVALSHA, the detect-and-move is exact; joined as separate round trips, a second sweep
+      slips between detect and recover and reclaims the same job twice.</p>
+  </section>
+
+  <section id="when">
+    <h2>When to Use</h2>
+    <div class="prose">
+      <p>A recovery sweep belongs to any reliable queue whose workers can crash mid-job. The choices it makes are how it
+        detects a dead worker, whether it grants a grace pass, and how the detect-and-move is joined.</p>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Concern</th><th>Choice</th></tr></thead>
+      <tbody>
+        <tr><td>Detect a dead worker</td><td>a lock lease (<code>SET … PX</code> + heartbeat), not a fixed timeout</td></tr>
+        <tr><td>Tolerate a brief pause</td><td>two-phase: mark in a <code>stalled</code> set, recover on the next sweep</td></tr>
+        <tr><td>Bound the retries</td><td>increment the attempt count; past the ceiling, move to <code>failed</code></td></tr>
+        <tr><td>Avoid double recovery</td><td>run detect-and-move as one Lua script (one <code>EVALSHA</code>)</td></tr>
+        <tr><td>The reclaim move</td><td><code>LREM active</code> + <code>LPUSH wait</code>, in-script</td></tr>
+      </tbody>
+    </table>
+    <p class="take">A reliable queue needs a sweep that detects on a lease, forgives a flicker, caps the retries, and
+      moves in one step &mdash; the four choices this module's three dives make precise.</p>
+  </section>
+
+  <section id="dives">
+    <h2>The three dives</h2>
+    <div class="prose">
+      <p>Each dive takes one part of the sweep, in order: how it detects a dead worker, how it marks before it recovers,
+        and why the detect-and-move must be one indivisible step. Read them in order &mdash; the lease comes first, the
+        two-phase decision second, the atomic contrast third.</p>
+    </div>
+
+    <div class="mods" style="margin-top:1.3rem">
+
+      <a class="mod" href="/redis-patterns/queues/stalled-recovery/lock-expiry-detection">
+        <div class="top"><span class="num">R3.03.1</span><span class="pill built">built</span></div>
+        <p class="t">Lock-expiry detection</p>
+        <p class="o">The lease as a death signal: a <code class="inl">PX</code> lock renewed on a heartbeat, the
+          <code class="inl">EXISTS</code> check the sweep runs, and why a paused worker is left alone but a dead one is
+          reclaimed.</p>
+      </a>
+
+      <a class="mod" href="/redis-patterns/queues/stalled-recovery/two-phase-mark-recover">
+        <div class="top"><span class="num">R3.03.2</span><span class="pill built">built</span></div>
+        <p class="t">Two-phase mark/recover</p>
+        <p class="o">Mark a job in the <code class="inl">stalled</code> set on the first sweep, recover it on the second;
+          the grace pass for a flicker; the attempt count &rarr; <code class="inl">wait</code> or
+          <code class="inl">failed</code> branch.</p>
+      </a>
+
+      <a class="mod" href="/redis-patterns/queues/stalled-recovery/atomic-vs-non-atomic">
+        <div class="top"><span class="num">R3.03.3</span><span class="pill built">built</span></div>
+        <p class="t">Atomic vs non-atomic</p>
+        <p class="o">The centrepiece: <code class="inl">moveStalledJobsToWait-8.lua</code> as one EVALSHA vs the Go
+          port's multi-round-trip loop; the double-recovery window and the client-side attempt-count race.</p>
+      </a>
+
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>A separate sweep reclaims a job whose worker died, and the detect-and-move must be one step or two overlapping
+          sweeps redeliver it. The signal a worker died is a lock lease that lapsed.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p><code class="inl">move_stalled_jobs_to_wait/4</code> runs <code class="inl">moveStalledJobsToWait-8.lua</code>
+          &mdash; eight keys, one EVALSHA &mdash; over the lease <code class="inl">EchoMQ.Keys.lock/2</code> renewed by
+          <code class="inl">EchoMQ.LockManager</code>. The Go port's separate-round-trip
+          <code class="inl">StalledChecker</code> is the cautionary contrast.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says reclaim a crashed job in one atomic step; EchoMQ's atomic sweep does, and the Go
+      port's round-trip loop shows what the window costs.</p>
+
+    <div class="door">
+      <p class="dl">A door, not a depth</p>
+      <p>This module cites one excerpt of EchoMQ's protocol &mdash; the eight-key
+        <code class="inl">moveStalledJobsToWait</code> sweep and the lease it tests &mdash; as proof the recovery ships.
+        The heartbeat manager that renews the lease across a whole worker pool, the
+        <a href="/echomq/lifecycle">stalled-check coordination (E6 &middot; the lifecycle)</a>, and the
+        <a href="/echomq/core">worker fetch loop (E2 &middot; the engine)</a> are the subject of the dedicated
+        <strong>EchoMQ course</strong>, built next with this toolkit. This module teaches the recovery pattern; that
+        course teaches the engine that runs it.</p>
+    </div>
+
+    <p class="note">R3.03 closes the Reliable Queues chapter's recovery story: after the processing list and at-least-once
+      delivery, the sweep that reclaims a crashed job is the last guarantee. Return to the
+      <a href="/redis-patterns/queues">Reliable Queues chapter</a> to continue.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The Redis mechanisms behind the recovery sweep &mdash; the lease, the atomic script, the removal, and the move
+        &mdash; and where the engine that runs them is taught.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/set/">Redis &mdash; <em>SET</em></a> &mdash; the <code>PX</code> option behind the lock lease and the heartbeat renewal.</li>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the cached-script call that runs the atomic detect-and-move as one step.</li>
+          <li><a href="https://redis.io/commands/eval/">Redis &mdash; <em>EVAL / scripting</em></a> &mdash; why a Lua script is one indivisible step, so the sweep cannot interleave.</li>
+          <li><a href="https://redis.io/commands/lrem/">Redis &mdash; <em>LREM</em></a> &mdash; the removal of the stalled job from the in-flight list.</li>
+          <li><a href="https://redis.io/commands/lmove/">Redis &mdash; <em>LMOVE</em></a> &mdash; the move back to wait, the modern form of the source's <code>LMOVE processing work RIGHT RIGHT</code>.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the stalled-check worker path EchoMQ ports.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/queues/stalled-recovery/lock-expiry-detection">R3.03.1 &middot; Lock-expiry detection</a> &mdash; the lease as the death signal.</li>
+          <li><a href="/redis-patterns/queues/stalled-recovery/two-phase-mark-recover">R3.03.2 &middot; Two-phase mark/recover</a> &mdash; mark once, recover on the next sweep.</li>
+          <li><a href="/redis-patterns/queues/stalled-recovery/atomic-vs-non-atomic">R3.03.3 &middot; Atomic vs non-atomic</a> &mdash; one EVALSHA vs the multi-round-trip loop.</li>
+          <li><a href="/redis-patterns/queues/the-reliable-queue">R3 &middot; The reliable queue</a> &mdash; the family in one place: the three guarantees.</li>
+          <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &middot; Atomic updates</a> &mdash; the one-step atomic move the sweep needs.</li>
+          <li><a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a> &mdash; the chapter.</li>
+          <li><a href="/echomq/lifecycle">E6 &middot; The job lifecycle</a> &mdash; the dedicated EchoMQ course: the heartbeat manager and the pool-wide stalled-check.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/redis-patterns/queues"><span aria-hidden="true">&larr;</span>&nbsp; R3 &middot; Reliable Queues</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/queues/stalled-recovery/lock-expiry-detection">R3.03.1 &middot; Lock-expiry detection <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/queues/stalled-recovery/lock-expiry-detection">R3.03.1 &middot; Lock-expiry detection</a>
+        <a href="/redis-patterns/queues/stalled-recovery/two-phase-mark-recover">R3.03.2 &middot; Two-phase mark/recover</a>
+        <a href="/redis-patterns/queues/stalled-recovery/atomic-vs-non-atomic">R3.03.3 &middot; Atomic vs non-atomic</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/lifecycle">The EchoMQ course &middot; the lifecycle</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- the recovery sweep (pure over the dead-worker toggle) ---------- */
+  // Three jobs A, B, C sit in the active in-flight list, each with a lock lease. A dead worker drops its lock.
+  // The sweep moves every job whose lock is gone back to wait; jobs with a live lock stay. The result is a pure
+  // function of which workers died.
+  var JOBS = ['A', 'B', 'C'];
+  // pure: deadSet -> { lock:{A,B,C}, moved:[...], stayed:[...], waitText, verd, text }
+  function sweep(dead) {
+    var deadOf = { A: dead.indexOf('a') >= 0, B: dead.indexOf('b') >= 0, C: dead.indexOf('c') >= 0 };
+    var moved = [], stayed = [];
+    JOBS.forEach(function (j) {
+      if (deadOf[j]) moved.push(j); else stayed.push(j);
+    });
+    var lock = {};
+    JOBS.forEach(function (j) { lock[j] = deadOf[j] ? 'gone' : 'lock'; });
+    var waitText = moved.length ? moved.map(function (j) { return 'job ' + j; }).join(', ') : '—';
+    var verd, text;
+    if (!moved.length) {
+      verd = 'all locks present · the sweep moves nothing';
+      text = 'Every job in emq:{queue}:active still holds its lock lease — every worker is renewing. ' +
+        'The sweep finds no stalled job and moves nothing. The queue runs untouched.';
+    } else {
+      var list = moved.map(function (j) { return 'job ' + j; }).join(' and ');
+      verd = list + ' · lock gone → moved to wait';
+      text = 'The lock lease for ' + list + ' has lapsed — ' +
+        (moved.length === 1 ? "that worker's" : 'those workers’') + ' heartbeat stopped. ' +
+        'moveStalledJobsToWait found ' + (moved.length === 1 ? 'it' : 'them') + ' in active with no live worker and ' +
+        'returned ' + (moved.length === 1 ? 'it' : 'them') + ' to emq:{queue}:wait for another worker. ' +
+        (stayed.length ? 'job ' + stayed.join(', job ') + ' kept ' + (stayed.length === 1 ? 'its' : 'their') +
+          ' lock and stayed in active.' : 'all three were stalled.');
+    }
+    return { lock: lock, moved: moved, stayed: stayed, waitText: waitText, verd: verd, text: text };
+  }
+  function paintJob(id, lkId, present) {
+    var g = document.getElementById(id), lk = document.getElementById(lkId);
+    if (g) { g.classList.remove('live', 'stall'); g.classList.add(present ? 'live' : 'stall'); }
+    if (lk) {
+      lk.textContent = present ? 'lock' : 'gone';
+      lk.setAttribute('fill', present ? '#a7c9b1' : '#f2948c');
+    }
+  }
+  function setSweep(dead) {
+    var r = sweep(dead);
+    paintJob('jA', 'lkA', r.lock.A === 'lock');
+    paintJob('jB', 'lkB', r.lock.B === 'lock');
+    paintJob('jC', 'lkC', r.lock.C === 'lock');
+    var wait = document.getElementById('lWait'), wj = document.getElementById('waitJobs'),
+        verd = document.getElementById('swpVerd'), out = document.getElementById('swpOut'),
+        arr = document.getElementById('arrSweep');
+    if (wj) {
+      wj.textContent = r.waitText;
+      wj.setAttribute('fill', r.moved.length ? '#f0cd7f' : '#a39c89');
+    }
+    if (wait) wait.classList.toggle('hot', r.moved.length > 0);
+    if (arr) arr.setAttribute('stroke', r.moved.length ? '#d4a85a' : '#2a3252');
+    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', r.moved.length ? '#f2948c' : '#a39c89'); }
+    if (out) out.textContent = r.text;
+  }
+  document.querySelectorAll('#swpSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var dead = b.getAttribute('data-dead');
+      document.querySelectorAll('#swpSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setSweep(dead);
+    });
+  });
+  setSweep('none'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

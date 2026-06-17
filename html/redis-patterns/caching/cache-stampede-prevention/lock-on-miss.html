@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R1.05.1 &#183; Lock-on-miss &#183; Redis Patterns Applied &#183; jonnify</title>
+<meta name="description" content="R1.05.1 — the per-key regeneration lock. On a stampede, one request wins SET lock val NX PX and rebuilds the hot key; the rest poll, serve stale, or fail fast. The lock self-expires with PX so a crashed holder cannot deadlock, and a token-checked Lua release stops a stale lock from deleting another holder's. Grounded in EchoCache's single-flight flights map, backed by Valkey.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+.skip{position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 6px 0;font-family:var(--mono);font-weight:700;z-index:50}
+.skip:focus{left:0}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul,.prose ol{margin:0 0 14px 1.3rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink);margin:22px 0 6px}
+div.door:hover{box-shadow:none}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.9rem;color:var(--b-dim);max-width:74ch}
+.door .frozen{margin:12px 0 0}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .str{color:var(--b-node)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-family:var(--mono);font-size:12.5px;margin:0 0 18px}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+.note{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);border-left:3px solid var(--b-ts);padding-left:14px;margin:16px 0 0;max-width:78ch}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){.foot-nav{grid-template-columns:1fr}.topnav{display:none}}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{transition:none}}
+/* ---------- the lock-race figure (hover-select) ---------- */
+.lockfig{width:100%;height:auto;display:block;margin-top:4px}
+.lockfig .role{cursor:pointer;transition:opacity .18s ease}
+.lockfig .winner circle{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.8}
+.lockfig .loser circle{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.lockfig .lockbox rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.5}
+.lockfig .srcbox rect{fill:var(--b-card);stroke:var(--b-dim);stroke-width:1.5;stroke-dasharray:5 4}
+.lockfig .flbl{font:11px var(--mono);fill:var(--b-ink)}
+.lockfig .fsub{font:10px var(--mono);fill:var(--b-dim)}
+.lockfig .flow{stroke:var(--b-line);stroke-width:1.4;fill:none}
+.lockfig .flow.win{stroke:var(--r-red);stroke-width:2.4}
+.lockfig.focus .role{opacity:.3}
+.lockfig.focus .role.on{opacity:1}
+/* ---------- the release figure ---------- */
+.relfig{width:100%;height:auto;display:block;margin-top:4px}
+.relfig .box rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4}
+.relfig .blbl{font:11px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.relfig .tok{font:13px var(--mono);font-weight:700;text-anchor:middle}
+.relfig .cmp{font:13px var(--mono);font-weight:700;text-anchor:middle}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">&#183;</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/caching">caching</a><span class="rsep">/</span><a href="/redis-patterns/caching/cache-stampede-prevention">cache-stampede-prevention</a><span class="rsep">/</span><span class="rcur">lock-on-miss</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#acquire">Acquire</a>
+      <a href="#waiters">The losers</a>
+      <a href="#release">Release</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R1.05.1 &#183; Cache stampede prevention &#8212; dive 1</p>
+      <h1>The regeneration <span class="hns">lock</span>.</h1>
+      <p class="lede">One request wins the lock and rebuilds the hot key. The rest wait, serve a stale copy, or fail
+      fast &#8212; but never read the source.</p>
+      <p class="heronote">Grounding: content/fundamental/cache-stampede-prevention.md.txt (Solution 2) &#183;
+      echo/apps/echo_cache/table.ex (the single-flight <code>flights</code> map) &#8212; the lock idea, applied.</p>
+
+      <figure class="anatomy" aria-labelledby="raceCap">
+        <figcaption id="raceCap"><b>The lock race.</b> Select what the losing requests do; one winner reaches the
+        source, the rest are turned back. The readout names the source reads, the staleness, and the latency.</figcaption>
+        <div class="segbar" id="waitSel" role="group" aria-label="What the losing requests do">
+          <button type="button" data-wait="poll" aria-pressed="false">losers poll</button>
+          <button type="button" data-wait="stale" aria-pressed="false">serve stale</button>
+          <button type="button" data-wait="fail" aria-pressed="false">fail fast</button>
+        </div>
+        <svg class="lockfig" id="lockSvg" viewBox="0 0 460 240" role="img" aria-label="Four concurrent requests on the left contend for one regeneration lock in the centre. One request wins the lock, drawn in the redis accent, and reaches the source on the right; the other three are turned back. Select a loser strategy to read what the three do while the winner rebuilds.">
+          <g class="role winner" data-role="winner">
+            <circle cx="52" cy="48" r="13"></circle>
+            <text class="fsub" x="52" y="78" text-anchor="middle">winner</text>
+            <path class="flow win" d="M65 48 L170 110"></path>
+          </g>
+          <g class="role loser" data-role="loser">
+            <circle cx="52" cy="108" r="13"></circle>
+            <circle cx="52" cy="158" r="13"></circle>
+            <circle cx="52" cy="208" r="13"></circle>
+            <text class="fsub" x="52" y="232" text-anchor="middle">3 losers</text>
+            <path class="flow" d="M65 108 L170 120"></path>
+            <path class="flow" d="M65 158 L170 130"></path>
+            <path class="flow" d="M65 208 L170 140"></path>
+          </g>
+          <g class="role lockbox" data-role="lock">
+            <rect x="170" y="96" width="118" height="58" rx="8"></rect>
+            <text class="flbl" x="229" y="120" text-anchor="middle">lock:instruments:AAPL</text>
+            <text class="fsub" x="229" y="138" text-anchor="middle">SET NX PX 5000</text>
+          </g>
+          <g class="role srcbox" data-role="source">
+            <rect x="330" y="96" width="110" height="58" rx="8"></rect>
+            <text class="flbl" x="385" y="120" text-anchor="middle">the source</text>
+            <text class="fsub" x="385" y="138" text-anchor="middle">read by 1</text>
+            <path class="flow win" d="M288 125 L330 125"></path>
+          </g>
+        </svg>
+        <div class="readout" id="raceOut" aria-live="polite"><span class="rk">readout &#183;</span> Select what the
+        losers do; the winner always reads the source once.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="acquire">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Acquire with NX and PX</h2>
+        <span class="ssrc">source &#183; Redis Commands Used</span>
+      </div>
+      <div class="prose">
+        <p>The lock is one command. <code>SET lock:instruments:AAPL &lt;token&gt; NX PX 5000</code> sets the lock key to a
+        unique token only if it does not already exist (<code>NX</code>), with a five-second expiry in milliseconds
+        (<code>PX 5000</code>). The reply is the gate: <code>OK</code> means this request holds the lock and may
+        rebuild; <code>nil</code> means another request already holds it.</p>
+        <p>The two options carry the whole guarantee. <code>NX</code> makes the acquire atomic &#8212; under a
+        thousand concurrent attempts on one key, the engine admits exactly one. <code>PX</code> bounds the
+        lock&#8217;s life so a winner that crashes mid-rebuild cannot hold the key forever; the lock expires and the
+        next miss elects a fresh winner. The token matters for the release, not the acquire: each request generates a
+        unique value so that later it can prove the lock it deletes is still its own.</p>
+      </div>
+      <pre class="code"><span class="cmt"># Try to win the regeneration lock for one hot key.</span>
+<span class="cmt"># NX: set only if absent (one winner). PX 5000: self-expire in 5s.</span>
+<b>SET</b> lock:instruments:AAPL <span class="str">"a1b2c3-unique-token"</span> <b>NX</b> <b>PX</b> 5000
+<span class="cmt"># -> OK    : this request holds the lock; read the source and refill</span>
+<span class="cmt"># -> (nil) : another request holds it; this request waits or serves stale</span></pre>
+      <dl class="deflist">
+        <dt>NX</dt><dd>Set only if the key does not exist. Makes one client &#8212; and only one &#8212; win the lock.</dd>
+        <dt>PX 5000</dt><dd>Expire the lock after 5000ms. A crashed holder cannot deadlock the key; the lock self-clears.</dd>
+        <dt>token</dt><dd>A unique value per request. Proves ownership at release time, so a stale lock is not deleted by the wrong holder.</dd>
+      </dl>
+      <p class="note">This is a single-Valkey lease, not a distributed lock across independent nodes. The multi-node
+      contrast &#8212; Redlock &#8212; is the R2 Coordination chapter; here one Valkey is the source of truth.</p>
+    </section>
+
+    <section id="waiters">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>What the losers do</h2>
+        <span class="ssrc">source &#183; Handling Waiting Clients</span>
+      </div>
+      <div class="prose">
+        <p>The point of the lock is what the requests that <em>lose</em> it do: not read the source. Each loser has
+        four options, trading freshness against latency and load. Pick one in the race above, or read them here:</p>
+        <ul>
+          <li><strong>Poll</strong> &#8212; sleep briefly, then re-read the cache. The winner&#8217;s fill lands
+          within a rebuild, so a short poll loop returns the fresh value with no source read and no staleness. The
+          cost is a little added latency for the losers.</li>
+          <li><strong>Serve stale</strong> &#8212; if a previous value is kept (a longer physical TTL than the
+          logical one), serve it immediately while the winner rebuilds. Zero added latency, at the cost of a brief,
+          bounded staleness.</li>
+          <li><strong>Return a default</strong> &#8212; serve a degraded or placeholder response when no stale copy
+          exists and latency matters more than completeness.</li>
+          <li><strong>Fail fast</strong> &#8212; return an error at once. The bluntest choice; it sheds load but
+          surfaces the miss to the caller.</li>
+        </ul>
+        <p>Whatever the losers do, the invariant holds: exactly one request reads the source per expiry. The flood of
+        <em>N</em> misses becomes one source read.</p>
+      </div>
+      <p class="take">The lock&#8217;s value is in the losers: one request rebuilds, and every other request waits,
+      serves stale, or degrades &#8212; but does not add to the source&#8217;s load.</p>
+    </section>
+
+    <section id="release">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Releasing the lock safely</h2>
+        <span class="ssrc">source &#183; Releasing the Lock</span>
+      </div>
+      <p class="ethic">Releasing looks trivial &#8212; delete the lock key after the refill &#8212; and a naive
+      <code>DEL</code> is a bug. If request A wins the lock but its rebuild runs long and the <code>PX 5000</code>
+      expiry fires, the lock is free; request B acquires it with a fresh token. If A then calls a plain
+      <code>DEL lock:instruments:AAPL</code>, it deletes <em>B&#8217;s</em> lock &#8212; two requests now run as the holder
+      at once. The guard against this is the token: read the lock, check the stored token equals this
+      request&#8217;s, and delete only on a match &#8212; as one atomic Lua script.</p>
+      <pre class="code"><span class="cmt">-- release only if this request still owns the lock (atomic)</span>
+if redis.call(<span class="str">"get"</span>, KEYS[1]) == ARGV[1] then
+    return redis.call(<span class="str">"del"</span>, KEYS[1])
+end
+return 0
+<span class="cmt">-- KEYS[1] = lock:instruments:AAPL   ARGV[1] = this request's token</span>
+<span class="cmt">-- returns 1 (released) or 0 (the lock is no longer this one's — do nothing)</span></pre>
+      <div class="prose">
+        <p>Run the release below against either an owned lock or one that already expired and was re-acquired by
+        another request. The readout shows the <code>GET</code> comparison and whether the <code>DEL</code>
+        fires.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="relCap">
+        <figcaption id="relCap"><b>Token-checked release.</b> Select what the lock now holds; the readout compares it
+        with this request&#8217;s token and shows whether the <code>DEL</code> fires.</figcaption>
+        <div class="segbar" id="relSel" role="group" aria-label="What token the lock now holds">
+          <button type="button" data-rel="own" aria-pressed="false">lock still held</button>
+          <button type="button" data-rel="reacquired" aria-pressed="false">expired, re-acquired</button>
+          <button type="button" data-rel="gone" aria-pressed="false">already expired</button>
+        </div>
+        <svg class="relfig" id="relSvg" viewBox="0 0 460 140" role="img" aria-label="Two token boxes are compared: the stored lock token on the left and this request's token on the right. A connector lights with the accent on a match and stays neutral on a mismatch, and the box on the far right shows whether the DEL fires or is skipped.">
+          <g class="box"><rect x="20" y="46" width="150" height="48" rx="8"></rect></g>
+          <text class="blbl" x="95" y="40">GET lock:instruments:AAPL</text>
+          <text class="tok" id="storedTok" x="95" y="76" fill="#d6584f">"z9y8x7"</text>
+          <g class="box"><rect x="200" y="46" width="118" height="48" rx="8"></rect></g>
+          <text class="blbl" x="259" y="40">this token</text>
+          <text class="tok" x="259" y="76" fill="#20618e">"a1b2c3"</text>
+          <path id="cmpLine" class="flow" d="M170 70 L200 70" stroke="#68705f" stroke-width="2.2" fill="none"></path>
+          <text id="cmpOp" class="cmp" x="185" y="62" fill="#68705f">&ne;</text>
+          <g class="box"><rect id="delBox" x="348" y="46" width="92" height="48" rx="8"></rect></g>
+          <text id="delTxt" class="cmp" x="394" y="76" fill="#68705f">skip DEL</text>
+        </svg>
+        <div class="readout" id="relOut" aria-live="polite"><span class="rk">readout &#183;</span> Select the lock
+        state to run the token-checked release.</div>
+      </figure>
+
+      <div class="door">
+        <span class="dr">the application &#183; one fill per herd at the owner</span>
+        <h3>EchoCache elects the single fill in-process</h3>
+        <p>EchoCache reaches the same one-winner guarantee without a separate lock key: a miss calls the owner with
+        <code>{:fill, id}</code>, and the owner&#8217;s <code>flights</code> map admits one load per id. The first
+        miss launches a flight; a concurrent miss appends its caller to the waiter list and bumps the
+        <code>:coalesced</code> counter. The cost the lock saves is the committed figure &#8212; the L1 hit against
+        the L2 GET a herd would multiply:</p>
+        <figure class="frozen">
+          <figcaption>content/bcs4.1.md &#183; the cache hit cost, against live Valkey<span class="tag">frozen</span></figcaption>
+          <pre>L1 hit reads/s                <b>1311621</b>        <span class="fd">&#8592; 762 ns each, caller-side ETS</span>
+L2 GET                        <b>31 us</b>          <span class="fd">&#8592; the round trip the herd avoids</span>
+the L1 hit is                 <b>40 times</b>       cheaper than the round trip it replaces</pre>
+        </figure>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>SET key value NX PX &lt;ms&gt;</code> acquires
+      and bounds the lock in one atomic command &#8212; the <code>NX</code> admits one writer, the <code>PX</code>
+      self-expires it so a crashed holder cannot deadlock the key &#8212;
+      <a href="https://valkey.io/commands/set" rel="noopener">valkey.io/commands/set</a>.</p>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>On a hot-key miss, contend for a short-lived <code>SET NX PX</code> lock. One winner reads the source
+          and refills; the losers poll or serve stale. Exactly one source read per expiry.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoCache application</span>
+          <p>EchoCache serializes the fill through the table&#8217;s owner: the <code>flights</code> map admits one
+          load per id, concurrent misses coalesce onto it (the <code>:coalesced</code> counter), and every waiter
+          reads the one answer &#8212; the lock idea, in-process.</p>
+        </div>
+      </div>
+      <p class="take">Lock-on-miss is the deterministic defence: one lock, one winner, one source read &#8212; and a
+      token-checked release so the lock is never deleted out from under another holder.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/set" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; the <code>NX</code> and <code>PX</code> options that make one client acquire a self-expiring regeneration lock.</li>
+            <li><a href="https://redis.io/commands/set" rel="noopener">Redis &mdash; <em>SET</em></a> &mdash; the canonical command reference for the lock.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; expiry, atomic Lua scripting, and the patterns the token-checked release is built from.</li>
+            <li><a href="https://antirez.com/" rel="noopener">Sanfilippo, S. &mdash; <em>antirez weblog</em></a> &mdash; the Redis creator on a single-instance lock, the token, and check-and-delete with Lua.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/caching/cache-stampede-prevention">R1.05 &#183; Cache stampede prevention</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/caching/cache-stampede-prevention/early-refresh">R1.05.2 &#183; Probabilistic early refresh</a><span class="rs">the next dive</span></li>
+            <li><a href="/redis-patterns/caching/cache-stampede-prevention/coalescing">R1.05.3 &#183; Request coalescing</a><span class="rs">one fill per herd, every waiter served</span></li>
+            <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
+            <li><a href="/elixir/pragmatic/state">/elixir &#183; State</a><span class="rs">the OTP craft behind the echo data layer</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the protocol behind the coherence lane</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/redis-patterns/caching/cache-stampede-prevention"><span class="pk">previous</span>&#8592; R1.05 &#183; Cache stampede prevention</a>
+      <a class="pgx" href="/redis-patterns/caching/cache-stampede-prevention/early-refresh"><span class="pk">next</span>R1.05.2 &#183; Probabilistic early refresh &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">&#183;</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/caching/cache-stampede-prevention/lock-on-miss">R1.05.1 &#183; Lock-on-miss</a>
+        <a href="/redis-patterns/caching/cache-stampede-prevention/early-refresh">R1.05.2 &#183; Early refresh</a>
+        <a href="/redis-patterns/caching/cache-stampede-prevention/coalescing">R1.05.3 &#183; Request coalescing</a>
+        <a href="/redis-patterns/caching">R1 &#183; Caching</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the lock race (hover-select over a fixed model) ---------- */
+  var WAIT = {
+    poll:  { losers: 'sleep briefly, then re-read the cache for the fill', staleness: 'none', latency: 'small added latency for the 3 losers' },
+    stale: { losers: 'serve the previous value immediately while one rebuilds', staleness: 'brief, bounded', latency: 'none added' },
+    fail:  { losers: 'return an error at once, shedding load', staleness: 'n/a', latency: 'none added' }
+  };
+  var ROLE = {
+    winner: 'the winner: one request takes the lock, reads the source once, and refills the key.',
+    loser:  'the losers: three requests lose the lock and never read the source.',
+    lock:   'the lock: SET lock:instruments:AAPL token NX PX 5000 admits exactly one writer, and self-expires in 5s.',
+    source: 'the source: read by exactly one request per expiry, whatever the losers do.'
+  };
+  var lockSvg = document.getElementById('lockSvg');
+  var waitButtons = document.querySelectorAll('#waitSel button');
+  var raceOut = document.getElementById('raceOut');
+  var curWait = 'poll';
+  // pure: strategy -> race readout text
+  function describeRace(strategy) {
+    var w = WAIT[strategy];
+    return '4 readers contend; SET lock:instruments:AAPL NX PX 5000 admits exactly 1. The winner reads the source and refills. ' +
+      'The 3 losers: ' + w.losers + '. Source reads: 1. Staleness: ' + w.staleness + '. Latency: ' + w.latency + '.';
+  }
+  function setWait(strategy) {
+    curWait = strategy;
+    waitButtons.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-wait') === strategy ? 'true' : 'false'); });
+    if (raceOut) raceOut.innerHTML = '<span class="rk">readout &#183;</span> ' + describeRace(strategy);
+  }
+  // pure: role -> readout text (hover); null restores the strategy readout
+  function focusRole(role) {
+    if (lockSvg) {
+      lockSvg.classList.toggle('focus', !!role);
+      lockSvg.querySelectorAll('.role').forEach(function (g) { g.classList.toggle('on', g.getAttribute('data-role') === role); });
+    }
+    if (raceOut) {
+      raceOut.innerHTML = role
+        ? '<span class="rk">readout &#183;</span> ' + ROLE[role]
+        : '<span class="rk">readout &#183;</span> ' + describeRace(curWait);
+    }
+  }
+  waitButtons.forEach(function (b) { b.addEventListener('click', function () { setWait(b.getAttribute('data-wait')); }); });
+  if (lockSvg) {
+    lockSvg.querySelectorAll('.role').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { focusRole(g.getAttribute('data-role')); });
+      g.addEventListener('mouseleave', function () { focusRole(null); });
+    });
+  }
+  setWait('poll');
+
+  /* ---------- Interactive 2: token-checked release (hover-select over a fixed model) ---------- */
+  var MY_TOKEN = 'a1b2c3';
+  var LOCKS = {
+    own:        { holds: 'a1b2c3', label: 'the lock still holds this request’s token' },
+    reacquired: { holds: 'z9y8x7', label: 'the lock expired and another request re-acquired it' },
+    gone:       { holds: null,     label: 'the lock already expired and is absent' }
+  };
+  var RED = '#d6584f', TS = '#20618e', NEUT = '#68705f';
+  var relSvg = document.getElementById('relSvg');
+  var relButtons = document.querySelectorAll('#relSel button');
+  var relOut = document.getElementById('relOut');
+  // pure: lock state -> readout text (GET compare + DEL outcome)
+  function describeRelease(state) {
+    var l = LOCKS[state];
+    var stored = l.holds === null ? '(nil)' : '"' + l.holds + '"';
+    var match = l.holds === MY_TOKEN;
+    var del = match ? 'DEL fires -> 1 (released)' : 'DEL skipped -> 0 (not held by this request; do nothing)';
+    return 'GET lock:instruments:AAPL -> ' + stored + ' vs this request’s token "' + MY_TOKEN + '": ' +
+      (match ? 'match' : 'no match') + '. ' + del + '. (' + l.label + '.)';
+  }
+  function setRelease(state) {
+    relButtons.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-rel') === state ? 'true' : 'false'); });
+    var l = LOCKS[state], match = l.holds === MY_TOKEN;
+    var storedTok = document.getElementById('storedTok');
+    if (storedTok) { storedTok.textContent = l.holds === null ? '(nil)' : '"' + l.holds + '"'; storedTok.setAttribute('fill', match ? RED : NEUT); }
+    var line = document.getElementById('cmpLine'), op = document.getElementById('cmpOp');
+    if (line) line.setAttribute('stroke', match ? RED : NEUT);
+    if (op) { op.textContent = match ? '=' : '≠'; op.setAttribute('fill', match ? RED : NEUT); }
+    var delBox = document.getElementById('delBox'), delTxt = document.getElementById('delTxt');
+    if (delBox) delBox.setAttribute('stroke', match ? RED : NEUT);
+    if (delTxt) { delTxt.textContent = match ? 'DEL -> 1' : 'skip DEL'; delTxt.setAttribute('fill', match ? RED : NEUT); }
+    if (relOut) relOut.innerHTML = '<span class="rk">readout &#183;</span> ' + describeRelease(state);
+  }
+  relButtons.forEach(function (b) { b.addEventListener('click', function () { setRelease(b.getAttribute('data-rel')); }); });
+  setRelease('own');
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

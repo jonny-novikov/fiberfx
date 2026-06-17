@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M3.3 · Streams and the Global Edge — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="The availability-first retention and delivery tiers, in two layers. Each instrument has its own append-only stream — the ordered, replicated record readers consume without contending with the writer — and deep retention runs on a globally distributed object store that keeps data close to where it is written and replicates it close to readers. This dive builds the per-instrument streams on a Valkey-class store and the global edge on Tigris, and shows how both answer from local or nearby state with bounded staleness.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-mesh)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the two-tier retention emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.capsvg{width:100%;height:auto;display:block}
+.capsvg .grp{fill:var(--m-card);stroke:var(--m-line);stroke-width:1.5}
+.capsvg .node{fill:var(--m-avail-tint);stroke:var(--m-avail);stroke-width:1.5}
+.capsvg .node.e{fill:var(--m-edge-tint);stroke:var(--m-edge)}
+.capsvg .ent{fill:var(--m-avail-tint);stroke:var(--m-avail);stroke-width:1.3}
+.capsvg .ent.head{fill:var(--m-mesh-tint);stroke:var(--m-mesh)}
+.capsvg .glbl{font:12px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .vlbl{font:11px var(--mono);fill:var(--m-ink);text-anchor:middle;font-weight:700}
+.capsvg .link{stroke:var(--m-avail);stroke-width:2.5;fill:none}
+.capsvg .msg{stroke:var(--m-mesh);stroke-width:2;fill:none;marker-end:url(#arw)}
+.capsvg .msg.a{stroke:var(--m-avail)}
+.capsvg .msg.e{stroke:var(--m-edge)}
+.capsvg .opn{font:11px var(--mono);fill:var(--m-ink);text-anchor:middle}
+.capsvg .barr{font:13px var(--mono);fill:var(--m-edge);text-anchor:middle;font-weight:700}
+.capsvg .axt{font:11px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .okm{font:12px var(--mono);font-weight:700;text-anchor:middle;fill:var(--m-avail)}
+.capsvg g[data-tab]{transition:opacity .18s ease}
+.capsvg.focus g[data-tab]{opacity:.16}
+.capsvg.focus g[data-tab].on{opacity:1}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the two-tier duality cards ---------- */
+.tri{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-avail);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-edge)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the three-surface compose ---------- */
+.cmp{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:6px}
+.cmp article{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px}
+.cmp article.book{border-left:3px solid var(--m-cons)}
+.cmp article.feed{border-left:3px solid var(--m-avail)}
+.cmp article.strm{border-left:3px solid var(--m-edge)}
+.cmp .ck{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.cmp article.book .ck{color:var(--m-cons)}
+.cmp article.feed .ck{color:var(--m-avail)}
+.cmp article.strm .ck{color:var(--m-edge)}
+.cmp h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.cmp p{font-size:.9rem;color:var(--m-ink)}
+.cmp .ex{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);border-top:1px dashed var(--m-line);padding-top:9px}
+.cmp .ex b{color:var(--m-ink)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.doors,.cmp{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.doors,.cmp{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><a href="/mesh/best-effort-consistency">best-effort-consistency</a><span class="rsep">/</span><span class="rcur">streams-and-edge</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#streams">Per-instrument streams</a>
+      <a href="#why">Why availability-first</a>
+      <a href="#tigris">The global edge</a>
+      <a href="#tiers">Two tiers</a>
+      <a href="#trade">The trade</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M3.3 &#183; Best Effort Consistency</p>
+      <h1>Streams and the <span class="hns">global edge</span>.</h1>
+      <p class="lede">The availability-first retention and delivery tiers, in two layers. Each instrument has its own
+      append-only stream &#8212; the ordered, replicated record readers consume without contending with the writer
+      &#8212; and deep retention runs on a globally distributed object store that keeps data <b>close to where it is
+      written</b> and replicates it <b>close to readers</b>.</p>
+      <p class="heronote">No measurement here: this dive reads two mechanisms, not a benchmark. Three primary sources
+      carry it (<a href="#refs">a Valkey-class store's stream type, Tigris global object storage, and Gilbert &amp;
+      Lynch 2012</a>); the mechanisms are external and settled, and EchoMesh's per-instrument streams and its retention
+      are named as design built on them. Both tiers answer from local or nearby state and accept bounded staleness as
+      the price of always answering &#8212; the availability-first posture of M3.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>The append-only stream with its consumer groups and trimming, and the globally replicated S3-compatible edge,
+        are shipped technology. EchoMesh's <b>use</b> &#8212; a per-instrument stream as the hot ordered record and
+        Tigris as the global retention tier, both keyed by the branded identity &#8212; is the course's proposal,
+        composed into the mesh at M2 and separated from the substrate at M8.2.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>The two-tier retention path &#183; a producer appends to a per-instrument stream (the <b>hot
+        tier</b>, replicated to a replica a reader tails), and the older record ages out into a <b>Tigris region</b>
+        (the cold tier, written near the source, read near the requester) &#8212; hover a state to see <b>which tier
+        answers</b> and <b>what staleness it carries</b> (mechanisms from <b>Valkey &#183; Streams</b> and <b>Fly.io
+        &#183; Tigris</b>)</figcaption>
+        <svg class="capsvg" id="capsvg" viewBox="0 0 760 290" role="img" aria-label="A two-tier retention and delivery path. On the left, a producer appends entries to a per-instrument append-only stream, which is replicated to a replica that a reader tails in order without taking a lock or waiting on a quorum. As the stream rolls forward, the oldest entries are trimmed to bound memory and aged out into Tigris, a globally distributed object store, shown on the right as a region near the writer. When an object is requested it is replicated close to the requesting reader and served from a nearby region with low latency. A stronger read-after-write read is available on demand for a caller that needs the authoritative value rather than the fast one. Both tiers answer from local or nearby state and may trail the latest write by the replication or propagation window, which is bounded rather than open-ended.">
+          <defs>
+            <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#7b3aa0"></path>
+            </marker>
+          </defs>
+          <!-- group frames: hot tier (stream) left, cold tier (Tigris) right -->
+          <rect class="grp" x="34" y="60" width="330" height="160" rx="8"></rect>
+          <rect class="grp" x="430" y="60" width="296" height="160" rx="8"></rect>
+          <text class="glbl" x="199" y="50">hot tier &#183; per-instrument stream</text>
+          <text class="glbl" x="578" y="50">cold tier &#183; Tigris global edge</text>
+
+          <!-- the stream log: producer, ordered entries, replica -->
+          <text class="glbl" x="76" y="92">producer</text>
+          <circle class="node" cx="76" cy="120" r="20"></circle>
+          <rect class="ent" x="120" y="108" width="30" height="24" rx="3"></rect>
+          <rect class="ent" x="156" y="108" width="30" height="24" rx="3"></rect>
+          <rect class="ent" x="192" y="108" width="30" height="24" rx="3"></rect>
+          <rect class="ent head" x="228" y="108" width="30" height="24" rx="3"></rect>
+          <text class="axt" x="189" y="150">append-only log &#183; time-ordered IDs</text>
+          <text class="glbl" x="310" y="92">replica</text>
+          <circle class="node" cx="310" cy="120" r="20"></circle>
+          <text class="glbl" x="199" y="200">reader tails &#183; no lock, no quorum</text>
+
+          <!-- the Tigris region + requester -->
+          <text class="glbl" x="500" y="92">region near writer</text>
+          <circle class="node e" cx="500" cy="120" r="20"></circle>
+          <text class="glbl" x="660" y="92">region near reader</text>
+          <circle class="node" cx="660" cy="120" r="20"></circle>
+          <text class="axt" x="578" y="200">replicate close to the requester</text>
+
+          <!-- step: append — an entry lands on the stream head -->
+          <g data-tab="append">
+            <path class="msg" d="M98 120 L116 120"></path>
+            <text class="opn" x="243" y="100">append</text>
+            <text class="vlbl" x="243" y="124">e4</text>
+          </g>
+
+          <!-- step: tail — replica serves the reader in order -->
+          <g data-tab="tail">
+            <path class="msg a" d="M248 120 L288 120"></path>
+            <text class="opn" x="310" y="156">tail &#8594; e4, in order</text>
+            <text class="okm" x="199" y="180">served now, from the replica</text>
+          </g>
+
+          <!-- step: ageout — old entries trim into Tigris -->
+          <g data-tab="ageout">
+            <path class="msg e" d="M366 120 L478 120"></path>
+            <text class="opn" x="404" y="106">age out &#183; trim</text>
+            <text class="axt" x="404" y="140">oldest entries &#8594; durable object</text>
+          </g>
+
+          <!-- step: edge — object replicated close to requester -->
+          <g data-tab="edge">
+            <path class="msg a" d="M520 120 L638 120"></path>
+            <text class="opn" x="578" y="106">replicate to edge</text>
+            <text class="okm" x="660" y="156">read near, low latency</text>
+            <text class="axt" x="660" y="176">may trail by the propagation window</text>
+          </g>
+
+          <!-- step: strong — stronger read-after-write on demand -->
+          <g data-tab="strong">
+            <text class="barr" x="578" y="248">stronger read-after-write</text>
+            <text class="barr" x="578" y="268">on demand &#8212; authoritative, slower</text>
+          </g>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">state &#183; hover to walk the two tiers</span>
+          A producer <b>appends</b> to the stream, a reader <b>tails</b> the replica in order, the oldest entries
+          <b>age out</b> into Tigris, and an object is served from a region <span class="vc">near the reader</span>
+          &#8212; fast and slightly behind by default, with a <span class="vc">stronger read</span> on demand. Hover a
+          state below to take it one move at a time.
+        </p>
+        <div class="htabs" id="tierw">
+          <div class="htabs-bar" role="tablist" aria-label="The two-tier retention path, state by state">
+            <button type="button" role="tab" data-tab="append" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>1 &#183; Append</button>
+            <button type="button" role="tab" data-tab="tail" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>2 &#183; Tail the replica</button>
+            <button type="button" role="tab" data-tab="ageout" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>3 &#183; Age out to Tigris</button>
+            <button type="button" role="tab" data-tab="edge" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>4 &#183; Read at the edge</button>
+            <button type="button" role="tab" data-tab="strong" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>5 &#183; Stronger, on demand</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="append" role="tabpanel"><span class="tag m">State 1 &#183; a producer appends.</span> One command appends an entry to the instrument's stream, and the store assigns it a time-ordered ID composed of a timestamp and a sequence. The entry is immutable once written, and the head advances &#8212; ordering is a property of the structure, not something the application maintains.</div>
+            <div class="htabs-p" data-tab="tail" role="tabpanel"><span class="tag a">State 2 &#183; a reader tails the replica.</span> A consumer reads the log forward from a cursor &#8212; from a replica or the persisted record &#8212; in order, without taking a lock the writer holds and without waiting on a quorum. It answers now from the state it holds and reconciles toward the producer's latest as new entries arrive.</div>
+            <div class="htabs-p" data-tab="ageout" role="tabpanel"><span class="tag e">State 3 &#183; the older record ages out.</span> Memory stays bounded because the stream is trimmed, by length or by oldest entry, as it rolls forward. The records that age out of the hot stream are kept durably in Tigris &#8212; retention by temperature, hot in memory, cold on the object store.</div>
+            <div class="htabs-p" data-tab="edge" role="tabpanel"><span class="tag a">State 4 &#183; a read at the global edge.</span> Tigris keeps an object close to the region where it is written, and when it is requested replicates it close to the requesting reader, served from a nearby region with low latency &#8212; a replacement for a CDN with no configuration to manage. The value may trail the latest write by the propagation window, which is bounded.</div>
+            <div class="htabs-p" data-tab="strong" role="tabpanel"><span class="tag e">State 5 &#183; stronger, on demand.</span> For a caller that needs the authoritative value rather than the fast one, Tigris offers a stronger read-after-write read. Each surface chooses its point on the trade: fast-and-slightly-behind by default, stronger-and-slower on demand. The budget that fixes the point per surface is <b>M4</b>.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a state to walk it; click to pin. Without scripting, all five read in sequence and the figure shows every marker at once.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="streams">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Per-instrument streams</h2>
+        <span class="ssrc">mesh.3.3.md &#183; Valkey &#183; Streams</span>
+      </div>
+      <p class="body">EchoMesh gives each instrument its own append-only stream. A stream is a log with auto-generated,
+      time-ordered entry IDs, so ordering is a property of the structure rather than something the application
+      maintains; a producer appends an entry with one command, and the store assigns it an ID composed of a timestamp
+      and a sequence. Entries are immutable once written.</p>
+      <p class="body">Readers consume them in two modes &#8212; <b>tailing</b> the stream forward from a cursor to follow
+      it in real time, or joining a <b>consumer group</b> that hands each entry to one member, tracks a per-consumer
+      pending list, and lets an unacknowledged entry be reclaimed if a consumer fails. Memory stays bounded because the
+      stream is trimmed, by length or by oldest entry, as it rolls forward, and the whole structure &#8212; including
+      consumer-group state &#8212; is replicated to replicas and persisted, so it survives restarts.</p>
+      <p class="body">Per instrument, this is an ordered, durable record of everything that happened to that instrument,
+      readable by many consumers at their own pace. The shape of the commands &#8212; append, tail, group, trim &#8212;
+      is the Valkey-class store's stream data type, lifted here with teaching comments rather than invented.</p>
+      <figure class="frozen">
+        <figcaption>the append-only stream: append, tail, group, trim<span class="tag">Valkey &#183; Streams</span></figcaption>
+<pre><span class="fd">// each instrument has one append-only stream, keyed by its branded id</span>
+append(stream, <span class="fc">entry</span>)   <span class="fd">&#8594;</span> <b>id = ts-seq</b>   <span class="fd"># the store assigns a time-ordered ID; the entry is immutable</span>
+
+<span class="fd">// readers consume the log in two modes &#8212; no lock, no quorum:</span>
+tail(stream, <span class="fa">from = cursor</span>)            <span class="fd"># follow the log forward in order, at the reader's own pace</span>
+group.read(stream, <span class="fa">consumer</span>)            <span class="fd"># one entry to one member; a per-consumer pending list tracks it</span>
+group.ack(stream, <span class="fa">id</span>)                    <span class="fd"># acknowledged &#8212; else the entry can be reclaimed if a consumer fails</span>
+
+<span class="fd">// memory stays bounded as the log rolls forward:</span>
+trim(stream, <span class="fe">by length | by oldest</span>)      <span class="fd"># the structure (incl. group state) replicates and persists</span>
+<span class="fd">// per instrument: an ordered, durable record, read by many consumers at their own pace.</span></pre>
+      </figure>
+    </section>
+
+    <section id="why">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Why a stream is availability-first</h2>
+        <span class="ssrc">mesh.3.3.md &#183; Gilbert &amp; Lynch 2012</span>
+      </div>
+      <p class="body">The stream is an availability-first surface because of how it is read. Consumers read from the log
+      &#8212; from a replica or from the persisted record &#8212; in order, without taking any lock the writer holds and
+      without waiting on a quorum; the writer appends and the readers follow, <b>decoupled</b>. That decoupling is what
+      lets the delivery path keep answering: a consumer can read the most recent entries it has, in order, regardless of
+      whether it is momentarily behind the producer.</p>
+      <p class="body">The staleness is the replication and propagation delay &#8212; a replica may trail the
+      authoritative log by the time it takes an entry to reach it &#8212; and it is <b>bounded by that delay rather than
+      open-ended</b>. So the stream answers now, in order, from the state it holds, and reconciles toward the producer's
+      latest as new entries arrive, which is the availability-first shape of the strategy: a response always, and
+      consistency as best it can without blocking.</p>
+      <div class="htabs" id="modesw">
+        <div class="htabs-bar" role="tablist" aria-label="The two read modes of a stream">
+          <button type="button" role="tab" data-tab="tail" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>Tailing</button>
+          <button type="button" role="tab" data-tab="group" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>Consumer group</button>
+          <button type="button" role="tab" data-tab="trim" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>Trimming</button>
+          <button type="button" role="tab" data-tab="durable" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>Replicated &amp; persisted</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="tail" role="tabpanel"><span class="tag a">Tailing follows the log in real time.</span> A reader reads forward from a cursor, taking the most recent entries it has in order, at its own pace. Many readers tail the same stream independently &#8212; none contends with the writer, which only appends.</div>
+          <div class="htabs-p" data-tab="group" role="tabpanel"><span class="tag a">A consumer group shares the work.</span> Each entry goes to exactly one member of the group; a per-consumer pending list tracks what is in flight, and an unacknowledged entry can be reclaimed if a consumer fails, so a failed reader does not lose its share of the log.</div>
+          <div class="htabs-p" data-tab="trim" role="tabpanel"><span class="tag e">Trimming bounds memory.</span> The stream is trimmed by length or by oldest entry as it rolls forward, so the hot tier stays bounded. The records that age out are not discarded by EchoMesh &#8212; they are retained in the cold tier, Tigris.</div>
+          <div class="htabs-p" data-tab="durable" role="tabpanel"><span class="tag m">The structure is replicated and persisted.</span> The whole stream, including consumer-group state, is replicated to replicas and persisted, so it survives a restart. A reader can read from a replica &#8212; the source of the bounded staleness and the reason the delivery path keeps answering.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus a mode to read it; click to pin. Without scripting, all four read in sequence.</p>
+      </div>
+    </section>
+
+    <section id="tigris">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The global edge &#8212; Tigris</h2>
+        <span class="ssrc">mesh.3.3.md &#183; Fly.io &#183; Tigris</span>
+      </div>
+      <p class="body">Deep retention and global delivery run on Tigris, a globally distributed, S3-compatible object
+      store. Tigris keeps an object <b>close to the region where it is written</b>, and when the object is requested it
+      replicates it <b>close to the requesting user</b>, with the cross-region replication managed by the service
+      according to global traffic patterns; the effect is low-latency reads anywhere and a replacement for a CDN with no
+      configuration to manage.</p>
+      <p class="body">Underneath, redundant regional clusters track where objects live, and the platform resolves writes
+      from multiple regions into a coherent global view rather than leaving conflicts unhandled, with stronger
+      read-after-write consistency available where a caller needs it. For EchoMesh this is the retention tier: the
+      ordered records that age out of the hot streams are kept durably in Tigris and served to readers from a nearby
+      region, so retention and global delivery are <b>the same surface</b> &#8212; written close to the source, read
+      close to the consumer.</p>
+    </section>
+
+    <section id="tiers">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Two tiers, one availability-first posture</h2>
+        <span class="ssrc">mesh.3.3.md &#183; Gilbert &amp; Lynch 2012</span>
+      </div>
+      <p class="body">The two layers divide retention by temperature and share one posture. The per-instrument stream is
+      the hot tier &#8212; recent, ordered, in-memory, replicated &#8212; where consumers follow an instrument in
+      near-real time. Tigris is the cold tier &#8212; durable, global, served from the edge &#8212; where the older
+      record is retained and delivered worldwide.</p>
+      <p class="body">Both answer from local or nearby state, both accept bounded staleness as the price of always
+      answering, and both are keyed by the instrument's branded identity, so the same instrument names its stream and
+      its retained objects across the surfaces that touch it; the identity contract is the <b>/bcs</b> course, described
+      there rather than restated here. The two tiers are not different strategies &#8212; they are the same
+      best-effort-consistency choice applied to hot and cold data.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">Hot tier</p>
+          <h3>The per-instrument stream</h3>
+          <p>Recent, ordered, in-memory, replicated. Consumers tail it or share a consumer group, following the
+          instrument in near-real time. Trimmed to bound memory; the staleness is the replication delay.</p>
+          <p class="note">answers from a replica &#183; <b>bounded by replication delay</b></p>
+        </article>
+        <article>
+          <p class="cno">Cold tier</p>
+          <h3>The Tigris global edge</h3>
+          <p>Durable, global, served from a nearby region. The record that ages out of the stream is retained here and
+          delivered worldwide, written close to the source and read close to the consumer.</p>
+          <p class="note">answers from a near region &#183; <b>bounded by propagation window</b></p>
+        </article>
+      </div>
+      <p class="compose"><b>The same theorem, twice:</b> both tiers make the availability-first choice &#8212; answer
+      now from local or nearby state, accept a bounded lag &#8212; and both are keyed by the branded identity, the seam
+      that lets one instrument name its stream and its retained objects across every surface. The budget that turns
+      &#8220;bounded&#8221; into a specific number per surface is <b>M4</b>.</p>
+    </section>
+
+    <section id="trade">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The trade, named &#8212; and how it sits with the feed and the book</h2>
+        <span class="ssrc">mesh.3.3.md &#183; Fly.io &#183; Tigris</span>
+      </div>
+      <p class="body">The win is an ordered, decoupled read path with low-latency global delivery that keeps answering
+      whether or not a reader is momentarily behind. The loss is the mirror image and must be named: a stream replica
+      can trail the producer by its replication delay, and a globally replicated object can be read from a region before
+      the latest write has propagated there, so a reader can <b>observe a value that is behind</b>.</p>
+      <p class="body">What keeps the loss bounded is that the lag is a propagation window rather than an unbounded
+      divergence, and that the cold tier offers a stronger-consistency read where a caller needs the authoritative value
+      rather than the fast one. Each surface chooses its point on the trade &#8212; fast-and-slightly-behind by default,
+      stronger-and-slower on demand &#8212; and the budget that fixes that point per surface is <b>M4</b>.</p>
+      <p class="body">The three surfaces of this chapter and M2 compose into one path for a value. Each makes a
+      deliberate choice about the theorem &#8212; the book blocks rather than diverges, the feed and the streams diverge
+      within a bound rather than block &#8212; and together they are how EchoMesh both decides values correctly and
+      delivers them everywhere, fast.</p>
+      <div class="cmp">
+        <article class="book">
+          <p class="ck">Consistency-first &#183; M2</p>
+          <h3>The book decides</h3>
+          <p>A single owner per instrument decides the authoritative value &#8212; one writer, one ordered history. It
+          <b>blocks rather than diverges</b>: correctness from ownership, not a vote.</p>
+          <p class="ex"><b>chooses:</b> safety over liveness &#183; <b>cost:</b> blocks under partition</p>
+        </article>
+        <article class="feed">
+          <p class="ck">Availability-first &#183; M3.2</p>
+          <h3>The feed serves</h3>
+          <p>A near-cache serves that value to readers at memory speed, kept coherent by invalidation. Under partition
+          it <b>marks a value stale</b> rather than withholding it.</p>
+          <p class="ex"><b>chooses:</b> liveness over safety &#183; <b>cost:</b> a marked, bounded staleness</p>
+        </article>
+        <article class="strm">
+          <p class="ck">Availability-first &#183; M3.3</p>
+          <h3>The streams record &amp; deliver</h3>
+          <p>The per-instrument stream records the ordered history; Tigris retains and delivers it globally. Both
+          <b>answer from nearby state</b>, behind by a bounded propagation window.</p>
+          <p class="ex"><b>chooses:</b> liveness over safety &#183; <b>cost:</b> a bounded replication lag</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh/best-effort-consistency">
+          <span class="dr">/mesh/best-effort-consistency</span>
+          <h3>M3 &#8212; Best Effort Consistency</h3>
+          <p>The chapter landing: the availability-first strategy and its surfaces &#8212; answer now from local or
+          nearby state, accept a bounded, marked staleness.</p>
+          <p class="dnote"><b>this dive</b> is M3.3, the streams and the edge; the feed is M3.2, the strategy is M3.1.</p>
+        </a>
+        <a class="door" href="/echomq">
+          <span class="dr">/echomq</span>
+          <h3>EchoMQ &#8212; the protocol, in depth</h3>
+          <p>The Valkey-native bus and stream tier, rung by rung: the owned keyspace, the Lua inventory, the conformance
+          suite.</p>
+          <p class="dnote"><b>the bus</b> that moves events between these surfaces, and the stream tier itself, are
+          specified here rather than in this dive.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract, proven by frozen transcripts
+          across five runtimes.</p>
+          <p class="dnote"><b>the identity</b> that keys a stream and an object &#8212; so one instrument names both
+          &#8212; is this contract, summarized here and specified there.</p>
+        </a>
+        <a class="door" href="/elixir">
+          <span class="dr">/elixir</span>
+          <h3>Functional Programming in Elixir</h3>
+          <p>The engine and the umbrella where the identity library lives, through to the Fly deployment chapter that
+          puts the surfaces on machines.</p>
+          <p class="dnote"><b>the consumers</b> that tail a stream are processes on the BEAM &#8212; the runtime this
+          course taught here, deployed beside Tigris on Fly.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://valkey.io/topics/streams-intro/" rel="noopener">Valkey &#8212; Streams</a><span class="rs">a stream is an append-only log with auto-generated, time-ordered IDs; producers append with one command, consumers tail with a read or share work via consumer groups with per-consumer pending lists and acknowledgment, trimming bounds size, and the structure replicates and persists</span></li>
+          <li><a href="https://fly.io/docs/tigris/" rel="noopener">Fly.io &#8212; Tigris Global Object Storage</a><span class="rs">a globally distributed, S3-compatible object store that keeps an object close to the region where it is written and replicates it close to the requesting user, replacing a CDN with zero configuration, with conflict resolution across regions and stronger consistency available on demand</span></li>
+          <li><a href="https://groups.csail.mit.edu/tds/papers/Gilbert/Brewer2.pdf" rel="noopener">Gilbert &amp; Lynch (2012) &#8212; Perspectives on the CAP Theorem</a><span class="rs">best-effort consistency answers from local or nearby state and provides consistency as best it can &#8212; the availability-over-consistency choice a replicated stream and a global edge make</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh/best-effort-consistency">M3 &#8212; Best Effort Consistency</a><span class="rs">the chapter landing: the availability-first strategy and its surfaces</span></li>
+          <li><a href="/mesh/best-effort-consistency/market-data">M3.2 &#8212; Market Data on EchoCache</a><span class="rs">the near-cache and coherence broadcast in front of the consistency-first book</span></li>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/echomq">EchoMQ &#8212; the protocol, in depth</a><span class="rs">the Valkey-native bus and stream tier the availability-first surfaces use</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the law and the 14-byte identity contract that keys a stream and an object</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the engine, the umbrella where the identity library lives, and the Fly deployment chapter</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh/best-effort-consistency/market-data"><span class="pk">previous &#183; dive</span>&#8592; M3.2 &#183; Market Data on EchoCache</a>
+      <a class="pgx" href="/mesh/best-effort-consistency"><span class="pk">back to the chapter</span>M3 &#183; Best Effort Consistency &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <span>M2 &#183; Best Effort Availability<i>soon</i></span>
+        <a href="/mesh/best-effort-consistency">M3 &#183; Best Effort Consistency</a>
+        <span>M4 &#183; Trading the Trade<i>soon</i></span>
+        <span>M5 &#183; Segmenting<i>soon</i></span>
+        <span>M6 &#183; The Stack<i>soon</i></span>
+        <span>M7 &#183; Transparent Infrastructure<i>soon</i></span>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0K8wBHgMS</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 17:19:03 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the two-tier retention emulator: the state tabs drive the SVG + an aria-live readout ----------
+     READOUT is a pure function of the state key over fixed data — no network, no storage. The SVG
+     highlights the active state's marker group; both tiers answer from local or nearby state. */
+  var EMIT = {
+    append: { s: "state 1 · append to the stream",
+              h: "A producer appends entry <b>e4</b> with one command; the store assigns a <b>time-ordered ID</b> and the head advances. The entry is immutable once written — ordering is a property of the structure.",
+              o: 0 },
+    tail:   { s: "state 2 · tail the replica",
+              h: "A reader tails the log forward from a cursor, served from the <b>replica</b> in order — no lock, no quorum. It answers now from the state it holds and reconciles toward the producer's latest as entries arrive.",
+              o: 0 },
+    ageout: { s: "state 3 · age out to Tigris",
+              h: "The stream is <b>trimmed</b> by length or oldest entry to bound memory; the records that age out are kept <span class='vc'>durably in Tigris</span> — retention by temperature, hot in memory, cold on the object store.",
+              o: 0 },
+    edge:   { s: "state 4 · read at the global edge",
+              h: "The object is replicated close to the requester and served from a <b>nearby region</b>, low latency anywhere. The value may trail the latest write by the <span class='vc'>propagation window</span> — fast and slightly behind, the availability-first default.",
+              o: 0 },
+    strong: { s: "state 5 · stronger, on demand",
+              h: "For a caller that needs the authoritative value, Tigris offers a <b>stronger read-after-write</b> read — authoritative and slower. Each surface picks its point: fast-and-slightly-behind by default, stronger-and-slower on demand.",
+              o: 0 }
+  };
+  var capsvg = document.getElementById('capsvg');
+  var emit = document.getElementById('emit');
+  wireHtabs(document.getElementById('tierw'), function (key) {
+    var d = EMIT[key];
+    if (emit && d) emit.innerHTML = '<span class="step">' + d.s + '</span>' + d.h;
+    if (!capsvg) return;
+    capsvg.classList.toggle('focus', !!key);
+    capsvg.querySelectorAll('g[data-tab]').forEach(function (g) {
+      g.classList.toggle('on', g.getAttribute('data-tab') === key);
+    });
+  });
+
+  /* the read-modes tabs are a plain reuse of the same component */
+  wireHtabs(document.getElementById('modesw'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

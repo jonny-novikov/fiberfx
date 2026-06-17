@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E2.04.2 — The Go gaps · EchoMQ, the protocol in depth · jonnify</title>
+<meta name="description" content="E2.04.2 — The honest Go port status. The non-atomic add path: where the Elixir reference runs one atomic addStandardJob-9.lua, the Go port runs two separate commands — HSet (queue_impl.go ~105) then a separate LPush/ZAdd (queue_impl.go ~137). The attemptsMade-vs-atm nuance: Go writes and reads atm on the Redis hash, only its external JSON tag is attemptsMade (job.go:22) — an L4 surface, not a wire bug, convergently verified twice. The cluster validator Go does carry: GetClusterSlot + ValidateHashTags in cluster.go, CRC16 % 16384 with RedisClusterSlots = 16384. A depth course names all three.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.geo-readout .warn{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.rng{display:flex;flex-direction:column;gap:.3rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim)}
+.rng input[type=range]{width:230px;accent-color:var(--echo)}
+.rng .val{font-family:var(--mono);color:var(--echo-bright);font-size:.84rem}
+.field{display:flex;flex-direction:column;gap:.3rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim)}
+.field input[type=text]{font-family:var(--mono);font-size:.86rem;color:var(--echo-bright);background:var(--ink-2);
+  border:1px solid var(--line);border-radius:8px;padding:.42rem .6rem;width:260px}
+
+/* ---- step diagram ---- */
+.step .cmd rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.step .cmd.done rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.step .cmd.gap rect{fill:rgba(214,88,79,.14);stroke:#d6584f}
+.step text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.step .ct{fill:#d7cfb9;font-size:11px}
+.step .edge{stroke:#2a3252;stroke-width:1.3;fill:none}
+
+/* ---- slot diagram ---- */
+.slotc .kbox rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.slotc .kbox.same rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.slotc .kbox.diff rect{fill:rgba(214,88,79,.14);stroke:#d6584f}
+.slotc text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.slotc .kt{fill:#d7cfb9;font-size:11px}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .kw{color:var(--blue-bright)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- the 2.0 fork (the break callout — EchoMQ leaves the BullMQ wire) ---- */
+.fork{margin:1.7rem 0 0;border:1px solid var(--burgundy);border-radius:16px;
+  background:linear-gradient(180deg,rgba(196,80,76,.10),rgba(10,14,26,.3));
+  padding:clamp(1rem,2.4vw,1.5rem)}
+.fork .dl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--burgundy);margin:0 0 .6rem}
+.fork p{margin:0;font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure)}
+.fork a{color:var(--gold-bright);font-weight:600}
+.fork a:hover{color:var(--cream)}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.backlinks{font-family:var(--mono);font-size:.76rem;color:var(--cream-dim);margin:1.2rem 0 0;display:flex;flex-wrap:wrap;gap:.4rem 1rem}
+.backlinks a{color:var(--gold)}
+.backlinks .mv{color:var(--echo-bright)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/core">core</a><span class="rsep">/</span><a href="/echomq/core/runtimes">runtimes</a><span class="rsep">/</span><span class="rcur">the-go-gaps</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core">E2 &middot; Core</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core/runtimes">The three runtimes</a>
+        <span class="sep">/</span>
+        <span class="here">The Go gaps</span>
+      </div>
+      <p class="eyebrow">E2.04.2 &middot; The three runtimes &middot; dive 2</p>
+      <h1>The Go <span class="ex">gaps</span></h1>
+      <p class="lede">The port speaks the same wire — but it is partial, and a depth course names the gaps rather than
+        smoothing them.</p>
+      <p class="kicker">Three things, told straight. The <strong>non-atomic add path</strong>: where the Elixir
+        reference runs one atomic <code class="inl">addStandardJob-9.lua</code>, the Go port runs two separate commands.
+        The <strong>attemptsMade-vs-atm nuance</strong>: Go writes and reads <code class="inl">atm</code> on the hash —
+        only its external JSON tag is <code class="inl">attemptsMade</code>, an L4 surface, not a wire bug. And the
+        <strong>cluster validator</strong> the Go port does carry: <code class="inl">GetClusterSlot</code> +
+        <code class="inl">ValidateHashTags</code>, the CRC16-modulo-16384 rule. Step the add comparison on the right.</p>
+      <p class="backlinks">
+        <span class="mv">Movement I · Core (as-built)</span>
+        <a href="/redis-patterns/queues">← redis-patterns R3</a>
+      </p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#atomic">The non-atomic add path</a>
+        <a href="#tag">The attemptsMade/atm nuance</a>
+        <a href="#cluster">The cluster validator</a>
+        <a href="#rule">The Golden Rule</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig step" aria-labelledby="stepTitle">
+      <h4 id="stepTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Add a standard job &middot; one atomic script vs two commands</h4>
+      <div class="controls">
+        <div class="solid-select" role="group" aria-label="Pick a runtime">
+          <button type="button" id="rt-elixir" data-c="echo" class="active">Elixir &middot; one script</button>
+          <button type="button" id="rt-go" data-c="gold">Go &middot; two commands</button>
+        </div>
+        <div class="solid-select" role="group" aria-label="Step the add">
+          <button type="button" id="stepBtn" data-c="blue">step &rarr;</button>
+          <button type="button" id="resetBtn" data-c="blue">reset</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 480 180" role="img" aria-label="The add-a-standard-job path, stepped. For Elixir, a single atomic Lua script writes the job hash and pushes it to the wait list in one all-or-nothing step. For Go, two separate commands run in sequence — HSet, then LPush — leaving a window between them.">
+        <g class="cmd" id="c-0"><rect x="20" y="24" width="200" height="44" rx="8"></rect></g>
+        <text x="34" y="44" class="ct" id="c0t">step 1</text>
+        <text x="34" y="60" id="c0s">&mdash;</text>
+        <path class="edge" d="M120 68 L120 96"></path>
+        <g class="cmd" id="c-1"><rect x="20" y="96" width="200" height="44" rx="8"></rect></g>
+        <text x="34" y="116" class="ct" id="c1t">step 2</text>
+        <text x="34" y="132" id="c1s">&mdash;</text>
+      </svg>
+
+      <div class="geo-readout" id="stepOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="atomic">
+    <h2>Gap one &mdash; the non-atomic add path</h2>
+    <div class="prose">
+      <p>On the Elixir reference, enqueuing a standard job runs <strong>one</strong> atomic Lua script —
+        <code class="inl">addStandardJob-9.lua</code>, via <code class="inl">Scripts.add_standard_job</code>
+        (<code class="inl">scripts.ex</code> line ~435). The job hash is written and the id pushed onto the wait list
+        in a single round-trip that either fully happens or does not:</p>
+
+      <pre class="code"><span class="cmt"># scripts.ex — one atomic script for the whole add</span>
+<span class="op">execute</span>(conn, <span class="str">:add_standard_job</span>, keys, args)   <span class="cmt"># addStandardJob-9.lua, 9 declared keys</span></pre>
+
+      <p>The Go port's add path runs <strong>two separate commands</strong>: <code class="inl">addJobToQueue</code>
+        writes the hash with <code class="inl">HSet</code> (<code class="inl">queue_impl.go</code> line ~105), and then
+        <code class="inl">enqueueJob</code> pushes the id with a separate <code class="inl">LPush</code> (or
+        <code class="inl">ZAdd</code> for delayed/priority, <code class="inl">queue_impl.go</code> line ~137):</p>
+
+      <pre class="code"><span class="cmt">// queue_impl.go — addJobToQueue: first command</span>
+<span class="kw">return</span> q.redisClient.<span class="op">HSet</span>(ctx, key, fields).Err()
+
+<span class="cmt">// queue_impl.go — enqueueJob: second, separate command</span>
+<span class="kw">return</span> q.redisClient.<span class="op">LPush</span>(ctx, q.keyBuilder.Wait(), job.ID).Err()</pre>
+
+      <p>Where the protocol expects one atomic script, the Go port issues two commands. A failure between them can leave
+        a job hash with no list entry. This is the <strong>non-atomic critical path</strong> — a real porting gap,
+        reported, not glossed. (The Go port's <em>fetch</em> path is atomic: the worker pickup runs the
+        <code class="inl">moveToActive</code> Lua script — <code class="inl">worker_impl.go</code> line ~112 — so the
+        gap is on the add side, not the pickup side.)</p>
+    </div>
+    <p class="take">One atomic script versus two separate commands. The Elixir add either fully happens or does not; the
+      Go add has a window between <code class="inl">HSet</code> and <code class="inl">LPush</code>. That is the
+      non-atomic critical path.</p>
+  </section>
+
+  <section id="tag">
+    <h2>The nuance &mdash; attemptsMade vs atm</h2>
+    <div class="prose">
+      <p>A common worry is that the Go port writes the wrong field name. It does not. The Go port <strong>writes and
+        reads <code class="inl">atm</code></strong> on the Redis hash, exactly as the wire requires:</p>
+
+      <pre class="code"><span class="cmt">// queue_impl.go ~102 — WRITE the hash field as "atm"</span>
+<span class="str">"atm"</span>: job.AttemptsMade,
+
+<span class="cmt">// script_runner.go ~160 — READ the hash field "atm" back</span>
+<span class="kw">if</span> attemptsMade, ok := data[<span class="str">"atm"</span>]; ok {
+  fmt.Sscanf(attemptsMade, <span class="str">"%d"</span>, &amp;job.AttemptsMade)
+}</pre>
+
+      <p>Only the Go struct's external <strong>JSON tag</strong> is <code class="inl">attemptsMade</code>
+        (<code class="inl">job.go</code> line 22):</p>
+
+      <pre class="code"><span class="cmt">// job.go:22 — the JSON tag is an L4 serialisation surface, NOT the wire</span>
+AttemptsMade <span class="kw">int</span> <span class="str">`json:"attemptsMade"`</span></pre>
+
+      <p>That tag is an <strong>L4 surface</strong> — how a Go program serialises the struct to its own callers — not
+        the wire. The Redis field round-trips as <code class="inl">atm</code> in both directions, so a job written by Go
+        and read by Elixir (whose <code class="inl">EchoMQ.Job.from_redis/4</code> reads the same compressed fields)
+        agrees on the field. This was convergently verified twice: it is a serialisation tag, not a wire bug.</p>
+    </div>
+    <p class="take">The Go port reads and writes <code class="inl">atm</code> on the wire; only its JSON output is named
+      <code class="inl">attemptsMade</code>. That is an L4 tag, not a wire difference — the interop holds.</p>
+  </section>
+
+  <section id="cluster">
+    <h2>What the Go port does carry &mdash; the cluster validator</h2>
+    <div class="prose">
+      <p>The Go port carries a real Redis Cluster slot validator the Elixir runtime lacks.
+        <code class="inl">pkg/echomq/cluster.go</code> implements <code class="inl">GetClusterSlot</code> and
+        <code class="inl">ValidateHashTags</code>, with <code class="inl">RedisClusterSlots = 16384</code>:</p>
+
+      <pre class="code"><span class="cmt">// cluster.go — the slot is CRC16 of the {hashtag}, modulo 16384</span>
+<span class="kw">const</span> RedisClusterSlots = <span class="res">16384</span>
+
+<span class="kw">func</span> <span class="op">GetClusterSlot</span>(key <span class="kw">string</span>) <span class="kw">int</span> {
+  hashKey := key                          <span class="cmt">// extract the {hashtag} content if present</span>
+  crc := <span class="op">CalculateCRC16</span>([]<span class="kw">byte</span>(hashKey))
+  <span class="kw">return</span> <span class="kw">int</span>(crc) % RedisClusterSlots
+}
+
+<span class="kw">func</span> <span class="op">ValidateHashTags</span>(keys []<span class="kw">string</span>) (<span class="kw">bool</span>, <span class="kw">int</span>, []<span class="kw">int</span>) {
+  <span class="cmt">// true iff every key hashes to the SAME slot</span>
+}</pre>
+
+      <p>The rule is <code class="inl">slot = CRC16(hashtag) % 16384</code>; keys that share a hashtag share a slot,
+        which is the precondition for running a multi-key Lua script on a Redis Cluster. The checker below applies the
+        rule to a fixed pair of keys: type a hashtag and read whether two keys built with it land in the same slot. It
+        demonstrates the rule, not a specific slot number.</p>
+    </div>
+
+    <figure class="fig slotc" aria-labelledby="slotcTitle">
+      <h4 id="slotcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">ValidateHashTags &middot; same hashtag &rArr; same slot</h4>
+      <div class="controls">
+        <label class="field">
+          <span>hashtag for key A &middot; <code style="font-family:var(--mono);font-size:.78rem">emq:{<span id="tagAEcho">orders</span>}:wait</code></span>
+          <input type="text" id="tagA" value="orders" aria-label="Hashtag for key A">
+        </label>
+        <label class="field">
+          <span>hashtag for key B &middot; <code style="font-family:var(--mono);font-size:.78rem">emq:{<span id="tagBEcho">orders</span>}:active</code></span>
+          <input type="text" id="tagB" value="orders" aria-label="Hashtag for key B">
+        </label>
+      </div>
+
+      <svg viewBox="0 0 480 130" role="img" aria-label="Two Redis keys, each with its own hashtag. The validator computes each key's slot from the CRC16 of its hashtag, modulo 16384, and reports whether the two keys land in the same slot. Same hashtag means same slot, which a multi-key Lua script requires.">
+        <g class="kbox" id="kbA"><rect x="20" y="28" width="200" height="40" rx="8"></rect></g>
+        <text x="34" y="52" class="kt" id="kAlab">emq:{orders}:wait</text>
+        <g class="kbox" id="kbB"><rect x="20" y="78" width="200" height="40" rx="8"></rect></g>
+        <text x="34" y="102" class="kt" id="kBlab">emq:{orders}:active</text>
+      </svg>
+
+      <div class="geo-readout" id="slotcOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">The cluster validator is a genuine Go-side addition: it confirms a multi-key script's keys share one
+      slot before running it. The rule is <code class="inl">CRC16(hashtag) % 16384</code> — same hashtag, same
+      slot.</p>
+  </section>
+
+  <section id="rule">
+    <h2>The Golden Rule &mdash; gaps measured against the shared wire</h2>
+    <div class="prose">
+      <p>The wire is the same for every runtime — the <code class="inl">emq:</code> keyspace and the field names
+        (including <code class="inl">atm</code>) are <strong>L1</strong>, and a multi-key transition is one atomic Lua
+        script, <strong>L2</strong>. The Go port's gaps live above that line, in <strong>L3/L4</strong>: the add path
+        runs two commands instead of the atomic script, and the <code class="inl">attemptsMade</code> JSON tag is an L4
+        serialisation choice over the <code class="inl">atm</code> field. The cluster validator it adds is also L3 —
+        the slot rule it checks is the protocol's.</p>
+    </div>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the protocol (immutable L1/L2)</span>
+        <p>The <code class="inl">emq:</code> keyspace and the field names — including <code class="inl">atm</code> on
+          the hash (<strong>L1</strong>); a multi-key transition is one atomic script (<strong>L2</strong>) — frozen and
+          shared.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">its Go runtime (variable L3/L4)</span>
+        <p>A partial port — the add path runs two separate commands (the non-atomic gap), the
+          <code class="inl">attemptsMade</code> JSON tag is an L4 serialisation choice over the
+          <code class="inl">atm</code> field, and it adds a CRC16-based cluster slot validator the reference lacks.</p>
+      </div>
+    </div>
+    <p class="take">The Go port is honestly partial: a non-atomic add path is a real gap, the
+      <code class="inl">attemptsMade</code>/<code class="inl">atm</code> mismatch is an L4 tag and not a wire bug, and
+      the cluster validator is a genuine Go-side addition. A depth course names all three.</p>
+    <p class="note">Next: with both runtimes covered, how does a job written by one get processed by the other?
+      <a href="/echomq/core/runtimes/cross-runtime-interop">E2.04.3 · cross-runtime interop</a> walks the round-trip and
+      the v2 trajectory.</p>
+
+    <div class="fork">
+      <p class="dl">The 2.0 fork — EchoMQ leaves the BullMQ wire</p>
+      <p>The gaps above are measured against the <strong>v1 line (frozen at 1.3.0)</strong> — the BullMQ wire.
+        <a href="/echomq/core/runtimes/cross-runtime-interop">emq.1 ships</a> EchoMQ 2.0, and the Go port must implement
+        2.0 to stay in the fleet: the v2 declared-keys script set, the <code class="inl">emq:{q}:&hellip;</code>
+        keyspace, and the transparent <code class="inl">{q}</code> hashtag. The Go port's gap list is its porting
+        work-list for v2 — the non-atomic add path becomes a v2 atomic script, and the cluster validator it already
+        carries is exactly the placement check the v2 hashtag design formalises. emq.1's fleet-interop probe tracks the
+        port's v2 status honestly until it lands.</p>
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The atomic add and fetch scripts, the cached-script dispatch, and the Redis Cluster slot scheme the validator
+        implements.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://docs.bullmq.io/">BullMQ &mdash; <em>Documentation</em></a> &mdash; the atomic add and fetch scripts the Go port partially ports.</li>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the cached-script dispatch the atomic fetch path uses.</li>
+          <li><a href="https://redis.io/docs/">Redis &mdash; <em>Documentation</em></a> &mdash; Redis Cluster, hash tags, and the CRC16 slot scheme the validator implements.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/core/runtimes">E2.04 &middot; The three runtimes &amp; interop</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/core/runtimes/the-elixir-architecture">E2.04.1 &middot; The Elixir architecture</a> &mdash; the reference runtime the gaps are measured against.</li>
+          <li><a href="/echomq/core/runtimes/cross-runtime-interop">E2.04.3 &middot; Cross-runtime interop</a> &mdash; the <code>atm</code> field round-trip Elixir &harr; Go in full.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns R3 &middot; Reliable queues</a> &mdash; the atomic-transition pattern the gaps touch.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/core/runtimes/the-elixir-architecture"><span aria-hidden="true">&larr;</span>&nbsp; E2.04.1 &middot; The Elixir architecture</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/core/runtimes/cross-runtime-interop">E2.04.3 &middot; Cross-runtime interop <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ &mdash; the polyglot job-queue protocol, taught in depth and tracked as it is built.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/core/runtimes">E2.04 &middot; The three runtimes</a>
+        <a href="/echomq/core/runtimes/the-elixir-architecture">E2.04.1 &middot; The Elixir architecture</a>
+        <a href="/echomq/core/runtimes/the-go-gaps">E2.04.2 &middot; The Go gaps</a>
+        <a href="/echomq/core/runtimes/cross-runtime-interop">E2.04.3 &middot; Cross-runtime interop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/core">E2 &middot; The core</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the add path, one atomic script vs two commands (pure over a fixed transition) ---------- */
+  var ADD = {
+    elixir: {
+      steps: [{ t: 'one atomic script', s: 'addStandardJob-9.lua' }],
+      atomic: true
+    },
+    go: {
+      steps: [{ t: 'command 1', s: 'HSet job hash' }, { t: 'command 2', s: 'LPush job id to wait' }],
+      atomic: false
+    }
+  };
+  var addRt = 'elixir';
+  var addStep = 0;
+
+  function maxSteps() { return ADD[addRt].steps.length; }
+
+  function renderStep() {
+    var rec = ADD[addRt];
+    var out = document.getElementById('stepOut');
+    for (var i = 0; i < 2; i++) {
+      var g = document.getElementById('c-' + i);
+      var tEl = document.getElementById('c' + i + 't');
+      var sEl = document.getElementById('c' + i + 's');
+      if (!g) continue;
+      var def = rec.steps[i];
+      g.classList.remove('done', 'gap');
+      if (def) {
+        if (tEl) tEl.textContent = def.t;
+        if (sEl) sEl.textContent = def.s;
+        var walked = i < addStep;
+        if (walked) g.classList.add(rec.atomic ? 'done' : (addStep < maxSteps() ? 'gap' : 'done'));
+      } else {
+        if (tEl) tEl.textContent = (i === 1 ? '(no second step)' : '');
+        if (sEl) sEl.textContent = (i === 1 ? 'the script does it all' : '');
+      }
+    }
+    if (out) {
+      if (addStep === 0) {
+        out.innerHTML = '<span class="dim">runtime: <b>' + (addRt === 'elixir' ? 'Elixir' : 'Go') + '</b>. Press “step” to run the add path.</span>';
+      } else if (addRt === 'elixir') {
+        out.innerHTML = '<span class="ok">Elixir: one atomic addStandardJob-9.lua — the job hash and the wait push happen together, all-or-nothing.</span>';
+      } else if (addStep === 1) {
+        out.innerHTML = '<b>Go step 1</b> &middot; <span class="ok">HSet wrote the job hash</span><br>' +
+          '<span class="warn">but the id is not in the wait list yet — a window is open here</span>';
+      } else {
+        out.innerHTML = '<b>Go step 2</b> &middot; <span class="ok">LPush put the id on the wait list</span><br>' +
+          '<span class="warn">two separate commands — a failure between them leaves an orphan hash (the non-atomic add path)</span>';
+      }
+    }
+  }
+
+  function setRt(rt) {
+    addRt = rt; addStep = 0;
+    var e = document.getElementById('rt-elixir'), g = document.getElementById('rt-go');
+    if (e) e.classList.toggle('active', rt === 'elixir');
+    if (g) g.classList.toggle('active', rt === 'go');
+    renderStep();
+  }
+  var eBtn = document.getElementById('rt-elixir'), gBtn = document.getElementById('rt-go');
+  if (eBtn) eBtn.addEventListener('click', function () { setRt('elixir'); });
+  if (gBtn) gBtn.addEventListener('click', function () { setRt('go'); });
+  var stepBtn = document.getElementById('stepBtn');
+  if (stepBtn) stepBtn.addEventListener('click', function () { if (addStep < maxSteps()) addStep++; renderStep(); });
+  var resetBtn = document.getElementById('resetBtn');
+  if (resetBtn) resetBtn.addEventListener('click', function () { addStep = 0; renderStep(); });
+  renderStep();
+
+  /* ---------- content: ValidateHashTags — same hashtag => same slot (pure CRC16 % 16384) ---------- */
+  /* CRC16-CCITT, the Redis Cluster slot polynomial (the same table cluster.go uses). */
+  var CRC16TAB = (function () {
+    var tab = new Array(256);
+    for (var i = 0; i < 256; i++) {
+      var crc = i << 8;
+      for (var j = 0; j < 8; j++) {
+        crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+        crc &= 0xFFFF;
+      }
+      tab[i] = crc;
+    }
+    return tab;
+  })();
+  var SLOTS = 16384;
+  function crc16(str) {
+    var crc = 0;
+    for (var i = 0; i < str.length; i++) {
+      crc = ((crc << 8) ^ CRC16TAB[((crc >> 8) ^ str.charCodeAt(i)) & 0xFF]) & 0xFFFF;
+    }
+    return crc;
+  }
+  function clusterSlot(hashtag) { return crc16(hashtag) % SLOTS; }
+  function sameSlot(tagA, tagB) { return clusterSlot(tagA) === clusterSlot(tagB); }
+
+  function renderSlotc() {
+    var a = (document.getElementById('tagA') || {}).value;
+    var b = (document.getElementById('tagB') || {}).value;
+    a = (a == null ? 'orders' : a);
+    b = (b == null ? 'orders' : b);
+    var aEcho = document.getElementById('tagAEcho'), bEcho = document.getElementById('tagBEcho');
+    var kAlab = document.getElementById('kAlab'), kBlab = document.getElementById('kBlab');
+    if (aEcho) aEcho.textContent = a || '∅';
+    if (bEcho) bEcho.textContent = b || '∅';
+    if (kAlab) kAlab.textContent = 'emq:{' + (a || '∅') + '}:wait';
+    if (kBlab) kBlab.textContent = 'emq:{' + (b || '∅') + '}:active';
+
+    var same = sameSlot(a, b);
+    var boxA = document.getElementById('kbA'), boxB = document.getElementById('kbB');
+    [boxA, boxB].forEach(function (box) {
+      if (!box) return;
+      box.classList.remove('same', 'diff');
+      box.classList.add(same ? 'same' : 'diff');
+    });
+
+    var out = document.getElementById('slotcOut');
+    if (out) {
+      var slotA = clusterSlot(a), slotB = clusterSlot(b);
+      out.innerHTML = 'slot(A) = CRC16("' + (a || '') + '") % 16384 = <b>' + slotA + '</b><br>' +
+        'slot(B) = CRC16("' + (b || '') + '") % 16384 = <b>' + slotB + '</b><br>' +
+        (same
+          ? '<span class="ok">same slot &rArr; ValidateHashTags = true &mdash; a multi-key Lua script is safe</span>'
+          : '<span class="warn">different slots &rArr; ValidateHashTags = false &mdash; a multi-key script would be a CROSSSLOT error</span>');
+    }
+  }
+  var tagAInp = document.getElementById('tagA'), tagBInp = document.getElementById('tagB');
+  if (tagAInp) tagAInp.addEventListener('input', renderSlotc);
+  if (tagBInp) tagBInp.addEventListener('input', renderSlotc);
+  renderSlotc();
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

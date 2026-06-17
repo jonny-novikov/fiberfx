@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C3.02.3 · The trade — what the types buy, what Elixir's flexibility gave — F# In Depth</title>
+<meta name="description" content="An even-handed weighing. Static types buy compile-time shape checks, inferred typed contracts (val parsePort: s: string -> Result<int,string>), and refactors the compiler propagates — add a DU case and FS0025 lists the matches to fix. Elixir's dynamism gave hot code reload (OTP code_change), metaprogramming (defmacro / quote), and less ceremony while a design is in flux. The trade is real on both sides. Verified against dotnet fsi. Dive C3.02.3 of the F# In Depth course.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --fsharp:#b48ee0; --fsharp-bright:#d2b8f5;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(180,142,224,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--fsharp-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--fsharp-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="fsharp"]{background:var(--fsharp-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--fsharp-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .err{color:var(--burgundy)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--fsharp-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pill / legend ---- */
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--fsharp-bright);border-color:var(--fsharp)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- references ---- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.refs li{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.45}
+.refs li a{color:var(--cream-soft)}
+.refs li a:hover{color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--sage-bright)}
+.bridge .cell.fs .lbl{color:var(--fsharp-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--fsharp-bright);
+  border:1px solid var(--fsharp);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.note.warn{border-left-color:var(--burgundy)}
+.note code.inl{color:var(--cream-soft)}
+pre.code .rdx{background:rgba(180,142,224,.18);border-radius:4px;padding:0 .18em;color:var(--fsharp-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+
+/* ---- Elixir → F# side-by-side (stacked .lbl + pre.code) ---- */
+.cmp{margin:1.2rem 0 0}
+.cmp .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:1rem 0 .35rem;color:var(--cream-dim)}
+.cmp .lbl.ex{color:var(--sage-bright)}
+.cmp .lbl.fs{color:var(--fsharp-bright)}
+.cmp .lbl:first-child{margin-top:0}
+pre.code .exa{color:var(--sage-bright)}
+
+/* ---- the balance svg (this dive) ---- */
+.bal-beam{transition:transform .35s ease}
+@media (prefers-reduced-motion: reduce){ .bal-beam{transition:none} }
+.bal-pan{transition:opacity .25s ease}
+.tradegrid{width:100%;border-collapse:collapse;margin-top:1rem;font-family:var(--sans);font-size:.86rem}
+.tradegrid caption{font-family:var(--sans);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--cream-dim);text-align:left;margin-bottom:.5rem}
+.tradegrid th{font-family:var(--sans);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;
+  text-align:left;padding:.4rem .7rem;border-bottom:1px solid var(--line)}
+.tradegrid th.fs{color:var(--fsharp-bright)}
+.tradegrid th.ex{color:var(--sage-bright)}
+.tradegrid td{padding:.55rem .7rem;border-bottom:1px solid var(--line);color:var(--cream-soft);vertical-align:top}
+.tradegrid td.mono{font-family:var(--mono);font-size:.8rem}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/fsharp">jonnify<span class="dot"></span><span class="sub">fsharp</span></a>
+    <nav>
+      <a href="/fsharp">F# In Depth</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/fsharp">fsharp</a><span class="rsep">/</span><a href="/fsharp/for-elixir">for-elixir</a><span class="rsep">/</span><a href="/fsharp/for-elixir/static-types">static-types</a><span class="rsep">/</span><span class="rcur">the-trade</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/fsharp">F# In Depth</a><span class="sep">/</span><a href="/fsharp/for-elixir">C3 · F# for Elixir developers</a><span class="sep">/</span><a href="/fsharp/for-elixir/static-types">C3.02 · From dynamic to static types</a><span class="sep">/</span><span class="here">C3.02.3 · The trade</span>
+    </nav>
+    <p class="eyebrow">Dive C3.02.3</p>
+    <h1>The trade <span class="ex">— both sides, honestly</span></h1>
+    <p class="lede">A static type system is not a free upgrade. It buys, and it charges.</p>
+    <p class="kicker">It would be easy to read this module as "F# is the grown-up version of Elixir." That is not the
+      case, and it is worth saying plainly. Static types buy real guarantees — a class of run-time shape errors that
+      stops compiling, signatures that are inferred contracts, and refactors the compiler propagates for you. Elixir's
+      dynamism bought real power — hot code reload on a running system, metaprogramming that whole frameworks are
+      built on, and the freedom to move before the types are settled. The move to F# is a trade, made with open eyes,
+      not a conversion. This dive weighs both sides.</p>
+    <div class="cta-row">
+      <a class="btn" href="#explore">Weigh the trade <span aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="/fsharp/for-elixir/static-types">Module hub</a>
+    </div>
+  </section>
+
+  <!-- ===================== WHAT THE TYPES BUY ===================== -->
+  <section id="buy">
+    <div class="dive-head">
+      <span class="dive-tag">C3.02.3 · part 1</span>
+      <h2>What the static types buy</h2>
+    </div>
+    <div class="prose">
+      <p>The gains are concrete. A value that might be missing is <code class="inl">Option</code>; a payment that
+        might be unpaid has no amount slot. A signature is inferred and checked, so it documents the function without
+        a comment. And when a type changes, the compiler hands you the exact list of sites to fix.</p>
+    </div>
+
+    <h3 style="margin-top:1.6rem">Signatures are inferred contracts</h3>
+    <pre class="code" aria-label="parsePort infers Result<int,string> with no return annotation. Verified FSI echoes."><span class="op">let</span> parsePort (s: <span class="op">string</span>) =
+    <span class="op">match</span> System.Int32.TryParse s <span class="op">with</span>
+    | <span class="op">true</span>, n  -> Ok n
+    | <span class="op">false</span>, _ -> Error (sprintf <span class="res">"not a port: %s"</span> s)
+<span class="cmt">// val parsePort: s: string -> Result&lt;int,string&gt;</span>
+
+parsePort <span class="res">"8080"</span>   <span class="cmt">// val it: Result&lt;int,string&gt; = Ok 8080</span>
+parsePort <span class="res">"nope"</span>   <span class="cmt">// val it: Result&lt;int,string&gt; = Error "not a port: nope"</span></pre>
+
+    <h3 style="margin-top:1.8rem">Refactors propagate</h3>
+    <div class="prose">
+      <p>Add a case to a union and every <code class="inl">match</code> that does not handle it stops compiling. The
+        compiler names the missing case — the same <code class="inl">FS0025</code> seen in the last dive, now working
+        as a refactor tool.</p>
+    </div>
+
+    <pre class="code" aria-label="Adding the Tri case makes the old match incomplete; FS0025 names it. Verified FSI echoes."><span class="op">type</span> Shape =
+    | Circle <span class="op">of</span> <span class="op">float</span>
+    | Rect <span class="op">of</span> <span class="op">float</span> * <span class="op">float</span>
+    | Tri <span class="op">of</span> <span class="op">float</span> * <span class="op">float</span> * <span class="op">float</span>    <span class="cmt">// new case added</span>
+
+<span class="op">let</span> area s =
+    <span class="op">match</span> s <span class="op">with</span>
+    | Circle r    -> 3.14 * r * r
+    | Rect (w, h) -> w * h
+<span class="cmt">// warning FS0025: Incomplete pattern matches on this expression.</span>
+<span class="cmt">// For example, the value 'Tri (_, _, _)' may indicate a case not covered by the pattern(s).</span></pre>
+
+    <div class="note">In Elixir, adding a new tag the old <code class="inl">case</code> does not handle is found by a
+      test, or by a <code class="inl">FunctionClauseError</code> in production. In F#, the compiler walks every
+      <code class="inl">match</code> over the type and reports each one that is now incomplete.</div>
+  </section>
+
+  <!-- ===================== WHAT ELIXIR GAVE ===================== -->
+  <section id="gave">
+    <div class="dive-head">
+      <span class="dive-tag">C3.02.3 · part 2</span>
+      <h2>What Elixir's dynamism gave</h2>
+    </div>
+    <div class="prose">
+      <p>The dynamism was not a deficiency to be corrected. It paid for capabilities F# does not match — and a team
+        coming from the BEAM gives them up knowingly, not by accident.</p>
+    </div>
+
+    <dl class="deflist">
+      <dt>hot code reload</dt><dd>the BEAM swaps a module's code in a running system without dropping connections — the OTP <code class="inl">code_change</code> path. F# on the CLR has no equivalent for live upgrades; a new version is a redeploy.</dd>
+      <dt>metaprogramming</dt><dd>Elixir macros (<code class="inl">defmacro</code>, <code class="inl">quote</code> / <code class="inl">unquote</code>) run at compile time over the AST, and Ecto, Phoenix, and ExUnit are built on them. F# has quotations and type providers, but the everyday "write a macro to remove this boilerplate" move is an Elixir habit, not an F# one.</dd>
+      <dt>less ceremony</dt><dd>a dynamic language asks for no type when shapes are in flux. Early in a design, Elixir's <code class="inl">{:ok, _}</code> / <code class="inl">{:error, _}</code> and bare maps let an idea move before its types are settled.</dd>
+    </dl>
+
+    <div class="note">F#'s concurrency answer to a <code class="inl">GenServer</code> is the
+      <code class="inl">MailboxProcessor</code>, covered in module C3.07. It gives the actor and the mailbox; OTP's
+      supervision trees and live <code class="inl">code_change</code> upgrades are the part that does not carry over.</div>
+  </section>
+
+  <!-- ===================== INTERACTIVE: WEIGH THE TRADE ===================== -->
+  <section id="explore">
+    <h2>Weigh the trade</h2>
+    <div class="prose">
+      <p>Pick a concern. The balance tips to the side that holds the advantage, and the readout names what each
+        regime offers for it — the <span style="color:var(--fsharp-bright)">F#</span> gain beside the
+        <span style="color:var(--sage-bright)">Elixir</span> one. Some concerns favour the types; some favour the
+        dynamism; the point is that neither side is empty.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="balTitle">
+      <h4 id="balTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">a concern · which side it favours</h4>
+
+      <div class="controls">
+        <div class="solid-select" role="group" aria-label="Choose a concern to weigh">
+          <button type="button" class="bal-btn active" data-k="shape" data-c="fsharp" aria-pressed="true">shape errors</button>
+          <button type="button" class="bal-btn" data-k="contract" data-c="fsharp" aria-pressed="false">contracts</button>
+          <button type="button" class="bal-btn" data-k="refactor" data-c="fsharp" aria-pressed="false">refactors</button>
+          <button type="button" class="bal-btn" data-c="sage" data-k="reload" aria-pressed="false">live upgrade</button>
+          <button type="button" class="bal-btn" data-c="sage" data-k="macro" aria-pressed="false">metaprogramming</button>
+          <button type="button" class="bal-btn" data-c="sage" data-k="flux" aria-pressed="false">early design</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 1080 220" role="img" aria-label="A balance scale. The beam tips toward F# or Elixir depending on which side holds the advantage for the chosen concern.">
+        <!-- F# pan label -->
+        <text x="210" y="32" text-anchor="middle" font-family="Manrope, sans-serif" font-size="12" fill="#d2b8f5">F# · static types</text>
+        <!-- Elixir pan label -->
+        <text x="870" y="32" text-anchor="middle" font-family="Manrope, sans-serif" font-size="12" fill="#a7c9b1">Elixir · dynamism</text>
+
+        <!-- stand -->
+        <rect x="535" y="60" width="10" height="120" rx="3" fill="#2a3252"></rect>
+        <rect x="470" y="180" width="140" height="10" rx="4" fill="#2a3252"></rect>
+        <circle cx="540" cy="62" r="7" fill="#d4a85a"></circle>
+
+        <!-- beam (rotates around the pivot at 540,62) -->
+        <g id="balBeam" class="bal-beam" transform="rotate(0 540 62)">
+          <line x1="210" y1="62" x2="870" y2="62" stroke="#d4a85a" stroke-width="4"></line>
+          <!-- F# pan -->
+          <g id="panFs" class="bal-pan">
+            <line x1="210" y1="62" x2="210" y2="98" stroke="#2a3252" stroke-width="2"></line>
+            <rect x="140" y="98" width="140" height="44" rx="11" fill="#161d38" stroke="#b48ee0"></rect>
+            <text id="balFsTxt" x="210" y="125" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#d2b8f5">compile-time</text>
+          </g>
+          <!-- Elixir pan -->
+          <g id="panEx" class="bal-pan">
+            <line x1="870" y1="62" x2="870" y2="98" stroke="#2a3252" stroke-width="2"></line>
+            <rect x="800" y="98" width="140" height="44" rx="11" fill="#161d38" stroke="#7ba387"></rect>
+            <text id="balExTxt" x="870" y="125" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#a7c9b1">run-time</text>
+          </g>
+        </g>
+      </svg>
+
+      <div class="geo-readout" id="balOut" aria-live="polite">
+        <span class="dim">shape errors ·</span> favours <span style="color:var(--fsharp-bright)">F#</span> <span class="dim">·</span> F#: a missing case stops compiling (FS0025) <span class="dim">·</span> Elixir: a FunctionClauseError when the value arrives</div>
+    </figure>
+
+    <table class="tradegrid">
+      <caption>Without JavaScript: the whole trade, both columns</caption>
+      <thead><tr><th class="fs">F# static types buy</th><th class="ex">Elixir's dynamism gave</th></tr></thead>
+      <tbody>
+        <tr><td>shape errors caught at compile time</td><td class="mono">hot code reload (OTP code_change)</td></tr>
+        <tr><td>inferred, typed contracts</td><td>macros / metaprogramming (defmacro, quote)</td></tr>
+        <tr><td>refactors the compiler propagates</td><td>no type ceremony while a design is in flux</td></tr>
+        <tr><td>exhaustive match checks</td><td>one model fits any term</td></tr>
+      </tbody>
+    </table>
+    <p class="take">The trade is real on both sides. F# moves a class of bugs to compile time and a class of
+      documentation into signatures; Elixir keeps a class of run-time power that types cannot express.</p>
+  </section>
+
+  <!-- ===================== THE HONEST SUMMARY ===================== -->
+  <section id="summary">
+    <div class="dive-head">
+      <span class="dive-tag">C3.02.3 · part 3</span>
+      <h2>The honest summary</h2>
+    </div>
+    <div class="prose">
+      <p>Coming from the BEAM, the gain is the compiler as a second pair of hands on every refactor, and a class of
+        shape bug that stops compiling. The cost is the ceremony of a type where an Elixir map would have done,
+        and the loss of live upgrades and everyday macros. Both columns are real; the right choice depends on the
+        system, not on which language is "better".</p>
+    </div>
+
+    <pre class="code" aria-label="A two-column summary of the trade."><span class="cmt">F# static types buy        |  Elixir's dynamism gave</span>
+<span class="cmt">---------------------------+---------------------------</span>
+shape errors at compile    |  hot code reload (OTP)
+inferred typed contracts   |  macros / metaprogramming
+refactors the compiler     |  no type ceremony while
+  propagates               |    a design is in flux
+exhaustive match checks    |  one model fits any term</pre>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">Elixir kept</p>
+        <p>Run-time power — live <code class="inl">code_change</code> upgrades, AST macros, and the freedom to move before the types are settled.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">⇄</div>
+      <div class="cell fs">
+        <p class="lbl">F# gained</p>
+        <p>Compile-time guarantees — shape errors that do not compile, inferred contracts, and refactors the compiler walks for you.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== THE THREAD ===================== -->
+  <section id="thread">
+    <h2>Where this leads</h2>
+    <div class="prose">
+      <p>The type system is the one genuine shift coming from Elixir, and this module weighed it whole. From here, C3
+        returns to the ground that carries over: pattern matching sharpened with exhaustiveness, the
+        <code class="inl">|&gt;</code> pipe that is identical in both languages, and the
+        <code class="inl">MailboxProcessor</code> that answers the <code class="inl">GenServer</code>.</p>
+    </div>
+    <div class="toc-mini" aria-label="Continue in this module">
+      <a href="/fsharp/for-elixir/static-types">↑ C3.02 · From dynamic to static types</a>
+      <a href="/fsharp/for-elixir/static-types/inference">C3.02.1 · Type inference</a>
+      <a href="/fsharp/for-elixir/static-types/illegal-states">C3.02.2 · Making illegal states unrepresentable</a>
+      <a href="/fsharp/for-elixir">C3 · Back to the chapter →</a>
+    </div>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/">Microsoft &mdash; <em>F# documentation</em></a> &mdash; type inference, discriminated unions, quotations, and type providers.</li>
+          <li><a href="https://fsharp.org/">The F# Software Foundation</a> &mdash; the language's design goals and trade-offs.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/">Microsoft &mdash; <em>.NET documentation</em></a> &mdash; the CLR's deployment model, and why live code-swap differs from the BEAM.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/fsharp/for-elixir">C3 &mdash; F# for Elixir developers</a> &mdash; the chapter this module closes a thread in.</li>
+          <li><a href="/elixir/language/values">Elixir F3.01 &mdash; Values, types &amp; IEx</a> &mdash; the dynamic regime this dive weighs.</li>
+          <li><a href="/elixir/functional/adt">Elixir F2.07 &mdash; Algebraic data types</a> &mdash; the tagged-tuple modelling the types replace.</li>
+          <li><a href="/fsharp/language/unions-and-records">C1.06 &mdash; Discriminated unions &amp; records</a> &mdash; the construct doing the buying, in depth.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/fsharp/for-elixir/static-types/illegal-states"><span aria-hidden="true">←</span> C3.02.2 · Making illegal states unrepresentable</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/fsharp/for-elixir/static-types">C3.02 · Module hub <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="F# In Depth — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/fsharp">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">F# In Depth &mdash; the ML-family language on .NET, taught from first principles to a real DevOps tool shipped in F#.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/fsharp/for-elixir">C3 &middot; F# for Elixir developers</a>
+        <a href="/fsharp/for-elixir/static-types">C3.02 &middot; From dynamic to static types</a>
+        <a href="#refs">References</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/fsharp">Course home</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Interactive: weigh the trade (pure over a fixed table) ---------- */
+  // side: "fs" tips the beam left (toward F#); "ex" tips it right (toward Elixir).
+  var TRADE = {
+    "shape":    { side: "fs", label: "shape errors",    fsPan: "compile-time", exPan: "run-time",  fs: "a missing case stops compiling (FS0025)", ex: "a FunctionClauseError when the value arrives" },
+    "contract": { side: "fs", label: "contracts",       fsPan: "inferred",     exPan: "by docs",    fs: "val parsePort: s: string -> Result<int,string>, inferred", ex: "a @spec or a doc comment, by convention" },
+    "refactor": { side: "fs", label: "refactors",       fsPan: "compiler-led", exPan: "test-led",   fs: "add a DU case; every stale match stops compiling", ex: "a test, or a crash, finds the missed clause" },
+    "reload":   { side: "ex", label: "live upgrade",    fsPan: "redeploy",     exPan: "code_change", fs: "a new version is a redeploy; no live swap", ex: "OTP code_change swaps a running module, no dropped connections" },
+    "macro":    { side: "ex", label: "metaprogramming", fsPan: "quotations",   exPan: "defmacro",   fs: "quotations and type providers, but rarely for boilerplate", ex: "defmacro / quote — Ecto, Phoenix, ExUnit are built on them" },
+    "flux":     { side: "ex", label: "early design",    fsPan: "types first",  exPan: "shapes free", fs: "a type is asked for even while the design moves", ex: "bare maps and {:ok, _} move before types are settled" }
+  };
+
+  var beam = document.getElementById('balBeam');
+  var fsTxt = document.getElementById('balFsTxt');
+  var exTxt = document.getElementById('balExTxt');
+  var panFs = document.getElementById('panFs');
+  var panEx = document.getElementById('panEx');
+  var out = document.getElementById('balOut');
+  var btns = Array.prototype.slice.call(document.querySelectorAll('.bal-btn'));
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function select(k) {
+    var r = TRADE[k];
+    if (!r) return;
+    btns.forEach(function (b) {
+      var on = b.getAttribute('data-k') === k;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var deg = r.side === "fs" ? -9 : 9;       // F# heavier -> left side down
+    if (beam) beam.setAttribute('transform', 'rotate(' + (reduce ? 0 : deg) + ' 540 62)');
+    if (panFs) panFs.style.opacity = r.side === "fs" ? '1' : '0.55';
+    if (panEx) panEx.style.opacity = r.side === "ex" ? '1' : '0.55';
+    if (fsTxt) fsTxt.textContent = r.fsPan;
+    if (exTxt) exTxt.textContent = r.exPan;
+    if (out) {
+      var favCol = r.side === "fs" ? 'var(--fsharp-bright)' : 'var(--sage-bright)';
+      var favName = r.side === "fs" ? "F#" : "Elixir";
+      out.innerHTML = '<span class="dim">' + r.label + ' ·</span> favours ' +
+        '<span style="color:' + favCol + '">' + favName + '</span> <span class="dim">·</span> ' +
+        '<span style="color:var(--fsharp-bright)">F#:</span> ' + r.fs + ' <span class="dim">·</span> ' +
+        '<span style="color:var(--sage-bright)">Elixir:</span> ' + r.ex;
+    }
+  }
+
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () { select(b.getAttribute('data-k')); });
+  });
+  if (btns.length) select('shape');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C4.05.2 · The HAMT — F# In Depth</title>
+<meta name="description" content="A HAMT is a trie indexed by slices of the key&#x27;s hash: take 5 bits per level, each slice picks one of 32 slots, and a node is a 32-bit bitmap plus one packed array sized to the set bits, with a slot&#x27;s position found by popcount. Depth is about log32 n. Re-derived in F# with System.Numerics.BitOperations.PopCount, verified in dotnet fsi. The honesty guardrail: F#&#x27;s built-in Map is a balanced search tree, NOT a HAMT — taught here as a technique, with the stdlib&#x27;s choice named as a real trade-off. The EchoMQ in F# block: the registry as a high-fan-out persistent map, grounded in echo_fs EchoMQ.Store.Rows. Dive C4.05.2 of the F# In Depth course.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --fsharp:#b48ee0; --fsharp-bright:#d2b8f5;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(180,142,224,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--fsharp-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--fsharp-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="fsharp"]{background:var(--fsharp-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--fsharp-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .err{color:var(--burgundy)}
+pre.code .str{color:var(--sage-bright)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--fsharp-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pill / legend ---- */
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--fsharp-bright);border-color:var(--fsharp)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- references ---- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.refs li{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.45}
+.refs li a{color:var(--cream-soft)}
+.refs li a:hover{color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.fs .lbl{color:var(--fsharp-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--fsharp-bright);
+  border:1px solid var(--fsharp);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.note.warn{border-left-color:var(--burgundy)}
+.note code.inl{color:var(--cream-soft)}
+pre.code .rdx{background:rgba(180,142,224,.18);border-radius:4px;padding:0 .18em;color:var(--fsharp-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+
+/* ---- Elixir → F# side-by-side ---- */
+.cmp{margin:1.2rem 0 0}
+.cmp .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:1rem 0 .35rem;color:var(--cream-dim)}
+.cmp .lbl.ex{color:var(--sage-bright)}
+.cmp .lbl.fs{color:var(--fsharp-bright)}
+.cmp .lbl:first-child{margin-top:0}
+pre.code .ex{color:var(--sage-bright)}
+
+/* ---- EchoMQ block (this course's defining C4 device) ---- */
+.emq{margin:1.7rem 0 0;border:1px solid var(--fsharp);border-radius:16px;
+  background:linear-gradient(180deg,rgba(180,142,224,.10),rgba(10,14,26,.35));
+  padding:clamp(1.1rem,2.6vw,1.7rem)}
+.emq .emq-h{font-family:var(--sans);font-size:.66rem;font-weight:700;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--fsharp-bright);margin:0 0 .7rem;
+  display:inline-flex;align-items:center;gap:.55rem}
+.emq .emq-h::before{content:"";width:22px;height:1px;background:var(--fsharp-bright);display:inline-block}
+.emq h3{margin:.1rem 0 .6rem}
+.emq p{font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure);margin:0 0 .9rem}
+.emq .status{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);
+  border-top:1px dashed var(--line);margin-top:1rem;padding-top:.8rem}
+.emq .status b{color:var(--fsharp-bright);font-weight:600}
+
+/* ---- the popcount-node svg (this dive) ---- */
+.ha-cell rect{transition:fill .2s ease, stroke .2s ease}
+.ha-ctrls{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-top:1rem}
+.ha-btn{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;
+  display:inline-flex;align-items:center;gap:.4rem;padding:.5rem .95rem;border-radius:10px;
+  color:var(--fsharp-bright);background:var(--ink-2);border:1px solid var(--fsharp);
+  transition:background .16s ease, color .16s ease, transform .16s ease}
+.ha-btn:hover{background:var(--fsharp-bright);color:var(--ink);transform:translateY(-2px)}
+.ha-btn.ghost{color:var(--cream-dim);border-color:var(--line)}
+.ha-btn.ghost:hover{background:var(--ink);color:var(--cream);border-color:var(--cream-dim);transform:none}
+.ha-new{transform-origin:center}
+@media (prefers-reduced-motion: no-preference){
+  .ha-new{animation:haIn .42s ease both}
+}
+@keyframes haIn{from{opacity:0;transform:translateY(-10px) scale(.82)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.ha-new{animation:none}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/fsharp">jonnify<span class="dot"></span><span class="sub">fsharp</span></a>
+    <nav>
+      <a href="/fsharp">F# In Depth</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/fsharp">fsharp</a><span class="rsep">/</span><a href="/fsharp/algorithms">algorithms</a><span class="rsep">/</span><a href="/fsharp/algorithms/hamt">hamt</a><span class="rsep">/</span><span class="rcur">the-hamt</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/fsharp">F# In Depth</a><span class="sep">/</span><a href="/fsharp/algorithms">C4 · Algorithms &amp; Data Structures</a><span class="sep">/</span><a href="/fsharp/algorithms/hamt">C4.05 · Hash Array Mapped Tries</a><span class="sep">/</span><span class="here">C4.05.2 · The HAMT</span>
+    </nav>
+    <p class="eyebrow">Dive C4.05.2</p>
+    <h1>The <span class="ex">HAMT</span></h1>
+    <p class="lede">Hash the key, read it five bits at a time, and a node fits in a bitmap and one packed array.</p>
+    <p class="kicker">A <strong>HAMT</strong> — a hash array mapped trie — is the prefix trie of the last dive with two
+      changes. First, the key is <strong>hashed</strong>, and the descent reads the hash in fixed <strong>5-bit
+      slices</strong>: each slice is a number 0–31 that picks one of a node's 32 slots, and 5 bits per level means the
+      depth is about <code class="inl">log&#8323;&#8322; n</code> — four levels for millions of keys. Second, a node
+      does not store 32 cells. It stores a 32-bit <strong>bitmap</strong> (a bit set per occupied slot) and one
+      <strong>packed array</strong> sized to the set bits; a slot's array position is the <strong>popcount</strong> of
+      the bits below it. This dive builds those pieces in F#, with
+      <code class="inl">System.Numerics.BitOperations.PopCount</code>, all verified in
+      <code class="inl">dotnet fsi</code>. One thing it states up front and never walks back: F#'s built-in
+      <code class="inl">Map</code> is <strong>not</strong> a HAMT.</p>
+    <div class="cta-row">
+      <a class="btn" href="#explore">Insert into a node <span aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="/fsharp/algorithms/hamt">Module hub</a>
+    </div>
+  </section>
+
+  <!-- ===================== THE GUARDRAIL ===================== -->
+  <section id="guardrail">
+    <div class="dive-head">
+      <span class="dive-tag">C4.05.2 · the honest part</span>
+      <h2>F#'s Map is a balanced tree — read this first</h2>
+    </div>
+    <div class="prose">
+      <p>This dive teaches the HAMT as a <strong>technique</strong> — a structure you would build by hand or take from
+        a library. It does not describe F#'s <code class="inl">Map</code>. F#'s <code class="inl">Map</code> is the
+        standard library's immutable persistent map, and it is a <strong>balanced binary search tree</strong> (an AVL
+        tree), not a HAMT. The two are kin — both <code class="inl">O(log n)</code> lookup, both persistent — but they
+        place keys differently: a HAMT by hash with 32-way fan-out, a balanced tree in sorted order with binary
+        branching. So when this dive shows a bitmap and a popcount, that is the HAMT design, and where it shows F#
+        code calling <code class="inl">Map</code>, that is the balanced tree. The course never conflates them.</p>
+    </div>
+    <p class="note warn"><strong>Held throughout:</strong> F#'s <code class="inl">Map</code> is not a HAMT, and the
+      <code class="inl">echo_fs</code> port does not ship a HAMT — it uses the stdlib <code class="inl">Map</code>.
+      The HAMT below is the design Elixir's <code class="inl">Map</code> and Clojure use; on the BEAM, reaching for
+      <code class="inl">Map</code> does give you a HAMT, which is the difference C4.05 keeps in view.</p>
+  </section>
+
+  <!-- ===================== INDEX BY POPCOUNT ===================== -->
+  <section id="popcount">
+    <div class="dive-head">
+      <span class="dive-tag">C4.05.2 · part 1</span>
+      <h2>A slot's place is the popcount below it</h2>
+    </div>
+    <div class="prose">
+      <p>The node's compactness rests on one fact: given the bitmap, a slot's index in the packed array is the number
+        of set bits strictly below that slot — its <strong>popcount</strong>. .NET exposes popcount directly as
+        <code class="inl">System.Numerics.BitOperations.PopCount</code>, so the index is a couple of bitwise
+        operations and one count. Masking the bits below a slot is <code class="inl">(1u &lt;&lt;&lt; slot) - 1u</code>.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: index a slot by the popcount of the bits below it, verified in FSI."><span class="op">open</span> System.Numerics
+
+<span class="cmt">// the slot's array index = popcount of the set bits strictly below it</span>
+<span class="op">let</span> <span class="fn">indexOfSlot</span> (bitmap: uint32) (slot: int) : int =
+    <span class="op">let</span> below = bitmap &amp;&amp;&amp; ((1u &lt;&lt;&lt; slot) - 1u)
+    BitOperations.PopCount below
+
+<span class="op">let</span> bitmap = 0b00100100u            <span class="cmt">// slots 2 and 5 set</span>
+BitOperations.PopCount bitmap        <span class="step">// </span><span class="res">val it : int = 2</span>
+<span class="fn">indexOfSlot</span> bitmap 2               <span class="step">// </span><span class="res">val it : int = 0</span>
+<span class="fn">indexOfSlot</span> bitmap 5               <span class="step">// </span><span class="res">val it : int = 1</span></pre>
+
+    <p class="kicker" style="margin-top:1.1rem">Inserting a slot splices a cell into the packed array at that index, and
+      a 5-bit slice of the hash chooses the slot at each level:</p>
+
+    <pre class="code" aria-label="F#: insert into the packed array and slice the hash, verified in FSI."><span class="cmt">// insert one cell at the popcount index — the packed array grows by one</span>
+<span class="op">let</span> <span class="fn">insertAt</span> (i: int) (x: 'v) (arr: 'v array) : 'v array =
+    Array.concat [ arr.[.. i-1]; [| x |]; arr.[i ..] ]
+
+<span class="op">let</span> packed = [| <span class="str">"a"</span>; <span class="str">"c"</span> |]               <span class="cmt">// slots 2,5 -> array[0],array[1]</span>
+<span class="fn">insertAt</span> (<span class="fn">indexOfSlot</span> bitmap 4) <span class="str">"b"</span> packed   <span class="step">// </span><span class="res">val it : string[] = [|"a"; "b"; "c"|]</span>
+
+<span class="cmt">// a level's slot = a 5-bit slice of the hash (0..31)</span>
+<span class="op">let</span> <span class="fn">sliceAt</span> (hash: uint32) (level: int) : int =
+    int ((hash &gt;&gt;&gt; (5 * level)) &amp;&amp;&amp; 0x1Fu)</pre>
+
+    <dl class="deflist">
+      <dt>bitmap</dt><dd>a <code class="inl">uint32</code>; bit <em>k</em> set means slot <em>k</em> is occupied.</dd>
+      <dt>popcount</dt><dd><code class="inl">BitOperations.PopCount</code> — counts set bits; of the bits below a slot, it is that slot's array index.</dd>
+      <dt>packed array</dt><dd>one cell per set bit, in slot order; an empty slot costs nothing.</dd>
+      <dt>5-bit slice</dt><dd><code class="inl">(hash &gt;&gt;&gt; 5*level) &amp;&amp;&amp; 0x1F</code> — the slot to take at that level, 0–31.</dd>
+    </dl>
+  </section>
+
+  <!-- ===================== THE NODE ===================== -->
+  <section id="node">
+    <div class="dive-head">
+      <span class="dive-tag">C4.05.2 · part 2</span>
+      <h2>The node, as an F# record</h2>
+    </div>
+    <div class="prose">
+      <p>A node is a bitmap and a packed array. The array holds either inline entries or child nodes — both kinds share
+        the one array, indexed the same way. Modelled as a record, the lookup hashes the key, then descends slice by
+        slice: at each level, check the slot's bit; if set, take its packed cell; if it is a child, recurse with the
+        next slice. Depth is bounded by <code class="inl">~log&#8323;&#8322; n</code>.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: a HAMT node as a record, with the descent sketch."><span class="cmt">// a HAMT node: one bitmap + one packed array sized to the set bits</span>
+<span class="op">type</span> HamtNode&lt;'v&gt; =
+    { Bitmap: uint32
+      Slots: 'v array }   <span class="cmt">// packed: one entry per set bit, in slot order</span>
+
+<span class="cmt">// is slot k occupied?  -> test bit k</span>
+<span class="op">let</span> <span class="fn">isSet</span> (bm: uint32) (slot: int) = (bm &amp;&amp;&amp; (1u &lt;&lt;&lt; slot)) &lt;&gt; 0u
+<span class="fn">isSet</span> 0b00100100u 2   <span class="step">// </span><span class="res">val it : bool = true</span>
+<span class="fn">isSet</span> 0b00100100u 3   <span class="step">// </span><span class="res">val it : bool = false</span></pre>
+
+    <div class="note">Why 32 and not 2? A binary trie on a 32-bit hash is 32 levels deep; reading 5 bits at a time
+      makes 32 bits about seven levels, and a realistic key around four. Each level is a constant-time bit test plus a
+      popcount, so a wide, shallow tree behaves like a flat table while staying a tree — which is what keeps it cheap
+      to share and to grow.</div>
+  </section>
+
+  <!-- ===================== INTERACTIVE: INSERT INTO A NODE ===================== -->
+  <section id="explore">
+    <h2>Insert a key into one node</h2>
+    <div class="prose">
+      <p>Insert a key on the node below. The bitmap flips the new slot's bit on; the packed array grows by exactly one
+        cell, spliced in at the popcount index; and the readout shows the arithmetic — <code class="inl">popcount(bits
+        below slot)</code> giving the array position. Every value is computed by the same
+        <code class="inl">indexOfSlot</code> the code uses, over a fixed eight-slot bitmap. The static diagram and
+        table below stand without scripting.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="haTitle">
+      <h4 id="haTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">index(slot) = popcount(bits below slot) · 8 of 32 slots</h4>
+      <svg viewBox="0 0 720 248" role="img" aria-label="One HAMT node, eight of its slots shown. A bitmap row marks the occupied slots; below it a packed array holds one entry per set bit, in slot order. Slots 2 and 5 are set, so the array holds two entries: slot 2 at array index 0, slot 5 at array index 1. An entry's array index is the popcount of the set bits below its slot.">
+        <text x="24" y="30" font-family="JetBrains Mono, monospace" font-size="12" fill="#a7c9b1">bitmap</text>
+        <text x="696" y="30" text-anchor="end" font-family="Manrope, sans-serif" font-size="10" letter-spacing="0.08em" fill="#6b7494">8 of 32 slots</text>
+        <g font-family="JetBrains Mono, monospace" font-size="11" fill="#6b7494" text-anchor="middle">
+          <text x="52" y="52">0</text><text x="130" y="52">1</text><text x="208" y="52">2</text><text x="286" y="52">3</text>
+          <text x="364" y="52">4</text><text x="442" y="52">5</text><text x="520" y="52">6</text><text x="598" y="52">7</text>
+        </g>
+        <g id="haBits"></g>
+        <g id="haLinks" stroke="#5a6688" stroke-width="2" fill="none"></g>
+        <text x="24" y="160" font-family="JetBrains Mono, monospace" font-size="12" fill="#d2b8f5">array</text>
+        <g id="haArr"></g>
+        <rect x="24" y="196" width="672" height="40" rx="10" fill="#10162b" stroke="#2a3252" stroke-width="1.3"></rect>
+        <text id="haWork" x="40" y="221" font-family="JetBrains Mono, monospace" font-size="12" fill="#d2b8f5">index(slot) = popcount(bits below slot)</text>
+      </svg>
+      <div class="ha-ctrls">
+        <button type="button" class="ha-btn" id="haAdd">▸ insert key</button>
+        <button type="button" class="ha-btn ghost" id="haReset">reset</button>
+      </div>
+      <div class="geo-readout" id="haOut" aria-live="polite"><span class="dim">bitmap</span> 0b00100100 <span class="dim">· 2 slots set. A slot's array index is the popcount of the bits below it: slot 2 → array[0], slot 5 → array[1].</span></div>
+
+      <table class="refs" aria-label="Without JavaScript: the eight-slot node, fully described" style="display:block;margin-top:1.2rem">
+        <caption style="font-family:var(--sans);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cream-dim);text-align:left;margin-bottom:.5rem">Without JavaScript: the initial node, slots 2 and 5 set</caption>
+        <tbody style="display:block;font-family:var(--mono);font-size:.84rem;color:var(--cream-soft)">
+          <tr><td style="padding:.25rem .6rem">bitmap</td><td style="padding:.25rem .6rem;color:var(--fsharp-bright)">0b00100100 (popcount 2)</td></tr>
+          <tr><td style="padding:.25rem .6rem">slot 2</td><td style="padding:.25rem .6rem;color:var(--sage-bright)">popcount(below) = 0 → array[0]</td></tr>
+          <tr><td style="padding:.25rem .6rem">slot 5</td><td style="padding:.25rem .6rem;color:var(--sage-bright)">popcount(below) = 1 → array[1]</td></tr>
+          <tr><td style="padding:.25rem .6rem">insert slot 4</td><td style="padding:.25rem .6rem;color:var(--gold-bright)">popcount(below) = 1 → splice at array[1]</td></tr>
+        </tbody>
+      </table>
+    </figure>
+
+    <p class="take">A bitmap plus a packed array makes a 32-wide node compact, and popcount turns a slot into an array
+      index in a couple of instructions. Five hash bits per level keep the tree four-deep for millions of keys.</p>
+  </section>
+
+  <!-- ===================== THE TRADE, IN FULL ===================== -->
+  <section id="trade">
+    <h2>The trade F#'s standard library took</h2>
+    <div class="prose">
+      <p>F#'s standard library could have shipped a HAMT for <code class="inl">Map</code>; it shipped a balanced tree
+        instead. Both are good immutable maps. The balanced tree keeps keys in sorted order, which makes ordered
+        iteration and range queries free and the comparison the only requirement on a key. The HAMT keys by hash,
+        which gives near-constant depth and needs only equality and a hash. Neither is wrong; they answer different
+        defaults. The point of this module is to know which structure you are reasoning about.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">The HAMT · this dive</p>
+        <p>Hash the key; nodes branch 32 ways via a bitmap + packed array; depth <code class="inl">~log&#8323;&#8322; n</code>; iteration in hash order.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="cell fs">
+        <p class="lbl">F#'s Map · what shipped</p>
+        <p>A balanced search tree; keys in sorted order; depth <code class="inl">O(log n)</code> binary; ordered iteration and range queries for free.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ECHOMQ IN F# ===================== -->
+  <section id="echomq">
+    <h2>EchoMQ in F#</h2>
+    <p class="take">Status &mdash; <code class="inl">echo_fs</code> is an in-memory model. The EchoMQ protocol &mdash; the Lua transitions executing on a Valkey wire &mdash; is <strong>not implemented</strong> (there is no Lua and no Valkey client in the code); that is the coming-soon transport (<code class="inl">EchoMQ.Connector</code>). This block shows how the model uses the structure, not a running bus.</p>
+    <div class="prose">
+      <p>A job registry calls for a high-fan-out persistent map: many keys, cheap lookups, non-destructive writes. That is
+        exactly what a HAMT is for — and what the F# EchoMQ's registry is. The honest framing holds here too: the F#
+        port's registry, <code class="inl">EchoMQ.Store.Rows</code>, is a plain F# <code class="inl">Map</code> (a
+        balanced tree) today; the production Elixir bus backs the equivalent registry with the echo_data HAMT/CHAMP
+        family; the port keeps the same surface so a HAMT/CHAMP swaps in later with no caller change.</p>
+    </div>
+
+    <div class="emq">
+      <p class="emq-h">EchoMQ in F#</p>
+      <h3>The registry is the persistent map a HAMT would back</h3>
+      <p>The queue state holds its rows in a <code class="inl">Map</code> keyed by branded id. Quoted verbatim from
+        <code class="inl">echo_fs/EchoMQ/Store.fs</code>:</p>
+      <pre class="code" aria-label="The echo_fs QueueState.Rows field, verbatim from the port."><span class="cmt">/// One queue's state.</span>
+<span class="op">type</span> QueueState =
+    { Rows: Map&lt;string, Job&gt;
+      Pending: Set&lt;string&gt;
+      <span class="cmt">// id -> due-at (ms), id -> lease deadline (ms), ...</span> }</pre>
+      <p style="margin-top:.8rem">An admission writes a row without disturbing the old state — the persistent-map
+        property. Quoted verbatim from the <code class="inl">enqueue</code> transition in the same file:</p>
+      <pre class="code" aria-label="The echo_fs enqueue write, verbatim from the port."><span class="cmt">// echo_fs/EchoMQ/Store.fs — enqueue admission (verbatim)</span>
+{ st <span class="op">with</span>
+    Rows = st.Rows.Add(id, row)
+    Pending = st.Pending.Add id },
+Admission.Enqueued</pre>
+      <p class="status">The F# EchoMQ keeps its job registry in <b>EchoMQ.Store.Rows</b> today — an immutable F#
+        <code class="inl">Map</code> (a balanced tree, not a HAMT), in the in-memory core
+        (<code class="inl">echo_fs/EchoMQ/Store.fs</code> — built and tested). The HAMT/CHAMP backing the Elixir bus
+        uses, and the Valkey transport <b>EchoMQ.Connector</b>, land next; the
+        <code class="inl">enqueue</code>/<code class="inl">claim</code> surface holds across the swap.</p>
+    </div>
+    <p class="take">The HAMT is one way to build the persistent map a registry calls for; the balanced tree is another.
+      The bus's registry is that map. The next dive reads the property both structures share: an update keeps the old
+      version standing.</p>
+  </section>
+
+  <!-- ===================== WHERE THIS LEADS ===================== -->
+  <section id="next">
+    <h2>Where this leads</h2>
+    <div class="prose">
+      <p>The node is a bitmap and a packed array; the descent reads 5-bit hash slices; popcount turns a slot into an
+        array index. The next dive reads how an insert keeps the old map intact and shares structure — the property a
+        HAMT and a balanced tree both provide, and the reason either is a persistent map.</p>
+    </div>
+    <div class="toc-mini" aria-label="Continue in this module">
+      <a href="/fsharp/algorithms/hamt">↑ C4.05 · Hash Array Mapped Tries</a>
+      <a href="/fsharp/algorithms/hamt/prefix-tries">← C4.05.1 · Prefix tries</a>
+      <a href="/fsharp/algorithms/hamt/structural-sharing">C4.05.3 · Structural sharing →</a>
+    </div>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://learn.microsoft.com/dotnet/">Microsoft &mdash; <em>.NET documentation</em></a> &mdash; <code class="inl">System.Numerics.BitOperations.PopCount</code> and the bitwise operators.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/">Microsoft &mdash; <em>F# documentation</em></a> &mdash; records, arrays, and the bitwise operators (<code class="inl">&amp;&amp;&amp;</code>, <code class="inl">&lt;&lt;&lt;</code>).</li>
+          <li><a href="https://fsharp.github.io/fsharp-core-docs/">FSharp.Core API reference</a> &mdash; the <code class="inl">Map</code> module (the immutable balanced-tree map) and <code class="inl">Array</code>.</li>
+          <li><a href="https://fsharp.org/">The F# Software Foundation</a> &mdash; F#'s home on the .NET runtime.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/elixir/algorithms/hamt">Elixir &mdash; Hash array mapped tries (E4.05)</a> &mdash; the same structure on the BEAM, whose <code class="inl">Map</code> <em>is</em> a HAMT.</li>
+          <li><a href="/fsharp/algorithms/hamt">C4.05 &mdash; Hash Array Mapped Tries</a> &mdash; the module hub.</li>
+          <li><a href="/fsharp/algorithms/hamt/prefix-tries">C4.05.1 &mdash; Prefix tries</a> &mdash; the trie shape this dive indexes by hash.</li>
+          <li><a href="/fsharp/language/collections">C1.07 &mdash; Collections</a> &mdash; <code class="inl">Map</code>, arrays, and the cost model in F#.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/fsharp/algorithms/hamt/prefix-tries"><span aria-hidden="true">←</span> C4.05.1 · Prefix tries</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/fsharp/algorithms/hamt/structural-sharing">Next · C4.05.3 Structural sharing <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="F# In Depth — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/fsharp">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">F# In Depth &mdash; the ML-family language on .NET, taught from first principles to a real DevOps tool shipped in F#.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/fsharp/algorithms">C4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/fsharp/algorithms/hamt">C4.05 &middot; Hash Array Mapped Tries (HAMT)</a>
+        <a href="#refs">References</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/fsharp">Course home</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Interactive: insert into one HAMT node — index by popcount ---------- */
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var SLOTS = 8;                  // 8 of 32 slots shown
+  var INITIAL = [2, 5];
+  var POOL = [4, 0, 6];
+  var CAP = 5;
+  var cx = function (slot) { return 52 + slot * 78; };
+  var acx = function (pos) { return 64 + pos * 92; };
+
+  var bitsG = document.getElementById('haBits');
+  var linksG = document.getElementById('haLinks');
+  var arrG = document.getElementById('haArr');
+  var workEl = document.getElementById('haWork');
+  var addBtn = document.getElementById('haAdd');
+  var resetBtn = document.getElementById('haReset');
+  var out = document.getElementById('haOut');
+  if (!bitsG || !linksG || !arrG || !workEl || !addBtn || !resetBtn || !out) return;
+
+  var set = INITIAL.slice();
+  var added = 0;
+  var lastSlot = null;
+
+  function el(name, attrs) {
+    var n = document.createElementNS(SVGNS, name), k;
+    for (k in attrs) { if (Object.prototype.hasOwnProperty.call(attrs, k)) n.setAttribute(k, attrs[k]); }
+    return n;
+  }
+  function txt(attrs, s) { var t = el('text', attrs); t.textContent = s; return t; }
+  function indexOfSlot(slot) { var n = 0, i; for (i = 0; i < set.length; i++) { if (set[i] < slot) n++; } return n; }
+  function bitmapBits() { var s = '', i; for (i = 0; i < SLOTS; i++) { s += (set.indexOf(i) >= 0) ? '1' : '0'; } return s; }
+  function clear(g) { while (g.firstChild) { g.removeChild(g.firstChild); } }
+
+  function render(isInsert) {
+    clear(bitsG);
+    for (var i = 0; i < SLOTS; i++) {
+      var on = set.indexOf(i) >= 0;
+      var isNew = isInsert && i === lastSlot;
+      var g = el('g', { 'class': 'ha-cell' + (isNew ? ' ha-new' : '') });
+      g.appendChild(el('rect', {
+        x: cx(i) - 27, y: 60, width: 54, height: 30, rx: 6,
+        fill: on ? '#231a33' : '#10162b',
+        stroke: on ? (isNew ? '#b48ee0' : '#d2b8f5') : '#3a4263',
+        'stroke-width': on ? 2 : 1.3
+      }));
+      g.appendChild(txt({
+        x: cx(i), y: 80, 'text-anchor': 'middle',
+        'font-family': 'JetBrains Mono, monospace', 'font-size': 13,
+        fill: on ? '#d2b8f5' : '#5a6688'
+      }, on ? '1' : '0'));
+      bitsG.appendChild(g);
+    }
+    clear(arrG);
+    for (var p = 0; p < set.length; p++) {
+      var slot = set[p];
+      var newCell = isInsert && slot === lastSlot;
+      var gc = el('g', { 'class': 'ha-cell' + (newCell ? ' ha-new' : '') });
+      gc.appendChild(el('rect', {
+        x: acx(p) - 40, y: 124, width: 80, height: 40, rx: 8,
+        fill: '#10162b',
+        stroke: newCell ? '#b48ee0' : '#d2b8f5', 'stroke-width': 2
+      }));
+      gc.appendChild(txt({ x: acx(p), y: 142, 'text-anchor': 'middle', 'font-family': 'JetBrains Mono, monospace', 'font-size': 12, fill: '#d2b8f5' }, 'slot ' + slot));
+      gc.appendChild(txt({ x: acx(p), y: 157, 'text-anchor': 'middle', 'font-family': 'JetBrains Mono, monospace', 'font-size': 10, fill: '#6b7494' }, 'array[' + p + ']'));
+      arrG.appendChild(gc);
+    }
+    clear(linksG);
+    for (var q = 0; q < set.length; q++) {
+      var s2 = set[q], tx = acx(q);
+      var path = el('path', { d: 'M' + cx(s2) + ' 90 C' + cx(s2) + ' 110 ' + tx + ' 104 ' + tx + ' 124' });
+      if (isInsert && s2 === lastSlot) { path.setAttribute('stroke', '#b48ee0'); path.setAttribute('stroke-width', '2.4'); }
+      linksG.appendChild(path);
+      var head = el('path', { d: 'M' + tx + ' 124 l-5 -10 h10 z', fill: (isInsert && s2 === lastSlot) ? '#b48ee0' : '#5a6688', stroke: 'none' });
+      linksG.appendChild(head);
+    }
+    var bits = bitmapBits();
+    if (lastSlot === null) {
+      workEl.textContent = 'bitmap = 0b' + bits + '  ·  popcount = ' + set.length + ' → array length ' + set.length;
+      out.innerHTML = '<span class="dim">bitmap</span> 0b' + bits + ' <span class="dim">· ' + set.length +
+        ' slots set. A slot\'s array index is the popcount of the bits below it.</span>';
+    } else {
+      var idx = indexOfSlot(lastSlot);
+      workEl.textContent = 'insert slot ' + lastSlot + ': popcount(bits below) = ' + idx + ' → array[' + idx + ']';
+      out.innerHTML = '<span class="dim">insert slot</span> ' + lastSlot +
+        ' <span class="dim">· bitmap 0b' + bits + ', popcount now ' + set.length + '. popcount(below ' + lastSlot + ') = </span>' +
+        idx + ' <span class="dim">→ the new cell splices in at</span> array[' + idx + ']<span class="dim">.</span>';
+    }
+    addBtn.disabled = set.length >= CAP;
+    addBtn.style.opacity = addBtn.disabled ? '.5' : '';
+    addBtn.style.cursor = addBtn.disabled ? 'default' : '';
+  }
+
+  addBtn.addEventListener('click', function () {
+    if (set.length >= CAP) return;
+    var slot = POOL[added % POOL.length];
+    if (set.indexOf(slot) < 0) { set.push(slot); set.sort(function (a, b) { return a - b; }); }
+    added++;
+    lastSlot = slot;
+    render(true);
+  });
+  resetBtn.addEventListener('click', function () {
+    set = INITIAL.slice();
+    added = 0;
+    lastSlot = null;
+    render(false);
+  });
+  render(false);
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var e = document.getElementById(id); if (e) e.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

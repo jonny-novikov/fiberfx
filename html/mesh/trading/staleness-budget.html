@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M4.2 · The Staleness Budget — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="EchoMesh's expression of the trading strategy: a per-surface recency window a surface owner sets and the engine holds the surface within. A budget is expressed as a duration, a version count, or the lesser of the two — the form Azure Cosmos DB's bounded-staleness level uses, throttling writes when the lag would exceed it. PACELC is why the cost is continuous: once data is replicated, consistency trades against latency on every request, so a tight window is a standing cost, not a partition-only one.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-mesh)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the staleness-budget emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.capsvg{width:100%;height:auto;display:block}
+.capsvg .track{fill:none;stroke:var(--m-line);stroke-width:8;stroke-linecap:round}
+.capsvg .zoneC{stroke:var(--m-cons);stroke-width:8;stroke-linecap:round;fill:none}
+.capsvg .zoneA{stroke:var(--m-avail);stroke-width:8;stroke-linecap:round;fill:none}
+.capsvg .zoneM{stroke:var(--m-mesh);stroke-width:8;stroke-linecap:round;fill:none}
+.capsvg .endlbl{font:12px var(--mono);fill:var(--m-ink);font-weight:700}
+.capsvg .endsub{font:11px var(--mono);fill:var(--m-dim)}
+.capsvg .axt{font:11px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .marker{fill:var(--m-edge);stroke:var(--m-card);stroke-width:2.5;transition:transform .22s ease}
+.capsvg .mlbl{font:11.5px var(--mono);fill:var(--m-edge);font-weight:700;text-anchor:middle;transition:transform .22s ease}
+.capsvg .barlbl{font:11px var(--mono);fill:var(--m-dim);text-anchor:end}
+.capsvg .bartrk{fill:var(--m-paper);stroke:var(--m-line);stroke-width:1}
+.capsvg .barF{fill:var(--m-mesh);transition:width .22s ease}
+.capsvg .barA{fill:var(--m-avail);transition:width .22s ease}
+.capsvg .barK{fill:var(--m-cons);transition:width .22s ease}
+.capsvg .barval{font:11px var(--mono);fill:var(--m-ink);font-weight:700}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the property duality / thesis ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-cons);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-edge)}
+.tri article:nth-child(3){border-top-color:var(--m-avail)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the two-end compare ---------- */
+.cmp{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:6px}
+.cmp article{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px}
+.cmp article.reg{border-left:3px solid var(--m-cons)}
+.cmp article.con{border-left:3px solid var(--m-avail)}
+.cmp .ck{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.cmp article.reg .ck{color:var(--m-cons)}
+.cmp article.con .ck{color:var(--m-avail)}
+.cmp h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.cmp p{font-size:.9rem;color:var(--m-ink)}
+.cmp .ex{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);border-top:1px dashed var(--m-line);padding-top:9px}
+.cmp .ex b{color:var(--m-ink)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.doors,.cmp{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.doors,.cmp{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><a href="/mesh/trading">trading</a><span class="rsep">/</span><span class="rcur">staleness-budget</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#window">The window</a>
+      <a href="#expressed">Expressed</a>
+      <a href="#hold">Held</a>
+      <a href="#cost">The cost</a>
+      <a href="#setting">Set well</a>
+      <a href="#ends">The two ends</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M4.2 &#183; Trading Consistency for Availability</p>
+      <h1>The staleness <span class="hns">budget</span>.</h1>
+      <p class="lede">EchoMesh's expression of the trading strategy is a <b>per-surface recency window</b> a surface
+      owner sets and the engine holds the surface within. This dive builds the budget &#8212; how it is expressed, how
+      the engine keeps a surface inside it, and what it costs &#8212; and shows that the cost is <b>continuous</b>, not
+      confined to a partition.</p>
+      <p class="heronote">No measurement here: this dive reads a mechanism, not a benchmark. Three primary sources carry
+      it (<a href="#refs">Yu &amp; Vahdat's conit model, Azure Cosmos DB's bounded-staleness level, and Abadi's
+      PACELC</a>); the mechanisms are external and settled, and EchoMesh's per-surface budget is named as design built
+      on them. The model the budget narrows is M4.1; the argument that a budgeted surface guarantees neither property is
+      the next dive, M4.3.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>The conit's staleness metric, Cosmos DB's version-or-time bound with its throttling cost, and PACELC's
+        continuity are settled external results. EchoMesh's per-surface staleness budget is the course's proposal, built
+        on those shipped mechanisms and composed into the mesh at M8.2; the shipped-versus-proposed line is drawn there.
+        Window settings named below are illustrative example settings, not measurements.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>The dial of one surface &#183; set a recency window from <b>zero</b> at the consistency-first end to
+        <b>loose</b> at the availability-first end, and watch freshness move against availability and coordination cost
+        &#8212; hover a setting to take the surface to that point (the conit's staleness metric of <b>Yu &amp; Vahdat
+        2000</b>, the tunable bound of <b>Cosmos DB</b>, and the continuous cost of <b>PACELC</b>)</figcaption>
+        <svg class="capsvg" id="capsvg" viewBox="0 0 760 270" role="img" aria-label="A horizontal staleness dial for one surface. The left end is the consistency-first window at zero, in blue: the surface refuses to serve anything behind the authority. The right end is the availability-first wide window, in green: the surface serves local state and marks how far behind it might be. A movable amber marker sits between them at the chosen recency window. Three qualitative bars below the dial show that as the window tightens toward zero, read freshness rises to high while availability and latency, and coordination cost, both rise toward high; as the window loosens, freshness falls while availability rises and coordination cost falls. No bar carries a measured number — the magnitudes are qualitative, none invented.">
+          <defs>
+            <linearGradient id="dialgrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#2a5b8f"></stop>
+              <stop offset="50%" stop-color="#7b3aa0"></stop>
+              <stop offset="100%" stop-color="#1f7a5e"></stop>
+            </linearGradient>
+          </defs>
+
+          <!-- the dial track, coloured along the CAP spectrum -->
+          <line class="track" x1="70" y1="60" x2="690" y2="60"></line>
+          <line x1="70" y1="60" x2="690" y2="60" stroke="url(#dialgrad)" stroke-width="8" stroke-linecap="round"></line>
+
+          <!-- end labels -->
+          <text class="endlbl" x="70" y="36" text-anchor="start">window = 0</text>
+          <text class="endsub" x="70" y="51" text-anchor="start">consistency-first &#183; M2</text>
+          <text class="endlbl" x="690" y="36" text-anchor="end">window wide</text>
+          <text class="endsub" x="690" y="51" text-anchor="end">availability-first &#183; M3</text>
+          <text class="axt" x="380" y="36">EchoMesh budget &#183; a chosen point between the ends</text>
+
+          <!-- the movable marker, positioned by JS along x in [70,690]; default at the moderate setting -->
+          <g id="dialMarker" style="transform:translateX(380px)">
+            <circle class="marker" cx="0" cy="60" r="9"></circle>
+            <text class="mlbl" id="dialMlbl" x="0" y="88">moderate</text>
+          </g>
+
+          <!-- three qualitative bars: read freshness, availability + low latency, coordination cost -->
+          <text class="barlbl" x="250" y="135">read freshness</text>
+          <rect class="bartrk" x="262" y="124" width="380" height="15" rx="3"></rect>
+          <rect class="barF" id="barF" x="263" y="125" width="190" height="13" rx="2"></rect>
+          <text class="barval" id="barFv" x="650" y="135" text-anchor="start">moderate</text>
+
+          <text class="barlbl" x="250" y="175">availability &amp; low latency</text>
+          <rect class="bartrk" x="262" y="164" width="380" height="15" rx="3"></rect>
+          <rect class="barA" id="barA" x="263" y="165" width="190" height="13" rx="2"></rect>
+          <text class="barval" id="barAv" x="650" y="175" text-anchor="start">moderate</text>
+
+          <text class="barlbl" x="250" y="215">coordination cost</text>
+          <rect class="bartrk" x="262" y="204" width="380" height="15" rx="3"></rect>
+          <rect class="barK" id="barK" x="263" y="205" width="190" height="13" rx="2"></rect>
+          <text class="barval" id="barKv" x="650" y="215" text-anchor="start">moderate</text>
+
+          <text class="axt" x="380" y="252">tighter window &#8594; fresher reads, paid in availability/latency and coordination &#183; looser &#8594; the reverse</text>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">setting &#183; hover to move the window</span>
+          At a <b>moderate</b> window the surface answers from local state at full speed within budget and coordinates
+          as the lag approaches the window. Tightening buys <span class="vc">fresher reads</span> and pays in
+          <span class="vc">availability and coordination</span>; loosening buys <span class="vc">availability</span> and
+          pays in <span class="vc">staleness</span>. Hover a setting below to move the surface to that point.
+        </p>
+        <div class="htabs" id="dialw">
+          <div class="htabs-bar" role="tablist" aria-label="Set the recency window of one surface">
+            <button type="button" role="tab" data-tab="zero" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>0 &#183; Window = zero</button>
+            <button type="button" role="tab" data-tab="tight" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>1 &#183; Tight</button>
+            <button type="button" role="tab" data-tab="moderate" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>2 &#183; Moderate</button>
+            <button type="button" role="tab" data-tab="loose" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>3 &#183; Loose</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="zero" role="tabpanel"><span class="tag c">Window = zero &#183; the consistency-first end.</span> The surface refuses to serve anything behind the authority &#8212; the ledger of M2, blocking rather than diverging. Reads are fully fresh; the surface pays the most in availability and coordination, declining to answer when it cannot be certain. This is a settlement check or a risk limit: stale state is not an option.</div>
+            <div class="htabs-p" data-tab="tight" role="tabpanel"><span class="tag c">Tight &#183; close to the consistency end.</span> A small recency window. The surface keeps the lag low by coordinating &#8212; refreshing from the authority or honoring an invalidation &#8212; and throttles the source when the lag would exceed the window, the way Cosmos DB throttles writes for a partition. Freshness stays high; availability and coordination cost are paid heavily.</div>
+            <div class="htabs-p" data-tab="moderate" role="tabpanel"><span class="tag m">Moderate &#183; a deliberate middle.</span> The surface answers from local state at full speed within budget and coordinates only as the lag nears the window. Freshness, availability, and coordination cost each sit between the ends &#8212; the specific, stated position the budget exists to make precise rather than vague.</div>
+            <div class="htabs-p" data-tab="loose" role="tabpanel"><span class="tag a">Loose &#183; close to the availability end.</span> A wide window. The surface serves whatever local state it has and marks how far behind it might be &#8212; the feed of M3, diverging within a bound rather than blocking. Availability is high and coordination cost low; a reader may fall further behind before anything intervenes. This is an analytics rollup or a tick superseded within milliseconds.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a setting to move the window; click to pin. Without scripting, all four settings read in sequence and the dial shows the marker at its default moderate point with every bar at once.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="window">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>A per-surface recency window</h2>
+        <span class="ssrc">mesh.4.2.md &#183; Yu &amp; Vahdat 2000</span>
+      </div>
+      <p class="body">A staleness budget is a recency window attached to a surface: <b>a maximum amount a reader on that
+      surface may lag the authoritative value</b>, declared by the surface's owner and enforced by the engine. It is the
+      staleness metric of the conit model of M4.1, narrowed to its most legible dimension and exposed as a knob a surface
+      owner turns.</p>
+      <p class="body">The budget is per-surface because the stakes are per-surface. An analytics rollup and a settlement
+      check do not need the same freshness, so binding one window to a whole system would over-pay on the surfaces that
+      tolerate staleness and under-serve the ones that do not. Each surface declares the window it needs, and the
+      engine's job is to keep the surface inside it or to make the breach visible &#8212; the dial above is exactly this
+      one surface's window, moved.</p>
+      <figure class="frozen">
+        <figcaption>staleness, the conit metric a recency window narrows<span class="tag">Yu &amp; Vahdat 2000 &#183; OSDI</span></figcaption>
+<pre><span class="fd">// the conit bounds divergence on three axes (M4.1):</span>
+conit = { <span class="fc">numerical error</span>, <span class="fc">order error</span>, <span class="fa">staleness</span> }
+
+<span class="fd">// staleness bounds the real-time delay of write propagation among replicas.</span>
+<span class="fd">// a recency window is that one axis, exposed as a per-surface knob:</span>
+surface.window = max amount a reader may lag the authority   <span class="fd"># declared by the owner</span>
+
+<span class="fd">// the engine's contract on that surface:</span>
+hold(surface) &#8594; keep the lag &#8804; window, <b>or make the breach visible.</b></pre>
+      </figure>
+    </section>
+
+    <section id="expressed">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>How a budget is expressed</h2>
+        <span class="ssrc">mesh.4.2.md &#183; Azure Cosmos DB</span>
+      </div>
+      <p class="body">A window has two natural forms, and the real precedent uses both at once. Azure Cosmos DB's
+      bounded-staleness level bounds the lag between regions by <b>a number of versions</b> &#8212; updates of an item
+      &#8212; or by <b>an interval of time</b>, whichever is reached first. The two forms answer different questions: a
+      version bound caps how many writes a reader may be behind, which suits a surface where each update matters; a time
+      bound caps how many seconds a reader may be behind, which suits a surface where recency in wall-clock terms is what
+      a consumer reasons about.</p>
+      <p class="body">EchoMesh expresses a budget the same way &#8212; a recency window stated as a duration, a version
+      count, or the lesser of the two &#8212; so a surface owner picks the form that matches how that surface's consumers
+      think about freshness. The window, once stated, is the contract: a reader on the surface is never more than the
+      window behind, and can reason accordingly.</p>
+      <div class="htabs" id="formw">
+        <div class="htabs-bar" role="tablist" aria-label="The two forms a window takes">
+          <button type="button" role="tab" data-tab="version" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>By versions</button>
+          <button type="button" role="tab" data-tab="time" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>By time</button>
+          <button type="button" role="tab" data-tab="lesser" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>The lesser of the two</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="version" role="tabpanel"><span class="tag c">A version bound.</span> The lag is capped at a number of updates of the item &#8212; a reader may be behind by at most that many writes. This suits a surface where each update matters and being a fixed count of changes behind is the meaningful limit, regardless of how fast or slow the writes arrive.</div>
+          <div class="htabs-p" data-tab="time" role="tabpanel"><span class="tag e">A time bound.</span> The lag is capped at an interval of wall-clock time &#8212; a reader may be at most that many seconds behind. This suits a surface where a consumer reasons in seconds: a moment-old view is fine, a minute-old one is not, whatever the write rate.</div>
+          <div class="htabs-p" data-tab="lesser" role="tabpanel"><span class="tag m">Whichever comes first.</span> Cosmos DB's bounded staleness applies both at once and holds to the tighter &#8212; the lag stays under the version count or the time interval, whichever is reached first. EchoMesh expresses a window the same way, letting a surface owner state a duration, a count, or the lesser of the two.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus a form to read it; click to pin. Without scripting, all three read in sequence. Cosmos DB's bounded staleness uses both bounds at once, holding to whichever is reached first.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>bounded staleness &#183; versions or time, whichever comes first<span class="tag">Azure Cosmos DB</span></figcaption>
+<pre><span class="fd">// Cosmos DB bounded staleness bounds the lag between regions by:</span>
+window = { <span class="fc">versions</span>: K updates of the item,
+           <span class="fe">interval</span>: T of time }
+hold to <b>whichever is reached first.</b>
+
+<span class="fd">// EchoMesh states a per-surface window the same way:</span>
+surface.window = duration <span class="fd">|</span> version_count <span class="fd">|</span> min(duration, version_count)
+
+<span class="fd">// once stated, the window is the contract a reader reasons against:</span>
+reader is never more than <b>window</b> behind the authority.</pre>
+      </figure>
+    </section>
+
+    <section id="hold">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>How the engine holds the window</h2>
+        <span class="ssrc">mesh.4.2.md &#183; Azure Cosmos DB</span>
+      </div>
+      <p class="body">Holding a window means acting <b>before</b> the lag exceeds it, and there are two moves. The first
+      is to close the gap by coordinating &#8212; refreshing the reader from the authority, or pushing an invalidation
+      that flushes a stale cache, the mechanism the market-data feed of M3.2 already uses, where the authority's write
+      triggers an invalidation that the reader honors.</p>
+      <p class="body">The second is to slow the source when the gap cannot be closed fast enough. Cosmos DB, when the lag
+      would exceed the configured bound, <b>throttles writes for the affected partition</b> until staleness returns
+      within the limit, trading write availability to keep the window. EchoMesh applies the same logic per surface: within
+      budget, the surface answers from local state at full speed; as the lag approaches the window, the surface coordinates
+      to stay inside it; and if it cannot coordinate fast enough, it either throttles the source or, at the tight extreme
+      where the window is zero, refuses rather than serves stale &#8212; the consistency-first behavior of M2. The window
+      is held by spending availability as needed to keep staleness inside it.</p>
+      <figure class="frozen">
+        <figcaption>the two moves that hold a window<span class="tag">Azure Cosmos DB &#183; M3.2 invalidation</span></figcaption>
+<pre><span class="fd">// as the lag approaches the window, move 1 — close the gap:</span>
+coordinate: refresh reader from authority         <span class="fd"># a coordination round-trip</span>
+         <span class="fd">|</span> push invalidation &#8594; reader flushes stale     <span class="fd"># the M3.2 feed mechanism</span>
+
+<span class="fd">// if the gap cannot be closed fast enough, move 2 — slow the source:</span>
+throttle source until staleness &#8804; window         <span class="fe">trades write availability</span>
+
+<span class="fd">// at the tight extreme, window = 0:</span>
+refuse rather than serve stale                    <span class="fd"># the consistency-first behavior of M2</span>
+&#8658; the window is held by <b>spending availability as needed.</b></pre>
+      </figure>
+    </section>
+
+    <section id="cost">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>What it costs &#8212; and why it is continuous</h2>
+        <span class="ssrc">mesh.4.2.md &#183; Abadi, PACELC</span>
+      </div>
+      <p class="body">The budget makes the trade explicit, and the cost runs in both directions. A <b>tighter</b> window
+      buys fresher reads and pays in availability and latency, because keeping the lag small forces coordination or
+      throttling that a looser window would not; a <b>looser</b> window buys availability and lower latency and pays in
+      staleness, because a reader may fall further behind before anything intervenes. There is no setting that escapes the
+      trade &#8212; moving the window tightens one property by loosening the other, which is exactly what the dial above
+      shows as its three bars move against each other.</p>
+      <p class="body">PACELC is the reason this cost is not a partition-only phenomenon. Once data is replicated,
+      consistency trades against latency on <b>every request</b>, even on a healthy network, because a fresher read
+      requires the replicas to have coordinated first. So a tight budget is paid on the common Tuesday, not only in the
+      rare partition, and a surface owner choosing a window is choosing <b>a standing cost, not an emergency one</b>.</p>
+      <figure class="frozen">
+        <figcaption>PACELC &#8212; the cost is continuous, not partition-only<span class="tag">Abadi &#183; PACELC</span></figcaption>
+<pre><span class="fd">// CAP names only the partition case. PACELC adds the else:</span>
+<b>P</b>artition &#8594; trade <span class="fc">A</span>vailability vs <span class="fc">C</span>onsistency     <span class="fd"># the rare case</span>
+<b>E</b>lse (healthy) &#8594; trade <span class="fe">L</span>atency vs <span class="fc">C</span>onsistency       <span class="fd"># the common case</span>
+
+<span class="fd">// once data is replicated, a fresher read requires the replicas</span>
+<span class="fd">// to have coordinated — so a tight window costs latency on every request:</span>
+tight window &#8594; coordination per read &#8594; <span class="fe">standing latency cost</span>
+&#8658; a tight budget is paid <b>on the common Tuesday</b>, not only in a partition.</pre>
+      </figure>
+    </section>
+
+    <section id="setting">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Setting a budget well</h2>
+        <span class="ssrc">mesh.4.2.md &#183; proposed application</span>
+      </div>
+      <p class="body">A budget is set against the stakes, the way the reservation system of M4.1 sets its tolerance
+      against how full the flight is. <b>Low-stakes surfaces take loose windows</b>: an analytics rollup, a view count,
+      or a market-data tick that is superseded within milliseconds loses nothing by being a moment behind, so a generous
+      window keeps it cheap and always available. <b>High-stakes surfaces take tight windows or zero</b>: a settlement
+      check or a risk limit cannot act on stale state, so its window collapses toward the consistency-first end.</p>
+      <p class="body">A budget can also be a function of conditions rather than a constant &#8212; tightening as a
+      position grows, as the reservation conit tightens as seats fill &#8212; so the surface spends freshness only when
+      the stakes call for it. The surface's branded identity is what scopes a budget to the right surface, so a window
+      set for one surface does not bind another.</p>
+      <p class="compose"><b>Where the identity comes from:</b> a window is scoped to a surface by that surface's branded
+      identity, so one surface's budget never binds another. The identity contract itself is the <b>/bcs</b> course,
+      described there rather than restated here &#8212; carried under a <b>Proposed &#183; not shipped</b> note until the
+      substrate-versus-proposal line is drawn at M8.2.</p>
+    </section>
+
+    <section id="ends">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>How it sits with the two ends</h2>
+        <span class="ssrc">mesh.4.2.md &#183; M2 &amp; M3</span>
+      </div>
+      <p class="body">The budget is the dial the whole chapter draws, and the two earlier chapters are its endpoints. At
+      the <b>tight extreme</b> the window is zero: the surface refuses to serve anything behind the authority, which is
+      the ledger of M2 blocking rather than diverging. At the <b>loose extreme</b> the window is wide: the surface serves
+      whatever local state it has and marks how far behind it might be, which is the feed of M3 diverging within a bound
+      rather than blocking.</p>
+      <p class="body">A surface tuned with a staleness budget picks a point between those ends, and the budget is what
+      makes &#8220;between&#8221; a specific, stated position rather than a vague one. The chapter's three strategies are,
+      seen this way, three settings of one dial &#8212; and the next dive argues that a setting in the middle,
+      guaranteeing neither property fully, is a deliberate and correct choice for the surfaces whose stakes call for it.</p>
+      <div class="cmp">
+        <article class="reg">
+          <p class="ck">The tight end &#183; M2</p>
+          <h3>Window = zero</h3>
+          <p>The surface refuses to serve anything behind the authority &#8212; blocking rather than diverging.
+          Consistency-first: the ledger that declines to answer until it is certain.</p>
+          <p class="ex"><b>setting:</b> zero recency &#183; <b>cost:</b> availability and standing latency</p>
+        </article>
+        <article class="con">
+          <p class="ck">The loose end &#183; M3</p>
+          <h3>Window wide</h3>
+          <p>The surface serves whatever local state it has and marks how far behind it might be &#8212; diverging within
+          a bound rather than blocking. Availability-first: the feed that answers and labels its lag.</p>
+          <p class="ex"><b>setting:</b> wide recency &#183; <b>cost:</b> staleness within a stated bound</p>
+        </article>
+      </div>
+      <div class="tri">
+        <article>
+          <p class="cno">Tight extreme</p>
+          <h3>The window at zero</h3>
+          <p>The dial pinned to the consistency-first end. The surface blocks rather than diverges &#8212; the M2 ledger,
+          correct or silent.</p>
+          <p class="note">refuse rather than serve stale &#183; <b>M2</b></p>
+        </article>
+        <article>
+          <p class="cno">The middle</p>
+          <h3>A stated point between</h3>
+          <p>The budget makes &#8220;between&#8221; specific. A surface picks a window that matches its stakes and the
+          engine holds it there, spending availability as needed.</p>
+          <p class="note">a specific, stated position &#183; <b>the budget</b></p>
+        </article>
+        <article>
+          <p class="cno">Loose extreme</p>
+          <h3>The window wide</h3>
+          <p>The dial pinned to the availability-first end. The surface diverges within a bound and labels its lag
+          &#8212; the M3 feed, always answering.</p>
+          <p class="note">serve and mark the lag &#183; <b>M3</b></p>
+        </article>
+      </div>
+      <p class="compose"><b>The next dive:</b> three strategies are three settings of one dial. M4.3 argues that the
+      middle setting &#8212; guaranteeing neither property fully &#8212; is a deliberate and correct choice for the
+      surfaces whose stakes call for it, carried under a <b>Proposed &#183; not shipped</b> note.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh/trading">
+          <span class="dr">/mesh/trading</span>
+          <h3>M4 &#8212; Trading Consistency for Availability</h3>
+          <p>The chapter landing: the staleness dial whose middle this dive sets &#8212; the conit model, the budget,
+          and the case for guaranteeing neither property on purpose.</p>
+          <p class="dnote"><b>this dive</b> is M4.2, the budget; the conit is M4.1, neither-on-purpose is M4.3.</p>
+        </a>
+        <a class="door" href="/mesh/best-effort-availability">
+          <span class="dr">/mesh/best-effort-availability</span>
+          <h3>M2 &#8212; Best Effort Availability</h3>
+          <p>The consistency-first surface: a single owning writer, the ledger that blocks rather than diverges &#8212;
+          the window at zero, the tight end of this dial.</p>
+          <p class="dnote"><b>the tight extreme</b> of the budget is M2's behavior: refuse rather than serve stale.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract, proven by frozen transcripts
+          across five runtimes.</p>
+          <p class="dnote"><b>the identity</b> that scopes a window to one surface, so a budget set for one does not bind
+          another, is specified here.</p>
+        </a>
+        <a class="door" href="/elixir">
+          <span class="dr">/elixir</span>
+          <h3>Functional Programming in Elixir</h3>
+          <p>The engine and the umbrella where the identity library lives, through to the Fly deployment chapter that
+          puts the surfaces on machines.</p>
+          <p class="dnote"><b>the engine</b> that holds a surface inside its window is a process on the BEAM &#8212; the
+          runtime taught here.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;8</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://www.usenix.org/legacy/events/osdi2000/full_papers/yuvahdat/yuvahdat.pdf" rel="noopener">Yu &amp; Vahdat (2000) &#8212; A Continuous Consistency Model for Replicated Services</a><span class="rs">bounds the divergence of a conit using numerical error, order error, and staleness, where staleness bounds the real-time delay of write propagation among replicas &#8212; the metric a recency window narrows to</span></li>
+          <li><a href="https://learn.microsoft.com/en-us/azure/cosmos-db/consistency-levels" rel="noopener">Microsoft &#8212; Azure Cosmos DB consistency levels</a><span class="rs">bounded staleness keeps the lag under a configured number of versions or a time interval, whichever comes first, and throttles writes for the affected partition when the lag would exceed it &#8212; a tunable staleness budget that spends availability to hold the window</span></li>
+          <li><a href="https://en.wikipedia.org/wiki/PACELC_theorem" rel="noopener">Abadi &#8212; The PACELC design principle</a><span class="rs">once data is replicated, consistency trades against latency on every request even without a partition, because a fresher read requires the replicas to have coordinated &#8212; the reason a tight budget is a standing cost</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh/trading">M4 &#8212; Trading Consistency for Availability</a><span class="rs">the chapter landing: the staleness dial whose middle this dive sets</span></li>
+          <li><a href="/mesh/trading/continuous-consistency">M4.1 &#8212; Continuous Consistency</a><span class="rs">the conit model whose staleness metric the budget narrows to one legible dimension</span></li>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/mesh/best-effort-availability">M2 &#8212; Best Effort Availability</a><span class="rs">the consistency-first end of the dial &#8212; the window at zero, blocking rather than diverging</span></li>
+          <li><a href="/mesh/best-effort-consistency">M3 &#8212; Best Effort Consistency</a><span class="rs">the availability-first end of the dial &#8212; the window set wide, diverging within a bound</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the engine, the umbrella where the identity library lives, and the Fly deployment chapter</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh/trading"><span class="pk">the chapter</span>&#8592; M4 &#183; Trading Consistency for Availability</a>
+      <a class="pgx" href="/mesh/trading/neither-on-purpose"><span class="pk">next &#183; dive</span>M4.3 &#183; Neither, On Purpose &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <span>M2 &#183; Best Effort Availability<i>soon</i></span>
+        <span>M3 &#183; Best Effort Consistency<i>soon</i></span>
+        <a href="/mesh/trading">M4 &#183; Trading the Trade</a>
+        <span>M5 &#183; Segmenting<i>soon</i></span>
+        <span>M6 &#183; The Stack<i>soon</i></span>
+        <span>M7 &#183; Transparent Infrastructure<i>soon</i></span>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0KnDX0rMe</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 17:28:09 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the staleness-budget emulator: the window-setting tabs drive the SVG dial + an aria-live readout ----------
+     READOUT and the bar widths are pure functions of the setting key over fixed data — no network, no storage,
+     no measurement. Each level carries a qualitative label and a fraction in [0,1] for the bar fill only; the
+     fraction is a relative position on the dial, not a measured magnitude. Freshness rises as the window tightens;
+     availability/low-latency and coordination cost move against it. The marker slides along the dial track. */
+  var X0 = 70, X1 = 690;                 /* dial track endpoints in SVG units */
+  var BAR_X = 263, BAR_W = 378;          /* qualitative bar track in SVG units */
+  var DIAL = {
+    zero:     { s: "setting · window = zero", pos: 0.00, fresh: 1.00, avail: 0.10, coord: 1.00,
+                fl: "high", al: "low", kl: "high", ml: "window = 0",
+                h: "The window is <b>zero</b>: the surface refuses to serve anything behind the authority — the M2 ledger, blocking rather than diverging. <span class='vc'>Reads are fully fresh</span>; the surface pays the most in <span class='vc'>availability and coordination</span>." },
+    tight:    { s: "setting · tight window", pos: 0.22, fresh: 0.85, avail: 0.30, coord: 0.82,
+                fl: "high", al: "low", kl: "high", ml: "tight",
+                h: "A <b>tight</b> window: the surface keeps the lag low by coordinating and throttles the source when the lag would exceed it, as Cosmos DB throttles writes for a partition. <span class='vc'>Freshness stays high</span>; availability and coordination cost are paid heavily." },
+    moderate: { s: "setting · moderate window", pos: 0.50, fresh: 0.55, avail: 0.55, coord: 0.50,
+                fl: "moderate", al: "moderate", kl: "moderate", ml: "moderate",
+                h: "A deliberate <b>middle</b>: the surface answers from local state at full speed within budget and coordinates as the lag nears the window. Freshness, availability, and coordination cost each sit <span class='vc'>between the ends</span> — a specific, stated position." },
+    loose:    { s: "setting · loose window", pos: 1.00, fresh: 0.20, avail: 0.95, coord: 0.12,
+                fl: "low", al: "high", kl: "low", ml: "window wide",
+                h: "A <b>loose</b>, wide window: the surface serves whatever local state it has and marks how far behind it might be — the M3 feed, diverging within a bound. <span class='vc'>Availability is high</span> and coordination cost low; a reader may fall further behind." }
+  };
+  var capsvg  = document.getElementById('capsvg');
+  var emit    = document.getElementById('emit');
+  var marker  = document.getElementById('dialMarker');
+  var mlbl    = document.getElementById('dialMlbl');
+  var barF = document.getElementById('barF'), barFv = document.getElementById('barFv');
+  var barA = document.getElementById('barA'), barAv = document.getElementById('barAv');
+  var barK = document.getElementById('barK'), barKv = document.getElementById('barKv');
+
+  function setBar(rect, val) { if (rect) rect.setAttribute('width', String(Math.round(BAR_W * val))); }
+
+  wireHtabs(document.getElementById('dialw'), function (key) {
+    var d = DIAL[key];
+    if (!d) return;
+    if (emit) emit.innerHTML = '<span class="step">' + d.s + '</span>' + d.h;
+    if (marker) marker.style.transform = 'translateX(' + (X0 + (X1 - X0) * d.pos) + 'px)';
+    if (mlbl)  mlbl.textContent = d.ml;
+    setBar(barF, d.fresh); if (barFv) barFv.textContent = d.fl;
+    setBar(barA, d.avail); if (barAv) barAv.textContent = d.al;
+    setBar(barK, d.coord); if (barKv) barKv.textContent = d.kl;
+  });
+
+  /* the two-forms tabs are a plain reuse of the same component */
+  wireHtabs(document.getElementById('formw'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

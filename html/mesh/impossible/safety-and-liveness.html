@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M1.1 · Safety and Liveness — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="The two halves of CAP named for what they are: consistency is a safety property — nothing bad ever happens — and availability is a liveness property — something good eventually does. Why the asymmetry of the two (a finite witness vs an absence you only wait on) makes the asynchronous model, where a server cannot distinguish a partition from a slow link, the place the trade bites hardest — and the general safety-versus-liveness trade CAP is one instance of.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-mesh)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the property emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.capsvg{width:100%;height:auto;display:block}
+.capsvg .grp{fill:var(--m-card);stroke:var(--m-line);stroke-width:1.5}
+.capsvg .node{fill:var(--m-cons-tint);stroke:var(--m-cons);stroke-width:1.5}
+.capsvg .node.a{fill:var(--m-avail-tint);stroke:var(--m-avail)}
+.capsvg .glbl{font:12px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .vlbl{font:12px var(--mono);fill:var(--m-ink);text-anchor:middle;font-weight:700}
+.capsvg .link{stroke:var(--m-avail);stroke-width:2.5;fill:none}
+.capsvg .link.cut{stroke:var(--m-edge);stroke-width:2.5;stroke-dasharray:5 5}
+.capsvg .msg{stroke:var(--m-mesh);stroke-width:2;fill:none;marker-end:url(#arw)}
+.capsvg .msg.c{stroke:var(--m-cons)}
+.capsvg .msg.a{stroke:var(--m-avail)}
+.capsvg .opn{font:11px var(--mono);fill:var(--m-ink);text-anchor:middle}
+.capsvg .barr{font:13px var(--mono);fill:var(--m-edge);text-anchor:middle;font-weight:700}
+.capsvg .axt{font:11px var(--mono);fill:var(--m-dim)}
+.capsvg .ckm{font:14px var(--mono);font-weight:700;text-anchor:middle}
+.capsvg .ckm.ok{fill:var(--m-avail)}
+.capsvg .ckm.no{fill:var(--m-edge)}
+.capsvg g[data-tab]{transition:opacity .18s ease}
+.capsvg.focus g[data-tab]{opacity:.18}
+.capsvg.focus g[data-tab].on{opacity:1}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the property duality / thesis ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-cons);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-avail)}
+.tri article:nth-child(3){border-top-color:var(--m-edge)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the surface placement table ---------- */
+.surf{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:6px}
+.surf article{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px}
+.surf article.c{border-left:3px solid var(--m-cons)}
+.surf article.a{border-left:3px solid var(--m-avail)}
+.surf .sk{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.surf article.c .sk{color:var(--m-cons)}
+.surf article.a .sk{color:var(--m-avail)}
+.surf h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.surf p{font-size:.9rem;color:var(--m-ink)}
+.surf .ex{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);border-top:1px dashed var(--m-line);padding-top:9px}
+.surf .ex b{color:var(--m-ink)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.doors,.surf{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.doors,.surf{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><a href="/mesh/impossible">impossible</a><span class="rsep">/</span><span class="rcur">safety-and-liveness</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#properties">Two properties</a>
+      <a href="#safety">Safety</a>
+      <a href="#liveness">Liveness</a>
+      <a href="#async">Asynchrony</a>
+      <a href="#general">The general trade</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M1.1 &#183; Doing the Impossible</p>
+      <h1>Safety and <span class="hns">liveness</span>.</h1>
+      <p class="lede">CAP is cleanest when its two halves are named for what they are. <b>Consistency is a safety
+      property</b> &#8212; nothing bad ever happens &#8212; and <b>availability is a liveness property</b> &#8212;
+      something good eventually does. The CAP trade is one instance of the general impossibility of guaranteeing both in an
+      unreliable system.</p>
+      <p class="heronote">This dive makes the two properties precise, shows why the asynchronous model &#8212; where a
+      server cannot distinguish a partition from a slow link &#8212; is where the trade bites hardest, and places
+      EchoMesh's surfaces on the two sides. The framing is settled theory (<a href="#refs">Gilbert &amp; Lynch 2012,
+      2002</a>); the proof that the trade is forced is the next dive, M1.2. Nothing here is benchmarked: it is a
+      conceptual dive.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>The safety/liveness framing is established theory and none of it is EchoMesh's invention; what this course
+        proposes is the placement &#8212; book and ledger on the safety side, feed and retention on the liveness side.
+        Those pieces are shipped; their composition into one mesh is the proposal.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>The two horns, side by side &#183; a write lands in <b>p1</b>, the network splits, a read arrives at
+        <b>p2</b> &#8212; hover a property to see which bad thing it forbids and which good thing it must give up (the
+        properties of <b>Gilbert &amp; Lynch 2002</b>)</figcaption>
+        <svg class="capsvg" id="capsvg" viewBox="0 0 760 250" role="img" aria-label="A client writes value v1 to server p1, which acknowledges, and a partition then cuts the link to server p2 so the write cannot propagate. A read arrives at p2, which still holds the prior value v0 and has heard nothing from the writer. Under the safety reading, p2 refuses to answer until certain — no wrong answer is ever emitted, but the request hangs, so something good never happens. Under the liveness reading, p2 answers immediately from its local state — the request always returns, but it returns the stale value v0, so a bad thing happens. No third move holds both.">
+          <defs>
+            <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#7b3aa0"></path>
+            </marker>
+          </defs>
+          <!-- server frames -->
+          <rect class="grp" x="60" y="74" width="150" height="96" rx="8"></rect>
+          <rect class="grp" x="550" y="74" width="150" height="96" rx="8"></rect>
+          <text class="glbl" x="135" y="64">server p1</text>
+          <text class="glbl" x="625" y="64">server p2</text>
+          <circle class="node" cx="135" cy="122" r="24"></circle>
+          <circle class="node a" cx="625" cy="122" r="24"></circle>
+          <text class="vlbl" x="135" y="127">v1</text>
+          <text class="vlbl" x="625" y="127">v0</text>
+
+          <!-- the cross link, cut by the partition -->
+          <line class="link cut" x1="210" y1="122" x2="550" y2="122"></line>
+          <text class="barr" x="380" y="112">&#9889; partition</text>
+          <text class="barr" x="380" y="132">message lost</text>
+
+          <!-- the write that completed in p1 (shared context) -->
+          <path class="msg" d="M30 122 L106 122"></path>
+          <text class="opn" x="40" y="108">write v1</text>
+
+          <!-- safety horn: refuse until certain -->
+          <g data-tab="safety">
+            <path class="msg c" d="M730 122 L656 122"></path>
+            <text class="opn" x="715" y="108">read</text>
+            <text class="ckm no" x="625" y="166">&#10007; no answer</text>
+            <text class="barr" x="625" y="200" fill="#2a5b8f">refuse until certain</text>
+            <text class="axt" x="625" y="220">nothing bad &#183; but it hangs</text>
+          </g>
+
+          <!-- liveness horn: answer from local state -->
+          <g data-tab="liveness">
+            <path class="msg a" d="M730 122 L656 122"></path>
+            <text class="opn" x="715" y="108">read</text>
+            <text class="ckm ok" x="625" y="166">&#10003; returns v0</text>
+            <text class="barr" x="625" y="200" fill="#1f7a5e">answer from local state</text>
+            <text class="axt" x="625" y="220">always answers &#183; but it is stale</text>
+          </g>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">property &#183; hover to contrast the two horns</span>
+          A write completes in <b>p1</b>, the network splits, a read arrives at <b>p2</b>. Hold both and you cannot:
+          <span class="vc">refuse until certain</span> keeps safety but hangs, <span class="vc">answer from local
+          state</span> keeps liveness but goes stale. Hover a property below to take one at a time.
+        </p>
+        <div class="htabs" id="propw">
+          <div class="htabs-bar" role="tablist" aria-label="The two properties, contrasted under a partition">
+            <button type="button" role="tab" data-tab="safety" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>Safety &#183; nothing bad</button>
+            <button type="button" role="tab" data-tab="liveness" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>Liveness &#183; something good</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="safety" role="tabpanel"><span class="tag c">Consistency &#183; a safety property.</span> The bad thing forbidden is a read that disagrees with the writes ordered before it. To keep it, p2 refuses to answer until it is certain &#8212; so no wrong answer is ever emitted, and the violation any execution could witness never occurs. The cost is that the refusal is itself the liveness failure: the request hangs.</div>
+            <div class="htabs-p" data-tab="liveness" role="tabpanel"><span class="tag a">Availability &#183; a liveness property.</span> The good thing promised is termination: the request eventually returns. To keep it, p2 answers from its local state &#8212; so the request always returns. The cost is that the answer is the stale prior value v0: the answer is itself the safety risk. Waiting longer does not help, because waiting is the failure mode, not the remedy.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a property to contrast it; click to pin. Without scripting, both read in sequence and the figure shows both horns at once.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="properties">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Nothing bad, and something good</h2>
+        <span class="ssrc">mesh.1.1.md &#183; Gilbert &amp; Lynch 2012</span>
+      </div>
+      <p class="body">The two words have exact meanings, and the exactness is what makes the trade legible. A
+      <b>safety</b> property says a bad thing never happens; its defining feature is that any violation is witnessed by a
+      finite prefix of an execution &#8212; there is a first moment at which the bad thing has occurred, and you can point
+      to it. A <b>liveness</b> property says a good thing eventually happens; its defining feature is the opposite &#8212;
+      no finite prefix can witness a violation, because at any finite moment the good thing might still be coming, and only
+      an infinite execution in which it never arrives is a counterexample.</p>
+      <p class="body">Consistency is of the first kind and availability of the second. The asymmetry matters: a safety
+      violation is a concrete event you can catch, while a liveness violation is the absence of an event you can only ever
+      be still waiting for &#8212; which is precisely the situation a partitioned server is in when it cannot tell whether
+      a response is late or never coming.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">Safety</p>
+          <h3>Nothing bad ever happens</h3>
+          <p>Witnessed by a finite prefix: there is a first moment the bad thing occurs, and you can point to it. A single
+          wrong answer is the violation.</p>
+          <p class="note">finite witness &#183; <b>consistency</b></p>
+        </article>
+        <article>
+          <p class="cno">Liveness</p>
+          <h3>Something good eventually happens</h3>
+          <p>No finite prefix witnesses a violation: the good thing might still be coming. Only an infinite execution in
+          which it never arrives is a counterexample.</p>
+          <p class="note">an absence you wait on &#183; <b>availability</b></p>
+        </article>
+        <article>
+          <p class="cno">The asymmetry</p>
+          <h3>Catch it, or wait on it</h3>
+          <p>A safety violation is an event you catch; a liveness violation is the absence of an event &#8212; exactly a
+          partitioned server's position when it cannot tell late from never.</p>
+          <p class="note">the operational edge &#183; <b>why asynchrony bites</b></p>
+        </article>
+      </div>
+      <figure class="frozen">
+        <figcaption>the witness asymmetry, made literal<span class="tag">Gilbert &amp; Lynch 2012</span></figcaption>
+<pre><span class="fd">// SAFETY  — a bad thing never happens (consistency)</span>
+witness   = a <span class="fc">finite prefix</span> of one execution
+violation = a <b>read that disagrees with prior writes</b>   <span class="fd"># emitted at a definite instant</span>
+catch?    = <span class="fa">yes</span> &#8212; point to the first moment it occurred
+
+<span class="fd">// LIVENESS — a good thing eventually happens (availability)</span>
+witness   = only an <span class="fe">infinite execution</span> where it never arrives
+violation = a <b>response that never comes</b>             <span class="fd"># no finite instant proves it</span>
+catch?    = <span class="fe">never</span> &#8212; you can only be still waiting
+
+<span class="fd">// the consequence:</span> a partitioned server sits on the liveness
+<span class="fd">// side of this line &#8212;</span> <b>it cannot tell a late answer from no answer.</b></pre>
+      </figure>
+    </section>
+
+    <section id="safety">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Consistency is a safety property</h2>
+        <span class="ssrc">mesh.1.1.md &#183; Gilbert &amp; Lynch 2002</span>
+      </div>
+      <p class="body">The consistency CAP refers to is atomic, or linearizable, behavior on a shared register: the system
+      behaves as if there were a single copy of the data and every operation took effect at one instant between its call
+      and its return, so every read returns the value of the most recent write in that single order. Read as safety, the
+      bad thing it forbids is a read that returns a value inconsistent with the writes ordered before it &#8212; a stale or
+      out-of-order answer presented as current.</p>
+      <p class="body">The property is violated the moment such a response is emitted, and that moment is finite and
+      identifiable, which is exactly why the 2002 proof can construct an execution and point to the offending read. The
+      next dive, <b>M1.2</b>, walks that construction; here it is enough that the failure is a definite event with a first
+      occurrence.</p>
+    </section>
+
+    <section id="liveness">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Availability is a liveness property</h2>
+        <span class="ssrc">mesh.1.1.md &#183; Gilbert &amp; Lynch 2002</span>
+      </div>
+      <p class="body">The availability CAP refers to is the guarantee that every request received by a non-failing node
+      eventually returns a response &#8212; not necessarily fast, but not never. Read as liveness, the good thing it
+      promises is termination: the request does not hang forever. Its violation cannot be caught at any finite instant,
+      because a response that has not yet arrived may still arrive; only the infinite execution in which it never does is
+      the counterexample.</p>
+      <p class="body">This is why availability cannot be salvaged by waiting longer: <b>waiting is the failure mode, not
+      the remedy</b>. A surface that must always answer is committing to liveness, and it pays for that commitment by
+      answering from whatever state it holds &#8212; which, under a partition, may be stale.</p>
+    </section>
+
+    <section id="surfaces">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>EchoMesh on the two sides</h2>
+        <span class="ssrc">mesh.1.1.md &#183; proposed placement</span>
+      </div>
+      <p class="body">Each surface commits to the property its users really need. The placement below is the course's
+      proposal, not a shipped claim &#8212; the pieces run on shipped technology, and their assignment to the two sides is
+      what M5 composes into one mesh.</p>
+      <div class="surf">
+        <article class="c">
+          <p class="sk">Safety side &#8212; the bad thing must never happen</p>
+          <h3>Order book &amp; regulated ledger</h3>
+          <p>A fill matched against state that has moved on, or a ledger entry that disagrees with the balance before it,
+          is not a slow answer but a wrong one. The design forbids it rather than bounding it.</p>
+          <p class="ex"><b>commits to:</b> correctness with respect to prior writes &#183; refuse rather than risk a stale
+          answer</p>
+        </article>
+        <article class="a">
+          <p class="sk">Liveness side &#8212; something good must always eventually happen</p>
+          <h3>Market-data feed &amp; replicated retention</h3>
+          <p>A reader is better served a slightly stale quote now than a correct one withheld indefinitely. These surfaces
+          answer always, and bound how stale the answer may be rather than risk never answering.</p>
+          <p class="ex"><b>commits to:</b> termination &#183; answer always, bound the staleness rather than block</p>
+        </article>
+      </div>
+      <p class="compose"><b>Why the split is the design:</b> under a partition no single surface can hold both, so
+      EchoMesh assigns each the property it actually needs and segments the trade across them &#8212; the architecture the
+      heart of the course, <b>M5</b>, builds. The boundary between a safety-side and a liveness-side surface is held by the
+      branded identity contract of <b>/bcs</b>.</p>
+    </section>
+
+    <section id="async">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The asynchronous model, and why it bites</h2>
+        <span class="ssrc">mesh.1.1.md &#183; Gilbert &amp; Lynch 2002 / 2012</span>
+      </div>
+      <p class="body">The model the impossibility lives in is asynchronous message passing: nodes communicate only by
+      messages, and there is no upper bound on how long a message may take to arrive, or whether it arrives at all. In that
+      model a single hard fact does the damage &#8212; <b>a node cannot distinguish a partition from a slow link</b>. A
+      message that has not come may have been dropped by a partition or merely delayed by congestion, and nothing the node
+      can observe separates the two.</p>
+      <p class="body">The consequence is that a service cannot promise to be correct only while partitioned and responsive
+      otherwise, because it can never know it is partitioned; the bad case is latent in every execution, including ones in
+      which no message is ultimately lost. This is the asymmetry of the two properties made operational: safety can be
+      protected by refusing to answer until certain, but that refusal is itself the liveness violation; and liveness can be
+      protected by answering from local state, but that answer is itself the safety risk. The model leaves no third move.</p>
+      <div class="htabs" id="asyncw">
+        <div class="htabs-bar" role="tablist" aria-label="Two causes, one indistinguishable observation">
+          <button type="button" role="tab" data-tab="slow" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>A slow link</button>
+          <button type="button" role="tab" data-tab="partition" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>A partition</button>
+          <button type="button" role="tab" data-tab="observe" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>What the server observes</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="slow" role="tabpanel"><span class="tag e">A slow link.</span> The message was sent and will arrive &#8212; eventually. Congestion delayed it. There is no upper bound on the delay, so &#8220;eventually&#8221; carries no deadline the server can hold against.</div>
+          <div class="htabs-p" data-tab="partition" role="tabpanel"><span class="tag e">A partition.</span> The message was dropped and will never arrive. The link is severed. But severed and merely slow produce the same thing at the server: a message that has not come.</div>
+          <div class="htabs-p" data-tab="observe" role="tabpanel"><span class="tag m">What the server observes: a message that has not come.</span> Identical under both causes. Nothing the server can observe separates them, so it cannot act on which one is true &#8212; it must choose its property in advance, and the bad case is latent even when no message is ultimately lost.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus a cause to read it; click to pin. Without scripting, all three read in sequence. The point is the third panel: the two causes are one observation.</p>
+      </div>
+    </section>
+
+    <section id="general">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The general trade</h2>
+        <span class="ssrc">mesh.1.1.md &#183; Gilbert &amp; Lynch 2012</span>
+      </div>
+      <p class="body">Naming the two properties for their class is what lifts CAP out of the web-services setting it was
+      born in. The impossibility of guaranteeing both safety and liveness in an unreliable system is general, and CAP is
+      one case of it. The same shape recurs wherever a component must both never act wrongly and always eventually act: a
+      lock service that must never grant two holders yet should always eventually grant one, a commit protocol that must
+      never disagree yet should always eventually decide.</p>
+      <p class="body">Seeing the trade at this altitude is what lets the rest of the course treat each EchoMesh surface as
+      a fresh instance of one well-understood problem rather than a new puzzle, and it is why the harder consensus
+      impossibility in the next dive is recognizably the same wall with a steeper face.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh/impossible">
+          <span class="dr">/mesh/impossible</span>
+          <h3>M1 &#8212; Doing the Impossible</h3>
+          <p>The chapter landing: the theorem made rigorous &#8212; the two properties, the proof in brief and its
+          consensus sibling, and the menu that replaces &#8220;two of three&#8221;.</p>
+          <p class="dnote"><b>this dive</b> is M1.1, the first movement &#8212; the properties; the proof is M1.2, the menu
+          is M1.3.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract, proven by frozen transcripts
+          across five runtimes.</p>
+          <p class="dnote"><b>the seam</b> that holds a safety-side surface against a liveness-side one rests on this
+          identity contract.</p>
+        </a>
+        <a class="door" href="/art">
+          <span class="dr">/art</span>
+          <h3>The Art of BCS</h3>
+          <p>The architect's case for owning the runtime, taught from a working exchange, ending at the EchoMesh chapters
+          this course continues in full.</p>
+          <p class="dnote"><b>this course continues</b> the EchoMesh introduction of A8&#8211;A9 &#8212; the case for the
+          owned runtime.</p>
+        </a>
+        <a class="door" href="/echomq">
+          <span class="dr">/echomq</span>
+          <h3>EchoMQ &#8212; the protocol, in depth</h3>
+          <p>The Valkey-native bus and stream tier, rung by rung: the keyspace, the Lua inventory, the conformance
+          suite.</p>
+          <p class="dnote"><b>the liveness-side</b> delivery and log surfaces of the mesh door here &#8212; M3 and M6.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;8</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://groups.csail.mit.edu/tds/papers/Gilbert/Brewer2.pdf" rel="noopener">Gilbert &amp; Lynch (2012) &#8212; Perspectives on the CAP Theorem</a><span class="rs">frames CAP as one case of the safety-versus-liveness impossibility &#8212; consistency a safety property, availability a liveness property &#8212; and notes the bad case is latent even when no message is lost</span></li>
+          <li><a href="https://dl.acm.org/doi/10.1145/564585.564601" rel="noopener">Gilbert &amp; Lynch (2002) &#8212; Brewer's Conjecture and the Feasibility of CAP</a><span class="rs">the asynchronous model: an atomic read/write register, availability as a response to every request, and the impossibility of guaranteeing both under communication failures</span></li>
+          <li><a href="https://dl.acm.org/doi/10.1145/3149.214121" rel="noopener">Fischer, Lynch &amp; Paterson (1985) &#8212; Impossibility of Distributed Consensus with One Faulty Process</a><span class="rs">deterministic consensus is unsolvable in an asynchronous system with a single crash failure; named here as the steeper sibling the next dive proves</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh/impossible">M1 &#8212; Doing the Impossible</a><span class="rs">the chapter landing: the theorem made rigorous, the proof in brief, and the menu</span></li>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/art">The Art of BCS</a><span class="rs">the case for owning the runtime, ending at the EchoMesh chapters this course continues</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the law and the 14-byte identity contract the segmentation seam rests on</span></li>
+          <li><a href="/echomq">EchoMQ &#8212; the protocol, in depth</a><span class="rs">the Valkey-native bus and stream tier the liveness-first surfaces use</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the engine, the umbrella where the identity library lives, and the Fly deployment chapter</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh/impossible"><span class="pk">the chapter</span>&#8592; M1 &#183; Doing the Impossible</a>
+      <a class="pgx" href="/mesh/impossible/the-proof"><span class="pk">next &#183; dive</span>M1.2 &#183; The Proof, Briefly &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <span>M0 &#183; Overview<i>soon</i></span>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <span>M2 &#183; Best Effort Availability<i>soon</i></span>
+        <span>M3 &#183; Best Effort Consistency<i>soon</i></span>
+        <span>M4 &#183; Trading the Trade<i>soon</i></span>
+        <span>M5 &#183; Segmenting<i>soon</i></span>
+        <span>M6 &#183; The Stack<i>soon</i></span>
+        <span>M7 &#183; Transparent Infrastructure<i>soon</i></span>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0NzxV9kKcjY</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 12:02:13 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the property emulator: the two-horn tabs drive the SVG + an aria-live readout ----------
+     READOUT is a pure function of the property key over fixed data — no network, no storage. The SVG
+     highlights the active property's horn group (the partition cut is always shown as the context). */
+  var EMIT = {
+    safety:   { s: "property · safety (consistency)",
+                h: "p2 <b>refuses to answer</b> until certain — <span class='vc'>no wrong answer is ever emitted</span>, so the bad thing never happens. The cost: the request hangs, which is itself the liveness failure." },
+    liveness: { s: "property · liveness (availability)",
+                h: "p2 <b>answers from local state</b> — <span class='vc'>the request always returns</span>, so something good happens. The cost: it returns the stale v0, which is itself the safety risk. Waiting longer does not help." }
+  };
+  var capsvg = document.getElementById('capsvg');
+  var emit = document.getElementById('emit');
+  wireHtabs(document.getElementById('propw'), function (key) {
+    var d = EMIT[key];
+    if (emit && d) emit.innerHTML = '<span class="step">' + d.s + '</span>' + d.h;
+    if (!capsvg) return;
+    capsvg.classList.toggle('focus', !!key);
+    capsvg.querySelectorAll('g[data-tab]').forEach(function (g) {
+      g.classList.toggle('on', g.getAttribute('data-tab') === key);
+    });
+  });
+
+  /* the asynchrony tabs are a plain reuse of the same component */
+  wireHtabs(document.getElementById('asyncw'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

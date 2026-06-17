@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Declared keys · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="Every key a Lua script touches is declared in KEYS[]; ARGV carries values only. The host builds the keys through EchoMQ.Keyspace; the script constructs none from data. Why declared keys is the law — atomicity on a cluster, the keyspace as the single owner of address, and thread-per-shard placement. Real code from echo/apps/echo_mq, with a declared-keys checker.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- declared-keys svg ---- */
+.dk .slot rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+.dk .slot.good rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
+.dk .slot.bad rect{fill:rgba(196,80,76,.13);stroke:#c4504c}
+.dk text{font-family:var(--sans);fill:#d7cfb9}
+.dk .kid{font-family:var(--mono);fill:#a39c89;font-size:10px}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/protocol">protocol</a><span class="rsep">/</span><a href="/echomq/protocol/the-lua-layer">the-lua-layer</a><span class="rsep">/</span><span class="rcur">declared-keys</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/protocol">The Protocol</a>
+        <span class="sep">/</span>
+        <a href="/echomq/protocol/the-lua-layer">The Lua layer</a>
+        <span class="sep">/</span>
+        <span class="here">Declared keys</span>
+      </nav>
+      <p class="eyebrow">The Lua layer &middot; dive 02</p>
+      <h1>Declared <span class="ex">keys</span></h1>
+      <p class="lede">The host builds every key; the script touches only KEYS[]. Values ride ARGV. That is the law.</p>
+      <p class="kicker">Every key a script touches is <strong>declared in <code class="inl">KEYS[]</code></strong>; the
+        script constructs none from data. <code class="inl">EchoMQ.Script</code>'s own contract states it — every key a
+        script touches is declared in <code class="inl">KEYS</code>; <code class="inl">ARGV</code> carries values only.
+        It is the discipline that keeps atomicity sound on a cluster, keeps the keyspace the single owner of where data
+        lives, and keeps the wire portable to a thread-per-shard engine. Classify a key on the right, then read the
+        two beats below.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#beats">The host builds, the script declares</a>
+        <a href="#why">Why it is the law</a>
+        <a href="#colo">Co-location, on a slot</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig dk" aria-labelledby="dkTitle">
+      <h4 id="dkTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Declared or constructed? &middot; classify a key</h4>
+      <div class="controls">
+        <div class="solid-select" id="dkSel" role="group" aria-label="How the key reaches the script">
+          <button type="button" data-kind="declared" data-c="echo" class="active" aria-pressed="true">KEYS[1] — passed in</button>
+          <button type="button" data-kind="argv-value" data-c="echo" aria-pressed="false">ARGV[1] — a value</button>
+          <button type="button" data-kind="constructed" data-c="gold" aria-pressed="false">'emq:'..ARGV — built in-script</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 150" role="img" aria-label="A script with a declared key reaching it from the host, a value reaching it as ARGV, and a key constructed inside the script from data. The declared path and the value path are sound; the constructed path is unportable.">
+        <rect x="160" y="58" width="140" height="40" rx="9" fill="rgba(16,22,43,.7)" stroke="#2a3252"></rect>
+        <text x="230" y="83" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="12" fill="#ece4d0">@enqueue (Lua)</text>
+        <g class="slot good" id="s-declared"><rect x="20" y="20" width="160" height="34" rx="8"></rect></g>
+        <text x="100" y="41" text-anchor="middle" class="kid">host → KEYS[1]</text>
+        <g class="slot good" id="s-argv-value"><rect x="20" y="100" width="160" height="34" rx="8"></rect></g>
+        <text x="100" y="121" text-anchor="middle" class="kid">host → ARGV[1] (value)</text>
+        <g class="slot" id="s-constructed"><rect x="280" y="58" width="160" height="34" rx="8"></rect></g>
+        <text x="360" y="79" text-anchor="middle" class="kid">'emq:'..ARGV (in-script)</text>
+        <g stroke="#2a3252" stroke-width="1.3" fill="none">
+          <path d="M180 37 L160 70"></path><path d="M180 117 L160 86"></path><path d="M300 75 L280 75"></path>
+        </g>
+      </svg>
+      <div class="geo-readout" id="dkOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="beats">
+    <h2>The host builds, the script declares</h2>
+    <div class="prose">
+      <p>Two beats again: the handle that builds the keys, and the body that touches only what it was handed. The
+        difference this dive draws is <em>which</em> things cross as keys and which cross as values.</p>
+      <p><strong>Beat one — the host builds the keys.</strong> <code class="inl">EchoMQ.Jobs.enqueue/4</code> builds both
+        keys through <code class="inl">EchoMQ.Keyspace</code> — the single owner of where data lives — then hands them to
+        the script as <code class="inl">KEYS</code>. The values go in <code class="inl">ARGV</code>. The script never
+        sees the queue name, the braces, or the slot; it sees two opaque keys and two opaque values.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs</span>
+<span class="cmt"># The host builds KEYS through the keyspace, the single owner of where data</span>
+<span class="cmt"># lives. The script receives [row, pending] declared and [id, payload] as</span>
+<span class="cmt"># values. The script does not know the queue name, the braces, or the slot —</span>
+<span class="cmt"># only the two keys it was handed.</span>
+<span class="op">def</span> <span class="fn">enqueue</span>(conn, queue, job_id, payload) <span class="op">when</span> is_binary(job_id) <span class="op">and</span> is_binary(payload) <span class="op">do</span>
+  keys = [Keyspace.<span class="fn">job_key</span>(queue, job_id), Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"pending"</span>)]
+  Connector.<span class="fn">eval</span>(conn, <span class="rdx">@enqueue</span>, keys, [job_id, payload])
+  <span class="cmt"># ... verdict mapping omitted; see scripts-are-the-protocol</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><strong>Beat two — the script touches only declared keys.</strong> <code class="inl">@enqueue</code> references
+        <code class="inl">KEYS[1]</code> and <code class="inl">KEYS[2]</code> and nothing else. It never builds a key by
+        concatenating <code class="inl">ARGV</code>. The branded id rides <code class="inl">ARGV[1]</code> as a
+        <em>value</em> — the member written into the set, never spliced into a key name.</p>
+    </div>
+
+    <pre class="code"><span class="cmt">-- the @enqueue script — KEYS[1] = the job row, KEYS[2] = the pending set</span>
+<span class="cmt">-- Both keys arrive declared; the script constructs neither. ARGV[1] (the id)</span>
+<span class="cmt">-- is a VALUE — the member written into KEYS[2], never concatenated into a key.</span>
+<span class="op">if</span> string.sub(<span class="rdx">ARGV[1]</span>, <span class="res">1</span>, <span class="res">3</span>) ~= <span class="str">'JOB'</span> <span class="op">then</span>
+  <span class="op">return</span> redis.error_reply(<span class="str">'EMQKIND job id must be JOB-namespaced'</span>)
+<span class="op">end</span>
+<span class="op">if</span> redis.call(<span class="str">'EXISTS'</span>, <span class="rdx">KEYS[1]</span>) == <span class="res">1</span> <span class="op">then</span>
+  <span class="op">return</span> <span class="res">0</span>
+<span class="op">end</span>
+redis.call(<span class="str">'HSET'</span>, <span class="rdx">KEYS[1]</span>, <span class="str">'state'</span>, <span class="str">'pending'</span>, <span class="str">'attempts'</span>, <span class="str">'0'</span>, <span class="str">'payload'</span>, <span class="rdx">ARGV[2]</span>)
+redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[2]</span>, <span class="res">0</span>, <span class="rdx">ARGV[1]</span>)
+<span class="op">return</span> <span class="res">1</span></pre>
+
+    <div class="prose">
+      <p>The id appears inside the script only as the third argument to <code class="inl">ZADD</code> — a member, a value.
+        It is never used to build the row key; that key was built host-side and arrived as <code class="inl">KEYS[1]</code>.
+        The rule for <em>where</em> the job lives stays in <code class="inl">EchoMQ.Keyspace</code>, where it belongs.</p>
+    </div>
+    <p class="take">Keys are handed in; values ride ARGV. A script that builds a key from data has moved the address rule
+      out of the keyspace and broken the law.</p>
+  </section>
+
+  <section id="why">
+    <h2>Why declared keys is the law &mdash; three reasons</h2>
+    <div class="prose">
+      <p>The discipline is not a style choice. Three things depend on it.</p>
+      <p><strong>One — atomicity needs co-location.</strong> A Valkey cluster runs one script's keys on one node only if
+        they hash to one slot. The per-queue hashtag <code class="inl">{q}</code> puts every key of a queue on one slot;
+        declaring those keys is how the engine verifies the script stays on its slot. A key constructed in-script is not
+        on the declared set, so the engine cannot guarantee it is co-resident.</p>
+      <p><strong>Two — the keyspace stays the single owner of address.</strong> If a script built a key from data, the
+        rule for where a job lives would be split between <code class="inl">EchoMQ.Keyspace</code> and the script body.
+        Declaring keys keeps that rule in one place. There is exactly one answer to "where does this job's row live",
+        and it is the keyspace's.</p>
+      <p><strong>Three — thread-per-shard placement.</strong> A multithreaded engine like Dragonfly places a script on a
+        thread by its declared key set (<code class="inl">--lock_on_hashtags</code>). A key constructed inside the script
+        is invisible to that placement — so an undeclared key is not portable to a thread-per-shard engine. Conformance
+        is phrased against Valkey; the declared-key discipline is what makes the multithreaded placement reachable.</p>
+    </div>
+  </section>
+
+  <section id="colo">
+    <h2>Co-location, on a slot</h2>
+    <div class="prose">
+      <p>One enqueue touches the row and the pending set. Both are declared, both carry the <code class="inl">{q}</code>
+        hashtag, so both hash to one slot and the script runs on one node — atomic. Add an undeclared key (built in the
+        script) and the guarantee is gone: the key is not in the declared <code class="inl">KEYS</code> set, so the
+        engine cannot place the script where that key lives. Compare the two below.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="coloTitle">
+      <h4 id="coloTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Declared keys vs an undeclared one &middot; pick a script</h4>
+      <div class="controls">
+        <div class="solid-select" id="coloSel" role="group" aria-label="Which script shape">
+          <button type="button" data-shape="declared" data-c="echo" class="active">@enqueue — both keys declared</button>
+          <button type="button" data-shape="undeclared" data-c="gold">a hypothetical with one built in-script</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 100" role="img" aria-label="Two keys for one queue and whether the engine can place the script on one slot. With both keys declared, the script is on one slot and atomic; with one key built in-script, the engine cannot guarantee placement.">
+        <rect x="14" y="18" width="140" height="60" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="84" y="40" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#a39c89">emq:{q}:job:&lt;id&gt;</text>
+        <text id="colo-k1" x="84" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#6fdccf">KEYS[1] · slot S</text>
+        <rect x="170" y="18" width="140" height="60" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="240" y="40" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#a39c89">emq:{q}:pending</text>
+        <text id="colo-k2" x="240" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#6fdccf">KEYS[2] · slot S</text>
+        <rect id="colo-k3box" x="326" y="18" width="140" height="60" rx="8" fill="rgba(16,22,43,.4)" stroke="#2a3252" stroke-dasharray="4 3" opacity="0.4"></rect>
+        <text id="colo-k3" x="396" y="48" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#a39c89">—</text>
+      </svg>
+      <div class="geo-readout" id="coloOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>Hash-tag co-location and one-slot atomic Lua: keep the keys a script touches on one slot so one script can
+          touch them atomically. <a href="/redis-patterns/coordination/hash-tag-colocation">Hash-tag co-location</a> and
+          <a href="/redis-patterns/coordination">Coordination</a> teach it.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">@enqueue</code> declares <code class="inl">KEYS[1]</code> and <code class="inl">KEYS[2]</code>,
+          both built by <code class="inl">EchoMQ.Keyspace</code> on the <code class="inl">{q}</code> slot; the script
+          builds no key from data, so the engine can place it.</p>
+      </div>
+    </div>
+    <p class="take">Declared keys is the law because it is what atomicity, single ownership of address, and
+      thread-per-shard placement all stand on.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; declared keys, three reasons</h2>
+    <div class="prose">
+      <p>The host builds every key; the script touches only <code class="inl">KEYS[]</code>; values ride
+        <code class="inl">ARGV</code>. It keeps atomicity sound on a cluster, keeps the keyspace the single owner of
+        address, and keeps the wire portable to a thread-per-shard engine. The next dive reads how the declared-keys
+        script is dispatched — loaded once and run by its SHA.</p>
+    </div>
+    <p class="note">Next in the Lua layer: <strong>EVALSHA dispatch</strong> &mdash; the SHA precomputed at definition,
+      the script run by digest, the source loaded once on a NOSCRIPT miss.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the declared-keys discipline is grounded, and the engine behaviour it serves.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/eval/">Redis &mdash; <em>EVAL</em></a> &mdash; the <code>KEYS</code>/<code>ARGV</code> contract: keys declared, values separate.</li>
+          <li><a href="https://redis.io/docs/">Redis &mdash; <em>Keyspace &amp; hash tags</em></a> &mdash; cluster routing by the hashtag inside <code>{...}</code>, which the declared keys must share to stay atomic.</li>
+          <li><a href="https://valkey.io/docs/">Valkey &mdash; <em>Documentation</em></a> &mdash; the substrate of record; Redis-semantics Lua and slot routing.</li>
+          <li><a href="https://www.dragonflydb.io/docs/managing-dragonfly/flags">DragonflyDB &mdash; <em>Server flags</em></a> &mdash; <code>--lock_on_hashtags</code>, the thread-per-shard placement the declared keys enable.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/protocol/the-lua-layer">The Lua layer</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/protocol/the-lua-layer/scripts-are-the-protocol">Scripts are the protocol</a> &mdash; the transition this dive reads the keys of.</li>
+          <li><a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a> &mdash; the keyspace that builds the declared keys.</li>
+          <li><a href="/redis-patterns/coordination/hash-tag-colocation">redis-patterns &middot; Hash-tag co-location</a> &mdash; keys on one slot, the near side of the door.</li>
+          <li><a href="/redis-patterns/coordination">redis-patterns &middot; Coordination</a> &mdash; atomic updates and one-slot Lua.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/protocol/the-lua-layer/scripts-are-the-protocol"><span aria-hidden="true">&larr;</span>&nbsp; Scripts are the protocol</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/protocol/the-lua-layer/evalsha-dispatch">EVALSHA dispatch <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This chapter</h4>
+        <a href="/echomq/protocol">The Protocol</a>
+        <a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a>
+        <a href="/echomq/protocol/the-record-hash">The record hash</a>
+        <a href="/echomq/protocol/the-lua-layer">The Lua layer</a>
+        <a href="/echomq/protocol/immutability-and-branded-ids">Immutability &amp; branded ids</a>
+        <a href="/echomq/protocol/workshop">Workshop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/overview">Overview</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: declared or constructed? (pure over a fixed dataset) ---------- */
+  var KINDS = {
+    declared: { title: 'KEYS[1] — passed in by the host', verdict: 'SOUND',
+      note: 'the host built it through EchoMQ.Keyspace and declared it; it is in the KEYS set, so the engine can place the script' },
+    'argv-value': { title: 'ARGV[1] — a value, not a key', verdict: 'SOUND',
+      note: 'the branded id rides ARGV as a value (the ZADD member); it is never used to build a key, so the law holds' },
+    constructed: { title: "'emq:'..ARGV — built inside the script", verdict: 'BREAKS THE LAW',
+      note: 'a key concatenated from data is undeclared; it is not in the KEYS set, so the engine cannot place the script on that slot — and the address rule has left the keyspace' }
+  };
+  function describeKind(key) {
+    var k = KINDS[key];
+    var tag = k.verdict === 'SOUND' ? '<b class="ok">' + k.verdict + '</b>' : '<b class="bad">' + k.verdict + '</b>';
+    return '<b>' + k.title + '</b> &mdash; ' + tag + '<br><span class="dim">' + k.note + '</span>';
+  }
+  function setKind(key) {
+    ['declared', 'argv-value', 'constructed'].forEach(function (k) {
+      var g = document.getElementById('s-' + k);
+      if (g) { g.classList.toggle('good', k === key && k !== 'constructed'); g.classList.toggle('bad', k === key && k === 'constructed'); }
+    });
+    var out = document.getElementById('dkOut');
+    if (out) out.innerHTML = describeKind(key);
+  }
+  document.querySelectorAll('#dkSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-kind');
+      document.querySelectorAll('#dkSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setKind(key);
+    });
+  });
+  setKind('declared'); // initial render — correct without interaction
+
+  /* ---------- content: co-location on a slot (pure over a fixed model) ---------- */
+  /* @enqueue declares both keys on the {q} slot, so the engine places the script
+     atomically. A hypothetical that builds one key in-script leaves the engine
+     unable to guarantee placement. Pure over this fixed model. */
+  var SHAPES = {
+    declared: {
+      k1: 'KEYS[1] · slot S', k2: 'KEYS[2] · slot S', showK3: false, k3: '—',
+      verdict: 'ATOMIC',
+      line: 'both keys declared, both carry {q} → one slot → one node → the script is atomic',
+      cls: 'ok'
+    },
+    undeclared: {
+      k1: 'KEYS[1] · slot S', k2: 'KEYS[2] · slot S', showK3: true, k3: "'emq:'..ARGV · slot ?",
+      verdict: 'NOT GUARANTEED',
+      line: 'the third key was built in-script and never declared; the engine cannot place the script where it lives',
+      cls: 'bad'
+    }
+  };
+  function renderShape(key) {
+    var s = SHAPES[key];
+    var k1 = document.getElementById('colo-k1'); if (k1) k1.textContent = s.k1;
+    var k2 = document.getElementById('colo-k2'); if (k2) k2.textContent = s.k2;
+    var k3 = document.getElementById('colo-k3'); if (k3) k3.textContent = s.k3;
+    var box = document.getElementById('colo-k3box'); if (box) box.setAttribute('opacity', s.showK3 ? '0.95' : '0.4');
+    var out = document.getElementById('coloOut');
+    if (out) out.innerHTML = 'verdict: <b class="' + s.cls + '">' + s.verdict + '</b><br><span class="dim">' + s.line + '</span>';
+  }
+  document.querySelectorAll('#coloSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-shape');
+      document.querySelectorAll('#coloSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderShape(key);
+    });
+  });
+  renderShape('declared'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

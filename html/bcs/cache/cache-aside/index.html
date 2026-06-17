@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B4.1 · Cache-Aside at ETS Speed · BCS · jonnify</title>
+<meta name="description" content="EchoCache opens with its floor: a declared L1 of ETS tables in front of the L2 Valkey the systems already share, read at memory speed and filled under discipline. The committed rung closes PASS 6/6 — the cache is declared, not discovered; one fill per herd; jittered expiry; the sweeper; a size bound that degrades to pass-through. Measured: 1311621 hit reads per second (762 ns each) against 31 us per L2 GET — the L1 hit is 40 times cheaper.">
+<style>
+/* ============ The BCS identity — the contract sheet ============
+   Copied from the B0 exemplar (html/bcs/index.html). Light
+   engineering-document aesthetic; monospace-forward; the 3/11 id
+   rhythm; transcript evidence blocks. Not the dark-editorial system
+   of the sibling courses. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;      /* namespace — oxide red   */
+  --b-ts:#20618e;      /* timestamp — drafting blue */
+  --b-node:#2e7d5b;    /* node — verdigris        */
+  --b-seq:#7d4e8f;     /* sequence — violet       */
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--b-ns)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--b-ns);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the 3/11 rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--b-ns-tint)}
+.idrule i:nth-child(-n+3){box-shadow:inset 0 0 0 1px var(--b-ns)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--b-ns);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:62ch;color:var(--b-ink)}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--b-ns);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--b-ns)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:70ch}
+
+/* ---------- the anatomy figure (interactive) ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.anat{width:100%;height:auto;display:block}
+.anat .edge{stroke:var(--b-line);stroke-width:2}
+.anat .node{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.anat .node.first{stroke:var(--b-ns)}
+.anat .nid{font:700 15px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.anat .nlbl{font:11px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.anat g[data-seg]{cursor:pointer;transition:opacity .18s ease}
+.anat.focus g[data-seg]{opacity:.3}
+.anat.focus g[data-seg].on{opacity:1}
+.anat.focus g[data-seg].on .node{stroke:var(--b-ns);stroke-width:2.5}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:72ch;margin-bottom:22px}
+
+/* ---------- code figures (page addition) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+
+/* ---------- the module / chapter cards ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pcard{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+a.pcard{border-color:var(--b-ns)}
+a.pcard:hover{border-bottom-color:var(--b-ns);box-shadow:0 1px 0 var(--b-ns)}
+.pcard .bid{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--b-ns);letter-spacing:.08em}
+.pcard h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.pcard p{font-size:.88rem;color:var(--b-dim)}
+.pcard .meta{display:flex;gap:10px;align-items:center;margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.chip{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-radius:3px;padding:1px 7px}
+.chip.now{background:var(--b-ns);color:var(--b-card)}
+.chip.soon{background:var(--b-paper);border:1px solid var(--b-line);color:var(--b-dim)}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:80ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--b-ns)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--b-ns)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .pgrid,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .pgrid,.doors{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>bcs</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/bcs">bcs</a><span class="rsep">/</span><a href="/bcs/cache">cache</a><span class="rsep">/</span><span class="rcur">cache-aside</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#why">Why</a>
+      <a href="#proof">The proof</a>
+      <a href="#dives">Dives</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">B4.1 · Cache-Aside at ETS Speed — manuscript chapter 4.1</p>
+      <h1>The cache is <span class="hns">declared</span>, not discovered.</h1>
+      <p class="lede">EchoCache opens with its floor: a declared L1 of ETS tables in front of the L2 Valkey the
+      systems already share, read at memory speed and filled under discipline. Three production modules land —
+      the directory, the keyspace, the table — and the committed rung gates the part's first two laws plus the
+      machinery around them. The headline is the chapter's title made a number: <b>1311621 hit reads per second
+      (762 ns each)</b> against <b>31 us per L2 GET</b> on the same wire — the L1 hit is <b>40 times
+      cheaper</b> than the round trip it replaces.</p>
+      <p class="heronote">The chapter is content/bcs4.1.md; the rung behind it is
+      <code>bcs_rung_4_1_check.exs</code>, and its committed transcript closes <code>PASS 6/6</code> under the
+      header <code>Valkey on 6390 | Elixir 1.14.0 OTP 25 | schedulers 1</code>. Six gates, each derived
+      before it is measured.</p>
+
+      <figure class="anatomy">
+        <figcaption><b>The six gates, mapped to the dives.</b> Drawn in transcript order. Select a gate to read
+        its verbatim line and the dive that teaches it.</figcaption>
+        <svg class="anat" id="anat" viewBox="0 0 980 150" role="img" aria-label="The bcs4.1 rung's six gates in transcript order: E1 declared and E2 sources taught by dive 1, E3 herd and E4 speed taught by dive 2, E5 jitter and E6 bound taught by dive 3.">
+          <line class="edge" x1="20" y1="52" x2="960" y2="52"></line>
+          <g data-seg="e1">
+            <rect class="node first" x="22" y="22" width="140" height="60" rx="8"></rect>
+            <text class="nid" x="92" y="58">E1</text>
+            <text class="nlbl" x="92" y="104">declared</text>
+            <text class="nlbl" x="92" y="124">dive 1</text>
+          </g>
+          <g data-seg="e2">
+            <rect class="node" x="180" y="22" width="140" height="60" rx="8"></rect>
+            <text class="nid" x="250" y="58">E2</text>
+            <text class="nlbl" x="250" y="104">sources</text>
+            <text class="nlbl" x="250" y="124">dive 1</text>
+          </g>
+          <g data-seg="e3">
+            <rect class="node" x="338" y="22" width="140" height="60" rx="8"></rect>
+            <text class="nid" x="408" y="58">E3</text>
+            <text class="nlbl" x="408" y="104">herd</text>
+            <text class="nlbl" x="408" y="124">dive 2</text>
+          </g>
+          <g data-seg="e4">
+            <rect class="node" x="496" y="22" width="140" height="60" rx="8"></rect>
+            <text class="nid" x="566" y="58">E4</text>
+            <text class="nlbl" x="566" y="104">speed</text>
+            <text class="nlbl" x="566" y="124">dive 2</text>
+          </g>
+          <g data-seg="e5">
+            <rect class="node" x="654" y="22" width="140" height="60" rx="8"></rect>
+            <text class="nid" x="724" y="58">E5</text>
+            <text class="nlbl" x="724" y="104">jitter</text>
+            <text class="nlbl" x="724" y="124">dive 3</text>
+          </g>
+          <g data-seg="e6">
+            <rect class="node" x="812" y="22" width="140" height="60" rx="8"></rect>
+            <text class="nid" x="882" y="58">E6</text>
+            <text class="nlbl" x="882" y="104">bound</text>
+            <text class="nlbl" x="882" y="124">dive 3</text>
+          </g>
+        </svg>
+        <div class="segbar" id="segbar" role="group" aria-label="Select a gate">
+          <button type="button" data-seg="e1" aria-pressed="false">E1</button>
+          <button type="button" data-seg="e2" aria-pressed="false">E2</button>
+          <button type="button" data-seg="e3" aria-pressed="false">E3</button>
+          <button type="button" data-seg="e4" aria-pressed="false">E4</button>
+          <button type="button" data-seg="e5" aria-pressed="false">E5</button>
+          <button type="button" data-seg="e6" aria-pressed="false">E6</button>
+        </div>
+        <div class="readout" id="readout" aria-live="polite"><span class="rk">readout &#183;</span> Select a
+        gate to read its verbatim line and the dive that teaches it. Six gates, three derive lines, one header;
+        the full record is frozen in &#167;2 below, the dives are mapped in &#167;3.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="why">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Why a local copy must answer three questions</h2>
+        <span class="ssrc">content/bcs4.1.md &#183; Why &#183; Decisions</span>
+      </div>
+      <p class="ethic">A trading read path is asymmetric in the extreme: a quote or a reference row is read
+      thousands of times between writes, and every read that crosses the wire pays the loopback floor — around
+      31 microseconds here, multiplied by however many services ask. The first answer is the one this series
+      has always given: put the data behind its owner and read it locally. But a local copy raises the three
+      questions every cache must answer or be a liability — "who knows this cache exists, what happens when a
+      thousand readers miss at once, and when do stale rows leave." This chapter answers all three with gates: a
+      directory that makes every cache enumerable, a single-flight fill that survives the herd by construction,
+      and a jittered clock plus a sweeper that bound both staleness and memory by declaration. Coherence
+      sharper than TTL is Chapter 4.2's business; this chapter builds the surface 4.2 will invalidate.</p>
+      <div class="pgrid">
+        <div class="pcard">
+          <span class="bid">DECLARED</span>
+          <h3>Declared, not discovered</h3>
+          <p>The directory is a monitored registry, not a convention: a table registers its full specification
+          at start, and a crash removes it. The negative is gated — an undeclared name answers
+          <code>:error</code>.</p>
+        </div>
+        <div class="pcard">
+          <span class="bid">HIT PATH</span>
+          <h3>The hit path never enters the owner</h3>
+          <p>Public ETS with <code>read_concurrency</code>, caller-side gate, atomic counters — the owner
+          serializes only fills, puts, and invalidations. Stats ride <code>:counters</code>, not
+          <code>GenServer.call</code>.</p>
+        </div>
+        <div class="pcard">
+          <span class="bid">FLIGHTS</span>
+          <h3>Flights are processes, not owner code</h3>
+          <p>A slow loader blocks its own flight, never the owner — other keys keep filling, puts keep landing.
+          A crashed flight is a monitored event: every waiter gets a typed error, nobody hangs.</p>
+        </div>
+        <div class="pcard">
+          <span class="bid">BINARIES</span>
+          <h3>Values are binaries</h3>
+          <p>The L2 layer stores bytes; the L1 stores the same bytes. Term encoding is the application's
+          decision at the edge, not the cache's opinion in the middle.</p>
+        </div>
+        <div class="pcard">
+          <span class="bid">PASS-THROUGH</span>
+          <h3>Full degrades to pass-through</h3>
+          <p>When the bound is reached and nothing has expired, a fill serves its caller and skips the insert.
+          No eviction cleverness: an LRU would tax every read with touch-tracking, and the read path's purity
+          is the product.</p>
+        </div>
+        <div class="pcard">
+          <span class="bid">TWO CLOCKS</span>
+          <h3>Two clocks, again</h3>
+          <p>L1 expiry runs on the BEAM's monotonic clock; L2 expiry runs on the server's clock via
+          <code>PX</code>. Each layer is sovereign over its own staleness — the series' two-clocks law, now in
+          the cache.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="proof">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The proof</h2>
+        <span class="ssrc">content/bcs4.1.md &#183; quoting bcs_rung_4_1_check.out</span>
+      </div>
+      <p class="ethic">The full committed record, verbatim — the header, six gates, and three derive lines. The
+      derive lines are part of the record: each measurement is bounded before it is taken, and the committed
+      line then lands inside its own band.</p>
+      <figure class="frozen">
+        <figcaption>content/echo_data/runtimes/elixir/bcs_rung_4_1_check.out &#183; verbatim<span class="tag">frozen</span></figcaption>
+        <pre>header: <span class="fd">Valkey on 6390 | Elixir 1.14.0 OTP 25 | schedulers 1</span>
+E1 declared ok <span class="fd">-- two caches enumerable with their full declarations -- kind, ttl, coherence -- an undeclared name answers :error, and a wrong-kind id is refused at the door: zero loader runs, zero keys on the wire</span>
+E2 sources ok <span class="fd">-- one name, three sources in order: a cold read fills (loader ran once), a warm read hits L1 without touching the owner, and an L1 drop falls back to L2 -- the loader still ran once; the L2 row carries the declared TTL (PTTL 300 ms of 300)</span>
+<span class="fd">derive (herd): 200 concurrent cold readers without single-flight run 200 loads; the law demands the misses coalesce onto one flight -- expect loader runs 1 and 199 coalesced waiters</span>
+E3 herd ok <span class="fd">-- the thundering herd survived with one fill: 200 concurrent cold readers, loader runs 1, coalesced waiters 199, every reader holding the one answer</span>
+<span class="fd">derive (speed): a hit is a caller-side lookup on a public read-concurrency set plus the kind gate and a counter bump -- expect 250,000 to 1,500,000 hit reads per second on this core; an L2 GET pays a loopback round trip, and Appendix A committed 29,456 sequential round trips per second, near 34 us each -- expect the L1 hit at least 10 times cheaper than the wire</span>
+E4 speed ok <span class="fd">-- measured: 1311621 hit reads per second (762 ns each) against 31 us per L2 GET on the same wire -- the L1 hit is 40 times cheaper than the round trip it replaces, inside the derived band</span>
+<span class="fd">derive (jitter): ttl 300 ms at jitter 0.2 spreads expiry uniformly across plus-minus 60 ms -- 400 rows filled in one fast pass should spread at least 70 ms beyond their fill walltime, approaching 120; a jitter 0.0 cohort's spread can never exceed its own fill walltime -- jitter adds nothing; the sweeper on a 100 ms tick then reclaims the whole cohort without a single read</span>
+E5 jitter ok <span class="fd">-- 400 rows filled in 24 ms expire 138 ms apart at jitter 0.2 -- no synchronized re-herd -- while the jitter 0.0 cohort spreads 5 ms across a 4 ms fill: jitter added nothing there; the sweeper then reclaimed the whole cohort on its tick (swept 400, table size 0) with not one read paying the cleanup</span>
+<span class="fd">derive (bound): refdata declares max_size 100 with a 60 s ttl, so nothing expires to reclaim -- 49 more fills fit beside the 51 live rows, then every further fill must serve its caller and skip the insert</span>
+E6 bound ok <span class="fd">-- the declaration holds: size capped at 100 of 100, 101 fills served their callers and skipped the insert -- a full cache is a stat, never an error -- and the writer path lands one value in both layers</span>
+<b>PASS 6/6</b></pre>
+      </figure>
+      <p class="ethic">The system lives in its own directory beside the bus:
+      <code>runtimes/elixir/lib/echo_cache/echo_cache.ex</code>, <code>lib/echo_cache/keyspace.ex</code>,
+      <code>lib/echo_cache/table.ex</code>. Its keyspace is its own — <code>ecc:{&lt;table&gt;}:&lt;id&gt;</code>,
+      "a fresh prefix beside <code>emq:</code>, never inside it" — and its wire is the production connector,
+      "reused untouched"; the manuscript plans the connector's prose appendix.</p>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The dives</h2>
+        <span class="ssrc">three lessons, fixed by the chapter spec</span>
+      </div>
+      <div class="pgrid">
+        <a class="pcard" href="/bcs/cache/cache-aside/declared-not-discovered">
+          <span class="bid">B4.1.1</span>
+          <h3>Declared, Not Discovered</h3>
+          <p>E1 — the monitored directory: <code>two caches enumerable with their full declarations -- kind,
+          ttl, coherence</code>; the wrong-kind refusal at the door. E2 — three sources of one answer: L1, L2
+          with <code>PTTL 300 ms of 300</code>, the loader once.</p>
+          <span class="meta"><span>dive 1</span><span class="chip now">built</span></span>
+        </a>
+        <a class="pcard" href="/bcs/cache/cache-aside/one-fill-per-herd">
+          <span class="bid">B4.1.2</span>
+          <h3>One Fill per Herd</h3>
+          <p>E3 — the herd drill: <code>200 concurrent cold readers, loader runs 1, coalesced waiters
+          199</code>; singleflight as the named prior art. E4 — the speed: <code>1311621 hit reads per second
+          (762 ns each)</code> against <code>31 us per L2 GET</code>, "40 times cheaper".</p>
+          <span class="meta"><span>dive 2</span><span class="chip now">built</span></span>
+        </a>
+        <a class="pcard" href="/bcs/cache/cache-aside/the-jittered-clock">
+          <span class="bid">B4.1.3</span>
+          <h3>The Jittered Clock</h3>
+          <p>E5 — <code>400 rows filled in 24 ms expire 138 ms apart at jitter 0.2</code>, the zero-jitter
+          control, the sweeper's <code>swept 400, table size 0</code>. E6 — the bound: <code>size capped at 100
+          of 100, 101 fills served their callers and skipped the insert</code>.</p>
+          <span class="meta"><span>dive 3</span><span class="chip now">built</span></span>
+        </a>
+      </div>
+      <p class="booknote">The module hands forward: <a href="/bcs/cache/coherence-by-mint-time">B4.2 &#183; Coherence by Mint Time</a> inherits
+      <code>invalidate/2</code> as the hook its coherence messages will pull, and the declared
+      <code>coherence:</code> mode it will wire. And the manuscript plans the referee chapter —
+      <strong>B4.5 &#183; The Cache Referee</strong> — to hold the comparison set to this module's drills.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://www.erlang.org/doc/apps/stdlib/ets.html" rel="noopener">Erlang/OTP — ets</a><span class="rs">public read_concurrency tables for caller-side hits; select_delete as the sweeper's one-pass reclaim</span></li>
+          <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey — SET</a><span class="rs">the PX option: the L2 row written with its expiry in one command</span></li>
+          <li><a href="https://valkey.io/commands/expire/" rel="noopener">Valkey — EXPIRE</a><span class="rs">expiration semantics and the server's two reclamation paths, on-access and active cycles</span></li>
+          <li><a href="https://pkg.go.dev/golang.org/x/sync/singleflight" rel="noopener">Go x/sync — singleflight</a><span class="rs">duplicate function call suppression: the named prior art for one fill per herd</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/bcs/cache">B4 — EchoCache</a><span class="rs">the chapter landing; Part IV's arc</span></li>
+          <li><a href="/bcs/bus">B3 — The Bus</a><span class="rs">the bus beside which the cache lives</span></li>
+          <li><a href="/bcs/bus/jobs-are-entities">B3.2 — Jobs Are Entities</a><span class="rs">the keyspace discipline ecc: sits beside</span></li>
+          <li><a href="/bcs/elixir-core/property-stores">B2.2 — Property Stores</a><span class="rs">the stores being cached</span></li>
+          <li><a href="/redis-patterns">Redis Patterns Applied</a><span class="rs">the caching substrate patterns</span></li>
+          <li><a href="/echomq">EchoMQ — the course</a><span class="rs">the bus protocol in rung-level depth</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the umbrella the runtimes live in</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/bcs/cache"><span class="pk">previous</span>&#8592; B4 &#183; EchoCache</a>
+      <a class="pgx" href="/bcs/cache/cache-aside/declared-not-discovered"><span class="pk">next</span>B4.1.1 &#183; Declared, Not Discovered &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="BCS — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>bcs</span>
+        <p class="foot-tag">The Branded Component System — boundaries around systems, identity as a contract,
+        every figure from a frozen transcript.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/bcs">B0 &#183; Orientation</a>
+        <a href="/bcs/ideas">B1 &#183; Ideas Behind</a>
+        <a href="/bcs/elixir-core">B2 &#183; The Elixir BCS Core</a>
+        <a href="/bcs/bus">B3 &#183; The Bus</a>
+        <a href="/bcs/cache">B4 &#183; EchoCache</a>
+        <span>B5 &#183; Go<i>soon</i></span>
+        <span>B6 &#183; Node 22+<i>soon</i></span>
+        <span>B7 &#183; Production on Fly<i>soon</i></span>
+        <span>B8 &#183; The Trading System<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/bcs">BCS — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">BCS0NvpbidOFWK</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-13 00:21:20 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive: the six gates, mapped to the dives (pure lookup, no storage) ---------- */
+  var GATES = {
+    e1: { line: "E1 declared ok -- two caches enumerable with their full declarations -- kind, ttl, coherence -- an undeclared name answers :error, and a wrong-kind id is refused at the door: zero loader runs, zero keys on the wire",
+          dive: 'dive 1, Declared, Not Discovered &#8212; the monitored directory.' },
+    e2: { line: "E2 sources ok -- one name, three sources in order: a cold read fills (loader ran once), a warm read hits L1 without touching the owner, and an L1 drop falls back to L2 -- the loader still ran once; the L2 row carries the declared TTL (PTTL 300 ms of 300)",
+          dive: 'dive 1, Declared, Not Discovered &#8212; three sources of one answer.' },
+    e3: { line: "E3 herd ok -- the thundering herd survived with one fill: 200 concurrent cold readers, loader runs 1, coalesced waiters 199, every reader holding the one answer",
+          dive: 'dive 2, One Fill per Herd &#8212; the herd drill.' },
+    e4: { line: "E4 speed ok -- measured: 1311621 hit reads per second (762 ns each) against 31 us per L2 GET on the same wire -- the L1 hit is 40 times cheaper than the round trip it replaces, inside the derived band",
+          dive: 'dive 2, One Fill per Herd &#8212; the priced pair.' },
+    e5: { line: "E5 jitter ok -- 400 rows filled in 24 ms expire 138 ms apart at jitter 0.2 -- no synchronized re-herd -- while the jitter 0.0 cohort spreads 5 ms across a 4 ms fill: jitter added nothing there; the sweeper then reclaimed the whole cohort on its tick (swept 400, table size 0) with not one read paying the cleanup",
+          dive: 'dive 3, The Jittered Clock &#8212; the spread and the sweeper.' },
+    e6: { line: "E6 bound ok -- the declaration holds: size capped at 100 of 100, 101 fills served their callers and skipped the insert -- a full cache is a stat, never an error -- and the writer path lands one value in both layers",
+          dive: 'dive 3, The Jittered Clock &#8212; the bound.' }
+  };
+
+  var anat = document.getElementById('anat');
+  var readout = document.getElementById('readout');
+  var buttons = document.querySelectorAll('#segbar button');
+
+  function select(seg) {
+    buttons.forEach(function (b) {
+      var on = b.getAttribute('data-seg') === seg;
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    if (anat) {
+      anat.classList.toggle('focus', !!seg);
+      anat.querySelectorAll('g[data-seg]').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-seg') === seg);
+      });
+    }
+    if (readout && seg && GATES[seg]) {
+      readout.innerHTML = '<span class="rk">verbatim &#183;</span> <code>' + GATES[seg].line + '</code><br>' +
+        '<span class="rk">taught in &#183;</span> ' + GATES[seg].dive;
+    }
+  }
+
+  buttons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var seg = b.getAttribute('data-seg');
+      var already = b.getAttribute('aria-pressed') === 'true';
+      select(already ? null : seg);
+    });
+  });
+  if (anat) {
+    anat.querySelectorAll('g[data-seg]').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { select(g.getAttribute('data-seg')); });
+      g.addEventListener('mouseleave', function () { select(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

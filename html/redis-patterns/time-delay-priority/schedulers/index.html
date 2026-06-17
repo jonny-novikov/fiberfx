@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4.02 · Schedulers &amp; repeatable jobs — Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R4.02 module hub: schedulers and repeatable jobs. A repeatable job is a delayed job that re-schedules itself — a sorted set holds one entry per scheduler scored by the next run time, and each fire rewrites that single score, so recurrence survives restarts without duplicating. Three dives — cron vs interval, the upsert with no duplicates, start-to-start cadence — grounded in EchoMQ's :repeat ZSET (EchoMQ.Keys.repeat/1), storeRepeatableJob's ZADD repeatKey nextMillis customKey in addRepeatableJob-2.lua, and the ZSCORE upsert probe.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- registry diagram ---- */
+.rg .slot rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.rg .slot.hot rect{fill:rgba(212,168,90,.14);stroke:#d4a85a}
+.rg .slot.dup rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
+.rg text{font-family:var(--sans);fill:#d7cfb9}
+.rg .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.rg .mem{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
+.rg .sc{font-family:var(--mono);font-size:11px;fill:#a7c9b1}
+.rg .arr{stroke:#2a3252;stroke-width:1.4;fill:none;transition:stroke .18s ease}
+.rg .arr.on{stroke:#d4a85a}
+.rg .cmd{font-family:var(--mono);fill:#a39c89;font-size:10px}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- when-to-use table ---- */
+.tbl{width:100%;border-collapse:collapse;margin:1.2rem 0 0;font-family:var(--sans);font-size:.9rem}
+.tbl th,.tbl td{text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);font-weight:700}
+.tbl td{color:var(--cream-soft)}
+.tbl td code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+.tbl tr:last-child td{border-bottom:0}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--redis-bright);border-color:var(--redis)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+
+/* ---- door ---- */
+.door{margin:1.7rem 0 0;border:1px solid var(--redis);border-radius:16px;
+  background:linear-gradient(180deg,rgba(214,88,79,.10),rgba(10,14,26,.3));
+  padding:clamp(1rem,2.4vw,1.5rem)}
+.door .dl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--redis-bright);margin:0 0 .6rem}
+.door p{margin:0;font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure)}
+.door a{color:var(--redis-bright);font-weight:600}
+.door a:hover{color:var(--cream)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--redis-bright);
+  border:1px solid var(--redis);border-radius:999px;padding:.16rem .55rem}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the module</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><span class="rcur">schedulers</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/redis-patterns">Redis Patterns</a>
+      <span class="sep">/</span>
+      <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+      <span class="sep">/</span>
+      <span class="here">Schedulers &amp; repeatable jobs</span>
+    </div>
+    <p class="eyebrow">R4.02 &middot; Time, Delay &amp; Priority</p>
+    <h1>Schedulers &amp; repeatable <span class="ex">jobs</span></h1>
+    <p class="lede">A repeatable job is a delayed job that re-schedules itself: a sorted set holds one entry per
+      scheduler, scored by the next run time, and each fire rewrites the score &mdash; so recurrence survives restarts
+      without ever duplicating.</p>
+    <p class="kicker">The delayed-queue pattern scores one future run in a sorted set. A scheduler carries that move
+      forward: it keeps a registry, one entry per recurring schedule, each scored by <em>when it next runs</em>. When the
+      job fires, the next run time is computed and the same entry's score is rewritten &mdash; the registry never grows
+      past one row per scheduler, and a restart re-registering the same cron or interval rewrites the row rather than
+      appending a second. The three dives take the move apart &mdash; naming the cadence, the upsert that adds no
+      duplicate, and the start-to-start rewrite that holds the cadence to the clock.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#adds">Over a one-shot delay</a>
+      <a href="#cadence">Naming the cadence</a>
+      <a href="#registry">The repeat registry</a>
+      <a href="#upsert">The upsert</a>
+      <a href="#cadence-next">Producing the next run</a>
+      <a href="#whentouse">When to use / avoid</a>
+      <a href="#dives">Dives</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <section id="adds">
+    <h2>What a scheduler adds over a one-shot delay</h2>
+    <div class="prose">
+      <p>A one-shot delayed job is a member in the <code class="inl">:delayed</code> sorted set scored by its fire-time.
+        It runs once and is gone. A scheduler adds three things on top: a <strong>cadence</strong> &mdash; a rule for
+        "when next," a cron expression or a fixed interval, evaluated to a timestamp; a <strong>registry</strong> &mdash;
+        a separate sorted set, scored by the next run time, holding one entry per recurring schedule; and an
+        <strong>upsert</strong> &mdash; registering a schedule that already exists rewrites its single entry rather than
+        appending a duplicate.</p>
+      <p>The score is still a future timestamp, exactly as in the delayed queue. The new idea is that the entry is
+        rewritten each cycle instead of consumed once. The interactive below runs a fixed scheduler &mdash; an
+        every-15-minute interval and a daily cron &mdash; and shows the single registry entry being rewritten across
+        three fires, not appended.</p>
+    </div>
+
+    <figure class="fig rg" aria-labelledby="rgTitle">
+      <h4 id="rgTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The repeat registry &middot; one entry per scheduler, rewritten each fire &mdash; not appended</h4>
+      <div class="controls">
+        <div class="solid-select" id="rgSel" role="group" aria-label="Which scheduler to advance, and how many fires">
+          <button type="button" data-sched="iv" data-c="gold" class="active" aria-pressed="true">interval &middot; every 15 min</button>
+          <button type="button" data-sched="cr" data-c="sage" aria-pressed="false">cron &middot; 0 9 * * *</button>
+        </div>
+        <div class="fold-ctrl">
+          <label for="rgFires">fires elapsed</label>
+          <input type="range" id="rgFires" min="0" max="3" step="1" value="0">
+          <span class="val" id="rgFiresVal">0</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 168" role="img" aria-label="A single registry entry for the selected scheduler, scored by its next run time. As fires elapse, the same entry's score is rewritten with the next computed timestamp; the registry stays at one entry per scheduler, never appending a second row.">
+        <text class="ttl" x="30" y="24">emq:{queue}:repeat (ZSET) &mdash; one entry per scheduler</text>
+        <g class="slot hot" id="rgSlot"><rect x="30" y="36" width="400" height="48" rx="11"></rect></g>
+        <text class="mem" id="rgMem" x="48" y="58">sched:reports</text>
+        <text class="sc" id="rgScore" x="48" y="74">score = 09:00:00 (next run)</text>
+        <text class="cmd" id="rgCmd" x="48" y="106">ZADD emq:{queue}:repeat &lt;nextMillis&gt; sched:reports</text>
+        <text class="ttl" id="rgVerd" x="230" y="140" text-anchor="middle">fire 0 &middot; one entry, scored by the next run</text>
+        <text class="ttl" id="rgVerd2" x="230" y="158" text-anchor="middle" fill="#a7c9b1">registry size: 1 entry</text>
+      </svg>
+
+      <div class="geo-readout" id="rgOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">A scheduler is a one-shot delay made recurring: one registry entry, scored by the next run, rewritten
+      each fire &mdash; the size stays at one row per scheduler.</p>
+  </section>
+
+  <section id="cadence">
+    <h2>Naming the cadence (cron vs interval)</h2>
+    <div class="prose">
+      <p>There are two ways to name <em>when next</em>. A <strong>cron expression</strong> (<code class="inl">0 9 * * *</code>)
+        names a wall-clock calendar position &mdash; every day at 09:00 &mdash; and the next run is the next calendar
+        slot at or after now. A <strong>fixed interval</strong> (<code class="inl">every: 900000</code> ms) names a gap
+        &mdash; every fifteen minutes &mdash; and the next run is the previous run plus the gap.</p>
+      <p>Both reduce to a single millisecond timestamp, which is the score the registry stores. The registry does not
+        record whether the next run came from a calendar match or a gap addition; it stores a sorted set of next-run
+        times. The first dive computes the next run each way over a fixed clock.</p>
+    </div>
+    <p class="take">Cron names a calendar slot; an interval names a gap. Both reduce to one future millisecond &mdash;
+      the registry's score.</p>
+  </section>
+
+  <section id="registry">
+    <h2>The repeat registry (a sorted set of next-run times)</h2>
+    <div class="prose">
+      <p>The registry is a sorted set scored by the next run time. The member is the scheduler's own key; the score is
+        the millisecond at which it next fires. EchoMQ builds this key with <code class="inl">EchoMQ.Keys.repeat/1</code>,
+        which returns <code class="inl">"#{base}:repeat"</code>. The behaviour is a sorted set:
+        <code class="inl">ZADD repeatKey nextMillis customKey</code> to record,
+        <code class="inl">ZSCORE repeatKey customKey</code> to read the prior next-run time.</p>
+      <p>Per-scheduler options &mdash; the name, the cron pattern, the interval, the timezone &mdash; live in a
+        <em>separate hash</em> at <code class="inl">repeatKey .. ":" .. customKey</code>, written with
+        <code class="inl">HMSET</code>; the registry sorted set carries only the next-run times.</p>
+    </div>
+    <p class="note">A source note: the <code class="inl">keys.ex</code> doc-comment labels <code class="inl">:repeat</code>
+      a "hash." The code's <code class="inl">ZADD</code> / <code class="inl">ZSCORE</code> calls are the ground truth
+      &mdash; the registry is used as a sorted set. The hash the comment loosely points at is the companion
+      per-scheduler options hash, a separate key.</p>
+    <p class="take">The registry is a sorted set: member is the scheduler key, score is the next-run millisecond; the
+      cadence options live in a separate companion hash.</p>
+  </section>
+
+  <section id="upsert">
+    <h2>The upsert (no duplicate on boot)</h2>
+    <div class="prose">
+      <p>A service that boots re-registers all its schedules. A naive add would push a second entry for a schedule that
+        already exists, and the recurring job would fire twice. The upsert prevents that. Before adding, the script
+        probes the registry: <code class="inl">local prevMillis = rcall("ZSCORE", repeatKey, customKey)</code>. If a
+        prior entry exists, the script reconciles the stale delayed entry instead of adding a second scheduler.</p>
+      <p>The store itself is <code class="inl">rcall("ZADD", repeatKey, nextMillis, customKey)</code>, and re-adding the
+        same member rewrites its score rather than appending a row. One scheduler key, one registry entry, across any
+        number of boots. The second dive runs two boots over the same scheduler key and counts the entries.</p>
+    </div>
+    <pre class="code"><span class="cmt">-- addRepeatableJob-2.lua — the upsert (real)</span>
+<span class="cmt">-- probe: was this scheduler already registered?</span>
+<span class="op">local</span> prevMillis = <span class="rdx">ZSCORE</span> repeatKey customKey
+<span class="op">if</span> prevMillis <span class="op">then</span> <span class="cmt">-- reconcile the stale delayed entry, do not add a second</span>
+<span class="op">end</span>
+<span class="cmt">-- store: ZADD the same member rewrites its score, never appends a row</span>
+<span class="rdx">ZADD</span> repeatKey nextMillis customKey</pre>
+    <p class="take">Probe with <code class="inl">ZSCORE</code>, store with <code class="inl">ZADD</code>; the same member
+      rewrites rather than appends, so a boot adds no duplicate.</p>
+  </section>
+
+  <section id="cadence-next">
+    <h2>Producing the next run (start-to-start)</h2>
+    <div class="prose">
+      <p>The registry holds only the <em>next</em> run, never a queue of future runs. When a job is produced, the next
+        run time is computed from the cadence and the registry's single entry is rewritten with the new score. The next
+        run is measured <strong>start-to-start</strong> &mdash; from this run's scheduled time plus the interval &mdash;
+        not start-to-finish. Measuring from the finish would let a slow job push every later run later and drift the
+        schedule; measuring start-to-start keeps the cadence anchored to the clock.</p>
+      <p>When the next run is known, EchoMQ also writes the wake marker &mdash;
+        <code class="inl">ZADD markerKey nextTimestamp "1"</code> &mdash; so a blocked worker wakes at the next run
+        rather than on a poll tick. The third dive compares start-to-start against start-to-finish and shows the
+        drift.</p>
+    </div>
+    <p class="take">The registry holds only the next run, rewritten each cycle; start-to-start keeps the cadence on the
+      clock, and the marker rings the worker at the next run.</p>
+  </section>
+
+  <section id="whentouse">
+    <h2>When to use &amp; when to avoid</h2>
+    <table class="tbl">
+      <thead><tr><th>Use it for</th><th>Avoid it for</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Recurring work on a calendar or a fixed cadence &mdash; periodic reports, cleanup sweeps, polling an upstream.</td>
+          <td>Sub-second or hard-real-time cadences &mdash; a worker-polled registry is millisecond-grained, not a real-time scheduler.</td>
+        </tr>
+        <tr>
+          <td>Schedules that must survive a restart without re-firing or duplicating.</td>
+          <td>Enormous fan-outs of distinct one-off future runs &mdash; those are delayed jobs in <code>:delayed</code>, not schedules.</td>
+        </tr>
+        <tr>
+          <td>A small-to-moderate number of named schedules, each with its own cron or interval.</td>
+          <td>Full calendar correctness across timezones and daylight-saving transitions at the edge &mdash; that parsing depth is the EchoMQ course's territory.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="take">Reach for a scheduler for restart-safe recurring work on a calendar or interval; reach elsewhere for
+      real-time ticks, millions of one-off runs, or hard timezone edge correctness.</p>
+  </section>
+
+  <section id="dives">
+    <h2>The three dives</h2>
+    <div class="prose">
+      <p>Each dive takes one layer of the scheduler, in source order: naming the cadence that produces the next run, the
+        upsert that keeps the registry at one entry per scheduler key, and the start-to-start rewrite that holds the
+        cadence to the clock. Read them in order &mdash; the cadence first, the upsert second, the rewrite third.</p>
+    </div>
+
+    <div class="mods" style="margin-top:1.3rem">
+
+      <a class="mod" href="/redis-patterns/time-delay-priority/schedulers/cron-vs-interval">
+        <div class="top"><span class="num">R4.02.1</span><span class="pill built">built</span></div>
+        <p class="t">Cron vs interval</p>
+        <p class="o">Two ways to name "when next": a cron expression (<code class="inl">0 9 * * *</code>, a wall-clock
+          slot) vs a fixed interval (<code class="inl">every: 900000</code>, a gap). Each produces the one timestamp the
+          registry is scored by.</p>
+      </a>
+
+      <a class="mod" href="/redis-patterns/time-delay-priority/schedulers/upsert-no-duplicates">
+        <div class="top"><span class="num">R4.02.2</span><span class="pill built">built</span></div>
+        <p class="t">The upsert, no duplicates</p>
+        <p class="o">A reboot re-registers the same scheduler. The <code class="inl">ZSCORE</code>-then-<code class="inl">ZADD</code>
+          upsert keeps exactly one registry entry per scheduler key &mdash; no duplicate recurring job on boot.</p>
+      </a>
+
+      <a class="mod" href="/redis-patterns/time-delay-priority/schedulers/start-to-start-cadence">
+        <div class="top"><span class="num">R4.02.3</span><span class="pill built">built</span></div>
+        <p class="t">Start-to-start cadence</p>
+        <p class="o">The registry holds only the next run; when a job is produced the next timestamp is computed and the
+          single score rewritten &mdash; start-to-start, anchored to the clock, not start-to-finish.</p>
+      </a>
+
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>A textbook delayed queue schedules one future run; a scheduler makes the run re-schedule itself &mdash; one
+          registry entry per schedule, scored by the next run, rewritten each cycle and upserted so a restart never
+          spawns a duplicate.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p><code class="inl">storeRepeatableJob</code> in <code class="inl">addRepeatableJob-2.lua</code> runs
+          <code class="inl">ZADD repeatKey nextMillis customKey</code> on the <code class="inl">:repeat</code> ZSET
+          (<code class="inl">EchoMQ.Keys.repeat/1</code>), idempotent through the
+          <code class="inl">ZSCORE repeatKey customKey</code> probe above it &mdash; one entry per scheduler key, no
+          duplicate on boot.</p>
+      </div>
+    </div>
+    <p class="take">Redis offers one move that re-schedules without duplicating; EchoMQ's repeat registry chose it, and
+      proves the pattern is real.</p>
+
+    <div class="door">
+      <p class="dl">A door, not a depth</p>
+      <p>This module cites one excerpt of EchoMQ's protocol &mdash; the <code class="inl">ZADD</code>/<code class="inl">ZSCORE</code>
+        upsert inside <code class="inl">addRepeatableJob-2.lua</code> &mdash; as proof the registry ships. The full cron
+        parser, the timezone and daylight-saving handling, and the scheduler-vs-delayed reconciliation across a worker
+        pool are the subject of the dedicated <strong>EchoMQ course</strong>, built next with this toolkit. From here,
+        open onto <a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a>. This module teaches the registry and
+        its upsert; that course teaches the scheduler subsystem that maintains it.</p>
+    </div>
+
+    <p class="note">R4.01 &middot; the one-shot delayed queue this recurs on precedes this module; the chapter then
+      continues with composite-score priority and backoff-and-retry. Return to the
+      <a href="/redis-patterns/time-delay-priority">Time, Delay &amp; Priority chapter</a> to continue.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The Redis commands behind the registry and its upsert &mdash; the store, the idempotence probe, the sorted set
+        underneath &mdash; the cron cadence spec, and where the scheduler subsystem that runs them is taught.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; the upsert: re-<code>ZADD</code> the same member to rewrite its next-run score.</li>
+          <li><a href="https://redis.io/commands/zscore/">Redis &mdash; <em>ZSCORE</em></a> &mdash; the probe that makes the add idempotent: read the prior next-run time before storing.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; the registry as a sorted set of next-run times.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the repeatable-jobs / job-schedulers protocol EchoMQ ports.</li>
+          <li><a href="https://en.wikipedia.org/wiki/Cron">Wikipedia &mdash; <em>Cron</em></a> &mdash; the cron expression as a cadence spec.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority/schedulers/cron-vs-interval">R4.02.1 &middot; Cron vs interval</a> &mdash; naming the cadence.</li>
+          <li><a href="/redis-patterns/time-delay-priority/schedulers/upsert-no-duplicates">R4.02.2 &middot; The upsert, no duplicates</a> &mdash; one entry per scheduler key.</li>
+          <li><a href="/redis-patterns/time-delay-priority/schedulers/start-to-start-cadence">R4.02.3 &middot; Start-to-start cadence</a> &mdash; rewriting the single next-run score.</li>
+          <li><a href="/redis-patterns/time-delay-priority/delayed-queue">R4.01 &middot; The delayed queue</a> &mdash; the one-shot delay a scheduler recurs on.</li>
+          <li><a href="/redis-patterns/time-delay-priority/score-as-meaning">R4 &middot; Score as meaning</a> &mdash; the orientation dive that names the <code>:repeat</code> ZSET.</li>
+          <li><a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a> &mdash; the chapter.</li>
+          <li><a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a> &mdash; the dedicated EchoMQ course: the scheduler subsystem in depth.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority"><span aria-hidden="true">&larr;</span>&nbsp; R4 &middot; Time, Delay &amp; Priority</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority/schedulers/cron-vs-interval">R4.02.1 &middot; Cron vs interval <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/time-delay-priority/schedulers/cron-vs-interval">R4.02.1 &middot; Cron vs interval</a>
+        <a href="/redis-patterns/time-delay-priority/schedulers/upsert-no-duplicates">R4.02.2 &middot; The upsert, no duplicates</a>
+        <a href="/redis-patterns/time-delay-priority/schedulers/start-to-start-cadence">R4.02.3 &middot; Start-to-start cadence</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/lifecycle">The EchoMQ course &middot; the lifecycle</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hub: the repeat registry — one entry, rewritten each fire (pure over sched + fires) ---------- */
+  // The registry holds one entry per scheduler, scored by the next run. Advancing the fires rewrites the SAME entry's
+  // score with the next computed timestamp; the registry size stays at 1. The state is a pure function of (sched, fires).
+  // Interval: 15-min gap starting 09:00. Cron 0 9 * * *: daily 09:00, next run advances by a day.
+  function pad2(x){ return (x < 10 ? '0' : '') + x; }
+  function fmtClock(min){ var h = Math.floor(min / 60) % 24, m = min % 60; return pad2(h) + ':' + pad2(m) + ':00'; }
+  // pure: (sched, fires) -> { mem, runs[], next, cmd, text }
+  function registry(sched, fires) {
+    var mem, runs = [], i;
+    if (sched === 'iv') {
+      // interval every 15 min, anchored at 09:00 (540 min). start-to-start: next = prior + 15.
+      mem = 'sched:reports';
+      for (i = 0; i <= fires; i++) runs.push(540 + i * 15);
+    } else {
+      // cron 0 9 * * *: daily at 09:00. each fire advances one day; display the day index with the same clock.
+      mem = 'sched:digest';
+      for (i = 0; i <= fires; i++) runs.push(540); // same wall-clock 09:00 each day
+    }
+    var next = runs[runs.length - 1];
+    var nextLabel = (sched === 'iv') ? fmtClock(next) : ('09:00:00 (day ' + (fires + 1) + ')');
+    return { mem: mem, runs: runs, next: next, nextLabel: nextLabel };
+  }
+  function setReg(sched, fires) {
+    var r = registry(sched, fires);
+    var slot = document.getElementById('rgSlot'), mem = document.getElementById('rgMem'),
+        score = document.getElementById('rgScore'), cmd = document.getElementById('rgCmd'),
+        verd = document.getElementById('rgVerd'), verd2 = document.getElementById('rgVerd2'),
+        out = document.getElementById('rgOut');
+    if (mem) mem.textContent = r.mem;
+    if (score) score.textContent = 'score = ' + r.nextLabel + ' (next run)';
+    if (cmd) cmd.textContent = 'ZADD emq:{queue}:repeat <nextMillis> ' + r.mem;
+    if (slot) { slot.classList.add('hot'); }
+    if (verd) verd.textContent = 'fire ' + fires + ' · one entry, rewritten to the next run';
+    if (verd2) { verd2.textContent = 'registry size: 1 entry (never appended)'; verd2.setAttribute('fill', '#a7c9b1'); }
+    if (out) {
+      var word = (sched === 'iv') ? 'interval (every 15 min)' : 'cron (0 9 * * *)';
+      var seq;
+      if (sched === 'iv') {
+        seq = r.runs.map(fmtClock).join(' → ');
+      } else {
+        seq = r.runs.map(function (_, ix) { return '09:00 d' + (ix + 1); }).join(' → ');
+      }
+      out.textContent = 'Scheduler ' + r.mem + ' on the ' + word + ' cadence. After ' + fires + ' fire' +
+        (fires === 1 ? '' : 's') + ', the next run is ' + r.nextLabel + '. The run sequence so far: ' + seq +
+        '. Each fire ran ZADD emq:{queue}:repeat <nextMillis> ' + r.mem + ' — the same member, so the one registry ' +
+        'entry was rewritten, not appended. The registry holds exactly 1 entry for this scheduler at every step.';
+    }
+  }
+  var rgSched = 'iv', rgFires = 0;
+  document.querySelectorAll('#rgSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      rgSched = b.getAttribute('data-sched');
+      document.querySelectorAll('#rgSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setReg(rgSched, rgFires);
+    });
+  });
+  var rgRange = document.getElementById('rgFires'), rgRangeV = document.getElementById('rgFiresVal');
+  if (rgRange) rgRange.addEventListener('input', function () {
+    rgFires = parseInt(rgRange.value, 10); if (rgRangeV) rgRangeV.textContent = String(rgFires);
+    setReg(rgSched, rgFires);
+  });
+  setReg('iv', 0); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2b(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2b(d.getUTCMonth() + 1) + '-' + pad2b(d.getUTCDate()) + ' ' + pad2b(d.getUTCHours()) + ':' + pad2b(d.getUTCMinutes()) + ':' + pad2b(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

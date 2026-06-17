@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M2.3 · The Ledger on Ecto.Multi — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="The other consistency-first surface, where blocking over diverging is sharpest. EchoMesh's regulated ledger composes a debit, a credit, and a journal entry into one Ecto.Multi transaction over Postgres: it commits the whole only if every step succeeds, and on any failure — an unreachable store, a bad step, a serialization conflict — it rolls the whole back and returns a labelled result naming the step that failed. The surface refuses rather than recording half a transfer; it blocks, it does not diverge.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-mesh)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the all-or-nothing emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.capsvg{width:100%;height:auto;display:block}
+.capsvg .frame{fill:var(--m-card);stroke:var(--m-line);stroke-width:1.5}
+.capsvg .step{fill:var(--m-cons-tint);stroke:var(--m-cons);stroke-width:1.5}
+.capsvg .slbl{font:12.5px var(--mono);fill:var(--m-ink);text-anchor:middle;font-weight:700}
+.capsvg .sann{font:11px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .glbl{font:12px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .flow{stroke:var(--m-mesh);stroke-width:2;fill:none;marker-end:url(#arw)}
+.capsvg .store{fill:var(--m-mesh-tint);stroke:var(--m-mesh);stroke-width:1.5}
+.capsvg .stlbl{font:12.5px var(--mono);fill:var(--m-mesh);text-anchor:middle;font-weight:700}
+.capsvg .ckm{font:13px var(--mono);font-weight:700;text-anchor:middle}
+.capsvg .ckm.ok{fill:var(--m-avail)}
+.capsvg .ckm.no{fill:var(--m-edge)}
+.capsvg .verdict{font:14px var(--mono);font-weight:700;text-anchor:middle}
+.capsvg .verdict.commit{fill:var(--m-avail)}
+.capsvg .verdict.rollback{fill:var(--m-edge)}
+.capsvg g[data-tab]{transition:opacity .18s ease}
+.capsvg.focus g[data-tab]{opacity:.16}
+.capsvg.focus g[data-tab].on{opacity:1}
+/* the step tiles re-colour per scenario via JS-set classes */
+.capsvg .step.fail{fill:var(--m-edge-tint);stroke:var(--m-edge)}
+.capsvg .step.rolled{fill:var(--m-paper);stroke:var(--m-line);stroke-dasharray:4 4}
+.capsvg .store.down{fill:var(--m-edge-tint);stroke:var(--m-edge);stroke-dasharray:5 5}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:4.0em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the property duality / thesis ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-cons);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-mesh)}
+.tri article:nth-child(3){border-top-color:var(--m-edge)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the block-vs-diverge compare ---------- */
+.cmp{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:6px}
+.cmp article{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px}
+.cmp article.reg{border-left:3px solid var(--m-cons)}
+.cmp article.con{border-left:3px solid var(--m-avail)}
+.cmp .ck{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.cmp article.reg .ck{color:var(--m-cons)}
+.cmp article.con .ck{color:var(--m-avail)}
+.cmp h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.cmp p{font-size:.9rem;color:var(--m-ink)}
+.cmp .ex{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);border-top:1px dashed var(--m-line);padding-top:9px}
+.cmp .ex b{color:var(--m-ink)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.doors,.cmp{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.doors,.cmp{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><a href="/mesh/best-effort-availability">best-effort-availability</a><span class="rsep">/</span><span class="rcur">the-ledger</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#settled">Settled money</a>
+      <a href="#multi">Ecto.Multi</a>
+      <a href="#atomicity">Atomicity</a>
+      <a href="#serializable">Serializable</a>
+      <a href="#line">Block, not diverge</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M2.3 &#183; Best Effort Availability</p>
+      <h1>The ledger on <span class="hns">Ecto.Multi</span>.</h1>
+      <p class="lede">The other consistency-first surface, where blocking over diverging is sharpest. A ledger of settled
+      money must never record half a transfer, so it composes a debit, a credit, and a journal entry into <b>one
+      all-or-nothing transaction</b> &#8212; and when it cannot do the whole thing correctly, it does none of it.</p>
+      <p class="heronote">No measurement here &#8212; this dive reads a mechanism, not a benchmark. Three primary sources
+      carry it (<a href="#refs">Ecto.Multi, the PostgreSQL transaction-isolation documentation, and Gilbert &amp; Lynch
+      2012</a>): the composition is <code>Ecto.Multi</code>, the all-or-nothing guarantee is the database's, and the
+      consistency-over-availability choice is the best-effort-availability strategy. The single writer that holds the
+      other consistency-first surface is the previous dive, M2.2.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>The mechanisms here are external and settled &#8212; <code>Ecto.Multi</code> over Postgres is shipped
+        technology. That the regulated ledger is EchoMesh's consistency-first surface, built as one transaction per
+        settlement that blocks rather than diverges, is the course's proposal; the shipped-versus-proposed line is drawn
+        in full at M8.2.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>One settlement &#8212; a <b>debit</b>, a <b>credit</b>, a <b>journal entry</b> &#8212; composed into a
+        single <code>Ecto.Multi</code> handed to <code>Repo.transaction</code>; hover a scenario to run it and read the
+        <b>verdict</b>: commit the whole, or roll the whole back and name the step that failed (the API of
+        <b>Ecto.Multi</b> over <b>PostgreSQL</b>)</figcaption>
+        <svg class="capsvg" id="capsvg" viewBox="0 0 760 280" role="img" aria-label="A ledger settlement composed of three steps — debit account A, credit account B, and write a journal entry — chained into one Ecto.Multi and handed to Repo.transaction over a PostgreSQL store. In the commit scenario all three steps succeed, the transaction commits as a whole, and the balances move together. In the failed-step scenario the credit step returns an error, so the whole transaction rolls back, the already-applied debit is undone, nothing is committed, and the labelled result names the credit as the failed step. In the unreachable-store scenario Repo.transaction cannot reach PostgreSQL, so no step is applied, nothing commits, and the surface refuses. In the conflict scenario serializable isolation detects a read-write dependency that no serial order would allow and aborts the transaction with a serialization failure to retry. In every failing scenario the ledger blocks rather than diverges — it never records half a transfer.">
+          <defs>
+            <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#7b3aa0"></path>
+            </marker>
+          </defs>
+          <!-- the three multi steps -->
+          <text class="glbl" x="150" y="40">Ecto.Multi &#183; named steps</text>
+          <rect class="step" id="s1" x="40" y="56" width="220" height="40" rx="6"></rect>
+          <text class="slbl" x="150" y="74">:debit</text>
+          <text class="sann" id="s1a" x="150" y="89">account A &#8722;&#8201;100</text>
+          <rect class="step" id="s2" x="40" y="108" width="220" height="40" rx="6"></rect>
+          <text class="slbl" x="150" y="126">:credit</text>
+          <text class="sann" id="s2a" x="150" y="141">account B +&#8201;100</text>
+          <rect class="step" id="s3" x="40" y="160" width="220" height="40" rx="6"></rect>
+          <text class="slbl" x="150" y="178">:entry</text>
+          <text class="sann" id="s3a" x="150" y="193">journal +&#8201;1</text>
+
+          <!-- the flow into the transaction boundary, then the store -->
+          <path class="flow" id="f1" d="M268 130 L356 130"></path>
+          <rect class="frame" x="360" y="92" width="180" height="76" rx="8"></rect>
+          <text class="glbl" x="450" y="84">Repo.transaction</text>
+          <text class="slbl" id="txn" x="450" y="126" font-size="13">BEGIN &#8230; COMMIT</text>
+          <text class="sann" id="txna" x="450" y="146">all steps or none</text>
+
+          <path class="flow" id="f2" d="M548 130 L626 130"></path>
+          <rect class="store" id="store" x="630" y="100" width="92" height="60" rx="8"></rect>
+          <text class="stlbl" x="676" y="126">Postgres</text>
+          <text class="sann" id="storea" x="676" y="144">the store</text>
+
+          <!-- the verdict band -->
+          <text class="verdict commit" id="verdict" x="380" y="238">verdict &#8212; hover a scenario to run the settlement</text>
+          <text class="ckm" id="vsub" x="380" y="262">all three steps apply together, or none of them do</text>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">scenario &#183; hover to run the settlement</span>
+          A settlement composes a <b>:debit</b>, a <b>:credit</b>, and a <b>:entry</b> into one <code>Ecto.Multi</code>.
+          Run it whole and it <span class="vc">commits</span>; let any step fail, or the store go unreachable, and the
+          whole <span class="vc">rolls back</span> with nothing committed. Hover a scenario below to run it.
+        </p>
+        <div class="htabs" id="ledgerw">
+          <div class="htabs-bar" role="tablist" aria-label="Run the settlement under four scenarios">
+            <button type="button" role="tab" data-tab="commit" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>1 &#183; All steps succeed</button>
+            <button type="button" role="tab" data-tab="failstep" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>2 &#183; A step fails</button>
+            <button type="button" role="tab" data-tab="unreachable" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>3 &#183; Store unreachable</button>
+            <button type="button" role="tab" data-tab="conflict" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>4 &#183; Serialization conflict</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="commit" role="tabpanel"><span class="tag a">Scenario 1 &#183; all steps succeed.</span> <code>Repo.transaction</code> begins, applies <code>:debit</code>, <code>:credit</code>, and <code>:entry</code> in order, and commits the whole. The result is <code>{:ok, changes}</code> with the changes keyed by step name &#8212; the balances move together, and the entry agrees with them.</div>
+            <div class="htabs-p" data-tab="failstep" role="tabpanel"><span class="tag e">Scenario 2 &#183; a step fails.</span> The <code>:credit</code> step returns an error &#8212; a constraint violation, say. The whole transaction rolls back: the already-applied <code>:debit</code> is undone and nothing commits. The labelled result <code>{:error, :credit, value, changes_so_far}</code> names exactly the step that failed.</div>
+            <div class="htabs-p" data-tab="unreachable" role="tabpanel"><span class="tag e">Scenario 3 &#183; the store is unreachable.</span> <code>Repo.transaction</code> cannot reach PostgreSQL, so no step is applied and nothing commits. The settlement is refused, not half-recorded; the ledger is exactly as it was, and available again the moment the store returns.</div>
+            <div class="htabs-p" data-tab="conflict" role="tabpanel"><span class="tag m">Scenario 4 &#183; a serialization conflict.</span> Under serializable isolation PostgreSQL detects a read/write dependency that no serial order would allow and <b>aborts one transaction with a serialization failure</b> for the application to retry &#8212; rather than permitting the anomaly. One settlement commits; the other starts over.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a scenario to run it; click to pin. Without scripting, all four read in sequence and the figure shows the commit case. Every failing scenario ends the same way: block, do not diverge.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="settled">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Settled money is consistency-first</h2>
+        <span class="ssrc">mesh.2.3.md &#183; Gilbert &amp; Lynch 2012</span>
+      </div>
+      <p class="body">A ledger records what has settled, and its correctness is not a matter of degree: a transfer is
+      either fully recorded &#8212; the debit, the credit, and the entry all present &#8212; or it is not recorded at all.
+      A half-recorded transfer, where money left one account but never reached another, is a <b>worse outcome</b> than a
+      transfer that was refused and can be retried, because the refused one leaves the ledger correct and the
+      half-recorded one leaves it wrong.</p>
+      <p class="body">So the ledger is a best-effort-availability surface in the precise sense of the strategy: it
+      guarantees correctness regardless of the network and gives up availability when it must, choosing consistency over
+      availability whenever the two collide. The proof in M1.2 is what says the collision is real and unavoidable under a
+      partition; the ledger's job is to make the <b>safe side</b> of it the one it lands on &#8212; refusing rather than
+      recording something wrong.</p>
+    </section>
+
+    <section id="multi">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Ecto.Multi &#8212; one all-or-nothing transaction</h2>
+        <span class="ssrc">mesh.2.3.md &#183; Ecto.Multi</span>
+      </div>
+      <p class="body">EchoMesh composes a settlement out of several operations &#8212; debit one account, credit another,
+      write the journal entry &#8212; and runs them as one transaction with <code>Ecto.Multi</code>. A multi is built by
+      <b>naming each operation</b> and chaining it onto the previous, then handed to <code>Repo.transaction</code>, which
+      starts a database transaction, applies every operation, and commits the whole <b>only if all of them succeed</b>.</p>
+      <p class="body">On success it returns the changes keyed by the names given to the steps; on any failure it rolls
+      the whole transaction back and returns a labelled result naming the operation that failed, the value it failed
+      with, and the changes made before it &#8212; so the caller learns not only that the settlement failed but exactly
+      <b>where</b>. The naming is what makes a multi-step settlement legible: a failure is attributed to its step rather
+      than to the transaction as a whole, and nothing partial survives. Ecto relies on the database's transaction for
+      this guarantee rather than reimplementing it, which ties the surface's all-or-nothing behaviour to the store
+      beneath it.</p>
+      <figure class="frozen">
+        <figcaption>a settlement composed and run as one transaction<span class="tag">Ecto.Multi &#183; extract + notes</span></figcaption>
+<pre><span class="fd"># a settlement: debit A, credit B, write the entry — named, chained,</span>
+<span class="fd"># and run as ONE transaction over Postgres. Built from documented calls.</span>
+multi =
+  <span class="fc">Ecto.Multi</span>.new()
+  |&gt; <span class="fc">Ecto.Multi</span>.update(<span class="fa">:debit</span>,  debit_changeset)    <span class="fd"># step named :debit</span>
+  |&gt; <span class="fc">Ecto.Multi</span>.update(<span class="fa">:credit</span>, credit_changeset)   <span class="fd"># step named :credit</span>
+  |&gt; <span class="fc">Ecto.Multi</span>.insert(<span class="fa">:entry</span>,  journal_changeset)  <span class="fd"># step named :entry</span>
+
+<span class="fd"># handed to the repo: BEGIN, apply each step in order, COMMIT only if all succeed</span>
+<span class="fc">Repo</span>.transaction(multi)
+
+<span class="fd"># the two outcomes the multi can return:</span>
+{<span class="fa">:ok</span>, <b>changes</b>}                              <span class="fd"># all committed; changes keyed by step name</span>
+{<span class="fa">:error</span>, <span class="fe">failed_step</span>, value, changes_so_far}   <span class="fd"># rolled back; names the step that failed</span></pre>
+      </figure>
+      <p class="compose"><b>The shape to keep:</b> a settlement is one named, chained <code>Ecto.Multi</code> handed to
+      <code>Repo.transaction</code>. Success returns the changes keyed by step; failure rolls the whole back and names
+      the step &#8212; <b>nothing partial survives</b> either way.</p>
+    </section>
+
+    <section id="atomicity">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>What the database guarantees beneath it</h2>
+        <span class="ssrc">mesh.2.3.md &#183; PostgreSQL transaction isolation</span>
+      </div>
+      <p class="body">The guarantee <code>Ecto.Multi</code> leans on is the database's atomicity: every operation inside a
+      transaction completes, or none does &#8212; a commit makes the whole set permanent, and a rollback cancels all of
+      it, leaving the database unchanged. This is <b>block-over-diverge at the storage layer</b>.</p>
+      <p class="body">When the store cannot be reached, or a constraint is violated, or any step errors, the transaction
+      rolls back and the ledger is exactly as it was before the attempt; there is no state in which the debit landed and
+      the credit did not, because the database does not expose one. The surface's refusal to diverge is therefore not
+      something EchoMesh enforces in application code and hopes holds &#8212; it is the <b>atomicity the database
+      provides</b>, surfaced through one transaction per settlement.</p>
+      <figure class="frozen">
+        <figcaption>atomicity &#8212; the whole transaction, or none of it<span class="tag">PostgreSQL &#183; transaction isolation</span></figcaption>
+<pre><span class="fd">// a transaction is atomic: every step lands, or none does</span>
+BEGIN
+  UPDATE accounts ... <span class="fd">-- :debit, account A − 100</span>
+  UPDATE accounts ... <span class="fd">-- :credit, account B + 100</span>
+  INSERT INTO entries ... <span class="fd">-- :entry, the journal row</span>
+COMMIT          <span class="fa">→ all three permanent</span>   <span class="fd"># the whole set is durable</span>
+
+<span class="fd">// any failure inside — a bad step, an unreachable store — instead:</span>
+ROLLBACK        <span class="fe">→ database unchanged</span>   <span class="fd"># no half-transfer is reachable</span></pre>
+      </figure>
+    </section>
+
+    <section id="serializable">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Serializable isolation &#8212; abort rather than anomaly</h2>
+        <span class="ssrc">mesh.2.3.md &#183; PostgreSQL transaction isolation</span>
+      </div>
+      <p class="body">Atomicity handles a single transaction; concurrency is handled by isolation, and the strict end of
+      it is where refusing over diverging shows again. PostgreSQL's serializable isolation <b>emulates running
+      transactions one at a time</b>: it monitors for the read/write dependencies that could let a concurrent set behave
+      in a way no serial order would, and when it detects such a condition it does not permit the anomaly &#8212; it
+      aborts one of the transactions with a <b>serialization failure</b>, which the application is expected to catch and
+      retry from the beginning.</p>
+      <p class="body">So under contention the ledger does not produce an inconsistent interleaving; one transaction
+      commits and the other is told to start over, and the database stays consistent throughout. The cost is named beside
+      the guarantee: serializable carries monitoring overhead and forces retries that a looser isolation level would
+      avoid, so it is the right choice where <b>correctness outranks throughput</b> &#8212; which is exactly the ledger's
+      priority, and the same priority Chubby names when it puts reliability ahead of throughput in M2.1.</p>
+      <figure class="frozen">
+        <figcaption>serializable &#8212; the conflict aborts, the anomaly never lands<span class="tag">PostgreSQL &#183; serializable isolation</span></figcaption>
+<pre><span class="fd">// two settlements interleave on the same accounts; serializable</span>
+<span class="fd">// emulates a one-at-a-time order and refuses any other behaviour</span>
+T1: BEGIN ISOLATION LEVEL SERIALIZABLE ...   <span class="fd"># reads, writes</span>
+T2: BEGIN ISOLATION LEVEL SERIALIZABLE ...   <span class="fd"># reads, writes the same rows</span>
+
+<span class="fd">// a read/write dependency no serial order would allow is detected:</span>
+T1: COMMIT          <span class="fa">→ committed</span>
+T2: COMMIT          <span class="fe">→ ERROR: could not serialize access</span>   <span class="fd"># abort, then retry</span>
+
+<span class="fd">// the anomaly never lands — one commits, the other starts over</span></pre>
+      </figure>
+    </section>
+
+    <section id="line">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The line that blocks rather than diverges</h2>
+        <span class="ssrc">mesh.2.3.md &#183; the consistency-first contract</span>
+      </div>
+      <p class="body">Put together, the ledger draws one clear line: when it cannot do the whole settlement correctly, it
+      does none of it. A store it cannot reach, a step that fails, a conflict it cannot serialize &#8212; each ends the
+      same way, with the transaction rolled back and the ledger unchanged, available again the moment the obstacle clears.
+      It <b>blocks</b>; it does not diverge.</p>
+      <p class="body">This is the consistency-first contract made concrete on the surface where it matters most, and it is
+      the deliberate opposite of the availability-first periphery, which answers from local state during a partition and
+      logs enough to reconcile on heal rather than refusing &#8212; the choice the next chapter, M3, builds. The two
+      surfaces are not in disagreement about the theorem; they have made <b>opposite, deliberate choices</b> about which
+      side of it to land on.</p>
+      <div class="cmp">
+        <article class="reg">
+          <p class="ck">Consistency-first &#183; the ledger</p>
+          <h3>Block when it cannot be correct</h3>
+          <p>When the store is unreachable or a step fails, nothing commits and the ledger is unchanged. The settlement is
+          refused and can be retried; the surface is unavailable for the moment, never wrong.</p>
+          <p class="ex"><b>under failure:</b> roll back, refuse, retry &#183; <b>never:</b> half a transfer</p>
+        </article>
+        <article class="con">
+          <p class="ck">Availability-first &#183; the periphery</p>
+          <h3>Answer, then reconcile on heal</h3>
+          <p>The opposite choice EchoMesh's periphery makes: answer from local state during a partition and log enough to
+          reconcile once the network heals, rather than refusing. The choice the next chapter, M3, builds.</p>
+          <p class="ex"><b>under partition:</b> answer locally, reconcile later &#183; <b>builds at:</b> M3</p>
+        </article>
+      </div>
+      <div class="htabs" id="dualw">
+        <div class="htabs-bar" role="tablist" aria-label="How the ledger sits with the single writer">
+          <button type="button" role="tab" data-tab="writer" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>The single writer</button>
+          <button type="button" role="tab" data-tab="txn" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>The atomic transaction</button>
+          <button type="button" role="tab" data-tab="together" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>The two together</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="writer" role="tabpanel"><span class="tag c">Who may write.</span> The single writer of M2.2 gives an instrument one ordered history cheaply, with no quorum, because there is one author. Correctness comes from ownership rather than a vote &#8212; there is one history because there is one writer.</div>
+          <div class="htabs-p" data-tab="txn" role="tabpanel"><span class="tag m">What counts as a complete write.</span> The atomic transaction gives a settlement all-or-nothing finality, with no partial state, because the database commits or rolls back as a unit. Several writes must stand or fall together; the multi is how they do.</div>
+          <div class="htabs-p" data-tab="together" role="tabpanel"><span class="tag c">The two mechanisms of the consistency-first side.</span> Together they are how EchoMesh keeps the surfaces that must be correct correct &#8212; by <b>ownership</b> where a single history suffices, and by <b>transaction</b> where several writes must stand or fall together.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus a panel to read it; click to pin. Without scripting, all three read in sequence. One answers who may write; the other answers what counts as a complete write.</p>
+      </div>
+      <p class="compose"><b>Real and proposed, candidly:</b> the mechanisms are external and settled &#8212; the atomic
+      transaction is <code>Ecto.Multi</code>, the all-or-nothing commit and serializable abort-over-anomaly are
+      PostgreSQL's, and the consistency-over-availability choice is the best-effort-availability strategy. EchoMesh's
+      proposal is the <b>use</b>: a regulated ledger built as one transaction per settlement that blocks rather than
+      diverges, sitting beside the single-writer book as the consistency-first side of the mesh &#8212; separated from
+      the proposed composition at M8.2.</p>
+    </section>
+
+    <section id="scope">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>What this dive reads, and does not</h2>
+        <span class="ssrc">mesh.2.3.md &#183; boundaries</span>
+      </div>
+      <p class="body">This dive reads the transaction mechanism; it does not specify the ledger's schema or its
+      reconciliation with upstream surfaces. It treats serializable isolation as the strict option without claiming every
+      ledger operation runs at that level; the isolation a given settlement needs is a design choice the schema chapter
+      settles. The identity that names an entry across surfaces is summarized, not specified &#8212; the specification is
+      the <code>/bcs</code> course &#8212; and the availability-first alternative to blocking is M3.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">It reads</p>
+          <h3>The transaction mechanism</h3>
+          <p>How a settlement composes into one <code>Ecto.Multi</code>, how the database's atomicity makes it
+          all-or-nothing, and how serializable isolation aborts rather than permits an anomaly.</p>
+          <p class="note">the all-or-nothing line &#183; <b>block, not diverge</b></p>
+        </article>
+        <article>
+          <p class="cno">It defers</p>
+          <h3>The schema and the isolation choice</h3>
+          <p>Not the ledger's schema, nor the level each settlement runs at &#8212; serializable is the strict option, not
+          a claim that every operation uses it. The schema chapter settles that.</p>
+          <p class="note">a design choice &#183; <b>the schema chapter</b></p>
+        </article>
+        <article>
+          <p class="cno">It doors to</p>
+          <h3>The identity and the opposite choice</h3>
+          <p>The identity that names an entry across surfaces is the <code>/bcs</code> course; the availability-first
+          surface that answers and reconciles rather than blocks is the next chapter.</p>
+          <p class="note">identity &#183; <b>/bcs</b> &#183; the periphery &#183; <b>M3</b></p>
+        </article>
+      </div>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh/best-effort-availability">
+          <span class="dr">/mesh/best-effort-availability</span>
+          <h3>M2 &#8212; Best Effort Availability</h3>
+          <p>The chapter landing: consistency first &#8212; the strategy, its classic example, consistency by ownership
+          rather than a vote, and the ledger that blocks rather than diverges.</p>
+          <p class="dnote"><b>this dive</b> is M2.3, the ledger; the strategy is M2.1, the single writer is M2.2.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract, proven by frozen transcripts
+          across five runtimes.</p>
+          <p class="dnote"><b>the identity</b> that names a ledger entry across surfaces is specified by this contract.</p>
+        </a>
+        <a class="door" href="/elixir">
+          <span class="dr">/elixir</span>
+          <h3>Functional Programming in Elixir</h3>
+          <p>The engine and the umbrella where the surfaces run, through to the Fly deployment chapter that puts them on
+          machines &#8212; and the Ecto layer the ledger composes over.</p>
+          <p class="dnote"><b>Ecto.Multi</b> and <code>Repo.transaction</code> are the Elixir-side mechanism this dive
+          read.</p>
+        </a>
+        <a class="door" href="/echomq">
+          <span class="dr">/echomq</span>
+          <h3>EchoMQ &#8212; the protocol, in depth</h3>
+          <p>The Valkey-native bus and stream tier, rung by rung: the keyspace, the Lua inventory, the conformance
+          suite.</p>
+          <p class="dnote"><b>the availability-first</b> surfaces the next chapter builds answer and reconcile through
+          this bus &#8212; M3 and M6.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;8</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://hexdocs.pm/ecto/Ecto.Multi.html" rel="noopener">Elixir &#8212; Ecto.Multi</a><span class="rs">composes several repository operations into one transaction handed to Repo.transaction: on success it commits and returns the changes keyed by step name, and on any failure it rolls back and returns the failed operation, its value, and the changes made before it</span></li>
+          <li><a href="https://www.postgresql.org/docs/current/transaction-iso.html" rel="noopener">PostgreSQL &#8212; Transaction Isolation (official documentation)</a><span class="rs">a transaction is atomic &#8212; commit makes all changes permanent, rollback cancels them all; serializable isolation emulates serial execution and aborts a transaction with a serialization failure to retry rather than permitting an anomaly</span></li>
+          <li><a href="https://groups.csail.mit.edu/tds/papers/Gilbert/Brewer2.pdf" rel="noopener">Gilbert &amp; Lynch (2012) &#8212; Perspectives on the CAP Theorem</a><span class="rs">best-effort availability guarantees consistency regardless of the network and gives up availability when the two collide &#8212; the choice a ledger makes by blocking rather than diverging</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh/best-effort-availability">M2 &#8212; Best Effort Availability</a><span class="rs">the chapter landing: consistency first &#8212; the strategy, the single writer, and the ledger</span></li>
+          <li><a href="/mesh/best-effort-availability/single-writer">M2.2 &#8212; The Single Writer, Not the Quorum</a><span class="rs">the other consistency-first mechanism: one ordered history by ownership rather than a vote</span></li>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the law and the 14-byte identity contract that names a ledger entry across surfaces</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">Ecto, the engine, the umbrella where the surfaces run, and the Fly deployment chapter</span></li>
+          <li><a href="/echomq">EchoMQ &#8212; the protocol, in depth</a><span class="rs">the Valkey-native bus and stream tier the availability-first surfaces use</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh/best-effort-availability/single-writer"><span class="pk">previous &#183; dive</span>&#8592; M2.2 &#183; The Single Writer, Not the Quorum</a>
+      <a class="pgx" href="/mesh/best-effort-availability"><span class="pk">back to the chapter</span>M2 &#183; Best Effort Availability &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <a href="/mesh/best-effort-availability">M2 &#183; Best Effort Availability</a>
+        <span>M3 &#183; Best Effort Consistency<i>soon</i></span>
+        <span>M4 &#183; Trading the Trade<i>soon</i></span>
+        <span>M5 &#183; Segmenting<i>soon</i></span>
+        <span>M6 &#183; The Stack<i>soon</i></span>
+        <span>M7 &#183; Transparent Infrastructure<i>soon</i></span>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0ItdPRBLc</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 17:01:37 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the all-or-nothing emulator: the scenario tabs run the multi over fixed data ----------
+     RUN is a pure function of the scenario key — no network, no storage. It re-colours the three
+     step tiles and the store, sets the transaction label, and writes the verdict + an aria-live readout.
+     Every failing scenario ends the same way: roll back, nothing committed — block, do not diverge. */
+  var STEPS = ['s1', 's2', 's3'];                 // :debit, :credit, :entry
+  var SCEN = {
+    commit: {
+      s: "scenario 1 · all steps succeed",
+      step: ['ok', 'ok', 'ok'], store: 'up', txn: 'BEGIN … COMMIT', txna: 'all steps committed',
+      verdict: 'COMMIT', vcls: 'commit', vsub: '{:ok, changes} — balances move together, the entry agrees',
+      h: "<code>Repo.transaction</code> applies <b>:debit</b>, <b>:credit</b>, and <b>:entry</b> in order and commits the whole. The result is <b>{:ok, changes}</b>, keyed by step name — the balances move together and the entry agrees with them."
+    },
+    failstep: {
+      s: "scenario 2 · a step fails",
+      step: ['rolled', 'fail', 'rolled'], store: 'up', txn: 'BEGIN … ROLLBACK', txna: 'nothing committed',
+      verdict: 'ROLLBACK', vcls: 'rollback', vsub: '{:error, :credit, value, changes_so_far} — names the failed step',
+      h: "The <b>:credit</b> step returns an error, so the whole transaction <span class='vc'>rolls back</span> — the already-applied <b>:debit</b> is undone and nothing commits. The labelled result <b>{:error, :credit, value, changes_so_far}</b> names exactly the step that failed."
+    },
+    unreachable: {
+      s: "scenario 3 · the store is unreachable",
+      step: ['rolled', 'rolled', 'rolled'], store: 'down', txn: 'cannot reach store', txna: 'no step applied',
+      verdict: 'REFUSED', vcls: 'rollback', vsub: 'no step applied — the ledger is unchanged, available on return',
+      h: "<code>Repo.transaction</code> <span class='vc'>cannot reach PostgreSQL</span>, so no step is applied and nothing commits. The settlement is refused, not half-recorded; the ledger is exactly as it was, and available again the moment the store returns."
+    },
+    conflict: {
+      s: "scenario 4 · a serialization conflict",
+      step: ['rolled', 'rolled', 'rolled'], store: 'up', txn: 'serialization failure', txna: 'abort, then retry',
+      verdict: 'ABORT → RETRY', vcls: 'rollback', vsub: 'could not serialize access — the anomaly never lands',
+      h: "Under serializable isolation PostgreSQL detects a read/write dependency that no serial order would allow and <span class='vc'>aborts one transaction</span> with a serialization failure to retry — rather than permitting the anomaly. One settlement commits; the other starts over."
+    }
+  };
+  var capsvg = document.getElementById('capsvg');
+  var emit = document.getElementById('emit');
+  var txn = document.getElementById('txn');
+  var txna = document.getElementById('txna');
+  var store = document.getElementById('store');
+  var verdict = document.getElementById('verdict');
+  var vsub = document.getElementById('vsub');
+
+  function paintStep(id, state) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.setAttribute('class', state === 'fail' ? 'step fail' : (state === 'rolled' ? 'step rolled' : 'step'));
+  }
+  wireHtabs(document.getElementById('ledgerw'), function (key) {
+    var d = SCEN[key];
+    if (!d) return;
+    if (emit) emit.innerHTML = '<span class="step">' + d.s + '</span>' + d.h;
+    STEPS.forEach(function (id, i) { paintStep(id, d.step[i]); });
+    if (store) store.setAttribute('class', d.store === 'down' ? 'store down' : 'store');
+    if (txn) txn.textContent = d.txn;
+    if (txna) txna.textContent = d.txna;
+    if (verdict) { verdict.setAttribute('class', 'verdict ' + d.vcls); verdict.textContent = 'verdict — ' + d.verdict; }
+    if (vsub) { vsub.setAttribute('class', 'ckm ' + (d.vcls === 'commit' ? 'ok' : 'no')); vsub.textContent = d.vsub; }
+    if (capsvg) capsvg.classList.toggle('focus', false);
+  });
+
+  /* the single-writer-vs-transaction tabs are a plain reuse of the same component */
+  wireHtabs(document.getElementById('dualw'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

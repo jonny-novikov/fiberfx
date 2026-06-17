@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E2.01 · The lifecycle &amp; state machine — EchoMQ</title>
+<meta name="description" content="E2.01 · The lifecycle & state machine: a job in EchoMQ is always in exactly one of eight states, and every move between them is one atomic Lua script — moveToActive-11 (pickup), moveToFinished-14 (completion), moveToDelayed-8 (retry), moveStalledJobsToWait-8 (stalled recovery) — with a closed -1..-11 return vocabulary and the lock that keeps a job owned. Three dives, grounded in the real EchoMQ.Keys / EchoMQ.Scripts source and the real priv/scripts/*.lua files.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero / crumbs ---- */
+.hero{padding-top:clamp(2.4rem,6vw,4.4rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.backlinks{font-family:var(--mono);font-size:.76rem;color:var(--cream-dim);margin:1.2rem 0 0;display:flex;flex-wrap:wrap;gap:.4rem 1rem}
+.backlinks a{color:var(--gold)}
+.backlinks .mv{color:var(--echo-bright)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;
+  color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;
+  border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);background:var(--ink);
+  border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.kmap .kbox rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.kmap .kbox.on rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.kmap .kbox.done rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.kmap text{font-family:var(--sans);fill:#d7cfb9}
+.kmap .kt{font-family:var(--mono);fill:#a39c89;font-size:11px}
+.kmap .edge{stroke:#2a3252;stroke-width:1.3;fill:none;transition:stroke .18s ease}
+.kmap .edge.lit{stroke:#6fdccf;stroke-width:2.2}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){.bridge{grid-template-columns:1fr;gap:.7rem}.bridge .arrow{justify-self:center;transform:rotate(90deg)}}
+
+/* ---- contents cards ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.6rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.soon{color:var(--echo-bright);border-color:var(--echo)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:1rem 1.05rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.18rem;font-weight:600;color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.45}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;
+  padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);
+  border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.mods{grid-template-columns:1fr}.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the contents</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/core">core</a><span class="rsep">/</span><span class="rcur">lifecycle</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/core">E2 · Core</a>
+      <span class="sep">/</span>
+      <span class="here">The lifecycle</span>
+    </nav>
+    <p class="eyebrow">E2.01 · Movement I · The Core</p>
+    <h1>The lifecycle &amp;<br>the <span class="ex">state machine</span></h1>
+    <p class="lede">A job is always in exactly one of eight states, and every move between them is one atomic Lua script.</p>
+    <p class="kicker">A job in EchoMQ occupies <strong>one of eight states</strong> at a time —
+      <code class="inl">wait</code>, <code class="inl">paused</code>, <code class="inl">delayed</code>,
+      <code class="inl">prioritized</code>, <code class="inl">active</code>, <code class="inl">completed</code>,
+      <code class="inl">failed</code>, <code class="inl">waiting-children</code> — and each is one Redis key built by one
+      function in <code class="inl">EchoMQ.Keys</code>. Every move between states is <strong>one atomic Lua
+      script</strong>: <code class="inl">moveToActive-11</code> picks a job up and takes the lock,
+      <code class="inl">moveToFinished-14</code> completes it, <code class="inl">moveToDelayed-8</code> retries it, and
+      <code class="inl">moveStalledJobsToWait-8</code> recovers a stalled one. When a script cannot complete it returns a
+      negative integer from a closed <code class="inl">-1</code>…<code class="inl">-11</code> set. The core is shipped, so
+      every surface below is read from the real source. Three dives follow.</p>
+    <p class="backlinks">
+      <span class="mv">Movement I · Core (as-built)</span>
+      <a href="/redis-patterns/queues">← redis-patterns R3</a>
+    </p>
+    <div class="toc-mini">
+      <a href="#stepper">Step a job through it</a>
+      <a href="#dives">The dives</a>
+      <a href="#how">How it fits</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- ===================== THE FRAMING INTERACTIVE ===================== -->
+  <section id="stepper">
+    <h2>Step a job through the machine</h2>
+    <div class="prose">
+      <p>The state machine is easiest to read by walking it. Step a captured job along two real paths and read the
+        transition script named at each edge. The <strong>happy path</strong> is
+        <code class="inl">add → wait → active → completed</code>; the <strong>retry path</strong> is
+        <code class="inl">add → wait → active → failed-handling → delayed → wait → active</code>. Each move names exactly
+        one Lua script, and the lifecycle never lets a job be half-moved — every transition is one atomic step.</p>
+    </div>
+
+    <figure class="fig kmap" aria-labelledby="stepTitle">
+      <h4 id="stepTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A captured job's path · pick a path, then step</h4>
+      <div class="controls">
+        <div class="solid-select" id="pathSel" role="group" aria-label="Which lifecycle path to step">
+          <button type="button" data-path="happy" data-c="sage" class="active" aria-pressed="true">happy path</button>
+          <button type="button" data-path="retry" data-c="gold" aria-pressed="false">retry path</button>
+        </div>
+        <div class="solid-select" role="group" aria-label="Stepping">
+          <button type="button" id="stepBtn" data-c="echo">step →</button>
+          <button type="button" id="resetBtn" data-c="blue">reset</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 1000 230" role="img" aria-label="The job lifecycle path. A captured job moves through states — wait, active, then completed or, on the retry path, delayed and back to wait — with the active transition acquiring the lock. Each edge names its Lua script. The current state and the last traversed edge are highlighted.">
+        <g>
+          <path class="edge" id="e-wait-active" d="M212 56 L408 56"></path>
+          <path class="edge" id="e-active-completed" d="M510 82 L300 158"></path>
+          <path class="edge" id="e-active-delayed" d="M510 82 L700 158"></path>
+          <path class="edge" id="e-delayed-wait" d="M700 158 C760 100, 360 36, 212 50"></path>
+        </g>
+        <g class="kbox on" id="n-wait"><rect x="40" y="32" width="172" height="48" rx="9"></rect></g>
+        <text x="126" y="54" text-anchor="middle" font-size="14">wait</text>
+        <text x="126" y="71" text-anchor="middle" class="kt">LIST</text>
+        <g class="kbox" id="n-active"><rect x="408" y="32" width="172" height="48" rx="9"></rect></g>
+        <text x="494" y="54" text-anchor="middle" font-size="14">active</text>
+        <text x="494" y="71" text-anchor="middle" class="kt">LIST · lock held</text>
+        <g class="kbox" id="n-completed"><rect x="180" y="158" width="172" height="48" rx="9"></rect></g>
+        <text x="266" y="180" text-anchor="middle" font-size="14">completed</text>
+        <text x="266" y="197" text-anchor="middle" class="kt">ZSET · terminal</text>
+        <g class="kbox" id="n-delayed"><rect x="614" y="158" width="172" height="48" rx="9"></rect></g>
+        <text x="700" y="180" text-anchor="middle" font-size="14">delayed</text>
+        <text x="700" y="197" text-anchor="middle" class="kt">ZSET · score = run-at</text>
+        <text x="820" y="60" class="kt" id="step-script">moveToActive-11</text>
+        <text x="820" y="80" class="kt" id="step-prog">step 0 / 3</text>
+      </svg>
+
+      <div class="geo-readout" id="stepOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">A job is always in exactly one state, and each move is one named atomic Lua script. The state and the
+      script are the protocol — the same in Elixir, Go, and Node.js.</p>
+  </section>
+
+  <!-- ===================== THE DIVES ===================== -->
+  <section id="dives">
+    <h2>The dives</h2>
+    <div class="prose">
+      <p>Three dives build the module — the states first, then the script behind each transition, then the lock that
+        keeps a job owned.</p>
+    </div>
+    <div class="mods">
+      <a class="mod" href="/echomq/core/lifecycle/the-eight-states">
+        <div class="top"><span class="num">E2.01.1</span></div>
+        <p class="t">The eight states</p>
+        <p class="o">wait · paused · delayed · prioritized · active · completed · failed · waiting-children — each with its Redis location, type, key function, and terminal-or-not.</p>
+      </a>
+      <a class="mod" href="/echomq/core/lifecycle/every-transition-and-its-script">
+        <div class="top"><span class="num">E2.01.2</span></div>
+        <p class="t">Every transition &amp; its script</p>
+        <p class="o">The script behind each move — moveToActive-11, moveToFinished-14, moveToDelayed-8, moveStalledJobsToWait-8 — its KEYS arity, the atomic step list, and the closed -1…-11 codes.</p>
+      </a>
+      <a class="mod" href="/echomq/core/lifecycle/the-lock-protocol">
+        <div class="top"><span class="num">E2.01.3</span></div>
+        <p class="t">The lock protocol</p>
+        <p class="o">The SET …:lock uuid PX acquire inside moveToActive, the extendLock-2 heartbeat, the token verification that returns -2/-6, and the 30000/15000/30000ms timing.</p>
+      </a>
+    </div>
+  </section>
+
+  <!-- ===================== HOW IT FITS ===================== -->
+  <section id="how">
+    <h2>How it fits</h2>
+    <div class="prose">
+      <p>The lifecycle stands on the two immutable layers E1 froze — the L1 state keys and the L2 transition scripts —
+        and sets them in motion. One transition makes the layering concrete: a worker picks up the next job, and at
+        <strong>L4</strong> it calls a runtime API; at <strong>L3</strong> the executor dispatches a script by SHA
+        (<code class="inl">EchoMQ.Scripts.move_to_active/4</code>); at <strong>L2</strong> the script
+        <code class="inl">moveToActive-11</code> runs atomically; at <strong>L1</strong> it moves a job id from
+        <code class="inl">emq:{queue}:wait</code> to <code class="inl">emq:{queue}:active</code> and sets the lock at
+        <code class="inl">emq:{queue}:{jobId}:lock</code> with a UUID token and a <code class="inl">PX</code> TTL. The
+        completion script <code class="inl">moveToFinished-14</code> first verifies that token; a missing or mismatched
+        lock returns <code class="inl">-2</code> or <code class="inl">-6</code> from the closed set. L1 and L2 are
+        byte-identical across runtimes; only L3 and L4 differ — the Golden Rule.</p>
+    </div>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the protocol (immutable L1/L2)</span>
+        <p>The state keys (<code class="inl">EchoMQ.Keys.wait/1</code>, <code class="inl">active/1</code>, …) and the
+          transition scripts (<code class="inl">moveToActive-11</code>, <code class="inl">moveToFinished-14</code>) —
+          frozen, with the same closed <code class="inl">-1</code>…<code class="inl">-11</code> codes in every runtime.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">its three runtimes (variable L3/L4)</span>
+        <p>Elixir dispatches the moves with <code class="inl">EchoMQ.Scripts</code> over a Redix pool and renews locks
+          with one <code class="inl">EchoMQ.LockManager</code> timer per worker; Go and Node.js drive the same scripts
+          their own way. The wire underneath does not move.</p>
+      </div>
+    </div>
+    <p class="take">The Golden Rule: L1 and L2 are immutable and shared; L3 and L4 vary. The eight states and the four
+      transition scripts are the protocol — the same in every runtime; the executor that dispatches them is each
+      runtime's own.</p>
+    <p class="note">Start with <a href="/echomq/core/lifecycle/the-eight-states">the eight states</a>, then read every
+      transition and its script, then the lock protocol. The chapter closes with a workshop that runs a job through
+      every state — reachable from <a href="/echomq/core">E2 · the core</a>.</p>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://docs.bullmq.io/">BullMQ &mdash; <em>Documentation</em></a> &mdash; the wire protocol EchoMQ implements: the eight states, the transition scripts, and the lock protocol.</li>
+          <li><a href="https://redis.io/commands/rpoplpush/">Redis &mdash; <em>RPOPLPUSH</em></a> &mdash; the reliable wait&rarr;active move at the heart of <code class="inl">moveToActive</code>.</li>
+          <li><a href="https://redis.io/commands/lpush/">Redis &mdash; <em>LPUSH</em></a> &mdash; the push onto the <code class="inl">active</code> list a pickup performs.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; the ZSET scoring behind delayed, prioritized, and the terminal sets.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/core">E2 &middot; The core</a> &mdash; the chapter landing.</li>
+          <li><a href="/echomq/protocol/lua-scripts">E1.03 &middot; The Lua script layer</a> &mdash; the scripts these transitions run.</li>
+          <li><a href="/echomq/protocol">E1 &middot; The protocol</a> &mdash; the immutable wire this chapter sets in motion.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns R3 &middot; Reliable queues</a> &mdash; the pattern this chapter deepens.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/echomq/core"><span aria-hidden="true">←</span> E2 · The core</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/core/lifecycle/the-eight-states">E2.01.1 · The eight states <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMQ — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">EchoMQ &mdash; the polyglot job-queue protocol, taught in depth and tracked as it is built.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/echomq/core/lifecycle/the-eight-states">E2.01.1 &middot; The eight states</a>
+        <a href="/echomq/core/lifecycle/every-transition-and-its-script">E2.01.2 &middot; Every transition &amp; its script</a>
+        <a href="/echomq/core/lifecycle/the-lock-protocol">E2.01.3 &middot; The lock protocol</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/core">E2 &middot; The core</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Interactive: step a captured job through the lifecycle (pure over fixed paths) ---------- */
+  /* Each path is an ordered list of edges. Each edge: from-state → to-state via one real Lua script. */
+  var PATHS = {
+    happy: [
+      { from: 'wait',    to: 'active',    edge: 'e-wait-active',      script: 'moveToActive-11',  note: 'pickup — RPOP wait, acquire the lock (SET …:lock uuid PX), LPUSH active' },
+      { from: 'active',  to: 'completed', edge: 'e-active-completed', script: 'moveToFinished-14', note: 'success — verify the lock token, LREM active, ZADD completed' }
+    ],
+    retry: [
+      { from: 'wait',    to: 'active',    edge: 'e-wait-active',      script: 'moveToActive-11',  note: 'pickup — RPOP wait, acquire the lock, LPUSH active' },
+      { from: 'active',  to: 'delayed',   edge: 'e-active-delayed',   script: 'moveToDelayed-8',  note: 'retry — DEL the lock, delay = base * 2^(attempt-1), ZADD delayed, increment atm' },
+      { from: 'delayed', to: 'wait',      edge: 'e-delayed-wait',     script: 'moveToActive-11',  note: 'delay expired — promoted delayed → wait, then a later pickup runs moveToActive-11 again' }
+    ]
+  };
+  var ALL_STATES = ['wait', 'active', 'completed', 'delayed'];
+  var ALL_EDGES = ['e-wait-active', 'e-active-completed', 'e-active-delayed', 'e-delayed-wait'];
+
+  var curPath = 'happy';
+  var curStep = 0; /* number of edges traversed */
+
+  function stateOfStep(path, step) {
+    var edges = PATHS[path];
+    if (step <= 0) return edges[0].from;
+    return edges[step - 1].to;
+  }
+
+  function renderStep() {
+    var edges = PATHS[curPath];
+    var n = edges.length;
+    var here = stateOfStep(curPath, curStep);
+    var out = document.getElementById('stepOut');
+    if (!out) return;
+
+    /* nodes */
+    ALL_STATES.forEach(function (s) {
+      var g = document.getElementById('n-' + s);
+      if (!g) return;
+      var isHere = s === here;
+      var isTerminalDone = (curStep === n) && isHere && (s === 'completed');
+      g.classList.toggle('on', isHere && !isTerminalDone);
+      g.classList.toggle('done', isTerminalDone);
+    });
+    /* edges: light the edge just traversed */
+    ALL_EDGES.forEach(function (e) {
+      var el = document.getElementById(e);
+      if (el) el.classList.toggle('lit', curStep > 0 && edges[curStep - 1].edge === e);
+    });
+
+    var scriptEl = document.getElementById('step-script');
+    var progEl = document.getElementById('step-prog');
+    if (progEl) progEl.textContent = 'step ' + curStep + ' / ' + n;
+
+    if (curStep === 0) {
+      if (scriptEl) scriptEl.textContent = 'next: ' + edges[0].script;
+      out.innerHTML = '<b>' + curPath + ' path</b> <span class="dim">— captured at</span> <b>' + here + '</b><br>' +
+        '<span class="dim">press “step” to run the next transition. ' + n + ' moves on this path.</span>';
+    } else {
+      var ed = edges[curStep - 1];
+      if (scriptEl) scriptEl.textContent = ed.script;
+      var doneLine = (curStep === n)
+        ? '<br><span class="dim">path complete — the job is now in</span> <b>' + here + '</b>.'
+        : '';
+      out.innerHTML = '<b>' + ed.from + ' → ' + ed.to + '</b> <span class="dim">via</span> <b>' + ed.script + '</b><br>' +
+        '<span class="dim">' + ed.note + '</span>' + doneLine;
+    }
+  }
+
+  document.querySelectorAll('#pathSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#pathSel button').forEach(function (o) {
+        var on = o === b; o.classList.toggle('active', on); o.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      curPath = b.getAttribute('data-path');
+      curStep = 0;
+      renderStep();
+    });
+  });
+  var stepBtn = document.getElementById('stepBtn');
+  if (stepBtn) stepBtn.addEventListener('click', function () {
+    var n = PATHS[curPath].length;
+    if (curStep < n) curStep++;
+    renderStep();
+  });
+  var resetBtn = document.getElementById('resetBtn');
+  if (resetBtn) resetBtn.addEventListener('click', function () { curStep = 0; renderStep(); });
+  renderStep();
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The hash and its fields · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="The job record is one Valkey HASH at emq:{q}:job:<id>, built by a single HSET in the @enqueue script. The field set — state, attempts, payload — is the record's shape and part of the protocol: a fixed, named row any speaker reads without a schema lookup. The named handle EchoMQ.Jobs.enqueue/4, then the script body, with two interactives over a fixed sample row.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(2.4rem,6vw,4.4rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- record hash diagram ---- */
+.rec .field rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+.rec .field.sel rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.rec text{font-family:var(--sans);fill:#d7cfb9}
+.rec .fk{font-family:var(--mono);fill:#f0cd7f;font-size:12px}
+.rec .fv{font-family:var(--mono);fill:#a7c9b1;font-size:12px}
+.rec .cap{font-family:var(--mono);fill:#a39c89;font-size:11px}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- footer ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/protocol">protocol</a><span class="rsep">/</span><a href="/echomq/protocol/the-record-hash">the-record-hash</a><span class="rsep">/</span><span class="rcur">the-hash-and-its-fields</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/protocol">The Protocol</a>
+        <span class="sep">/</span>
+        <a href="/echomq/protocol/the-record-hash">The record hash</a>
+        <span class="sep">/</span>
+        <span class="here">The hash and its fields</span>
+      </div>
+      <p class="eyebrow">The record hash &middot; dive 01 &middot; the field set</p>
+      <h1>The hash and its <span class="ex">fields</span></h1>
+      <p class="lede">One write builds the row. Its three field names are the record's shape.</p>
+      <p class="kicker">The job record is one Valkey <strong>HASH</strong>, addressed by
+        <code class="inl">EchoMQ.Keyspace.job_key/2</code> at <code class="inl">emq:{q}:job:&lt;id&gt;</code> and built by
+        exactly one <code class="inl">HSET</code> inside the enqueue script. The field list &mdash;
+        <code class="inl">state</code>, <code class="inl">attempts</code>, <code class="inl">payload</code> &mdash; is
+        the record's shape, fixed and named, so any speaker that reads the row knows what each field means without a
+        schema lookup. Pick a field on the right to read its name, its birth value, and its role.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#fields">The field set</a>
+        <a href="#example">The write</a>
+        <a href="#read">Reading the row back</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig rec" aria-labelledby="recTitle">
+      <h4 id="recTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The record &middot; pick a field</h4>
+      <div class="controls">
+        <div class="solid-select" id="fieldSel" role="group" aria-label="Which field to inspect">
+          <button type="button" data-field="state" data-c="echo" class="active" aria-pressed="true">state</button>
+          <button type="button" data-field="attempts" data-c="echo" aria-pressed="false">attempts</button>
+          <button type="button" data-field="payload" data-c="echo" aria-pressed="false">payload</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 196" role="img" aria-label="A Valkey hash drawn as three rows. The key is emq, open brace, orders, close brace, colon job colon JOB-id. Row one: field state, value pending. Row two: field attempts, value 0. Row three: field payload, value caller bytes. The selected field row is highlighted in the EchoMQ accent.">
+        <text x="24" y="24" class="cap">HASH key</text>
+        <text x="120" y="24" font-family="JetBrains Mono,monospace" font-size="12" fill="#6fdccf">emq:&#123;orders&#125;:job:JOB0f3k…</text>
+        <g class="field sel" id="f-state"><rect x="24" y="40" width="412" height="40" rx="8"></rect></g>
+        <text x="40" y="64" class="fk">state</text>
+        <text x="180" y="64" class="fv">"pending"</text>
+        <text x="300" y="64" class="cap">— lifecycle position</text>
+        <g class="field" id="f-attempts"><rect x="24" y="86" width="412" height="40" rx="8"></rect></g>
+        <text x="40" y="110" class="fk">attempts</text>
+        <text x="180" y="110" class="fv">"0"</text>
+        <text x="300" y="110" class="cap">— retry count + token</text>
+        <g class="field" id="f-payload"><rect x="24" y="132" width="412" height="40" rx="8"></rect></g>
+        <text x="40" y="156" class="fk">payload</text>
+        <text x="180" y="156" class="fv">"&lt;caller bytes&gt;"</text>
+        <text x="300" y="156" class="cap">— opaque cargo</text>
+      </svg>
+
+      <div class="geo-readout" id="fieldOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="fields">
+    <h2>One hash, a fixed field set</h2>
+    <div class="prose">
+      <p>A job is an entity, and its state is one Valkey hash. The hash holds three fields and no more at birth: there
+        is no <code class="inl">id</code> field, because the id is the key; no <code class="inl">created_at</code>,
+        because the branded id is itself time-ordered; no duplicate of anything. The record is the smallest row that
+        carries a job.</p>
+      <p>What makes the field set part of the protocol, not an implementation detail, is that the names are read across
+        the wire. When a worker claims the job, the script reads <code class="inl">payload</code> by that name; when a
+        completion is fenced, the script reads <code class="inl">attempts</code> by that name. Any runtime that speaks
+        the wire agrees on those three strings. The shape is the contract.</p>
+    </div>
+    <p class="take">Three named fields, one hash, born from one write. The names are fixed so any speaker reads the row
+      with no schema lookup.</p>
+  </section>
+
+  <section id="example">
+    <h2>The write &mdash; two beats</h2>
+    <div class="prose">
+      <p><strong>Beat one &mdash; the named handle.</strong> <code class="inl">EchoMQ.Jobs.enqueue/4</code> builds the
+        two keys it will touch &mdash; the job row and the pending set &mdash; and runs the
+        <code class="inl">@enqueue</code> script. The row key comes from <code class="inl">job_key/2</code>, a gated
+        builder that raises on an ill-formed id, so a bad id never reaches the wire.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs</span>
+<span class="cmt"># job_key/2 addresses the row at emq:{q}:job:&lt;id&gt;; queue_key/2 the pending</span>
+<span class="cmt"># set. Both are built host-side and handed in declared. The values (id and</span>
+<span class="cmt"># payload) ride ARGV — never the keys.</span>
+<span class="op">def</span> <span class="fn">enqueue</span>(conn, queue, job_id, payload) <span class="op">when</span> is_binary(job_id) <span class="op">and</span> is_binary(payload) <span class="op">do</span>
+  keys = [Keyspace.<span class="fn">job_key</span>(queue, job_id), Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"pending"</span>)]
+
+  <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@enqueue</span>, keys, [job_id, payload]) <span class="op">do</span>
+    {<span class="str">:ok</span>, <span class="res">1</span>} -&gt; {<span class="str">:ok</span>, <span class="str">:enqueued</span>}
+    {<span class="str">:ok</span>, <span class="res">0</span>} -&gt; {<span class="str">:ok</span>, <span class="str">:duplicate</span>}
+    {<span class="str">:error</span>, {<span class="str">:server</span>, <span class="str">"EMQKIND"</span> &lt;&gt; _}} -&gt; {<span class="str">:error</span>, <span class="str">:kind</span>}
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><strong>Beat two &mdash; the script body.</strong> After the branded-id gate and the idempotency check, the
+        record is one <code class="inl">HSET</code>. The three field names and their initial values are right there in
+        the call: <code class="inl">state</code> = <code class="inl">"pending"</code>, <code class="inl">attempts</code>
+        = <code class="inl">"0"</code>, <code class="inl">payload</code> = <code class="inl">ARGV[2]</code>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt">-- the @enqueue script — the record write, every key declared in KEYS[]</span>
+<span class="cmt">-- The branded-id gate: the id must be JOB-namespaced, else refused at the wire.</span>
+<span class="op">if</span> string.sub(<span class="rdx">ARGV[1]</span>, <span class="res">1</span>, <span class="res">3</span>) ~= <span class="str">'JOB'</span> <span class="op">then</span>
+  <span class="op">return</span> redis.error_reply(<span class="str">'EMQKIND job id must be JOB-namespaced'</span>)
+<span class="op">end</span>
+<span class="cmt">-- Idempotent: a row that already exists is a no-op (a duplicate enqueue).</span>
+<span class="op">if</span> redis.call(<span class="str">'EXISTS'</span>, <span class="rdx">KEYS[1]</span>) == <span class="res">1</span> <span class="op">then</span>
+  <span class="op">return</span> <span class="res">0</span>
+<span class="op">end</span>
+<span class="cmt">-- THE FIELD SET: one HSET, three named fields, in field/value pairs.</span>
+<span class="cmt">--   'state'    'pending'  — born at the head of the lifecycle</span>
+<span class="cmt">--   'attempts' '0'        — born with zero tries</span>
+<span class="cmt">--   'payload'  ARGV[2]    — the caller's bytes, stored verbatim</span>
+redis.call(<span class="str">'HSET'</span>, <span class="rdx">KEYS[1]</span>, <span class="str">'state'</span>, <span class="str">'pending'</span>, <span class="str">'attempts'</span>, <span class="str">'0'</span>, <span class="str">'payload'</span>, <span class="rdx">ARGV[2]</span>)
+<span class="cmt">-- The pending set: the id is the member, so byte order is mint order.</span>
+redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[2]</span>, <span class="res">0</span>, <span class="rdx">ARGV[1]</span>)
+<span class="op">return</span> <span class="res">1</span></pre>
+
+    <div class="prose">
+      <p>The <code class="inl">HSET</code> is the field set, literally. Lifecycle transitions add a small, fixed set of
+        further fields only when they apply &mdash; a failed retry writes <code class="inl">last_error</code>, the
+        progress verb writes <code class="inl">progress</code>, a lane member carries <code class="inl">group</code>
+        &mdash; but the row a job is born with is exactly these three.</p>
+    </div>
+  </section>
+
+  <section id="read">
+    <h2>Reading the row back</h2>
+    <div class="prose">
+      <p>The same three names are what a reader looks for. A reader naming a field that exists gets its value; a reader
+        naming a field that is not part of the record &mdash; or misspelling one &mdash; gets nothing, because the
+        protocol is the exact strings. Read a field off the sample row and see what comes back.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="readTitle">
+      <h4 id="readTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">HGET the sample row &middot; which field name?</h4>
+      <div class="controls">
+        <div class="solid-select" id="readSel" role="group" aria-label="Which field name to read">
+          <button type="button" data-name="state" data-c="echo" class="active">state</button>
+          <button type="button" data-name="attempts" data-c="echo">attempts</button>
+          <button type="button" data-name="payload" data-c="echo">payload</button>
+          <button type="button" data-name="data" data-c="gold">data</button>
+          <button type="button" data-name="body" data-c="gold">body</button>
+        </div>
+      </div>
+      <div class="geo-readout" id="readOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>Model an entity as one Valkey hash with a small, fixed field set &mdash; the key is the address, the fields
+          are the contract. <strong>Redis Patterns Applied &middot; Data Modeling &amp; Memory (R7)</strong> teaches the
+          move; <a href="/redis-patterns">Redis Patterns Applied</a> opens the door and
+          <a href="/redis-patterns/overview/patterns-become-protocol">Patterns become protocol</a> is the near side.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">job_key/2</code> addresses the row; <code class="inl">@enqueue</code>'s
+          <code class="inl">HSET</code> fixes the three field names. A reader that names <code class="inl">payload</code>
+          gets the cargo; a reader that names <code class="inl">data</code> finds nothing.</p>
+      </div>
+    </div>
+    <p class="take">The record is the exact field strings. Name <code class="inl">payload</code> and the row answers; name
+      <code class="inl">data</code> and it is silent &mdash; the names are the protocol.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap</h2>
+    <div class="prose">
+      <p>A job is a Valkey hash at <code class="inl">emq:{q}:job:&lt;id&gt;</code> with three named fields written by one
+        atomic <code class="inl">HSET</code> in <code class="inl">@enqueue</code>: <code class="inl">state</code>,
+        <code class="inl">attempts</code>, <code class="inl">payload</code>. The names are read across the wire, so the
+        field set is the contract, not an implementation detail. The next dive reads two of those fields in depth: the
+        lifecycle field and the fencing token.</p>
+    </div>
+    <p class="note">Next in this module: <a href="/echomq/protocol/the-record-hash/the-state-and-attempts">The state and
+      attempts</a> &mdash; the lifecycle position the transitions rewrite, and the retry count that doubles as the
+      worker's fencing token.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the record's data type and the writes that build and read it are documented.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/hset/">Valkey &mdash; <em>HSET</em></a> &mdash; the one write that builds the three-field row.</li>
+          <li><a href="https://valkey.io/docs/">Valkey &mdash; <em>Documentation</em></a> &mdash; the substrate of record.</li>
+          <li><a href="https://redis.io/docs/data-types/hashes/">Redis &mdash; <em>Hashes</em></a> &mdash; the hash data type the record is modeled on.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/protocol/the-record-hash">The record hash</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/protocol/the-record-hash/the-state-and-attempts">The state and attempts</a> &mdash; the next dive.</li>
+          <li><a href="/echomq/protocol">The Protocol</a> &mdash; the chapter landing.</li>
+          <li><a href="/echomq/overview/the-protocol-below-the-line">The protocol below the line</a> &mdash; where the field set first appears.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/protocol/the-record-hash"><span aria-hidden="true">&larr;</span>&nbsp; The record hash</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/protocol/the-record-hash/the-state-and-attempts">The state and attempts <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This chapter</h4>
+        <a href="/echomq/protocol">The Protocol</a>
+        <a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a>
+        <a href="/echomq/protocol/the-record-hash">The record hash</a>
+        <a href="/echomq/protocol/the-lua-layer">The Lua layer</a>
+        <a href="/echomq/protocol/immutability-and-branded-ids">Immutability &amp; branded ids</a>
+        <a href="/echomq/protocol/workshop">Workshop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/overview">Overview</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero interactive: the three fields (pure lookup over a fixed dataset) ---------- */
+  var FIELDS = {
+    state: { name: 'state', born: '"pending"', role: 'the lifecycle position',
+      note: 'each atomic transition rewrites it: @claim → "active", @schedule → "scheduled", @retry → "dead"' },
+    attempts: { name: 'attempts', born: '"0"', role: 'the retry count and the fencing token',
+      note: '@claim runs HINCRBY attempts 1 and returns the value as the worker token' },
+    payload: { name: 'payload', born: 'the caller’s ARGV[2]', role: 'the opaque cargo',
+      note: 'stored verbatim by @enqueue, returned verbatim by @claim — the wire never reads inside it' }
+  };
+  var FORDER = ['state', 'attempts', 'payload'];
+  function describeField(key) {
+    var f = FIELDS[key];
+    return f.name + ' — ' + f.role + '. Born: ' + f.born + '. ' + f.note + '.';
+  }
+  function setField(key) {
+    FORDER.forEach(function (k) {
+      var g = document.getElementById('f-' + k);
+      if (g) g.classList.toggle('sel', k === key);
+    });
+    var out = document.getElementById('fieldOut');
+    if (out) out.textContent = describeField(key);
+  }
+  document.querySelectorAll('#fieldSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-field');
+      document.querySelectorAll('#fieldSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setField(key);
+    });
+  });
+  setField('state'); // initial render — correct without interaction
+
+  /* ---------- content interactive: HGET the row by field name (pure over a fixed row) ---------- */
+  /* The sample row, exactly as @enqueue wrote it. A read names a field; only the
+     three real names answer — the protocol is the exact strings. */
+  var ROW = { state: 'pending', attempts: '0', payload: '{"sku":"A-19","qty":3}' };
+  var NAMES = {
+    state: { real: true }, attempts: { real: true }, payload: { real: true },
+    data: { real: false, hint: 'a v1-style name; the as-built field is "payload"' },
+    body: { real: false, hint: 'not a record field; the cargo lives in "payload"' }
+  };
+  function describeRead(name) {
+    var meta = NAMES[name];
+    if (meta && meta.real) {
+      return 'HGET row "' + name + '" → <b class="ok">"' + ROW[name] + '"</b>.  ' +
+        '<span class="dim">A real field name — the row answers with its value.</span>';
+    }
+    return 'HGET row "' + name + '" → <b class="bad">nil</b>.  ' +
+      '<span class="dim">Not a field on the record (' + (meta ? meta.hint : 'unknown name') +
+      '). The record is the exact strings state / attempts / payload.</span>';
+  }
+  function setRead(name) {
+    var out = document.getElementById('readOut');
+    if (out) out.innerHTML = describeRead(name);
+  }
+  document.querySelectorAll('#readSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var name = b.getAttribute('data-name');
+      document.querySelectorAll('#readSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setRead(name);
+    });
+  });
+  setRead('state'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

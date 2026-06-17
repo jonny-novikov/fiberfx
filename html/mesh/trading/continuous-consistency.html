@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M4.1 · Continuous Consistency — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="Turn the binary consistency switch into a knob. The third coping strategy bounds how far a surface may diverge and picks that bound to fit its stakes. Yu and Vahdat's continuous-consistency model and its conit, bounded by three metrics — numerical error, order error, and staleness; the reservation system that tolerates an approximate seat count while the cabin is empty and tightens toward exact as it fills; and EchoMesh's proposed per-surface staleness budget derived from it.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-mesh)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the conit emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.capsvg{width:100%;height:auto;display:block}
+.capsvg .frame{fill:var(--m-card);stroke:var(--m-line);stroke-width:1.5}
+.capsvg .track{fill:none;stroke:var(--m-line);stroke-width:14;stroke-linecap:round}
+.capsvg .fillc{fill:none;stroke:var(--m-cons);stroke-width:14;stroke-linecap:round;transition:stroke-dasharray .3s ease,stroke .3s ease}
+.capsvg .seat{fill:var(--m-avail-tint);stroke:var(--m-avail);stroke-width:1}
+.capsvg .seat.sold{fill:var(--m-cons-tint);stroke:var(--m-cons)}
+.capsvg .band{fill:var(--m-edge-tint);stroke:var(--m-edge);stroke-width:1;transition:width .3s ease,x .3s ease}
+.capsvg .glbl{font:12px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .vlbl{font:13px var(--mono);fill:var(--m-ink);text-anchor:middle;font-weight:700}
+.capsvg .dial{font:24px var(--mono);fill:var(--m-edge);text-anchor:middle;font-weight:700}
+.capsvg .axt{font:11px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .barr{font:13px var(--mono);text-anchor:middle;font-weight:700}
+.capsvg .barr.cons{fill:var(--m-cons)}
+.capsvg .barr.avail{fill:var(--m-avail)}
+.capsvg .barr.edge{fill:var(--m-edge)}
+.capsvg g[data-tab]{transition:opacity .18s ease}
+.capsvg.focus g[data-tab]{opacity:.16}
+.capsvg.focus g[data-tab].on{opacity:1}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the property duality / thesis ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-cons);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-mesh)}
+.tri article:nth-child(3){border-top-color:var(--m-avail)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the metric / stake compare ---------- */
+.cmp{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:6px}
+.cmp article{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px}
+.cmp article.num{border-left:3px solid var(--m-cons)}
+.cmp article.ord{border-left:3px solid var(--m-mesh)}
+.cmp article.sta{border-left:3px solid var(--m-edge)}
+.cmp .ck{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.cmp article.num .ck{color:var(--m-cons)}
+.cmp article.ord .ck{color:var(--m-mesh)}
+.cmp article.sta .ck{color:var(--m-edge)}
+.cmp h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.cmp p{font-size:.9rem;color:var(--m-ink)}
+.cmp .ex{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);border-top:1px dashed var(--m-line);padding-top:9px}
+.cmp .ex b{color:var(--m-ink)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.doors,.cmp{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.doors,.cmp{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><a href="/mesh/trading">trading</a><span class="rsep">/</span><span class="rcur">continuous-consistency</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#knob">The knob</a>
+      <a href="#metrics">Three metrics</a>
+      <a href="#staleness">Bounded staleness</a>
+      <a href="#stakes">Tightening</a>
+      <a href="#toolkit">The toolkit</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M4.1 &#183; Trading Consistency for Availability</p>
+      <h1>Continuous <span class="hns">consistency</span>.</h1>
+      <p class="lede">The third strategy turns the binary consistency switch into a knob. Instead of choosing strong
+      consistency or none, a surface <b>bounds how far it may diverge</b> and picks that bound to fit its stakes &#8212;
+      tolerating an approximate answer when the stakes are low and tightening toward exact as they rise.</p>
+      <p class="heronote">No measurement here: this dive reads a model and an example, not a benchmark. Two primary
+      sources carry it (<a href="#refs">Gilbert &amp; Lynch 2012 and Yu &amp; Vahdat 2000</a>) &#8212; the catalogue that
+      names the strategy and Yu and Vahdat's continuous-consistency model with its conit and three metrics. The
+      per-surface budget EchoMesh derives is named as design and built in the next dive, M4.2.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>The model and the reservation example are external and settled. EchoMesh's per-surface staleness budget is
+        the proposal the chapter develops from them &#8212; built on shipped mechanisms and separated from the proposed
+        composition at M8.2. The reservation figures here are the toolkit's evaluation, not EchoMesh measurements.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>The conit, read as a dial &#183; a reservation conit over the seats on a flight; as the cabin fills,
+        the same few-seats disagreement turns from <b>harmless</b> to <b>dangerous</b>, so the surface tightens the
+        staleness bound toward exact &#8212; hover a stake to move the dial (the continuous model of <b>Yu &amp; Vahdat
+        2000</b>; the reservation example of <b>Gilbert &amp; Lynch 2012</b>; seat figures illustrative)</figcaption>
+        <svg class="capsvg" id="capsvg" viewBox="0 0 760 300" role="img" aria-label="A reservation conit defined over the seats on a flight, drawn as an occupancy arc with a tolerance band overlaid on the unsold seats. When the cabin is nearly empty, the staleness bound is loose and the tolerance band is wide, because two replicas disagreeing by a few seats cannot oversell a flight with hundreds free, so the surface stays cheaply available. As the cabin fills, the same few-seat disagreement can oversell the last rows, so the application tightens the staleness bound toward exact and pays more coordination, narrowing the tolerance band. The dial reading moves from loose toward exact across three stakes — nearly empty, filling, and last seats — while the cost moves from cheaply available toward more coordination.">
+          <defs>
+            <linearGradient id="arcg" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#2a5b8f"></stop>
+              <stop offset="1" stop-color="#1f7a5e"></stop>
+            </linearGradient>
+          </defs>
+          <!-- frame -->
+          <rect class="frame" x="20" y="20" width="720" height="260" rx="8"></rect>
+
+          <!-- occupancy track: a horizontal seat-fill bar -->
+          <text class="glbl" x="130" y="60">cabin occupancy</text>
+          <line class="track" x1="60" y1="92" x2="380" y2="92"></line>
+
+          <!-- step: nearly empty -->
+          <g data-tab="empty">
+            <line class="fillc" x1="60" y1="92" x2="120" y2="92"></line>
+            <rect class="band" x="120" y="78" width="240" height="28"></rect>
+            <text class="vlbl" x="220" y="96">~ few of 400 sold</text>
+            <text class="dial" x="600" y="128">loose</text>
+            <text class="axt" x="600" y="150">staleness bound</text>
+            <text class="barr avail" x="600" y="196">tolerance band: wide</text>
+            <text class="barr avail" x="600" y="218">cost: cheaply available</text>
+            <text class="axt" x="600" y="250">a few seats of error cannot</text>
+            <text class="axt" x="600" y="266">oversell hundreds free</text>
+          </g>
+
+          <!-- step: filling -->
+          <g data-tab="filling">
+            <line class="fillc" x1="60" y1="92" x2="270" y2="92" stroke="var(--m-mesh)"></line>
+            <rect class="band" x="270" y="78" width="90" height="28"></rect>
+            <text class="vlbl" x="220" y="96">about half of 400 sold</text>
+            <text class="dial" x="600" y="128" fill="var(--m-mesh)">mid</text>
+            <text class="axt" x="600" y="150">staleness bound</text>
+            <text class="barr edge" x="600" y="196">tolerance band: narrowing</text>
+            <text class="barr edge" x="600" y="218">cost: more coordination</text>
+            <text class="axt" x="600" y="250">the dial is reset against</text>
+            <text class="axt" x="600" y="266">the rising stakes</text>
+          </g>
+
+          <!-- step: last seats -->
+          <g data-tab="last">
+            <line class="fillc" x1="60" y1="92" x2="368" y2="92"></line>
+            <rect class="band" x="368" y="78" width="12" height="28"></rect>
+            <text class="vlbl" x="210" y="96">last rows of 400 left</text>
+            <text class="dial" x="600" y="128">exact</text>
+            <text class="axt" x="600" y="150">staleness bound</text>
+            <text class="barr cons" x="600" y="196">tolerance band: tight</text>
+            <text class="barr cons" x="600" y="218">cost: pays to stay fresh</text>
+            <text class="axt" x="600" y="250">a few seats of error here</text>
+            <text class="axt" x="600" y="266">would oversell the flight</text>
+          </g>
+
+          <!-- legend -->
+          <text class="axt" x="220" y="132">amber band = tolerated divergence (unsettled seats)</text>
+          <line x1="460" y1="40" x2="460" y2="270" stroke="var(--m-line)" stroke-width="1"></line>
+          <text class="glbl" x="600" y="60">the trade this stake sets</text>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">stake &#183; hover to move the dial</span>
+          A reservation conit is defined over the seats on a flight; the bound is not a constant set once but a
+          <span class="vc">function of conditions the surface moves</span>. While the cabin is empty an approximate
+          count is harmless; as it fills the surface tightens toward <span class="vc">exact</span>, paying coordination
+          precisely when the stakes justify it. Hover a stake below to move the bound.
+        </p>
+        <div class="htabs" id="conitw">
+          <div class="htabs-bar" role="tablist" aria-label="The reservation conit, stake by stake">
+            <button type="button" role="tab" data-tab="empty" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>1 &#183; Nearly empty</button>
+            <button type="button" role="tab" data-tab="filling" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>2 &#183; Filling</button>
+            <button type="button" role="tab" data-tab="last" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>3 &#183; Last seats</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="empty" role="tabpanel"><span class="tag a">Stake 1 &#183; the cabin is nearly empty.</span> An approximate seat count is harmless &#8212; two replicas disagreeing by a few seats cannot oversell a flight with hundreds free. So the surface tolerates a <b>loose staleness bound</b> and stays cheaply available, paying little coordination for a count that is close enough.</div>
+            <div class="htabs-p" data-tab="filling" role="tabpanel"><span class="tag m">Stake 2 &#183; the cabin is filling.</span> The same few-seat disagreement begins to matter as the margin shrinks. The bound is <b>not a constant the surface is configured with once</b>; it is a function of conditions the surface moves, so it tightens as the count climbs &#8212; paying more coordination as the stakes rise.</div>
+            <div class="htabs-p" data-tab="last" role="tabpanel"><span class="tag c">Stake 3 &#183; the last seats sell.</span> A few seats of error can now oversell the last rows, so the application <b>tightens the bound toward exact</b> and pays the coordination to stay fresh &#8212; precisely when the stakes justify it. That movement, set and reset against the stakes rather than fixed, is what the strategy means by continuous.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a stake to move the dial; click to pin. Without scripting, all three read in sequence and the figure shows every stake at once. Seat figures are illustrative of the toolkit's example, not EchoMesh measurements.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="knob">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Turning the switch into a knob</h2>
+        <span class="ssrc">mesh.4.1.md &#183; Yu &amp; Vahdat 2000</span>
+      </div>
+      <p class="body">The model starts from a complaint about the usual choice: designers of replicated systems were
+      forced to pick either strong consistency or none at all, with nothing in between. Yu and Vahdat's first move is to
+      turn that binary switch into a knob, and the carrier for the setting is the <b>conit</b> &#8212; a logical
+      consistency unit.</p>
+      <p class="body">The shift is subtle and consequential: applications impose their consistency requirement on conits
+      rather than on physical data items, so the requirement is expressed in terms of how much the application cares
+      about divergence rather than in terms of the storage layout. A conit is a unit the application defines &#8212; a
+      quantity it wants kept close to consistent &#8212; and its allowed divergence is what the surface tunes. That is
+      what lets a single mechanism serve requirements that differ widely: each surface declares its own conit and its
+      own tolerance.</p>
+      <figure class="frozen">
+        <figcaption>the conit: a requirement on divergence, not on storage layout<span class="tag">Yu &amp; Vahdat 2000</span></figcaption>
+<pre><span class="fd">// the old choice: a binary switch, nothing in between</span>
+consistency = { <span class="fc">strong</span> }  <span class="fd">|</span>  { <span class="fa">none</span> }       <span class="fd"># pick one — that was the menu</span>
+
+<span class="fd">// the conit turns the switch into a knob:</span>
+conit       = <span class="fe">a logical consistency unit</span>          <span class="fd"># a quantity kept close to consistent</span>
+requirement = <span class="fe">a bound on the conit's divergence</span>   <span class="fd"># imposed on the conit, not the data items</span>
+
+<span class="fd">// so a single mechanism serves requirements that differ widely:</span>
+each surface declares <b>its own conit</b> and <b>its own tolerance.</b></pre>
+      </figure>
+    </section>
+
+    <section id="metrics">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The three metrics</h2>
+        <span class="ssrc">mesh.4.1.md &#183; Yu &amp; Vahdat 2000</span>
+      </div>
+      <p class="body">Divergence is measured along three application-independent metrics, and a conit's consistency level
+      is a bound on each. <b>Numerical error</b> counts the writes applied somewhere but not yet reached a given replica,
+      so it measures how far a replica's value is off in magnitude. <b>Order error</b> counts the writes a replica has
+      accepted tentatively that may still be reordered before they commit, so it measures how unsettled the sequence is.
+      <b>Staleness</b> bounds the real-time delay between a write and its propagation, so it measures how far behind in
+      time a replica may be.</p>
+      <p class="body">Together the three capture the dimensions along which a replicated value can drift from an ideal
+      single-copy execution, and bounding them gives a precise, quantitative grip on consistency that a binary label
+      does not. A surface that bounds all three tightly approaches strong consistency; one that bounds them loosely
+      approaches eventual; the space between is the continuum the strategy occupies.</p>
+      <div class="cmp">
+        <article class="num">
+          <p class="ck">Numerical error</p>
+          <h3>Off in magnitude</h3>
+          <p>Counts the writes applied somewhere but not yet reached a given replica &#8212; how far a replica's value is
+          off in magnitude.</p>
+          <p class="ex"><b>measures:</b> divergence in value &#183; <b>e.g.</b> seats sold the count has not yet seen</p>
+        </article>
+        <article class="ord">
+          <p class="ck">Order error</p>
+          <h3>Unsettled sequence</h3>
+          <p>Counts the writes a replica has accepted tentatively that may still be reordered before they commit &#8212;
+          how unsettled the sequence is.</p>
+          <p class="ex"><b>measures:</b> divergence in order &#183; <b>e.g.</b> tentative writes not yet final</p>
+        </article>
+        <article class="sta">
+          <p class="ck">Staleness</p>
+          <h3>Behind in time</h3>
+          <p>Bounds the real-time delay between a write and its propagation &#8212; how far behind in time a replica may
+          be. The dimension EchoMesh takes as its primary dial.</p>
+          <p class="ex"><b>measures:</b> divergence in time &#183; <b>e.g.</b> how far behind the authority a reader is</p>
+        </article>
+      </div>
+      <div class="htabs" id="metricsw">
+        <div class="htabs-bar" role="tablist" aria-label="The three conit metrics and the continuum they span">
+          <button type="button" role="tab" data-tab="num" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>Numerical error</button>
+          <button type="button" role="tab" data-tab="ord" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>Order error</button>
+          <button type="button" role="tab" data-tab="sta" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>Staleness</button>
+          <button type="button" role="tab" data-tab="span" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>The continuum</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="num" role="tabpanel"><span class="tag c">Numerical error &#8212; how far off in magnitude.</span> The writes applied somewhere in the system but not yet reflected at this replica. On the reservation conit, it is the seats sold elsewhere that this copy's count has not yet absorbed.</div>
+          <div class="htabs-p" data-tab="ord" role="tabpanel"><span class="tag m">Order error &#8212; how unsettled the sequence is.</span> The writes a replica has accepted tentatively that may still be reordered before they commit. It bounds how far the not-yet-final ordering can move under the replica's feet.</div>
+          <div class="htabs-p" data-tab="sta" role="tabpanel"><span class="tag e">Staleness &#8212; how far behind in time.</span> The real-time delay between a write and its propagation. It is a duration a person can reason about, which is why EchoMesh takes it as the most legible dial of the three.</div>
+          <div class="htabs-p" data-tab="span" role="tabpanel"><span class="tag a">The space between is the continuum.</span> Bound all three tightly and the surface approaches strong consistency; bound them loosely and it approaches eventual. The continuum the strategy occupies is everything in between &#8212; a precise, quantitative grip a binary label does not give.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus a metric to read it; click to pin. Without scripting, all four read in sequence. The fourth names what the three metrics together span: the continuum.</p>
+      </div>
+    </section>
+
+    <section id="staleness">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Bounded staleness as a unit of trade</h2>
+        <span class="ssrc">mesh.4.1.md &#183; Yu &amp; Vahdat 2000</span>
+      </div>
+      <p class="body">Of the three metrics, staleness is the most legible as a dial, because it is a duration a person can
+      reason about &#8212; how far behind the authority a reader may be. Tuning it is tuning the trade directly. A
+      <b>tight staleness bound</b> keeps readers close to current, but holding it requires the replicas to coordinate
+      more often, which costs availability and latency when the network is slow or partitioned; a <b>loose bound</b> lets
+      readers fall further behind, but it stays available through a longer disruption because it demands less
+      coordination.</p>
+      <p class="body">The bound is therefore not a quality setting that is always better when tighter &#8212; it is a
+      position on a trade, and moving it tightens one property by loosening the other. EchoMesh takes staleness as the
+      primary unit of its per-surface budget for exactly this reason: it is the metric whose cost is easiest to state and
+      whose value is easiest for a surface owner to choose.</p>
+      <figure class="frozen">
+        <figcaption>staleness is a position on a trade, not a quality setting<span class="tag">mesh.4.1.md &#183; Yu &amp; Vahdat 2000</span></figcaption>
+<pre><span class="fd">// staleness = the real-time delay a replica may run behind the authority</span>
+<span class="fc">tight</span> bound  <span class="fd">&#8594;</span> readers close to current  <span class="fd"># but coordinate more often</span>
+              <span class="fe">costs availability + latency when the network is slow or partitioned</span>
+
+<span class="fa">loose</span> bound  <span class="fd">&#8594;</span> readers fall further behind <span class="fd"># but demand less coordination</span>
+              <span class="fa">stays available through a longer disruption</span>
+
+<span class="fd">// not a quality knob — a position on a trade:</span>
+moving it <b>tightens one property by loosening the other.</b></pre>
+      </figure>
+      <p class="compose"><b>Why EchoMesh chooses this dimension:</b> a per-surface staleness budget is a recency window
+      a surface owner sets and the engine holds the surface within. Of the conit's three metrics it is the one whose cost
+      a surface owner can state plainly and whose value is the easiest to choose &#8212; the design the next dive
+      <b>M4.2</b> builds.</p>
+    </section>
+
+    <section id="stakes">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Tightening as the stakes rise</h2>
+        <span class="ssrc">mesh.4.1.md &#183; Gilbert &amp; Lynch 2012 &#183; Yu &amp; Vahdat 2000</span>
+      </div>
+      <p class="body">The reservation system is the example that makes "continuous" concrete, and both Yu and Vahdat and
+      Gilbert and Lynch use it. A conit is defined over the seats on a flight &#8212; in the toolkit's evaluation, a
+      flight initialized at four hundred seats &#8212; and each reservation draws the count down. While the cabin is
+      nearly empty, an approximate seat count is harmless: two replicas disagreeing by a few seats cannot oversell a
+      flight with hundreds free, so the surface tolerates a loose bound and stays cheaply available.</p>
+      <p class="body">As the flight fills, the same disagreement becomes dangerous, because a few seats of error can
+      oversell the last rows, so the application <b>tightens the bound toward exact</b>, paying more coordination
+      precisely when the stakes justify it. The requirement is not a constant the surface is configured with once; it is
+      a function of conditions the surface moves as those conditions change. That is what the strategy means by
+      continuous &#8212; the dial is set and reset against the stakes, not fixed. The emulator above walks exactly this
+      progression.</p>
+      <figure class="frozen">
+        <figcaption>the reservation conit, set and reset against the stakes<span class="tag">Gilbert &amp; Lynch 2012 &#183; Yu &amp; Vahdat 2000</span></figcaption>
+<pre><span class="fd">// a conit over the seats on a flight (toolkit eval: 400 seats; illustrative)</span>
+nearly empty  &#8594; bound = <span class="fa">loose</span>   <span class="fd"># a few seats of error cannot oversell hundreds free</span>
+filling       &#8594; bound = <span class="fe">tighter</span> <span class="fd"># the margin shrinks; the disagreement starts to matter</span>
+last seats    &#8594; bound = <span class="fc">exact</span>   <span class="fd"># a few seats of error would oversell the last rows</span>
+
+<span class="fd">// the requirement is not configured once — it is a function of conditions:</span>
+the dial is <b>set and reset against the stakes, not fixed.</b></pre>
+      </figure>
+    </section>
+
+    <section id="toolkit">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>What the toolkit showed</h2>
+        <span class="ssrc">mesh.4.1.md &#183; Yu &amp; Vahdat 2000</span>
+      </div>
+      <p class="body">The model is not only a framing; the toolkit demonstrated that a precise middle is worth occupying.
+      TACT was evaluated on three applications with differing requirements &#8212; an airline reservation system, a
+      distributed bulletin board, and load-distribution front ends to a web server &#8212; and against strong
+      consistency it <b>improved throughput by up to a factor of ten</b>, while against weak consistency it provided a
+      stated guarantee on the maximum inconsistency a read or write could observe.</p>
+      <p class="body">The lesson EchoMesh takes is that the continuum is not a vague compromise but a measurable one: a
+      surface in the middle is not merely "somewhat consistent," it is consistent to a bounded, named degree, which is a
+      property a system can reason about and a reader can rely on. A precise middle is the thing worth building.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">Against strong</p>
+          <h3>Up to tenfold throughput</h3>
+          <p>Measured across three applications with differing requirements &#8212; reservation, bulletin board, web
+          load distribution &#8212; TACT improved throughput by up to a factor of ten over strong consistency.</p>
+          <p class="note">a measured win &#183; <b>Yu &amp; Vahdat 2000</b></p>
+        </article>
+        <article>
+          <p class="cno">Against weak</p>
+          <h3>A stated bound</h3>
+          <p>Where weak consistency gives no promise, TACT provided a stated guarantee on the maximum inconsistency a
+          read or write could observe &#8212; a bounded, named degree.</p>
+          <p class="note">consistent to a degree &#183; <b>a property to rely on</b></p>
+        </article>
+        <article>
+          <p class="cno">The lesson</p>
+          <h3>A precise middle</h3>
+          <p>The continuum is not a vague compromise but a measurable one. A surface in the middle is not "somewhat
+          consistent" &#8212; it is consistent to a bounded, named degree.</p>
+          <p class="note">worth building &#183; <b>EchoMesh adopts it</b></p>
+        </article>
+      </div>
+      <p class="compose"><b>Where EchoMesh stands:</b> it adopts the conit idea narrowed to its most legible dimension
+      &#8212; a per-surface staleness budget. A surface whose stakes are low takes a loose window and stays cheaply
+      available; a surface whose stakes rise tightens the window and pays the coordination to stay fresh. How that
+      budget is set and what it costs is the next dive, <b>M4.2</b>; the argument that such a surface guarantees neither
+      property &#8212; and that this is the point &#8212; is <b>M4.3</b>.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh/trading">
+          <span class="dr">/mesh/trading</span>
+          <h3>M4 &#8212; Trading Consistency for Availability</h3>
+          <p>The chapter landing: the strategy that sets the choice continuously, the per-surface budget it proposes, and
+          the candid argument that a tuned surface guarantees neither property.</p>
+          <p class="dnote"><b>this dive</b> is M4.1, the model; the budget is M4.2, the candid neither is M4.3.</p>
+        </a>
+        <a class="door" href="/mesh/best-effort-consistency">
+          <span class="dr">/mesh/best-effort-consistency</span>
+          <h3>M3 &#8212; Best Effort Consistency</h3>
+          <p>The consistency-first end of the dial &#8212; a single owning writer per instrument, correct cheaply rather
+          than by waiting on a quorum vote.</p>
+          <p class="dnote"><b>the tight end</b> a conit approaches when staleness is bounded toward exact.</p>
+        </a>
+        <a class="door" href="/mesh/best-effort-availability">
+          <span class="dr">/mesh/best-effort-availability</span>
+          <h3>M2 &#8212; Best Effort Availability</h3>
+          <p>The availability-first end of the dial &#8212; surfaces that always answer and reconcile afterward, staying
+          live through a partition.</p>
+          <p class="dnote"><b>the loose end</b> a conit approaches when staleness is bounded loosely.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract, proven by frozen transcripts
+          across five runtimes.</p>
+          <p class="dnote"><b>the seam</b> on which a per-surface staleness budget is declared rests on this identity
+          contract.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://www.usenix.org/legacy/events/osdi2000/full_papers/yuvahdat/yuvahdat.pdf" rel="noopener">Yu &amp; Vahdat (2000) &#8212; Design and Evaluation of a Continuous Consistency Model for Replicated Services</a><span class="rs">turns the binary consistency switch into a knob: applications bound the divergence of a conit using numerical error, order error, and staleness; evaluated on a reservation system, a bulletin board, and web load distribution, improving throughput up to tenfold over strong consistency while bounding the maximum inconsistency</span></li>
+          <li><a href="https://groups.csail.mit.edu/tds/papers/Gilbert/Brewer2.pdf" rel="noopener">Gilbert &amp; Lynch (2012) &#8212; Perspectives on the CAP Theorem</a><span class="rs">names trading consistency for availability, setting the trade continuously by how out of date data may be, with a reservation system that tolerates an approximate seat count when the cabin is empty and tightens toward exact as it fills</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh/trading">M4 &#8212; Trading Consistency for Availability</a><span class="rs">the chapter landing: the strategy, the per-surface budget, and the candid neither</span></li>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/mesh/best-effort-availability">M2 &#8212; Best Effort Availability</a><span class="rs">the availability-first end of the dial &#8212; surfaces that always answer and reconcile afterward</span></li>
+          <li><a href="/mesh/best-effort-consistency">M3 &#8212; Best Effort Consistency</a><span class="rs">the consistency-first end of the dial &#8212; a single owning writer per instrument</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the law and the 14-byte identity contract a per-surface budget rests on</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the engine and the umbrella that holds a surface within its window</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh/trading"><span class="pk">the chapter</span>&#8592; M4 &#183; Trading Consistency for Availability</a>
+      <a class="pgx" href="/mesh/trading/staleness-budget"><span class="pk">next &#183; dive</span>M4.2 &#183; The Staleness Budget &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <span>M2 &#183; Best Effort Availability<i>soon</i></span>
+        <span>M3 &#183; Best Effort Consistency<i>soon</i></span>
+        <a href="/mesh/trading">M4 &#183; Trading the Trade</a>
+        <span>M5 &#183; Segmenting<i>soon</i></span>
+        <span>M6 &#183; The Stack<i>soon</i></span>
+        <span>M7 &#183; Transparent Infrastructure<i>soon</i></span>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0KAF4g9cO</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 17:19:21 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the conit emulator: the stake tabs drive the SVG dial + an aria-live readout ----------
+     READOUT is a pure function of the stake key over fixed data — no network, no storage. The SVG
+     highlights the active stake's marker group; the dial reading moves from loose toward exact as the
+     stakes rise. The seat figures are the toolkit's illustrative example, not EchoMesh measurements. */
+  var EMIT = {
+    empty:   { s: "stake 1 · cabin nearly empty",
+               h: "An approximate seat count is <b>harmless</b> — two replicas off by a few seats cannot oversell a flight with hundreds free. The surface tolerates a <span class='vc'>loose staleness bound</span> and stays <span class='vc'>cheaply available</span>." },
+    filling: { s: "stake 2 · cabin filling",
+               h: "The same few-seat disagreement starts to matter as the margin shrinks. The bound is <b>not a constant set once</b> — it is a function of conditions the surface moves, so it <span class='vc'>tightens</span> as the count climbs, paying more coordination." },
+    last:    { s: "stake 3 · last seats sell",
+               h: "A few seats of error could now <b>oversell the last rows</b>, so the application tightens the bound toward <span class='vc'>exact</span> and pays the coordination to stay fresh — precisely when the stakes justify it. That movement is what 'continuous' means." }
+  };
+  var capsvg = document.getElementById('capsvg');
+  var emit = document.getElementById('emit');
+  wireHtabs(document.getElementById('conitw'), function (key) {
+    var d = EMIT[key];
+    if (emit && d) emit.innerHTML = '<span class="step">' + d.s + '</span>' + d.h;
+    if (!capsvg) return;
+    capsvg.classList.toggle('focus', !!key);
+    capsvg.querySelectorAll('g[data-tab]').forEach(function (g) {
+      g.classList.toggle('on', g.getAttribute('data-tab') === key);
+    });
+  });
+
+  /* the three-metrics tabs are a plain reuse of the same component */
+  wireHtabs(document.getElementById('metricsw'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4.05.1 · ZADD and ZREVRANK · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R4.05.1 — ZADD and ZREVRANK. A player's score goes in with ZADD; the rank comes out with ZREVRANK. The score is the ranking key — the set orders by it, and the rank is a position in that order, 0-based from the top, computed on read in O(log N), never stored. ZRANK is the mirror from the bottom; a member's ZRANK and ZREVRANK add up to N minus one. Bridged honestly to Portal.Enrollment.Progress — the percent (0..100, namespace PRG, an in-memory store row) the rank would read; Portal runs no Redis sorted set.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- board diagram ---- */
+.lb .row rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.lb .row.lead rect{fill:rgba(212,168,90,.18);stroke:#d4a85a}
+.lb .row.pick rect{fill:rgba(90,135,196,.18);stroke:#5a87c4}
+.lb .row.up rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.lb text{font-family:var(--sans);fill:#d7cfb9}
+.lb .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.lb .rk{font-family:var(--mono);font-size:11px;fill:#a39c89}
+.lb .nm{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
+.lb .sc{font-family:var(--mono);font-size:11px;fill:#a39c89}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
+.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
+.door a{color:var(--gold-bright)}
+.fwd{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(90,135,196,.06),rgba(10,14,26,.2))}
+.fwd .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--blue-bright);display:block;margin:0 0 .5rem}
+.fwd code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority/leaderboards">leaderboards</a><span class="rsep">/</span><span class="rcur">zadd-and-zrank</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority/leaderboards">Leaderboards</a>
+        <span class="sep">/</span>
+        <span class="here">ZADD and ZREVRANK</span>
+      </div>
+      <p class="eyebrow">R4.05.1 &middot; dive 1</p>
+      <h1><code style="font-family:var(--serif-display);font-style:normal">ZADD</code> and <span class="ex">ZREVRANK</span></h1>
+      <p class="lede">A player's score goes in with <code class="inl">ZADD</code>; the rank comes out with
+        <code class="inl">ZREVRANK</code>. The score is the ranking key &mdash; the set orders by it, the rank is a
+        position in that order, read on the fly.</p>
+      <p class="kicker">A leaderboard rests on one structure: a sorted set whose score is the player's points. Two
+        commands carry it. <code class="inl">ZADD</code> writes a member and a score, placing the member in the order.
+        <code class="inl">ZREVRANK</code> reads a member's position in that order from the top, where the highest score
+        is rank 0. No rank is stored; the rank is the position, recomputed each time it is read. Set a score on the
+        right and watch the rank fall out of the order.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#add">ZADD</a>
+        <a href="#revrank">ZREVRANK</a>
+        <a href="#mirror">ZRANK, the mirror</a>
+        <a href="#applied">In Portal</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig lb" aria-labelledby="upTitle">
+      <h4 id="upTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Set a score, read the rank &middot; one ZADD ripples the order</h4>
+      <div class="controls">
+        <div class="fold-ctrl">
+          <label for="upScore">finn's score</label>
+          <input type="range" id="upScore" min="500" max="2600" step="50" value="1650">
+          <span class="val" id="upScoreVal">1650</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 220" role="img" aria-label="A fixed roster on a leaderboard, ordered top to bottom by descending score, each row showing its 0-based ZREVRANK, the player, and the score. The slider sets one player's score, re-placing it in the order; its row is shown sage and the leader at rank 0 gold. Moving the slider recomputes the whole order and reports the player's new ZREVRANK and how many places it moved.">
+        <text class="ttl" x="20" y="18">leaderboard after ZADD &mdash; rank · player · score</text>
+        <g id="upRows"></g>
+      </svg>
+
+      <div class="geo-readout" id="upOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="add">
+    <h2><code class="inl">ZADD</code> &mdash; the score is the write</h2>
+    <div class="prose">
+      <p>A sorted set holds members, each with a numeric score, and keeps them ordered by score. The whole write is
+        <code class="inl">ZADD</code>: a score and a member.</p>
+      <pre class="code"><span class="rdx">ZADD</span> leaderboard <span class="res">1500</span> <span class="str">"player:alice"</span></pre>
+      <p>Run <code class="inl">ZADD</code> on a member that is already on the board and its score is overwritten, and
+        the member is re-placed in the order. The score is the entire index &mdash; there is no separate ranking
+        column. Reading the set high-to-low gives the leader first; reading it low-to-high gives the trailing player. A
+        player's own score is read with <code class="inl">ZSCORE</code>, which is <code class="inl">O(1)</code>.</p>
+    </div>
+    <p class="take">The whole write is <code class="inl">ZADD</code>: a score and a member; re-running it overwrites the
+      score and re-places the member. The score is the entire index, no separate ranking column.</p>
+  </section>
+
+  <section id="revrank">
+    <h2><code class="inl">ZREVRANK</code> &mdash; the rank is a position</h2>
+    <div class="prose">
+      <p>A rank is a player's position in the order, counted from one end. <code class="inl">ZREVRANK</code> counts from
+        the top, so the leader is rank 0:</p>
+      <pre class="code"><span class="rdx">ZREVRANK</span> leaderboard <span class="str">"player:bob"</span>   <span class="cmt"># 0 if bob has the highest score</span></pre>
+      <p>The rank is 0-based: rank 0 is first place, rank 1 is second. The set computes it by walking the order to the
+        member, which is <code class="inl">O(log N)</code> &mdash; the cost does not grow with how the board is read,
+        only with its size. Crucially, the rank is not stored anywhere. It is derived from the score order on each read,
+        so it is always exactly the current order; there is no snapshot to fall out of date.</p>
+    </div>
+    <p class="take"><code class="inl">ZREVRANK</code> reads a 0-based position from the top in
+      <code class="inl">O(log N)</code>; the rank is not stored, it is derived from the order on every read, so it is
+      never stale.</p>
+  </section>
+
+  <section id="mirror">
+    <h2><code class="inl">ZRANK</code> &mdash; the mirror from the bottom</h2>
+    <div class="prose">
+      <p><code class="inl">ZRANK</code> is the same position counted from the other end &mdash; low-to-high, so the
+        lowest score is rank 0:</p>
+      <pre class="code"><span class="rdx">ZRANK</span> leaderboard <span class="str">"player:bob"</span>      <span class="cmt"># 0 if bob has the lowest score</span></pre>
+      <p>For a board where a higher score is better, <code class="inl">ZREVRANK</code> is the rank a player wants to
+        see; <code class="inl">ZRANK</code> answers the opposite question &mdash; how far up from the bottom. The two
+        are mirrors of one position in the same order. If the board holds N players, a member's
+        <code class="inl">ZRANK</code> and <code class="inl">ZREVRANK</code> add up to N&nbsp;&minus;&nbsp;1. Reading
+        either end leaves the set unchanged.</p>
+    </div>
+
+    <figure class="fig lb" aria-labelledby="mTitle">
+      <h4 id="mTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">One position, two ends &middot; ZREVRANK + ZRANK = N − 1</h4>
+      <div class="controls">
+        <div class="solid-select" id="mSel" role="group" aria-label="Pick a player to read both ranks">
+          <button type="button" data-pick="gwen" data-c="gold" class="active" aria-pressed="true">gwen (top)</button>
+          <button type="button" data-pick="charlie" data-c="blue" aria-pressed="false">charlie (mid)</button>
+          <button type="button" data-pick="erin" data-c="sage" aria-pressed="false">erin (low)</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 150" role="img" aria-label="The same fixed roster, ordered by descending score. The chosen player's row is highlighted. To its left a counter shows ZREVRANK, counted from the top; to its right a counter shows ZRANK, counted from the bottom. The two always sum to the member count minus one. Picking a player reads both ranks; the order never changes.">
+        <text class="ttl" x="20" y="18">one player, both ends — ZREVRANK (top) · ZRANK (bottom)</text>
+        <g><rect class="bit" x="30" y="40" width="120" height="60" rx="9" style="fill:rgba(212,168,90,.12);stroke:#d4a85a"></rect></g>
+        <text class="rk" x="90" y="62" text-anchor="middle">ZREVRANK</text>
+        <text class="nm" id="mRev" x="90" y="88" text-anchor="middle" style="font-size:20px">—</text>
+        <g><rect class="bit" x="170" y="40" width="120" height="60" rx="9" style="fill:rgba(90,135,196,.10);stroke:#2a3252"></rect></g>
+        <text class="rk" x="230" y="62" text-anchor="middle">player</text>
+        <text class="nm" id="mNm" x="230" y="86" text-anchor="middle">—</text>
+        <g><rect class="bit" x="310" y="40" width="120" height="60" rx="9" style="fill:rgba(90,135,196,.12);stroke:#5a87c4"></rect></g>
+        <text class="rk" x="370" y="62" text-anchor="middle">ZRANK</text>
+        <text class="nm" id="mRank" x="370" y="88" text-anchor="middle" style="font-size:20px;fill:#9fc0ea">—</text>
+        <text class="ttl" id="mVerd" x="230" y="130" text-anchor="middle">—</text>
+      </svg>
+
+      <div class="geo-readout" id="mOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take"><code class="inl">ZRANK</code> and <code class="inl">ZREVRANK</code> are mirrors of one position
+      in the same order; on an N-player board they sum to N&nbsp;&minus;&nbsp;1, and reading either leaves the set
+      unchanged.</p>
+  </section>
+
+  <section id="applied">
+    <h2>In Portal &mdash; the percent is the score the rank would read</h2>
+    <div class="prose">
+      <p>The pattern is a clean sorted-set leaderboard: score in, rank out. Portal does not run one. What Portal does
+        record is a learner's progress through a lesson as a <strong>percent</strong> &mdash;
+        <code class="inl">Portal.Enrollment.Progress</code>, the field <code class="inl">percent :: 0..100</code>,
+        namespace <code class="inl">PRG</code>, a row in an in-memory store. Portal has no progress ranking and no
+        Redis sorted set; the percent is a plain stored value.</p>
+      <pre class="code"><span class="cmt"># Portal.Enrollment.Progress — the real struct (echo/apps/portal), percent 0..100, namespace PRG</span>
+<span class="op">%Portal.Enrollment.Progress</span>{id: <span class="str">"PRG…"</span>, enrollment_id: <span class="str">"ENR…"</span>, lesson_id: <span class="str">"LSN…"</span>, percent: <span class="res">72</span>}
+
+<span class="cmt"># the ranking view a leaderboard would add over that percent (the applied pattern — Portal runs no sorted set)</span>
+<span class="rdx">ZADD</span> board <span class="res">72</span> <span class="str">"learner:dana"</span>      <span class="cmt"># score = the stored percent</span>
+<span class="rdx">ZREVRANK</span> board <span class="str">"learner:dana"</span>      <span class="cmt"># where dana stands — read on the fly</span></pre>
+      <p>Ranking learners by that percent is this dive applied to that data.
+        <code class="inl">ZADD board &lt;percent&gt; &lt;learner&gt;</code> writes each learner's percent as a score;
+        <code class="inl">ZREVRANK board &lt;learner&gt;</code> then reads where that learner stands. The percent is the
+        score the rank would read. State it plainly: the percent exists in Portal's store today, and the sorted-set
+        rank is the ordinary structure to add when a ranked view of that percent is wanted &mdash; the rank is never
+        stored, only computed from the percent order on read.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p><code class="inl">ZADD</code> writes a score and <code class="inl">ZREVRANK</code> reads a 0-based rank from
+          the score order, computed on read.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in Portal</span>
+        <p>Portal stores each learner's lesson progress as a <code class="inl">percent</code> (the
+          <code class="inl">PRG</code> struct). A ranking view scores by that percent
+          (<code class="inl">ZADD board percent learner</code>) and reads a learner's standing with
+          <code class="inl">ZREVRANK</code> &mdash; the rank derived from the percent order, not stored. Portal runs no
+          sorted set; this is the structure to add for the ranked query.</p>
+      </div>
+    </div>
+
+    <p class="take">The score is the write and the rank is the read; nothing stores a rank. Portal stores a progress
+      percent &mdash; the score a <code class="inl">ZREVRANK</code> would read.</p>
+
+    <div class="fwd">
+      <span class="lbl">Where this is heading &mdash; EchoMQ 2.0</span>
+      A leaderboard is a generic sorted-set ranking, not part of the EchoMQ queue protocol. Where EchoMQ ranks with a
+      sorted set is its priority queue (R4.03's <code>emq:{queue}:prioritized</code>); the settled
+      <strong>EchoMQ 2.0</strong> design (the protocol break on the first EMQ rung, <code>emq.1</code>) renames it to
+      <code>emq:{queue}:prioritized</code> &mdash; <code>emq:</code> replacing <code>emq:</code>, every Lua key
+      declared in <code>KEYS[]</code>, <code>meta.version</code> bumped to <code>echomq:2.0.0</code> &mdash; with the
+      ranking math unchanged. A sorted-set ranking is a property of the score order, independent of the prefix or the
+      version.
+    </div>
+
+    <div class="door">
+      <span class="lbl">Door &middot; not depth</span>
+      The full ranking machinery &mdash; how a group orders its members and resolves equal scores inside the queue
+      &mdash; is the subject of the dedicated <strong>EchoMQ course</strong>. The intra-group ranking is
+      <a href="/echomq/groups">E4 &middot; Groups</a>. This dive teaches <code class="inl">ZADD</code> and
+      <code class="inl">ZREVRANK</code>; that course teaches the group ranking built on the same score order.
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The write that places a player in the order, the read that returns its rank from the top, and the sorted set
+        behind both.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; add or update a member's score; the single write that places a player in the order.</li>
+          <li><a href="https://redis.io/commands/zrevrank/">Redis &mdash; <em>ZREVRANK</em></a> &mdash; a member's rank, 0-based from the top, computed on read.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; the data type behind the board: members ordered by a numeric score.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority/leaderboards">R4.05 &middot; Leaderboards</a> &mdash; the module hub.</li>
+          <li><a href="/redis-patterns/time-delay-priority/leaderboards/top-n-and-around-me">R4.05.2 &middot; Top-N and around-me</a> &mdash; the next dive: the two read shapes over this order.</li>
+          <li><a href="/redis-patterns/time-delay-priority/leaderboards/the-score-update-path">R4.05.3 &middot; The score-update path</a> &mdash; updating a score and reading the rank again.</li>
+          <li><a href="/redis-patterns/time-delay-priority/priority-scores">R4.03 &middot; Composite priority scores</a> &mdash; packing two axes into one score for ties.</li>
+          <li><a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a> &mdash; the chapter.</li>
+          <li><a href="/echomq/groups">E4 &middot; Groups</a> &mdash; the dedicated EchoMQ course: the group ranking on the same score order.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority/leaderboards"><span aria-hidden="true">&larr;</span>&nbsp; R4.05 &middot; Leaderboards</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority/leaderboards/top-n-and-around-me">R4.05.2 &middot; Top-N and around-me <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/time-delay-priority/leaderboards/zadd-and-zrank">R4.05.1 &middot; ZADD and ZREVRANK</a>
+        <a href="/redis-patterns/time-delay-priority/leaderboards/top-n-and-around-me">R4.05.2 &middot; Top-N and around-me</a>
+        <a href="/redis-patterns/time-delay-priority/leaderboards/the-score-update-path">R4.05.3 &middot; The score-update path</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/groups">The EchoMQ course &middot; groups</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: set a score, read the rank — one ZADD ripples the order (pure over finn's score) ---------- */
+  // A fixed roster of eight players. The slider sets one player's (finn's) score; ZADD overwrites it. The board is the
+  // roster sorted by score descending — ZREVRANGE 0 -1. finn's ZREVRANK is its 0-based position in that order, and the
+  // readout reports how many places it moved from its starting rank. The sort, the rank, and the readout are pure over s.
+  var ROSTER = [
+    { id: 'alice', score: 1500 }, { id: 'bob', score: 2300 }, { id: 'charlie', score: 1800 },
+    { id: 'dana', score: 2100 }, { id: 'erin', score: 900 }, { id: 'gwen', score: 2450 },
+    { id: 'hugo', score: 1200 }
+  ];
+  var FINN_BASE = 1650; // finn's starting score, used to report the move
+  // pure: score -> { board:[{id,score}], finnRank, baseRank }
+  function place(score) {
+    var withFinn = ROSTER.concat([{ id: 'finn', score: score }]);
+    var board = withFinn.slice().sort(function (a, b) { return b.score - a.score; });
+    var withBase = ROSTER.concat([{ id: 'finn', score: FINN_BASE }])
+      .sort(function (a, b) { return b.score - a.score; });
+    var finnRank = -1, baseRank = -1;
+    for (var i = 0; i < board.length; i++) { if (board[i].id === 'finn') { finnRank = i; break; } }
+    for (var j = 0; j < withBase.length; j++) { if (withBase[j].id === 'finn') { baseRank = j; break; } }
+    return { board: board, finnRank: finnRank, baseRank: baseRank };
+  }
+  function renderUp(score) {
+    var r = place(score);
+    var g = document.getElementById('upRows');
+    if (g) {
+      var frag = '';
+      for (var i = 0; i < r.board.length; i++) {
+        var p = r.board[i];
+        var y = 28 + i * 23;
+        var cls = i === 0 ? 'lead' : (p.id === 'finn' ? 'up' : '');
+        frag += '<g class="row ' + cls + '"><rect x="20" y="' + y + '" width="420" height="20" rx="6"></rect>' +
+          '<text class="rk" x="32" y="' + (y + 14) + '">#' + i + '</text>' +
+          '<text class="nm" x="78" y="' + (y + 14) + '">player:' + p.id + '</text>' +
+          '<text class="sc" x="430" y="' + (y + 14) + '" text-anchor="end">' + p.score + '</text></g>';
+      }
+      g.innerHTML = frag;
+    }
+    var out = document.getElementById('upOut');
+    if (out) {
+      var moved = r.baseRank - r.finnRank; // positive = moved up
+      var moveTxt = moved === 0 ? 'no change from its starting rank ' + r.baseRank :
+        (moved > 0 ? 'up ' + moved + ' place' + (moved === 1 ? '' : 's') + ' from rank ' + r.baseRank :
+          'down ' + (-moved) + ' place' + (moved === -1 ? '' : 's') + ' from rank ' + r.baseRank);
+      out.textContent = 'ZADD leaderboard ' + score + ' "player:finn" overwrites the score and re-places finn. ' +
+        'ZREVRANK leaderboard "player:finn" = ' + r.finnRank + ' (0-based, ' + (r.board.length) + ' players) — ' +
+        moveTxt + '. Only finn was written; the other players keep their scores, but the ranks of those it passed ' +
+        'shift on the next read, never rewritten.';
+    }
+  }
+  var upRange = document.getElementById('upScore'), upRangeV = document.getElementById('upScoreVal');
+  if (upRange) upRange.addEventListener('input', function () {
+    var s = parseInt(upRange.value, 10); if (upRangeV) upRangeV.textContent = String(s);
+    renderUp(s);
+  });
+  renderUp(1650); // initial render — correct without interaction
+
+  /* ---------- content: one position, two ends — ZREVRANK + ZRANK = N − 1 (pure over the picked player) ---------- */
+  // A fixed roster sorted by score descending. For the picked player, ZREVRANK is its position from the top and ZRANK
+  // is its position from the bottom; the two sum to N − 1. The readout reports both and their sum. Pure over the id.
+  var ROST2 = [
+    { id: 'gwen', score: 2450 }, { id: 'bob', score: 2300 }, { id: 'dana', score: 2100 },
+    { id: 'charlie', score: 1800 }, { id: 'finn', score: 1650 }, { id: 'alice', score: 1500 },
+    { id: 'hugo', score: 1200 }, { id: 'erin', score: 900 }
+  ];
+  // pure: id -> { rev, rank, n, score }
+  function bothEnds(id) {
+    var b = ROST2.slice().sort(function (a, b2) { return b2.score - a.score; });
+    var n = b.length, rev = -1, score = 0;
+    for (var i = 0; i < n; i++) { if (b[i].id === id) { rev = i; score = b[i].score; break; } }
+    return { rev: rev, rank: n - 1 - rev, n: n, score: score };
+  }
+  function renderM(id) {
+    var r = bothEnds(id);
+    var rev = document.getElementById('mRev'), nm = document.getElementById('mNm'),
+        rk = document.getElementById('mRank'), verd = document.getElementById('mVerd'),
+        out = document.getElementById('mOut');
+    if (rev) rev.textContent = String(r.rev);
+    if (nm) nm.textContent = id;
+    if (rk) rk.textContent = String(r.rank);
+    if (verd) verd.textContent = 'ZREVRANK ' + r.rev + ' + ZRANK ' + r.rank + ' = ' + (r.rev + r.rank) + ' = N − 1 (N = ' + r.n + ')';
+    if (out) {
+      out.textContent = 'player:' + id + ' has score ' + r.score + '. ZREVRANK leaderboard "player:' + id + '" = ' +
+        r.rev + ' (from the top, 0 = leader). ZRANK leaderboard "player:' + id + '" = ' + r.rank + ' (from the ' +
+        'bottom, 0 = trailing). The two are mirrors of one position: ' + r.rev + ' + ' + r.rank + ' = ' +
+        (r.rev + r.rank) + ' = N − 1 on an ' + r.n + '-player board. Reading either leaves the set unchanged.';
+    }
+  }
+  document.querySelectorAll('#mSel button').forEach(function (bn) {
+    bn.addEventListener('click', function () {
+      var pick = bn.getAttribute('data-pick');
+      document.querySelectorAll('#mSel button').forEach(function (x) {
+        var sel = x === bn; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderM(pick);
+    });
+  });
+  renderM('gwen'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4.04.3 · Reusing the delayed ZSET · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R4.04.3 — reusing the delayed ZSET. A retry introduces no new structure: it is R4.01's delayed sorted set used a second time. EchoMQ.Scripts.retry_job/5 runs retryJob-11.lua, which re-adds the failed job to the delayed key (KEYS[7]) scored by the backoff fire-time and includes promoteDelayedJobs — the same due-sweep R4.01 teaches: ZRANGEBYSCORE delayedKey 0 (timestamp + 1) × 0x1000 - 1 LIMIT 0 1000, then ZREM onto wait. One set, two uses: R4.01 schedules, R4.04 chooses the delay with EchoMQ.Backoff and re-schedules on failure.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- delayed-set / clock diagram ---- */
+.clk .slot rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.clk .slot.due rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.clk .slot.head rect{fill:rgba(212,168,90,.18);stroke:#d4a85a}
+.clk .slot.retry rect{fill:rgba(214,88,79,.18);stroke:#d6584f}
+.clk text{font-family:var(--sans);fill:#d7cfb9}
+.clk .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.clk .job{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
+.clk .sc{font-family:var(--mono);font-size:10px;fill:#a39c89}
+.clk .now{stroke:#d6584f;stroke-width:1.6;stroke-dasharray:4 3}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
+.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
+.door a{color:var(--gold-bright)}
+/* ---- forward note (EchoMQ 2.0) ---- */
+.fwd{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--elixir);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(179,157,219,.08),rgba(10,14,26,.2))}
+.fwd .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--elixir-bright);display:block;margin:0 0 .5rem}
+.fwd code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority/backoff-retry">backoff-retry</a><span class="rsep">/</span><span class="rcur">reuse-the-delayed-zset</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority/backoff-retry">Backoff &amp; retry</a>
+        <span class="sep">/</span>
+        <span class="here">Reusing the delayed ZSET</span>
+      </div>
+      <p class="eyebrow">R4.04.3 &middot; dive 3</p>
+      <h1>Reusing the delayed <span class="ex">ZSET</span></h1>
+      <p class="lede">A retry introduces no new structure. It is R4.01's delayed sorted set used a second time: re-added
+        at a backoff fire-time, swept back by the same <code class="inl">promoteDelayedJobs</code>.</p>
+      <p class="kicker">The whole module reduces to one fact: R4.01 owns the delayed set, the score shift, and the
+        promote sweep, and R4.04 reuses all three. <code class="inl">retryJob-11.lua</code> re-adds the failed job to
+        <code class="inl">emq:{queue}:delayed</code> scored by the backoff fire-time, and the script <em>includes</em>
+        the same due-sweep R4.01 teaches. Move the clock slider on the right to watch a retry re-enter the set at its
+        backoff score and be swept back when the clock reaches it.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#reenter">The retry re-enters</a>
+        <a href="#sweep">The same sweep</a>
+        <a href="#twouses">One structure, two uses</a>
+        <a href="#applied">In EchoMQ</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig clk" aria-labelledby="rzTitle">
+      <h4 id="rzTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A retry in the delayed set &middot; re-added, then swept when due</h4>
+      <div class="controls">
+        <div class="fold-ctrl">
+          <label for="rzNow">clock (s)</label>
+          <input type="range" id="rzNow" min="0" max="120" step="5" value="20">
+          <span class="val" id="rzNowVal">20</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 150" role="img" aria-label="A delayed set holds five jobs ordered by fire-time, one of them a retry re-added at its backoff score. A dashed red line marks the clock. Jobs whose fire-time is at or below the clock are inside the promoteDelayedJobs range and shown sage; the retry is shown red until it is due. Moving the clock slider sweeps the line and recolours the jobs as they become due.">
+        <text class="ttl" x="30" y="22">emq:{queue}:delayed &mdash; a retry among scheduled jobs (s)</text>
+        <g id="rzSlots"></g>
+        <line class="now" id="rzNowLine" x1="120" y1="34" x2="120" y2="104"></line>
+        <text class="ttl" id="rzNowLbl" x="120" y="120" text-anchor="middle" fill="#f2948c">now</text>
+        <text class="ttl" id="rzVerd" x="235" y="140" text-anchor="middle">&mdash;</text>
+      </svg>
+
+      <div class="geo-readout" id="rzOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="reenter">
+    <h2>The retry re-enters the delayed set</h2>
+    <div class="prose">
+      <p>When a job fails and has retries left, the worker calls <code class="inl">EchoMQ.Scripts.retry_job/5</code>,
+        which runs <code class="inl">retryJob-11.lua</code>. That script's <code class="inl">KEYS[7]</code> is the
+        delayed key &mdash; <code class="inl">emq:{queue}:delayed</code>, the exact set R4.01 schedules into. The failed
+        job is re-added there, scored by its fire-time the way every delayed job is, with the score coming from the same
+        <code class="inl">getDelayedScore</code> shift R4.01 walks: <code class="inl">(timestamp + delay) &times; 0x1000</code>,
+        the fire-time shifted twelve bits so jobs due in the same millisecond stay ordered.</p>
+      <p>The delay in that fire-time is the backoff delay &mdash; computed first by
+        <code class="inl">EchoMQ.Backoff.calculate/4</code> in Elixir, then handed to the reschedule. So the retry sits
+        in the delayed set indistinguishable from a freshly-scheduled deferred job: same key, same score shape, same
+        ordering. The set does not separate one member as a retry and another as a first-time schedule. To the sorted
+        set they are all jobs scored by when they are due.</p>
+    </div>
+    <p class="take">A retry re-enters <code class="inl">emq:{queue}:delayed</code> via
+      <code class="inl">retryJob-11.lua</code>'s <code class="inl">KEYS[7]</code>, scored by the same
+      <code class="inl">(timestamp + delay) &times; 0x1000</code> shift &mdash; indistinguishable in the set from a
+      first-time schedule.</p>
+  </section>
+
+  <section id="sweep">
+    <h2>The sweep is the same <code style="font-size:.7em">promoteDelayedJobs</code></h2>
+    <div class="prose">
+      <p><code class="inl">retryJob-11.lua</code> does not only re-add the job &mdash; it <em>includes</em> the promote
+        sweep. The script carries <code class="inl">[INCLUDED: includes/promoteDelayedJobs.lua]</code>, and that included
+        function is the same one R4.01's promotion dive teaches.</p>
+      <pre class="code"><span class="cmt">-- promoteDelayedJobs (included by retryJob-11.lua) — real</span>
+<span class="op">local</span> jobs = <span class="fn">rcall</span>(<span class="str">"ZRANGEBYSCORE"</span>, delayedKey, <span class="res">0</span>, (timestamp + <span class="res">1</span>) * <span class="res">0x1000</span> - <span class="res">1</span>, <span class="str">"LIMIT"</span>, 0, <span class="res">1000</span>)
+<span class="op">if</span> (#jobs &gt; <span class="res">0</span>) <span class="op">then</span>
+    <span class="fn">rcall</span>(<span class="str">"ZREM"</span>, delayedKey, <span class="fn">unpack</span>(jobs))    <span class="cmt">-- then ZADD each onto the wait / prioritized list</span>
+<span class="op">end</span></pre>
+      <p>It ranges the delayed key from <code class="inl">0</code> up to
+        <code class="inl">(timestamp + 1) &times; 0x1000 - 1</code> &mdash; every job whose shifted fire-time is at or below
+        the current millisecond &mdash; removes them with <code class="inl">ZREM</code>, and moves them onto the wait or
+        prioritized list. The retry re-enters at a future score and is swept back by exactly this function when the
+        clock reaches it. There is no retry-specific sweep; the retry is promoted by the same machinery that promotes
+        every delayed job, invoked as <code class="inl">promoteDelayedJobs(KEYS[7], ...)</code> inside the retry
+        script.</p>
+    </div>
+    <p class="take">The retry is swept back by the same included <code class="inl">promoteDelayedJobs</code> &mdash;
+      <code class="inl">ZRANGEBYSCORE delayedKey 0 (timestamp + 1) &times; 0x1000 - 1</code> then
+      <code class="inl">ZREM</code> &mdash; no retry-specific sweep exists.</p>
+  </section>
+
+  <section id="twouses">
+    <h2>One structure, two uses &mdash; what changes and what does not</h2>
+    <div class="prose">
+      <p>The whole module reduces to this: R4.01 owns the delayed set, the score shift, and the promote sweep. R4.04
+        reuses all three. What R4.04 <em>adds</em> is upstream of the set &mdash; the computation of <em>which delay</em>
+        to put in the score, done by <code class="inl">EchoMQ.Backoff</code> (the exponential doubling, the jitter). What
+        R4.04 does <em>not</em> add is any new key, command, or sweep. The reschedule is a <code class="inl">ZADD</code>
+        to <code class="inl">emq:{queue}:delayed</code>; the recovery is <code class="inl">promoteDelayedJobs</code>;
+        both are R4.01's.</p>
+      <p>This is why the pattern is economical. A queue that already has a delayed queue has a retry mechanism for free
+        &mdash; it needs only a formula to size the delay and an attempts counter to bound the loop. The hard part (a
+        time-ordered set with an efficient due-range read) was built once, in R4.01, and serves both scheduled work and
+        retries. The interactive below puts a first-time schedule and a retry in the same set and sweeps them with one
+        clock.</p>
+    </div>
+
+    <figure class="fig clk" aria-labelledby="tuTitle">
+      <h4 id="tuTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Two uses, one set &middot; a schedule and a retry, swept together</h4>
+      <div class="controls">
+        <div class="solid-select" id="tuSel" role="group" aria-label="Show the set with the first-time schedule alone, or with the retry added">
+          <button type="button" data-mode="one" data-c="sage" class="active" aria-pressed="true">schedule only</button>
+          <button type="button" data-mode="two" data-c="redis" aria-pressed="false">schedule + retry</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 150" role="img" aria-label="A delayed set with one scheduled job. Toggling adds a retry of a failed job at its backoff score, into the same set. Both members carry the same score shape, fire-time times 0x1000, and both are ordered and swept by the one promoteDelayedJobs. The readout names the members and confirms one set holds both.">
+        <text class="ttl" x="30" y="22">emq:{queue}:delayed &mdash; one set, both uses</text>
+        <g id="tuSlots"></g>
+        <text class="ttl" id="tuVerd" x="235" y="138" text-anchor="middle">&mdash;</text>
+      </svg>
+
+      <div class="geo-readout" id="tuOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">A retry adds no structure: it reuses R4.01's delayed set, score shift, and
+      <code class="inl">promoteDelayedJobs</code> sweep, contributing only the backoff delay that sets the
+      fire-time.</p>
+  </section>
+
+  <section id="applied">
+    <h2>In EchoMQ &mdash; the reuse, in real code</h2>
+    <div class="prose">
+      <p>The reuse is real code in <code class="inl">echo/apps/echomq</code>.
+        <code class="inl">EchoMQ.Scripts.retry_job/5</code> runs <code class="inl">retryJob-11.lua</code>;
+        <code class="inl">KEYS[7]</code> is the delayed key from <code class="inl">EchoMQ.Keys.delayed/1</code>
+        (<code class="inl">emq:{queue}:delayed</code>). The script re-adds the failed job there at the backoff score and
+        then calls the included <code class="inl">promoteDelayedJobs(KEYS[7], ...)</code> &mdash; the same sweep
+        <code class="inl">addDelayedJob-6.lua</code> and the worker scripts include. The backoff delay comes from
+        <code class="inl">EchoMQ.Backoff</code>; the key, the score shift, and the sweep are R4.01's.</p>
+      <pre class="code"><span class="cmt">-- retryJob-11.lua — re-add at the backoff score, then sweep (real shape)</span>
+<span class="cmt">-- KEYS[7] = emq:{queue}:delayed</span>
+<span class="rdx">ZADD</span> KEYS[<span class="res">7</span>] backoffScore jobId          <span class="cmt">-- backoffScore = (now + backoff) × 0x1000</span>
+<span class="fn">promoteDelayedJobs</span>(KEYS[<span class="res">7</span>], markerKey, target, ...)  <span class="cmt">-- the same included sweep R4.01 teaches</span></pre>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>A retry is a delayed job: re-add the failed job to the delayed set at a backoff fire-time, and let the
+          existing due-sweep bring it back when its time comes. No new structure.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p><code class="inl">retryJob-11.lua</code> re-adds the job to <code class="inl">emq:{queue}:delayed</code>
+          (<code class="inl">KEYS[7]</code>) at the backoff score, and the <em>included</em>
+          <code class="inl">promoteDelayedJobs</code> sweeps it back with
+          <code class="inl">ZRANGEBYSCORE delayedKey 0 (timestamp + 1) &times; 0x1000 - 1</code> then
+          <code class="inl">ZREM</code> &mdash; R4.01's own sweep, called from inside the retry script.</p>
+      </div>
+    </div>
+
+    <p class="take">A retry adds no structure &mdash; it reuses R4.01's delayed set, score shift, and
+      <code class="inl">promoteDelayedJobs</code> sweep, contributing only the backoff delay that sets the
+      fire-time.</p>
+
+    <div class="fwd">
+      <span class="lbl">Where this is heading &middot; EchoMQ 2.0</span>
+      The retry re-enters <code class="inl">emq:{queue}:delayed</code> and is swept by
+      <code class="inl">promoteDelayedJobs</code> today. EchoMQ 2.0 renames the key to
+      <code class="inl">emq:{queue}:delayed</code>, applies the <code class="inl">{queue}</code> hashtag transparently in
+      the core, and declares every Lua key in <code class="inl">KEYS[]</code> &mdash; so
+      <code class="inl">retryJob-11.lua</code>'s <code class="inl">KEYS[7]</code> and the sweep's
+      <code class="inl">delayedKey</code> become fully-declared <code class="inl">emq:</code>-prefixed keys, and
+      <code class="inl">meta.version</code> reads <code class="inl">echomq:2.0.0</code> behind the two-way boot fence.
+      The reuse this dive teaches &mdash; one set serving both schedule and retry, swept by one
+      <code class="inl">promoteDelayedJobs</code> &mdash; is unchanged by the break. The "one structure, two uses"
+      property is a fact about the sorted set, not the prefix.
+    </div>
+
+    <div class="door">
+      <span class="lbl">Door &middot; not depth</span>
+      The full lifecycle subsystem &mdash; the failed-job path through reschedule, the attempts cap, and the worker pool
+      that runs <code class="inl">retryJob-11.lua</code> &mdash; is the subject of the dedicated
+      <strong>EchoMQ course</strong>. The retry and checkpoint lifecycle is
+      <a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a>. This dive teaches the reuse; that course teaches
+      the lifecycle that runs it.
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The re-add at the backoff fire-time, the due-sweep that brings the retry back, the one sorted set both uses
+        share, the queue protocol EchoMQ ports, and the direction EchoMQ 2.0 takes native.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; re-add the failed job to <code>emq:{queue}:delayed</code> at the backoff fire-time score.</li>
+          <li><a href="https://redis.io/commands/zrangebyscore/">Redis &mdash; <em>ZRANGEBYSCORE</em></a> &mdash; the <code>promoteDelayedJobs</code> range that sweeps the due retry back to wait.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; the one timer-wheel that serves both schedule and retry.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the retry-reschedule protocol EchoMQ ports, where the Lua scripts are the protocol.</li>
+          <li><a href="https://www.dragonflydb.io/docs/integrations/bullmq">DragonflyDB &mdash; <em>BullMQ on Dragonfly</em></a> &mdash; the BullMQ-on-Dragonfly direction the EchoMQ 2.0 protocol break takes native.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority/backoff-retry">R4.04 &middot; Backoff &amp; retry</a> &mdash; the module hub.</li>
+          <li><a href="/redis-patterns/time-delay-priority/backoff-retry/exponential-backoff">R4.04.1 &middot; Exponential backoff</a> &mdash; the formula that sizes the delay re-added here.</li>
+          <li><a href="/redis-patterns/time-delay-priority/backoff-retry/jitter-thundering-herd">R4.04.2 &middot; Jitter &amp; the thundering herd</a> &mdash; the spread on the delay re-added here.</li>
+          <li><a href="/redis-patterns/time-delay-priority/delayed-queue">R4.01 &middot; The delayed queue</a> &mdash; the <code>:delayed</code> set, score shift, and sweep this reuses.</li>
+          <li><a href="/redis-patterns/time-delay-priority/schedulers">R4.02 &middot; Scheduler registry</a> &mdash; recurring jobs on the sibling <code>:repeat</code> set.</li>
+          <li><a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a> &mdash; the dedicated EchoMQ course: the retry lifecycle in depth.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority/backoff-retry/jitter-thundering-herd"><span aria-hidden="true">&larr;</span>&nbsp; R4.04.2 &middot; Jitter &amp; the thundering herd</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority/backoff-retry">R4.04 &middot; Backoff &amp; retry <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/time-delay-priority/backoff-retry/exponential-backoff">R4.04.1 &middot; Exponential backoff</a>
+        <a href="/redis-patterns/time-delay-priority/backoff-retry/jitter-thundering-herd">R4.04.2 &middot; Jitter &amp; the thundering herd</a>
+        <a href="/redis-patterns/time-delay-priority/backoff-retry/reuse-the-delayed-zset">R4.04.3 &middot; Reusing the delayed ZSET</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/lifecycle">The EchoMQ course &middot; the lifecycle</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: a retry in the delayed set — re-added, then swept when due (pure over now) ---------- */
+  // Five jobs in the delayed set, one a retry (job R*) re-added at a backoff score. The clock slider sets now. A job is
+  // due when its fire-time ≤ now (the promoteDelayedJobs 0 → now range). The retry is highlighted red until it is due.
+  // The due set, the head, and the readout are pure over now.
+  var RZ_JOBS = [
+    { id: 'A', fire: 15, retry: false }, { id: 'B', fire: 30, retry: false },
+    { id: 'R*', fire: 50, retry: true }, { id: 'D', fire: 75, retry: false }, { id: 'E', fire: 100, retry: false }
+  ];
+  // pure: now -> { slots:[{id,fire,due,retry,head}], due:[ids], head:{...}|null, retryDue:boolean }
+  function sweep(now) {
+    var sorted = RZ_JOBS.slice().sort(function (a, b) { return a.fire - b.fire; });
+    var due = [], head = null;
+    sorted.forEach(function (j) {
+      if (j.fire <= now) due.push(j.id);
+      else if (head === null) head = j;
+    });
+    var slots = sorted.map(function (j) {
+      return { id: j.id, fire: j.fire, due: j.fire <= now, retry: j.retry, head: head !== null && j.id === head.id };
+    });
+    var retryDue = sorted.some(function (j) { return j.retry && j.fire <= now; });
+    return { slots: slots, due: due, head: head, retryDue: retryDue };
+  }
+  function renderRz(now) {
+    var r = sweep(now);
+    var g = document.getElementById('rzSlots');
+    if (g) {
+      var frag = '';
+      for (var i = 0; i < r.slots.length; i++) {
+        var s = r.slots[i];
+        var x = 30 + i * 82;
+        var cls = s.due ? 'due' : (s.retry ? 'retry' : (s.head ? 'head' : ''));
+        frag += '<g class="slot ' + cls + '"><rect x="' + x + '" y="38" width="68" height="44" rx="9"></rect>' +
+          '<text class="job" x="' + (x + 34) + '" y="60" text-anchor="middle">' + s.id + '</text>' +
+          '<text class="sc" x="' + (x + 34) + '" y="76" text-anchor="middle">' + s.fire + 's</text></g>';
+      }
+      g.innerHTML = frag;
+    }
+    var x0 = 30, x1 = 440, nx = x0 + (Math.max(0, Math.min(120, now)) / 120) * (x1 - x0);
+    var line = document.getElementById('rzNowLine'), lbl = document.getElementById('rzNowLbl');
+    if (line) { line.setAttribute('x1', nx.toFixed(1)); line.setAttribute('x2', nx.toFixed(1)); }
+    if (lbl) lbl.setAttribute('x', nx.toFixed(1));
+    var verd = document.getElementById('rzVerd'), out = document.getElementById('rzOut');
+    var dueTxt = r.due.length ? r.due.join(', ') : 'none';
+    if (verd) verd.textContent = r.due.length + ' due · retry R* ' + (r.retryDue ? 'swept' : 'pending');
+    if (out) {
+      out.textContent = 'clock = ' + now + 's. promoteDelayedJobs ranges [0, ' + now + '] and finds ' + r.due.length +
+        ' due job' + (r.due.length === 1 ? '' : 's') + ': ' + dueTxt + '. ' +
+        (r.retryDue
+          ? 'The retry R* (re-added at its backoff score, 50s) is now ≤ the clock, so the same ZREM-and-promote sweep moves it to wait — no retry-specific path.'
+          : 'The retry R* sits at 50s, still in the future, ordered among the scheduled jobs by the one score shape. It will be swept by the same promoteDelayedJobs when the clock reaches it.');
+    }
+  }
+  var rzRange = document.getElementById('rzNow'), rzRangeV = document.getElementById('rzNowVal');
+  if (rzRange) rzRange.addEventListener('input', function () {
+    var now = parseInt(rzRange.value, 10); if (rzRangeV) rzRangeV.textContent = String(now);
+    renderRz(now);
+  });
+  renderRz(20); // initial render — correct without interaction
+
+  /* ---------- content: two uses, one set — a schedule and a retry, swept together (pure over mode) ---------- */
+  // mode 'one': the set holds one scheduled job. mode 'two': a retry is added to the SAME set, same score shape. Both
+  // are ordered and swept by the one promoteDelayedJobs. The slots and readout are pure over mode.
+  var SCHED = { id: 'S', fire: 40, retry: false };   // a first-time scheduled job
+  var RETRY = { id: 'R*', fire: 65, retry: true };   // a retry, re-added at its backoff score
+  // pure: mode -> { members:[{id,fire,retry}] }
+  function members(mode) {
+    return mode === 'two' ? [SCHED, RETRY] : [SCHED];
+  }
+  function renderTu(mode) {
+    var ms = members(mode).slice().sort(function (a, b) { return a.fire - b.fire; });
+    var g = document.getElementById('tuSlots');
+    if (g) {
+      var frag = '';
+      for (var i = 0; i < ms.length; i++) {
+        var m = ms[i];
+        var x = 30 + i * 110 + (ms.length === 1 ? 130 : 70);
+        frag += '<g class="slot ' + (m.retry ? 'retry' : 'due') + '"><rect x="' + x + '" y="44" width="96" height="44" rx="9"></rect>' +
+          '<text class="job" x="' + (x + 48) + '" y="66" text-anchor="middle">' + m.id + '</text>' +
+          '<text class="sc" x="' + (x + 48) + '" y="82" text-anchor="middle">score ' + m.fire + 's × 0x1000</text></g>';
+      }
+      g.innerHTML = frag;
+    }
+    var verd = document.getElementById('tuVerd'), out = document.getElementById('tuOut');
+    if (verd) verd.textContent = ms.length + ' member' + (ms.length === 1 ? '' : 's') + ' in one delayed set, one sweep';
+    if (out) {
+      if (mode === 'two') {
+        out.textContent = 'The set now holds two members: the scheduled job S (fire 40s) and the retry R* (re-added ' +
+          'at its backoff fire-time, 65s). Both carry the same score shape — fire-time × 0x1000 — and both are ordered ' +
+          'and swept by the one promoteDelayedJobs. R4.01 put S there; R4.04 put R* there. Same set, two uses, no new ' +
+          'structure.';
+      } else {
+        out.textContent = 'The set holds one first-time scheduled job S, scored 40s × 0x1000 — R4.01’s machinery. ' +
+          'Add a retry and it enters this same set, with the same score shape, swept by the same promoteDelayedJobs.';
+      }
+    }
+  }
+  document.querySelectorAll('#tuSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var mode = b.getAttribute('data-mode');
+      document.querySelectorAll('#tuSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderTu(mode);
+    });
+  });
+  renderTu('one'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

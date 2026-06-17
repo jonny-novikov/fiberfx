@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workshop · trace a job, compose a flow · The Queue · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="A hands-on close to The Queue: trace one job through its whole lifecycle, then compose a small flow. Walk enqueue → claim (lease + token) → complete, the failure fork claim → retry (scheduled) → promote → claim → dead, and the recovery reap; then a parent + N children landing atomically and fanning in. Two real interactives — a lifecycle stepper across the four sorted sets and a flow composer whose :dependencies counter ticks to zero — both pure over the real EchoMQ.Jobs and EchoMQ.Flows transitions in echo/apps/echo_mq.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.ctl{display:flex;flex-direction:column;gap:.35rem;font-family:var(--sans);font-size:.8rem;color:var(--cream-dim)}
+.ctl input[type=range]{width:200px;accent-color:var(--echo)}
+.ctl .val{font-family:var(--mono);color:var(--echo-bright);font-size:.9rem}
+
+/* ---- transition stepper svg ---- */
+.step .mv rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+.step .mv.on rect{fill:rgba(42,161,152,.14);stroke:#2aa198}
+.step text{font-family:var(--sans);fill:#d7cfb9}
+.step .mid{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.setbox rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.setbox.hot rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.setbox.dead.hot rect{fill:rgba(196,80,76,.16);stroke:#c4504c}
+.setbox .lbl{font-family:var(--mono);font-size:10px;fill:#a39c89}
+.setbox .mem{font-family:var(--mono);font-size:12px;fill:#6fdccf}
+.setbox.dead.hot .mem{fill:#f2948c}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/queue">queue</a><span class="rsep">/</span><span class="rcur">workshop</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue">The Queue</a>
+        <span class="sep">/</span>
+        <span class="here">Workshop</span>
+      </nav>
+      <p class="eyebrow">The Queue &middot; workshop</p>
+      <h1>Trace a job, <span class="ex">compose a flow</span></h1>
+      <p class="lede">The whole machine, hands-on: walk one job across the four sets, then watch a flow's counter tick to zero.</p>
+      <p class="kicker">The Queue is a state machine over <strong>four sorted sets</strong> &mdash;
+        <code class="inl">pending</code>, <code class="inl">active</code>, <code class="inl">schedule</code>,
+        <code class="inl">dead</code> &mdash; and <strong>one row hash</strong>. This page closes the chapter by
+        running it end to end: trace one job through enqueue, claim, complete, the failure fork, and recovery; then
+        compose a parent and its children and watch the fan-in release the parent. Step the lifecycle on the right,
+        then build a flow below.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#lifecycle">Trace a job</a>
+        <a href="#flow">Compose a flow</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig step" aria-labelledby="stepTitle">
+      <h4 id="stepTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The lifecycle stepper &middot; one job across the four sets</h4>
+      <div class="controls">
+        <div class="solid-select" id="pathSel" role="group" aria-label="Which path to trace">
+          <button type="button" data-path="happy" data-c="echo" class="active" aria-pressed="true">happy path</button>
+          <button type="button" data-path="fail" data-c="gold" aria-pressed="false">failure path</button>
+        </div>
+        <div class="solid-select" id="stepSel" role="group" aria-label="Which step of the path"></div>
+      </div>
+      <svg viewBox="0 0 460 196" role="img" aria-label="The four sorted sets of one queue — pending, active, schedule, dead — with the job id shown in whichever set holds it at the selected step. The holding set is highlighted in the EchoMQ accent; the dead set highlights in burgundy.">
+        <g class="setbox" id="set-pending"><rect x="14" y="16" width="200" height="44" rx="8"></rect>
+          <text class="lbl" x="26" y="34">emq:{q}:pending</text>
+          <text class="mem" id="mem-pending" x="26" y="52">(empty)</text></g>
+        <g class="setbox" id="set-active"><rect x="246" y="16" width="200" height="44" rx="8"></rect>
+          <text class="lbl" x="258" y="34">emq:{q}:active (score = lease)</text>
+          <text class="mem" id="mem-active" x="258" y="52">(empty)</text></g>
+        <g class="setbox" id="set-schedule"><rect x="14" y="72" width="200" height="44" rx="8"></rect>
+          <text class="lbl" x="26" y="90">emq:{q}:schedule (score = run-at)</text>
+          <text class="mem" id="mem-schedule" x="26" y="108">(empty)</text></g>
+        <g class="setbox dead" id="set-dead"><rect x="246" y="72" width="200" height="44" rx="8"></rect>
+          <text class="lbl" x="258" y="90">emq:{q}:dead</text>
+          <text class="mem" id="mem-dead" x="258" y="108">(empty)</text></g>
+        <line x1="14" y1="138" x2="446" y2="138" stroke="#2aa198" stroke-dasharray="4 3"></line>
+        <text x="230" y="156" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#6fdccf">members are the branded ids themselves — byte order is mint order</text>
+        <text id="rowline" x="230" y="178" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a39c89">row —</text>
+      </svg>
+      <div class="geo-readout" id="stepOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="lifecycle">
+    <h2>Trace a job through its lifecycle</h2>
+    <div class="prose">
+      <p>A job moves through the machine by <strong>one atomic script per transition</strong>. The happy path is three
+        moves; the failure fork adds two; recovery is one. The stepper above walks each step; the transitions below are
+        the real scripts in <code class="inl">EchoMQ.Jobs</code>.</p>
+      <p><strong>The happy path &mdash; enqueue &rarr; claim &rarr; complete.</strong>
+        <code class="inl">enqueue/4</code> writes the row and the pending entry.
+        <code class="inl">claim/3</code> pops the oldest pending id, increments <code class="inl">attempts</code> (the
+        fencing token), and inserts an <code class="inl">active</code> entry whose <strong>score is the lease
+        deadline</strong>. <code class="inl">complete/4</code> token-fences, removes the active entry, and retires the
+        row.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs.claim/3, the handle that runs @claim</span>
+<span class="cmt"># A paused queue answers :empty FIRST (the pending set untouched); otherwise</span>
+<span class="cmt"># @claim pops the oldest pending id and leases it on the server clock. The</span>
+<span class="cmt"># KEYS are the pending and active sets; ARGV[1] is the queue's job-key base</span>
+<span class="cmt"># "emq:{q}:job:", ARGV[2] the lease in ms. The script returns {id, payload, att}.</span>
+<span class="op">def</span> <span class="fn">claim</span>(conn, queue, lease_ms) <span class="op">when</span> is_integer(lease_ms) <span class="op">and</span> lease_ms &gt; <span class="res">0</span> <span class="op">do</span>
+  <span class="op">if</span> <span class="fn">paused?</span>(conn, queue) <span class="op">do</span>
+    <span class="str">:empty</span>                                  <span class="cmt"># queue-wide pause gates the claim</span>
+  <span class="op">else</span>
+    keys = [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"pending"</span>), Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"active"</span>)]
+    argv = [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"job:"</span>), Integer.to_string(lease_ms)]
+
+    <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@claim</span>, keys, argv) <span class="op">do</span>
+      {<span class="str">:ok</span>, []} -&gt; <span class="str">:empty</span>                  <span class="cmt"># nothing pending</span>
+      {<span class="str">:ok</span>, [id, payload, att]} -&gt; {<span class="str">:ok</span>, {id, payload, att}}
+      other -&gt; other
+    <span class="op">end</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><strong>Beat two &mdash; the <code class="inl">@claim</code> body.</strong> Four moves, one atomic step.
+        <code class="inl">KEYS[1]</code> is the pending set, <code class="inl">KEYS[2]</code> the active set;
+        <code class="inl">ARGV[1]</code> is the job-key base and <code class="inl">ARGV[2]</code> the lease. The active
+        score is computed from the server clock, so the lease deadline lives where reap and complete read it.</p>
+    </div>
+
+    <pre class="code"><span class="cmt">-- the @claim script — pop the oldest pending id and lease it, atomically</span>
+<span class="op">local</span> popped = redis.call(<span class="str">'ZPOPMIN'</span>, <span class="rdx">KEYS[1]</span>)   <span class="cmt">-- oldest pending id (lowest score)</span>
+<span class="op">if</span> #popped == <span class="res">0</span> <span class="op">then</span> <span class="op">return</span> {} <span class="op">end</span>      <span class="cmt">-- nothing pending → empty</span>
+<span class="op">local</span> id = popped[<span class="res">1</span>]
+<span class="op">local</span> jk = <span class="rdx">ARGV[1]</span> .. id                  <span class="cmt">-- the row key: base "emq:{q}:job:" + id</span>
+<span class="op">local</span> att = redis.call(<span class="str">'HINCRBY'</span>, jk, <span class="str">'attempts'</span>, <span class="res">1</span>)  <span class="cmt">-- the NEW attempts == the fencing token</span>
+redis.call(<span class="str">'HSET'</span>, jk, <span class="str">'state'</span>, <span class="str">'active'</span>)
+<span class="op">local</span> t = redis.call(<span class="str">'TIME'</span>)                 <span class="cmt">-- the SERVER clock, not the caller's</span>
+<span class="op">local</span> now = t[<span class="res">1</span>] * <span class="res">1000</span> + math.floor(t[<span class="res">2</span>] / <span class="res">1000</span>)
+redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[2]</span>, now + tonumber(<span class="rdx">ARGV[2]</span>), id)  <span class="cmt">-- active score IS the lease deadline</span>
+<span class="op">return</span> {id, redis.call(<span class="str">'HGET'</span>, jk, <span class="str">'payload'</span>), att}</pre>
+
+    <div class="prose">
+      <p><strong>The failure fork &mdash; retry, promote, dead.</strong> When a handler returns
+        <code class="inl">{:error, reason}</code>, the worker calls <code class="inl">retry/7</code>. Below max attempts,
+        <code class="inl">@retry</code> parks the job on the <code class="inl">schedule</code> set at a future score
+        (a <strong>visibility fence, not a second queue</strong>) and <code class="inl">promote/3</code> later returns
+        it to pending; the next claim increments <code class="inl">attempts</code> again. At max attempts the job lands
+        in <code class="inl">dead</code> with its <code class="inl">last_error</code>.</p>
+      <p><strong>Recovery &mdash; reap.</strong> If the worker crashes, nobody completes or retries &mdash; the active
+        entry expires on its own. <code class="inl">reap/2</code> runs <code class="inl">@reap</code> on the server clock:
+        every active member past its deadline returns to <code class="inl">pending</code>. No separate lock, no
+        heartbeat table; the next claim moves the token, so a crashed worker's late completion is fenced out.</p>
+    </div>
+    <p class="take">The active score is the lease, and <code class="inl">attempts</code> is the token. Those two facts
+      carry the whole lifecycle: the lease times the work, and the token decides who may finish it.</p>
+  </section>
+
+  <section id="flow">
+    <h2>Compose a small flow</h2>
+    <div class="prose">
+      <p>A flow is a <strong>parent job and a flat list of children</strong>. <code class="inl">EchoMQ.Flows.add/3</code>
+        lands a same-queue flow in one atomic <code class="inl">@enqueue_flow</code>: the children go to
+        <code class="inl">pending</code> claimable, the parent is held out of pending
+        (<code class="inl">state = awaiting_children</code>) with its outstanding-child count
+        <code class="inl">SET</code> to N in <code class="inl">emq:{q}:job:&lt;parent&gt;:dependencies</code>. Set the
+        child count and complete them one by one &mdash; watch the counter tick to zero and the parent release.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="flowTitle">
+      <h4 id="flowTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The flow composer &middot; the :dependencies counter ticks to zero</h4>
+      <div class="controls">
+        <div class="ctl">
+          <label for="nKids">children (N)</label>
+          <input type="range" id="nKids" min="1" max="5" step="1" value="3">
+          <span class="val" id="nKidsVal">3</span>
+        </div>
+        <div class="ctl">
+          <label for="nDone">children completed</label>
+          <input type="range" id="nDone" min="0" max="5" step="1" value="0">
+          <span class="val" id="nDoneVal">0</span>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 150" role="img" aria-label="A parent job holding a dependencies counter, above a row of child jobs. Each completed child decrements the counter; at zero the parent is released to pending.">
+        <rect x="150" y="12" width="180" height="42" rx="9" fill="rgba(16,22,43,.6)" stroke="#2a3252" id="parentBox"></rect>
+        <text x="240" y="30" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a39c89">parent (JOB-p)</text>
+        <text id="parentState" x="240" y="46" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="12" fill="#6fdccf">awaiting_children</text>
+        <text id="depText" x="240" y="74" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#f0cd7f">:dependencies = 3</text>
+        <g id="kids"></g>
+      </svg>
+      <div class="geo-readout" id="flowOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="prose">
+      <p>The fan-in lives <strong>inside <code class="inl">@complete</code></strong>: when a flow child completes (its
+        row carries a <code class="inl">parent</code> field, read host-side by <code class="inl">complete/4</code>), the
+        script <code class="inl">DECR</code>s the parent's <code class="inl">:dependencies</code> counter, records the
+        child's result in <code class="inl">:processed</code>, and at zero releases the parent to pending. The decrement
+        sits inside the once-only active&rarr;done branch, so a redelivered or stale-token completion never
+        double-counts.</p>
+    </div>
+
+    <pre class="code"><span class="cmt">-- inside @complete: the flow fan-in branch (a flow child only — KEYS[3] present)</span>
+<span class="cmt">-- KEYS[3] = parent's :dependencies, KEYS[4] = parent's :processed, KEYS[5] = parent row;</span>
+<span class="cmt">-- ARGV[1] = the child's id, ARGV[4] = the parent's bare id, ARGV[5] = the child's result.</span>
+<span class="op">if</span> <span class="rdx">KEYS[3]</span> <span class="op">and</span> was_active == <span class="res">1</span> <span class="op">then</span>      <span class="cmt">-- once-only: fires on the child's active→done</span>
+  <span class="op">local</span> left = redis.call(<span class="str">'DECR'</span>, <span class="rdx">KEYS[3]</span>)    <span class="cmt">-- one fewer outstanding child</span>
+  redis.call(<span class="str">'HSET'</span>, <span class="rdx">KEYS[4]</span>, <span class="rdx">ARGV[1]</span>, <span class="rdx">ARGV[5]</span>)  <span class="cmt">-- record the child's result in :processed</span>
+  <span class="op">if</span> left &lt;= <span class="res">0</span> <span class="op">then</span>                       <span class="cmt">-- the last child — release the parent</span>
+    redis.call(<span class="str">'ZADD'</span>, p .. <span class="str">'pending'</span>, <span class="res">0</span>, <span class="rdx">ARGV[4]</span>)
+    redis.call(<span class="str">'HSET'</span>, <span class="rdx">KEYS[5]</span>, <span class="str">'state'</span>, <span class="str">'pending'</span>)
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <p class="note">The parent handler runs <em>on</em> its children's results, through three pure reads:
+      <code class="inl">children_values/3</code> (<code class="inl">HGETALL</code> the <code class="inl">:processed</code>
+      hash), <code class="inl">dependencies/3</code> (<code class="inl">GET</code> the counter, <code class="inl">{:ok, 0}</code>
+      when absent), and <code class="inl">ignored_failures/3</code> (<code class="inl">HGETALL</code> the
+      <code class="inl">:unsuccessful</code> hash). None of them changes state.</p>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A reliable queue confirms work atomically and recovers a crashed worker's job from a visibility timeout;
+          orchestrating dependent work &mdash; a parent that waits on its legs &mdash; is the flow-control angle,
+          <strong>R6 &middot; Flow control</strong>. The near, resolvable door is
+          <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>: each child is one reliable-queue job.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">EchoMQ.Jobs</code> is the lifecycle &mdash; four scripts over four sorted sets, the active
+          score the lease, <code class="inl">attempts</code> the token, <code class="inl">@reap</code> the server-clock
+          recovery. <code class="inl">EchoMQ.Flows.add/3</code> is the flow &mdash; one atomic
+          <code class="inl">@enqueue_flow</code>, plus the fan-in hook inside <code class="inl">@complete</code>.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: confirm atomically, recover by timeout, compose by counting. The implementation is
+      <code class="inl">EchoMQ.Jobs</code> and <code class="inl">EchoMQ.Flows</code> &mdash; four sets, one row, one
+      counter.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; the whole machine, run once</h2>
+    <div class="prose">
+      <p>One job: three moves on the happy path, two more on the failure fork, one for recovery &mdash; each an atomic
+        script over the four sets and the row. One flow: an atomic land and a counter that ticks to zero. That is the
+        Queue &mdash; <code class="inl">pending</code>, <code class="inl">active</code>, <code class="inl">schedule</code>,
+        <code class="inl">dead</code>, and one row hash, with every transition pushed below the line as a single
+        indivisible step.</p>
+    </div>
+    <p class="note">That closes The Queue. The chapter landing collects the lifecycle, jobs &amp; lanes, batches,
+      lifecycle controls, and flows; the next pillar, the Bus, broadcasts signals over the same wire.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the lifecycle and flow transitions are grounded, and the commands their scripts run.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/zpopmin/">Valkey &mdash; <em>ZPOPMIN</em></a> &mdash; the claim's pop of the oldest pending id (lowest score).</li>
+          <li><a href="https://valkey.io/commands/zadd/">Valkey &mdash; <em>ZADD</em></a> &mdash; the set insertion every transition ends with: pending at 0, active at the lease deadline, schedule at the run-at score.</li>
+          <li><a href="https://valkey.io/commands/zrangebyscore/">Valkey &mdash; <em>ZRANGEBYSCORE</em></a> &mdash; promote and reap select the due or expired members by score.</li>
+          <li><a href="https://valkey.io/commands/decr/">Valkey &mdash; <em>DECR</em></a> &mdash; the fan-in decrement of the parent's <code>:dependencies</code> counter.</li>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the load-once dispatch each transition script runs with.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/queue">The Queue</a> &mdash; the chapter landing this workshop closes.</li>
+          <li><a href="/echomq/queue/the-lifecycle">The lifecycle</a> &mdash; the state machine in full.</li>
+          <li><a href="/echomq/queue/the-lifecycle/claim-and-the-lease">Claim &amp; the lease</a> &mdash; the lease deadline and the fencing token.</li>
+          <li><a href="/echomq/queue/the-lifecycle/completion-and-recovery">Completion &amp; recovery</a> &mdash; complete, retry, reap.</li>
+          <li><a href="/echomq/queue/flows/parent-and-children">Flows &middot; parent and children</a> &mdash; the flow shape and the atomic land.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns &middot; Reliable Queues</a> &mdash; the near side of the door.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/queue/flows"><span aria-hidden="true">&larr;</span>&nbsp; Flows</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/queue">The Queue <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This chapter</h4>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/echomq/queue/the-lifecycle">The lifecycle</a>
+        <a href="/echomq/queue/jobs-lanes-consumer">Jobs, lanes &amp; the consumer</a>
+        <a href="/echomq/queue/batches">Batches</a>
+        <a href="/echomq/queue/lifecycle-controls">Lifecycle controls</a>
+        <a href="/echomq/queue/flows">Flows</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/overview">Overview</a>
+        <a href="/echomq/protocol">The Protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the lifecycle stepper (pure over a fixed job) ----------
+     One job (JOB-7a3), lease 30000 ms, max_attempts 2. Each path is a fixed
+     list of steps; stepState(path, i) returns, for step i, which set holds the
+     id, the row state, and attempts — read off the real @enqueue/@claim/@retry/
+     @promote/@complete/@reap transitions in jobs.ex. @claim HINCRBYs attempts;
+     @retry dead-letters when the row's attempts >= max (2 here), else schedules.
+     The state is a pure function of (path, step): no accumulation, reproducible. */
+  var ID = 'JOB-7a3';
+  var PATHS = {
+    happy: [
+      { label: '1 · enqueue', set: 'pending', state: 'pending', att: 0,
+        verb: 'enqueue/4 → @enqueue', note: 'HSET the row (state pending, attempts 0, payload), ZADD pending 0 — the id sits in pending at score 0' },
+      { label: '2 · claim', set: 'active', state: 'active', att: 1,
+        verb: 'claim/3 → @claim', note: 'ZPOPMIN pending, HINCRBY attempts → 1 (the token), HSET state active, ZADD active at now + 30000 (the lease deadline)' },
+      { label: '3 · complete', set: null, state: '(deleted)', att: 1,
+        verb: 'complete/4 → @complete', note: 'token matches → ZREM active, DEL the row, HINCRBY metrics:completed — every set empty, the row gone' }
+    ],
+    fail: [
+      { label: '1 · enqueue', set: 'pending', state: 'pending', att: 0,
+        verb: 'enqueue/4 → @enqueue', note: 'the id enters pending at score 0, row state pending, attempts 0' },
+      { label: '2 · claim', set: 'active', state: 'active', att: 1,
+        verb: 'claim/3 → @claim', note: 'ZPOPMIN pending, HINCRBY attempts → 1, active entry at now + 30000' },
+      { label: '3 · retry', set: 'schedule', state: 'scheduled', att: 1,
+        verb: 'retry/7 → @retry (below max)', note: 'handler errored; the row\'s attempts 1 < max 2 → ZREM active, HSET last_error, state scheduled, ZADD schedule at now + delay — a visibility fence' },
+      { label: '4 · promote', set: 'pending', state: 'pending', att: 1,
+        verb: 'promote/3 → @promote', note: 'the scheduled score is now due → ZREM schedule, ZADD pending 0, HSET state pending — claimable again' },
+      { label: '5 · claim', set: 'active', state: 'active', att: 2,
+        verb: 'claim/3 → @claim', note: 'ZPOPMIN pending, HINCRBY attempts → 2, a fresh lease at now + 30000' },
+      { label: '6 · retry → dead', set: 'dead', state: 'dead', att: 2,
+        verb: 'retry/7 → @retry (at max)', note: 'errored again; the row\'s attempts 2 >= max 2 → ZREM active, HSET last_error, state dead, ZADD dead 0, HINCRBY metrics:failed' }
+    ]
+  };
+  var SETS = ['pending', 'active', 'schedule', 'dead'];
+  var curPath = 'happy', curStep = 0;
+
+  function paintStep(path, i) {
+    var steps = PATHS[path];
+    if (i >= steps.length) i = steps.length - 1;
+    var s = steps[i];
+    SETS.forEach(function (name) {
+      var box = document.getElementById('set-' + name);
+      var mem = document.getElementById('mem-' + name);
+      var holds = s.set === name;
+      if (box) box.classList.toggle('hot', holds);
+      if (mem) mem.textContent = holds ? ID : '(empty)';
+    });
+    var rowline = document.getElementById('rowline');
+    if (rowline) rowline.textContent = 'row — state ' + s.state + ' · attempts ' + s.att;
+    var out = document.getElementById('stepOut');
+    if (out) {
+      var where = s.set ? ('held in <b>' + s.set + '</b>') : '<span class="dim">in no set (row deleted)</span>';
+      out.innerHTML = '<b>' + s.label.replace(/^\d+ · /, '') + '</b> &mdash; <span class="dim">' + s.verb + '</span><br>' +
+        ID + ' is ' + where + ' &middot; row <b>state ' + s.state + '</b>, <b>attempts ' + s.att + '</b><br>' +
+        '<span class="dim">' + s.note + '.</span>';
+    }
+  }
+
+  function buildStepButtons(path) {
+    var sel = document.getElementById('stepSel');
+    if (!sel) return;
+    sel.innerHTML = '';
+    PATHS[path].forEach(function (s, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('data-step', String(i));
+      b.setAttribute('data-c', path === 'fail' ? 'gold' : 'echo');
+      if (i === 0) { b.className = 'active'; b.setAttribute('aria-pressed', 'true'); }
+      else { b.setAttribute('aria-pressed', 'false'); }
+      b.textContent = s.label;
+      b.addEventListener('click', function () {
+        curStep = i;
+        sel.querySelectorAll('button').forEach(function (x) {
+          var on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        paintStep(curPath, curStep);
+      });
+      sel.appendChild(b);
+    });
+  }
+
+  document.querySelectorAll('#pathSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      curPath = b.getAttribute('data-path'); curStep = 0;
+      document.querySelectorAll('#pathSel button').forEach(function (x) {
+        var on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      buildStepButtons(curPath);
+      paintStep(curPath, 0);
+    });
+  });
+  buildStepButtons('happy');
+  paintStep('happy', 0); // initial render — correct without interaction
+
+  /* ---------- content: the flow composer (pure over a parent + N children) ----------
+     A same-queue flow: add/3 SETs :dependencies = N and holds the parent
+     (state awaiting_children); each child completion DECRs the counter (the
+     @complete fan-in), and at zero the parent is released to pending. flowState
+     (n, done) returns the counter (n - done), each child's bucket, the parent
+     state, and the :processed size — pure, no accumulation. */
+  function flowState(n, done) {
+    done = Math.min(done, n);
+    var left = n - done;
+    return {
+      n: n, done: done, left: left,
+      parentState: left <= 0 ? 'pending' : 'awaiting_children',
+      released: left <= 0,
+      processed: done
+    };
+  }
+
+  var nKids = document.getElementById('nKids');
+  var nDone = document.getElementById('nDone');
+  var nKidsVal = document.getElementById('nKidsVal');
+  var nDoneVal = document.getElementById('nDoneVal');
+
+  function renderFlow() {
+    var n = parseInt(nKids.value, 10);
+    var done = parseInt(nDone.value, 10);
+    // the completed slider can never exceed N (you cannot complete more than you have)
+    if (done > n) { done = n; nDone.value = String(n); }
+    nDone.max = String(n);
+    var f = flowState(n, done);
+
+    if (nKidsVal) nKidsVal.textContent = String(n);
+    if (nDoneVal) nDoneVal.textContent = String(done);
+
+    // the parent box
+    var pState = document.getElementById('parentState');
+    var pBox = document.getElementById('parentBox');
+    var depText = document.getElementById('depText');
+    if (pState) pState.textContent = f.parentState;
+    if (pState) pState.setAttribute('fill', f.released ? '#a7c9b1' : '#6fdccf');
+    if (pBox) pBox.setAttribute('stroke', f.released ? '#7ba387' : '#2a3252');
+    if (depText) depText.textContent = ':dependencies = ' + f.left;
+    if (depText) depText.setAttribute('fill', f.released ? '#a7c9b1' : '#f0cd7f');
+
+    // the children row
+    var g = document.getElementById('kids');
+    if (g) {
+      g.innerHTML = '';
+      var slot = 480 / n;
+      for (var i = 0; i < n; i++) {
+        var cx = slot * i + slot / 2;
+        var isDone = i < done;
+        var x = cx - 38;
+        var rect = '<rect x="' + x.toFixed(1) + '" y="104" width="76" height="34" rx="7" fill="' +
+          (isDone ? 'rgba(123,163,135,.18)' : 'rgba(16,22,43,.6)') + '" stroke="' +
+          (isDone ? '#7ba387' : '#2a3252') + '"></rect>';
+        var t1 = '<text x="' + cx.toFixed(1) + '" y="120" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#a39c89">JOB-c' + (i + 1) + '</text>';
+        var t2 = '<text x="' + cx.toFixed(1) + '" y="132" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="' +
+          (isDone ? '#a7c9b1' : '#6fdccf') + '">' + (isDone ? 'done' : 'pending') + '</text>';
+        g.innerHTML += rect + t1 + t2;
+      }
+    }
+
+    var out = document.getElementById('flowOut');
+    if (out) {
+      var lead = 'add/3 → @enqueue_flow: SET :dependencies = <b>' + n + '</b>, parent held <b>awaiting_children</b>';
+      var body;
+      if (f.released) {
+        body = '<span class="dim">' + done + ' of ' + n + ' children done</span> &rarr; @complete DECR\'d to <b class="ok">0</b> &rarr; parent <b class="ok">released to pending</b>, :processed holds ' + f.processed + ' result' + (f.processed === 1 ? '' : 's');
+      } else {
+        body = '<span class="dim">' + done + ' of ' + n + ' children done</span> &rarr; each @complete DECR\'d the counter &rarr; <b>:dependencies = ' + f.left + '</b>, parent still <b>awaiting_children</b>';
+      }
+      out.innerHTML = lead + '<br>' + body + '.';
+    }
+  }
+
+  if (nKids && nDone) {
+    nKids.addEventListener('input', renderFlow);
+    nDone.addEventListener('input', renderFlow);
+    renderFlow(); // initial render — correct without interaction
+  }
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

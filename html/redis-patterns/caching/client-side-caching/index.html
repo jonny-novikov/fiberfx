@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R1.04 — Server-assisted client-side caching · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R1.04 module hub: cache hot keys in the application's own memory and let the server push invalidations, so a repeated read of an unchanged key skips the round-trip. Grounded in EchoCache's broadcast-coherence path — L1 ETS over L2 Valkey, the 29-byte coherence message over RESP3 pub/sub. Three dives: CLIENT TRACKING, the invalidation push, and the SHA1 script-cache parallel in EchoMQ.Script.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:6px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.crumbs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-bottom:16px}
+.crumbs a{color:var(--b-dim)}
+.crumbs a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.ctl{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:4px 0 14px;font-family:var(--mono);font-size:13px}
+.ctl label{color:var(--b-dim)}
+.ctl input[type=range]{flex:1;min-width:160px;accent-color:var(--r-red);height:3px}
+.ctl .val{color:var(--r-red);font-weight:700;min-width:3em;text-align:right}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- the course map ---------- */
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:82ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the round-trip bar (slider) ---------- */
+.tbar{width:100%;height:auto;display:block;margin-top:4px}
+/* ---------- the tier figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.tiers{width:100%;height:auto;display:block;margin-top:4px}
+.tiers .tier{cursor:pointer;transition:opacity .18s ease}
+.tiers .tier rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.tiers .tier.l1 rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.tiers .tlbl{font:13px var(--mono);fill:var(--b-ink)}
+.tiers .tsub{font:10.5px var(--mono);fill:var(--b-dim)}
+.tiers.focus .tier{opacity:.3}
+.tiers.focus .tier.on{opacity:1}
+.tiers.focus .tier.on rect{stroke-width:2.6}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/caching">caching</a><span class="rsep">/</span><span class="rcur">client-side-caching</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#architecture">Architecture</a>
+      <a href="#modes">Tracking modes</a>
+      <a href="#applied">The broadcast lane</a>
+      <a href="#dives">The dives</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/caching">R1 &#183; Caching</a>
+        <span class="sep">/</span>
+        <span class="here">Client-side caching</span>
+      </div>
+      <p class="kicker">R1.04 &#183; Caching &#8212; module hub</p>
+      <h1>Server-assisted <span class="hns">client-side</span> caching.</h1>
+      <p class="lede">Eliminate network round-trips for frequently accessed keys by caching values in application
+      memory, with the engine automatically <b>sending invalidation messages</b> when data changes.</p>
+      <p class="heronote">Grounding: echo_cache/coherence.ex &#183; echo_cache/table.ex &#183; echo_wire/script.ex
+      &#183; content/bcs4.2.md &#8212; every figure verbatim from a committed record.</p>
+
+      <figure class="anatomy" aria-labelledby="dialCap">
+        <figcaption id="dialCap"><b>Near-cache hit ratio.</b> Round-trips removed over 10,000 reads &#8212; move the
+        dial and read the saving.</figcaption>
+        <div class="ctl">
+          <label for="hitRatio">near-cache hits</label>
+          <input type="range" id="hitRatio" min="0" max="100" step="5" value="90" aria-describedby="dialOut">
+          <span class="val" id="hitVal">90%</span>
+        </div>
+        <svg class="tbar" viewBox="0 0 460 96" role="img" aria-label="A horizontal bar of 10,000 reads, split into two parts: a left part for reads served from the near cache in memory with no round-trip, and a right part for reads that reach Valkey. As the hit ratio rises, the memory part grows and the Valkey part shrinks. The figures update with the slider.">
+          <text x="6" y="20" font-size="11" font-family="ui-monospace, monospace" fill="#68705f">10,000 reads</text>
+          <rect x="6" y="30" width="448" height="40" rx="6" fill="#fffefa" stroke="#d9d2bf"></rect>
+          <rect id="barMem" x="6" y="30" width="403" height="40" rx="6" fill="#f8e3e0" stroke="#d6584f"></rect>
+          <rect id="barNet" x="409" y="30" width="45" height="40" fill="#e4ebf1" stroke="#20618e"></rect>
+          <text id="barMemLbl" x="14" y="55" font-size="11" font-family="ui-monospace, monospace" fill="#b23b2e">memory &#183; 9,000</text>
+          <text id="barNetLbl" x="448" y="88" text-anchor="end" font-size="11" font-family="ui-monospace, monospace" fill="#20618e">Valkey &#183; 1,000</text>
+          <text x="14" y="88" font-size="11" font-family="ui-monospace, monospace" fill="#68705f">no round-trip</text>
+        </svg>
+        <div class="readout" id="dialOut" aria-live="polite"><span class="rk">readout &#183;</span> Move the dial.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="architecture">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The architecture</h2>
+        <span class="ssrc">source &#183; echo_cache/table.ex</span>
+      </div>
+      <div class="prose">
+        <p>Client-side caching creates a multi-tier cache. <strong>L1 (local memory)</strong> is nanosecond access,
+        held by the application; <strong>L2 (Valkey)</strong> is microsecond to millisecond access; <strong>L3 (the
+        database)</strong> is millisecond access. The key innovation is that the server records which keys each client
+        holds and sends an invalidation message when those keys change.</p>
+        <p>The payoff is the round-trip a cache-aside hit still pays. With cache-aside the data is in Valkey, one
+        network hop away; a hit is fast but still a request and a response across a socket. For a key read thousands of
+        times a second and changed rarely &#8212; an instrument record, a feature flag, a config blob &#8212; that hop
+        is pure overhead. A near cache removes it: a repeated read of an unchanged key is a memory lookup with no
+        network at all, and the value stays correct because the server pushes a message the moment it goes stale. This
+        is exactly the shape of <strong>EchoCache</strong> (<code>echo/apps/echo_cache</code>): an L1 ETS table in the
+        caller's process over an L2 Valkey row, with coherence carried by a server-side push.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="tierCap">
+        <figcaption id="tierCap"><b>The three tiers.</b> Select a tier to read its cost and who owns it.</figcaption>
+        <div class="segbar" id="tierSel" role="group" aria-label="Select a cache tier">
+          <button type="button" data-tier="L1" aria-pressed="false">L1 &#183; local memory</button>
+          <button type="button" data-tier="L2" aria-pressed="false">L2 &#183; Valkey</button>
+          <button type="button" data-tier="L3" aria-pressed="false">L3 &#183; database</button>
+        </div>
+        <svg class="tiers" id="tiers" viewBox="0 0 460 200" role="img" aria-label="Three stacked tiers, top to bottom: L1 local memory in the redis accent, L2 Valkey, and L3 the database. Select a tier to highlight it; its access cost and owner appear in the readout.">
+          <g class="tier l1" data-tier="L1"><rect x="40" y="14" width="380" height="48" rx="6"></rect><text class="tlbl" x="62" y="36">L1 &#183; local memory (ETS)</text><text class="tsub" x="62" y="52">nanoseconds &#183; the caller's process</text></g>
+          <g class="tier" data-tier="L2"><rect x="40" y="74" width="380" height="48" rx="6"></rect><text class="tlbl" x="62" y="96">L2 &#183; Valkey</text><text class="tsub" x="62" y="112">microseconds &#183; ecc:{instruments}:&lt;id&gt;</text></g>
+          <g class="tier" data-tier="L3"><rect x="40" y="134" width="380" height="48" rx="6"></rect><text class="tlbl" x="62" y="156">L3 &#183; the database</text><text class="tsub" x="62" y="172">milliseconds &#183; the system of record</text></g>
+        </svg>
+        <div class="readout" id="tierOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a tier.
+        L1 is the near cache the server keeps honest; L2 is the shared store; L3 is the loader behind both.</div>
+      </figure>
+      <p class="take">A near-cache hit costs a memory read and zero network. The only cost is correctness &#8212; and
+      the server pays that with an invalidation push.</p>
+    </section>
+
+    <section id="modes">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Tracking modes</h2>
+        <span class="ssrc">source &#183; CLIENT TRACKING</span>
+      </div>
+      <div class="prose">
+        <p><strong>Default tracking.</strong> The server remembers which keys each client has requested. After
+        <code>CLIENT TRACKING ON</code>, every <code>GET</code> causes the server to record that this client accessed
+        that key; if another client modifies the key, an invalidation message is pushed to the original client. The
+        trade-off is that the server must maintain a table mapping keys to client IDs, consuming memory proportional to
+        the number of tracked keys.</p>
+        <p><strong>Broadcasting mode.</strong> Instead of recording individual key accesses, clients subscribe to key
+        prefixes; the server broadcasts invalidation messages to all subscribers when any matching key changes. A
+        client running <code>CLIENT TRACKING ON BCAST PREFIX user: PREFIX session:</code> receives invalidations for
+        any key starting with <code>user:</code> or <code>session:</code>. The trade-off reverses: a client may receive
+        invalidations for keys it does not have cached locally, but server memory stays minimal because it tracks
+        prefix subscriptions, not individual accesses. EchoCache rides the broadcast shape over plain pub/sub: a table
+        subscribes to one channel, <code>ecc:{&lt;table&gt;}:coh</code>, and the writer publishes a message naming the
+        changed key.</p>
+        <p><strong>How invalidation works.</strong> When tracking is enabled and a key changes, four steps follow. The
+        server checks which clients hold the key; it sends an invalidation message naming the key; the client removes
+        the key from its local cache; and the next access fetches fresh data. This keeps local caches synchronized
+        without polling. The message names the key and carries no value &#8212; it reports only that the held copy is
+        no longer trustworthy. In EchoCache the message carries one more thing than a bare <code>CLIENT TRACKING</code>
+        invalidation does &#8212; the writer's mint-time version &#8212; so a late stale message can never erase a
+        newer row.</p>
+      </div>
+      <pre class="code"><b>CLIENT TRACKING</b> ON                          <span class="cmt"># enable tracking for the connection</span>
+<b>CLIENT TRACKING</b> ON BCAST PREFIX user:       <span class="cmt"># broadcast mode with a prefix</span>
+<b>CLIENT TRACKING</b> ON REDIRECT 123             <span class="cmt"># redirect invalidations to another connection</span>
+<b>CLIENT TRACKING</b> ON NOLOOP                   <span class="cmt"># do not invalidate the writer's own copy</span>
+<b>CLIENT TRACKING</b> OFF                         <span class="cmt"># disable tracking</span></pre>
+      <p class="take">Default tracking is exact and table-backed; broadcast trades a per-key table for prefix
+      subscriptions &#8212; cheaper memory, coarser notification. The first dive measures that trade.</p>
+    </section>
+
+    <section id="when">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>When to use it</h2>
+        <span class="ssrc">source &#183; considerations</span>
+      </div>
+      <div class="prose">
+        <p>This pattern benefits ultra-high-throughput applications where network RTT matters, frequently accessed
+        "hot" keys, read-heavy workloads with relatively stable data, and applications already holding local caches
+        that need invalidation.</p>
+        <p>Three considerations bound it. <strong>Memory management</strong> &#8212; the application must cap its local
+        cache size, evicting when memory is constrained. <strong>Complexity</strong> &#8212; handling invalidation
+        messages requires dedicated connection management or async processing. <strong>Not for volatile data</strong>
+        &#8212; if data changes constantly, invalidation traffic may exceed the benefit of caching. RESP3 carries push
+        notifications natively, making invalidation handling cleaner; EchoCache requires it for the broadcast lane
+        &#8212; the table opens a RESP3 connection precisely so a push and a reply can share one wire.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>Server-assisted client-side caching pushes an
+      <b>unversioned, orderless</b> invalidation &#8212; it names a key and nothing more. That is the gap EchoCache's
+      mint-time version closes: its 29-byte message carries the version, so newer-wins resolves a late stale message by
+      comparison &#8212;
+      <a href="https://valkey.io/topics/client-side-caching/" rel="noopener">valkey.io/topics/client-side-caching</a>.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The broadcast lane in EchoCache</h2>
+        <span class="ssrc">echo_cache/coherence.ex &#183; bcs4.2</span>
+      </div>
+      <div class="prose">
+        <p>The near cache the Exchange Platform would put in front of its instrument catalog is an EchoCache table: an
+        L1 ETS row in the caller's process over an L2 Valkey row keyed <code>ecc:{instruments}:&lt;id&gt;</code>.
+        Coherence is carried by a server push, not by polling. On start the table opens a RESP3 connection and
+        subscribes to its coherence channel; when a writer changes a row, it publishes the change on that channel, and
+        every subscribing table applies it newer-wins in its owner.</p>
+      </div>
+      <pre class="code"><span class="cmt"># echo/apps/echo_cache/lib/echo_cache/coherence.ex</span>
+def channel(table), do: <b>"ecc:{" &lt;&gt; table &lt;&gt; "}:coh"</b>
+def payload(&lt;&lt;_::binary-14&gt;&gt; = id, &lt;&lt;_::binary-14&gt;&gt; = version), do: id &lt;&gt; ":" &lt;&gt; version
+
+def broadcast(conn, table, id, version) do
+  Connector.command(conn, [<b>"PUBLISH"</b>, channel(table), payload(id, version)])
+end</pre>
+
+      <div class="door">
+        <span class="dr">the application &#183; the broadcast lane, priced</span>
+        <h3>Two lanes, one 29-byte message</h3>
+        <p>The coherence message is the same twenty-nine bytes on either lane &#8212; a cached name, a colon, the
+        writer's mint-time version. The broadcast lane is fast and lossy; the durable job lane survives a crash. The
+        committed record prices both:</p>
+        <figure class="frozen">
+          <figcaption>content/bcs4.2.md &#183; the coherence lanes, measured<span class="tag">frozen</span></figcaption>
+          <pre>coherence message            <b>twenty-nine bytes</b>   <span class="fd">&#8592; name + ":" + mint-time version</span>
+broadcast lane (PUBLISH)     <b>72 us</b>   <span class="fd">&#8592; fire-and-forget, at-most-once</span>
+job lane (EchoMQ)            148 us         <span class="fd">&#8592; at-least-once, crash-surviving</span>
+the guarantee costs          <b>2.1 times the latency</b></pre>
+        </figure>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">client-side caching</span>
+          <p>The application caches a value locally and reads it from memory. The server tracks the key; on a change it
+          pushes an invalidation, and the local copy is dropped.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoCache application</span>
+          <p>An L1 ETS row over an L2 Valkey row; a RESP3 subscription on <code>ecc:{&lt;table&gt;}:coh</code>.
+          <code>Coherence.broadcast/4</code> PUBLISHes the 29-byte message; the table drops L1 newer-wins.</p>
+        </div>
+      </div>
+      <p class="take">Cache the hot and stable; leave the volatile in Valkey. The benefit is the round-trip removed;
+      the cost is the memory the near cache holds and the invalidation traffic it must process.</p>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The three dives</h2>
+        <span class="ssrc">track &#8594; invalidate &#8594; the same shape</span>
+      </div>
+      <div class="prose">
+        <p>The module takes the pattern in three steps, in the arc <em>track &#8594; invalidate &#8594; the same shape
+        elsewhere</em>: how the server records what each client holds, how it notifies a holder when a key changes, and
+        a real EchoMQ script cache that follows the identical cache-then-invalidate idea. Read them in order &#8212;
+        <code>CLIENT TRACKING</code> starts.</p>
+      </div>
+
+      <div class="mods" style="margin-top:6px">
+        <a class="mod" href="/redis-patterns/caching/client-side-caching/client-tracking">
+          <div class="top"><span class="num">R1.04.1</span><span class="pill built">built</span></div>
+          <p class="t">CLIENT TRACKING</p>
+          <p class="o">The server-assisted near cache: tracking in default and broadcast mode, and the real RESP3
+          subscription EchoCache opens for the broadcast shape.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/caching/client-side-caching/invalidation-push">
+          <div class="top"><span class="num">R1.04.2</span><span class="pill built">built</span></div>
+          <p class="t">The invalidation push</p>
+          <p class="o">When a tracked key changes, the server sends a RESP3 message naming the key, and the holder drops
+          its copy &#8212; the real <code>Coherence.broadcast/4</code> and the 29-byte message.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/caching/client-side-caching/script-cache">
+          <div class="top"><span class="num">R1.04.3</span><span class="pill built">built</span></div>
+          <p class="t">The SHA1 script-cache parallel</p>
+          <p class="o"><code>EVALSHA</code> with a precomputed SHA1 and a <code>NOSCRIPT</code> fallback &#8212; the same
+          cache-then-invalidate shape, in EchoMQ's real <code>EchoMQ.Script.new/2</code>.</p>
+        </a>
+      </div>
+
+      <p class="booknote">The third dive draws a <strong>parallel</strong> only. The script cache uses the same
+      cache-then-invalidate idea as <code>CLIENT TRACKING</code>; the queue protocol itself &#8212; the full Lua bundle
+      and the version fence &#8212; belongs to the dedicated EchoMQ course, which this module links forward to rather
+      than teaches.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/topics/client-side-caching/" rel="noopener">Valkey &mdash; <em>Client-side caching</em></a> &mdash; server-assisted tracking and its invalidation messages; the unversioned, orderless gap EchoCache's mint-time version closes.</li>
+            <li><a href="https://valkey.io/topics/pubsub/" rel="noopener">Valkey &mdash; <em>Pub/Sub</em></a> &mdash; at-most-once delivery, the broadcast lane's contract taken whole.</li>
+            <li><a href="https://redis.io/docs/latest/develop/use/client-side-caching/" rel="noopener">Redis &mdash; <em>Client-side caching</em></a> &mdash; the server-assisted near cache and invalidation via <code>CLIENT TRACKING</code>.</li>
+            <li><a href="https://redis.io/commands/client-tracking" rel="noopener">Redis &mdash; <em>CLIENT TRACKING</em></a> &mdash; default and broadcast modes, <code>REDIRECT</code>, <code>NOLOOP</code>, and <code>OPTIN</code>/<code>OPTOUT</code>.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/caching/client-side-caching/client-tracking">R1.04.1 &#183; CLIENT TRACKING</a><span class="rs">the near cache</span></li>
+            <li><a href="/redis-patterns/caching/client-side-caching/invalidation-push">R1.04.2 &#183; The invalidation push</a><span class="rs">the change notification</span></li>
+            <li><a href="/redis-patterns/caching/client-side-caching/script-cache">R1.04.3 &#183; The SHA1 script-cache parallel</a><span class="rs">the same shape, applied</span></li>
+            <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
+            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under the Exchange Platform</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the EVALSHA/script-loading protocol in depth</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/caching"><span class="pk">up</span>&#8592; R1 &#183; Caching</a>
+      <a class="pgx" href="/redis-patterns/caching/client-side-caching/client-tracking"><span class="pk">next</span>R1.04.1 &#183; CLIENT TRACKING &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        BCS build: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/redis-patterns/caching">R1 &#183; Caching</a>
+        <a href="/redis-patterns/coordination">R2 &#183; Coordination</a>
+        <a href="/redis-patterns/queues">R3 &#183; Reliable Queues</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &#183; Time, Delay &amp; Priority</a>
+        <span>R5 &#183; Streams &amp; Events<i>soon</i></span>
+        <span>R6 &#183; Flow Control<i>soon</i></span>
+        <span>R7 &#183; Data Modeling<i>soon</i></span>
+        <span>R8 &#183; Production &amp; Operations<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: near-cache hit ratio · round-trips removed (pure over a fixed dataset) ---------- */
+  var TOTAL_READS = 10000;
+  // pure: hit ratio (0..100) -> readout text. Round-trips removed = hits; remaining = misses.
+  function describeRatio(pct) {
+    var hits = Math.round(TOTAL_READS * (pct / 100));
+    var misses = TOTAL_READS - hits;
+    return TOTAL_READS.toLocaleString() + ' reads at ' + pct + '% near-cache hits: ' +
+      hits.toLocaleString() + ' served from memory with no round-trip, ' +
+      misses.toLocaleString() + ' reach Valkey. Round-trips removed: ' + hits.toLocaleString() + '.';
+  }
+  var ratio = document.getElementById('hitRatio');
+  var ratioVal = document.getElementById('hitVal');
+  var dialOut = document.getElementById('dialOut');
+  // pure: ratio -> bar geometry (x=6, total width=448)
+  var BAR_X = 6, BAR_W = 448;
+  function barGeom(pct) {
+    var memW = Math.round(BAR_W * (pct / 100));
+    return { memW: memW, netX: BAR_X + memW, netW: BAR_W - memW };
+  }
+  function setRatio() {
+    var pct = ratio ? parseInt(ratio.value, 10) : 90;
+    var hits = Math.round(TOTAL_READS * (pct / 100));
+    var misses = TOTAL_READS - hits;
+    var g = barGeom(pct);
+    if (ratioVal) ratioVal.textContent = pct + '%';
+    var bm = document.getElementById('barMem'), bn = document.getElementById('barNet');
+    var bml = document.getElementById('barMemLbl'), bnl = document.getElementById('barNetLbl');
+    if (bm) bm.setAttribute('width', g.memW);
+    if (bn) { bn.setAttribute('x', g.netX); bn.setAttribute('width', g.netW); }
+    if (bml) { bml.textContent = 'memory · ' + hits.toLocaleString(); bml.style.display = g.memW < 70 ? 'none' : ''; }
+    if (bnl) { bnl.textContent = 'Valkey · ' + misses.toLocaleString(); bnl.style.display = g.netW < 70 ? 'none' : ''; }
+    if (dialOut) dialOut.innerHTML = '<span class="rk">readout ·</span> ' + describeRatio(pct);
+  }
+  if (ratio) ratio.addEventListener('input', setRatio);
+  setRatio(); // initial render — correct without interaction
+
+  /* ---------- Interactive 2: the three tiers (pure lookup over a fixed dataset) ---------- */
+  var TIERS = {
+    L1: { name: 'local memory (ETS)', cost: 'nanoseconds — a caller-side lookup, no network', owner: 'the application; the near cache the server keeps honest by push' },
+    L2: { name: 'Valkey', cost: 'microseconds — one round-trip to the shared store, key ecc:{instruments}:&lt;id&gt;', owner: 'the engine; the row every node shares' },
+    L3: { name: 'the database', cost: 'milliseconds — the loader behind both layers', owner: 'the system of record; read only on an L2 miss' }
+  };
+  // pure: tier key -> readout text
+  function describeTier(key) {
+    var t = TIERS[key];
+    return key + ' ' + t.name + ' — cost: ' + t.cost + '. Owner: ' + t.owner + '.';
+  }
+  var tiers = document.getElementById('tiers');
+  var tierButtons = document.querySelectorAll('#tierSel button');
+  var tierOut = document.getElementById('tierOut');
+  // pure: highlight a tier in the diagram, sync the buttons, fill the readout — hover or click.
+  function selectTier(key) {
+    tierButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-tier') === key ? 'true' : 'false');
+    });
+    if (tiers) {
+      tiers.classList.toggle('focus', !!key);
+      tiers.querySelectorAll('.tier').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-tier') === key);
+      });
+    }
+    if (tierOut) {
+      tierOut.innerHTML = key
+        ? '<span class="rk">readout ·</span> ' + describeTier(key)
+        : '<span class="rk">readout ·</span> Select a tier. L1 is the near cache the server keeps honest; L2 is the shared store; L3 is the loader behind both.';
+    }
+  }
+  tierButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-tier');
+      selectTier(b.getAttribute('aria-pressed') === 'true' ? null : key);
+    });
+  });
+  if (tiers) {
+    tiers.querySelectorAll('.tier').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectTier(g.getAttribute('data-tier')); });
+      g.addEventListener('mouseleave', function () { selectTier(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

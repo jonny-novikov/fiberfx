@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C4.05.1 · Prefix tries — F# In Depth</title>
+<meta name="description" content="A trie (a prefix tree) stores keys by their pieces: each node holds the values that end here plus a map from the next piece to a child, and keys that share a prefix share the path. Re-derived in F# at parity with the Elixir course&#x27;s E4.05, with a trie modelled as a record (Value option + Map of children), verified in dotnet fsi. The HAMT&#x27;s move — hashing the key first — comes next. The EchoMQ in F# block: keying the job registry by a branded id&#x27;s digits, the trie shape, grounded in the real echo_fs EchoMQ.Store.Rows. Dive C4.05.1 of the F# In Depth course.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --fsharp:#b48ee0; --fsharp-bright:#d2b8f5;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(180,142,224,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--fsharp-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--fsharp-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="fsharp"]{background:var(--fsharp-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--fsharp-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .err{color:var(--burgundy)}
+pre.code .str{color:var(--sage-bright)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--fsharp-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pill / legend ---- */
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--fsharp-bright);border-color:var(--fsharp)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- references ---- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.refs li{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.45}
+.refs li a{color:var(--cream-soft)}
+.refs li a:hover{color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.fs .lbl{color:var(--fsharp-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--fsharp-bright);
+  border:1px solid var(--fsharp);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.note.warn{border-left-color:var(--burgundy)}
+.note code.inl{color:var(--cream-soft)}
+pre.code .rdx{background:rgba(180,142,224,.18);border-radius:4px;padding:0 .18em;color:var(--fsharp-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+
+/* ---- Elixir → F# side-by-side ---- */
+.cmp{margin:1.2rem 0 0}
+.cmp .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:1rem 0 .35rem;color:var(--cream-dim)}
+.cmp .lbl.ex{color:var(--sage-bright)}
+.cmp .lbl.fs{color:var(--fsharp-bright)}
+.cmp .lbl:first-child{margin-top:0}
+pre.code .ex{color:var(--sage-bright)}
+
+/* ---- EchoMQ block (this course's defining C4 device) ---- */
+.emq{margin:1.7rem 0 0;border:1px solid var(--fsharp);border-radius:16px;
+  background:linear-gradient(180deg,rgba(180,142,224,.10),rgba(10,14,26,.35));
+  padding:clamp(1.1rem,2.6vw,1.7rem)}
+.emq .emq-h{font-family:var(--sans);font-size:.66rem;font-weight:700;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--fsharp-bright);margin:0 0 .7rem;
+  display:inline-flex;align-items:center;gap:.55rem}
+.emq .emq-h::before{content:"";width:22px;height:1px;background:var(--fsharp-bright);display:inline-block}
+.emq h3{margin:.1rem 0 .6rem}
+.emq p{font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure);margin:0 0 .9rem}
+.emq .status{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);
+  border-top:1px dashed var(--line);margin-top:1rem;padding-top:.8rem}
+.emq .status b{color:var(--fsharp-bright);font-weight:600}
+
+/* ---- the trie-shape svg (this dive) ---- */
+.tr-node rect, .tr-node circle{transition:fill .2s ease, stroke .2s ease}
+.tr-edge{stroke:#5a6688;stroke-width:2;fill:none}
+.tr-edge.on{stroke:var(--fsharp-bright);stroke-width:3}
+@media (prefers-reduced-motion: no-preference){
+  .tr-edge.on{stroke-dasharray:5 6;animation:trflow 1.4s linear infinite}
+}
+@keyframes trflow{to{stroke-dashoffset:-22}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/fsharp">jonnify<span class="dot"></span><span class="sub">fsharp</span></a>
+    <nav>
+      <a href="/fsharp">F# In Depth</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/fsharp">fsharp</a><span class="rsep">/</span><a href="/fsharp/algorithms">algorithms</a><span class="rsep">/</span><a href="/fsharp/algorithms/hamt">hamt</a><span class="rsep">/</span><span class="rcur">prefix-tries</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/fsharp">F# In Depth</a><span class="sep">/</span><a href="/fsharp/algorithms">C4 · Algorithms &amp; Data Structures</a><span class="sep">/</span><a href="/fsharp/algorithms/hamt">C4.05 · Hash Array Mapped Tries</a><span class="sep">/</span><span class="here">C4.05.1 · Prefix tries</span>
+    </nav>
+    <p class="eyebrow">Dive C4.05.1</p>
+    <h1>Prefix <span class="ex">tries</span></h1>
+    <p class="lede">Store a key by its pieces, and keys that begin the same way share the road in.</p>
+    <p class="kicker">Before the hashing, the shape. A <strong>trie</strong> — a prefix tree — stores keys piece by
+      piece. Each node holds the value (if any) that ends exactly here, plus a map from the next piece to a child
+      node. To find a key, walk it one piece at a time, following the child for each piece, and read the value at the
+      end. Two keys that share a prefix — say <code class="inl">"JO"</code> and <code class="inl">"JOB"</code> — share
+      every node down to where they diverge. Nothing is hashed yet; the HAMT's move, in the next dive, is to hash the
+      key first and walk slices of that hash instead of raw pieces. This dive builds a small trie in F# and verifies
+      it in <code class="inl">dotnet fsi</code>.</p>
+    <div class="cta-row">
+      <a class="btn" href="#explore">Walk a trie <span aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="/fsharp/algorithms/hamt">Module hub</a>
+    </div>
+  </section>
+
+  <!-- ===================== THE MODEL ===================== -->
+  <section id="model">
+    <div class="dive-head">
+      <span class="dive-tag">C4.05.1 · part 1</span>
+      <h2>A node is a value and a map of children</h2>
+    </div>
+    <div class="prose">
+      <p>The model is one recursive record. A node carries an optional <strong>value</strong> — present only at a node
+        where a key ends — and a <strong>map from the next character to a child node</strong>. The map of children is
+        an F# <code class="inl">Map</code>; the recursion is the trie. <code class="inl">add</code> walks the key
+        character by character, reusing the child that already exists for each character or starting an empty one, and
+        sets the value at the end; <code class="inl">find</code> walks the same path and reads the value there.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: a prefix trie modelled as a recursive record, verified in FSI."><span class="op">type</span> Trie&lt;'v&gt; =
+    { Value: 'v option
+      Children: Map&lt;char, Trie&lt;'v&gt;&gt; }
+
+<span class="op">module</span> Trie =
+    <span class="op">let</span> empty : Trie&lt;'v&gt; = { Value = None; Children = Map.empty }
+
+    <span class="op">let rec</span> <span class="fn">add</span> (key: string) (i: int) (v: 'v) (node: Trie&lt;'v&gt;) : Trie&lt;'v&gt; =
+        <span class="op">if</span> i = key.Length <span class="op">then</span> { node <span class="op">with</span> Value = Some v }
+        <span class="op">else</span>
+            <span class="op">let</span> c = key.[i]
+            <span class="op">let</span> child = node.Children |> Map.tryFind c |> Option.defaultValue empty
+            { node <span class="op">with</span> Children = node.Children.Add(c, <span class="fn">add</span> key (i + 1) v child) }
+
+    <span class="op">let rec</span> <span class="fn">find</span> (key: string) (i: int) (node: Trie&lt;'v&gt;) : 'v option =
+        <span class="op">if</span> i = key.Length <span class="op">then</span> node.Value
+        <span class="op">else</span>
+            <span class="op">match</span> Map.tryFind key.[i] node.Children <span class="op">with</span>
+            | Some child -> <span class="fn">find</span> key (i + 1) child
+            | None -> None</pre>
+
+    <dl class="deflist">
+      <dt>node</dt><dd>a <code class="inl">Value: 'v option</code> (a value only where a key ends) plus <code class="inl">Children: Map&lt;char, Trie&lt;'v&gt;&gt;</code>.</dd>
+      <dt>add</dt><dd>walks the key, descends or starts a child per character, and sets the value at the final node.</dd>
+      <dt>find</dt><dd>walks the same path; returns the node's value, or <code class="inl">None</code> if any character has no child.</dd>
+      <dt>shared prefix</dt><dd>keys with a common start share the nodes down to the point they differ — the trie's defining property.</dd>
+    </dl>
+  </section>
+
+  <!-- ===================== IT TYPE-CHECKS AND RUNS ===================== -->
+  <section id="runs">
+    <div class="dive-head">
+      <span class="dive-tag">C4.05.1 · part 2</span>
+      <h2>Two keys, one shared root</h2>
+    </div>
+    <div class="prose">
+      <p>Add <code class="inl">"JO"</code> then <code class="inl">"JOB"</code>. Both descend through the
+        <code class="inl">'J'</code> child at the root and the <code class="inl">'O'</code> child below it;
+        <code class="inl">"JO"</code> ends there with its value, and <code class="inl">"JOB"</code> carries on to a
+        <code class="inl">'B'</code> child. Looking up a key that was never added returns
+        <code class="inl">None</code> the moment a character has no child.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: building and querying the trie, verified in FSI."><span class="op">let</span> t0 = Trie.empty
+<span class="op">let</span> t1 = Trie.add <span class="str">"JO"</span> 0 1 t0
+<span class="op">let</span> t2 = Trie.add <span class="str">"JOB"</span> 0 2 t1
+
+Trie.find <span class="str">"JO"</span>  0 t2   <span class="step">// </span><span class="res">val it : int option = Some 1</span>
+Trie.find <span class="str">"JOB"</span> 0 t2   <span class="step">// </span><span class="res">val it : int option = Some 2</span>
+Trie.find <span class="str">"JX"</span>  0 t2   <span class="step">// </span><span class="res">val it : int option = None</span>
+t2.Children.ContainsKey <span class="str">'J'</span>   <span class="step">// </span><span class="res">val it : bool = true  (both keys share it)</span></pre>
+
+    <div class="note">The shape carries over from Elixir directly. An Elixir trie is a map with a values slot and a
+      children map; the F# trie is the same data, given a static type. The pattern — a node of a value and a map of
+      children, walked by recursion — is identical on both runtimes.</div>
+
+    <div class="cmp">
+      <p class="lbl ex">Elixir — a trie node as a map</p>
+      <pre class="code" aria-label="Elixir: a prefix trie node, the same shape, dynamically typed."><span class="cmt"># Elixir — a trie node: value + children map</span>
+<span class="op">defp</span> add(node, <span class="str">""</span>, v), <span class="op">do:</span> %{node | value: v}
+<span class="op">defp</span> add(node, &lt;&lt;c::utf8, rest::binary&gt;&gt;, v) <span class="op">do</span>
+  child = Map.get(node.children, c, %{value: nil, children: %{}})
+  %{node | children: Map.put(node.children, c, add(child, rest, v))}
+<span class="op">end</span></pre>
+      <p class="lbl fs">F# — the same node, statically typed (verified in FSI)</p>
+      <pre class="code" aria-label="F#: the same trie node, statically typed."><span class="cmt">// F# — Value: 'v option ; Children: Map&lt;char, Trie&lt;'v&gt;&gt;</span>
+<span class="op">let rec</span> <span class="fn">add</span> (key: string) (i: int) (v: 'v) (node: Trie&lt;'v&gt;) =
+    <span class="op">if</span> i = key.Length <span class="op">then</span> { node <span class="op">with</span> Value = Some v }
+    <span class="op">else</span>
+        <span class="op">let</span> c = key.[i]
+        <span class="op">let</span> child = node.Children |> Map.tryFind c |> Option.defaultValue Trie.empty
+        { node <span class="op">with</span> Children = node.Children.Add(c, <span class="fn">add</span> key (i + 1) v child) }</pre>
+    </div>
+  </section>
+
+  <!-- ===================== INTERACTIVE: WALK A TRIE ===================== -->
+  <section id="explore">
+    <h2>Walk the trie, key by key</h2>
+    <div class="prose">
+      <p>Pick a key to look up in a fixed trie holding <code class="inl">"JO"</code>, <code class="inl">"JOB"</code>,
+        and <code class="inl">"JAR"</code>. The path lights up character by character as
+        <code class="inl">find</code> descends; the readout shows the character being matched, the child taken, and
+        the value at the end — or where the walk stopped at a missing child. Every step is computed by the same
+        recursive descent the code uses, over the fixed trie.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="trTitle">
+      <h4 id="trTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">find key : descend one character per level</h4>
+
+      <div class="controls">
+        <div class="solid-select" id="trSel" role="group" aria-label="Choose a key to look up">
+          <button type="button" class="tr-btn active" data-k="JOB" data-c="fsharp" aria-pressed="true">find "JOB"</button>
+          <button type="button" class="tr-btn" data-k="JO" data-c="fsharp" aria-pressed="false">find "JO"</button>
+          <button type="button" class="tr-btn" data-k="JAR" data-c="fsharp" aria-pressed="false">find "JAR"</button>
+          <button type="button" class="tr-btn" data-k="JX" data-c="gold" aria-pressed="false">find "JX" (miss)</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 300" role="img" aria-label="A prefix trie holding the keys JO, JOB and JAR. The root branches on J; under J, the node branches on A and O; under O, a node ends the key JO and branches on B to end JOB; under A, a node branches on R to end JAR. Looking up a key lights the path of nodes it descends.">
+        <!-- edges -->
+        <g id="trEdges">
+          <path class="tr-edge" data-e="root-J" d="M360 44 L360 96"></path>
+          <path class="tr-edge" data-e="J-A" d="M340 130 L228 182"></path>
+          <path class="tr-edge" data-e="J-O" d="M380 130 L492 182"></path>
+          <path class="tr-edge" data-e="A-R" d="M208 216 L208 258"></path>
+          <path class="tr-edge" data-e="O-B" d="M512 216 L512 258"></path>
+        </g>
+
+        <!-- nodes -->
+        <g id="trNodes">
+          <g class="tr-node" data-n="root">
+            <circle cx="360" cy="30" r="18" fill="#10162b" stroke="#5a6688" stroke-width="1.6"></circle>
+            <text x="360" y="35" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#a39c89">root</text>
+          </g>
+          <g class="tr-node" data-n="J">
+            <circle cx="360" cy="114" r="18" fill="#10162b" stroke="#5a6688" stroke-width="1.6"></circle>
+            <text x="360" y="119" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#d2b8f5">J</text>
+          </g>
+          <g class="tr-node" data-n="A">
+            <circle cx="208" cy="198" r="18" fill="#10162b" stroke="#5a6688" stroke-width="1.6"></circle>
+            <text x="208" y="203" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#d2b8f5">A</text>
+          </g>
+          <g class="tr-node" data-n="O">
+            <circle cx="512" cy="198" r="18" fill="#10162b" stroke="#5a6688" stroke-width="1.6"></circle>
+            <text x="512" y="203" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#d2b8f5">O</text>
+            <text x="512" y="166" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9" fill="#a7c9b1">JO = 1</text>
+          </g>
+          <g class="tr-node" data-n="R">
+            <rect x="186" y="262" width="44" height="30" rx="7" fill="#10162b" stroke="#5a6688" stroke-width="1.6"></rect>
+            <text x="208" y="281" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">JAR=3</text>
+          </g>
+          <g class="tr-node" data-n="B">
+            <rect x="490" y="262" width="44" height="30" rx="7" fill="#10162b" stroke="#5a6688" stroke-width="1.6"></rect>
+            <text x="512" y="281" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#a7c9b1">JOB=2</text>
+          </g>
+        </g>
+      </svg>
+
+      <div class="geo-readout" id="trOut" aria-live="polite"><span class="dim">find "JOB" · descend</span> 'J' → 'O' → 'B'<span class="dim">; the node at the end holds</span> Some 2<span class="dim">.</span></div>
+    </figure>
+
+    <p class="take">A trie reads a key by its pieces, and a shared start is a shared path. Switch the key from raw
+      characters to slices of the key's hash, and a node from a child-per-character map to a bitmap-plus-array, and the
+      trie becomes a HAMT — the next dive.</p>
+  </section>
+
+  <!-- ===================== WHY DIGITS ===================== -->
+  <section id="why">
+    <div class="dive-head">
+      <span class="dive-tag">C4.05.1 · part 3</span>
+      <h2>Why keying by digits is the HAMT's seed</h2>
+    </div>
+    <div class="prose">
+      <p>A branded id like <code class="inl">JOB0NcQgyPQEbI</code> is fourteen characters: a three-letter namespace
+        then an eleven-character Base62 snowflake. Keying a registry by the id's <em>characters</em> makes a trie whose
+        top levels are the namespace (<code class="inl">J</code>, <code class="inl">O</code>,
+        <code class="inl">B</code>), then the snowflake. Ids minted close in time share the high bytes of the
+        timestamp, so they share a long prefix — and therefore most of the path.</p>
+      <p>That works, but a character trie has an awkward shape: branching depends on the alphabet, and a long key means
+        a deep walk. The HAMT keeps the trie idea and fixes both: it <strong>hashes</strong> the key first, then reads
+        the hash in fixed <strong>5-bit slices</strong>, so every node branches exactly 32 ways and the depth is
+        <code class="inl">~log&#8323;&#8322; n</code> regardless of key length. The next dive makes that switch.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">This dive · a prefix trie</p>
+        <p>Walk the key's raw pieces; a node is a value plus a child-per-piece map. Shared prefixes share the path.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="cell fs">
+        <p class="lbl">Next dive · the HAMT</p>
+        <p>Hash the key, walk 5-bit slices; a node is a bitmap plus a packed array. Branch 32 ways, depth <code class="inl">~log&#8323;&#8322; n</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ECHOMQ IN F# ===================== -->
+  <section id="echomq">
+    <h2>EchoMQ in F#</h2>
+    <p class="take">Status &mdash; <code class="inl">echo_fs</code> is an in-memory model. The EchoMQ protocol &mdash; the Lua transitions executing on a Valkey wire &mdash; is <strong>not implemented</strong> (there is no Lua and no Valkey client in the code); that is the coming-soon transport (<code class="inl">EchoMQ.Connector</code>). This block shows how the model uses the structure, not a running bus.</p>
+    <div class="prose">
+      <p>EchoMQ keys its job registry by the branded id directly: <code class="inl">EchoMQ.Store.Rows</code> is a
+        <code class="inl">Map&lt;string, Job&gt;</code> over those ids. The trie view of this dive says: if that map
+        were a prefix trie keyed by the id's digits, ids minted in the same window would share the path through their
+        common prefix. The id itself is built to make that prefix meaningful — its namespace and timestamp lead.</p>
+    </div>
+
+    <div class="emq">
+      <p class="emq-h">EchoMQ in F#</p>
+      <h3>Keying the registry by the branded id's digits</h3>
+      <p>The registry's key is a branded id, and the id is gated to a strict shape before it is used as a key. Quoted
+        verbatim from <code class="inl">echo_fs/EchoMQ/BrandedId.fs</code>:</p>
+      <pre class="code" aria-label="The echo_fs BrandedId.isValid check, verbatim from the port."><span class="cmt">/// The full-format check: 3 uppercase letters then 11 Base62 chars. A bare</span>
+<span class="cmt">/// `"JOB"` has a valid namespace but is **not** a valid id (the gate the key</span>
+<span class="cmt">/// builder enforces).</span>
+<span class="op">let</span> isValid (id: string) : bool =
+    <span class="op">not</span> (isNull id)
+    &amp;&amp; id.Length = 14
+    &amp;&amp; Seq.forall isUpper (id.Substring(0, 3))
+    &amp;&amp; Seq.forall isBase62 (id.Substring(3))</pre>
+      <p style="margin-top:.8rem">Reading those fourteen digits as a trie path: the first three (<code class="inl">JOB</code>)
+        are the namespace, the next eleven the Base62 snowflake. Ids from the same mint window share the leading
+        digits, so a trie keyed this way shares their path (the descent below was verified in FSI over a fixed trie):</p>
+      <pre class="code" aria-label="F#: three branded ids in a trie share their JOB prefix, verified in FSI."><span class="op">let</span> reg =
+    Trie.empty
+    |> Trie.add <span class="str">"JOB0NcQgyPQEbI"</span> 0 <span class="str">"ping"</span>
+    |> Trie.add <span class="str">"JOB0NcQh2mK1tW"</span> 0 <span class="str">"scan"</span>
+
+reg.Children.ContainsKey <span class="str">'J'</span>   <span class="step">// </span><span class="res">val it : bool = true   (one shared J node)</span>
+Trie.find <span class="str">"JOB0NcQgyPQEbI"</span> 0 reg   <span class="step">// </span><span class="res">val it : string option = Some "ping"</span></pre>
+      <p class="status">The F# EchoMQ keys its registry by the branded id today — <b>EchoMQ.Store.Rows</b>, a
+        <code class="inl">Map&lt;string, Job&gt;</code> in the in-memory core
+        (<code class="inl">echo_fs/EchoMQ/Store.fs</code>, <code class="inl">BrandedId.fs</code> — built and tested).
+        The map is a balanced tree, not a trie; the trie above is the shape this dive teaches. The HAMT/CHAMP backing
+        the Elixir bus uses is the next dive's subject, and the Valkey transport <b>EchoMQ.Connector</b> lands next.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">The shape</p>
+        <p>A trie stores keys by their pieces; a shared prefix is a shared path. A branded id leads with namespace and timestamp.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="cell fs">
+        <p class="lbl">The next dive</p>
+        <p>The HAMT hashes the key and walks 5-bit slices, so a node branches 32 ways and depth stays near-constant.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== WHERE THIS LEADS ===================== -->
+  <section id="next">
+    <h2>Where this leads</h2>
+    <div class="prose">
+      <p>The trie is the shape. The next dive turns it into a HAMT: a node becomes a bitmap plus one packed array, the
+        key becomes its hash, and the descent reads 5-bit slices of that hash — so a node branches 32 ways and the
+        depth drops to <code class="inl">~log&#8323;&#8322; n</code>. The third reads how an update shares structure.</p>
+    </div>
+    <div class="toc-mini" aria-label="Continue in this module">
+      <a href="/fsharp/algorithms/hamt">↑ C4.05 · Hash Array Mapped Tries</a>
+      <a href="/fsharp/algorithms/hamt/the-hamt">C4.05.2 · The HAMT →</a>
+      <a href="/fsharp/algorithms/hamt/structural-sharing">C4.05.3 · Structural sharing</a>
+    </div>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/">Microsoft &mdash; <em>F# documentation</em></a> &mdash; records, the <code class="inl">Map</code> module, <code class="inl">Option</code>, and recursion.</li>
+          <li><a href="https://fsharp.github.io/fsharp-core-docs/">FSharp.Core API reference</a> &mdash; the <code class="inl">Map</code> module (<code class="inl">tryFind</code>, <code class="inl">Add</code>) and <code class="inl">Option</code>.</li>
+          <li><a href="https://fsharp.org/">The F# Software Foundation</a> &mdash; F#'s home on the .NET runtime.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/elixir/algorithms/hamt">Elixir &mdash; Hash array mapped tries (E4.05)</a> &mdash; the trie and the HAMT on the BEAM.</li>
+          <li><a href="/fsharp/algorithms/hamt">C4.05 &mdash; Hash Array Mapped Tries</a> &mdash; the module hub.</li>
+          <li><a href="/fsharp/algorithms/hamt/the-hamt">C4.05.2 &mdash; The HAMT</a> &mdash; the next dive: the trie indexed by hash slices.</li>
+          <li><a href="/fsharp/language/collections">C1.07 &mdash; Collections</a> &mdash; the <code class="inl">Map</code> and <code class="inl">Option</code> this dive builds on.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/fsharp/algorithms/hamt"><span aria-hidden="true">←</span> C4.05 · Module hub</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/fsharp/algorithms/hamt/the-hamt">Next · C4.05.2 The HAMT <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="F# In Depth — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/fsharp">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">F# In Depth &mdash; the ML-family language on .NET, taught from first principles to a real DevOps tool shipped in F#.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/fsharp/algorithms">C4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/fsharp/algorithms/hamt">C4.05 &middot; Hash Array Mapped Tries (HAMT)</a>
+        <a href="#refs">References</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/fsharp">Course home</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Interactive: walk the prefix trie (pure recursive descent) ---------- */
+  // Fixed trie: { J: { A: { R: JAR=3 }, O: (JO=1) { B: JOB=2 } } }
+  var TRIE = {
+    children: {
+      J: { value: null, children: {
+        A: { value: null, children: { R: { value: 3, children: {} } } },
+        O: { value: 1, children: { B: { value: 2, children: {} } } }
+      } }
+    },
+    value: null
+  };
+  // node id by the path string, used to light SVG nodes/edges
+  var NODE_OF = { "": "root", "J": "J", "JA": "A", "JO": "O", "JAR": "R", "JOB": "B" };
+
+  var nodes = document.getElementById('trNodes');
+  var edges = document.getElementById('trEdges');
+  var out = document.getElementById('trOut');
+  var btns = Array.prototype.slice.call(document.querySelectorAll('.tr-btn'));
+  if (!nodes || !edges || !out) return;
+
+  function clearHi() {
+    nodes.querySelectorAll('circle, rect').forEach(function (s) {
+      s.setAttribute('stroke', '#5a6688'); s.setAttribute('stroke-width', '1.6');
+    });
+    edges.querySelectorAll('path').forEach(function (p) { p.setAttribute('class', 'tr-edge'); });
+  }
+  function lightNode(pathStr) {
+    var id = NODE_OF[pathStr]; if (!id) return;
+    var g = nodes.querySelector('[data-n="' + id + '"]'); if (!g) return;
+    var shape = g.querySelector('circle, rect');
+    if (shape) { shape.setAttribute('stroke', '#d2b8f5'); shape.setAttribute('stroke-width', '3'); }
+  }
+  function lightEdge(name) {
+    var p = edges.querySelector('[data-e="' + name + '"]'); if (p) p.setAttribute('class', 'tr-edge on');
+  }
+  var EDGE_OF = { "J": "root-J", "JA": "J-A", "JO": "J-O", "JAR": "A-R", "JOB": "O-B" };
+
+  // pure descent: returns {value, stoppedAt} mirroring Trie.find
+  function findKey(key) {
+    var node = TRIE, path = "";
+    lightNode("");
+    for (var i = 0; i < key.length; i++) {
+      var c = key[i];
+      if (!node.children[c]) { return { found: false, stoppedAt: c, depth: i }; }
+      node = node.children[c];
+      path += c;
+      lightEdge(EDGE_OF[path]);
+      lightNode(path);
+    }
+    return { found: true, value: node.value, path: path };
+  }
+
+  function show(key) {
+    clearHi();
+    var r = findKey(key);
+    var chars = key.split('').join("' → '");
+    if (r.found && r.value !== null) {
+      out.innerHTML = '<span class="dim">find "' + key + '" · descend</span> \'' + chars +
+        '\'<span class="dim">; the node at the end holds</span> Some ' + r.value + '<span class="dim">.</span>';
+    } else if (r.found && r.value === null) {
+      out.innerHTML = '<span class="dim">find "' + key + '" · the path exists but no key ends here →</span> None<span class="dim">.</span>';
+    } else {
+      out.innerHTML = '<span class="dim">find "' + key + '" · no child for</span> \'' + r.stoppedAt +
+        '\' <span class="dim">at depth ' + r.depth + ', so the walk stops →</span> None<span class="dim">.</span>';
+    }
+  }
+
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      btns.forEach(function (x) {
+        var on = x === b;
+        x.classList.toggle('active', on);
+        x.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      show(b.getAttribute('data-k'));
+    });
+  });
+  show('JOB');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var e = document.getElementById(id); if (e) e.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

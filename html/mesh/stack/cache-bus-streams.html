@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M6.2 · EchoCache, Bus, and Streams — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="The availability-first surfaces, pinned to their primitives. Three different jobs — keep a value fresh near readers, move work between surfaces, keep an ordered record per instrument — take three distinct shapes on a Valkey-class store: an invalidating near-cache kept coherent by client-side caching (CLIENT TRACKING), a reference-passing bus built on the claim-check pattern, and an append-only stream log appended with XADD and read with XREAD. This dive builds each in the primitive that fits it, ties the bus's claim check to the branded identity, and marks all three on the available side of the CAP line.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-mesh)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the three-shapes diagram (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.shapesvg{width:100%;height:auto;display:block}
+.shapesvg text{font-family:var(--mono)}
+.shapesvg .node{fill:var(--m-card);stroke:var(--m-line);stroke-width:1.5}
+.shapesvg .nlbl{font-size:12px;fill:var(--m-ink);font-weight:700;text-anchor:middle}
+.shapesvg .nsub{font-size:10.5px;fill:var(--m-dim);text-anchor:middle}
+.shapesvg .flow{fill:none;stroke:var(--m-line);stroke-width:2}
+.shapesvg .flowlbl{font-size:10.5px;fill:var(--m-dim);text-anchor:middle}
+.shapesvg .grouptitle{font-size:12.5px;font-weight:700;text-anchor:middle}
+/* each shape group dims unless active; without JS all groups read at full strength */
+.js .shapesvg g[data-tab]{opacity:.16;transition:opacity .22s ease}
+.js .shapesvg g[data-tab].on{opacity:1}
+.shapesvg g[data-tab="near"] .node{stroke:var(--m-avail)}
+.shapesvg g[data-tab="near"] .accent{fill:var(--m-avail)}
+.shapesvg g[data-tab="near"] .flow{stroke:var(--m-avail)}
+.shapesvg g[data-tab="near"] .grouptitle{fill:var(--m-avail)}
+.shapesvg g[data-tab="bus"] .node{stroke:var(--m-mesh)}
+.shapesvg g[data-tab="bus"] .accent{fill:var(--m-mesh)}
+.shapesvg g[data-tab="bus"] .flow{stroke:var(--m-mesh)}
+.shapesvg g[data-tab="bus"] .grouptitle{fill:var(--m-mesh)}
+.shapesvg g[data-tab="stream"] .node{stroke:var(--m-edge)}
+.shapesvg g[data-tab="stream"] .accent{fill:var(--m-edge)}
+.shapesvg g[data-tab="stream"] .flow{stroke:var(--m-edge)}
+.shapesvg g[data-tab="stream"] .grouptitle{fill:var(--m-edge)}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the three-up shape cards / thesis ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-avail);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-mesh)}
+.tri article:nth-child(3){border-top-color:var(--m-edge)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the per-shape compare ---------- */
+.cmp{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:6px}
+.cmp article{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px}
+.cmp article.near{border-left:3px solid var(--m-avail)}
+.cmp article.bus{border-left:3px solid var(--m-mesh)}
+.cmp article.stream{border-left:3px solid var(--m-edge)}
+.cmp .ck{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.cmp article.near .ck{color:var(--m-avail)}
+.cmp article.bus .ck{color:var(--m-mesh)}
+.cmp article.stream .ck{color:var(--m-edge)}
+.cmp h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.cmp p{font-size:.9rem;color:var(--m-ink)}
+.cmp .ex{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);border-top:1px dashed var(--m-line);padding-top:9px}
+.cmp .ex b{color:var(--m-ink)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.doors,.cmp{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.doors,.cmp{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><a href="/mesh/stack">stack</a><span class="rsep">/</span><span class="rcur">cache-bus-streams</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#shapes">Three shapes</a>
+      <a href="#near">Near-cache</a>
+      <a href="#bus">The bus</a>
+      <a href="#streams">The streams</a>
+      <a href="#why">Why three</a>
+      <a href="#line">The line</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M6.2 &#183; The Stack</p>
+      <h1>EchoCache, the bus, and <span class="hns">streams</span>.</h1>
+      <p class="lede">Three different jobs &#8212; keep a value fresh near readers, move work between surfaces, keep an
+      ordered record per instrument &#8212; take <b>three distinct shapes</b> on one Valkey-class store: an invalidating
+      near-cache, a reference-passing bus, and an append-only stream log. This dive builds each in the <b>primitive that
+      fits it</b>, and marks all three on the available side of the line.</p>
+      <p class="heronote">No measurement here: this dive maps three shapes to three primitives, not a benchmark. Three
+      primary sources carry it (<a href="#refs">a Valkey-class store's client-side caching, the claim-check pattern, and
+      the stream data type</a>); the primitives are external and settled, and EchoCache, the bus, and the streams are
+      named as the EchoMesh components built on them. The cache and streams come from M3; the line between them and the
+      consistent ledger is the next dive, M6.3.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>The primitives are external and settled &#8212; the near-cache's invalidation push is a Valkey-class store's
+        client-side-caching protocol, the bus's reference-passing is the claim-check enterprise integration pattern, and
+        the stream log is that store's data type. EchoCache, the EchoMQ bus, and the per-instrument streams are the
+        EchoMesh components built on those primitives; their composition is the course's proposal, separated from the
+        shipped substrate at M8.2. Command names below (CLIENT TRACKING, XADD, XREAD) name the primitives illustratively,
+        not a measured deployment.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>One store, three shapes &#183; hover a shape to light its primitive &#8212; the
+        <b>invalidating near-cache</b> (a value held near readers, flushed by an invalidation push), the
+        <b>reference-passing bus</b> (a large payload stored, a small claim check carried), and the <b>append-only
+        stream log</b> (time-ordered entries appended and tailed) &#8212; each on a Valkey-class store</figcaption>
+        <svg class="shapesvg" id="shapesvg" viewBox="0 0 760 300" role="img" aria-label="Three messaging shapes on one Valkey-class store, drawn as three diagrams. Near-cache: a reader holds a cached copy keyed by a branded identity; when the authority writes that key, the store pushes an invalidation to the reader, which flushes its stale copy and refetches. Claim-check bus: a producer stores a large payload in the store and passes a small claim check, the branded identity, through the queue; the consumer redeems the claim check to fetch the payload by it. Stream log: a producer appends time-ordered entries to an append-only log with one command, and consumers tail the log forward at their own pace while trimming keeps it bounded. The magnitudes are qualitative — small reference against large payload, bounded log — with no measured numbers.">
+          <!-- the shared store baseline label -->
+          <text x="380" y="20" text-anchor="middle" font-size="11.5" fill="#68705f">one Valkey-class store &#183; three primitives</text>
+
+          <!-- SHAPE 1: the invalidating near-cache -->
+          <g data-tab="near" class="on">
+            <text class="grouptitle" x="380" y="52">near-cache &#183; CLIENT TRACKING</text>
+            <!-- authority -->
+            <rect class="node" x="60" y="70" width="150" height="46" rx="6"></rect>
+            <text class="nlbl" x="135" y="92">authority</text>
+            <text class="nsub" x="135" y="107">writes the key</text>
+            <!-- store -->
+            <rect class="node" x="305" y="70" width="150" height="46" rx="6"></rect>
+            <text class="nlbl" x="380" y="92">the store</text>
+            <text class="nsub" x="380" y="107">tracks who holds the key</text>
+            <!-- reader -->
+            <rect class="node" x="550" y="70" width="150" height="46" rx="6"></rect>
+            <text class="nlbl" x="625" y="92">reader</text>
+            <text class="nsub" x="625" y="107">holds a cached copy</text>
+            <!-- write -> store -->
+            <path class="flow" d="M210 93 H300" marker-end="url(#arrowNear)"></path>
+            <text class="flowlbl" x="255" y="86">write</text>
+            <!-- store -> reader: invalidation push -->
+            <path class="flow" d="M455 93 H545" marker-end="url(#arrowNear)"></path>
+            <text class="flowlbl" x="500" y="86">invalidation push</text>
+            <text class="flowlbl" x="500" y="132">reader flushes stale &#183; refetches</text>
+            <circle class="accent" cx="500" cy="93" r="3.5"></circle>
+          </g>
+
+          <!-- SHAPE 2: the claim-check bus -->
+          <g data-tab="bus">
+            <text class="grouptitle" x="380" y="166">claim-check bus &#183; the EchoMQ tier</text>
+            <!-- producer -->
+            <rect class="node" x="60" y="182" width="150" height="46" rx="6"></rect>
+            <text class="nlbl" x="135" y="204">producer</text>
+            <text class="nsub" x="135" y="219">stores the large payload</text>
+            <!-- queue -->
+            <rect class="node" x="305" y="182" width="150" height="46" rx="6"></rect>
+            <text class="nlbl" x="380" y="204">the queue</text>
+            <text class="nsub" x="380" y="219">carries a small claim check</text>
+            <!-- consumer -->
+            <rect class="node" x="550" y="182" width="150" height="46" rx="6"></rect>
+            <text class="nlbl" x="625" y="204">consumer</text>
+            <text class="nsub" x="625" y="219">redeems &#183; fetches payload</text>
+            <!-- producer -> queue: claim check -->
+            <path class="flow" d="M210 205 H300" marker-end="url(#arrowBus)"></path>
+            <text class="flowlbl" x="255" y="198">claim check</text>
+            <text class="flowlbl" x="255" y="246">a branded identity</text>
+            <!-- queue -> consumer: redeem -->
+            <path class="flow" d="M455 205 H545" marker-end="url(#arrowBus)"></path>
+            <text class="flowlbl" x="500" y="198">redeem by id</text>
+            <circle class="accent" cx="255" cy="205" r="3.5"></circle>
+          </g>
+
+          <!-- SHAPE 3: the append-only stream log -->
+          <g data-tab="stream">
+            <text class="grouptitle" x="380" y="278">stream log &#183; XADD / XREAD</text>
+            <!-- the log cells (append-only, time-ordered) -->
+            <rect class="node" x="120" y="252" width="46" height="32" rx="4"></rect>
+            <rect class="node" x="172" y="252" width="46" height="32" rx="4"></rect>
+            <rect class="node" x="224" y="252" width="46" height="32" rx="4"></rect>
+            <rect class="node" x="276" y="252" width="46" height="32" rx="4"></rect>
+            <rect class="node" x="328" y="252" width="46" height="32" rx="4"></rect>
+            <text class="nsub" x="247" y="300">append-only &#183; time-ordered IDs &#183; trimmed to stay bounded</text>
+            <!-- producer appends -->
+            <text class="flowlbl" x="100" y="245" text-anchor="start">producer appends (XADD) &#8594;</text>
+            <!-- consumers tail -->
+            <path class="flow" d="M380 268 H470" marker-end="url(#arrowStream)"></path>
+            <text class="flowlbl" x="560" y="263" text-anchor="start">consumers tail (XREAD)</text>
+            <text class="flowlbl" x="560" y="280" text-anchor="start">at their own pace</text>
+            <circle class="accent" cx="425" cy="268" r="3.5"></circle>
+          </g>
+
+          <defs>
+            <marker id="arrowNear" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#1f7a5e"></path></marker>
+            <marker id="arrowBus" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#7b3aa0"></path></marker>
+            <marker id="arrowStream" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#b3631c"></path></marker>
+          </defs>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">shape &#183; hover to light its primitive</span>
+          The <b>near-cache</b> holds a value close to readers and flushes it on an <span class="vc">invalidation
+          push</span>; the <b>bus</b> stores a large payload and carries a <span class="vc">small claim check</span> the
+          consumer redeems; the <b>stream log</b> appends <span class="vc">time-ordered entries</span> that consumers
+          tail at their own pace. Three shapes, three primitives, one store. Hover a shape below to light it.
+        </p>
+        <div class="htabs" id="shapew">
+          <div class="htabs-bar" role="tablist" aria-label="Pick a messaging shape">
+            <button type="button" role="tab" data-tab="near" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>Near-cache</button>
+            <button type="button" role="tab" data-tab="bus" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>Claim-check bus</button>
+            <button type="button" role="tab" data-tab="stream" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>Stream log</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="near" role="tabpanel"><span class="tag a">Near-cache &#183; EchoCache.</span> A value held close to readers, kept coherent by client-side caching. When a reader caches a key the store records that the reader holds it; when the authority later writes that key the store pushes an invalidation, and the reader flushes its stale copy so the next read refetches. The copy is keyed by the instrument's branded identity, so a write to one instrument invalidates only the readers caching that instrument.</div>
+            <div class="htabs-p" data-tab="bus" role="tabpanel"><span class="tag m">Claim-check bus &#183; the EchoMQ tier.</span> Work moved between surfaces without a large payload going through the broker. The producer stores the payload in the store and passes a small reference &#8212; a claim check &#8212; through the queue; the consumer redeems the claim check to fetch the payload when it needs it. The claim check is the branded identity, a unique, location-independent key &#8212; precisely what a claim check must be.</div>
+            <div class="htabs-p" data-tab="stream" role="tabpanel"><span class="tag e">Stream log &#183; the per-instrument record.</span> An append-only log with auto-generated, time-ordered IDs. A producer appends an entry with one command (XADD); consumers tail the log forward (XREAD) or join a consumer group that shares the entries out with per-consumer acknowledgment, and trimming keeps the log bounded as it rolls forward. The ordering is the structure's time-ordered IDs, not something the application maintains.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a shape to light its primitive in the diagram; click to pin. Without scripting, all three shapes draw at once and all three panels read in sequence.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="shapes">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Three shapes, one store</h2>
+        <span class="ssrc">mesh.6.2.md &#183; the design choice</span>
+      </div>
+      <p class="body">The availability-first surfaces do not all need the same messaging behavior. One needs to hold a
+      recent value close to many readers and keep it from going stale; one needs to hand work from one surface to another
+      without choking on size; one needs to keep an ordered, durable record that many consumers replay at their own pace.
+      These are three different shapes, and the design choice that runs through this dive is to <b>match each to the
+      primitive that fits it</b> rather than stretch one mechanism across all three.</p>
+      <p class="body">A Valkey-class store offers all three primitives, so the three shapes can share one store &#8212;
+      which keeps the operational surface small &#8212; while each gets a mechanism built for its job. Three shapes, three
+      primitives, one store. The diagram above lights one shape at a time; the three sections below build each.</p>
+    </section>
+
+    <section id="near">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The near-cache: EchoCache</h2>
+        <span class="ssrc">mesh.6.2.md &#183; Redis client-side caching</span>
+      </div>
+      <p class="body">The first shape is the near-cache, and its job is to answer reads from local memory while staying
+      coherent with the authority. EchoCache is built on the client-side-caching protocol: when a reader caches a key,
+      the server records that the reader holds it, and when that key is later modified the server pushes an invalidation
+      to the reader, which flushes its stale copy so the next read refetches. This is the <b>coherence broadcast of
+      M3.2</b> pinned to its primitive &#8212; the broadcast is the protocol's invalidation push, not a mechanism
+      EchoMesh invents on top.</p>
+      <p class="body">The cached value is keyed by the instrument's branded identity, so a write to one instrument
+      invalidates only the readers caching that instrument rather than the whole feed, and the identity that does this
+      keying is the <b>/bcs</b> course's contract. The near-cache is the shape that keeps the available read path both
+      fast and current-to-within-one-invalidation.</p>
+      <figure class="frozen">
+        <figcaption>client-side caching &#183; the server tracks the key and pushes an invalidation<span class="tag">Redis &#183; CLIENT TRACKING</span></figcaption>
+<pre><span class="fd">// the near-cache holds a value close to readers, keyed by branded identity:</span>
+reader caches key(<span class="fa">instrument-id</span>)   <span class="fd"># the store records the reader holds it</span>
+
+<span class="fd">// when the authority writes that key, the protocol pushes an invalidation:</span>
+authority writes key(<span class="fa">instrument-id</span>)
+&#8594; store pushes <b>invalidation</b> to the readers that hold it   <span class="fd"># CLIENT TRACKING</span>
+&#8594; reader flushes its stale copy; next read refetches
+
+<span class="fd">// scoped by identity — only readers of that instrument are invalidated:</span>
+one write &#8594; invalidates <span class="fa">only that instrument's readers</span>, not the whole feed</pre>
+      </figure>
+    </section>
+
+    <section id="bus">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The bus: the claim-check pattern</h2>
+        <span class="ssrc">mesh.6.2.md &#183; Hohpe &amp; Woolf</span>
+      </div>
+      <p class="body">The second shape is the bus, and its job is to move work between surfaces &#8212; to hand a fill
+      from the ledger to a worker, say &#8212; without dragging a large payload through the broker. The primitive is the
+      claim-check pattern: rather than carry the payload in the message, the bus stores the payload in a store and passes
+      a <b>small reference, a claim check</b>, through the queue, and the consumer redeems the claim check to retrieve the
+      payload when it needs it.</p>
+      <p class="body">The fit is exact, because a messaging system is built to move a high volume of small messages and
+      degrades when made to carry large ones, so keeping the payload in a store and the broker carrying references plays
+      each to its strength. The claim check is a unique key, and EchoMesh already has the ideal one: the <b>branded
+      identity that serves as the seam in M5.3</b> is a unique, location-independent key, which is precisely what a claim
+      check must be. The bus &#8212; the EchoMQ tier &#8212; passes that identity and lets the consumer fetch the payload
+      from the store by it.</p>
+      <figure class="frozen">
+        <figcaption>claim check &#183; store the payload, pass a small reference<span class="tag">Hohpe &amp; Woolf &#183; EIP</span></figcaption>
+<pre><span class="fd">// the broker is built for many small messages, not a few large ones.</span>
+<span class="fd">// store the payload; pass a claim check — a unique key — through the queue:</span>
+producer: store <span class="fe">large payload</span> in the store
+        &#8594; pass <b>claim check</b> through the queue        <span class="fd"># a small reference</span>
+
+consumer: redeem <b>claim check</b> &#8594; fetch the payload by it   <span class="fd"># when it needs it</span>
+
+<span class="fd">// EchoMesh already has the ideal key — the branded identity (M5.3):</span>
+claim check = <span class="fa">branded identity</span>   <span class="fd"># unique, location-independent — what a claim check must be</span></pre>
+      </figure>
+    </section>
+
+    <section id="streams">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The streams: the per-instrument log</h2>
+        <span class="ssrc">mesh.6.2.md &#183; Valkey Streams</span>
+      </div>
+      <p class="body">The third shape is the stream, and its job is to keep an ordered, durable record of everything that
+      happened to an instrument, readable by many consumers at their own pace. The primitive is the stream data type: an
+      <b>append-only log with auto-generated, time-ordered IDs</b>, where a producer appends an entry with one command
+      (XADD) and consumers either tail the log forward (XREAD) or join a consumer group that shares the entries out with
+      per-consumer acknowledgment, and trimming keeps the log bounded as it rolls forward.</p>
+      <p class="body">This is the <b>per-instrument stream of M3.3</b> pinned to its primitive &#8212; the ordering is the
+      structure's time-ordered IDs, not something the application maintains. The log replicates and persists, so it
+      survives restarts, and because consumers read from it without taking a lock the writer holds, the record is
+      decoupled from its production exactly as an availability-first surface requires.</p>
+      <figure class="frozen">
+        <figcaption>the stream &#183; append-only, time-ordered, tailed by many<span class="tag">Valkey &#183; Streams</span></figcaption>
+<pre><span class="fd">// an append-only log with auto-generated, time-ordered IDs:</span>
+producer: append one entry            <span class="fd"># XADD</span>
+
+<span class="fd">// consumers read at their own pace, without a lock the writer holds:</span>
+consumer: tail the log forward        <span class="fd"># XREAD</span>
+        <span class="fd">|</span> join a <b>consumer group</b>      <span class="fd"># shares entries out, per-consumer ack</span>
+
+trim to keep the log <span class="fe">bounded</span> as it rolls forward
+<span class="fd">// the log replicates and persists — it survives restarts.</span></pre>
+      </figure>
+    </section>
+
+    <section id="why">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Why three primitives, not one</h2>
+        <span class="ssrc">mesh.6.2.md &#183; the design</span>
+      </div>
+      <p class="body">It is worth saying why this is three primitives rather than one stretched thin, because the
+      temptation is to pick a single mechanism and use it everywhere. Each mechanism is <b>excellent at its own shape and
+      a poor fit for the other two</b>, so matching shape to primitive is the design, and putting all three primitives on
+      one store is what keeps that design from multiplying the things EchoMesh has to operate.</p>
+      <p class="body">All three shapes share one trait that places them in this chapter: each answers from local or
+      replicated state and accepts bounded staleness, which is the availability-first side of the trade. Hover a wrong
+      single mechanism below to see what it would lose.</p>
+      <div class="htabs" id="whyw">
+        <div class="htabs-bar" role="tablist" aria-label="What a single mechanism stretched across all three would lose">
+          <button type="button" role="tab" data-tab="pubsub" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>Pub/sub for all three</button>
+          <button type="button" role="tab" data-tab="queue" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>A queue for all three</button>
+          <button type="button" role="tab" data-tab="log" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>A log for all three</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="pubsub" role="tabpanel"><span class="tag c">Pub/sub for all three.</span> A publish-subscribe channel would broadcast changes but retain nothing, so the stream's replayable record would be lost. It can invalidate a cache, but it cannot keep a durable, ordered log a late consumer replays.</div>
+          <div class="htabs-p" data-tab="queue" role="tabpanel"><span class="tag e">A queue for all three.</span> A queue would move work but keep no cache coherent and replay no history. It can hand a claim check from producer to consumer, but it cannot push an invalidation to a reader or let many consumers tail the same ordered record.</div>
+          <div class="htabs-p" data-tab="log" role="tabpanel"><span class="tag a">A log for all three.</span> A log would record everything but pass no reference efficiently and invalidate no cached value. It can keep the ordered, durable record, but it neither flushes a stale near-cache nor moves a large payload out of the broker's way.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus a single mechanism to read what it loses; click to pin. Without scripting, all three read in sequence. Each mechanism is excellent at its own shape and a poor fit for the other two.</p>
+      </div>
+      <div class="cmp">
+        <article class="near">
+          <p class="ck">Near-cache</p>
+          <h3>Invalidating</h3>
+          <p>Holds a value close to readers; the store pushes an invalidation the moment the key changes, so the copy
+          flushes and refetches.</p>
+          <p class="ex"><b>primitive:</b> client-side caching &#183; <b>command:</b> CLIENT TRACKING</p>
+        </article>
+        <article class="bus">
+          <p class="ck">Claim-check bus</p>
+          <h3>Reference-passing</h3>
+          <p>Stores a large payload and carries a small claim check &#8212; the branded identity &#8212; that the consumer
+          redeems to fetch the payload by it.</p>
+          <p class="ex"><b>primitive:</b> claim-check pattern &#183; <b>key:</b> the branded identity</p>
+        </article>
+        <article class="stream">
+          <p class="ck">Stream log</p>
+          <h3>Append-only</h3>
+          <p>Keeps an ordered, durable record with time-ordered IDs; many consumers tail it at their own pace, trimming
+          keeps it bounded.</p>
+          <p class="ex"><b>primitive:</b> the stream data type &#183; <b>commands:</b> XADD / XREAD</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="line">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>Where the line is</h2>
+        <span class="ssrc">mesh.6.2.md &#183; M6.3</span>
+      </div>
+      <p class="body">These three are the <b>available substrate</b> of the system &#8212; the surfaces that keep answering
+      and reconcile toward correct. The consistency-first core, the ledger, and the deep global retention, Tigris, are
+      the next dive, and the line between the available substrate here and the consistent ledger there is the CAP
+      boundary of the whole system.</p>
+      <p class="body">Under a partition, the cache marks its value stale and the streams serve what they have replicated
+      rather than withholding, which is the deliberate availability-first choice; the ledger, on the other side of the
+      line, does the opposite. The third dive, M6.3, draws that line.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">Near-cache</p>
+          <h3>Coherent, fast</h3>
+          <p>Answers reads from local memory and stays current-to-within-one-invalidation; under a partition it marks its
+          value stale rather than withholding.</p>
+          <p class="note">available side &#183; <b>EchoCache</b></p>
+        </article>
+        <article>
+          <p class="cno">Claim-check bus</p>
+          <h3>Work, by reference</h3>
+          <p>Hands work between surfaces by a small claim check &#8212; the branded identity &#8212; so the broker stays
+          fast and the payload stays in the store.</p>
+          <p class="note">available side &#183; <b>the EchoMQ tier</b></p>
+        </article>
+        <article>
+          <p class="cno">Stream log</p>
+          <h3>Ordered, durable</h3>
+          <p>Keeps a replayable per-instrument record; under a partition it serves what it has replicated, decoupled from
+          its production.</p>
+          <p class="note">available side &#183; <b>per-instrument streams</b></p>
+        </article>
+      </div>
+      <p class="compose"><b>The next dive:</b> the consistency-first core. M6.3 builds the regulated ledger on Postgres
+      through <code>Ecto.Multi</code> and the globally replicated retention on Tigris, and draws the CAP line between the
+      available substrate here and the consistent ledger there &#8212; carried under a <b>Proposed &#183; not shipped</b>
+      note until the substrate-versus-proposal line is drawn at M8.2.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh/stack">
+          <span class="dr">/mesh/stack</span>
+          <h3>M6 &#8212; The Stack</h3>
+          <p>The chapter landing: the BEAM, the cache, the bus, the store, the ledger &#8212; each surface pinned to the
+          substrate that makes it real.</p>
+          <p class="dnote"><b>this dive</b> is M6.2, the three messaging shapes; the runtime is M6.1, the stores are M6.3.</p>
+        </a>
+        <a class="door" href="/echomq">
+          <span class="dr">/echomq</span>
+          <h3>EchoMQ, In Depth</h3>
+          <p>One Valkey-native system in three pillars &#8212; the Queue, the Bus, and the Cache &#8212; over one owned
+          wire: the claim-check bus and the stream tier taught to their depth.</p>
+          <p class="dnote"><b>the bus and the stream log</b> this dive names are the EchoMQ tier, taught in full there.</p>
+        </a>
+        <a class="door" href="/mesh/best-effort-consistency">
+          <span class="dr">/mesh/best-effort-consistency</span>
+          <h3>M3 &#8212; Best Effort Consistency</h3>
+          <p>The availability-first surface: the coherence broadcast of the market-data feed and the per-instrument
+          stream &#8212; diverging within a bound rather than blocking.</p>
+          <p class="dnote"><b>the cache and streams</b> pinned to their primitives here are the M3 surfaces: M3.2 and M3.3.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract, proven by frozen transcripts
+          across five runtimes.</p>
+          <p class="dnote"><b>the identity</b> that keys the near-cache and serves as the claim check is specified here.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;8</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://redis.io/docs/latest/develop/reference/client-side-caching/" rel="noopener">Redis &#8212; Client-side caching (CLIENT TRACKING)</a><span class="rs">when a connection caches a key, the server remembers it and pushes an invalidation message when the key changes, so the near-cache flushes its stale copy and refetches &#8212; a coherence broadcast without polling</span></li>
+          <li><a href="https://www.enterpriseintegrationpatterns.com/patterns/messaging/StoreInLibrary.html" rel="noopener">Hohpe, G. &amp; Woolf, B. &#8212; Claim Check (Enterprise Integration Patterns)</a><span class="rs">store the message payload in a persistent store and pass a claim check &#8212; a unique key &#8212; through the messaging system; the consumer redeems the claim check to retrieve the payload, keeping large payloads out of a broker built for small messages</span></li>
+          <li><a href="https://valkey.io/topics/streams-intro/" rel="noopener">Valkey &#8212; Streams</a><span class="rs">a stream is an append-only log with auto-generated, time-ordered IDs; producers append with XADD, consumers tail with XREAD or share work via consumer groups with per-consumer acknowledgment, trimming bounds size, and the structure replicates and persists</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh/stack">M6 &#8212; The Stack</a><span class="rs">the chapter landing whose second dive this is &#8212; the BEAM, the cache, the bus, the store, the ledger</span></li>
+          <li><a href="/mesh/best-effort-consistency">M3 &#8212; Best Effort Consistency</a><span class="rs">the availability-first cache (M3.2) and streams (M3.3) these primitives realize</span></li>
+          <li><a href="/echomq">EchoMQ, In Depth</a><span class="rs">the bus and the stream tier in depth &#8212; the Queue, the Bus, and the Cache over one owned wire</span></li>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the identity that keys the near-cache and serves as the claim check</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the engine and the umbrella where the surfaces and the bus tier run</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh/stack"><span class="pk">the chapter</span>&#8592; M6 &#183; The Stack</a>
+      <a class="pgx" href="/mesh/stack/tigris-postgres"><span class="pk">next &#183; dive</span>M6.3 &#183; Tigris and Postgres &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <a href="/mesh/best-effort-availability">M2 &#183; Best Effort Availability</a>
+        <a href="/mesh/best-effort-consistency">M3 &#183; Best Effort Consistency</a>
+        <a href="/mesh/trading">M4 &#183; Trading the Trade</a>
+        <a href="/mesh/segmenting">M5 &#183; Segmenting</a>
+        <a href="/mesh/stack">M6 &#183; The Stack</a>
+        <a href="/mesh/transparent">M7 &#183; Transparent Infrastructure</a>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0MtojrJOy</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 17:57:38 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the three-shapes diagram: the shape tabs light one SVG group + an aria-live readout ----------
+     READOUT is a pure function of the shape key over fixed data — no network, no storage, no measurement.
+     The active data-tab group is lit in the SVG (the inactive groups dim); the readout names the active
+     shape's primitive. The magnitudes are qualitative — small reference / large payload / bounded — none invented. */
+  var SHAPES = {
+    near:   { s: "shape · the invalidating near-cache",
+              h: "The <b>near-cache</b> (EchoCache) holds a value close to readers, keyed by the branded identity; when the authority writes that key the store pushes an <span class='vc'>invalidation</span>, the reader flushes its stale copy and the next read refetches. Coherence without polling, scoped to that instrument's readers." },
+    bus:    { s: "shape · the reference-passing bus",
+              h: "The <b>bus</b> (the EchoMQ tier) stores a <span class='vc'>large payload</span> and passes a <span class='vc'>small claim check</span> — the branded identity — through the queue; the consumer redeems it to fetch the payload by it. The broker stays fast carrying references, not payloads." },
+    stream: { s: "shape · the append-only stream log",
+              h: "The <b>stream log</b> appends <span class='vc'>time-ordered entries</span> with one command (XADD); consumers tail the log (XREAD) or share it through a consumer group, and trimming keeps it <span class='vc'>bounded</span>. The ordering is the structure's, and the record replicates and persists." }
+  };
+  var shapesvg = document.getElementById('shapesvg');
+  var emit     = document.getElementById('emit');
+  var groups    = shapesvg ? Array.prototype.slice.call(shapesvg.querySelectorAll('g[data-tab]')) : [];
+
+  wireHtabs(document.getElementById('shapew'), function (key) {
+    var d = SHAPES[key];
+    if (!d) return;
+    if (emit) emit.innerHTML = '<span class="step">' + d.s + '</span>' + d.h;
+    groups.forEach(function (g) {
+      g.classList.toggle('on', g.getAttribute('data-tab') === key);
+    });
+  });
+
+  /* the why-three-primitives tabs are a plain reuse of the same component */
+  wireHtabs(document.getElementById('whyw'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

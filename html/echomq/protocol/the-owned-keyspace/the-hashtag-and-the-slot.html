@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The hashtag and the slot · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="The hashtag and the slot in the EchoMQ keyspace: the {q} brace is the cluster hashtag, and EchoMQ.Keyspace.slot/1 computes the cluster slot client-side as CRC16-XMODEM over the hashtag modulo 16384 — the cluster specification's algorithm, pinned by the vector slot(\"123456789\")==12739. One queue, one slot, co-located keys: the precondition for atomic multi-key Lua. All real Elixir, grounded in echo/apps/echo_mq.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:block}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.inputrow{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
+.inputrow label{font-family:var(--sans);font-size:.74rem;letter-spacing:.1em;text-transform:uppercase;color:var(--cream-dim)}
+.inputrow input[type=text]{font-family:var(--mono);font-size:.92rem;color:var(--cream);background:var(--ink);
+  border:1px solid var(--line);border-radius:9px;padding:.5rem .7rem;min-width:13ch}
+.inputrow input[type=text]:focus{outline:none;border-color:var(--gold)}
+.chips{display:flex;flex-wrap:wrap;gap:.4rem;font-family:var(--sans);font-size:.74rem}
+.chips button{cursor:pointer;background:var(--ink-3);border:1px solid var(--line);border-radius:999px;
+  color:var(--cream-soft);padding:.28rem .7rem;font-family:var(--mono);font-size:.78rem}
+.chips button:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- slot ring viz ---- */
+.ringviz text{font-family:var(--mono)}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson additions ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.2rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/protocol">protocol</a><span class="rsep">/</span><a href="/echomq/protocol/the-owned-keyspace">the-owned-keyspace</a><span class="rsep">/</span><span class="rcur">the-hashtag-and-the-slot</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/protocol">The Protocol</a>
+      <span class="sep">/</span>
+      <a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a>
+      <span class="sep">/</span>
+      <span class="here">The hashtag &amp; the slot</span>
+    </div>
+    <p class="eyebrow">The owned keyspace &middot; dive 02 &middot; the slot</p>
+    <h1>The hashtag &amp; <span class="ex">the slot</span></h1>
+    <p class="lede">The brace is the routing key. The slot is one CRC16, computed before the wire is touched.</p>
+    <p class="kicker">The braces in <code class="inl">emq:{q}:&lt;type&gt;</code> are the <strong>cluster hashtag</strong>.
+      A Valkey cluster routes a key by a CRC16 of the substring inside its first <code class="inl">{...}</code> — so every
+      key that shares a hashtag shares a slot. <code class="inl">EchoMQ.Keyspace</code> computes that slot
+      <strong>client-side</strong>, with the cluster specification's exact algorithm: CRC16-XMODEM over the hashtag,
+      modulo 16384, pinned by the vector <code class="inl">slot("123456789") == 12739</code>.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#why">Why one slot matters</a>
+      <a href="#hashtag">hashtag/1</a>
+      <a href="#slot">slot/1 &amp; the CRC16</a>
+      <a href="#compute">Compute a slot</a>
+      <a href="#bridge">Pattern &rarr; implementation</a>
+      <a href="#refs">References</a>
+    </div>
+
+    <figure class="fig ringviz" aria-labelledby="ringFigTitle">
+      <h4 id="ringFigTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">16384 slots &middot; one queue lands on one</h4>
+      <div class="controls">
+        <div class="solid-select" id="qPick" role="group" aria-label="Pick a queue to place on the slot ring">
+          <button type="button" data-q="orders" data-c="echo" class="active" aria-pressed="true">orders</button>
+          <button type="button" data-q="quotes" data-c="echo" aria-pressed="false">quotes</button>
+          <button type="button" data-q="emails" data-c="gold" aria-pressed="false">emails</button>
+          <button type="button" data-q="123456789" data-c="sage" aria-pressed="false">123456789</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 240" role="img" aria-label="A ring of 16384 cluster slots drawn as a circle. A marker sits at the slot the selected queue hashes to, with the slot number printed at the centre.">
+        <circle cx="230" cy="120" r="86" fill="none" stroke="#2a3252" stroke-width="14"></circle>
+        <circle cx="230" cy="120" r="86" fill="none" stroke="rgba(42,161,152,.22)" stroke-width="14" stroke-dasharray="2 10"></circle>
+        <text x="230" y="40" text-anchor="middle" font-size="10" fill="#a39c89">0</text>
+        <text x="338" y="124" text-anchor="middle" font-size="10" fill="#a39c89">4096</text>
+        <text x="230" y="214" text-anchor="middle" font-size="10" fill="#a39c89">8192</text>
+        <text x="120" y="124" text-anchor="middle" font-size="10" fill="#a39c89">12288</text>
+        <line id="ringPointer" x1="230" y1="120" x2="230" y2="48" stroke="#f0cd7f" stroke-width="2.5"></line>
+        <circle id="ringDot" cx="230" cy="34" r="7" fill="#6fdccf" stroke="#0a0e1a" stroke-width="2"></circle>
+        <text id="ringSlot" x="230" y="116" text-anchor="middle" font-size="26" fill="#f0cd7f">105</text>
+        <text id="ringTag" x="230" y="138" text-anchor="middle" font-size="11" fill="#d7cfb9">{orders}</text>
+      </svg>
+      <div class="geo-readout" id="ringOut" aria-live="polite"></div>
+    </figure>
+  </section>
+
+  <section id="why">
+    <h2>Why one slot matters</h2>
+    <div class="prose">
+      <p>A Valkey cluster splits the keyspace into 16384 slots and assigns each slot to a shard. It routes a key by a
+        CRC16 of the substring inside its first <code class="inl">{...}</code> — <strong>not</strong> the whole key. So
+        every key that shares a hashtag is guaranteed to live on the same shard. By wrapping the queue name in braces,
+        EchoMQ makes one queue's keys all co-resident: <code class="inl">emq:{orders}:pending</code>,
+        <code class="inl">emq:{orders}:active</code>, and <code class="inl">emq:{orders}:job:&lt;id&gt;</code> all hash on
+        <code class="inl">orders</code>, so they land together.</p>
+      <p>That co-residence is the precondition for the protocol's atomic transitions. A Lua script that moves a job from
+        pending to active — deleting from one set, adding to another, updating the row — must touch keys that are all on
+        one shard, or the cluster refuses it. The hashtag is what guarantees that. Without the brace, three keys of one
+        queue could scatter across three shards and no single atomic script could span them.</p>
+    </div>
+  </section>
+
+  <section id="hashtag">
+    <h2>hashtag/1 &mdash; the substring inside the first braces</h2>
+    <div class="prose">
+      <p>The slot is computed over the hashtag, so the first job is to extract it. <code class="inl">hashtag/1</code>
+        returns the substring inside the first <code class="inl">{...}</code>, and falls back to the <em>whole key</em>
+        when the braces are absent or empty — that fallback is the cluster rule, not a convenience.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Keyspace</span>
+<span class="cmt"># The hashtag is the substring inside the first {...}. When the braces are</span>
+<span class="cmt"># absent, or empty, the whole key is hashed — the cluster rule. For an</span>
+<span class="cmt"># EchoMQ key the tag is always the queue name (emq:{orders}:* -&gt; "orders").</span>
+<span class="op">def</span> <span class="fn">hashtag</span>(key) <span class="op">do</span>
+  <span class="op">with</span> [_, rest] &lt;- :binary.<span class="fn">split</span>(key, <span class="str">"{"</span>),
+       [tag, _] <span class="op">when</span> tag != <span class="str">""</span> &lt;- :binary.<span class="fn">split</span>(rest, <span class="str">"}"</span>) <span class="op">do</span>
+    tag
+  <span class="op">else</span>
+    _ -&gt; key
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>For any EchoMQ key the tag is always the queue name, because the grammar puts the queue — and only the queue —
+        inside the braces. So <code class="inl">hashtag("emq:{orders}:pending")</code> is
+        <code class="inl">"orders"</code>, and computing the slot of the full key gives exactly the same answer as
+        computing it of the bare queue name. The brace is the routing key; the rest of the string does not move it.</p>
+    </div>
+  </section>
+
+  <section id="slot">
+    <h2>slot/1 &mdash; CRC16-XMODEM, modulo 16384</h2>
+    <div class="prose">
+      <p><code class="inl">slot/1</code> is the hashtag fed through CRC16-XMODEM, modulo 16384. It is computed
+        <strong>client-side</strong> so the connector can route and partition without a server round trip — the slot of a
+        key is knowable before the key is ever sent.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Keyspace</span>
+<span class="cmt"># The cluster slot, computed client-side so the connector routes without a</span>
+<span class="cmt"># server round trip. CRC16-XMODEM over the hashtag (not the whole key),</span>
+<span class="cmt"># modulo 16384 — the cluster specification's algorithm. Known vector:</span>
+<span class="cmt"># slot("123456789") == 12739 (CRC16 0x31C3).</span>
+<span class="op">def</span> <span class="fn">slot</span>(key) <span class="op">when</span> is_binary(key), <span class="op">do:</span> rem(<span class="fn">crc16</span>(<span class="fn">hashtag</span>(key), <span class="res">0</span>), <span class="res">16384</span>)</pre>
+
+    <div class="prose">
+      <p>The CRC16 itself is the standard cluster variant — polynomial <code class="inl">0x1021</code>, initial value
+        <code class="inl">0</code>, no reflection. One byte at a time: XOR the byte into the high half of the running
+        value, then eight rounds of shift-and-conditional-XOR, masked to 16 bits.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Keyspace</span>
+<span class="cmt"># CRC16-XMODEM: poly 0x1021, init 0, no reflection. XOR the byte into the</span>
+<span class="cmt"># high half, then eight shift-and-conditional-XOR rounds, masked to 16 bits.</span>
+<span class="op">defp</span> <span class="fn">crc16</span>(&lt;&lt;&gt;&gt;, crc), <span class="op">do:</span> crc
+
+<span class="op">defp</span> <span class="fn">crc16</span>(&lt;&lt;b, rest::binary&gt;&gt;, crc) <span class="op">do</span>
+  crc = Bitwise.<span class="fn">band</span>(Bitwise.<span class="fn">bxor</span>(crc, Bitwise.<span class="fn">bsl</span>(b, <span class="res">8</span>)), <span class="res">0xFFFF</span>)
+
+  crc =
+    Enum.<span class="fn">reduce</span>(<span class="res">1</span>..<span class="res">8</span>, crc, <span class="op">fn</span> _, c -&gt;
+      shifted = Bitwise.<span class="fn">band</span>(Bitwise.<span class="fn">bsl</span>(c, <span class="res">1</span>), <span class="res">0xFFFF</span>)
+      <span class="op">if</span> Bitwise.<span class="fn">band</span>(c, <span class="res">0x8000</span>) != <span class="res">0</span>, <span class="op">do:</span> Bitwise.<span class="fn">bxor</span>(shifted, <span class="res">0x1021</span>), <span class="op">else:</span> shifted
+    <span class="op">end</span>)
+
+  <span class="fn">crc16</span>(rest, crc)
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>The vector pins the implementation: <code class="inl">slot("123456789") == 12739</code>. This is what makes the
+        slot part of the protocol. Any speaker — in any language — must compute the same slot for the same hashtag, or its
+        keys would route to a different shard than every other speaker's, and the queue would split. The algorithm and
+        its constants are the wire, not an implementation choice.</p>
+    </div>
+  </section>
+
+  <section id="compute">
+    <h2>Compute a slot &mdash; the same CRC16 the connector runs</h2>
+    <div class="prose">
+      <p>Type a queue name. The page extracts the hashtag the way <code class="inl">hashtag/1</code> does — the name
+        itself, since a bare queue carries no braces — and runs the same CRC16-XMODEM modulo 16384 that
+        <code class="inl">slot/1</code> runs. The check chip <code class="inl">123456789</code> must read
+        <strong>12739</strong>: that is the vector that proves the port. (The computation is over the ASCII bytes of the
+        name, matching the byte-wise Elixir.)</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="computeFigTitle">
+      <h4 id="computeFigTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">slot/1 &middot; type a queue name</h4>
+      <div class="controls">
+        <div class="inputrow">
+          <label for="slotIn">queue / hashtag</label>
+          <input type="text" id="slotIn" value="orders" autocomplete="off" spellcheck="false" maxlength="40" aria-label="queue name or hashtag">
+        </div>
+        <div class="chips" aria-label="Examples">
+          <button type="button" data-fill="123456789">123456789 (vector)</button>
+          <button type="button" data-fill="orders">orders</button>
+          <button type="button" data-fill="quotes">quotes</button>
+          <button type="button" data-fill="emq">emq</button>
+        </div>
+      </div>
+      <div class="geo-readout" id="slotOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">The slot is one CRC16 of the hashtag, knowable before the wire is touched. One queue, one hashtag,
+      one slot — so one atomic script can move a job across the queue's sets and rows in a single round.</p>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &rarr; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>Hash-tag co-location: wrap the shared part of a key in <code class="inl">{...}</code> so a group of keys routes
+          to one slot, where an atomic multi-key operation is legal.
+          <a href="/redis-patterns/coordination/hash-tag-colocation/the-tag-mechanic">Redis Patterns Applied — the tag
+          mechanic</a> shows the slot computation.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">EchoMQ.Keyspace.slot/1</code> computes that slot client-side from the queue hashtag — CRC16
+          modulo 16384 — so the connector routes and partitions with no round trip, and the Lua scripts can declare a
+          single-slot key set.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says "co-locate by hashtag"; <code class="inl">slot/1</code> is the exact, pinned
+      arithmetic that makes the co-location real and the same for every speaker.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; the brace, the CRC16, the slot</h2>
+    <div class="prose">
+      <p>The <code class="inl">{q}</code> brace is the cluster hashtag. <code class="inl">hashtag/1</code> extracts the
+        substring inside the first <code class="inl">{...}</code>; <code class="inl">slot/1</code> runs it through
+        CRC16-XMODEM modulo 16384, client-side, pinned by <code class="inl">slot("123456789") == 12739</code>. One queue
+        hashes to one slot, so its keys co-locate — the precondition for atomic multi-key Lua. The next dive reads the
+        space that sits beside every queue: the reserve.</p>
+    </div>
+    <p class="note">Next in this module: <strong>The reserve</strong> — <code class="inl">{emq}:</code>, the core's
+      first-byte-disjoint cross-queue space, and why <code class="inl">emq</code> cannot be a queue.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the slot algorithm and the hashtag routing rule are specified.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/docs/">Redis &mdash; <em>Cluster specification (hash slots)</em></a> &mdash; the 16384-slot model and the CRC16-of-hashtag routing rule the slot computation follows.</li>
+          <li><a href="https://valkey.io/docs/">Valkey &mdash; <em>Documentation</em></a> &mdash; the cluster store the slot routes within; the substrate of record.</li>
+          <li><a href="https://www.dragonflydb.io/docs/managing-dragonfly/flags">DragonflyDB &mdash; <em>Server flags</em></a> &mdash; <code>--lock_on_hashtags</code>: the thread-per-shard placement the per-queue hashtag unlocks.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/protocol/the-owned-keyspace/the-braced-grammar">The braced grammar</a> &mdash; the grammar the hashtag lives in.</li>
+          <li><a href="/echomq/protocol/the-owned-keyspace/the-reserve">The reserve</a> &mdash; the cross-queue reserve.</li>
+          <li><a href="/echomq/protocol/the-lua-layer">The Lua layer</a> &mdash; the declared-key scripts the single slot makes legal.</li>
+          <li><a href="/redis-patterns/coordination/hash-tag-colocation/the-tag-mechanic">redis-patterns &middot; The tag mechanic</a> &mdash; the slot mechanism, the near side of the door.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/protocol/the-owned-keyspace/the-braced-grammar"><span aria-hidden="true">&larr;</span>&nbsp; The braced grammar</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/protocol/the-owned-keyspace/the-reserve">The reserve <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This chapter</h4>
+        <a href="/echomq/protocol">The Protocol</a>
+        <a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a>
+        <a href="/echomq/protocol/the-record-hash">The record hash</a>
+        <a href="/echomq/protocol/the-lua-layer">The Lua layer</a>
+        <a href="/echomq/protocol/immutability-and-branded-ids">Immutability &amp; branded ids</a>
+        <a href="/echomq/protocol/workshop">Workshop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/overview">Overview</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- the cluster slot: a faithful port of EchoMQ.Keyspace.slot/1 ----------
+     hashtag/1: the substring inside the first {...}, else the whole key.
+     crc16: CRC16-XMODEM (poly 0x1021, init 0, no reflection), byte by byte.
+     slot/1: crc16(hashtag(key)) % 16384. Pure — no I/O, no storage.
+     Known vector: slot("123456789") === 12739. Computed over ASCII bytes,
+     matching the byte-wise Elixir. */
+  function hashtag(key) {
+    var i = key.indexOf('{');
+    if (i < 0) return key;
+    var j = key.indexOf('}', i + 1);
+    if (j < 0) return key;
+    var tag = key.slice(i + 1, j);
+    return tag === '' ? key : tag;
+  }
+  function crc16(str) {
+    var crc = 0;
+    for (var k = 0; k < str.length; k++) {
+      crc = (crc ^ (str.charCodeAt(k) << 8)) & 0xFFFF;
+      for (var b = 0; b < 8; b++) {
+        if ((crc & 0x8000) !== 0) crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+        else crc = (crc << 1) & 0xFFFF;
+      }
+    }
+    return crc;
+  }
+  function slot(key) { return crc16(hashtag(key)) % 16384; }
+
+  /* ---------- hero: the slot ring (place a queue on its slot) ---------- */
+  function placeOnRing(queue) {
+    var s = slot(queue);
+    var ang = (s / 16384) * 2 * Math.PI - Math.PI / 2; // 0 at top, clockwise
+    var cx = 230, cy = 120, rPtr = 72, rDot = 86;
+    var px = cx + rPtr * Math.cos(ang), py = cy + rPtr * Math.sin(ang);
+    var dx = cx + rDot * Math.cos(ang), dy = cy + rDot * Math.sin(ang);
+    var ptr = document.getElementById('ringPointer');
+    var dot = document.getElementById('ringDot');
+    if (ptr) { ptr.setAttribute('x2', px.toFixed(1)); ptr.setAttribute('y2', py.toFixed(1)); }
+    if (dot) { dot.setAttribute('cx', dx.toFixed(1)); dot.setAttribute('cy', dy.toFixed(1)); }
+    var st = document.getElementById('ringSlot'); if (st) st.textContent = String(s);
+    var tg = document.getElementById('ringTag'); if (tg) tg.textContent = '{' + queue + '}';
+    var out = document.getElementById('ringOut');
+    if (out) out.innerHTML = 'queue <b>' + queue + '</b> → slot/1 = crc16("' + queue + '") % 16384 = <b>' + s +
+      '</b> <span class="dim">— every key emq:{' + queue + '}:* lands on slot ' + s + ', so the queue is single-shard</span>';
+  }
+  document.querySelectorAll('#qPick button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#qPick button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      placeOnRing(b.getAttribute('data-q'));
+    });
+  });
+  placeOnRing('orders'); // initial render — correct without interaction
+
+  /* ---------- content: compute a slot from a typed queue name ---------- */
+  function sanitize(raw) {
+    // a bare queue name carries no braces/colons; strip them so the demo's
+    // hashtag is the name itself (the EchoMQ case).
+    return (raw || '').replace(/[{}:]/g, '').slice(0, 40);
+  }
+  function showSlot() {
+    var raw = sanitize(document.getElementById('slotIn').value);
+    var out = document.getElementById('slotOut');
+    if (!out) return;
+    if (raw === '') { out.innerHTML = '<span class="dim">type a queue name to compute its slot</span>'; return; }
+    var c = crc16(raw), s = c % 16384;
+    var isVector = raw === '123456789';
+    var check = isVector
+      ? '  <b class="ok">✓ matches the vector slot("123456789") == 12739</b>'
+      : '';
+    out.innerHTML = 'hashtag(<b>' + raw + '</b>) = <b>' + raw + '</b>  <span class="dim">(no braces — the whole name)</span><br>' +
+      'crc16 = ' + c + ' (0x' + c.toString(16).toUpperCase() + ')  →  % 16384  →  slot = <b>' + s + '</b>' + check;
+  }
+  document.querySelectorAll('.chips button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var v = b.getAttribute('data-fill');
+      var inp = document.getElementById('slotIn');
+      if (inp) { inp.value = v; showSlot(); }
+    });
+  });
+  var slotIn = document.getElementById('slotIn');
+  if (slotIn) slotIn.addEventListener('input', showSlot);
+  showSlot(); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

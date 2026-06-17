@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R0.3 — Patterns become protocol · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R0.3 module hub: how a set of Redis patterns becomes a protocol the bus itself owns. The closed braced emq:{q}: grammar, the three-field job hash, the four sorted sets, eight verbs over six scripts — versioned and held by a two-way version fence, backed by Valkey. Three dives: the four layers, the immutable core, the door to EchoMQ.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.cta-row{display:flex;flex-wrap:wrap;gap:12px;margin-top:20px}
+.btn{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.02em;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:var(--rad);border:1px solid var(--r-red);color:var(--b-card);background:var(--r-red)}
+.btn:hover{background:#c64a41;border-bottom-color:var(--r-red)}
+.btn.ghost{background:transparent;color:var(--r-red);border-color:var(--b-line)}
+.btn.ghost:hover{border-color:var(--r-red);color:var(--r-red)}
+.hero-motif{margin-top:28px;width:100%;height:auto;display:block}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- the course map ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.chap{padding:28px 0 6px}
+.chap-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;padding-bottom:10px;border-bottom:1px solid var(--b-line);margin-bottom:16px}
+.chap-head .cid{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.chap-head h3{font-family:var(--mono);font-size:1.05rem}
+.chap-head .chap-link{font-family:var(--mono);font-size:12.5px;margin-left:auto}
+.chap-head .c-one{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);flex-basis:100%;margin-top:2px}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.mod.work{border-left:3px solid var(--r-red)}
+.mod.work .num::after{content:" · workshop";color:var(--b-dim)}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:82ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the layer-stack figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.lstack{width:100%;height:auto;display:block;margin-top:4px}
+.lstack .layer{cursor:pointer;transition:opacity .18s ease}
+.lstack .layer rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.lstack .layer.owned rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.lstack .layer.ext rect{fill:var(--b-card);stroke:var(--b-dim);stroke-width:1.5;stroke-dasharray:5 4}
+.lstack .llbl{font:13px var(--mono);fill:var(--b-ink)}
+.lstack .lbound{font:11px var(--mono);fill:var(--r-red);text-anchor:middle}
+.lstack.focus .layer{opacity:.3}
+.lstack.focus .layer.on{opacity:1}
+.lstack.focus .layer.on rect{stroke-width:2.6}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/overview">overview</a><span class="rsep">/</span><span class="rcur">patterns-become-protocol</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#layers">The layers</a>
+      <a href="#boundary">The boundary</a>
+      <a href="#dives">The dives</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R0.3 &#183; Overview &#8212; module hub</p>
+      <h1>Patterns become <span class="hns">protocol</span>.</h1>
+      <p class="lede">A handful of Redis patterns, owned the right way, stop being one library&#8217;s habits and
+      become a protocol the bus itself declares: a closed key grammar, a three-field job hash, four sorted sets,
+      eight verbs over six scripts &#8212; <b>versioned, fenced, and backed by Valkey</b>.</p>
+      <p class="heronote">Grounding: content/bcs3.1.md &#183; bcs3.2.md &#183; bcs3.3.md &#183; bcsA.md &#183;
+      docs/echo_mq/emq.design.md &#8212; every figure verbatim from a committed record.</p>
+
+      <figure class="anatomy" aria-labelledby="stackCap">
+        <figcaption id="stackCap"><b>The machine as five layers.</b> Select a layer to read its scope and whether
+        it belongs to the owned protocol.</figcaption>
+        <div class="segbar" id="layerSel" role="group" aria-label="Select a layer">
+          <button type="button" data-layer="L4" aria-pressed="false">L4 &#183; runtime API</button>
+          <button type="button" data-layer="L3" aria-pressed="false">L3 &#183; connector</button>
+          <button type="button" data-layer="L2" aria-pressed="false">L2 &#183; bundle</button>
+          <button type="button" data-layer="L1" aria-pressed="false">L1 &#183; grammar</button>
+          <button type="button" data-layer="L0" aria-pressed="false">L0 &#183; Valkey</button>
+        </div>
+        <svg class="lstack" id="lstack" viewBox="0 0 460 290" role="img" aria-label="A stack of five layers, top to bottom: L4 runtime API and L3 the connector (per runtime), then the boundary held by the version fence, then L2 the bundle and L1 the grammar (the owned protocol, in the redis accent), then L0 Valkey, external and dashed. Select a layer to highlight it; its scope appears in the readout.">
+          <g class="layer" data-layer="L4"><rect x="40" y="14" width="380" height="38" rx="6"></rect><text class="llbl" x="62" y="38">L4 &#183; runtime API</text></g>
+          <g class="layer" data-layer="L3"><rect x="40" y="58" width="380" height="38" rx="6"></rect><text class="llbl" x="62" y="82">L3 &#183; the connector</text></g>
+
+          <line x1="40" y1="108" x2="420" y2="108" stroke="#d6584f" stroke-width="1.5" stroke-dasharray="5 4"></line>
+          <text class="lbound" x="230" y="124">&#8212; the boundary &#183; held by the version fence &#8212;</text>
+
+          <g class="layer owned" data-layer="L2"><rect x="40" y="132" width="380" height="38" rx="6"></rect><text class="llbl" x="62" y="156">L2 &#183; the bundle</text></g>
+          <g class="layer owned" data-layer="L1"><rect x="40" y="176" width="380" height="38" rx="6"></rect><text class="llbl" x="62" y="200">L1 &#183; the grammar</text></g>
+          <g class="layer ext" data-layer="L0"><rect x="40" y="228" width="380" height="38" rx="6"></rect><text class="llbl" x="62" y="252">L0 &#183; Valkey</text></g>
+        </svg>
+        <div class="readout" id="layerOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a
+        layer. L1 and L2 are the owned protocol; L3 and L4 are each runtime&#8217;s own; L0 is the engine, gated.</div>
+        <p class="booknote">Static verdicts &#8212; L4 runtime API &#8594; varies per runtime &#183; L3 connector
+        &#8594; varies per runtime, gated <code>PASS 8/8</code> &#183; L2 bundle &#8594; owned, versioned behind
+        the fence &#183; L1 grammar &#8594; owned, versioned behind the fence &#183; L0 Valkey &#8594;
+        external, an enforced conformance gate.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="layers">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>From patterns to an owned protocol</h2>
+        <span class="ssrc">emq.md &#183; bcs3.1&#8211;3.3</span>
+      </div>
+      <div class="prose">
+        <p>A protocol here is not a network wire format. It is a <strong>declared Redis data convention</strong>
+        joined to a set of <strong>atomic Lua scripts</strong> &#8212; a written agreement about which key holds
+        which structure, what the row&#8217;s fields are, and which script makes each state change. EchoMQ owns
+        that agreement outright. The grammar is closed: every per-queue key parses as
+        <code>emq:{q}:&lt;type&gt;</code>, the job position is gated to branded ids, and the braced
+        <code>{emq}:</code> reserve holds the deployment&#8217;s own facts.</p>
+        <p>The job row is a hash of exactly three fields &#8212; <code>state</code>, <code>attempts</code>,
+        <code>payload</code> &#8212; and deliberately nothing more: no <code>enqueued_at</code>, because mint time
+        already lives inside the id. Four sorted sets carry the lifecycle &#8212; <code>pending</code>
+        (score-zero), <code>active</code> (lease-scored), <code>schedule</code> (run-at-scored),
+        <code>dead</code> &#8212; and <strong>eight verbs over six scripts</strong> move work between them. R0.2
+        fixed <em>where</em> Redis sits in the BCS build; this module answers <em>why</em> the worked examples
+        hold for any runtime that connects: the patterns are not language code. They are the bus&#8217;s owned
+        protocol.</p>
+      </div>
+    </section>
+
+    <section id="boundary">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The boundary is a fence, not a pin</h2>
+        <span class="ssrc">bcs3.1 F3 &#183; bcsA &#183; verbatim</span>
+      </div>
+      <div class="prose">
+        <p>The boundary between L2 and L3 is the line between the owned protocol and the runtime&#8217;s own
+        code. What holds the line is not a pinned commit. It is the <strong>version fence</strong>: at every connect
+        &#8212; first boot and every reconnect &#8212; the connector reads <code>{emq}:version</code>, claims it
+        on a fresh keyspace, and refuses any other value with a typed error. The committed line reads:
+        <code>GET {emq}:version answers echomq:2.0.0 through the fenced connector itself</code>.</p>
+      </div>
+      <pre class="code">L4  runtime API     &#8212; varies per runtime: EchoMQ.Jobs in Elixir; a Go loop around the same calls
+L3  the connector   &#8212; varies per runtime: RESP, pipelining, EVALSHA-first dispatch
+<b>&#8212;&#8212;&#8212; the boundary &#8212; held by the version fence: a mismatch is a typed boot refusal &#8212;&#8212;&#8212;</b>
+L2  the bundle      # six Lua scripts, eight verbs; every key declared or root-derived
+L1  the grammar     # emq:{q}:&lt;type&gt; &#183; the three-field hash &#183; the four sorted sets
+L0  Valkey    # the engine &#8212; external, and an enforced conformance gate</pre>
+
+      <div class="door">
+        <span class="dr">the application &#183; the connector that holds the boundary</span>
+        <h3>Gated against live Valkey</h3>
+        <p>The fence, the declared-keys dispatch, and the pipeline discipline are not aspirations &#8212; the
+        connector&#8217;s gate record is committed, figure by figure.</p>
+        <figure class="frozen">
+          <figcaption>content/bcsA.md &#183; the EchoMQ connector gate, against live Valkey<span class="tag">frozen</span></figcaption>
+          <pre>fence claimed                 echomq:2.0.0   <span class="fd">&#8592; typed, fatal on mismatch</span>
+pipelined EVALSHA             <b>161192 ops/s</b>   <span class="fd">&#8592; declared-keys law at speed</span>
+script_loads                  1              <span class="fd">&#8592; exactly one NOSCRIPT load</span>
+gate record                   <b>PASS 8/8</b></pre>
+        </figure>
+      </div>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The three dives</h2>
+        <span class="ssrc">the layers &#8594; the owned core &#8594; the door</span>
+      </div>
+      <div class="prose">
+        <p>Each dive takes one part of the story. Read them in order &#8212; the four layers start.</p>
+      </div>
+
+      <div class="mods" style="margin-top:6px">
+        <a class="mod" href="/redis-patterns/overview/patterns-become-protocol/the-four-layers">
+          <div class="top"><span class="num">R0.3.1</span><span class="pill built">built</span></div>
+          <p class="t">The four layers</p>
+          <p class="o">L0 Valkey to L4 runtime API; the claim script quoted verbatim; why the script is the
+          contract &#8212; same bytes, same SHA1, same semantics.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/overview/patterns-become-protocol/the-immutable-core">
+          <div class="top"><span class="num">R0.3.2</span><span class="pill built">built</span></div>
+          <p class="t">The immutable core</p>
+          <p class="o">The closed grammar, the four-member reserve, the three-field hash, the four sets &#8212;
+          and the fence, the change rules, and the wire classes that hold the core still.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/overview/patterns-become-protocol/the-door-to-echomq">
+          <div class="top"><span class="num">R0.3.3</span><span class="pill built">built</span></div>
+          <p class="t">The door to EchoMQ</p>
+          <p class="o">The contract retold &#8212; the script is the contract, the branded id is the wire form,
+          one queue answers one slot &#8212; and the live doors to /echomq and /bcs.</p>
+        </a>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Take the patterns a queue needs &#8212; atomic moves, leases, schedules, a morgue &#8212; write them
+          down as a grammar plus scripts, version the result, and fence the boot.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p>The closed <code>emq:{q}:&lt;type&gt;</code> grammar, the three-field hash, the four sorted sets,
+          eight verbs over six scripts &#8212; owned, versioned, and backed by Valkey.</p>
+        </div>
+      </div>
+      <p class="take">No upstream pin holds this protocol together. A closed grammar, a versioned bundle, and a
+      two-way fence do &#8212; and after R0.3 the Overview chapter is complete and the pattern chapters begin.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/topics/" rel="noopener">Valkey &mdash; <em>Topics</em></a> &mdash; the engine the connector is gated against.</li>
+            <li><a href="https://valkey.io/topics/programmability/" rel="noopener">Valkey &mdash; <em>Programmability</em></a> &mdash; atomic script execution, the basis of every transition in the bundle.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; the command and data-type reference behind the catalog.</li>
+            <li><a href="https://llmstxt.org/" rel="noopener">llmstxt.org &mdash; <em>The llms.txt convention</em></a> &mdash; the machine-readable map format the course follows.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/overview/patterns-become-protocol/the-four-layers">R0.3.1 &#183; The four layers</a><span class="rs">the stack, L0 to L4</span></li>
+            <li><a href="/redis-patterns/overview/patterns-become-protocol/the-immutable-core">R0.3.2 &#183; The immutable core</a><span class="rs">the owned core and its governance</span></li>
+            <li><a href="/redis-patterns/overview/patterns-become-protocol/the-door-to-echomq">R0.3.3 &#183; The door to EchoMQ</a><span class="rs">the contract, and the doors</span></li>
+            <li><a href="/redis-patterns/overview/redis-under-portal">R0.2 &#183; Valkey under the Exchange Platform</a><span class="rs">where Valkey sits</span></li>
+            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the protocol in depth, rung by rung</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/overview"><span class="pk">up</span>&#8592; R0 &#183; Overview</a>
+      <a class="pgx" href="/redis-patterns/overview/patterns-become-protocol/the-four-layers"><span class="pk">next</span>R0.3.1 &#183; The four layers &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        BCS build: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/redis-patterns/caching">R1 &#183; Caching</a>
+        <a href="/redis-patterns/coordination">R2 &#183; Coordination</a>
+        <a href="/redis-patterns/queues">R3 &#183; Reliable Queues</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &#183; Time, Delay &amp; Priority</a>
+        <span>R5 &#183; Streams &amp; Events<i>soon</i></span>
+        <span>R6 &#183; Flow Control<i>soon</i></span>
+        <span>R7 &#183; Data Modeling<i>soon</i></span>
+        <span>R8 &#183; Production &amp; Operations<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nv2WoRPVSK</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-12 12:54:32 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive: the five layers (pure lookup over a fixed dataset) ---------- */
+  var LAYERS = {
+    L4: { name: 'the runtime API', scope: 'the eight verbs a caller uses — enqueue, browse, pending_size, claim, complete, retry, promote, reap', status: 'varies per runtime' },
+    L3: { name: 'the connector', scope: 'RESP encoding, pipelining, EVALSHA-first dispatch with exactly one NOSCRIPT load; reads the fence at every connect', status: 'varies per runtime — gated PASS 8/8' },
+    L2: { name: 'the versioned bundle', scope: 'six Lua scripts carrying every state transition; every key declared in KEYS[] or derived from a declared root', status: 'OWNED — versioned behind the fence' },
+    L1: { name: 'the grammar and the sets', scope: 'emq:{q}:&lt;type&gt;, the gated job: position, the {emq}: reserve; the three-field hash; the four sorted sets', status: 'OWNED — versioned behind the fence' },
+    L0: { name: 'Valkey', scope: 'the engine — the committed gate record ran against it live', status: 'external — an enforced conformance gate' }
+  };
+  // pure: layer key -> readout text
+  function describeLayer(key) {
+    var L = LAYERS[key];
+    return key + ' ' + L.name + ' — scope: ' + L.scope + '. Status: ' + L.status + '.';
+  }
+  var lstack = document.getElementById('lstack');
+  var layerButtons = document.querySelectorAll('#layerSel button');
+  var layerOut = document.getElementById('layerOut');
+  // pure: highlight a layer in the diagram, sync the buttons, fill the readout — hover or click.
+  function selectLayer(key) {
+    layerButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-layer') === key ? 'true' : 'false');
+    });
+    if (lstack) {
+      lstack.classList.toggle('focus', !!key);
+      lstack.querySelectorAll('.layer').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-layer') === key);
+      });
+    }
+    if (layerOut) {
+      layerOut.innerHTML = key
+        ? '<span class="rk">readout &#183;</span> ' + describeLayer(key)
+        : '<span class="rk">readout &#183;</span> Select a layer. L1 and L2 are the owned protocol; L3 and L4 are each runtime&#8217;s own; L0 is the engine, gated.';
+    }
+  }
+  layerButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-layer');
+      selectLayer(b.getAttribute('aria-pressed') === 'true' ? null : key);
+    });
+  });
+  if (lstack) {
+    lstack.querySelectorAll('.layer').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectLayer(g.getAttribute('data-layer')); });
+      g.addEventListener('mouseleave', function () { selectLayer(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R1.05.3 &#183; Request coalescing &#183; Redis Patterns Applied &#183; jonnify</title>
+<meta name="description" content="R1.05.3 — request coalescing. Many concurrent misses on one owner collapse into a single in-flight regeneration: the first miss starts the rebuild, every later miss attaches to it, and one source read serves them all. EchoCache does this with its flights map and the :coalesced counter; the SET NX PX lock extends the merge across processes. Backed by Valkey.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+.skip{position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 6px 0;font-family:var(--mono);font-weight:700;z-index:50}
+.skip:focus{left:0}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul,.prose ol{margin:0 0 14px 1.3rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.ctrl{display:flex;align-items:center;gap:12px;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin:4px 0 14px}
+.ctrl label{min-width:9.5rem;color:var(--b-ink)}
+.ctrl input[type=range]{accent-color:var(--r-red);flex:1;max-width:300px}
+.ctrl .val{color:var(--r-red);font-weight:700;min-width:3.2rem;text-align:right}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink);margin:22px 0 6px}
+div.door:hover{box-shadow:none}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.9rem;color:var(--b-dim);max-width:74ch}
+.door .frozen{margin:12px 0 0}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .str{color:var(--b-node)}
+pre.code .cmt{color:var(--b-dim)}
+pre.code .kw{color:var(--b-seq)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-family:var(--mono);font-size:12.5px;margin:0 0 18px}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+.note{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);border-left:3px solid var(--b-ts);padding-left:14px;margin:16px 0 0;max-width:78ch}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){.foot-nav{grid-template-columns:1fr}.topnav{display:none}}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{transition:none}}
+/* ---------- the funnel figure (hover-select) ---------- */
+.funnel{width:100%;height:auto;display:block;margin-top:4px}
+.funnel .stage{cursor:pointer;transition:opacity .18s ease}
+.funnel .miss circle{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.4;transition:opacity .2s ease}
+.funnel .flightbox rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.5}
+.funnel .srcbox rect{fill:var(--b-card);stroke:var(--b-dim);stroke-width:1.5;stroke-dasharray:5 4}
+.funnel .flbl{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.funnel .fsub{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.funnel .flow{stroke:var(--b-line);stroke-width:1.2;fill:none}
+.funnel .flow.win{stroke:var(--r-red);stroke-width:2.4}
+.funnel.focus .stage{opacity:.3}
+.funnel.focus .stage.on{opacity:1}
+/* ---------- the count figure (segbar + slider) ---------- */
+.countfig{width:100%;height:auto;display:block;margin-top:4px}
+.countfig .axis{stroke:var(--b-line);stroke-width:1}
+.countfig .cbar{transition:height .2s ease,y .2s ease,stroke-width .15s ease}
+.countfig .clbl{font:11px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.countfig .cnum{font:12px var(--mono);font-weight:700;text-anchor:middle}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">&#183;</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/caching">caching</a><span class="rsep">/</span><a href="/redis-patterns/caching/cache-stampede-prevention">cache-stampede-prevention</a><span class="rsep">/</span><span class="rcur">coalescing</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#merge">The merge</a>
+      <a href="#across">Across processes</a>
+      <a href="#count">Count reads</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R1.05.3 &#183; Cache stampede prevention &#8212; dive 3</p>
+      <h1>Collapse many misses into <span class="hns">one</span>.</h1>
+      <p class="lede">The first miss starts the rebuild. Every later miss on the same owner attaches to it and waits
+      for the one result &#8212; one source read serves the whole burst.</p>
+      <p class="heronote">Grounding: echo/apps/echo_cache/table.ex (the single-flight <code>flights</code> map, the
+      <code>:coalesced</code> counter) &#183; content/bcs4.1.md (the herd drill) &#8212; coalescing, as EchoCache
+      runs it.</p>
+
+      <figure class="anatomy" aria-labelledby="funnelCap">
+        <figcaption id="funnelCap"><b>The funnel.</b> Slide the burst size; the misses funnel into one in-flight
+        regeneration that makes one source read. Hover a stage to read its role.</figcaption>
+        <div class="ctrl">
+          <label for="burstRange">concurrent misses</label>
+          <input type="range" id="burstRange" min="1" max="8" step="1" value="6">
+          <span class="val" id="burstVal">6</span>
+        </div>
+        <svg class="funnel" id="funnelSvg" viewBox="0 0 460 250" role="img" aria-label="Several concurrent misses on the left funnel into a single in-flight regeneration in the centre, which makes one read to the source on the right. The selected number of misses light up; the source read stays a single line whatever the burst size. Hover a stage to read its role.">
+          <g class="stage miss" data-stage="miss">
+            <circle id="m-0" cx="50" cy="40" r="11"></circle>
+            <circle id="m-1" cx="50" cy="75" r="11"></circle>
+            <circle id="m-2" cx="50" cy="110" r="11"></circle>
+            <circle id="m-3" cx="50" cy="145" r="11"></circle>
+            <circle id="m-4" cx="50" cy="180" r="11"></circle>
+            <circle id="m-5" cx="50" cy="215" r="11"></circle>
+            <circle id="m-6" cx="50" cy="40" r="11" opacity="0"></circle>
+            <circle id="m-7" cx="50" cy="40" r="11" opacity="0"></circle>
+            <text class="fsub" x="50" y="238">misses</text>
+            <path class="flow" d="M61 40 L210 120"></path>
+            <path class="flow" d="M61 75 L210 122"></path>
+            <path class="flow" d="M61 110 L210 124"></path>
+            <path class="flow" d="M61 145 L210 126"></path>
+            <path class="flow" d="M61 180 L210 128"></path>
+            <path class="flow" d="M61 215 L210 130"></path>
+          </g>
+          <g class="stage flightbox" data-stage="flight">
+            <rect x="210" y="100" width="122" height="52" rx="8"></rect>
+            <text class="flbl" x="271" y="122">one flight</text>
+            <text class="fsub" x="271" y="139">in-flight, shared</text>
+            <path class="flow win" d="M332 126 L372 126"></path>
+          </g>
+          <g class="stage srcbox" data-stage="source">
+            <rect x="372" y="100" width="70" height="52" rx="8"></rect>
+            <text class="flbl" x="407" y="130">source</text>
+          </g>
+          <text class="fsub" x="352" y="118" fill="#d6584f">1 read</text>
+        </svg>
+        <div class="readout" id="funnelOut" aria-live="polite"><span class="rk">readout &#183;</span> Slide the burst
+        size; hover a stage to read its role.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="merge">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>One in-flight regeneration</h2>
+        <span class="ssrc">source &#183; Handling Waiting Clients</span>
+      </div>
+      <div class="prose">
+        <p>Coalescing turns a key into a one-rebuild-at-a-time resource. The first request to miss the key starts the
+        regeneration and records it in a small in-flight table: <em>key &rarr; the in-flight rebuild</em>. The next
+        request that misses the same key, milliseconds later, looks in that table, finds the entry, and attaches to
+        the running rebuild rather than starting a second one. Every attached request waits on the same result; when
+        the rebuild completes, the value is delivered to all of them and the table entry is cleared.</p>
+        <p>The effect is that concurrency on one key collapses to one. A thousand near-simultaneous misses produce one
+        source read and one cache fill; the other nine hundred and ninety-nine requests pay only the wait for that
+        single rebuild. It needs no extra key on the engine: the merge is in-process state &#8212; a map of in-flight
+        rebuilds keyed by the cache key.</p>
+        <p>The boundary is the process. The in-flight table lives in one application instance, so coalescing dedupes
+        the misses <em>within</em> that instance. Across a fleet of instances, each one independently coalesces its
+        own burst &#8212; so a hundred instances make up to a hundred source reads, not one. Closing that gap is the
+        next section.</p>
+      </div>
+      <dl class="deflist">
+        <dt>in-flight table</dt><dd>An in-process map, <code>key &rarr; rebuild</code>, of regenerations currently running.</dd>
+        <dt>first miss</dt><dd>Starts the rebuild and records it. Reads the source once.</dd>
+        <dt>later miss</dt><dd>Finds the in-flight entry and attaches; waits for the shared result; does not read the source.</dd>
+        <dt>completion</dt><dd>Delivers the one value to every waiter and clears the entry.</dd>
+      </dl>
+    </section>
+
+    <section id="across">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Coalescing across processes</h2>
+        <span class="ssrc">source &#183; Solution 2: Mutex Locking</span>
+      </div>
+      <div class="prose">
+        <p>In-process coalescing is one source read per instance. To make it one source read for the whole fleet, the
+        merge has to live somewhere shared &#8212; and that is the regeneration lock from the first dive. The first
+        instance to win <code>SET lock val NX PX</code> for the key does the rebuild; the others, having lost the
+        lock, do what the losers do &#8212; poll for the fill or serve stale. Valkey is the shared in-flight
+        registry: the lock key is the cross-process equivalent of the in-process table entry.</p>
+        <p>So the two layers compose. Coalescing inside each instance collapses that instance&#8217;s concurrent
+        misses to one attempt on the lock; the lock across instances collapses those attempts to one rebuild for the
+        fleet. Together they take a fleet-wide flood &#8212; every instance, every concurrent request &#8212; down to
+        a single source read.</p>
+      </div>
+      <pre class="code"><span class="cmt"># Two layers: coalesce in-process, then the lock across processes.</span>
+<span class="cmt"># 1. in-process: the first miss starts the rebuild; later misses attach.</span>
+<span class="cmt"># 2. cross-process: the rebuild contends for the shared lock —</span>
+<b>SET</b> lock:instruments:AAPL <span class="str">"token"</span> <b>NX</b> <b>PX</b> 5000
+<span class="cmt"># one instance wins and reads the source; the rest serve stale or poll.</span></pre>
+      <p class="take">Coalescing dedupes within a process for free; the <code>SET NX PX</code> lock extends the same
+      merge across the fleet, so the whole system makes one source read.</p>
+    </section>
+
+    <section id="count">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Count the source reads</h2>
+        <span class="ssrc">source &#183; the three regimes</span>
+      </div>
+      <div class="prose">
+        <p>Compare the three regimes over one burst. Set the burst size &#8212; the concurrent misses on the key
+        &#8212; and the number of instances, and the readout counts source reads with no protection (one per miss, per
+        instance), with in-process coalescing (one per instance), and with the lock layered on (one for the
+        fleet).</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="countCap">
+        <figcaption id="countCap"><b>Source reads in one burst.</b> Select a regime; slide the misses per instance
+        and the instances. The bars use a log scale so the single fleet-wide read stays visible next to the
+        unprotected flood.</figcaption>
+        <div class="segbar" id="regimeSel" role="group" aria-label="Which coalescing regime">
+          <button type="button" data-regime="none" aria-pressed="false">no protection</button>
+          <button type="button" data-regime="inproc" aria-pressed="false">in-process coalescing</button>
+          <button type="button" data-regime="lock" aria-pressed="false">coalescing + lock</button>
+        </div>
+        <div class="ctrl">
+          <label for="missRange">misses / instance</label>
+          <input type="range" id="missRange" min="1" max="500" step="1" value="200">
+          <span class="val" id="missVal">200</span>
+        </div>
+        <div class="ctrl">
+          <label for="instRange">instances</label>
+          <input type="range" id="instRange" min="1" max="20" step="1" value="6">
+          <span class="val" id="instVal">6</span>
+        </div>
+        <svg class="countfig" id="countSvg" viewBox="0 0 460 170" role="img" aria-label="Three bars compare source reads for one burst: no protection, in-process coalescing, and coalescing plus the lock. The bars use a log scale so the single fleet-wide read stays visible next to the unprotected flood. The selected regime is highlighted.">
+          <line class="axis" x1="40" y1="130" x2="440" y2="130"></line>
+          <rect id="bar-none" class="cbar" x="70" y="30" width="80" height="100" rx="5" fill="var(--r-red-tint)" stroke="#d6584f" stroke-width="1.5"></rect>
+          <text id="num-none" class="cnum" x="110" y="22" fill="#d6584f">1200</text>
+          <text class="clbl" x="110" y="148">none</text>
+          <rect id="bar-inproc" class="cbar" x="190" y="70" width="80" height="60" rx="5" fill="var(--b-pay-tint)" stroke="#20618e" stroke-width="1.5"></rect>
+          <text id="num-inproc" class="cnum" x="230" y="62" fill="#20618e">6</text>
+          <text class="clbl" x="230" y="148">in-process</text>
+          <rect id="bar-lock" class="cbar" x="310" y="108" width="80" height="22" rx="5" fill="#e3efe6" stroke="#2e7d5b" stroke-width="1.5"></rect>
+          <text id="num-lock" class="cnum" x="350" y="100" fill="#2e7d5b">1</text>
+          <text class="clbl" x="350" y="148">+ lock</text>
+          <text class="clbl" x="40" y="164" text-anchor="start">source reads per burst (log scale)</text>
+        </svg>
+        <div class="readout" id="countOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a regime
+        and set the burst to count the source reads.</div>
+      </figure>
+
+      <p class="take">No protection makes one source read per miss; in-process coalescing makes one per instance; the
+      lock makes exactly one for the whole fleet.</p>
+    </section>
+
+    <section id="echocache">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>On EchoCache &#8212; the flights map</h2>
+        <span class="ssrc">table.ex &#183; handle_call({:fill, id}) &#183; verbatim</span>
+      </div>
+      <p class="ethic">This is EchoCache&#8217;s read path, exactly. A read tries L1 caller-side; on a miss it calls
+      the owner with <code>{:fill, id}</code>. The owner keeps a <code>flights</code> map keyed by id. The first miss
+      launches a flight; a concurrent miss on the same id finds the entry, appends its caller to the waiter list, and
+      bumps the <code>:coalesced</code> counter &#8212; it does not start a second load:</p>
+      <pre class="code"><span class="kw">def</span> handle_call({<span class="str">:fill</span>, id}, from, state) <span class="kw">do</span>
+  <span class="cmt"># ... L1 re-check elided ...</span>
+  <span class="kw">case</span> Map.fetch(state.flights, id) <span class="kw">do</span>
+    {<span class="str">:ok</span>, {ref, waiters}} <span class="kw">-></span>
+      :counters.add(state.spec.counters, counter(<span class="str">:coalesced</span>), 1)
+      {<span class="str">:noreply</span>, put_in(state.flights[id], {ref, [from | waiters]})}
+
+    <span class="str">:error</span> <span class="kw">-></span>
+      ref = launch_flight(state, id)
+      {<span class="str">:noreply</span>, put_in(state.flights[id], {ref, [from]})}
+  <span class="kw">end</span>
+<span class="kw">end</span></pre>
+      <div class="prose">
+        <p>When the flight finishes, the owner replies to every waiter with the one answer and clears the entry. The
+        flight runs <code>GET ecc:{table}:id</code>; on <code>{:ok, nil}</code> it calls the loader and writes both
+        layers with <code>SET &#8230; PX</code>. The moduledoc names the law: <em>&#8220;Concurrent misses on a key
+        coalesce onto a single in-flight load &#8230; every waiter reads the one answer.&#8221;</em></p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>across processes the merge rides one key:
+      <code>SET lock NX PX</code> is the shared in-flight registry, the cross-process equivalent of the owner&#8217;s
+      <code>flights</code> entry &#8212;
+      <a href="https://valkey.io/commands/set" rel="noopener">valkey.io/commands/set</a>.</p>
+
+      <div class="door">
+        <span class="dr">the application &#183; the herd drill, committed</span>
+        <h3>One fill, 199 waiters coalesced</h3>
+        <p>The merge is not asserted &#8212; the committed drill runs 200 simultaneous cold readers against the owner
+        and counts the result: the loader runs once, 199 waiters coalesce onto the one flight, and every reader holds
+        the one answer.</p>
+        <figure class="frozen">
+          <figcaption>content/bcs4.1.md &#183; the single-flight drill, against live Valkey<span class="tag">frozen</span></figcaption>
+          <pre>200 concurrent cold readers
+loader runs                   <b>1</b>            <span class="fd">&#8592; one fill for the whole herd</span>
+coalesced waiters             <b>199</b>          <span class="fd">&#8592; every reader holds the one answer</span></pre>
+        </figure>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>The first miss starts the rebuild; later misses attach to the in-flight one and share its result. Within
+          a process this needs no extra key; across processes the <code>SET NX PX</code> lock is the shared in-flight
+          registry.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoCache application</span>
+          <p>EchoCache&#8217;s owner is the in-flight table: the <code>flights</code> map admits one load per id,
+          concurrent misses append to the waiter list and bump <code>:coalesced</code>, and every waiter reads the
+          one answer &#8212; the merge, as committed code.</p>
+        </div>
+      </div>
+      <p class="take">Coalescing is the merge under both defences: the first miss rebuilds, every later miss attaches,
+      and the lock carries that merge from one process to the whole fleet.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/set" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; <code>NX</code>/<code>PX</code> for the cross-process lock that extends the merge across instances, and <code>PX</code> for the L2 fill.</li>
+            <li><a href="https://redis.io/commands/set" rel="noopener">Redis &mdash; <em>SET</em></a> &mdash; the canonical command reference for the lock the merge rides across a fleet.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; the expiry and locking primitives that extend an in-process merge across a fleet.</li>
+            <li><a href="https://antirez.com/" rel="noopener">Sanfilippo, S. &mdash; <em>antirez weblog</em></a> &mdash; the Redis creator on single-instance locks and coordinating one writer.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/caching/cache-stampede-prevention">R1.05 &#183; Cache stampede prevention</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/caching/cache-stampede-prevention/lock-on-miss">R1.05.1 &#183; Lock-on-miss</a><span class="rs">the lock that carries the merge across processes</span></li>
+            <li><a href="/redis-patterns/caching/cache-stampede-prevention/early-refresh">R1.05.2 &#183; Probabilistic early refresh</a><span class="rs">the lockless alternative</span></li>
+            <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
+            <li><a href="/elixir/pragmatic/state">/elixir &#183; State</a><span class="rs">the OTP craft behind the echo data layer</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the protocol behind the coherence lane</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/redis-patterns/caching/cache-stampede-prevention/early-refresh"><span class="pk">previous</span>&#8592; R1.05.2 &#183; Probabilistic early refresh</a>
+      <a class="pgx" href="/redis-patterns/caching/cache-stampede-prevention"><span class="pk">up</span>R1.05 &#183; Cache stampede prevention &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">&#183;</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/caching/cache-stampede-prevention/lock-on-miss">R1.05.1 &#183; Lock-on-miss</a>
+        <a href="/redis-patterns/caching/cache-stampede-prevention/early-refresh">R1.05.2 &#183; Early refresh</a>
+        <a href="/redis-patterns/caching/cache-stampede-prevention/coalescing">R1.05.3 &#183; Request coalescing</a>
+        <a href="/redis-patterns/caching">R1 &#183; Caching</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the funnel (slider + hover-select stages) ---------- */
+  var STAGE = {
+    miss:   'the misses: N concurrent reads miss the same id. The first launches the flight; the rest attach.',
+    flight: 'the flight: one in-flight load, shared. Concurrent misses coalesce onto it and bump the :coalesced counter.',
+    source: 'the source: read by exactly one flight per burst, whatever N is.'
+  };
+  var funnelSvg = document.getElementById('funnelSvg');
+  var funnelOut = document.getElementById('funnelOut');
+  var burstRange = document.getElementById('burstRange'), burstVal = document.getElementById('burstVal');
+  // pure: burst size -> readout text. Source reads stay 1 whatever the burst.
+  function describeFunnel(n) {
+    var attached = Math.max(0, n - 1);
+    return n + ' concurrent misses on one owner. The first starts the rebuild; ' + attached +
+      ' attach to it. Source reads: 1 (whatever the burst). Cache fills: 1. Waiters served from the one result: ' + n + '.';
+  }
+  function renderFunnel() {
+    var n = burstRange ? parseInt(burstRange.value, 10) : 6;
+    if (burstVal) burstVal.textContent = String(n);
+    for (var i = 0; i < 8; i++) { var el = document.getElementById('m-' + i); if (el) el.setAttribute('opacity', i < n ? '1' : '0'); }
+    if (funnelOut) funnelOut.innerHTML = '<span class="rk">readout &#183;</span> ' + describeFunnel(n);
+  }
+  if (burstRange) burstRange.addEventListener('input', renderFunnel);
+  if (funnelSvg) {
+    funnelSvg.querySelectorAll('.stage').forEach(function (g) {
+      g.addEventListener('mouseenter', function () {
+        funnelSvg.classList.add('focus');
+        funnelSvg.querySelectorAll('.stage').forEach(function (s) { s.classList.toggle('on', s === g); });
+        if (funnelOut) funnelOut.innerHTML = '<span class="rk">readout &#183;</span> ' + STAGE[g.getAttribute('data-stage')];
+      });
+      g.addEventListener('mouseleave', function () {
+        funnelSvg.classList.remove('focus');
+        funnelSvg.querySelectorAll('.stage').forEach(function (s) { s.classList.remove('on'); });
+        renderFunnel();
+      });
+    });
+  }
+  renderFunnel();
+
+  /* ---------- Interactive 2: count source reads across regimes (segbar + sliders) ---------- */
+  // pure: (regime, misses-per-instance, instances) -> source-read count
+  function sourceReads(regime, misses, instances) {
+    if (regime === 'none')   return misses * instances;
+    if (regime === 'inproc') return instances;
+    return 1;
+  }
+  // pure: -> readout text
+  function describeRegime(regime, misses, instances) {
+    var n = sourceReads(regime, misses, instances);
+    var unprotected = misses * instances;
+    var label = regime === 'none' ? 'no protection (one read per miss, per instance)'
+      : regime === 'inproc' ? 'in-process coalescing (one read per instance)'
+      : 'coalescing + SET NX PX lock (one read for the fleet)';
+    return label + ': ' + n + ' source read' + (n === 1 ? '' : 's') +
+      ' for ' + misses + ' misses x ' + instances + ' instances (' + unprotected + ' unprotected). Reduction: ' +
+      (unprotected / n).toFixed(0) + 'x.';
+  }
+  var BASE_Y = 130, MIN_H = 16, MAX_H = 100;
+  // pure: count -> bar height in px on a log scale
+  function logHeight(n) {
+    var t = Math.log(Math.max(1, n)) / Math.log(200 * 20);
+    return MIN_H + (MAX_H - MIN_H) * Math.max(0, Math.min(1, t));
+  }
+  function setBar(id, numId, n, active) {
+    var bar = document.getElementById(id), num = document.getElementById(numId);
+    if (bar) { var h = logHeight(n); bar.setAttribute('height', h.toFixed(1)); bar.setAttribute('y', (BASE_Y - h).toFixed(1)); bar.setAttribute('stroke-width', active ? '2.8' : '1.5'); }
+    if (num) { num.textContent = String(n); num.setAttribute('y', (BASE_Y - logHeight(n) - 8).toFixed(1)); }
+  }
+  var regimeOut = document.getElementById('countOut');
+  var missRange = document.getElementById('missRange'), missVal = document.getElementById('missVal');
+  var instRange = document.getElementById('instRange'), instVal = document.getElementById('instVal');
+  var regimeButtons = document.querySelectorAll('#regimeSel button');
+  var curRegime = 'none';
+  function renderCount() {
+    var misses = missRange ? parseInt(missRange.value, 10) : 200;
+    var instances = instRange ? parseInt(instRange.value, 10) : 6;
+    if (missVal) missVal.textContent = String(misses);
+    if (instVal) instVal.textContent = String(instances);
+    if (regimeOut) regimeOut.innerHTML = '<span class="rk">readout &#183;</span> ' + describeRegime(curRegime, misses, instances);
+    setBar('bar-none', 'num-none', sourceReads('none', misses, instances), curRegime === 'none');
+    setBar('bar-inproc', 'num-inproc', sourceReads('inproc', misses, instances), curRegime === 'inproc');
+    setBar('bar-lock', 'num-lock', sourceReads('lock', misses, instances), curRegime === 'lock');
+  }
+  function setRegime(regime) {
+    curRegime = regime;
+    regimeButtons.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-regime') === regime ? 'true' : 'false'); });
+    renderCount();
+  }
+  regimeButtons.forEach(function (b) { b.addEventListener('click', function () { setRegime(b.getAttribute('data-regime')); }); });
+  if (missRange) missRange.addEventListener('input', renderCount);
+  if (instRange) instRange.addEventListener('input', renderCount);
+  setRegime('none');
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

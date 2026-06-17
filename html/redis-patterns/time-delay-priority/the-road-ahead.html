@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4 · The road ahead: the arc R4.01 to R4.06 and the door into the EchoMQ scheduler subsystem · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R4 orientation — where the chapter goes. The granular ladder R4.01→R4.06 takes one score reading at a time: the delayed queue (:delayed ZSET + promoteDelayedJobs), schedulers & repeatable jobs (:repeat ZSET upsert), priority with composite scores (getPriorityScore priority×0x100000000+pc), backoff & retry (EchoMQ.Backoff.calculate/4 base×2^(n-1); retryJob-11.lua), leaderboards (Portal progress rankings), and the workshop. Then the door beyond: the living EchoMQ course (/echomq) whose scheduler subsystem owns the depth R4 doors to — timezone & DST, the busy-slot guard, legacy-repeatable migration, parent-child flow scheduling. R4 opens onto E6 lifecycle controls and E4 groups.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- arc / door diagram ---- */
+.arc .ch rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.arc .ch.on rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
+.arc .spine rect{fill:#161d38;stroke:#2a3252}
+.arc text{font-family:var(--sans);fill:#d7cfb9}
+.arc .lbl{font-family:var(--mono);fill:#a39c89;font-size:11px}
+.arc .flow{stroke:#2a3252;stroke-width:1.4;fill:none;transition:stroke .18s ease,stroke-width .18s ease}
+.arc .flow.on{stroke:#d6584f;stroke-width:2.4}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- door callout ---- */
+.door{margin:1.7rem 0 0;border:1px solid var(--redis);border-radius:16px;
+  background:linear-gradient(180deg,rgba(214,88,79,.10),rgba(10,14,26,.3));padding:1.2rem 1.3rem}
+.door .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--redis-bright);margin:0 0 .5rem}
+.door h3{margin:0 0 .5rem}
+.door p{margin:0 0 .7rem;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft);max-width:60ch}
+.door .doorlinks{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.4rem}
+.door .doorlinks a{font-family:var(--sans);font-size:.84rem;font-weight:600;
+  border:1px solid var(--redis);border-radius:999px;padding:.34rem .85rem;color:var(--gold-bright)}
+.door .doorlinks a:hover{background:rgba(214,88,79,.14);color:var(--cream)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><span class="rcur">the-road-ahead</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <span class="sep">/</span>
+        <span class="here">The road ahead</span>
+      </div>
+      <p class="eyebrow">R4 &middot; orientation</p>
+      <h1>The road <span class="ex">ahead</span></h1>
+      <p class="lede">One sorted set carries the whole chapter. Each module takes one reading of the score in depth &mdash;
+        and on the far side waits the engine that runs them all.</p>
+      <p class="kicker">R4 reads one structure two ways: a clock and an order. The granular ladder R4.01 through R4.06
+        takes the score apart one reading at a time &mdash; fire-time, composite priority, the recurring registry,
+        backoff, leaderboards, the workshop &mdash; and each is grounded in one real EchoMQ surface. Then the patterns
+        hand off to the system that runs the scheduler: the living <strong>EchoMQ course</strong>. Walk the arc on the
+        right, then open the door. The engine the patterns sit below is <a href="/elixir">/elixir</a>.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#arc">The arc R4.01&ndash;R4.06</a>
+        <a href="#door-map">The door map</a>
+        <a href="#door">The door to EchoMQ</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig arc" aria-labelledby="arcTitle">
+      <h4 id="arcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The R4 arc &middot; one sorted set, one score reading per module</h4>
+      <div class="controls">
+        <div class="solid-select" id="arcSel" role="group" aria-label="Which R4 module to survey">
+          <button type="button" data-ch="R4.01" data-c="redis" class="active" aria-pressed="true">R4.01 &middot; Delayed</button>
+          <button type="button" data-ch="R4.02" data-c="redis" aria-pressed="false">R4.02 &middot; Schedulers</button>
+          <button type="button" data-ch="R4.03" data-c="redis" aria-pressed="false">R4.03 &middot; Priority</button>
+          <button type="button" data-ch="R4.04" data-c="redis" aria-pressed="false">R4.04 &middot; Backoff</button>
+          <button type="button" data-ch="R4.05" data-c="redis" aria-pressed="false">R4.05 &middot; Leaderboards</button>
+          <button type="button" data-ch="R4.06" data-c="redis" aria-pressed="false">R4.06 &middot; Workshop</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 280" role="img" aria-label="The sorted set, the chapter spine, sits as a column at the left. Six modules stack to its right — R4.01 the delayed queue, R4.02 schedulers and repeatable jobs, R4.03 priority with composite scores, R4.04 backoff and retry, R4.05 leaderboards, and R4.06 the workshop — each joined to the spine by a path. Selecting a module lights its box and its path, showing the score reading it adds and the real EchoMQ surface it is grounded in.">
+        <g class="spine"><rect x="20" y="30" width="92" height="220" rx="12"></rect></g>
+        <text x="66" y="128" text-anchor="middle" font-size="12" font-weight="700">the</text>
+        <text x="66" y="146" text-anchor="middle" font-size="12" font-weight="700">ZSET</text>
+        <text class="lbl" x="66" y="166" text-anchor="middle">one set,</text>
+        <text class="lbl" x="66" y="180" text-anchor="middle">two readings</text>
+
+        <path id="fl-R4.01" class="flow on" d="M112 52 L168 52"></path>
+        <path id="fl-R4.02" class="flow" d="M112 88 L168 88"></path>
+        <path id="fl-R4.03" class="flow" d="M112 124 L168 124"></path>
+        <path id="fl-R4.04" class="flow" d="M112 160 L168 160"></path>
+        <path id="fl-R4.05" class="flow" d="M112 196 L168 196"></path>
+        <path id="fl-R4.06" class="flow" d="M112 232 L168 232"></path>
+
+        <g class="ch on" id="ch-R4.01"><rect x="168" y="36" width="272" height="32" rx="9"></rect></g>
+        <text x="180" y="56" font-size="12"><tspan font-weight="700">R4.01</tspan> &middot; The delayed queue</text>
+        <g class="ch" id="ch-R4.02"><rect x="168" y="72" width="272" height="32" rx="9"></rect></g>
+        <text x="180" y="92" font-size="12"><tspan font-weight="700">R4.02</tspan> &middot; Schedulers &amp; repeatable</text>
+        <g class="ch" id="ch-R4.03"><rect x="168" y="108" width="272" height="32" rx="9"></rect></g>
+        <text x="180" y="128" font-size="12"><tspan font-weight="700">R4.03</tspan> &middot; Priority with composite scores</text>
+        <g class="ch" id="ch-R4.04"><rect x="168" y="144" width="272" height="32" rx="9"></rect></g>
+        <text x="180" y="164" font-size="12"><tspan font-weight="700">R4.04</tspan> &middot; Backoff &amp; retry</text>
+        <g class="ch" id="ch-R4.05"><rect x="168" y="180" width="272" height="32" rx="9"></rect></g>
+        <text x="180" y="200" font-size="12"><tspan font-weight="700">R4.05</tspan> &middot; Leaderboards</text>
+        <g class="ch" id="ch-R4.06"><rect x="168" y="216" width="272" height="32" rx="9"></rect></g>
+        <text x="180" y="236" font-size="12"><tspan font-weight="700">R4.06</tspan> &middot; Workshop</text>
+      </svg>
+
+      <div class="geo-readout" id="arcOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="arc">
+    <h2>The arc &mdash; one score reading at a time</h2>
+    <div class="prose">
+      <p>R3 built a queue that is correct under a crash: a job moves from
+        <code class="inl">emq:{queue}:wait</code> into <code class="inl">emq:{queue}:active</code> and on to
+        completion, recoverable rather than lost. R4 keeps that floor and adds two senses to it &mdash; <em>when</em>
+        a job runs, and <em>in what order</em> &mdash; from one structure, the sorted set, read two ways. The member is
+        always the job id; only the score changes meaning. The granular ladder takes that score apart one reading at a
+        time, and each module is grounded in one real EchoMQ surface.</p>
+      <p><strong>R4.01 &middot; The delayed queue</strong> scores a job by its fire-time and sweeps the due head by
+        score. EchoMQ scores the <code class="inl">:delayed</code> ZSET as
+        <code class="inl">(timestamp + delay) &times; 0x1000</code>, and <code class="inl">promoteDelayedJobs</code>
+        runs a <code class="inl">ZRANGEBYSCORE</code> of the due head followed by <code class="inl">ZREM</code> to the
+        wait list. The queue learns <em>when</em>.</p>
+      <p><strong>R4.02 &middot; Schedulers &amp; repeatable jobs</strong> registers recurring jobs by cron or interval.
+        EchoMQ keeps the <code class="inl">:repeat</code> ZSET, upserted with
+        <code class="inl">ZADD nextMillis customKey</code> behind a <code class="inl">ZSCORE</code> check, so a reboot
+        re-registers the schedule rather than duplicating it.</p>
+      <p><strong>R4.03 &middot; Priority with composite scores</strong> packs a tier and an arrival counter into one
+        number. <code class="inl">getPriorityScore</code> computes
+        <code class="inl">priority &times; 0x100000000 + (INCR pc) % 0x100000000</code> &mdash; the tier in the high 32
+        bits, a monotonic arrival counter in the low 32, so jobs in a tier stay FIFO. The queue learns <em>in what
+        order</em>.</p>
+      <p><strong>R4.04 &middot; Backoff &amp; retry</strong> reschedules a failed job with exponential backoff and
+        jitter. <code class="inl">EchoMQ.Backoff.calculate/4</code> owns the delay
+        (<code class="inl">base &times; 2^(n-1)</code>, then jitter), and <code class="inl">retryJob-11.lua</code>
+        re-adds the job onto the <code class="inl">:delayed</code> set with that delay.</p>
+      <p><strong>R4.05 &middot; Leaderboards</strong> turns the same ZSET machinery into real-time rankings. This module
+        grounds in Portal progress rankings rather than EchoMQ, using the same
+        <code class="inl">ZADD</code> / <code class="inl">ZRANK</code> / <code class="inl">ZREVRANGE</code> commands the
+        rest of the chapter teaches.</p>
+      <p><strong>R4.06 &middot; Workshop</strong> puts the whole chapter to work: scheduling Portal's notification and
+        digest jobs over the <code class="inl">:delayed</code> and <code class="inl">:repeat</code> sets on one real
+        surface.</p>
+    </div>
+    <dl class="deflist">
+      <dt>R4.01 &mdash; fire-time</dt><dd>The <code>:delayed</code> ZSET scored <code>(ts+delay)&times;0x1000</code>; <code>promoteDelayedJobs</code> sweeps the due head.</dd>
+      <dt>R4.02 &mdash; next-run</dt><dd>The <code>:repeat</code> ZSET upserted <code>ZADD nextMillis customKey</code> behind <code>ZSCORE</code>.</dd>
+      <dt>R4.03 &mdash; priority</dt><dd><code>getPriorityScore</code>: <code>priority&times;0x100000000 + pc</code>, tier high, arrival low.</dd>
+      <dt>R4.04 &mdash; backoff</dt><dd><code>EchoMQ.Backoff.calculate/4</code> for the delay; <code>retryJob-11.lua</code> reschedules onto <code>:delayed</code>.</dd>
+      <dt>R4.05 &mdash; rankings</dt><dd>Portal progress rankings on the same <code>ZADD</code>/<code>ZRANK</code>/<code>ZREVRANGE</code> commands.</dd>
+      <dt>R4.06 &mdash; the workshop</dt><dd>Portal's notification and digest jobs over <code>:delayed</code> and <code>:repeat</code>.</dd>
+    </dl>
+    <p class="take">Read the arc as one sorted set gaining one reading at a time: a fire-time, a recurring registry,
+      a composite priority, a backoff reschedule, a ranking. The structure is the constant; the score is the chapter.</p>
+  </section>
+
+  <section id="door-map">
+    <h2>The door beyond &mdash; the living EchoMQ course</h2>
+    <div class="prose">
+      <p>R4 teaches the transferable sorted-set patterns. The engine that runs them &mdash; the scheduler subsystem
+        &mdash; is the subject of the dedicated <strong>EchoMQ course</strong> at <a href="/echomq">/echomq</a>. It is
+        a <em>living, agile-spec course</em>, built in two movements. Movement I (E1&ndash;E2) teaches the as-built
+        core library: the immutable wire protocol and data layer, then the lifecycle, components, and three runtimes.
+        Movement II (E3&ndash;E8) is a living spine that tracks the EMQ extension ladder &mdash;
+        <code class="inl">emq.1</code> through <code class="inl">emq.6</code> &mdash; rung by rung.</p>
+      <p>The patterns prove each score reading with one real excerpt and stop there. The scheduler subsystem owns the
+        depth beyond the patterns: cron schedules across a timezone and a daylight-saving boundary; the busy-slot guard
+        that holds a recurring job until its previous run finishes; the migration of legacy repeat keys onto the
+        current registry; and parent-child flow scheduling, where a delayed or prioritized job gates a child flow.
+        Pick a depth topic on the right to see which EchoMQ chapter owns it and which R4 pattern it extends.</p>
+      <pre class="code"><span class="cmt"># R4's EchoMQ doors (the content-grounded targets, per r4.progress.md)</span>
+  R4.02 schedulers     <span class="op">&rarr;</span> <span class="res">E6</span>   <span class="cmt"># timezone &amp; DST, the busy-slot guard, legacy migration</span>
+  R4.03 priority       <span class="op">&rarr;</span> <span class="res">E4</span>   <span class="cmt"># intra-group priority &amp; parent-child flow scheduling</span>
+  the scheduler depth  <span class="op">&rarr;</span> <span class="res">E6 / E4</span><span class="cmt"> # lifecycle controls &amp; groups own the engine</span></pre>
+      <p>The course-level map pairs R4/R5 with E6/E7, but E7 is EchoCache, the near-cache &mdash; unrelated to time,
+        delay, or priority. The honest, content-grounded doors are <strong>E6 &middot; Lifecycle controls</strong> (the
+        delay / promote / retry / TTL scheduler depth) and <strong>E4 &middot; Groups</strong> (intra-group priority
+        and the control plane). Pick a topic on the right to read what waits behind each door.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="doorTitle">
+      <h4 id="doorTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The scheduler-depth door map &middot; each topic, the EchoMQ chapter that owns it, the R4 pattern it extends</h4>
+      <div class="controls">
+        <div class="solid-select" id="doorSel" role="group" aria-label="Which EchoMQ scheduler-depth topic to open">
+          <button type="button" data-ch="tz" data-c="redis" class="active" aria-pressed="true">timezone &amp; DST</button>
+          <button type="button" data-ch="busy" data-c="redis" aria-pressed="false">the busy-slot guard</button>
+          <button type="button" data-ch="legacy" data-c="redis" aria-pressed="false">legacy-repeatable migration</button>
+          <button type="button" data-ch="flow" data-c="redis" aria-pressed="false">parent-child flow scheduling</button>
+        </div>
+      </div>
+      <div class="geo-readout" id="doorOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="note">A note on honesty. The EchoMQ course is designed &mdash; its spec system and TOC are authored
+      &mdash; and the EMQ ladder is drafted (the <code class="inl">emq.1</code>&ndash;<code class="inl">emq.6</code>
+      specs exist). The served <a href="/echomq">/echomq</a> pages ship as the build lands. It is the living companion
+      course, not a course produced all at once.</div>
+  </section>
+
+  <section id="door">
+    <h2>A door, not a depth</h2>
+    <div class="prose">
+      <p>This is where the patterns hand off. Redis Patterns Applied has shown the sorted-set techniques &mdash; the
+        fire-time score, the composite priority, the recurring registry, the backoff reschedule &mdash; and grounded
+        each in how EchoMQ-in-Portal really uses it, one excerpt at a time. What it has deliberately not done is teach
+        the scheduler subsystem in full: cron arithmetic across timezones and DST, the busy-slot guard, the
+        legacy-repeatable migration, and parent-child flow scheduling. That depth is a course of its own.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the patterns</span>
+        <p>R4.01&ndash;R4.06 teach the sorted-set techniques applied. Each pattern lands twice &mdash; the technique
+          and its trade-offs, then the one real EchoMQ excerpt that proves it. A catalog of judgement, grounded.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the system</span>
+        <p>The living EchoMQ course teaches the scheduler subsystem in depth and tracks the EMQ build &mdash;
+          E1&ndash;E8 standing on <code class="inl">emq.1</code>&ndash;<code class="inl">emq.6</code>, the spec, and the
+          as-built code together.</p>
+      </div>
+    </div>
+
+    <p class="take">The patterns are the vocabulary; the EchoMQ scheduler is the engine. Learn the score readings here,
+      then go run them there.</p>
+
+    <div class="door">
+      <p class="lbl">The forward door</p>
+      <h3>Start building with the EchoMQ course</h3>
+      <p>The polyglot scheduler taught end to end and tracked as it is built. R4 opens onto two of its chapters:
+        lifecycle controls, which own the delay, promote, retry, and TTL depth, and groups, which own intra-group
+        priority and the control plane. Begin at the course home, or step straight to R4's doors.</p>
+      <div class="doorlinks">
+        <a href="/echomq">/echomq &middot; the EchoMQ course</a>
+        <a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a>
+        <a href="/echomq/groups">E4 &middot; Groups</a>
+      </div>
+    </div>
+
+    <p class="note">Return to the chapter <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp;
+      Priority</a> to review the time-and-priority family in one place, or carry on into the pattern chapters that
+      follow.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the structure this chapter reads two ways is specified, the command that sweeps the delayed set, the
+        protocol the whole arc builds on, the machine-readable map both courses publish, and the dives this
+        orientation closes.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; the one structure this chapter reads two ways: a clock scored by fire-time and a priority ladder scored by a composite number.</li>
+          <li><a href="https://redis.io/commands/zrangebyscore/">Redis &mdash; <em>ZRANGEBYSCORE</em></a> &mdash; the command that sweeps the due head of the delayed set, the engine of R4.01's promote step.</li>
+          <li><a href="https://bullmq.io/">BullMQ</a> &mdash; the queue protocol whose scheduler EchoMQ ports across three runtimes, the source of the <code>:delayed</code> / <code>:prioritized</code> / <code>:repeat</code> score conventions.</li>
+          <li><a href="https://llmstxt.org/">llms.txt &mdash; <em>The /llms.txt convention</em></a> &mdash; the machine-readable map format both this course and the EchoMQ course publish for agents.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a> &mdash; the chapter this dive closes.</li>
+          <li><a href="/redis-patterns/time-delay-priority/the-sorted-set-as-a-clock">R4 &middot; The sorted set as a clock</a> &mdash; dive 1: one ZSET read two ways, a timer wheel and a priority ladder.</li>
+          <li><a href="/redis-patterns/time-delay-priority/score-as-meaning">R4 &middot; Score as meaning</a> &mdash; dive 2: the score is the whole semantic axis &mdash; fire-time, composite priority, next-run-millis.</li>
+          <li><a href="/redis-patterns/queues/the-road-ahead">R3 &middot; The road ahead</a> &mdash; the parallel orientation dive that surveys the full course arc and the first EchoMQ doors.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority/score-as-meaning"><span aria-hidden="true">&larr;</span>&nbsp; R4 &middot; Score as meaning</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This chapter</h4>
+        <a href="/redis-patterns/time-delay-priority/the-sorted-set-as-a-clock">R4 &middot; The sorted set as a clock</a>
+        <a href="/redis-patterns/time-delay-priority/score-as-meaning">R4 &middot; Score as meaning</a>
+        <a href="/redis-patterns/time-delay-priority/the-road-ahead">R4 &middot; The road ahead</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/echomq">The EchoMQ course</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlhk19x</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the R4 arc — one sorted set, one score reading per module (pure over a fixed dataset from the chapter spec / r4.progress.md) ---------- */
+  // Dataset: the R4.01→R4.06 ladder. Each module takes one reading of the ZSET score and names the real EchoMQ
+  // surface it is grounded in. Source: docs/redis-patterns/specs/time-delay-priority + r4.progress.md verified facts.
+  var ARC = {
+    'R4.01': { name: 'The delayed queue',             adds: 'score a job by fire-time; sweep the due head by score', ground: ':delayed ZSET ((ts+delay)×0x1000) + promoteDelayedJobs (ZRANGEBYSCORE then ZREM)' },
+    'R4.02': { name: 'Schedulers & repeatable jobs',  adds: 'recurring jobs via cron or interval',                   ground: ':repeat ZSET, upsert (ZADD nextMillis customKey behind ZSCORE)' },
+    'R4.03': { name: 'Priority with composite scores',adds: 'pack a priority tier and an arrival counter into one score', ground: 'getPriorityScore: priority×0x100000000 + (INCR pc) % 0x100000000' },
+    'R4.04': { name: 'Backoff & retry',               adds: 'exponential backoff with jitter, rescheduled onto the delayed set', ground: 'EchoMQ.Backoff.calculate/4 (base×2^(n-1)); retryJob-11.lua reschedule' },
+    'R4.05': { name: 'Leaderboards',                  adds: 'real-time rankings on the same ZSET machinery',         ground: 'Portal progress rankings (ZADD / ZRANK / ZREVRANGE)' },
+    'R4.06': { name: 'Workshop',                      adds: "schedule Portal's notification and digest jobs",        ground: 'the :delayed / :repeat sets over Portal jobs' }
+  };
+  var ARC_ORDER = ['R4.01', 'R4.02', 'R4.03', 'R4.04', 'R4.05', 'R4.06'];
+  // pure: module key -> readout text
+  function describeArc(key) {
+    var c = ARC[key];
+    return key + ' · ' + c.name + ' — adds: ' + c.adds + '. grounding: ' + c.ground + '.';
+  }
+  function setArc(key) {
+    ARC_ORDER.forEach(function (k) {
+      var ch = document.getElementById('ch-' + k);
+      var fl = document.getElementById('fl-' + k);
+      var on = k === key;
+      if (ch) ch.classList.toggle('on', on);
+      if (fl) fl.classList.toggle('on', on);
+    });
+    var out = document.getElementById('arcOut');
+    if (out) out.textContent = describeArc(key);
+  }
+  document.querySelectorAll('#arcSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-ch');
+      document.querySelectorAll('#arcSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setArc(key);
+    });
+  });
+  setArc('R4.01'); // initial render — correct without interaction
+
+  /* ---------- content: the scheduler-depth → EchoMQ door map (pure over a fixed dataset from r4.progress.md's honest door choice) ---------- */
+  // Dataset: each EchoMQ scheduler-depth topic this course doors to (does NOT teach), the owning E-chapter, and the
+  // R4 pattern it extends. Source: docs/redis-patterns/specs/time-delay-priority/r4.progress.md "The EchoMQ door".
+  var DOORS = {
+    'tz':     { topic: 'scheduler timezone & DST',          owner: 'E6 · Lifecycle controls', extends: 'R4.02 schedulers', teaches: 'cron schedules computed in a named timezone across a daylight-saving boundary, so a recurring job fires at the right local time' },
+    'busy':   { topic: 'the busy-slot guard',               owner: 'E6 · Lifecycle controls', extends: 'R4.02 schedulers', teaches: "a recurring job whose previous run has not finished is not double-run; the scheduler holds the next fire until the slot is free" },
+    'legacy': { topic: 'legacy-repeatable migration',       owner: 'E6 · Lifecycle controls', extends: 'R4.02 schedulers', teaches: 'moving older repeat keys onto the current :repeat registry without losing or duplicating a schedule' },
+    'flow':   { topic: 'parent-child flow scheduling',      owner: 'E4 · Groups',             extends: 'R4.03 priority',   teaches: 'a delayed or prioritized job that gates a child flow, so the child fires only after the parent is due and complete' }
+  };
+  var DOOR_ORDER = ['tz', 'busy', 'legacy', 'flow'];
+  // pure: topic key -> readout text
+  function describeDoor(key) {
+    var d = DOORS[key];
+    return d.topic + ' → owned by ' + d.owner + ', extends ' + d.extends + '. Behind the door: ' + d.teaches + '.';
+  }
+  function setDoor(key) {
+    var out = document.getElementById('doorOut');
+    if (out) out.textContent = describeDoor(key);
+  }
+  document.querySelectorAll('#doorSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-ch');
+      document.querySelectorAll('#doorSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setDoor(key);
+    });
+  });
+  setDoor('tz'); // initial render — the timezone topic, correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

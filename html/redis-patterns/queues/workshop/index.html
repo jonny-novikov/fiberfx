@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R3.06 · Workshop — A reliable enrollment queue — Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R3.06 capstone workshop: assemble the five R3 reliable-queue patterns into one worked design — a reliable Portal enrollment-job queue. The in-flight move (moveToActive-11), at-least-once delivery, stalled recovery (moveStalledJobsToWait-8), the atomic finish (moveToFinished-14), and the blocking pickup on emq:{queue}:marker — laid over an enroll job whose consumer, Portal.enroll/2, is already idempotent via Portal.Engine.Core.authorize/2 returning {:error, :already_enrolled}. At-least-once delivery over an idempotent effect is exactly-once-in-effect. An applied design: Portal does not run on EchoMQ today.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- queue / job diagram ---- */
+.atom .box rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.atom .rds rect{fill:rgba(214,88,79,.10);stroke:#d6584f}
+.atom .key rect{fill:#161d38;stroke:#2a3252}
+.atom text{font-family:var(--sans);fill:#d7cfb9}
+.atom .lbl{font-family:var(--mono);fill:#a39c89;font-size:11px}
+.atom .flow{stroke:#2a3252;stroke-width:1.4;fill:none}
+.atom .win rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
+.atom .lose rect{fill:#10162b;stroke:#2a3252;opacity:.55}
+.atom .reflabel{font-family:var(--mono);fill:#a39c89;font-size:11px}
+/* ---- list lanes (wait / active / completed) ---- */
+.atom .lane rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.atom .lane.here rect{fill:rgba(212,168,90,.16);stroke:#d4a85a}
+.atom .lane.done rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.atom .lane.stuck rect{fill:rgba(214,88,79,.12);stroke:#d6584f}
+.atom .lanelbl{font-family:var(--mono);fill:#a39c89;font-size:11px}
+.atom .jobchip{fill:#0a0e1a;stroke:#2a3252;transition:opacity .2s ease}
+.atom .jobchip.on{fill:rgba(212,168,90,.22);stroke:#d4a85a}
+.atom .jobchip.ok{fill:rgba(123,163,135,.22);stroke:#7ba387}
+.atom .jobchip.bad{fill:rgba(214,88,79,.18);stroke:#d6584f}
+.atom .joblbl{font-family:var(--mono);fill:#f0cd7f;font-size:12px;font-weight:700}
+.atom .retbox rect{fill:#0a0e1a;stroke:#2a3252}
+.atom .retbox.ok rect{stroke:#7ba387}
+.atom .retbox.no rect{stroke:#d6584f}
+.atom .retval{font-family:var(--mono);font-size:13px;font-weight:700}
+.atom .retval.ok{fill:#a7c9b1}
+.atom .retval.no{fill:#f2948c}
+/* ---- count cells (the idempotency proof) ---- */
+.atom .cellbox rect{fill:#10162b;stroke:#2a3252}
+.atom .cellbox.changed rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
+.atom .cellbox.blocked rect{fill:rgba(214,88,79,.10);stroke:#d6584f}
+.atom .cellval{font-family:var(--mono);fill:#f0cd7f;font-size:18px;font-weight:700}
+.atom .celltag{font-family:var(--mono);fill:#a39c89;font-size:10.5px}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- when-to-use table ---- */
+.tbl{width:100%;border-collapse:collapse;margin:1.2rem 0 0;font-family:var(--sans);font-size:.9rem}
+.tbl th,.tbl td{text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);font-weight:700}
+.tbl td{color:var(--cream-soft)}
+.tbl td code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+.tbl tr:last-child td{border-bottom:0}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--redis-bright);border-color:var(--redis)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+
+/* ---- door ---- */
+.door{margin:1.7rem 0 0;border:1px solid var(--redis);border-radius:16px;
+  background:linear-gradient(180deg,rgba(214,88,79,.10),rgba(10,14,26,.3));
+  padding:clamp(1rem,2.4vw,1.5rem)}
+.door .dl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--redis-bright);margin:0 0 .6rem}
+.door p{margin:0;font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure)}
+.door a{color:var(--redis-bright);font-weight:600}
+.door a:hover{color:var(--cream)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--redis-bright);
+  border:1px solid var(--redis);border-radius:999px;padding:.16rem .55rem}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the workshop</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><span class="rcur">workshop</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/redis-patterns">Redis Patterns</a>
+      <span class="sep">/</span>
+      <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+      <span class="sep">/</span>
+      <span class="here">Workshop</span>
+    </div>
+    <p class="eyebrow">R3 &middot; Reliable Queues</p>
+    <h1>A reliable enrollment <span class="ex">queue</span></h1>
+    <p class="lede">Assemble the five reliable-queue patterns into one worked job &mdash; an enrollment that runs
+      at-least-once and, because the consumer is idempotent, lands exactly once.</p>
+    <p class="kicker">The chapter taught five patterns: the processing list, at-least-once delivery, stalled recovery,
+      the atomic state machine, and the blocking pickup. This capstone is the one worked design that needs all five at
+      once &mdash; a reliable queue for a single, concrete job: <strong>enrolling a learner in a Portal course</strong>.
+      An enroll request is enqueued, a worker processes it, the job is completed once. A worker crash never drops the
+      enrollment and never leaves a corrupt half-state. The queue is at-least-once, so the job can run twice &mdash; and
+      that is safe because Portal&rsquo;s <code class="inl">enroll/2</code> is already idempotent. This is an
+      <em>applied design</em>: Portal does not run on EchoMQ today.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#scenario">The scenario</a>
+      <a href="#path">The assembled path</a>
+      <a href="#run">Run the job</a>
+      <a href="#synthesis">Exactly-once-in-effect</a>
+      <a href="#echomq">In EchoMQ</a>
+      <a href="#refs">References</a>
+    </div>
+
+    <figure class="fig atom" aria-labelledby="jobTitle">
+      <h4 id="jobTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The enroll job &middot; step it through the reliable loop, with or without a mid-process crash, and read the enroll count</h4>
+      <div class="controls">
+        <div class="solid-select" id="jobSel" role="group" aria-label="Drive the enroll job through the reliable queue">
+          <button type="button" data-act="step" data-c="sage" class="active" aria-pressed="true">step the job</button>
+          <button type="button" data-act="crash" data-c="redis" aria-pressed="false">crash mid-process</button>
+          <button type="button" data-act="reset" data-c="blue" aria-pressed="false">reset</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 248" role="img" aria-label="The enroll job moving through a reliable queue. Three list lanes hold the job: wait, active under a lock, and completed. Stepping the job runs the loop: a marker ZADD wakes a blocked worker, moveToActive runs RPOPLPUSH from wait to active and takes the lock, the worker runs Portal.enroll which records a LearnerEnrolled event, and moveToFinished moves the job from active to completed. The crash button injects a worker death after the enroll but before the finish: the lock expires, moveStalledJobsToWait returns the job to wait, and a second worker re-runs the enroll, which returns already-enrolled because the effect is idempotent. The enroll count stays one even when the job runs twice.">
+        <text class="reflabel" x="30" y="16" id="jobStageLbl">stage: enqueued &mdash; the job is in wait, a worker is blocked on the marker</text>
+
+        <g class="lane here" id="laneWait"><rect x="14" y="28" width="138" height="58" rx="11"></rect></g>
+        <text class="lanelbl" x="26" y="46">emq:{queue}:wait</text>
+        <g class="jobchip on" id="chipWait"><rect x="26" y="54" width="92" height="24" rx="7"></rect></g>
+        <text class="joblbl" x="40" y="70" id="lblWait">enroll j_1</text>
+
+        <g class="lane" id="laneActive"><rect x="161" y="28" width="138" height="58" rx="11"></rect></g>
+        <text class="lanelbl" x="173" y="46">emq:{queue}:active &middot; lock</text>
+        <g class="jobchip" id="chipActive"><rect x="173" y="54" width="92" height="24" rx="7"></rect></g>
+        <text class="joblbl" x="187" y="70" id="lblActive" style="opacity:0">enroll j_1</text>
+
+        <g class="lane" id="laneDone"><rect x="308" y="28" width="138" height="58" rx="11"></rect></g>
+        <text class="lanelbl" x="320" y="46">emq:{queue}:completed</text>
+        <g class="jobchip" id="chipDone"><rect x="320" y="54" width="92" height="24" rx="7"></rect></g>
+        <text class="joblbl" x="334" y="70" id="lblDone" style="opacity:0">enroll j_1</text>
+
+        <line class="flow" x1="152" y1="57" x2="161" y2="57"></line>
+        <line class="flow" x1="299" y1="57" x2="308" y2="57"></line>
+
+        <text class="reflabel" x="30" y="116" id="jobActLbl">action: ZADD emq:{queue}:marker 0 "0" &mdash; wake the worker</text>
+        <line class="flow" x1="14" y1="128" x2="446" y2="128"></line>
+
+        <g class="retbox ok" id="jobRetBox"><rect x="14" y="142" width="290" height="42" rx="10"></rect></g>
+        <text class="retval ok" id="jobRetVal" x="30" y="168" style="font-size:13px">queued &mdash; press step to pick it up</text>
+
+        <g class="cellbox changed" id="cCount"><rect x="316" y="142" width="130" height="42" rx="10"></rect></g>
+        <text class="celltag" x="330" y="160">enrolled (effect)</text>
+        <text class="cellval" id="vCount" x="330" y="178">0</text>
+
+        <text class="reflabel" x="30" y="208" id="jobRunsLbl">job runs so far: 0 &mdash; the effect count is what matters, not the delivery count</text>
+        <text class="reflabel" x="30" y="232" id="jobEffLbl">effect: nothing yet &mdash; the loop has not picked up the job</text>
+      </svg>
+      <div class="geo-readout" id="jobOut" aria-live="polite">Start: the enroll job j_1 is in wait, a worker is blocked on the marker. Press &ldquo;step the job&rdquo; to run the reliable loop, or &ldquo;crash mid-process&rdquo; to inject a worker death.</div>
+    </figure>
+    <p class="take">One job, five guarantees, one count. The enroll runs at-least-once &mdash; possibly twice after a
+      crash &mdash; and the enrolled count stays one, because the effect is idempotent.</p>
+  </section>
+
+  <section id="scenario">
+    <h2>The scenario &mdash; enrollment as a job</h2>
+    <div class="prose">
+      <p>Portal enrolls a learner in a course. Frame that enrollment as a <em>job</em>: an enrollment request is
+        enqueued, a worker processes it, and the job is completed once. &ldquo;Reliable&rdquo; means two things at the
+        same time. A worker crash never drops an enrollment &mdash; the learner is enrolled, eventually, even if the
+        first worker dies mid-process. And a worker crash never enrolls a learner into a corrupt half-state &mdash; no
+        torn write, and no double-enrollment when the job runs twice.</p>
+      <p>Be plain about the boundary. Portal&rsquo;s enroll is <strong>synchronous today</strong> and does not run
+        through EchoMQ. EchoMQ is the candidate for Portal&rsquo;s reserved <code class="inl">F7&ndash;F9</code>
+        multi-runtime layer. This workshop is the <em>applied design</em>: the reliable-queue path R3 built, laid over
+        an enrollment job, so each pattern&rsquo;s guarantee maps to a real failure it prevents. The Redis keys and Lua
+        scripts are EchoMQ&rsquo;s real ones; the wiring of enroll-as-a-queue-job is the design this page assembles, not
+        Portal&rsquo;s current architecture.</p>
+    </div>
+    <p class="take">An enrollment is a job: enqueued, processed by a worker, completed once. Reliable means lose no
+      enrollment and corrupt no state &mdash; even across a worker crash.</p>
+  </section>
+
+  <section id="path">
+    <h2>The assembled path &mdash; R3.01 through R3.05, in order</h2>
+    <div class="prose">
+      <p>Five patterns assemble into one reliable loop. Each prevents a different failure of the naive form &mdash; pop
+        a job, process it, done &mdash; and they build in order.</p>
+    </div>
+    <table class="tbl">
+      <thead>
+        <tr><th>Pattern</th><th>The move over the enroll job</th><th>The failure it prevents</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><a href="/redis-patterns/queues/processing-list">R3.01</a> &middot; processing list</td><td><code>moveToActive-11</code>: <code>RPOPLPUSH wait active</code> under a lock</td><td>a lost job &mdash; a crash leaves it recoverable in <code>active</code></td></tr>
+        <tr><td><a href="/redis-patterns/queues/at-least-once">R3.02</a> &middot; at-least-once</td><td>finish-then-crash redelivers; delivery is at-least-once</td><td>a dropped enrollment &mdash; the job runs again, not zero times</td></tr>
+        <tr><td><a href="/redis-patterns/queues/stalled-recovery">R3.03</a> &middot; stalled recovery</td><td><code>moveStalledJobsToWait-8</code>: expired lock &rarr; back to <code>wait</code></td><td>a stuck job &mdash; a dead worker&rsquo;s job returns for another</td></tr>
+        <tr><td><a href="/redis-patterns/queues/atomic-state-machine">R3.04</a> &middot; atomic finish</td><td><code>moveToFinished-14</code>: one <code>EVALSHA</code>, lock + result + move + next</td><td>a corrupt half-state &mdash; no torn finish</td></tr>
+        <tr><td><a href="/redis-patterns/queues/blocking-vs-polling">R3.05</a> &middot; blocking pickup</td><td><code>BZPOPMIN</code> on <code>emq:{queue}:marker</code>; a job add <code>ZADD</code>s it</td><td>a busy-poll &mdash; the worker sleeps until woken</td></tr>
+      </tbody>
+    </table>
+    <div class="prose">
+      <p>The processing list is the foundation: the enroll job moves from <code class="inl">wait</code> to
+        <code class="inl">active</code> in one atomic step, so it is in exactly one list at every instant and a crash
+        leaves it recoverable. That in-flight move is what makes redelivery <em>possible</em> &mdash; which is the point
+        &mdash; and it is also what makes delivery <strong>at-least-once</strong>: a worker that enrolls the learner,
+        then dies before it acknowledges, leaves the job in <code class="inl">active</code> to be redelivered. The
+        stalled sweep reclaims that job; the atomic finish keeps the completion indivisible; the blocking pickup keeps
+        the worker idle-cheap between jobs. Assembled, they are a queue that loses no job.</p>
+    </div>
+    <pre class="code"><span class="cmt"># The assembled path, over a Portal enroll job (applied design — Portal does not run on EchoMQ today)</span>
+enqueue        <span class="op">→</span> <span class="rdx">ZADD</span> emq:{queue}:marker 0 <span class="str">"0"</span>          <span class="cmt"># R3.05 — wake a blocked worker</span>
+worker         <span class="op">→</span> <span class="rdx">BZPOPMIN</span> emq:{queue}:marker            <span class="cmt"># R3.05 — block, no polling</span>
+pick up        <span class="op">→</span> moveToActive-11  <span class="rdx">RPOPLPUSH</span> wait active   <span class="cmt"># R3.01 — in-flight, take the lock</span>
+process        <span class="op">→</span> Portal.<span class="fn gold">enroll</span>/2  <span class="op">→</span> %LearnerEnrolled{}     <span class="cmt"># the effect</span>
+                 on redelivery   <span class="op">→</span> {<span class="op">:error</span>, <span class="op">:already_enrolled</span>}  <span class="cmt"># idempotent — a no-op</span>
+finish         <span class="op">→</span> moveToFinished-14 (one <span class="rdx">EVALSHA</span>)        <span class="cmt"># R3.04 — drop lock, record, active→completed, next</span>
+crash mid-job? <span class="op">→</span> lock expires <span class="op">→</span> moveStalledJobsToWait-8  <span class="cmt"># R3.02 + R3.03 — back to wait, retry</span></pre>
+    <p class="take">Each pattern guards one failure: a lost job, a dropped enrollment, a stuck job, a torn finish, a
+      busy-poll. Assembled in order, they are a queue that never loses an enrollment.</p>
+  </section>
+
+  <section id="run">
+    <h2>Run the job &mdash; and the crash</h2>
+    <div class="prose">
+      <p>The interactive in the hero steps a single enroll job through the assembled loop over a fixed start state. Each
+        press of <strong>step the job</strong> advances one stage of the reliable loop &mdash; wake, pick up under the
+        lock, enroll, finish &mdash; and the readout shows the job&rsquo;s list location and the enrolled count at each
+        step. The function behind it is pure: it returns a new state and stores nothing.</p>
+      <p>Press <strong>crash mid-process</strong> at the enroll stage to inject the failure the chapter was built to
+        survive. The worker dies after recording the enrollment but before the atomic finish. The job is stranded in
+        <code class="inl">active</code>; its lock expires; the stalled sweep returns it to <code class="inl">wait</code>;
+        a second worker picks it up and runs the enroll again. Because the enroll is idempotent, the second run returns
+        <code class="inl">{:error, :already_enrolled}</code> and records nothing &mdash; and the readout shows
+        <strong>enrolled: 1</strong> even though the job ran twice.</p>
+    </div>
+    <table class="tbl">
+      <thead>
+        <tr><th>Action</th><th>What the loop does</th><th>Enrolled count</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>step the job</code></td><td>advance one stage: wake &rarr; pick up &rarr; enroll &rarr; finish &rarr; completed</td><td>0 &rarr; 1 on the enroll, then stable</td></tr>
+        <tr><td><code>crash mid-process</code></td><td>worker dies after the enroll, before the finish; lock expires; sweep returns the job to wait; a second worker re-runs it</td><td>stays <code>1</code> &mdash; the redelivery is a no-op</td></tr>
+        <tr><td><code>reset</code></td><td>restore the start state &mdash; the job back in wait, the count back to zero</td><td>0</td></tr>
+      </tbody>
+    </table>
+    <div class="prose">
+      <p>Two behaviours are worth watching directly. <strong>The crash loses nothing</strong> &mdash; the job that died
+        in <code class="inl">active</code> comes back through the sweep and finishes on the second worker.
+        <strong>The redelivery corrupts nothing</strong> &mdash; the re-run hits the idempotency guard, so the enrolled
+        count is one, not two. Both are the reliability and the idempotency the five R3 patterns were building toward,
+        in one loop.</p>
+    </div>
+    <p class="take">Step the job and it completes once; crash it mid-process and it still completes once. At-least-once
+      delivery over an idempotent effect is exactly-once-in-effect &mdash; visible in the count.</p>
+  </section>
+
+  <section id="synthesis">
+    <h2>The synthesis &mdash; at-least-once + idempotent enroll</h2>
+    <div class="prose">
+      <p>The assembled queue guarantees at-least-once delivery, so the enroll job can run twice. That is safe, because
+        <strong>Portal&rsquo;s enroll is already idempotent</strong>. <code class="inl">Portal.Engine.Core.authorize/2</code>
+        checks the folded enrollment state before any event is recorded:</p>
+    </div>
+    <pre class="code"><span class="cmt"># Portal.Engine.Core.authorize/2 — the real guard (echo/apps/portal/lib/portal/engine/core.ex)</span>
+<span class="op">if</span> MapSet.<span class="fn sage">member?</span>(enrolled, course_id), <span class="op">do:</span> {<span class="op">:error</span>, <span class="op">:already_enrolled</span>}, <span class="op">else:</span> <span class="op">:ok</span></pre>
+    <div class="prose">
+      <p>A first enroll appends <code class="inl">%Portal.Enrollment.Events.LearnerEnrolled{user_id, course_id, at}</code>
+        and the learner is enrolled. A redelivered enroll of the same learner into the same course hits the guard,
+        returns <code class="inl">{:error, :already_enrolled}</code> &mdash; a real, closed
+        <code class="inl">Portal.Error</code> code &mdash; and records nothing. Enrolling twice equals enrolled once.</p>
+      <p>The interactive below makes the proof concrete. Run the same enroll job any number of times; the enrolled count
+        stays at one. The first run records the event; every later run returns <code class="inl">{:error,
+        :already_enrolled}</code> before any write. At-least-once delivery over an idempotent effect is
+        <strong>exactly-once-in-effect</strong>.</p>
+    </div>
+
+    <figure class="fig atom" aria-labelledby="idemTitle">
+      <h4 id="idemTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The idempotency proof &middot; run the same enroll job N times and read the enrolled count</h4>
+      <div class="controls">
+        <div class="solid-select" id="idemSel" role="group" aria-label="Run the same enroll job repeatedly">
+          <button type="button" data-act="run" data-c="sage" class="active" aria-pressed="true">run the enroll job</button>
+          <button type="button" data-act="reset" data-c="blue" aria-pressed="false">reset</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 168" role="img" aria-label="An idempotency proof. The same enroll job is run repeatedly. A deliveries cell counts how many times the job ran; an enrolled cell counts the recorded effect. The first run records one enrollment and returns enrolled. Every later run returns already-enrolled and records nothing, so the deliveries count climbs while the enrolled count stays exactly one. At-least-once delivery over an idempotent effect is exactly-once-in-effect.">
+        <text class="reflabel" x="30" y="16">Portal.enroll/2 over the same learner and course — the effect runs once</text>
+
+        <g class="cellbox" id="cDeliv"><rect x="14" y="30" width="210" height="58" rx="11"></rect></g>
+        <text class="celltag" x="28" y="50">deliveries (at-least-once)</text>
+        <text class="cellval" id="vDeliv" x="28" y="78">0</text>
+
+        <g class="cellbox changed" id="cEnrolled"><rect x="236" y="30" width="210" height="58" rx="11"></rect></g>
+        <text class="celltag" x="250" y="50">enrolled (effect)</text>
+        <text class="cellval" id="vEnrolled" x="250" y="78">0</text>
+
+        <line class="flow" x1="14" y1="104" x2="446" y2="104"></line>
+        <g class="retbox ok" id="idemRetBox"><rect x="14" y="116" width="432" height="38" rx="10"></rect></g>
+        <text class="retval ok" id="idemRetVal" x="30" y="140" style="font-size:13px">press run — the first delivery records the enrollment</text>
+      </svg>
+      <div class="geo-readout" id="idemOut" aria-live="polite">Start: zero deliveries, zero enrolled. Press &ldquo;run the enroll job&rdquo; repeatedly &mdash; deliveries climb, but the enrolled count stays one after the first run.</div>
+    </figure>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the chapter, assembled</span>
+        <p>A reliable queue &mdash; the in-flight move (R3.01), at-least-once delivery (R3.02), stalled recovery (R3.03),
+          the atomic finish (R3.04), the blocking pickup (R3.05) &mdash; loses no job, but delivers each one or more
+          times.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the Portal application</span>
+        <p>The consumer is <code class="inl">Portal.enroll/2</code>, already idempotent via
+          <code class="inl">Portal.Engine.Core.authorize/2</code> returning <code class="inl">{:error,
+          :already_enrolled}</code> &mdash; so a redelivered enroll is a no-op, and the assembled queue is
+          exactly-once-in-effect.</p>
+      </div>
+    </div>
+    <p class="take">A reliable queue plus an idempotent consumer is the whole reliable design: lose no work, corrupt no
+      state. Exactly-once delivery is a lie; exactly-once-in-effect is the achievable truth.</p>
+  </section>
+
+  <section id="echomq">
+    <h2>Grounded in EchoMQ&rsquo;s iconic Elixir move and Portal&rsquo;s real enroll</h2>
+    <div class="prose">
+      <p>Every Redis primitive in the assembled path is real EchoMQ code in the iconic Elixir app
+        <code class="inl">echo/apps/echomq</code> &mdash; the same symbols R3.01&ndash;R3.05 each cite.
+        <code class="inl">EchoMQ.Scripts.move_to_active/4</code> runs <code class="inl">moveToActive-11.lua</code>;
+        <code class="inl">EchoMQ.Scripts.move_stalled_jobs_to_wait/4</code> runs
+        <code class="inl">moveStalledJobsToWait-8.lua</code>; <code class="inl">EchoMQ.Scripts.move_to_finished/7</code>
+        runs <code class="inl">moveToFinished-14.lua</code> (fourteen keys, <code class="inl">fetch_next</code> default
+        one). The worker blocks on <code class="inl">EchoMQ.Keys.marker/1</code> &mdash;
+        <code class="inl">emq:{queue}:marker</code>, a ZSET &mdash; via <code class="inl">BZPOPMIN</code>
+        (<code class="inl">EchoMQ.Worker.wait_for_job/2</code>), and a job add wakes it with
+        <code class="inl">ZADD marker 0 "0"</code>.</p>
+      <p>EchoMQ&rsquo;s governing rule is <em>&ldquo;the Lua scripts ARE the protocol&rdquo;</em>: the same scripts are
+        meant to run identically across the Elixir, Go, and Node.js runtimes. The honest status is that the three are
+        not at parity &mdash; the iconic Elixir runtime is the most complete &mdash; so a guarantee holds wherever the
+        script runs as one atomic step, strongest in Elixir.</p>
+    </div>
+    <table class="tbl">
+      <thead>
+        <tr><th>Guarantee</th><th>The EchoMQ symbol (Elixir, verified)</th><th>The key</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>in-flight move</td><td><code>EchoMQ.Scripts.move_to_active/4</code> &rarr; <code>moveToActive-11.lua</code></td><td><code>emq:{queue}:wait</code> &rarr; <code>:active</code></td></tr>
+        <tr><td>stalled recovery</td><td><code>EchoMQ.Scripts.move_stalled_jobs_to_wait/4</code> &rarr; <code>moveStalledJobsToWait-8.lua</code></td><td><code>emq:{queue}:stalled</code></td></tr>
+        <tr><td>atomic finish</td><td><code>EchoMQ.Scripts.move_to_finished/7</code> &rarr; <code>moveToFinished-14.lua</code></td><td><code>emq:{queue}:active</code> &rarr; <code>:completed</code></td></tr>
+        <tr><td>blocking pickup</td><td><code>EchoMQ.Worker.wait_for_job/2</code> (<code>BZPOPMIN</code>)</td><td><code>emq:{queue}:marker</code></td></tr>
+      </tbody>
+    </table>
+    <div class="prose">
+      <p>The consumer is real Portal code in <code class="inl">echo/apps/portal</code>. The command is
+        <code class="inl">Portal.enroll/2</code> &mdash; the <code class="inl">Portal</code> facade function that
+        delegates to <code class="inl">Portal.Enrollment.enroll/2</code>. The recorded fact is
+        <code class="inl">%Portal.Enrollment.Events.LearnerEnrolled{user_id, course_id, at}</code>, emitted by
+        <code class="inl">Portal.Engine.Core.decide/2</code> and folded by <code class="inl">evolve/2</code>. The
+        idempotency guard is <code class="inl">Portal.Engine.Core.authorize/2</code>, which returns
+        <code class="inl">{:error, :already_enrolled}</code> against the folded state &mdash; the closed
+        <code class="inl">Portal.Error</code> code that makes a redelivered enroll a safe no-op.</p>
+    </div>
+    <p class="note">The wiring here &mdash; an enroll request dispatched as an EchoMQ queue job &mdash; is the applied
+      design, not Portal&rsquo;s current architecture. Portal&rsquo;s enroll is synchronous today; EchoMQ is the
+      candidate for the reserved <code class="inl">F7&ndash;F9</code> multi-runtime layer. The keys and scripts are real;
+      the queue-over-enrollment is the design this workshop assembles.</p>
+    <p class="take">The reliable-queue path and Portal&rsquo;s idempotent enroll are one shape: a queue that loses no job
+      plus a consumer that corrupts no state &mdash; assembled, exactly-once-in-effect.</p>
+
+    <div class="door">
+      <p class="dl">A door, not a depth</p>
+      <p>You have built the reliable-queue patterns; the engine that runs them &mdash; the full Lua inventory, the
+        heartbeat manager that renews the lock, the stalled-check coordination across a worker pool, and the three
+        runtime implementations (the iconic Elixir <code class="inl">echo/apps/echomq</code>, the Go runtime with its
+        documented gaps, the Node reference) &mdash; is the subject of the dedicated
+        <a href="/echomq/core"><strong>EchoMQ course</strong></a>, the companion depth course that teaches the polyglot
+        protocol in full. This workshop closes R3 with one reliable enrollment job; that course teaches the engine
+        behind it. Return to the <a href="/redis-patterns/queues">Reliable Queues chapter</a> to continue.</p>
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The Redis primitives the reliable enrollment queue assembles &mdash; the atomic in-flight move, the cached
+        finish script, the blocking pickup, and the lock lease &mdash; and the queue protocol whose worker path EchoMQ
+        ports.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/rpoplpush/">Redis &mdash; <em>RPOPLPUSH</em></a> &mdash; the atomic in-flight move (wait &rarr; active), the heart of <code>moveToActive-11.lua</code>.</li>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the atomic finish: <code>moveToFinished-14.lua</code> runs as one cached script.</li>
+          <li><a href="https://redis.io/commands/bzpopmin/">Redis &mdash; <em>BZPOPMIN</em></a> &mdash; the worker blocks on the marker between jobs; no polling loop.</li>
+          <li><a href="https://redis.io/commands/set/">Redis &mdash; <em>SET</em></a> &mdash; <code>SET NX PX</code>, the job lock lease whose expiry signals a dead worker.</li>
+          <li><a href="https://redis.io/glossary/redis-queue/">Redis &mdash; <em>Redis queue</em></a> &mdash; the reliable-queue model this workshop assembles.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the reliable worker path EchoMQ ports, where the Lua scripts are the protocol.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a> &mdash; the chapter this workshop closes.</li>
+          <li><a href="/redis-patterns/queues/processing-list">R3.01 &middot; The processing list</a> &mdash; the in-flight move (wait &rarr; active under a lock).</li>
+          <li><a href="/redis-patterns/queues/at-least-once">R3.02 &middot; At-least-once</a> &mdash; the delivery guarantee the idempotent consumer pays for.</li>
+          <li><a href="/redis-patterns/queues/stalled-recovery">R3.03 &middot; Stalled recovery</a> &mdash; the sweep that returns a dead worker&rsquo;s job to wait.</li>
+          <li><a href="/redis-patterns/queues/atomic-state-machine">R3.04 &middot; The atomic state machine</a> &mdash; the one-script finish.</li>
+          <li><a href="/redis-patterns/queues/blocking-vs-polling">R3.05 &middot; Blocking vs polling</a> &mdash; the blocking pickup on the marker.</li>
+          <li><a href="/echomq/core">EchoMQ &middot; The core</a> &mdash; the door: the engine that runs these scripts across three runtimes.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/redis-patterns/queues/blocking-vs-polling"><span aria-hidden="true">&larr;</span>&nbsp; R3.05 &middot; Blocking vs polling</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/queues">R3 &middot; Reliable Queues <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>The chapter</h4>
+        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <a href="/redis-patterns/queues/processing-list">R3.01 &middot; The processing list</a>
+        <a href="/redis-patterns/queues/at-least-once">R3.02 &middot; At-least-once</a>
+        <a href="/redis-patterns/queues/stalled-recovery">R3.03 &middot; Stalled recovery</a>
+        <a href="/redis-patterns/queues/atomic-state-machine">R3.04 &middot; Atomic state machine</a>
+        <a href="/redis-patterns/queues/blocking-vs-polling">R3.05 &middot; Blocking vs polling</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <a href="/echomq">The EchoMQ course</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nn3ub3z9qX</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- interactive 1 — the enroll job through the reliable loop (pure stepper) ---------- */
+  // A single enroll job j_1 moves through the reliable loop. The stages mirror the assembled path:
+  // queued (in wait) → active (RPOPLPUSH under a lock) → enrolled (the effect, count → 1) →
+  // completed (moveToFinished). A "crash" injected at the enrolled stage strands the job in active;
+  // its lock expires, moveStalledJobsToWait returns it to wait, a second worker re-runs the enroll,
+  // and because the effect is idempotent the re-run returns already-enrolled — the count stays 1.
+  // runStep is pure: it returns a NEW job model and never mutates its input, so a reset is exact and
+  // there is no browser storage.
+  var STAGES = {
+    queued:    { lane: 'wait',      act: 'ZADD emq:{queue}:marker 0 "0" — wake the worker',              note: 'queued — press step to pick it up' },
+    active:    { lane: 'active',    act: 'moveToActive-11: RPOPLPUSH wait active, take the lock',         note: 'in flight — the lock is held' },
+    enrolled:  { lane: 'active',    act: 'Portal.enroll/2 → %LearnerEnrolled{} — the effect runs',        note: 'enrolled — count 0 → 1' },
+    finished:  { lane: 'completed', act: 'moveToFinished-14 (one EVALSHA): active → completed, next',     note: 'completed — exactly once' },
+    stalled:   { lane: 'wait',      act: 'lock expired → moveStalledJobsToWait-8: active → wait',         note: 'reclaimed — back in wait for a second worker' },
+    requeued:  { lane: 'active',    act: 'second worker: moveToActive-11 → RPOPLPUSH wait active',        note: 're-picked up by a second worker' },
+    redeliv:   { lane: 'active',    act: 'Portal.enroll/2 → {:error, :already_enrolled} — idempotent',    note: 'redelivery — a no-op, count unchanged' },
+    refinished:{ lane: 'completed', act: 'moveToFinished-14: active → completed (the retry finishes)',    note: 'completed on the retry — still enrolled once' }
+  };
+  // The two stepping paths: the clean run, and the run interrupted by a crash at the enroll.
+  var PATH_CLEAN = ['queued', 'active', 'enrolled', 'finished'];
+  var PATH_CRASH = ['queued', 'active', 'enrolled', 'stalled', 'requeued', 'redeliv', 'refinished'];
+
+  // pure: the model after `n` steps along `path`, with the running effect count.
+  function runJob(path, n) {
+    var idx = Math.min(n, path.length - 1);
+    var stageKey = path[idx];
+    // the effect count: 1 once the first enroll has run, never more (idempotent).
+    var count = 0, ran = 0, crashed = false;
+    for (var i = 0; i <= idx; i++) {
+      var s = path[i];
+      if (s === 'enrolled') { count = 1; ran += 1; }
+      if (s === 'redeliv')  { ran += 1; }            // ran again, but no-op
+      if (s === 'stalled')  { crashed = true; }
+    }
+    return { stage: stageKey, count: count, ran: ran, crashed: crashed, done: idx >= path.length - 1 };
+  }
+
+  var jobState = { path: PATH_CLEAN, n: 0 };
+
+  var laneWait = document.getElementById('laneWait');
+  var laneActive = document.getElementById('laneActive');
+  var laneDone = document.getElementById('laneDone');
+  var chipWait = document.getElementById('chipWait');
+  var chipActive = document.getElementById('chipActive');
+  var chipDone = document.getElementById('chipDone');
+  var lblWait = document.getElementById('lblWait');
+  var lblActive = document.getElementById('lblActive');
+  var lblDone = document.getElementById('lblDone');
+  var jobStageLbl = document.getElementById('jobStageLbl');
+  var jobActLbl = document.getElementById('jobActLbl');
+  var jobRetBox = document.getElementById('jobRetBox');
+  var jobRetVal = document.getElementById('jobRetVal');
+  var vCount = document.getElementById('vCount');
+  var cCount = document.getElementById('cCount');
+  var jobRunsLbl = document.getElementById('jobRunsLbl');
+  var jobEffLbl = document.getElementById('jobEffLbl');
+  var jobOut = document.getElementById('jobOut');
+
+  var LANE_NAME = { wait: 'wait', active: 'active', completed: 'completed' };
+
+  function paintJob() {
+    var m = runJob(jobState.path, jobState.n);
+    var s = STAGES[m.stage];
+    var lane = s.lane;
+
+    // lanes: highlight the one the job is in; mark the completed lane done.
+    [laneWait, laneActive, laneDone].forEach(function (el) { if (el) el.classList.remove('here', 'done', 'stuck'); });
+    if (lane === 'wait' && laneWait) laneWait.classList.add(m.crashed && m.stage === 'stalled' ? 'stuck' : 'here');
+    if (lane === 'active' && laneActive) laneActive.classList.add('here');
+    if (lane === 'completed' && laneDone) laneDone.classList.add('done');
+
+    // chips: show the single job chip in its current lane only.
+    [chipWait, chipActive, chipDone].forEach(function (el) { if (el) el.classList.remove('on', 'ok', 'bad'); });
+    [lblWait, lblActive, lblDone].forEach(function (el) { if (el) el.style.opacity = '0'; });
+    if (lane === 'wait') { if (chipWait) chipWait.classList.add(m.stage === 'stalled' ? 'bad' : 'on'); if (lblWait) lblWait.style.opacity = '1'; }
+    if (lane === 'active') { if (chipActive) chipActive.classList.add(m.stage === 'redeliv' ? 'bad' : 'on'); if (lblActive) lblActive.style.opacity = '1'; }
+    if (lane === 'completed') { if (chipDone) chipDone.classList.add('ok'); if (lblDone) lblDone.style.opacity = '1'; }
+
+    if (jobStageLbl) jobStageLbl.textContent = 'stage: ' + m.stage + ' — the job is in ' + LANE_NAME[lane];
+    if (jobActLbl) jobActLbl.textContent = 'action: ' + s.act;
+
+    var ok = m.stage === 'finished' || m.stage === 'refinished' || m.stage !== 'stalled';
+    var bad = m.stage === 'stalled';
+    if (jobRetBox) { jobRetBox.classList.toggle('ok', !bad); jobRetBox.classList.toggle('no', bad); }
+    if (jobRetVal) { jobRetVal.classList.toggle('ok', !bad); jobRetVal.classList.toggle('no', bad); jobRetVal.textContent = s.note; }
+
+    if (vCount) vCount.textContent = String(m.count);
+    if (cCount) { cCount.classList.toggle('changed', m.count === 1); cCount.classList.toggle('blocked', false); }
+
+    if (jobRunsLbl) jobRunsLbl.textContent = 'job runs so far: ' + m.ran + ' — the effect count is what matters, not the delivery count';
+
+    var eff, out;
+    if (m.stage === 'queued') {
+      eff = 'effect: nothing yet — the loop has not picked up the job';
+      out = 'Queued: the enroll job j_1 is in wait, a worker is blocked on the marker. Press step to pick it up.';
+    } else if (m.stage === 'active' || m.stage === 'requeued') {
+      eff = 'effect: in flight under the lock — no enrollment recorded yet';
+      out = (m.stage === 'requeued' ? 'A second worker ' : 'The worker ') + 'ran moveToActive: RPOPLPUSH wait active, holding the lock. The enroll has not run.';
+    } else if (m.stage === 'enrolled') {
+      eff = 'effect: %LearnerEnrolled{} recorded — enrolled count 0 → 1';
+      out = 'The worker ran Portal.enroll/2: the learner is enrolled, %LearnerEnrolled{} recorded. Enrolled count is now 1.';
+    } else if (m.stage === 'finished') {
+      eff = 'effect: completed — one EVALSHA dropped the lock, recorded the result, moved active → completed';
+      out = 'moveToFinished-14 ran as one EVALSHA: active → completed, lock dropped, next fetched. The enrollment is complete — enrolled exactly once.';
+    } else if (m.stage === 'stalled') {
+      eff = 'effect: worker crashed after the enroll — the job is stranded in active, its lock expiring';
+      out = 'Crash: the worker died after recording the enrollment but before the finish. The job sits in active; its lock expires; moveStalledJobsToWait-8 returns it to wait for another worker. No enrollment is lost — count stays 1.';
+    } else if (m.stage === 'redeliv') {
+      eff = 'effect: nothing written — the enroll returned {:error, :already_enrolled} (idempotent)';
+      out = 'The second worker re-ran Portal.enroll/2. The learner is already enrolled, so authorize/2 returned {:error, :already_enrolled} and recorded nothing. The job ran twice; enrolled count is still 1.';
+    } else { // refinished
+      eff = 'effect: completed on the retry — active → completed, enrolled exactly once';
+      out = 'moveToFinished-14 completed the retried job: active → completed. The job ran twice (' + m.ran + ' deliveries), the enrolled count is 1. At-least-once delivery, exactly-once-in-effect.';
+    }
+    if (jobEffLbl) jobEffLbl.textContent = eff;
+    if (jobOut) jobOut.textContent = out;
+  }
+
+  function jobAction(act) {
+    if (act === 'reset') {
+      jobState = { path: PATH_CLEAN, n: 0 };
+      paintJob();
+      if (jobOut) jobOut.textContent = 'Reset: the enroll job j_1 is back in wait, the enrolled count is 0. Press step to run the loop, or crash to inject a worker death.';
+      return;
+    }
+    if (act === 'crash') {
+      // switch to the crash path and advance to the stalled stage (the visible failure).
+      // if not yet at the enroll, jump the clean prefix; the crash fires at the enroll.
+      jobState.path = PATH_CRASH;
+      jobState.n = 3; // index of 'stalled' in PATH_CRASH
+      paintJob();
+      return;
+    }
+    // step
+    if (jobState.n < jobState.path.length - 1) jobState.n += 1;
+    paintJob();
+  }
+
+  document.querySelectorAll('#jobSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#jobSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      jobAction(b.getAttribute('data-act'));
+    });
+  });
+  paintJob(); // initial render — correct without interaction
+
+  /* ---------- interactive 2 — the idempotency proof (pure: run the same enroll N times) ---------- */
+  // The same enroll job runs repeatedly. `deliveries` counts how many times the job ran (at-least-once);
+  // `enrolled` counts the recorded effect. The first run records one enrollment; every later run returns
+  // {:error, :already_enrolled} and records nothing. So deliveries climb while enrolled stays exactly 1.
+  // runEnrollOnce is pure: it returns a NEW model; reset restores the start with no browser storage.
+  function runEnrollOnce(model) {
+    var first = model.enrolled === 0;
+    return {
+      deliveries: model.deliveries + 1,
+      enrolled: first ? 1 : model.enrolled,   // idempotent: the second+ delivery is a no-op
+      lastFirst: first
+    };
+  }
+  var idem = { deliveries: 0, enrolled: 0, lastFirst: false };
+
+  var vDeliv = document.getElementById('vDeliv');
+  var vEnrolled = document.getElementById('vEnrolled');
+  var cDeliv = document.getElementById('cDeliv');
+  var cEnrolled = document.getElementById('cEnrolled');
+  var idemRetBox = document.getElementById('idemRetBox');
+  var idemRetVal = document.getElementById('idemRetVal');
+  var idemOut = document.getElementById('idemOut');
+
+  function paintIdem(justRan) {
+    if (vDeliv) vDeliv.textContent = String(idem.deliveries);
+    if (vEnrolled) vEnrolled.textContent = String(idem.enrolled);
+    if (cEnrolled) cEnrolled.classList.toggle('changed', idem.enrolled === 1);
+    if (cDeliv) cDeliv.classList.toggle('changed', idem.deliveries > 0);
+
+    if (!justRan) {
+      if (idemRetBox) { idemRetBox.classList.add('ok'); idemRetBox.classList.remove('no'); }
+      if (idemRetVal) { idemRetVal.classList.add('ok'); idemRetVal.classList.remove('no'); idemRetVal.textContent = 'press run — the first delivery records the enrollment'; }
+      if (idemOut) idemOut.textContent = 'Start: zero deliveries, zero enrolled. Press run the enroll job repeatedly — deliveries climb, but the enrolled count stays one after the first run.';
+      return;
+    }
+    var first = idem.lastFirst;
+    if (idemRetBox) { idemRetBox.classList.toggle('ok', true); idemRetBox.classList.toggle('no', false); }
+    if (idemRetVal) {
+      idemRetVal.classList.add('ok'); idemRetVal.classList.remove('no');
+      idemRetVal.textContent = first
+        ? 'return %LearnerEnrolled{} — the first delivery recorded the enrollment'
+        : 'return {:error, :already_enrolled} — a redelivery, nothing recorded';
+    }
+    if (idemOut) idemOut.textContent = first
+      ? 'Delivery 1: Portal.enroll/2 recorded %LearnerEnrolled{}. Deliveries=1, enrolled=1.'
+      : 'Delivery ' + idem.deliveries + ': the learner is already enrolled, so authorize/2 returned {:error, :already_enrolled} — nothing recorded. Deliveries=' + idem.deliveries + ', enrolled=1. At-least-once delivery, exactly-once-in-effect.';
+  }
+
+  function idemAction(act) {
+    if (act === 'reset') {
+      idem = { deliveries: 0, enrolled: 0, lastFirst: false };
+      paintIdem(false);
+      return;
+    }
+    idem = runEnrollOnce(idem);
+    paintIdem(true);
+  }
+
+  document.querySelectorAll('#idemSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#idemSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      idemAction(b.getAttribute('data-act'));
+    });
+  });
+  paintIdem(false); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E2.03.2 — Stalled recovery · EchoMQ, the protocol in depth · jonnify</title>
+<meta name="description" content="E2.03.2 — a job is stalled when it sits in active with no live lock because its worker died or stopped renewing. EchoMQ.StalledChecker lists active with LRANGE, pipelines EXISTS over each job's lock, and flags the jobs whose lock is gone. Recovery is two-phase: mark to the stalled set, then on the next sweep requeue to wait or fail by max_stalled_count, via moveStalledJobsToWait-8.lua (eight keys). The checker returns %{recovered, failed} and emits :stalled_recovered / :stalled_failed. Defaults: stalled_interval 30000ms, max_stalled_count 1.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.geo-readout .warn{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.rng{display:flex;flex-direction:column;gap:.3rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim)}
+.rng input[type=range]{width:230px;accent-color:var(--echo)}
+.rng .val{font-family:var(--mono);color:var(--echo-bright);font-size:.84rem}
+
+/* ---- phase diagram ---- */
+.ph .job rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.ph .job.marked rect{fill:rgba(212,168,90,.16);stroke:#d4a85a}
+.ph .job.requeued rect{fill:rgba(123,163,135,.18);stroke:#7ba387}
+.ph .job.failed rect{fill:rgba(214,88,79,.18);stroke:#d6584f}
+.ph .job.held rect{fill:rgba(42,161,152,.1);stroke:#2aa198}
+.ph text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.ph .jn{fill:#d7cfb9;font-size:11px}
+.ph .ttl{fill:#6fdccf;font-size:11px;font-weight:600}
+
+/* ---- probe diagram ---- */
+.pr .cell rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.pr .cell.ok rect{fill:rgba(42,161,152,.1);stroke:#2aa198}
+.pr .cell.no rect{fill:rgba(214,88,79,.18);stroke:#d6584f}
+.pr text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.pr .pn{fill:#6fdccf;font-size:11px;font-weight:600}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .kw{color:var(--blue-bright)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/core">core</a><span class="rsep">/</span><a href="/echomq/core/lock-management">lock-management</a><span class="rsep">/</span><span class="rcur">stalled-recovery</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core">E2 &middot; Core</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core/lock-management">Lock management</a>
+        <span class="sep">/</span>
+        <span class="here">Stalled recovery</span>
+      </div>
+      <p class="eyebrow">E2.03.2 &middot; Lock management &middot; dive 2</p>
+      <h1>Stalled <span class="ex">recovery</span></h1>
+      <p class="lede">A job whose worker died sits in active with no live lock; a two-phase sweep brings it back or fails
+        it.</p>
+      <p class="kicker">A job is <strong>stalled</strong> when it sits in <code class="inl">active</code> but its worker
+        failed to complete it or renew its lock before the <code class="inl">PX</code> TTL expired — a crash, lost power,
+        a network failure, or a blocked processor. <code class="inl">EchoMQ.StalledChecker</code> lists
+        <code class="inl">active</code>, probes each job's lock with a pipelined <code class="inl">EXISTS</code>, and
+        recovers the jobs whose lock is gone in <strong>two phases</strong>: mark to the stalled set, then on the next
+        sweep requeue or fail. Step the phases on the right over a fixed active set.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#fact">What stalls a job</a>
+        <a href="#probe">The lock probe</a>
+        <a href="#script">The recovery script</a>
+        <a href="#rule">The Golden Rule</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig ph" aria-labelledby="phTitle">
+      <h4 id="phTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Two-phase recovery &middot; mark, then recover</h4>
+      <div class="controls">
+        <div class="solid-select" role="group" aria-label="Step the two phases">
+          <button type="button" id="phStep" data-c="echo">next phase &rarr;</button>
+          <button type="button" id="phReset" data-c="blue">reset</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 480 220" role="img" aria-label="Four jobs sitting in the active list, each marked whether its lock still exists. The mark phase moves the lockless jobs into the stalled set; the recover phase, on the next sweep, requeues a job whose stall count is under max_stalled_count and fails a job that has exhausted it. Jobs with a live lock are left held.">
+        <g class="job" id="p-0"><rect x="20" y="20" width="270" height="34" rx="7"></rect></g>
+        <text x="32" y="41" class="jn">job A &middot; lock present</text>
+        <g class="job" id="p-1"><rect x="20" y="62" width="270" height="34" rx="7"></rect></g>
+        <text x="32" y="83" class="jn">job B &middot; lock missing &middot; stc 0</text>
+        <g class="job" id="p-2"><rect x="20" y="104" width="270" height="34" rx="7"></rect></g>
+        <text x="32" y="125" class="jn">job C &middot; lock missing &middot; stc 1</text>
+        <g class="job" id="p-3"><rect x="20" y="146" width="270" height="34" rx="7"></rect></g>
+        <text x="32" y="167" class="jn">job D &middot; lock present</text>
+        <text x="20" y="206" class="ttl" id="phLabel">phase: not started &middot; max_stalled_count = 1</text>
+      </svg>
+
+      <div class="geo-readout" id="phOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="fact">
+    <h2>What stalls a job</h2>
+    <div class="prose">
+      <p>A job is stalled when a worker took it — it sits in <code class="inl">active</code> — but failed to complete it
+        or renew its lock before the lock's <code class="inl">PX</code> TTL expired. That happens when the worker process
+        crashes, the machine loses power, a network failure blocks lock renewal, or the job processor blocks without
+        yielding. <code class="inl">EchoMQ.StalledChecker</code> finds such jobs and recovers them.</p>
+      <p>The checker is a <code class="inl">GenServer</code> driving one timer:</p>
+      <pre class="code"><span class="cmt"># default stalled_interval = 30000 ms</span>
+timer_ref = Process.<span class="op">send_after</span>(<span class="op">self</span>(), <span class="str">:check_stalled</span>, stalled_interval)</pre>
+      <p>Its public surface is <code class="inl">start_link/1</code>,
+        <code class="inl">check(connection, queue, opts \\ [])</code> (arity 3, a manual trigger returning
+        <code class="inl">{:ok, %{recovered: n, failed: n}}</code>), and
+        <code class="inl">job_stalled?(connection, queue, job_id, opts \\ [])</code> (arity 4, a single-job probe).</p>
+    </div>
+  </section>
+
+  <section id="probe">
+    <h2>The lock probe</h2>
+    <div class="prose">
+      <p>On each <code class="inl">:check_stalled</code>, <code class="inl">do_check</code> lists the active jobs and
+        probes their locks. The stall signal is the <strong>absence of the lock key</strong> for a job still in
+        <code class="inl">active</code>. Pick an active job below to read the probe and its verdict.</p>
+
+      <pre class="code"><span class="cmt">defp do_check(connection, ctx, max_stalled_count) do</span>
+  <span class="kw">case</span> RedisConnection.<span class="op">command</span>(connection, [<span class="str">"LRANGE"</span>, Keys.<span class="op">active</span>(ctx), <span class="res">0</span>, <span class="res">-1</span>]) <span class="kw">do</span>
+    {<span class="str">:ok</span>, []}      -&gt; {<span class="str">:ok</span>, %{recovered: <span class="res">0</span>, failed: <span class="res">0</span>}}
+    {<span class="str">:ok</span>, job_ids} -&gt; <span class="op">check_jobs_stalled</span>(connection, ctx, job_ids, max_stalled_count)
+  <span class="kw">end</span>
+<span class="cmt">end</span>
+
+<span class="cmt"># one EXISTS per active id, run as a single pipeline; exists == 0 means no lock</span>
+stalled_jobs =
+  Enum.<span class="op">zip</span>(job_ids, results)
+  |&gt; Enum.<span class="op">filter</span>(<span class="kw">fn</span> {_id, exists} -&gt; exists == <span class="res">0</span> <span class="kw">end</span>)
+  |&gt; Enum.<span class="op">map</span>(<span class="kw">fn</span> {id, _} -&gt; id <span class="kw">end</span>)</pre>
+    </div>
+
+    <figure class="fig pr" aria-labelledby="prTitle">
+      <h4 id="prTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">EXISTS lock &middot; pick an active job</h4>
+      <div class="controls">
+        <div class="solid-select" id="prSel" role="group" aria-label="Which active job to probe">
+          <button type="button" data-pr="held" data-c="sage" class="active" aria-pressed="true">lock present</button>
+          <button type="button" data-pr="gone" data-c="gold" aria-pressed="false">lock missing</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 660 170" role="img" aria-label="The stalled checker's lock probe. An EXISTS on a job's lock key returns 1 when the lock is present and 0 when it is gone. A return of 1 leaves the job held; a return of 0 flags the job stalled and routes it into the recovery script. The chosen branch is highlighted.">
+        <g><rect x="14" y="70" width="180" height="40" rx="8" fill="rgba(42,161,152,.10)" stroke="#2aa198"></rect></g>
+        <text x="104" y="86" text-anchor="middle" class="pn">EXISTS …:lock</text>
+        <text x="104" y="102" text-anchor="middle">0 or 1 ?</text>
+        <g>
+          <path id="pr-yes" d="M194 84 L300 40" stroke="#2a3252" stroke-width="1.3" fill="none"></path>
+          <path id="pr-no" d="M194 96 L300 140" stroke="#2a3252" stroke-width="1.3" fill="none"></path>
+        </g>
+        <g class="cell" id="pb-yes"><rect x="300" y="18" width="346" height="44" rx="7"></rect></g>
+        <text x="312" y="38" class="pn">EXISTS == 1 &rarr; lock held, job left alone</text>
+        <text x="312" y="54">the worker is alive and renewing</text>
+        <g class="cell" id="pb-no"><rect x="300" y="120" width="346" height="44" rx="7"></rect></g>
+        <text x="312" y="140" class="pn">EXISTS == 0 &rarr; stalled, routed to recovery</text>
+        <text x="312" y="156">no lock for a job still in active</text>
+      </svg>
+
+      <div class="geo-readout" id="prOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">The checker flags a job whose lock key is gone while the job still sits in active. A live lock means a
+      live worker; a missing one means the job needs recovery.</p>
+  </section>
+
+  <section id="script">
+    <h2>The recovery script, and the two phases</h2>
+    <div class="prose">
+      <p>EchoMQ uses two-phase detection so it never fails a job on a single bad reading:</p>
+      <p><strong>Mark phase</strong> — a job with no valid lock is moved into the <strong>stalled</strong> SET.
+        <strong>Recover phase</strong> — on the <em>next</em> check, a job still in the stalled set is either requeued
+        (→ <code class="inl">wait</code>) or moved to <code class="inl">failed</code>, decided by
+        <code class="inl">max_stalled_count</code>. The two phases prevent a false positive from a transient timing
+        window: a job that briefly looked lockless but is in fact healthy clears itself on the next pass instead of being
+        failed.</p>
+      <p>The recovery itself is <code class="inl">moveStalledJobsToWait-8.lua</code> — the <code class="inl">-8</code> is
+        the <code class="inl">numkeys</code>. The canonical wrapper
+        <code class="inl">EchoMQ.Scripts.move_stalled_jobs_to_wait/4</code> passes <strong>eight keys</strong>:</p>
+      <pre class="code"><span class="cmt">def move_stalled_jobs_to_wait(conn, ctx, max_stalled_count, opts \\ []) do</span>
+  keys = [
+    Keys.<span class="op">stalled</span>(ctx), Keys.<span class="op">wait</span>(ctx), Keys.<span class="op">active</span>(ctx), Keys.<span class="op">failed</span>(ctx),
+    Keys.<span class="op">stalled_check</span>(ctx), Keys.<span class="op">meta</span>(ctx), Keys.<span class="op">paused</span>(ctx), Keys.<span class="op">marker</span>(ctx)
+  ]                                          <span class="cmt">-- eight keys → moveStalledJobsToWait-8.lua</span>
+  ...
+<span class="cmt">end</span></pre>
+      <p>The recovery result the checker returns is
+        <code class="inl">{:ok, %{recovered: count, failed: count}}</code> — <code class="inl">recovered</code> is how
+        many jobs were requeued to <code class="inl">wait</code>, <code class="inl">failed</code> how many had exhausted
+        their stall count and were moved to <code class="inl">failed</code>. The checker emits telemetry for each:
+        <code class="inl">:stalled_recovered</code> and <code class="inl">:stalled_failed</code>.</p>
+    </div>
+    <h3>Defaults</h3>
+    <dl class="deflist">
+      <dt>stalled_interval</dt><dd>30000 ms &mdash; the sweep period.</dd>
+      <dt>max_stalled_count</dt><dd>1 &mdash; max stalls before a job is failed rather than requeued.</dd>
+    </dl>
+    <div class="prose">
+      <p>The default <code class="inl">max_stalled_count</code> is <strong>1</strong> because a job that stalls more than
+        once usually signals a real bug — repeated crashes on specific job data, resource exhaustion, an external-service
+        failure. So the default fails the job rather than looping forever; raising it is generally not recommended.
+        Investigate why the job stalls instead.</p>
+    </div>
+  </section>
+
+  <section id="rule">
+    <h2>The Golden Rule &mdash; the stall signal and the recovery are L1/L2</h2>
+    <div class="prose">
+      <p>The stall signal — the <strong>absence of the lock key</strong> for a job still in
+        <code class="inl">active</code> (<strong>L1</strong>) — and the recovery script
+        <code class="inl">moveStalledJobsToWait-8.lua</code> (<strong>L2</strong>) are frozen and shared, the same in
+        every runtime. The Elixir checker — <code class="inl">LRANGE active</code>, a pipelined
+        <code class="inl">EXISTS</code>-lock probe, the recovery script, all on one <code class="inl">GenServer</code>
+        timer — is the Elixir runtime's own <strong>L3/L4</strong>.</p>
+    </div>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the protocol (immutable L1/L2)</span>
+        <p>The stall signal — no <code class="inl">emq:{queue}:{jobId}:lock</code> for a job still in
+          <code class="inl">active</code> — and the recovery script
+          <code class="inl">moveStalledJobsToWait-8.lua</code> (eight keys), the same in every runtime.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">its three runtimes (variable L3/L4)</span>
+        <p>Elixir runs <code class="inl">EchoMQ.StalledChecker</code> — <code class="inl">LRANGE active</code>, a
+          pipelined <code class="inl">EXISTS</code> probe, the recovery script, on one timer; Go and Node.js run the same
+          signal and script with their own checker. (Go's recovery is part of its non-atomic critical path — separate
+          commands rather than embedded Lua — the cross-runtime contrast E2.04 takes up.) The detection signal and the
+          recovery script do not move.</p>
+      </div>
+    </div>
+    <p class="take">A job is stalled when it sits in active with no live lock; recovery is two-phase — mark to the
+      stalled set, then requeue or fail by <code class="inl">max_stalled_count</code> — over
+      <code class="inl">moveStalledJobsToWait-8.lua</code>. The signal and the recovery are L1/L2 — the same in every
+      runtime.</p>
+    <p class="note">Next: the scheduler and the event stream around the lifecycle.
+      <a href="/echomq/core/lock-management/schedulers-and-events">E2.03.3 · schedulers &amp; events</a> closes the
+      module, including the <code class="inl">:stalled</code> event this checker can emit.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The two-phase recovery sweep and the Redis commands the checker issues.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://docs.bullmq.io/">BullMQ &mdash; <em>Documentation</em></a> &mdash; the two-phase stalled-job detection and recovery sweep EchoMQ implements.</li>
+          <li><a href="https://redis.io/commands/lrange/">Redis &mdash; <em>LRANGE</em></a> &mdash; the read of the <code>active</code> list the checker scans each sweep.</li>
+          <li><a href="https://redis.io/commands/exists/">Redis &mdash; <em>EXISTS</em></a> &mdash; the pipelined lock-presence probe that flags a stalled job.</li>
+          <li><a href="https://redis.io/commands/srem/">Redis &mdash; <em>SREM</em></a> &mdash; the remove-from-stalled-set step a successful renewal performs before a sweep.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/core/lock-management">E2.03 &middot; Lock management</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/core/lock-management/one-timer-not-n">E2.03.1 &middot; One timer, not N</a> &mdash; the renewal that, when it fails, leaves a job for this checker to recover.</li>
+          <li><a href="/echomq/core/lifecycle/the-lock-protocol">E2.01.3 &middot; The lock protocol</a> &mdash; the lock whose absence is the stall signal.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns R3 &middot; Reliable queues</a> &mdash; the reliable-queue pattern this recovery upholds.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/core/lock-management/one-timer-not-n"><span aria-hidden="true">&larr;</span>&nbsp; E2.03.1 &middot; One timer, not N</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/core/lock-management/schedulers-and-events">E2.03.3 &middot; Schedulers &amp; events <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ &mdash; the polyglot job-queue protocol, taught in depth and tracked as it is built.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/core/lock-management">E2.03 &middot; Lock management</a>
+        <a href="/echomq/core/lock-management/one-timer-not-n">E2.03.1 &middot; One timer, not N</a>
+        <a href="/echomq/core/lock-management/stalled-recovery">E2.03.2 &middot; Stalled recovery</a>
+        <a href="/echomq/core/lock-management/schedulers-and-events">E2.03.3 &middot; Schedulers &amp; events</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/core">E2 &middot; The core</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the two-phase recovery (pure over a fixed active set) ---------- */
+  var MAX_STALLED = 1;
+  var ACTIVE = [
+    { id: 'A', lock: true,  stc: 0 },
+    { id: 'B', lock: false, stc: 0 },
+    { id: 'C', lock: false, stc: 1 },
+    { id: 'D', lock: true,  stc: 0 }
+  ];
+  /* phase 0 = not started, 1 = mark, 2 = recover */
+  var phase = 0;
+
+  function classify(job, ph) {
+    if (job.lock) return 'held';
+    if (ph >= 1 && ph < 2) return 'marked';
+    if (ph >= 2) return (job.stc >= MAX_STALLED) ? 'failed' : 'requeued';
+    return null;
+  }
+
+  function renderPhase() {
+    var out = document.getElementById('phOut');
+    var label = document.getElementById('phLabel');
+    if (!out) return;
+    ACTIVE.forEach(function (job, i) {
+      var g = document.getElementById('p-' + i);
+      if (!g) return;
+      g.classList.remove('held', 'marked', 'requeued', 'failed');
+      var cls = classify(job, phase);
+      if (cls) g.classList.add(cls);
+    });
+
+    if (phase === 0) {
+      if (label) label.textContent = 'phase: not started · max_stalled_count = ' + MAX_STALLED;
+      out.innerHTML = '<span class="dim">four jobs sit in active. Press “next phase” to run the mark phase.</span>';
+    } else if (phase === 1) {
+      var marked = ACTIVE.filter(function (j) { return !j.lock; }).map(function (j) { return j.id; });
+      if (label) label.textContent = 'phase 1: mark · max_stalled_count = ' + MAX_STALLED;
+      out.innerHTML = '<b>mark phase</b> &mdash; jobs with no lock move into the stalled set: ' +
+        '<b>' + marked.join(', ') + '</b><br>' +
+        '<span class="dim">A and D have a live lock and are left held. No job is failed yet.</span>';
+    } else {
+      var requeued = ACTIVE.filter(function (j) { return !j.lock && j.stc < MAX_STALLED; }).map(function (j) { return j.id; });
+      var failed = ACTIVE.filter(function (j) { return !j.lock && j.stc >= MAX_STALLED; }).map(function (j) { return j.id; });
+      if (label) label.textContent = 'phase 2: recover · max_stalled_count = ' + MAX_STALLED;
+      out.innerHTML = '<b>recover phase</b> (next sweep)<br>' +
+        '<span class="ok">requeued → wait: ' + (requeued.length ? requeued.join(', ') : '—') + '</span> (stall count under ' + MAX_STALLED + ')<br>' +
+        '<span class="warn">failed: ' + (failed.length ? failed.join(', ') : '—') + '</span> (stall count exhausted)<br>' +
+        '<span class="dim">recovered=' + requeued.length + ', failed=' + failed.length + ' → emits :stalled_recovered / :stalled_failed.</span>';
+    }
+  }
+
+  var stepBtn = document.getElementById('phStep');
+  if (stepBtn) stepBtn.addEventListener('click', function () { if (phase < 2) phase++; renderPhase(); });
+  var resetBtn = document.getElementById('phReset');
+  if (resetBtn) resetBtn.addEventListener('click', function () { phase = 0; renderPhase(); });
+  renderPhase();
+
+  /* ---------- content: the lock probe (pure over the two branches) ---------- */
+  var PR = {
+    held: { branch: 'pb-yes', edge: 'pr-yes', other: 'pb-no', otherEdge: 'pr-no',
+            ret: '1', line: 'EXISTS …:lock == 1 → lock held, job left alone',
+            note: 'the worker is alive and renewing; the job is not stalled.' },
+    gone: { branch: 'pb-no', edge: 'pr-no', other: 'pb-yes', otherEdge: 'pr-yes',
+            ret: '0', line: 'EXISTS …:lock == 0 → stalled, routed to recovery',
+            note: 'no lock for a job still in active; the recovery script will requeue or fail it.' }
+  };
+
+  function renderPr(key) {
+    var d = PR[key];
+    var out = document.getElementById('prOut');
+    if (!d || !out) return;
+    var yes = document.getElementById('pb-yes'), no = document.getElementById('pb-no');
+    var ey = document.getElementById('pr-yes'), en = document.getElementById('pr-no');
+    if (yes) yes.classList.toggle('ok', key === 'held');
+    if (no) no.classList.toggle('no', key === 'gone');
+    if (ey) ey.setAttribute('stroke', key === 'held' ? '#6fdccf' : '#2a3252');
+    if (ey) ey.setAttribute('stroke-width', key === 'held' ? '2.2' : '1.3');
+    if (en) en.setAttribute('stroke', key === 'gone' ? '#6fdccf' : '#2a3252');
+    if (en) en.setAttribute('stroke-width', key === 'gone' ? '2.2' : '1.3');
+    out.innerHTML = '<b>' + d.line + '</b><br>' +
+      '<span class="dim">returns</span> <b>' + d.ret + '</b> &nbsp; <span class="dim">' + d.note + '</span>';
+  }
+
+  document.querySelectorAll('#prSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#prSel button').forEach(function (o) {
+        var on = o === b; o.classList.toggle('active', on); o.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      renderPr(b.getAttribute('data-pr'));
+    });
+  });
+  renderPr('held');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

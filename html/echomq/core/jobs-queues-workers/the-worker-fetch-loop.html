@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E2.02.3 — The worker fetch loop · EchoMQ, the protocol in depth · jonnify</title>
+<meta name="description" content="E2.02.3 — EchoMQ.Worker is a GenServer fetch loop. handle_info(:fetch_jobs) computes available_slots = concurrency − map_size(active_jobs) — never more than concurrency jobs in flight (default 1). Each free slot fetches via EchoMQ.Scripts.move_to_active/4 → moveToActive-11.lua, the atomic pickup. Each job runs in its own BEAM process via Task.async — a BEAM process per job. On completion the worker refills the freed slot, event-driven with Process.send_after timer fallbacks. A crashing job's Task is monitored and fails without taking down the worker; the LockManager renews in-flight locks.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .warn{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.slider-row{display:flex;align-items:center;gap:.9rem;font-family:var(--sans);font-size:.84rem;color:var(--cream-soft)}
+.slider-row input[type=range]{accent-color:var(--echo);width:200px}
+.slider-row .val{font-family:var(--mono);color:var(--echo-bright);min-width:1.4em;text-align:center}
+
+/* ---- slot diagram ---- */
+.slot .cell rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.slot .cell.run rect{fill:rgba(42,161,152,.18);stroke:#2aa198}
+.slot .cell.free rect{fill:#10162b;stroke:#2a3252;stroke-dasharray:4 3}
+.slot .cell.wait rect{fill:rgba(212,168,90,.12);stroke:#d4a85a}
+.slot text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.slot .sl{fill:#6fdccf;font-size:11px;font-weight:600}
+
+/* ---- cycle diagram ---- */
+.cyc .cell rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.cyc .cell.on rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.cyc text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.cyc .cn{fill:#6fdccf;font-size:11px;font-weight:600}
+.cyc .edge{stroke:#2a3252;stroke-width:1.3;fill:none}
+.cyc .edge.lit{stroke:#6fdccf;stroke-width:2.2}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/core">core</a><span class="rsep">/</span><a href="/echomq/core/jobs-queues-workers">jobs-queues-workers</a><span class="rsep">/</span><span class="rcur">the-worker-fetch-loop</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core">E2 &middot; Core</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core/jobs-queues-workers">Jobs, queues &amp; workers</a>
+        <span class="sep">/</span>
+        <span class="here">The worker fetch loop</span>
+      </div>
+      <p class="eyebrow">E2.02.3 &middot; Jobs, queues &amp; workers &middot; dive 3</p>
+      <h1>The worker <span class="ex">fetch loop</span></h1>
+      <p class="lede">A loop bounded by a number: never more than <code class="inl">concurrency</code> jobs in flight, one BEAM process each.</p>
+      <p class="kicker"><code class="inl">EchoMQ.Worker</code> is a GenServer that pulls jobs from a queue and runs them. Its
+        fetch loop computes <code class="inl">available_slots = concurrency − map_size(active_jobs)</code> &mdash; the
+        concurrency limit made concrete. Each free slot fetches via <code class="inl">EchoMQ.Scripts.move_to_active/4</code> →
+        <code class="inl">moveToActive-11.lua</code>, the atomic pickup, and each job runs in its own BEAM process via
+        <code class="inl">Task.async/1</code>. Set the concurrency on the right and read the slot math.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#slots">The slot math</a>
+        <a href="#beam">A BEAM process per job</a>
+        <a href="#cycle">The fetch cycle</a>
+        <a href="#rule">The pickup script is L2</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig slot" aria-labelledby="slotTitle">
+      <h4 id="slotTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">available_slots = concurrency − in-flight &middot; set concurrency</h4>
+      <div class="controls">
+        <div class="slider-row">
+          <label for="concRange">concurrency</label>
+          <input type="range" id="concRange" min="1" max="6" step="1" value="1" aria-describedby="slotOut">
+          <span class="val" id="concVal">1</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 130" role="img" aria-label="Six job slots. The first concurrency slots run a job from the fixed pending set; the rest are free or hold a pending job that has no slot. The number running at once is the smaller of concurrency and the pending count.">
+        <g class="cell" id="slot-0"><rect x="10" y="14" width="68" height="44" rx="7"></rect></g>
+        <text x="20" y="32" class="sl" id="slot-t-0">slot 1</text><text x="20" y="48" id="slot-s-0">—</text>
+        <g class="cell" id="slot-1"><rect x="84" y="14" width="68" height="44" rx="7"></rect></g>
+        <text x="94" y="32" class="sl" id="slot-t-1">slot 2</text><text x="94" y="48" id="slot-s-1">—</text>
+        <g class="cell" id="slot-2"><rect x="158" y="14" width="68" height="44" rx="7"></rect></g>
+        <text x="168" y="32" class="sl" id="slot-t-2">slot 3</text><text x="168" y="48" id="slot-s-2">—</text>
+        <g class="cell" id="slot-3"><rect x="232" y="14" width="68" height="44" rx="7"></rect></g>
+        <text x="242" y="32" class="sl" id="slot-t-3">slot 4</text><text x="242" y="48" id="slot-s-3">—</text>
+        <g class="cell" id="slot-4"><rect x="306" y="14" width="68" height="44" rx="7"></rect></g>
+        <text x="316" y="32" class="sl" id="slot-t-4">slot 5</text><text x="316" y="48" id="slot-s-4">—</text>
+        <g class="cell" id="slot-5"><rect x="380" y="14" width="68" height="44" rx="7"></rect></g>
+        <text x="390" y="32" class="sl" id="slot-t-5">slot 6</text><text x="390" y="48" id="slot-s-5">—</text>
+        <text x="10" y="82">pending in the queue: 4 jobs (fixed)</text>
+        <text x="10" y="100">solid = running a job · dashed = free slot · gold = a pending job with no slot</text>
+      </svg>
+
+      <div class="geo-readout" id="slotOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="slots">
+    <h2>The slot math</h2>
+    <div class="prose">
+      <p>The fetch loop is <code class="inl">handle_info(:fetch_jobs, state)</code>. It computes the free capacity and fills
+        it, never exceeding <code class="inl">concurrency</code>. <code class="inl">active_jobs</code> is a map of in-flight
+        jobs, so <code class="inl">map_size(active_jobs)</code> is the count in flight.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoMQ.Worker fetch loop (lib/echomq/worker.ex, verified)</span>
+<span class="fn">def</span> <span class="res">handle_info</span>(<span class="str">:fetch_jobs</span>, state) <span class="fn">do</span>
+  available_slots = state.concurrency <span class="op">-</span> map_size(state.active_jobs)
+
+  <span class="fn">if</span> available_slots <span class="op">&gt;</span> <span class="res">0</span> <span class="fn">do</span>
+    new_state = fetch_and_process_jobs(state, available_slots)   <span class="cmt"># fill the free slots</span>
+    {<span class="str">:noreply</span>, new_state}
+  <span class="fn">else</span>
+    {<span class="str">:noreply</span>, state}                                     <span class="cmt"># full — wait for a completion</span>
+  <span class="fn">end</span>
+<span class="fn">end</span>
+
+<span class="cmt"># each free slot fetches one job, atomically, via the pickup script:</span>
+<span class="rdx">Scripts.move_to_active</span>(conn, keys, token, opts)   <span class="cmt"># → moveToActive-11.lua</span></pre>
+
+    <div class="prose">
+      <p><code class="inl">:concurrency</code> defaults to <strong>1</strong> (verified
+        <code class="inl">@default_concurrency 1</code> &mdash; the moduledoc's <code class="inl">concurrency: 10</code> is
+        only an example). Raising it to N lets up to N jobs run concurrently; the number actually running at once is
+        <code class="inl">min(concurrency, pending)</code>. The other tuning options are <code class="inl">:lock_duration</code>
+        (30000), <code class="inl">:stalled_interval</code> (30000), and <code class="inl">:max_stalled_count</code> (1).</p>
+    </div>
+  </section>
+
+  <section id="beam">
+    <h2>A BEAM process per job</h2>
+    <div class="prose">
+      <p>Each fetched job runs in its own BEAM process via <code class="inl">Task.async/1</code> &mdash; a BEAM process per
+        job. The worker records the task by reference in <code class="inl">active_jobs</code>; when the Task finishes, its
+        result returns as a message, the worker moves the job to completed, failed, or delayed, and re-sends
+        <code class="inl">:fetch_jobs</code> to refill the freed slot.</p>
+
+      <pre class="code"><span class="cmt"># one BEAM process per job (lib/echomq/worker.ex, verified)</span>
+task =
+  <span class="rdx">Task.async</span>(<span class="fn">fn</span> <span class="op">-&gt;</span>
+    run_processor(processor_fn, job, worker_pid, telemetry_mod, telemetry_metadata)
+  <span class="fn">end</span>)
+
+<span class="cmt"># track the in-flight job by its task ref</span>
+active_jobs = Map.put(state.active_jobs, job.id, {job, task.ref})</pre>
+
+      <p>BEAM-process-per-job gives cheap, isolated processes. A crashing job's Task is monitored and treated as failed or
+        stalled <strong>without taking down the worker</strong> &mdash; OTP's "let it crash" applied to one job at a time.
+        While the jobs run, <code class="inl">EchoMQ.LockManager</code> renews the locks of all in-flight
+        <code class="inl">active_jobs</code> so a long-running job keeps its claim.</p>
+    </div>
+    <p class="note">The lock heartbeat that keeps an in-flight job owned is
+      <a href="/echomq/core/lock-management">E2.03 &middot; lock management</a>; the lock the pickup acquires is
+      <a href="/echomq/core/lifecycle/the-lock-protocol">E2.01.3 &middot; the lock protocol</a>.</p>
+  </section>
+
+  <section id="cycle">
+    <h2>The fetch cycle</h2>
+    <div class="prose">
+      <p>The loop is event-driven &mdash; it refills on completion &mdash; with timer fallbacks
+        (<code class="inl">Process.send_after(self(), :fetch_jobs, …)</code>) when the worker is idle, rate-limited, or
+        waiting on a delayed job. Step the cycle for one slot to read each stage.</p>
+    </div>
+
+    <figure class="fig cyc" aria-labelledby="cycTitle">
+      <h4 id="cycTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">One slot's cycle &middot; step it</h4>
+      <div class="controls">
+        <div class="solid-select" role="group" aria-label="Stepping the cycle">
+          <button type="button" id="cycStep" data-c="echo">step →</button>
+          <button type="button" id="cycReset" data-c="blue">reset</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 660 120" role="img" aria-label="The fetch cycle for one slot, four stages. Fetch fills a slot via moveToActive-11; run starts a Task; complete returns a result and moves the job; refill re-sends fetch_jobs to fill the freed slot. The current stage is highlighted.">
+        <g>
+          <path class="edge" id="ce-0" d="M150 50 L230 50"></path>
+          <path class="edge" id="ce-1" d="M380 50 L460 50"></path>
+          <path class="edge" id="ce-2" d="M540 70 C540 110, 100 110, 70 70"></path>
+        </g>
+        <g class="cell on" id="cy-0"><rect x="20" y="28" width="130" height="40" rx="7"></rect></g>
+        <text x="30" y="44" class="cn">fetch</text><text x="30" y="60">moveToActive-11</text>
+        <g class="cell" id="cy-1"><rect x="230" y="28" width="150" height="40" rx="7"></rect></g>
+        <text x="240" y="44" class="cn">run</text><text x="240" y="60">Task.async — BEAM proc</text>
+        <g class="cell" id="cy-2"><rect x="460" y="28" width="130" height="40" rx="7"></rect></g>
+        <text x="470" y="44" class="cn">complete</text><text x="470" y="60">move + message</text>
+        <text x="20" y="104" class="cn" id="cy-refill">refill → :fetch_jobs re-sent (event-driven)</text>
+      </svg>
+
+      <div class="geo-readout" id="cycOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">The worker is a loop bounded by a number. Redis hands out one job per atomic pickup; how many to hold
+      and how to run each is set by the executor &mdash; the runtime's own choice.</p>
+  </section>
+
+  <section id="rule">
+    <h2>The pickup script is L2 &mdash; the executor varies</h2>
+    <div class="prose">
+      <p>The atomic pickup <code class="inl">moveToActive-11</code> is <strong>L2</strong>, and the wait, active, and lock
+        keys it touches are <strong>L1</strong> &mdash; frozen across runtimes. The executor that drives the script is L3/L4,
+        and each runtime has its own: an Elixir Worker GenServer with a Task per job, a Go goroutine-per-job, a Node async
+        worker. The script is the same; the loop around it is each runtime's choice.</p>
+    </div>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the protocol (immutable L1/L2)</span>
+        <p><code class="inl">moveToActive-11</code> (the atomic pickup, L2) plus the wait and active keys and the lock key
+          (L1) &mdash; frozen in every runtime.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">its three runtimes (variable L3/L4)</span>
+        <p>The Elixir Worker GenServer with a Task per job (a BEAM process), Go's goroutine-per-job, Node's async worker
+          &mdash; the same pickup script, a different executor. The wire underneath does not move.</p>
+      </div>
+    </div>
+    <p class="take">The pickup is the protocol; the loop is the runtime. Same <code class="inl">moveToActive-11</code> in
+      Elixir, Go, and Node.js &mdash; a BEAM process, a goroutine, or an async task around it.</p>
+    <p class="note">Back to <a href="/echomq/core/jobs-queues-workers">the module hub</a>; the lifecycle these components move
+      a job through is <a href="/echomq/core/lifecycle">E2.01</a>.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The reliable pickup behind the loop, and the BullMQ worker model it mirrors.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://docs.bullmq.io/">BullMQ &mdash; <em>Documentation</em></a> &mdash; the worker model, concurrency, and the pickup script.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>Home</em></a> &mdash; the project EchoMQ implements.</li>
+          <li><a href="https://redis.io/commands/rpoplpush/">Redis &mdash; <em>RPOPLPUSH</em></a> &mdash; the reliable wait&rarr;active move the pickup performs.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/lists/">Redis &mdash; <em>Lists</em></a> &mdash; the wait and active LISTs the loop reads.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/core/jobs-queues-workers">E2.02 &middot; Jobs, queues &amp; workers</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/core/jobs-queues-workers/the-stateless-queue">E2.02.2 &middot; The stateless queue</a> &mdash; the queue the worker pulls from.</li>
+          <li><a href="/echomq/core/lock-management">E2.03 &middot; Lock management</a> &mdash; the LockManager that renews in-flight locks.</li>
+          <li><a href="/echomq/core/lifecycle/the-lock-protocol">E2.01.3 &middot; The lock protocol</a> &mdash; the lock the pickup acquires.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns R3 &middot; Reliable queues</a> &mdash; the reliable pickup, applied.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/core/jobs-queues-workers/the-stateless-queue"><span aria-hidden="true">&larr;</span>&nbsp; E2.02.2 &middot; The stateless queue</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/core/jobs-queues-workers">E2.02 &middot; Jobs, queues &amp; workers <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ &mdash; the polyglot job-queue protocol, taught in depth and tracked as it is built.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/core/jobs-queues-workers">E2.02 &middot; Jobs, queues &amp; workers</a>
+        <a href="/echomq/core/jobs-queues-workers/the-job-model">E2.02.1 &middot; The job model</a>
+        <a href="/echomq/core/jobs-queues-workers/the-stateless-queue">E2.02.2 &middot; The stateless queue</a>
+        <a href="/echomq/core/jobs-queues-workers/the-worker-fetch-loop">E2.02.3 &middot; The worker fetch loop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/core">E2 &middot; The core</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the slot math (pure over concurrency + a fixed pending set) ---------- */
+  var PENDING = 4;            /* fixed pending jobs in the queue */
+  var SLOT_COUNT = 6;
+
+  function renderSlots(concurrency) {
+    var out = document.getElementById('slotOut');
+    var valEl = document.getElementById('concVal');
+    if (valEl) valEl.textContent = String(concurrency);
+    var running = Math.min(concurrency, PENDING);     /* min(concurrency, pending) */
+    var available = concurrency - running;            /* free slots after fetch (no in-flight yet) */
+    var waiting = Math.max(0, PENDING - running);     /* pending jobs with no slot */
+
+    for (var i = 0; i < SLOT_COUNT; i++) {
+      var g = document.getElementById('slot-' + i);
+      var s = document.getElementById('slot-s-' + i);
+      if (!g) continue;
+      g.classList.remove('run', 'free', 'wait');
+      if (i < running) { g.classList.add('run'); if (s) s.textContent = 'job ' + (i + 1); }
+      else if (i < concurrency) { g.classList.add('free'); if (s) s.textContent = 'free'; }
+      else { g.classList.add('wait'); if (s) s.textContent = (i < concurrency + waiting) ? 'queued' : '—'; }
+    }
+    /* mark queued pending jobs that have no slot, on the trailing cells */
+    if (out) {
+      out.innerHTML = '<b>concurrency = ' + concurrency + '</b> <span class="dim">· pending = ' + PENDING + '</span><br>' +
+        '<span class="dim">running at once = min(concurrency, pending) =</span> <b>' + running + '</b> &nbsp; ' +
+        '<span class="dim">available_slots = concurrency − in-flight =</span> <b>' + available + '</b><br>' +
+        '<span class="dim">jobs still waiting for a slot:</span> <b>' + waiting + '</b>';
+    }
+  }
+
+  var range = document.getElementById('concRange');
+  if (range) {
+    range.addEventListener('input', function () { renderSlots(parseInt(range.value, 10)); });
+    renderSlots(parseInt(range.value, 10));
+  } else {
+    renderSlots(1);
+  }
+
+  /* ---------- content: step one slot's fetch cycle (pure over the four stages) ---------- */
+  var STAGES = [
+    { cell: 'cy-0', edge: null,   name: 'fetch',    note: 'a free slot fetches one job via Scripts.move_to_active/4 → moveToActive-11.lua (atomic pickup)' },
+    { cell: 'cy-1', edge: 'ce-0', name: 'run',      note: 'the job runs in its own BEAM process via Task.async/1 — a process per job' },
+    { cell: 'cy-2', edge: 'ce-1', name: 'complete', note: 'the Task result returns as a message; the worker moves the job to completed / failed / delayed' },
+    { cell: 'cy-0', edge: 'ce-2', name: 'refill',   note: ':fetch_jobs is re-sent to fill the freed slot — event-driven, with Process.send_after fallbacks' }
+  ];
+  var CYC_CELLS = ['cy-0', 'cy-1', 'cy-2'];
+  var CYC_EDGES = ['ce-0', 'ce-1', 'ce-2'];
+  var cycStep = 0; /* 0 = fetch (start); steps advance through run, complete, refill */
+
+  function renderCycle() {
+    var st = STAGES[cycStep];
+    var out = document.getElementById('cycOut');
+    if (!out) return;
+    CYC_CELLS.forEach(function (c) { var el = document.getElementById(c); if (el) el.classList.remove('on'); });
+    CYC_EDGES.forEach(function (e) { var el = document.getElementById(e); if (el) el.classList.remove('lit'); });
+    var cellEl = document.getElementById(st.cell);
+    if (cellEl) cellEl.classList.add('on');
+    if (st.edge) { var edgeEl = document.getElementById(st.edge); if (edgeEl) edgeEl.classList.add('lit'); }
+    out.innerHTML = '<b>stage ' + (cycStep + 1) + ' / 4 — ' + st.name + '</b><br>' +
+      '<span class="dim">' + st.note + '</span>';
+  }
+
+  var stepBtn = document.getElementById('cycStep');
+  if (stepBtn) stepBtn.addEventListener('click', function () {
+    cycStep = (cycStep + 1) % STAGES.length;
+    renderCycle();
+  });
+  var resetBtn = document.getElementById('cycReset');
+  if (resetBtn) resetBtn.addEventListener('click', function () { cycStep = 0; renderCycle(); });
+  renderCycle();
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

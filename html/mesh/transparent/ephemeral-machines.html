@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M7.2 · A Million Ephemeral Machines — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="Modular work runs on short-lived machines that boot the whole application, not on a bespoke serverless rewrite. This dive reads the FLAME pattern — Fleeting Lambda Application for Modular Execution, which treats the entire app as a lambda whose parts run on temporary copies of itself — and the Fly Machine that is its grain, a microVM that launches and stops at subsecond speeds and shuts itself down when its program exits. It shows how EchoMesh proposes to drain its worker fleet, the Go workers included, onto ephemeral compute that scales to the work and to zero.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-mesh)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the FLAME ephemeral-fleet emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.capsvg{width:100%;height:auto;display:block}
+.capsvg .axt{font:11px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .endlbl{font:12px var(--mono);fill:var(--m-ink);font-weight:700}
+.capsvg .endsub{font:11px var(--mono);fill:var(--m-dim)}
+.capsvg .lane{fill:var(--m-paper);stroke:var(--m-line);stroke-width:1}
+.capsvg .lanelbl{font:11px var(--mono);fill:var(--m-dim);text-anchor:end}
+.capsvg .work{fill:var(--m-edge);transition:opacity .25s ease,transform .25s ease}
+.capsvg .worklbl{font:10.5px var(--mono);fill:var(--m-edge);font-weight:700;text-anchor:middle;transition:opacity .25s ease}
+.capsvg .mach{fill:var(--m-mesh-tint);stroke:var(--m-mesh);stroke-width:1.5;transition:opacity .25s ease,transform .25s ease}
+.capsvg .machx{font:10px var(--mono);fill:var(--m-mesh);font-weight:700;text-anchor:middle;transition:opacity .25s ease}
+.capsvg .gone{fill:none;stroke:var(--m-line);stroke-width:1.2;stroke-dasharray:3 3;transition:opacity .25s ease}
+.capsvg .flag{fill:var(--m-mesh)}
+.capsvg .flaglbl{font:10px var(--mono);fill:var(--m-card);font-weight:700;text-anchor:middle}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the property duality / thesis ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-cons);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-edge)}
+.tri article:nth-child(3){border-top-color:var(--m-avail)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+.frozen pre .fm{color:#c79bdc}
+
+/* ---------- the two-end compare ---------- */
+.cmp{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:6px}
+.cmp article{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px}
+.cmp article.reg{border-left:3px solid var(--m-cons)}
+.cmp article.con{border-left:3px solid var(--m-mesh)}
+.cmp .ck{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.cmp article.reg .ck{color:var(--m-cons)}
+.cmp article.con .ck{color:var(--m-mesh)}
+.cmp h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.cmp p{font-size:.9rem;color:var(--m-ink)}
+.cmp .ex{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);border-top:1px dashed var(--m-line);padding-top:9px}
+.cmp .ex b{color:var(--m-ink)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.doors,.cmp{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.doors,.cmp{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><a href="/mesh/transparent">transparent</a><span class="rsep">/</span><span class="rcur">ephemeral-machines</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#tax">The tax</a>
+      <a href="#flame">FLAME</a>
+      <a href="#grain">The grain</a>
+      <a href="#drain">Draining</a>
+      <a href="#fit">Why it fits</a>
+      <a href="#candid">Candidly</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M7.2 &#183; Transparent Infrastructure</p>
+      <h1>A million <span class="hns">ephemeral</span> machines.</h1>
+      <p class="lede">Modular work runs on <b>short-lived machines that boot the whole application</b>, not on a bespoke
+      serverless rewrite. This dive reads the <b>FLAME pattern</b> &#8212; treat the entire app as a lambda whose parts
+      run on temporary copies of itself &#8212; and the <b>Fly Machine</b> that is its grain, a microVM that launches and
+      stops at subsecond speeds and shuts itself down when its program exits.</p>
+      <p class="heronote">No measurement here: this dive reads a pattern and its grain, not a benchmark. Two primary
+      sources carry it (<a href="#refs">McCord's FLAME pattern and the Fly Machine as the ephemeral compute unit</a>);
+      the pattern and the grain are cited, and how EchoMesh's worker tier would use them is named as design. The same-code
+      property that makes a whole-app runner possible is M7.1; the placement of these machines is M7.3.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>Running a whole app on short-lived infrastructure is the settled FLAME pattern, and the fast-launching,
+        self-stopping ephemeral microVM is the shipped Fly Machine. EchoMesh's proposal is the use &#8212; draining its
+        worker tier, the Go workers included, onto ephemeral machines that absorb work off the bus and vanish when it
+        clears &#8212; separated from the shipped pattern and platform at M8.2. Magnitudes named below are qualitative,
+        not measured.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>A worker tier on ephemeral compute &#183; step from <b>idle</b> through a burst to <b>cleared</b>,
+        and watch short-lived machine grains appear to absorb work and disappear when done &#8212; the <b>FLAME</b>
+        pattern of McCord, on the self-stopping <b>Fly Machine</b>. Hover a state to take the fleet there.</figcaption>
+        <svg class="capsvg" id="capsvg" viewBox="0 0 760 250" role="img" aria-label="A worker tier drawn as a work lane above a machine lane. In the idle state the work lane is empty and the machine lane shows only faint dashed outlines where machines would be — nothing runs. When work appears, amber work items fill the work lane and violet machine grains launch in the lane below, one per item, each marked as running the whole app. Under a burst the work lane is full and the machine lane is full of running grains — the fleet tracks the work. When the work clears, the work items are gone and the machine grains fade back to dashed outlines — the machines have shut themselves down on program exit. No grain carries a measured count, latency, or rate; the magnitudes are qualitative — short-lived, launching, vanishing — none invented.">
+          <!-- lane labels -->
+          <text class="endlbl" x="70" y="30" text-anchor="start">the work</text>
+          <text class="endsub" x="70" y="45" text-anchor="start">claim checks off the bus &#183; M6.2</text>
+          <text class="endlbl" x="690" y="30" text-anchor="end">the fleet</text>
+          <text class="endsub" x="690" y="45" text-anchor="end">scale-to-zero &#183; FLAME on Fly Machines</text>
+
+          <!-- the work lane -->
+          <text class="lanelbl" x="118" y="84">work</text>
+          <rect class="lane" x="126" y="62" width="566" height="38" rx="4"></rect>
+          <g id="workLane">
+            <g class="wkitem" data-i="0"><rect class="work" x="138" y="70" width="46" height="22" rx="3"></rect><text class="worklbl" x="161" y="85">job</text></g>
+            <g class="wkitem" data-i="1"><rect class="work" x="196" y="70" width="46" height="22" rx="3"></rect><text class="worklbl" x="219" y="85">job</text></g>
+            <g class="wkitem" data-i="2"><rect class="work" x="254" y="70" width="46" height="22" rx="3"></rect><text class="worklbl" x="277" y="85">job</text></g>
+            <g class="wkitem" data-i="3"><rect class="work" x="312" y="70" width="46" height="22" rx="3"></rect><text class="worklbl" x="335" y="85">job</text></g>
+            <g class="wkitem" data-i="4"><rect class="work" x="370" y="70" width="46" height="22" rx="3"></rect><text class="worklbl" x="393" y="85">job</text></g>
+            <g class="wkitem" data-i="5"><rect class="work" x="428" y="70" width="46" height="22" rx="3"></rect><text class="worklbl" x="451" y="85">job</text></g>
+            <g class="wkitem" data-i="6"><rect class="work" x="486" y="70" width="46" height="22" rx="3"></rect><text class="worklbl" x="509" y="85">job</text></g>
+            <g class="wkitem" data-i="7"><rect class="work" x="544" y="70" width="46" height="22" rx="3"></rect><text class="worklbl" x="567" y="85">job</text></g>
+          </g>
+
+          <!-- the machine lane -->
+          <text class="lanelbl" x="118" y="158">machines</text>
+          <rect class="lane" x="126" y="132" width="566" height="50" rx="4"></rect>
+          <g id="machLane">
+            <g class="mcitem" data-i="0"><rect class="gone" x="138" y="140" width="46" height="34" rx="3"></rect><rect class="mach" x="138" y="140" width="46" height="34" rx="3"></rect><text class="machx" x="161" y="161">app</text></g>
+            <g class="mcitem" data-i="1"><rect class="gone" x="196" y="140" width="46" height="34" rx="3"></rect><rect class="mach" x="196" y="140" width="46" height="34" rx="3"></rect><text class="machx" x="219" y="161">app</text></g>
+            <g class="mcitem" data-i="2"><rect class="gone" x="254" y="140" width="46" height="34" rx="3"></rect><rect class="mach" x="254" y="140" width="46" height="34" rx="3"></rect><text class="machx" x="277" y="161">app</text></g>
+            <g class="mcitem" data-i="3"><rect class="gone" x="312" y="140" width="46" height="34" rx="3"></rect><rect class="mach" x="312" y="140" width="46" height="34" rx="3"></rect><text class="machx" x="335" y="161">app</text></g>
+            <g class="mcitem" data-i="4"><rect class="gone" x="370" y="140" width="46" height="34" rx="3"></rect><rect class="mach" x="370" y="140" width="46" height="34" rx="3"></rect><text class="machx" x="393" y="161">app</text></g>
+            <g class="mcitem" data-i="5"><rect class="gone" x="428" y="140" width="46" height="34" rx="3"></rect><rect class="mach" x="428" y="140" width="46" height="34" rx="3"></rect><text class="machx" x="451" y="161">app</text></g>
+            <g class="mcitem" data-i="6"><rect class="gone" x="486" y="140" width="46" height="34" rx="3"></rect><rect class="mach" x="486" y="140" width="46" height="34" rx="3"></rect><text class="machx" x="509" y="161">app</text></g>
+            <g class="mcitem" data-i="7"><rect class="gone" x="544" y="140" width="46" height="34" rx="3"></rect><rect class="mach" x="544" y="140" width="46" height="34" rx="3"></rect><text class="machx" x="567" y="161">app</text></g>
+          </g>
+
+          <text class="axt" x="380" y="212">work appears &#8594; machines launch &#183; work clears &#8594; machines vanish &#183; each grain runs the whole app, briefly</text>
+          <text class="axt" x="380" y="232" id="svgState">state &#183; idle: nothing runs</text>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">state &#183; hover to drive the fleet</span>
+          At <b>idle</b> nothing runs &#8212; the work lane is empty and no machine is up, so the fleet costs nothing.
+          Hover a state below to step the fleet from idle, through a burst, to cleared, and watch machines
+          <span class="vc">launch</span> to absorb work and <span class="vc">vanish</span> when it is done.
+        </p>
+        <div class="htabs" id="fleetw">
+          <div class="htabs-bar" role="tablist" aria-label="Step the ephemeral worker fleet">
+            <button type="button" role="tab" data-tab="idle" aria-selected="false"><span class="sw" style="background:var(--m-line)"></span>0 &#183; Idle &#183; no work</button>
+            <button type="button" role="tab" data-tab="appear" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>1 &#183; Work appears</button>
+            <button type="button" role="tab" data-tab="burst" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>2 &#183; Under burst</button>
+            <button type="button" role="tab" data-tab="clear" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>3 &#183; Work clears</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="idle" role="tabpanel"><span class="tag m">Idle &#183; no work.</span> The work lane is empty and no machine is up. This is the scale-to-zero shape of the Fly Machine: nothing runs when nothing is happening, so the fleet costs nothing between bursts &#8212; there is no standing pool idling against the next burst.</div>
+            <div class="htabs-p" data-tab="appear" role="tabpanel"><span class="tag e">Work appears &#183; machines launch.</span> Claim checks arrive on the bus of M6.2. Rather than wake a standing pool, EchoMesh would launch ephemeral machines to absorb the work, one grain coming up per item. Each machine runs the whole app &#8212; the FLAME pattern &#8212; so it can redeem the claim check and write its result through the surfaces the app already has, with no extra plumbing.</div>
+            <div class="htabs-p" data-tab="burst" role="tabpanel"><span class="tag m">Under burst &#183; the fleet tracks the work.</span> The work lane is full and the machine lane is full of running grains. The fleet's size tracks the work: many machines under a burst, each a short-lived copy of the same program. This is the bursty, parallel part of the system scaling to the work without a separate service to deploy &#8212; the workers are the app, instantiated for seconds where the work is.</div>
+            <div class="htabs-p" data-tab="clear" role="tabpanel"><span class="tag a">Work clears &#183; machines vanish.</span> The items are done. A Fly Machine stops automatically when its program exits, so a runner that finishes shuts itself down. The grains fade to dashed outlines &#8212; the fleet falls back to zero. The bursty surface paid only for the seconds it ran, and nothing for the quiet between bursts.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a state to drive the fleet; click to pin. Without scripting, all four states read in sequence and the SVG shows the fleet at idle. Counts here are illustrative grains, not a measured machine count or rate.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="tax">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The tax FLAME removes</h2>
+        <span class="ssrc">mesh.7.2.md &#183; McCord, FLAME</span>
+      </div>
+      <p class="body">Elastic scale has usually been bought at a steep price. The serverless and function-as-a-service
+      path asks you to <b>rewrite the work into a function dialect</b>, target a bespoke runtime, and surround it with
+      extra queues, storage, and glue code to talk back to the rest of the application &#8212; and the development, test,
+      and continuous-integration complexity grows alongside the bill.</p>
+      <p class="body">FLAME's premise is that none of that is necessary if the work can run on a <b>short-lived copy of
+      the application you already have</b>. The tax FLAME removes is the reimplementation: instead of porting a piece of
+      work into a foreign environment and wiring it back, you run it where it already lives, briefly, on infrastructure
+      that appears and disappears. The compare below sets the two paths side by side.</p>
+      <div class="htabs" id="ideaw">
+        <div class="htabs-bar" role="tablist" aria-label="The FLAME idea versus the serverless rewrite">
+          <button type="button" role="tab" data-tab="wrap" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>FLAME &#183; wrap existing code</button>
+          <button type="button" role="tab" data-tab="copy" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>FLAME &#183; run on a copy of the app</button>
+          <button type="button" role="tab" data-tab="teardown" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>FLAME &#183; tear down when done</button>
+          <button type="button" role="tab" data-tab="rewrite" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>The serverless rewrite</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="wrap" role="tabpanel"><span class="tag m">Wrap existing code.</span> A modular piece of work is wrapped in a function. There is no porting into a function dialect and no foreign environment &#8212; the work stays the code it already is, called where it already lives.</div>
+          <div class="htabs-p" data-tab="copy" role="tabpanel"><span class="tag m">Run on a copy of the whole app.</span> That function runs on a temporary copy of the entire application: a remote, ephemeral node is brought up running the same program. Because the runner is the whole app, the wrapped code can write the ledger, append to a stream, or broadcast on the bus &#8212; those capabilities are already present, with no extra plumbing.</div>
+          <div class="htabs-p" data-tab="teardown" role="tabpanel"><span class="tag m">Tear down when done.</span> The work executes on the remote node, the result returns, and the node is torn down. There is no rewrite and no bespoke runtime &#8212; the same program runs, briefly, somewhere else, then stops. The pattern has a Fly backend but is not tied to one cloud; any provider with an API to launch an instance running the app code can host it.</div>
+          <div class="htabs-p" data-tab="rewrite" role="tabpanel"><span class="tag e">The serverless rewrite &#183; what FLAME avoids.</span> The function-as-a-service path asks you to rewrite the work into a function dialect, target a bespoke runtime, and surround it with extra queues, storage, and glue code to talk back to the rest of the application. The development, test, and continuous-integration complexity grows alongside the bill &#8212; the tax FLAME removes.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus a step to read it; click to pin. Without scripting, the three FLAME beats and the serverless-rewrite alternative read in sequence.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>the tax: porting work into a foreign environment and wiring it back<span class="tag">McCord 2023 &#183; FLAME</span></figcaption>
+<pre><span class="fd">// the serverless / function-as-a-service path asks you to:</span>
+rewrite work &#8594; <span class="fe">function dialect</span>      <span class="fd"># reimplement the piece of work</span>
+target       &#8594; <span class="fe">bespoke runtime</span>       <span class="fd"># a foreign environment</span>
+surround with &#8594; extra queues, storage, glue  <span class="fd"># to talk back to the rest of the app</span>
+&#8658; dev / test / CI complexity grows alongside the bill.
+
+<span class="fd">// FLAME's premise — none of that, if the work can run on:</span>
+a <b>short-lived copy of the application you already have.</b></pre>
+      </figure>
+    </section>
+
+    <section id="flame">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The FLAME pattern</h2>
+        <span class="ssrc">mesh.7.2.md &#183; McCord, FLAME</span>
+      </div>
+      <p class="body"><b>FLAME &#8212; Fleeting Lambda Application for Modular Execution</b> &#8212; treats the entire
+      application as a lambda whose modular parts execute on short-lived infrastructure. A piece of work is wrapped in a
+      function, and that function runs on a temporary copy of the whole app: a remote, ephemeral node is brought up
+      running the same application, the work executes there, the result returns, and the node is torn down.</p>
+      <p class="body">Because the runner is the whole app rather than an isolated function, the wrapped code can do
+      anything the application can &#8212; write the ledger, append to a stream, broadcast on the bus &#8212; without extra
+      plumbing, since those capabilities are already present. There is <b>no rewrite and no bespoke runtime</b>, which is
+      the same transparency the chapter has been building: the work runs as the same program, briefly, somewhere else.
+      The pattern has a Fly backend but is not tied to one cloud; any provider with an API to launch an instance running
+      the app code can host it.</p>
+      <figure class="frozen">
+        <figcaption>FLAME &#183; the whole app as a lambda, run briefly elsewhere<span class="tag">McCord 2023 &#183; FLAME</span></figcaption>
+<pre><span class="fd">// FLAME = Fleeting Lambda Application for Modular Execution.</span>
+<span class="fm">flame</span>(work) &#8658;
+  bring up a remote, ephemeral node <span class="fd"># running the SAME app</span>
+  run <span class="fm">work</span> there                    <span class="fd"># the whole app's capabilities present</span>
+  return the result
+  <b>tear down the node</b>
+
+<span class="fd">// the runner is the whole app, so the wrapped code can:</span>
+write the ledger <span class="fd">|</span> append to a stream <span class="fd">|</span> broadcast on the bus
+&#8658; <b>no rewrite, no bespoke runtime</b> &#183; not tied to one cloud.</pre>
+      </figure>
+    </section>
+
+    <section id="grain">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Fly Machines as the grain</h2>
+        <span class="ssrc">mesh.7.2.md &#183; Fly Machines</span>
+      </div>
+      <p class="body">The grain FLAME launches onto is the <b>Fly Machine</b>, a fast-launching virtual machine built for
+      exactly this. A Fly Machine starts and stops at <b>subsecond speeds</b>, on Firecracker microVMs of the kind that
+      back large serverless platforms, and it <b>stops automatically when the program inside it exits</b>, so a runner
+      that finishes its work shuts itself down. It provides ephemeral storage &#8212; a blank slate on each startup
+      &#8212; and can be placed in any region through a simple REST API, which is what lets work run close to where it is
+      needed.</p>
+      <p class="body">The economic shape is <b>scale-to-zero</b>: nothing runs when nothing is happening, and machines
+      appear only to absorb work. The cost belongs in view: placement is best-effort and can fail when a region is at
+      capacity, so a system launching machines must be prepared to <b>retry</b>. The grain is small, fast, disposable,
+      and placeable &#8212; which is what makes a million of them a reasonable thing to imagine.</p>
+      <figure class="frozen">
+        <figcaption>the Fly Machine &#183; fast, self-stopping, placeable, scale-to-zero<span class="tag">Fly.io &#183; Fly Machines</span></figcaption>
+<pre><span class="fd">// a Fly Machine — the fast-launching microVM FLAME launches onto:</span>
+start / stop   : <span class="fm">subsecond</span> (Firecracker microVM)
+on program exit: <b>stops automatically</b>      <span class="fd"># the runner shuts itself down</span>
+storage        : ephemeral &#8212; blank slate per startup
+placement      : any region via REST API      <span class="fd"># run close to the work</span>
+
+economic shape : <b>scale-to-zero</b>           <span class="fd"># machines appear only to absorb work</span>
+the cost in view: placement is best-effort &#8594; <span class="fe">be prepared to retry</span></pre>
+      </figure>
+    </section>
+
+    <section id="drain">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Draining the worker fleet onto ephemeral compute</h2>
+        <span class="ssrc">mesh.7.2.md &#183; M5 &#183; M6.2 &#183; proposed</span>
+      </div>
+      <p class="body">EchoMesh would use this for its <b>worker tier</b>, and the Go workers are part of it. Work arrives
+      on the bus of M6.2 as a <b>claim check</b> &#8212; the branded identity that references a payload held in a store
+      &#8212; and rather than keep a standing pool of workers idling against the next burst, EchoMesh would launch
+      ephemeral machines to absorb the work as it appears.</p>
+      <p class="body">A machine comes up running the app, redeems the claim check to fetch the payload, does the work,
+      writes its result back through the surfaces the app already has, and shuts down when it exits. The fleet's size
+      tracks the work: <b>many machines under a burst, none when the queue is empty</b>. Draining the workers onto
+      ephemeral compute is how the bursty, parallel part of the system would scale without paying for capacity it is not
+      using, and it does so without the workers becoming a separate service with its own deployment &#8212; they are the
+      same app, running briefly elsewhere.</p>
+      <figure class="frozen">
+        <figcaption>the worker tier on ephemeral compute &#183; claim check in, result out, machine gone<span class="tag">M6.2 bus &#183; proposed use</span></figcaption>
+<pre><span class="fd">// work arrives on the bus of M6.2 as a claim check:</span>
+claim_check = <span class="fc">branded id</span> &#8594; payload held in a store
+
+<span class="fd">// EchoMesh's proposed worker tier — no standing idle pool:</span>
+on work appears:
+  <span class="fm">launch ephemeral machine</span>            <span class="fd"># running the whole app</span>
+  redeem claim check &#8594; fetch payload
+  do the work
+  write result back through the app's own surfaces
+  <b>shut down on exit</b>                  <span class="fd"># the machine stops itself</span>
+
+&#8658; fleet size <b>tracks the work</b> &#183; many under a burst, none when empty.</pre>
+      </figure>
+    </section>
+
+    <section id="fit">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Why this fits the architecture</h2>
+        <span class="ssrc">mesh.7.2.md &#183; M5 &#183; M7.1</span>
+      </div>
+      <p class="body">The worker tier is one of the <b>segmented surfaces of M5</b>, and its trade is its own: the work is
+      bursty and parallel, and it tolerates being done on infrastructure that did not exist a moment ago and will not
+      exist a moment later. Ephemeral execution fits that trade precisely &#8212; it adds no idle cost, scales to the
+      burst, and falls to zero between bursts.</p>
+      <p class="body">And because the runner is the whole app, by the FLAME pattern, and the app is the same program
+      everywhere, by M7.1, the worker is <b>not a thing to maintain apart from the system; it is the system</b>,
+      instantiated for seconds where the work is. That is the chapter's transparency seen from the worker's side: the
+      infrastructure the work runs on is summoned and dismissed by the design, not operated as a standing fleet.</p>
+      <div class="cmp">
+        <article class="reg">
+          <p class="ck">A standing fleet</p>
+          <h3>A separate service, always on</h3>
+          <p>Workers as their own deployment, a pool kept warm against the next burst &#8212; paying for capacity between
+          bursts, and a second thing to operate, deploy, and reason about apart from the app.</p>
+          <p class="ex"><b>cost:</b> idle capacity &#183; <b>shape:</b> a service to maintain</p>
+        </article>
+        <article class="con">
+          <p class="ck">An ephemeral fleet &#183; proposed</p>
+          <h3>The same app, instantiated for seconds</h3>
+          <p>Workers as short-lived copies of the whole app, summoned by the work and dismissed when it clears &#8212; no
+          idle cost, scaling to the burst, with nothing to maintain apart from the system itself.</p>
+          <p class="ex"><b>cost:</b> only the seconds it runs &#183; <b>shape:</b> the system, briefly elsewhere</p>
+        </article>
+      </div>
+      <div class="tri">
+        <article>
+          <p class="cno">The trade</p>
+          <h3>Bursty and parallel</h3>
+          <p>The worker surface's work is bursty and parallel and tolerates running on infrastructure that did not exist
+          a moment ago &#8212; a trade ephemeral execution fits exactly.</p>
+          <p class="note">a segmented surface &#183; <b>M5</b></p>
+        </article>
+        <article>
+          <p class="cno">The runner</p>
+          <h3>The whole app, briefly</h3>
+          <p>By FLAME the runner is the whole app; by M7.1 the app is the same program everywhere. So the worker is not a
+          thing apart &#8212; it is the system, instantiated for seconds where the work is.</p>
+          <p class="note">no rewrite, no separate runtime &#183; <b>M7.1</b></p>
+        </article>
+        <article>
+          <p class="cno">The transparency</p>
+          <h3>Summoned and dismissed</h3>
+          <p>The infrastructure the work runs on is summoned and dismissed by the design, not operated as a standing
+          fleet &#8212; the chapter's transparency seen from the worker's side.</p>
+          <p class="note">scale-to-zero, by design &#183; <b>the proposal</b></p>
+        </article>
+      </div>
+      <p class="compose"><b>The placement, next:</b> these machines can be placed in any region, and M7.3 reads how the
+      mesh places them &#8212; close to the work, without a central coordinator deciding where each one lands &#8212;
+      carried under a <b>Proposed &#183; not shipped</b> note.</p>
+    </section>
+
+    <section id="candid">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>Real and proposed, candidly</h2>
+        <span class="ssrc">mesh.7.2.md &#183; the line at M8.2</span>
+      </div>
+      <p class="body">The pattern and the grain are <b>external and settled</b>. Running a whole app on short-lived
+      infrastructure is the FLAME pattern; the fast-launching, self-stopping ephemeral microVM is the Fly Machine. Both
+      are shipped and cited, not invented here.</p>
+      <p class="body">EchoMesh's proposal is the <b>use</b>: draining its worker tier, the Go workers included, onto
+      ephemeral machines that absorb work off the bus and vanish when it clears. That use is the proposal, separated from
+      the shipped pattern and platform at M8.2 &#8212; where the substrate-versus-proposal line is drawn for the whole
+      mesh. This dive reads the pattern and its grain; it does not build the same-code foundation, which is M7.1, or the
+      placement, which is M7.3. It treats the bus and its claim check as established in M6.2 and the worker tier as a
+      segmented surface from M5, and it names the best-effort cost of placement rather than dismissing it. The worker tier
+      in depth is the <b>/echomq</b> course.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh/transparent">
+          <span class="dr">/mesh/transparent</span>
+          <h3>M7 &#8212; Transparent Infrastructure</h3>
+          <p>The chapter landing: the same code everywhere, ephemeral execution, and placement without a coordinator
+          &#8212; the three answers to why the infrastructure disappears into the design.</p>
+          <p class="dnote"><b>this dive</b> is M7.2, ephemeral execution; same-code is M7.1, placement is M7.3.</p>
+        </a>
+        <a class="door" href="/echomq">
+          <span class="dr">/echomq</span>
+          <h3>EchoMQ, In Depth</h3>
+          <p>The Valkey-native bus and the worker tier that feed the fleet: the claim check arrives here, and the worker
+          tier in depth is this course.</p>
+          <p class="dnote"><b>the work</b> a machine redeems is a claim check off the bus of M6.2, specified here.</p>
+        </a>
+        <a class="door" href="/elixir">
+          <span class="dr">/elixir</span>
+          <h3>Functional Programming in Elixir</h3>
+          <p>The engine the FLAME runner brings up, the umbrella it boots, and the Fly deployment chapter that puts the
+          app on machines in the first place.</p>
+          <p class="dnote"><b>the runner</b> FLAME launches is the same program on the BEAM &#8212; the runtime taught
+          here.</p>
+        </a>
+        <a class="door" href="/mesh/stack">
+          <span class="dr">/mesh/stack</span>
+          <h3>M6 &#8212; The Stack</h3>
+          <p>The owned stack the surfaces sit on &#8212; the BEAM, the cache, the bus and streams, Tigris and Postgres
+          &#8212; including the bus that carries the worker tier's claim checks.</p>
+          <p class="dnote"><b>the bus</b> the worker fleet drains, M6.2, is one surface of the stack read here.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;8</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://fly.io/blog/rethinking-serverless-with-flame/" rel="noopener">McCord, C. (2023) &#8212; Rethinking Serverless with FLAME (The Fly Blog)</a><span class="rs">FLAME &#8212; Fleeting Lambda Application for Modular Execution &#8212; wraps a piece of work in a function that runs on a temporary copy of the whole application and is torn down when done, with no rewrites, no bespoke runtimes, and no extra queues or glue, on any cloud whose API can launch an instance of the app</span></li>
+          <li><a href="https://fly.io/docs/machines/" rel="noopener">Fly.io &#8212; Fly Machines</a><span class="rs">fast-launching Firecracker microVMs that start and stop at subsecond speeds, stop automatically when their program exits, provide ephemeral storage as a blank slate per startup, and can be placed in any region through a REST API, with placement best-effort and subject to retry</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh/transparent">M7 &#8212; Transparent Infrastructure</a><span class="rs">the chapter landing: same code everywhere, ephemeral execution, and placement without a coordinator</span></li>
+          <li><a href="/mesh/stack">M6 &#8212; The Stack</a><span class="rs">the owned stack the surfaces sit on, including the bus that carries the worker tier's claim checks</span></li>
+          <li><a href="/echomq">EchoMQ, In Depth</a><span class="rs">the Valkey-native bus and the worker tier the fleet drains &#8212; the work tier in depth</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the engine the runner brings up, the umbrella it boots, and the Fly deployment chapter</span></li>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the branded identity that the claim check carries &#8212; the reference a machine redeems</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh/transparent"><span class="pk">the chapter</span>&#8592; M7 &#183; Transparent Infrastructure</a>
+      <a class="pgx" href="/mesh/transparent/placement"><span class="pk">next &#183; dive</span>M7.3 &#183; Placement Without a Coordinator &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <a href="/mesh/best-effort-availability">M2 &#183; Best Effort Availability</a>
+        <a href="/mesh/best-effort-consistency">M3 &#183; Best Effort Consistency</a>
+        <a href="/mesh/trading">M4 &#183; Trading the Trade</a>
+        <a href="/mesh/segmenting">M5 &#183; Segmenting</a>
+        <a href="/mesh/stack">M6 &#183; The Stack</a>
+        <a href="/mesh/transparent">M7 &#183; Transparent Infrastructure</a>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0MtpWOie0</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 17:57:38 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the FLAME ephemeral-fleet emulator: the state tabs drive the SVG fleet + an aria-live readout ----------
+     READOUT and the visible grain counts are pure functions of the state key over fixed data — no network, no storage,
+     no measurement. Each state names how many work items and machine grains are visible; the count is an illustrative
+     grain count for the drawing, NOT a measured machine count, rate, or latency. Work appears -> machines launch;
+     work clears -> machines fade to dashed outlines (the self-stopping Fly Machine on program exit). */
+  var N = 8;                              /* the number of grain slots drawn in each lane */
+  var FLEET = {
+    idle:   { work: 0, mach: 0, sv: "idle: nothing runs",
+              s: "state · idle — no work",
+              h: "At <b>idle</b> the work lane is empty and no machine is up. This is the scale-to-zero shape: nothing runs when nothing is happening, so the fleet <span class='vc'>costs nothing</span> between bursts." },
+    appear: { work: 3, mach: 3, sv: "work appears: machines launch",
+              s: "state · work appears — machines launch",
+              h: "Claim checks arrive on the bus of M6.2. EchoMesh would <span class='vc'>launch ephemeral machines</span> to absorb the work, one grain per item, each running the whole app — so it can redeem the claim check and write its result with no extra plumbing." },
+    burst:  { work: 8, mach: 8, sv: "under burst: the fleet tracks the work",
+              s: "state · under burst — the fleet tracks the work",
+              h: "The work lane is full and the machine lane is full of running grains. The fleet's size <span class='vc'>tracks the work</span> — many short-lived copies of the same program, the bursty parallel surface scaling without a separate service." },
+    clear:  { work: 0, mach: 0, sv: "work clears: machines vanish",
+              s: "state · work clears — machines vanish",
+              h: "The items are done. A Fly Machine stops automatically on program exit, so each runner <span class='vc'>shuts itself down</span> — the grains fade to dashed outlines and the fleet falls back to zero, paid only for the seconds it ran." }
+  };
+  var workItems = Array.prototype.slice.call(document.querySelectorAll('#workLane .wkitem'));
+  var machItems = Array.prototype.slice.call(document.querySelectorAll('#machLane .mcitem'));
+  var emit  = document.getElementById('emit');
+  var svgSt = document.getElementById('svgState');
+
+  function paintFleet(d) {
+    for (var i = 0; i < N; i++) {
+      var wOn = i < d.work, mOn = i < d.mach;
+      var wi = workItems[i], mi = machItems[i];
+      if (wi) {
+        var wr = wi.querySelector('.work'), wl = wi.querySelector('.worklbl');
+        if (wr) wr.style.opacity = wOn ? '1' : '0';
+        if (wl) wl.style.opacity = wOn ? '1' : '0';
+      }
+      if (mi) {
+        var mr = mi.querySelector('.mach'), mx = mi.querySelector('.machx');
+        if (mr) mr.style.opacity = mOn ? '1' : '0';   /* gone outline stays under it */
+        if (mx) mx.style.opacity = mOn ? '1' : '0';
+      }
+    }
+  }
+
+  wireHtabs(document.getElementById('fleetw'), function (key) {
+    var d = FLEET[key];
+    if (!d) return;
+    if (emit) emit.innerHTML = '<span class="step">' + d.s + '</span>' + d.h;
+    if (svgSt) svgSt.textContent = 'state · ' + d.sv;
+    paintFleet(d);
+  });
+
+  /* the FLAME-idea tabs are a plain reuse of the same component */
+  wireHtabs(document.getElementById('ideaw'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

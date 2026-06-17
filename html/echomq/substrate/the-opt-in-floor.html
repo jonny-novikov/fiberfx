@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E3 — The owned keyspace · EchoMQ, the protocol in depth · jonnify</title>
+<meta name="description" content="E3 · EchoMQ 2.0 — the owned keyspace: emq.1 ships the emq:{q}:type keyspace replacing emq:, the per-queue {q} hashtag applied transparently by the core (idempotent, validated), the braced base {emq}: reserved for the core's own cross-queue keys, and emq rejected as a queue name so the namespaces cannot collide — every queue slot-local by construction for DragonflyDB-native multithreading. The v1 line (EchoMQ.Keys interpolating the queue name verbatim under emq:, bullmq:5.65.1) freezes at 1.3.0. Movement II, tracks the drafted rung emq.1 (the 2.0 break, taught from its spec). ← redis-patterns R0 (foundations), R2 (atomicity).">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- key-list interactive ---- */
+.keylist{list-style:none;margin:1rem 0 0;padding:0;display:grid;gap:.4rem}
+.keylist li{font-family:var(--mono);font-size:.86rem;display:flex;flex-wrap:wrap;gap:.55rem;align-items:baseline;
+  padding:.45rem .65rem;border:1px solid var(--line);border-radius:9px;background:var(--ink);color:var(--cream-soft);
+  transition:border-color .16s ease,opacity .16s ease}
+.keylist li .tagb{font-family:var(--mono);font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;
+  padding:.1rem .45rem;border-radius:999px;border:1px solid var(--line)}
+.keylist li .tagb.core{color:var(--gold-bright);border-color:var(--gold)}
+.keylist li .tagb.emq{color:var(--echo-bright);border-color:var(--echo)}
+.keylist li.emqk{border-color:var(--echo)}
+.keylist li.hidden{display:none}
+.keylist .kn{color:var(--cream)}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.backlinks{font-family:var(--mono);font-size:.76rem;color:var(--cream-dim);margin:1.2rem 0 0;display:flex;flex-wrap:wrap;gap:.4rem 1rem}
+.backlinks a{color:var(--gold)}
+.backlinks .mv{color:var(--echo-bright)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+/* ---- the 2.0 fork (the break callout — EchoMQ leaves the BullMQ wire) ---- */
+.fork{margin:1.7rem 0 0;border:1px solid var(--burgundy);border-radius:16px;
+  background:linear-gradient(180deg,rgba(196,80,76,.10),rgba(10,14,26,.3));
+  padding:clamp(1rem,2.4vw,1.5rem)}
+.fork .dl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--burgundy);margin:0 0 .6rem}
+.fork p{margin:0;font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure)}
+.fork a{color:var(--gold-bright);font-weight:600}
+.fork a:hover{color:var(--cream)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/substrate">substrate</a><span class="rsep">/</span><span class="rcur">the-opt-in-floor</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/substrate">E3 &middot; EchoMQ 2.0</a>
+        <span class="sep">/</span>
+        <span class="here">The owned keyspace</span>
+      </div>
+      <p class="eyebrow">E3 &middot; EchoMQ 2.0 &middot; orientation &middot; transparent hashtags by construction</p>
+      <h1>The owned <span class="ex">keyspace</span></h1>
+      <p class="lede">EchoMQ 2.0 owns its keyspace. The <code class="inl">emq:</code> prefix replaces
+        <code class="inl">emq:</code>, the per-queue hashtag is the core's job, and every queue is placed by
+        construction.</p>
+      <p class="kicker">EchoMQ 2.0 breaks from BullMQ on the <strong>first</strong> rung, and the most visible part
+        of the break is the keyspace. emq.1 ships <code class="inl">emq:{q}:&lt;type&gt;</code> &mdash; the
+        <code class="inl">emq:</code> prefix replacing <code class="inl">emq:</code>, the queue name brace-wrapped
+        <strong>transparently by the core</strong> (a caller still writes <code class="inl">Queue("orders")</code>),
+        and the braced base <code class="inl">{emq}:</code> reserved for the core's own cross-queue keys so the
+        namespaces cannot collide. Every queue is slot-local by construction. The v1 line that interpolates the queue
+        name verbatim under <code class="inl">emq:</code> freezes at <code class="inl">1.3.0</code>. The rung is
+        <code class="inl">emq.1</code>, <strong>drafted</strong>, taught from its spec.</p>
+      <p class="backlinks">
+        <span class="mv">Movement II &middot; Extension &middot; tracks emq.1 &middot; drafted (the 2.0 break)</span>
+        <a href="/redis-patterns/overview">&larr; redis-patterns R0</a>
+        <a href="/redis-patterns/coordination">&larr; redis-patterns R2</a>
+      </p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#fact">The owned keyspace</a>
+        <a href="#seam">v1 &rarr; v2 keys</a>
+        <a href="#colocate">Two slots, by construction</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig" aria-labelledby="seamTitle">
+      <h4 id="seamTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">v1 &rarr; v2 keyspace &middot; queue <code class="inl">payments</code></h4>
+      <div class="controls">
+        <div class="solid-select" id="lineSel" role="group" aria-label="Which line's keyspace">
+          <button type="button" data-line="v1" data-c="gold" class="active" aria-pressed="true">v1 line (1.3.0)</button>
+          <button type="button" data-line="v2" data-c="echo" aria-pressed="false">emq.1 ships (2.0)</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 96" role="img" aria-label="A single band for the queue payments showing its key prefix. In the v1 state the band reads the bull prefix with the queue name interpolated verbatim and no hashtag. In the v2 state, drawn in the EchoMQ accent, the band reads the emq prefix with the queue name brace-wrapped as a hashtag.">
+        <rect id="lineBand" x="20" y="14" width="420" height="64" rx="9" fill="rgba(212,168,90,.10)" stroke="#d4a85a"></rect>
+        <text id="lineLbl" x="34" y="36" font-family="var(--mono)" font-size="11" fill="#f0cd7f">v1 LINE &middot; frozen at 1.3.0 &middot; verbatim, unplaced</text>
+        <text id="linePfx" x="34" y="54" font-family="var(--mono)" font-size="12" fill="#d7cfb9">emq:payments:&lt;type&gt;</text>
+        <text id="lineNote" x="34" y="70" font-family="var(--mono)" font-size="10" fill="#a39c89">no hashtag — nothing to place across threads</text>
+      </svg>
+
+      <ul class="keylist" id="seamList" aria-label="The produced key set for the selected line"></ul>
+      <div class="geo-readout" id="seamOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="fact">
+    <h2>emq.1 owns its keyspace</h2>
+    <div class="prose">
+      <p>EchoMQ 2.0 drops BullMQ wire compatibility on the <strong>first</strong> rung, and the most visible part of
+        that break is the keyspace. The v1 line &mdash; <code class="inl">echo/apps/echomq</code> v<code class="inl">1.3.0</code>,
+        the line the fork freezes &mdash; speaks the <code class="inl">emq:</code> prefix and interpolates the queue
+        name <strong>verbatim</strong>: the shipped <code class="inl">EchoMQ.Keys.base/1</code> returns
+        <code class="inl">"#{prefix}:#{name}"</code> (<code class="inl">keys.ex:97-98</code>),
+        <code class="inl">key_prefix/1</code> returns <code class="inl">"#{prefix}:#{name}:"</code>
+        (<code class="inl">keys.ex:85-86</code>) &mdash; no wrapping, no validation, no placement. A queue named
+        <code class="inl">payments</code> produces <code class="inl">emq:payments:wait</code>,
+        <code class="inl">emq:payments:active</code>, and the rest: flat strings with nothing for a thread-per-shard
+        datastore to balance on.</p>
+      <p><strong>emq.1 ships the owned keyspace.</strong> Every per-queue key becomes
+        <code class="inl">emq:{q}:&lt;type&gt;</code> &mdash; the <code class="inl">emq:</code> prefix replacing
+        <code class="inl">emq:</code>, the queue name brace-wrapped <strong>transparently by the core</strong> (a
+        caller still writes <code class="inl">Queue("orders")</code> and the core places
+        <code class="inl">emq:{orders}:*</code>). The wrap is <strong>idempotent</strong> (an already-braced caller
+        name is not double-wrapped) and <strong>validated</strong> (no colon inside a hashtag;
+        <code class="inl">emq</code> is rejected as a queue name). The braced base <code class="inl">{emq}:</code> is
+        <strong>reserved</strong> for the core's own cross-queue keys &mdash; so the core's namespace and any queue's
+        cannot collide (INV3). Every queue is slot-local by construction.</p>
+    </div>
+    <dl class="deflist">
+      <dt>v1 line (1.3.0)</dt><dd>The frozen <code class="inl">emq:</code> keyspace: <code class="inl">EchoMQ.Keys</code> interpolating the queue name verbatim (<code class="inl">keys.ex:85-86</code>), <code class="inl">EchoMQ.Version</code> = <code class="inl">bullmq:5.65.1</code>. Flat, unplaced.</dd>
+      <dt>emq:{q}:&lt;type&gt; (emq.1 ships)</dt><dd>The owned v2 keyspace: <code class="inl">emq:</code> prefix, the per-queue <code class="inl">{q}</code> hashtag applied transparently (idempotent, validated), every queue slot-local.</dd>
+      <dt>{emq}: (reserved)</dt><dd>The braced base reserved for the core's own cross-queue keys; <code class="inl">emq</code> rejected as a queue name so the namespaces cannot collide (INV3).</dd>
+    </dl>
+    <p class="note">The rung is <strong>drafted</strong>. <code class="inl">lib/echomq/ext/</code> and the v2 script
+      set do not exist yet, so every <code class="inl">emq:{q}:*</code> surface here is taught from
+      <code class="inl">specs/emq/emq.1.md</code>, written "emq.1 ships&nbsp;&hellip;" &mdash; never asserted as
+      shipped. The v1 anchors (<code class="inl">EchoMQ.Keys</code>, <code class="inl">bullmq:5.65.1</code>) are real
+      and present.</p>
+  </section>
+
+  <section id="seam">
+    <h2>The v1 &rarr; v2 key comparison, on the real grounding</h2>
+    <div class="prose">
+      <p>Take the fixed queue <code class="inl">payments</code>. The v1 line, today, produces the
+        <code class="inl">emq:</code> families &mdash; the verbatim-interpolated builders in
+        <code class="inl">EchoMQ.Keys</code>: the LIST keys <code class="inl">:wait</code> / <code class="inl">:active</code> /
+        <code class="inl">:paused</code>, the ZSET keys <code class="inl">:delayed</code> / <code class="inl">:prioritized</code> /
+        <code class="inl">:completed</code> / <code class="inl">:failed</code> / <code class="inl">:waiting-children</code>,
+        the SET <code class="inl">:stalled</code>, the STREAM <code class="inl">:events</code>, the HASH
+        <code class="inl">:meta</code>, and the per-job <code class="inl">emq:payments:&lt;jobId&gt;:lock</code> via
+        <code class="inl">EchoMQ.Keys.lock/2</code>. These are flat: no hashtag, nothing to place across threads. This
+        is the line the fork freezes at <code class="inl">1.3.0</code>.</p>
+      <p>emq.1 ships the v2 form of each. <code class="inl">emq:payments:wait</code> becomes
+        <code class="inl">emq:{payments}:wait</code>, <code class="inl">emq:payments:active</code> becomes
+        <code class="inl">emq:{payments}:active</code>, &hellip; <code class="inl">emq:payments:&lt;jobId&gt;:lock</code>
+        becomes <code class="inl">emq:{payments}:&lt;jobId&gt;:lock</code>. The <code class="inl">emq:</code> prefix
+        replaces <code class="inl">emq:</code>; the queue name carries its <code class="inl">{&hellip;}</code>
+        hashtag, applied transparently by the core; the field set is otherwise the same. The hero figure shows each
+        line's key set side by side &mdash; toggle it and watch the prefix flip and the hashtag appear.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># queue "payments" — v1 line (frozen at 1.3.0) → emq.1 ships (2.0).</span>
+<span class="cmt"># v1: EchoMQ.Keys interpolates the name verbatim under emq: (keys.ex:85-86) — flat, unplaced</span>
+  <span class="rdx">emq:payments:wait</span>   <span class="rdx">emq:payments:active</span>   <span class="rdx">emq:payments:meta</span>
+  <span class="rdx">emq:payments:&lt;jobId&gt;:lock</span>   <span class="cmt"># EchoMQ.Keys.lock/2 — no hashtag</span>
+<span class="cmt"># emq.1 ships: emq: prefix, the {q} hashtag applied transparently by the core</span>
+  <span class="op">emq:{payments}:wait</span>   <span class="op">emq:{payments}:active</span>   <span class="op">emq:{payments}:meta</span>
+  <span class="op">emq:{payments}:&lt;jobId&gt;:lock</span>   <span class="cmt"># one hashtag {payments} — slot-local by construction</span>
+  <span class="res">{emq}:version  {emq}:nodes</span>   <span class="cmt"># the core's own keys, the reserved {emq}: base</span></pre>
+
+    <p class="take">emq.1 ships the break: <code class="inl">emq:</code> for <code class="inl">emq:</code>, and the
+      queue name brace-wrapped so every v2 key is placed by construction.</p>
+  </section>
+
+  <section id="colocate">
+    <h2>Two slots, by construction</h2>
+    <div class="prose">
+      <p>emq.1 ships the transparent hashtag so a queue's keys are placed precisely. A datastore that locks on the
+        hashtag routes a key by the substring inside the first <code class="inl">{&hellip;}</code> &mdash; the hashtag.
+        So every v2 key of the <code class="inl">payments</code> queue &mdash; <code class="inl">emq:{payments}:wait</code>,
+        <code class="inl">emq:{payments}:active</code>, <code class="inl">emq:{payments}:&lt;jobId&gt;:lock</code> &mdash;
+        carries the same tag, <code class="inl">payments</code>, and lands in the <strong>same slot</strong>. That is
+        what lets a v2 Lua script touch several of a queue's keys in one atomic multi-key transition &mdash; the R2
+        atomicity floor, now placement-native.</p>
+      <p>The core's own cross-queue keys live under the reserved <code class="inl">{emq}:</code> base &mdash;
+        <code class="inl">{emq}:version</code>, <code class="inl">{emq}:nodes</code> &mdash; and group into a
+        <strong>second, distinct slot</strong>: the queue's and the core's. They cannot collide, because
+        <code class="inl">emq</code> is rejected as a queue name (INV3). A property test over arbitrary queue names
+        checks the rule holds: <code class="inl">wrap&deg;wrap = wrap</code>, and every per-queue key shares exactly the
+        queue's one hashtag (emq.1-D1). The figure below extracts the <code class="inl">{&hellip;}</code> tag from each
+        key and groups by tag &mdash; the queue's keys to one slot, the core's to the other.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="tagTitle">
+      <h4 id="tagTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Extract the hashtag &middot; group into two slots</h4>
+      <div class="controls">
+        <div class="solid-select" id="keySel" role="group" aria-label="Which key to inspect">
+          <button type="button" data-i="0" data-c="echo" class="active" aria-pressed="true">:wait</button>
+          <button type="button" data-i="1" data-c="echo" aria-pressed="false">:active</button>
+          <button type="button" data-i="2" data-c="echo" aria-pressed="false">:&lt;jobId&gt;:lock</button>
+          <button type="button" data-i="3" data-c="gold" aria-pressed="false">{emq}:version</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 110" role="img" aria-label="Four v2 keys, each with its hash tag braces highlighted. The three per-queue keys point to a slot labelled tag payments; the core's own key points to a separate slot labelled tag emq. Two distinct slots, by construction.">
+        <g font-family="var(--mono)" font-size="11">
+          <text x="20" y="22" fill="#6fdccf" id="tk0">emq:{payments}:wait</text>
+          <text x="20" y="40" fill="#6fdccf" id="tk1">emq:{payments}:active</text>
+          <text x="20" y="58" fill="#6fdccf" id="tk2">emq:{payments}:&lt;jobId&gt;:lock</text>
+          <text x="20" y="80" fill="#f0cd7f" id="tk3">{emq}:version</text>
+        </g>
+        <line x1="248" y1="40" x2="300" y2="40" stroke="#2a3252" stroke-width="1.4"></line>
+        <rect x="300" y="20" width="142" height="38" rx="9" fill="rgba(42,161,152,.13)" stroke="#2aa198"></rect>
+        <text x="371" y="38" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#6fdccf">tag {payments}</text>
+        <text x="371" y="52" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#a39c89">the queue's slot</text>
+        <line x1="248" y1="80" x2="300" y2="80" stroke="#2a3252" stroke-width="1.4"></line>
+        <rect x="300" y="62" width="142" height="38" rx="9" fill="rgba(212,168,90,.10)" stroke="#d4a85a"></rect>
+        <text x="371" y="80" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#f0cd7f">tag {emq}</text>
+        <text x="371" y="94" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#a39c89">the core's reserved slot</text>
+      </svg>
+
+      <div class="geo-readout" id="tagOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern &middot; &larr; redis-patterns R2 (atomicity)</span>
+        <p>A change is one indivisible move, foreign to other state &mdash; the atomicity floor a queue's correctness
+          rests on, and the foundations (R0) that make the keyspace and the scripts the protocol.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation &middot; &#8644; emq.1 (drafted &middot; the 2.0 break)</span>
+        <p>emq.1 ships the owned keyspace: <code class="inl">emq:{q}:*</code> with the brace applied by the core, every
+          queue slot-local, and the core's own keys alone under the reserved <code class="inl">{emq}:</code> (INV3) &mdash;
+          so a single hashtag per transition keeps it single-slot and atomic.</p>
+      </div>
+    </div>
+    <p class="take">Same <code class="inl">{tag}</code> &rArr; same slot. emq.1 ships a keyspace placed by construction:
+      one queue per slot, the core's own keys alone in their reserved slot &mdash; the foundation for locking on the
+      hashtag instead of the whole store.</p>
+
+    <div class="fork">
+      <p class="dl">The 2.0 fork &mdash; EchoMQ leaves the BullMQ wire</p>
+      <p>The verbatim <code class="inl">emq:payments:*</code> keyspace is the v1 line's, frozen at
+        <code class="inl">1.3.0</code> (<a href="/echomq/core">E2 &middot; the core</a> teaches it). emq.1 ships the
+        break: <code class="inl">emq:</code> replaces <code class="inl">emq:</code>, the per-queue
+        <code class="inl">{q}</code> hashtag is applied transparently by the core, and <code class="inl">{emq}:</code>
+        is reserved for the core's own keys &mdash; so DragonflyDB can lock on the hashtag precisely instead of the
+        whole store.</p>
+    </div>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; emq.1 owns its keyspace</h2>
+    <div class="prose">
+      <p>The v1 line interpolates the queue name verbatim under <code class="inl">emq:</code>
+        (<code class="inl">EchoMQ.Keys</code>, <code class="inl">keys.ex:85-86</code>) &mdash; flat, unplaced, frozen
+        at <code class="inl">1.3.0</code>. emq.1 ships <code class="inl">emq:{q}:&lt;type&gt;</code>: the
+        <code class="inl">emq:</code> prefix replacing <code class="inl">emq:</code>, the per-queue
+        <code class="inl">{q}</code> hashtag applied transparently (idempotent, validated), the braced base
+        <code class="inl">{emq}:</code> reserved for the core's own cross-queue keys, and <code class="inl">emq</code>
+        rejected as a queue name so the namespaces cannot collide (INV3). Every queue is slot-local by construction,
+        so a hashtag-locking datastore places one queue per thread and distinct queues across cores.</p>
+    </div>
+    <p class="note">Next in E3: <strong>The versioned break</strong> &mdash; how emq.1 ships
+      <code class="inl">echomq:2.0.0</code>, the two-way boot fence that refuses cross-version contact, and the
+      explicit v1&rarr;v2 migration path, dispatched the proven way <code class="inl">EchoMQ.Scripts.execute_raw/4</code>
+      dispatches today.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the owned keyspace is grounded: the BullMQ wire the v1 line speaks and the fork leaves, the Dragonfly
+        hashtag-locking the transparent brace targets, the cluster hashtag rule, and the chapter's own pages.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://docs.bullmq.io/">BullMQ &mdash; <em>Documentation</em></a> &mdash; the reference implementation whose <code>emq:</code> key layout the v1 line speaks and the 2.0 fork leaves behind.</li>
+          <li><a href="https://www.dragonflydb.io/docs/managing-dragonfly/flags">DragonflyDB &mdash; <em>Server flags</em></a> &mdash; <code>--lock_on_hashtags</code> ("locks are done at the <code>{hashtag}</code> level"), the mechanism the transparent <code>{q}</code> hashtag targets.</li>
+          <li><a href="https://www.dragonflydb.io/docs/integrations/bullmq">DragonflyDB &mdash; <em>BullMQ on Dragonfly</em></a> &mdash; the multithreading ceiling of an unplaced keyspace that the owned keyspace removes.</li>
+          <li><a href="https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/">Redis &mdash; <em>Cluster specification</em></a> &mdash; the hash-tag rule (<code>{…}</code> decides the slot) the transparent brace relies on.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/substrate">E3 &middot; EchoMQ 2.0</a> &mdash; the chapter this dive opens.</li>
+          <li><a href="/echomq/core">E2 &middot; The core</a> &mdash; the v1 line the fork forks from.</li>
+          <li><a href="/redis-patterns/coordination">redis-patterns R2 &middot; Coordination</a> &mdash; atomicity, the pattern this dive applies.</li>
+          <li><a href="/redis-patterns/overview">redis-patterns R0 &middot; Overview</a> &mdash; foundations: why the keyspace and the scripts are the protocol.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/substrate"><span aria-hidden="true">&larr;</span>&nbsp; E3 &middot; EchoMQ 2.0</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/substrate/loaded-beside-the-core">E3 &middot; The versioned break <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ &mdash; the polyglot job-queue protocol, taught in depth and tracked as it is built.</p>
+      </div>
+      <div>
+        <h4>This chapter</h4>
+        <a href="/echomq/substrate">E3 &middot; EchoMQ 2.0</a>
+        <a href="/echomq/substrate/the-opt-in-floor">The owned keyspace</a>
+        <a href="/echomq/substrate/loaded-beside-the-core">The versioned break</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/core">E2 &middot; The core</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the v1 → v2 keyspace comparator (queue "payments") ---------- */
+  /* each row is the per-queue type with its v1 (emq:, verbatim) and v2 (emq.1 ships: emq: + {q}) form */
+  var TYPES = [
+    ':wait', ':active', ':paused', ':delayed', ':prioritized',
+    ':completed', ':failed', ':stalled', ':events', ':meta', ':<jobId>:lock'
+  ];
+  /* pure: build a queue's key for a line */
+  function keyFor(line, type) {
+    return line === 'v2' ? ('emq:{payments}' + type) : ('emq:payments' + type);
+  }
+  function lineKeys(line) {
+    return TYPES.map(function (t) { return keyFor(line, t); });
+  }
+  function lineSummary(line) {
+    var n = TYPES.length;
+    if (line === 'v1') {
+      return 'v1 line (frozen at 1.3.0) → ' + n + ' keys under emq:, the queue name interpolated verbatim ' +
+        '(EchoMQ.Keys, keys.ex:85-86). no hashtag — nothing to place across threads.';
+    }
+    return 'emq.1 ships (2.0) → ' + n + ' keys under emq:, each carrying the {payments} hashtag the core applies ' +
+      'transparently. one hashtag per key → slot-local by construction (INV3).';
+  }
+  function renderLine(line) {
+    var list = document.getElementById('seamList');
+    if (list) {
+      list.innerHTML = lineKeys(line).map(function (k) {
+        var v2 = line === 'v2';
+        var cls = v2 ? 'emqk' : '';
+        var tag = v2
+          ? '<span class="tagb emq">emq.1 ships</span>'
+          : '<span class="tagb core">v1 line</span>';
+        return '<li class="' + cls + '">' + tag + '<span class="kn">' + k + '</span></li>';
+      }).join('');
+    }
+    var band = document.getElementById('lineBand');
+    var lbl = document.getElementById('lineLbl');
+    var pfx = document.getElementById('linePfx');
+    var note = document.getElementById('lineNote');
+    if (band) {
+      band.setAttribute('stroke', line === 'v2' ? '#2aa198' : '#d4a85a');
+      band.setAttribute('fill', line === 'v2' ? 'rgba(42,161,152,.13)' : 'rgba(212,168,90,.10)');
+    }
+    if (lbl) {
+      lbl.setAttribute('fill', line === 'v2' ? '#6fdccf' : '#f0cd7f');
+      lbl.textContent = line === 'v2' ? 'emq.1 SHIPS · 2.0 · emq: prefix, {q} hashtag' : 'v1 LINE · frozen at 1.3.0 · verbatim, unplaced';
+    }
+    if (pfx) pfx.textContent = line === 'v2' ? 'emq:{payments}:<type>' : 'emq:payments:<type>';
+    if (note) note.textContent = line === 'v2' ? 'one hashtag {payments} — placed by construction' : 'no hashtag — nothing to place across threads';
+    var out = document.getElementById('seamOut');
+    if (out) out.textContent = lineSummary(line);
+  }
+  document.querySelectorAll('#lineSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var line = b.getAttribute('data-line');
+      document.querySelectorAll('#lineSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderLine(line);
+    });
+  });
+  renderLine('v1'); // initial render — correct without interaction
+
+  /* ---------- content: hashtag extraction + group into two slots (queue vs reserved core) ---------- */
+  var TAG_KEYS = [
+    { key: 'emq:{payments}:wait', slot: 'queue' },
+    { key: 'emq:{payments}:active', slot: 'queue' },
+    { key: 'emq:{payments}:<jobId>:lock', slot: 'queue' },
+    { key: '{emq}:version', slot: 'core' }
+  ];
+  /* pure: extract the hashtag (first {...} substring); empty string if none */
+  function hashTag(key) {
+    var open = key.indexOf('{');
+    if (open < 0) return '';
+    var close = key.indexOf('}', open + 1);
+    if (close < 0) return '';
+    return key.slice(open + 1, close);
+  }
+  function describeTag(i) {
+    var rec = TAG_KEYS[i];
+    var tag = hashTag(rec.key);
+    var queueTags = TAG_KEYS.filter(function (r) { return r.slot === 'queue'; }).map(function (r) { return hashTag(r.key); });
+    var queueSame = queueTags.every(function (t) { return t === queueTags[0]; });
+    if (rec.slot === 'core') {
+      return "core key " + rec.key + " → hashtag {" + tag + "}. the reserved {emq}: base — the core's own cross-queue keys land in their OWN slot, distinct from any queue's (INV3). emq is rejected as a queue name, so no collision.";
+    }
+    return 'per-queue key ' + rec.key + ' → hashtag {' + tag + '}. ' +
+      (queueSame
+        ? "the three per-queue keys share {" + queueTags[0] + "} → ONE slot. the core's own key sits in the separate {emq} slot. two slots, by construction."
+        : 'tags differ.');
+  }
+  function setTag(i) {
+    ['tk0', 'tk1', 'tk2', 'tk3'].forEach(function (id, j) {
+      var el = document.getElementById(id);
+      if (el) el.setAttribute('opacity', j === i ? '1' : '.5');
+    });
+    var out = document.getElementById('tagOut');
+    if (out) out.textContent = describeTag(i);
+  }
+  document.querySelectorAll('#keySel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var i = parseInt(b.getAttribute('data-i'), 10);
+      document.querySelectorAll('#keySel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setTag(i);
+    });
+  });
+  setTag(0); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

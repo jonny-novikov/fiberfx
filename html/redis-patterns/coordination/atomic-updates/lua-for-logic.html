@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R2.01.2 · Lua scripts for atomic logic · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R2.01.2 — a Lua script runs atomically: no command interleaves between its start and end. Compare-and-set, the multi-step conditional with side effects, and how EchoMQ moves a job between states with one inline Lua script — the real @claim, @complete, @retry transitions run EVALSHA-first by EchoMQ.Connector.eval/5. The full Lua bundle is the dedicated EchoMQ course.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the atomic-move figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.move{width:100%;height:auto;display:block;margin-top:4px}
+.move .node rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.move .node.rds rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.move .nlbl{font:12px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.move .nsub{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.move .mode{cursor:pointer;transition:opacity .18s ease}
+.move .mode .edge{stroke:var(--b-dim);stroke-width:1.6;fill:none}
+.move .mode .elbl{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.move .mode.script .edge{stroke:var(--b-node)}
+.move .mode.script .elbl{fill:var(--b-node)}
+.move .mode.seq .edge{stroke:var(--r-red)}
+.move .mode.seq .elbl{fill:var(--r-red)}
+.move.focus .mode{opacity:.2}
+.move.focus .mode.on{opacity:1}
+.move.focus .mode.on .edge{stroke-width:2.8}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/coordination">coordination</a><span class="rsep">/</span><a href="/redis-patterns/coordination/atomic-updates">atomic-updates</a><span class="rsep">/</span><span class="rcur">lua-for-logic</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#atomic">One script</a>
+      <a href="#cas">Compare-and-set</a>
+      <a href="#move">The transition</a>
+      <a href="#cache">EVALSHA</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R2.01.2 &#183; Atomic updates &#8212; dive 2</p>
+      <h1>The script <span class="hns">is the lock</span>.</h1>
+      <p class="lede">A Lua script runs to the end with nothing else interleaved. A multi-step conditional with side
+      effects becomes one indivisible move &#8212; the way EchoMQ moves every job between states.</p>
+      <p class="heronote">Grounding: echo_mq/lib/echo_mq/jobs.ex &#183; @claim (jobs.ex:126), @complete (jobs.ex:139),
+      @retry (jobs.ex:173) &#183; echo_wire/connector.ex:63 eval/5 (EVALSHA-first). Committed figure: bcs3.3.md.</p>
+
+      <figure class="anatomy" aria-labelledby="moveCap">
+        <figcaption id="moveCap"><b>The atomic move &#8212; one script vs a non-atomic sequence.</b> Select a mode to
+        light its path and read whether the job is double-picked.</figcaption>
+        <div class="segbar" id="moveSel" role="group" aria-label="Run the transition as one script or a non-atomic sequence">
+          <button type="button" data-mode="script" aria-pressed="false">one Lua script</button>
+          <button type="button" data-mode="seq" aria-pressed="false">a GET/SET sequence</button>
+        </div>
+        <svg class="move" id="move" viewBox="0 0 460 210" role="img" aria-label="Two workers ask Valkey to move the same job from pending to active. As one Lua script the move is indivisible, so only one worker takes the job. As a non-atomic GET-then-SET sequence, a second worker reads the same pending state between the steps and both pick the job. The selected mode lights its path.">
+          <g class="node"><rect x="22" y="36" width="104" height="44" rx="8"></rect><text class="nlbl" x="74" y="58">worker A</text><text class="nsub" x="74" y="73">token a1</text></g>
+          <g class="node"><rect x="22" y="120" width="104" height="44" rx="8"></rect><text class="nlbl" x="74" y="142">worker B</text><text class="nsub" x="74" y="157">token b2</text></g>
+          <g class="node rds"><rect x="178" y="78" width="118" height="48" rx="8"></rect><text class="nlbl" x="237" y="100">Valkey</text><text class="nsub" x="237" y="116">j7 in pending</text></g>
+          <g class="node"><rect x="346" y="78" width="92" height="48" rx="8"></rect><text class="nlbl" x="392" y="100">active</text><text class="nsub" x="392" y="116" id="activeCnt">0 jobs</text></g>
+
+          <g class="mode script" data-mode="script">
+            <path class="edge" d="M126 56 L178 90"></path>
+            <path class="edge" d="M296 102 L346 102"></path>
+            <text class="elbl" x="237" y="150">one EVAL &#8212; the move is indivisible</text>
+          </g>
+          <g class="mode seq" data-mode="seq">
+            <path class="edge" d="M126 56 L178 96"></path>
+            <path class="edge" d="M126 142 L178 110"></path>
+            <path class="edge" d="M296 102 L346 102"></path>
+            <text class="elbl" x="237" y="166">GET/SET &#8212; B reads pending mid-step, double-picks</text>
+          </g>
+        </svg>
+        <div class="readout" id="moveOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a mode. One
+        Lua script picks the job once; a GET/SET sequence lets a second worker read the same pending state and pick it
+        twice.</div>
+        <p class="booknote">Static verdicts &#8212; one Lua script &#8594; A runs the whole move, B finds j7 gone,
+        active holds 1, double-picked: no &#183; GET/SET sequence &#8594; B reads pending between A&#8217;s steps, both
+        write, active holds 2, double-picked: yes.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="atomic">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>One script, no window</h2>
+        <span class="ssrc">atomic-updates.md.txt &#183; Pattern 2</span>
+      </div>
+      <div class="prose">
+        <p>A WATCH/MULTI/EXEC transaction reads the value outside the server and branches on the client; a Lua script
+        moves the whole read-branch-write <strong>into</strong> the server. Redis evaluates a script on a single thread
+        to completion before the next command on that connection runs, so a script that reads a key, branches on its
+        value, and writes several keys is one atomic step. No other command lands in the middle.</p>
+        <p>That is the window a non-atomic sequence cannot close. A bare <code>GET</code>, then a branch, then a
+        <code>SET</code> leaves a gap: between the read and the write, another client can read the same key and act on
+        the same stale value. Both pass the check; both write; one update is lost &#8212; or, in a queue, one job is
+        picked twice. The script removes the gap because there is no point inside it for another command to run.</p>
+      </div>
+      <dl class="deflist">
+        <dt>EVAL script numkeys k&#8230; a&#8230;</dt><dd>Run a Lua script atomically. <code>KEYS</code> are the keys it touches, <code>ARGV</code> the arguments.</dd>
+        <dt>redis.call(&#8230;)</dt><dd>Issue a command from inside the script. Every call runs within the one atomic execution.</dd>
+        <dt>atomic step</dt><dd>The whole script runs to the end with no other command interleaved on the server.</dd>
+        <dt>the window</dt><dd>The gap a non-atomic <code>GET</code>&#8230;<code>SET</code> leaves, where a second client can act on a value about to change.</dd>
+      </dl>
+      <p class="take">The optimistic-locking alternative &#8212; <code>WATCH</code> with a retry loop &#8212; is the
+      sibling dive, <a href="/redis-patterns/coordination/atomic-updates/watch-multi-exec">R2.01.1 &#183; WATCH / MULTI
+      / EXEC</a>. This dive uses one Lua script to close the window.</p>
+    </section>
+
+    <section id="cas">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Compare-and-set, then a conditional with side effects</h2>
+        <span class="ssrc">atomic-updates.md.txt &#183; Compare-and-Set</span>
+      </div>
+      <div class="prose">
+        <p>The smallest atomic conditional is compare-and-set: write only if the current value still matches what was
+        read. The <code>GET</code>, the comparison, and the <code>SET</code> are one operation, so the set is
+        conditioned on a value still current at the instant it is written &#8212; the property a separate read and write
+        cannot promise.</p>
+      </div>
+      <pre class="code"><span class="cmt">-- CAS: set only if the current value still matches the expected one</span>
+<b>if</b> redis.call('GET', KEYS[1]) == ARGV[1] <b>then</b>
+  redis.call('SET', KEYS[1], ARGV[2])
+  <b>return</b> 1
+<b>end</b>
+<b>return</b> 0</pre>
+      <div class="prose">
+        <p>The pattern scales past a single key: a script can read a field, branch on it, write the field, and append a
+        log entry &#8212; all atomic, so any read returns either the whole before-state or the whole after-state, never a
+        half-applied one. Pick a case below to run the compare-and-set: the readout shows the read value, whether the
+        expected value matched, and whether the <code>SET</code> ran.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="casCap">
+        <figcaption id="casCap"><b>Run a compare-and-set &#8212; match writes, mismatch holds.</b> Select a case to read
+        the read value, the comparison, and whether the <code>SET</code> ran.</figcaption>
+        <div class="segbar" id="casSel" role="group" aria-label="Which compare-and-set case to run">
+          <button type="button" data-case="match" aria-pressed="false">value matches</button>
+          <button type="button" data-case="changed" aria-pressed="false">value changed</button>
+          <button type="button" data-case="absent" aria-pressed="false">key absent</button>
+        </div>
+        <div class="readout" id="casOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a case. A match
+        writes and returns 1; a changed value or an absent key skips the <code>SET</code> and returns 0.</div>
+        <p class="booknote">Static verdicts &#8212; value matches &#8594; <code>GET</code> returns "open",
+        <code>SET</code> runs, returns 1 &#183; value changed &#8594; <code>GET</code> returns "locked", mismatch, skip,
+        returns 0 &#183; key absent &#8594; <code>GET</code> returns nil, mismatch, skip, returns 0.</p>
+      </figure>
+
+      <p class="take">When the logic is conditional and touches several keys, the script is the lock: the check and the
+      writes run with no command between them.</p>
+    </section>
+
+    <section id="move">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>How EchoMQ&#8217;s transitions are single Lua scripts</h2>
+        <span class="ssrc">echo_mq/jobs.ex:126 &#183; bcs3.3.md</span>
+      </div>
+      <div class="prose">
+        <p>This is the chapter&#8217;s central bridge. EchoMQ moves a job between states with a Lua script, because
+        moving a job <em>is</em> a multi-step conditional with side effects: pop the source set, increment a counter,
+        stamp a lease, return the job. <code>EchoMQ.Jobs.claim/3</code> runs the <code>@claim</code> script (jobs.ex:126)
+        through <code>EchoMQ.Connector.eval/5</code> &#8212; <code>ZPOPMIN</code> the oldest pending id,
+        <code>HINCRBY</code> the attempts counter (the fencing token), set the row active, and <code>ZADD</code> the
+        lease on the server clock, all in one atomic step:</p>
+      </div>
+      <pre class="code"><span class="cmt">-- @claim (echo_mq/lib/echo_mq/jobs.ex:126) — pop, fence, lease, return; one atomic step.</span>
+<b>local</b> popped = redis.call('ZPOPMIN', KEYS[1])
+<b>if</b> #popped == 0 <b>then</b> <b>return</b> {} <b>end</b>
+<b>local</b> id = popped[1]
+<b>local</b> jk = ARGV[1] .. id
+<b>local</b> att = redis.call('HINCRBY', jk, 'attempts', 1)
+redis.call('HSET', jk, 'state', 'active')
+<b>local</b> t = redis.call('TIME')
+<b>local</b> now = t[1] * 1000 + math.floor(t[2] / 1000)
+redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]), id)
+<b>return</b> {id, redis.call('HGET', jk, 'payload'), att}</pre>
+      <div class="prose">
+        <p>Three facts live here. The clock is the <em>server&#8217;s</em> &#8212; <code>redis.call('TIME')</code>
+        inside the script, so leases never see client skew. The token is minted by <code>HINCRBY</code> &#8212; monotone
+        per job by construction, the property the fencing argument requires. And the keys are declared in KEYS
+        (<code>KEYS[1]</code> pending, <code>KEYS[2]</code> active); the job key is built from the prefix argument, the
+        one sanctioned exception, safe because every key the prefix can produce shares the queue&#8217;s hashtag and
+        lands on one slot.</p>
+        <p>The other transitions are the same shape and verify that token before they touch anything.
+        <code>@complete</code> (jobs.ex:139) refuses a stale token, then retires the row:</p>
+      </div>
+      <pre class="code"><span class="cmt">-- @complete (echo_mq/lib/echo_mq/jobs.ex:139) — only the current token holder may retire the row.</span>
+<b>local</b> att = redis.call('HGET', KEYS[2], 'attempts')
+<b>if</b> not att <b>then</b> <b>return</b> 0 <b>end</b>
+<b>if</b> att ~= ARGV[2] <b>then</b>
+  <b>return</b> redis.error_reply('EMQSTALE complete token mismatch')
+<b>end</b></pre>
+      <div class="prose">
+        <p><code>@retry</code> (jobs.ex:173) carries the same <code>EMQSTALE retry token mismatch</code> fence and
+        dead-letters a job past <code>max_attempts</code>. The committed manuscript record reads the law in six words:
+        <code>one job, two lives, one counter</code> &#8212; the same integer that counts the attempts fences each life
+        against the last.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>content/bcs3.3.md &#183; the fence, performing &#183; against Valkey<span class="tag">frozen</span></figcaption>
+        <pre>complete, wrong token         <b>EMQSTALE; the lease holder's work survives the zombie's complete</b>
+complete, right token          complete with the right token retires the row -- nothing remains
+attempts                       <b>one job, two lives, one counter</b>   <span class="fd">&#8592; HINCRBY mints the fence</span></pre>
+      </figure>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A Lua script runs atomically and reads one frozen server
+      clock via <code>redis.call('TIME')</code>, so the pop, the increment, and the lease land together or not at all
+      &#8212; <a href="https://valkey.io/topics/programmability/" rel="noopener">valkey.io/topics/programmability</a>.</p>
+    </section>
+
+    <section id="cache">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>EVALSHA, NOSCRIPT, SCRIPT LOAD &#8212; the script cache</h2>
+        <span class="ssrc">echo_wire/connector.ex:63 &#183; bcsA.md</span>
+      </div>
+      <div class="prose">
+        <p>Sending a kilobyte of Lua on every call would waste bandwidth. Redis caches scripts by the SHA1 of their
+        body, so a client sends the full source once and a 40-byte hash thereafter. <code>EVALSHA</code> runs a cached
+        script; if it is not in the cache, the server replies <code>NOSCRIPT</code>, the client retries with
+        <code>SCRIPT LOAD</code> (which caches the body) and re-issues the <code>EVALSHA</code>, and every later call
+        hits the cache.</p>
+        <p><code>EchoMQ.Connector.eval/5</code> (connector.ex:63) is that dispatch verbatim: <code>EVALSHA</code> first,
+        and on a <code>NOSCRIPT</code> error, <code>SCRIPT LOAD</code> then re-run by SHA. The SHA1 is precomputed once
+        at <code>EchoMQ.Script.new/2</code>. Run the call sequence below: the first call to a fresh server misses, pays
+        the source once, and caches it; every later call hits and sends only the SHA.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="shaCap">
+        <figcaption id="shaCap"><b>Step the call sequence &#8212; first miss loads, rest hit.</b> Run the next call or
+        reset; the readout tallies hits, misses, and bytes sent.</figcaption>
+        <div class="segbar" id="shaCtrl" role="group" aria-label="Step or reset the call sequence">
+          <button type="button" id="shaStep" aria-pressed="false">run next call</button>
+          <button type="button" id="shaReset" aria-pressed="false">reset cache</button>
+        </div>
+        <div class="readout" id="shaOut" aria-live="polite"></div>
+        <p class="booknote">Static verdict &#8212; the body is sent once on the first NOSCRIPT (the source); every later
+        call sends only the 40-byte SHA. The committed connector record holds <code>script_loads=1</code> across a busy
+        session.</p>
+      </figure>
+
+      <figure class="frozen">
+        <figcaption>content/bcsA.md &#183; the script path, against Valkey on :6390<span class="tag">frozen</span></figcaption>
+        <pre>script path                   <b>script_loads=1</b>   <span class="fd">&#8592; exactly one NOSCRIPT load, then EVALSHA from cache</span>
+pipelined EVALSHA             <b>161192</b> ops/s   <span class="fd">&#8592; the declared-keys law at speed</span></pre>
+      </figure>
+
+      <p class="take">The atomicity is <code>EVALSHA</code> running the whole script on the server; the SHA cache is the
+      cost layered on top &#8212; the body once, the hash forever after.</p>
+    </section>
+
+    <section id="bridge">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The pattern, and its application</h2>
+        <span class="ssrc">echo_mq/jobs.ex</span>
+      </div>
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A Lua script runs atomically: a read, a branch, and several writes with no command interleaved. One of
+          three Redis read-modify-write tools, alongside WATCH/MULTI/EXEC and the shadow-key swap.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>@claim</code>, <code>@complete</code>, <code>@retry</code> (echo_mq/lib/echo_mq/jobs.ex) are the real
+          job transitions &#8212; each one inline Lua script, each atomic, the <code>attempts</code> counter the fencing
+          token, so no two workers pick the same job.</p>
+        </div>
+      </div>
+      <p class="take">When the logic is conditional and touches several keys, the script is the lock; EchoMQ&#8217;s
+      transitions prove it.</p>
+
+      <div class="door">
+        <span class="dr">the door &#183; the EchoMQ course</span>
+        <h3>The full Lua bundle is the next course</h3>
+        <p>EchoMQ&#8217;s full Lua bundle &#8212; every transition script, the EVALSHA/NOSCRIPT dispatch internals, and
+        the governance that keeps the transitions immutable &#8212; is the dedicated <a href="/echomq">EchoMQ
+        course</a>. This dive cites three real transitions as proof the pattern is real; the depth is the next course.
+        The functional-Elixir &amp; OTP craft behind the echo umbrella is the <a href="/elixir">/elixir course</a>.</p>
+      </div>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>Recap &#8212; the script is the lock</h2>
+        <span class="ssrc">next &#8594; R2.01.3</span>
+      </div>
+      <div class="prose">
+        <p>A Lua script runs to the end with nothing interleaved, so a conditional with side effects becomes one atomic
+        step: compare-and-set, the field-plus-log update, the job transition. EchoMQ moves every job between states with
+        one such script &#8212; <code>@claim</code> over pending and active, <code>@complete</code> and
+        <code>@retry</code> token-fenced. The SHA cache (<code>EVALSHA</code> &#8594; <code>NOSCRIPT</code> &#8594;
+        <code>SCRIPT LOAD</code>) sends the body once and the hash thereafter. The next dive swaps a whole value at once
+        instead, and admits a whole batch in one wire flush.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/docs/latest/develop/interact/programmability/eval-intro/" rel="noopener">Redis &mdash; <em>Scripting with Lua</em></a> &mdash; <code>EVAL</code>/<code>EVALSHA</code>, atomic execution, and the script cache.</li>
+            <li><a href="https://valkey.io/commands/evalsha/" rel="noopener">Valkey &mdash; <em>EVALSHA</em></a> &mdash; run a cached script by its SHA1; replies <code>NOSCRIPT</code> when the script is not cached.</li>
+            <li><a href="https://valkey.io/topics/programmability/" rel="noopener">Valkey &mdash; <em>Programmability</em></a> &mdash; atomic script execution: the basis of the single-script transition.</li>
+            <li><a href="https://redis.io/docs/latest/develop/interact/transactions/" rel="noopener">Redis &mdash; <em>Transactions</em></a> &mdash; the WATCH/MULTI/EXEC alternative a script replaces on the transition path.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &#183; Atomic updates</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/coordination/atomic-updates/watch-multi-exec">R2.01.1 &#183; WATCH / MULTI / EXEC</a><span class="rs">the sibling RMW tool, with a retry loop</span></li>
+            <li><a href="/redis-patterns/coordination/atomic-updates/shadow-key-bulk">R2.01.3 &#183; Shadow key + bulk</a><span class="rs">atomic swap, batch admission</span></li>
+            <li><a href="/redis-patterns/coordination">R2 &#183; Coordination</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the EchoMQ protocol, the transition bundle in depth</span></li>
+            <li><a href="/elixir">/elixir</a><span class="rs">the functional-Elixir &amp; OTP craft behind the echo umbrella</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/coordination/atomic-updates/watch-multi-exec"><span class="pk">previous</span>&#8592; R2.01.1 &#183; WATCH / MULTI / EXEC</a>
+      <a class="pgx" href="/redis-patterns/coordination/atomic-updates/shadow-key-bulk"><span class="pk">next</span>R2.01.3 &#183; Shadow key + bulk &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/coordination/atomic-updates/watch-multi-exec">R2.01.1 &#183; WATCH / MULTI / EXEC</a>
+        <a href="/redis-patterns/coordination/atomic-updates/lua-for-logic">R2.01.2 &#183; Lua for logic</a>
+        <a href="/redis-patterns/coordination/atomic-updates/shadow-key-bulk">R2.01.3 &#183; Shadow key + bulk</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the atomic move — one script vs a sequence (pure over a fixed schedule) ---------- */
+  // Fixed schedule: worker A and worker B both try to move job j7 (pending -> active).
+  // pure: mode -> { picks, text }
+  function runMove(mode) {
+    if (mode === 'script') {
+      return {
+        picks: 1,
+        text: '@claim as ONE Lua script (ZPOPMIN pending, HINCRBY attempts, HSET active, ZADD the lease). ' +
+          'Worker A runs the whole move; B runs after A and finds j7 gone from pending. Interleavings: 0. ' +
+          'active holds 1 job. j7 double-picked: no.'
+      };
+    }
+    return {
+      picks: 2,
+      text: 'move as a non-atomic sequence — GET pending, check, SET active. Worker B reads pending between A’s GET ' +
+        'and SET and finds j7 still there. Both write. Interleavings: 1. active holds 2 entries for j7. ' +
+        'j7 double-picked: yes.'
+    };
+  }
+  var move = document.getElementById('move');
+  var moveButtons = document.querySelectorAll('#moveSel button');
+  var moveOut = document.getElementById('moveOut');
+  var activeCnt = document.getElementById('activeCnt');
+  // pure: highlight the chosen mode, sync the buttons, fill the readout — hover or click.
+  function selectMove(mode) {
+    moveButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-mode') === mode ? 'true' : 'false');
+    });
+    if (move) {
+      move.classList.toggle('focus', !!mode);
+      move.querySelectorAll('.mode').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-mode') === mode);
+      });
+    }
+    if (activeCnt) {
+      var picks = mode ? runMove(mode).picks : 0;
+      activeCnt.textContent = picks + (picks === 1 ? ' job' : ' jobs');
+    }
+    if (moveOut) {
+      moveOut.innerHTML = mode
+        ? '<span class="rk">mode &#183;</span> ' + runMove(mode).text
+        : '<span class="rk">readout &#183;</span> Select a mode. One Lua script picks the job once; a GET/SET sequence lets a second worker read the same pending state and pick it twice.';
+    }
+  }
+  moveButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var mode = b.getAttribute('data-mode');
+      selectMove(b.getAttribute('aria-pressed') === 'true' ? null : mode);
+    });
+  });
+  if (move) {
+    move.querySelectorAll('.mode').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectMove(g.getAttribute('data-mode')); });
+      g.addEventListener('mouseleave', function () { selectMove(null); });
+    });
+  }
+
+  /* ---------- Interactive 2: compare-and-set in Lua (pure over a fixed dataset) ---------- */
+  // status holds "open"; the CAS expects "open" and would set "closed".
+  var CAS = {
+    match:   { stored: 'open',   expected: 'open' },
+    changed: { stored: 'locked', expected: 'open' },
+    absent:  { stored: null,     expected: 'open' }
+  };
+  // pure: case -> readout text
+  function runCas(name) {
+    var c = CAS[name];
+    var read = c.stored === null ? 'nil' : '"' + c.stored + '"';
+    var hit = c.stored === c.expected;
+    if (hit) {
+      return 'GET status -> ' + read + '. Matches expected "' + c.expected + '": yes. SET status "closed" runs. ' +
+        'Script returns 1. The read and the write were one atomic step — no client changed status between them.';
+    }
+    var why = c.stored === null ? 'the key is absent' : 'status changed to ' + read + ' before the script ran';
+    return 'GET status -> ' + read + '. Matches expected "' + c.expected + '": no (' + why + '). SET is skipped. ' +
+      'Script returns 0. The conditional held; nothing was written on a stale match.';
+  }
+  var casButtons = document.querySelectorAll('#casSel button');
+  var casOut = document.getElementById('casOut');
+  function selectCas(name) {
+    casButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-case') === name ? 'true' : 'false');
+    });
+    if (casOut) {
+      casOut.innerHTML = name
+        ? '<span class="rk">case &#183;</span> ' + runCas(name)
+        : '<span class="rk">readout &#183;</span> Select a case. A match writes and returns 1; a changed value or an absent key skips the SET and returns 0.';
+    }
+  }
+  casButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var name = b.getAttribute('data-case');
+      selectCas(b.getAttribute('aria-pressed') === 'true' ? null : name);
+    });
+  });
+
+  /* ---------- Interactive 3: EVALSHA -> NOSCRIPT -> SCRIPT LOAD script cache (pure over a fixed call sequence) ---------- */
+  var SCRIPT_BYTES = 612, SHA_BYTES = 40;
+  var CALLS = ['@claim', '@claim', '@complete', '@claim', '@complete'];
+  // pure: (name, cached) -> { line, bytes, hit }
+  function callStep(name, cached) {
+    if (cached[name]) {
+      return { line: 'EVALSHA ' + name + ' -> hit (script cached). Bytes sent: ' + SHA_BYTES + ' (the SHA1).', bytes: SHA_BYTES, hit: true };
+    }
+    return { line: 'EVALSHA ' + name + ' -> NOSCRIPT. SCRIPT LOAD caches it, then re-run by SHA. Bytes sent: ' + SCRIPT_BYTES + ' (the body, once).', bytes: SCRIPT_BYTES, hit: false };
+  }
+  var shaState = { i: 0, cached: {}, hits: 0, misses: 0, bytes: 0, lines: [] };
+  var shaOut = document.getElementById('shaOut');
+  function renderSha() {
+    if (!shaOut) return;
+    if (shaState.i === 0) {
+      shaOut.innerHTML = '<span class="rk">cache &#183;</span> Fresh server, empty script cache. Press "run next call" to send the first of ' +
+        CALLS.length + ' calls. The body is ' + SCRIPT_BYTES + ' bytes; a SHA1 is ' + SHA_BYTES + ' bytes.';
+    } else {
+      var sent = (shaState.misses * SCRIPT_BYTES + shaState.hits * SHA_BYTES);
+      var allBody = shaState.i * SCRIPT_BYTES;
+      shaOut.innerHTML = '<span class="rk">call ' + shaState.i + '/' + CALLS.length + ' &#183;</span> ' + shaState.lines[shaState.i - 1] +
+        ' <span class="rk">tally &#183;</span> hits <b>' + shaState.hits + '</b>, misses ' + shaState.misses +
+        ', bytes sent ' + sent + ' (vs ' + allBody + ' if every call sent the full body).';
+    }
+  }
+  function shaStepFn() {
+    if (shaState.i >= CALLS.length) return;
+    var name = CALLS[shaState.i];
+    var r = callStep(name, shaState.cached);
+    shaState.lines[shaState.i] = r.line;
+    if (r.hit) shaState.hits++; else { shaState.misses++; shaState.cached[name] = true; }
+    shaState.bytes += r.bytes;
+    shaState.i++;
+    renderSha();
+  }
+  function shaResetFn() { shaState = { i: 0, cached: {}, hits: 0, misses: 0, bytes: 0, lines: [] }; renderSha(); }
+  var stepBtn = document.getElementById('shaStep'), resetBtn = document.getElementById('shaReset');
+  if (stepBtn) stepBtn.addEventListener('click', shaStepFn);
+  if (resetBtn) resetBtn.addEventListener('click', shaResetFn);
+  renderSha(); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4.05.2 · Top-N and around-me · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R4.05.2 — top-N and around-me. Two reads serve every leaderboard view. The top-N is the first N positions of the order — ZREVRANGE 0 N-1 WITHSCORES, a head-read. The around-me window is two reads: ZREVRANK to locate a player's rank, then a rank-range read centred on it, clamped at the top. Pagination is the top-N offset down the order; ZCARD gives the page count. Bridged honestly to Portal.Enrollment.Progress — the percent (0..100, namespace PRG, an in-memory store row) a ranked view would read; Portal runs no Redis sorted set.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- board diagram ---- */
+.lb .row rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.lb .row.lead rect{fill:rgba(212,168,90,.18);stroke:#d4a85a}
+.lb .row.win rect{fill:rgba(90,135,196,.18);stroke:#5a87c4}
+.lb .row.me rect{fill:rgba(123,163,135,.2);stroke:#7ba387}
+.lb text{font-family:var(--sans);fill:#d7cfb9}
+.lb .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.lb .rk{font-family:var(--mono);font-size:11px;fill:#a39c89}
+.lb .nm{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
+.lb .sc{font-family:var(--mono);font-size:11px;fill:#a39c89}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
+.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
+.door a{color:var(--gold-bright)}
+.fwd{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(90,135,196,.06),rgba(10,14,26,.2))}
+.fwd .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--blue-bright);display:block;margin:0 0 .5rem}
+.fwd code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority/leaderboards">leaderboards</a><span class="rsep">/</span><span class="rcur">top-n-and-around-me</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority/leaderboards">Leaderboards</a>
+        <span class="sep">/</span>
+        <span class="here">Top-N and around-me</span>
+      </div>
+      <p class="eyebrow">R4.05.2 &middot; dive 2</p>
+      <h1>Top-N and <span class="ex">around-me</span></h1>
+      <p class="lede">Two reads serve every leaderboard view. The top-N is the first N positions of the order; the
+        around-me window is a slice of positions either side of a player's own. Both read the same order and leave it
+        unchanged.</p>
+      <p class="kicker">A leaderboard view is one of two shapes. The first is the top-N &mdash; the leader and the
+        players right behind. The second is around-me &mdash; where a single player stands, with a few competitors above
+        and below. Both are reads of the same sorted order: the top-N reads from the head, and around-me first locates a
+        player's rank, then reads the band centred on it. Pick a view on the right and watch the index range each read
+        walks.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#topn">Top-N</a>
+        <a href="#page">Pagination</a>
+        <a href="#around">Around-me</a>
+        <a href="#applied">In Portal</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig lb" aria-labelledby="vTitle">
+      <h4 id="vTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Two views, one order &middot; the top-N head vs the around-me band</h4>
+      <div class="controls">
+        <div class="solid-select" id="vMode" role="group" aria-label="Choose the top-N view or the around-me view">
+          <button type="button" data-mode="top" data-c="blue" class="active" aria-pressed="true">top-N</button>
+          <button type="button" data-mode="around" data-c="sage" aria-pressed="false">around-me</button>
+        </div>
+        <div class="fold-ctrl" id="vNctrl">
+          <label for="vN">N</label>
+          <input type="range" id="vN" min="1" max="8" step="1" value="3">
+          <span class="val" id="vNVal">3</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 230" role="img" aria-label="A fixed roster ordered top to bottom by descending score. In top-N mode the first N rows are highlighted as a head-read. In around-me mode a chosen player's row is centred and a band either side is highlighted, clamped at the top. The slider sets N or the band half-width; the readout reports the exact rank index range each read walks. The order never changes.">
+        <text class="ttl" x="20" y="18" id="vSubtitle">ZREVRANGE leaderboard 0 N-1 WITHSCORES — the top-N head</text>
+        <g id="vRows"></g>
+      </svg>
+
+      <div class="geo-readout" id="vOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="topn">
+    <h2>Top-N &mdash; a read from the head</h2>
+    <div class="prose">
+      <p>The top-N is the first N positions of the board read high-to-low. <code class="inl">ZREVRANGE</code> reads a
+        rank range from the top, and <code class="inl">WITHSCORES</code> returns each member's score alongside it:</p>
+      <pre class="code"><span class="rdx">ZREVRANGE</span> leaderboard <span class="res">0</span> <span class="res">9</span> <span class="res">WITHSCORES</span>    <span class="cmt"># the top 10</span></pre>
+      <p>The arguments <code class="inl">0 9</code> are rank indices, inclusive &mdash; positions 0 through 9, the
+        leader through the tenth player. To read the top 5, the range is <code class="inl">0 4</code>; for the top 20,
+        <code class="inl">0 19</code>. The read walks N members from the head, which is
+        <code class="inl">O(log N + N)</code>: the log to find the head, then N to read across. The board is unchanged
+        &mdash; <code class="inl">ZREVRANGE</code> reads the order, never writes it. Redis 6.2 folded the range commands
+        into a unified <code class="inl">ZRANGE &hellip; REV</code>, which reads the identical top-N; only the spelling
+        differs.</p>
+    </div>
+    <p class="take">The top-N is a head-read of the order: <code class="inl">ZREVRANGE 0 N-1 WITHSCORES</code> returns
+      the first N positions and their scores, and reads but never writes the set.</p>
+  </section>
+
+  <section id="page">
+    <h2>Pagination &mdash; the top-N, page by page</h2>
+    <div class="prose">
+      <p>A large board is read a page at a time, each page a rank range further down the order:</p>
+      <pre class="code"><span class="rdx">ZREVRANGE</span> leaderboard <span class="res">0</span> <span class="res">19</span> <span class="res">WITHSCORES</span>    <span class="cmt"># page 1: ranks 1–20</span>
+<span class="rdx">ZREVRANGE</span> leaderboard <span class="res">20</span> <span class="res">39</span> <span class="res">WITHSCORES</span>   <span class="cmt"># page 2: ranks 21–40</span></pre>
+      <p>Page p of size s is the range <code class="inl">(p&minus;1)&middot;s</code> through
+        <code class="inl">p&middot;s &minus; 1</code>. <code class="inl">ZCARD</code> returns the member count, which
+        divided by the page size gives the page count. Each page is the same head-read, offset down the order.</p>
+    </div>
+
+    <figure class="fig lb" aria-labelledby="pgTitle">
+      <h4 id="pgTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Pages of three &middot; each page a rank range offset down the order</h4>
+      <div class="controls">
+        <div class="solid-select" id="pgSel" role="group" aria-label="Pick a page to read its rank range">
+          <button type="button" data-page="1" data-c="blue" class="active" aria-pressed="true">page 1</button>
+          <button type="button" data-page="2" data-c="blue" aria-pressed="false">page 2</button>
+          <button type="button" data-page="3" data-c="blue" aria-pressed="false">page 3</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 230" role="img" aria-label="The same fixed roster ordered by descending score. At a page size of three, picking a page highlights the rank range it reads — page 1 the first three rows, page 2 the next three, page 3 the remainder, clamped at the member count. The readout reports the rank index range, the 1-based ranks, and the ZCARD page count. The order never changes.">
+        <text class="ttl" x="20" y="18">ZREVRANGE leaderboard (p-1)·s … p·s-1 WITHSCORES — page of 3</text>
+        <g id="pgRows"></g>
+      </svg>
+
+      <div class="geo-readout" id="pgOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">A page is the top-N offset down the order &mdash; page p is the rank range
+      <code class="inl">(p&minus;1)&middot;s</code> to <code class="inl">p&middot;s&minus;1</code> &mdash; and
+      <code class="inl">ZCARD</code> over the page size gives the count.</p>
+  </section>
+
+  <section id="around">
+    <h2>Around-me &mdash; locate, then read the band</h2>
+    <div class="prose">
+      <p>The around-me view shows a player their standing against nearby competitors. It is two reads. First locate the
+        player's rank with <code class="inl">ZREVRANK</code>; then read the rank band centred on it:</p>
+      <pre class="code"><span class="rdx">ZREVRANK</span> leaderboard <span class="str">"player:alice"</span>      <span class="cmt"># say it returns 50</span>
+<span class="rdx">ZREVRANGE</span> leaderboard <span class="res">45</span> <span class="res">55</span> <span class="res">WITHSCORES</span>   <span class="cmt"># ranks 45–55: alice with five either side</span></pre>
+      <p>With a window half-width k, the band is <code class="inl">rank &minus; k</code> through
+        <code class="inl">rank + k</code>. Near the top the band clamps at 0 &mdash; a player at rank 2 with k = 5 reads
+        <code class="inl">0 7</code>, since there is nothing above rank 0. The band is a slice of the existing order;
+        neither read changes the set. Locate, then read the band around the located rank.</p>
+    </div>
+    <p class="take">Around-me is locate-then-read: <code class="inl">ZREVRANK</code> finds the rank, then a rank-range
+      read takes the band <code class="inl">rank&minus;k</code> to <code class="inl">rank+k</code>, clamped at the top
+      edge.</p>
+  </section>
+
+  <section id="applied">
+    <h2>In Portal &mdash; ranking the progress percent</h2>
+    <div class="prose">
+      <p>The pattern is two reads over a sorted order. Portal runs no sorted set. It records a learner's lesson
+        progress as a <strong>percent</strong> &mdash; <code class="inl">Portal.Enrollment.Progress</code>, the field
+        <code class="inl">percent :: 0..100</code>, namespace <code class="inl">PRG</code>, an in-memory store row.
+        There is no progress ranking; the percent is a stored value.</p>
+      <pre class="code"><span class="cmt"># Portal.Enrollment.Progress — the real struct (echo/apps/portal): percent 0..100, namespace PRG</span>
+<span class="op">%Portal.Enrollment.Progress</span>{enrollment_id: <span class="str">"ENR…"</span>, lesson_id: <span class="str">"LSN…"</span>, percent: <span class="res">72</span>}
+
+<span class="cmt"># the two reads a ranked view would add over that percent (the applied pattern — Portal runs no sorted set)</span>
+<span class="rdx">ZREVRANGE</span> board <span class="res">0</span> <span class="res">9</span> <span class="res">WITHSCORES</span>     <span class="cmt"># the ten learners furthest along</span>
+<span class="rdx">ZREVRANK</span> board <span class="str">"learner:dana"</span>        <span class="cmt"># then a rank-range read around dana's place</span></pre>
+      <p>A ranked view of learners by progress is this dive applied to that data. Score each learner by their percent
+        with <code class="inl">ZADD board &lt;percent&gt; &lt;learner&gt;</code>, and the two reads serve the two views:
+        <code class="inl">ZREVRANGE board 0 9 WITHSCORES</code> reads the ten learners furthest along, and
+        <code class="inl">ZREVRANK</code> then a rank-range read shows one learner where they stand among their
+        nearest peers. State it plainly: the percent is in Portal's store today; the top-N and around-me reads are the
+        standard way to present a ranked view of it, and both read the percent order without changing it.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>The top-N is a head-read of the score order (<code class="inl">ZREVRANGE 0 N-1</code>) and around-me is a
+          band centred on a rank (<code class="inl">ZREVRANK</code>, then a rank-range read).</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in Portal</span>
+        <p>Portal stores each learner's progress as a <code class="inl">percent</code> (the <code class="inl">PRG</code>
+          struct, an in-memory store row). A ranked view scores by that percent and reads the top learners as a
+          head-read and a single learner's neighbourhood as a band around their rank &mdash; Portal runs no sorted set;
+          the reads are the structure to add over the percent it records.</p>
+      </div>
+    </div>
+
+    <p class="take">Two reads cover every view: the head for the top-N, a band for around-me. Both read the order
+      &mdash; Portal's progress percent, ranked &mdash; and leave it untouched.</p>
+
+    <div class="fwd">
+      <span class="lbl">Where this is heading &mdash; EchoMQ 2.0</span>
+      The top-N and around-me reads are generic sorted-set range queries, not part of the EchoMQ queue protocol. Where
+      EchoMQ orders by a sorted-set score is its priority queue (R4.03's <code>emq:{queue}:prioritized</code>); the
+      settled <strong>EchoMQ 2.0</strong> design (the protocol break on the first EMQ rung, <code>emq.1</code>) renames
+      it to <code>emq:{queue}:prioritized</code> &mdash; <code>emq:</code> replacing <code>emq:</code>, every Lua key
+      declared in <code>KEYS[]</code>, <code>meta.version</code> at <code>echomq:2.0.0</code> &mdash; with the read
+      semantics unchanged. A range read over a sorted set is a property of the score order, independent of the prefix
+      or the version.
+    </div>
+
+    <div class="door">
+      <span class="lbl">Door &middot; not depth</span>
+      How a job group presents its own ordered members, and how the queue reads a band of a group's work, is the
+      subject of the dedicated <strong>EchoMQ course</strong>. The intra-group ranking is
+      <a href="/echomq/groups">E4 &middot; Groups</a>. This dive teaches the top-N and around-me reads; that course
+      teaches the group reads built on the same order.
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The range read that returns the top-N from the head, the rank lookup that anchors an around-me window, and the
+        sorted set both reads walk.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/zrevrange/">Redis &mdash; <em>ZREVRANGE</em></a> &mdash; read a rank range from the top, the top-N and the pagination read.</li>
+          <li><a href="https://redis.io/commands/zrevrank/">Redis &mdash; <em>ZREVRANK</em></a> &mdash; locate a member's rank, the first read of an around-me window.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; the ordered structure both reads walk.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority/leaderboards">R4.05 &middot; Leaderboards</a> &mdash; the module hub.</li>
+          <li><a href="/redis-patterns/time-delay-priority/leaderboards/zadd-and-zrank">R4.05.1 &middot; ZADD and ZREVRANK</a> &mdash; the previous dive: the score in, the rank out.</li>
+          <li><a href="/redis-patterns/time-delay-priority/leaderboards/the-score-update-path">R4.05.3 &middot; The score-update path</a> &mdash; the next dive: updating a score, the rank recomputed.</li>
+          <li><a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a> &mdash; the chapter.</li>
+          <li><a href="/redis-patterns/time-delay-priority/score-as-meaning">R4 &middot; Score as meaning</a> &mdash; the score is the semantic axis.</li>
+          <li><a href="/echomq/groups">E4 &middot; Groups</a> &mdash; the dedicated EchoMQ course: the group reads on the same order.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority/leaderboards/zadd-and-zrank"><span aria-hidden="true">&larr;</span>&nbsp; R4.05.1 &middot; ZADD and ZREVRANK</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority/leaderboards/the-score-update-path">R4.05.3 &middot; The score-update path <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/time-delay-priority/leaderboards/zadd-and-zrank">R4.05.1 &middot; ZADD and ZREVRANK</a>
+        <a href="/redis-patterns/time-delay-priority/leaderboards/top-n-and-around-me">R4.05.2 &middot; Top-N and around-me</a>
+        <a href="/redis-patterns/time-delay-priority/leaderboards/the-score-update-path">R4.05.3 &middot; The score-update path</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/groups">The EchoMQ course &middot; groups</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: two views, one order — the top-N head vs the around-me band (pure over mode and slider) ---------- */
+  // A fixed roster of eight players sorted by score descending — the order both reads walk. In 'top' mode the slider is
+  // N and the read is ZREVRANGE 0 N-1, the first N rows. In 'around' mode the slider is the band half-width k around a
+  // fixed centred player (charlie), the read is ZREVRANK then ZREVRANGE rank-k rank+k, clamped at 0. The set of
+  // highlighted indices, the index range, and the readout are pure over (mode, sliderValue).
+  var ROSTER = [
+    { id: 'gwen', score: 2450 }, { id: 'bob', score: 2300 }, { id: 'dana', score: 2100 },
+    { id: 'charlie', score: 1800 }, { id: 'finn', score: 1650 }, { id: 'alice', score: 1500 },
+    { id: 'hugo', score: 1200 }, { id: 'erin', score: 900 }
+  ];
+  var CENTRE = 'charlie'; // the around-me player
+  // pure: () -> board sorted descending
+  function board() { return ROSTER.slice().sort(function (a, b) { return b.score - a.score; }); }
+  // pure: (mode, sv) -> { board, lo, hi, centreIdx, label }
+  function view(mode, sv) {
+    var b = board(), n = b.length;
+    if (mode === 'top') {
+      var hi = Math.min(sv, n) - 1;
+      return { board: b, lo: 0, hi: hi, centreIdx: -1, mode: 'top', k: sv };
+    }
+    var ci = -1;
+    for (var i = 0; i < n; i++) { if (b[i].id === CENTRE) { ci = i; break; } }
+    var lo = Math.max(0, ci - sv), hi2 = Math.min(n - 1, ci + sv);
+    return { board: b, lo: lo, hi: hi2, centreIdx: ci, mode: 'around', k: sv };
+  }
+  function renderV(mode, sv) {
+    var r = view(mode, sv), b = r.board;
+    var g = document.getElementById('vRows');
+    if (g) {
+      var frag = '';
+      for (var i = 0; i < b.length; i++) {
+        var p = b[i];
+        var y = 28 + i * 24;
+        var inWin = i >= r.lo && i <= r.hi;
+        var cls = (r.mode === 'around' && i === r.centreIdx) ? 'me' : (inWin ? 'win' : '');
+        frag += '<g class="row ' + cls + '"><rect x="20" y="' + y + '" width="420" height="21" rx="6"></rect>' +
+          '<text class="rk" x="32" y="' + (y + 15) + '">#' + i + '</text>' +
+          '<text class="nm" x="78" y="' + (y + 15) + '">player:' + p.id + '</text>' +
+          '<text class="sc" x="430" y="' + (y + 15) + '" text-anchor="end">' + p.score + '</text></g>';
+      }
+      g.innerHTML = frag;
+    }
+    var sub = document.getElementById('vSubtitle');
+    var out = document.getElementById('vOut');
+    var count = r.hi - r.lo + 1;
+    if (r.mode === 'top') {
+      if (sub) sub.textContent = 'ZREVRANGE leaderboard 0 ' + r.hi + ' WITHSCORES — the top-N head';
+      if (out) out.textContent = 'top-N, N = ' + r.k + '. ZREVRANGE leaderboard 0 ' + r.hi + ' WITHSCORES reads rank ' +
+        'indices 0 through ' + r.hi + ' — ' + count + ' player' + (count === 1 ? '' : 's') + ' from the head, the ' +
+        'leader player:' + b[0].id + ' first. A head-read of the order; the set is unchanged.';
+    } else {
+      var ci = r.centreIdx;
+      if (sub) sub.textContent = 'ZREVRANK = ' + ci + ', then ZREVRANGE ' + r.lo + ' ' + r.hi + ' — the around-me band';
+      var clampTxt = r.lo === 0 && (ci - r.k) < 0 ? ' (clamped at the top edge — nothing above rank 0)' : '';
+      if (out) out.textContent = 'around-me, k = ' + r.k + ', player:' + CENTRE + '. ZREVRANK leaderboard "player:' +
+        CENTRE + '" = ' + ci + '. ZREVRANGE leaderboard ' + r.lo + ' ' + r.hi + ' WITHSCORES reads rank indices ' +
+        r.lo + ' through ' + r.hi + clampTxt + ' — ' + count + ' players, ' + CENTRE + ' centred. Locate, then read ' +
+        'the band; the set is unchanged.';
+    }
+  }
+  var vMode = 'top', vSv = 3;
+  var vN = document.getElementById('vN'), vNV = document.getElementById('vNVal'),
+      vNctrl = document.getElementById('vNctrl');
+  function syncLabel() {
+    var lab = vNctrl ? vNctrl.querySelector('label') : null;
+    if (lab) lab.textContent = vMode === 'top' ? 'N' : 'window k';
+  }
+  document.querySelectorAll('#vMode button').forEach(function (bn) {
+    bn.addEventListener('click', function () {
+      vMode = bn.getAttribute('data-mode');
+      document.querySelectorAll('#vMode button').forEach(function (x) {
+        var sel = x === bn; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      // sensible default per mode without losing the user's slider intent
+      if (vMode === 'around' && vSv > 3) { vSv = 2; if (vN) vN.value = '2'; if (vNV) vNV.textContent = '2'; }
+      syncLabel();
+      renderV(vMode, vSv);
+    });
+  });
+  if (vN) vN.addEventListener('input', function () {
+    vSv = parseInt(vN.value, 10); if (vNV) vNV.textContent = String(vSv);
+    renderV(vMode, vSv);
+  });
+  syncLabel();
+  renderV('top', 3); // initial render — correct without interaction
+
+  /* ---------- content: pagination — which page a rank range covers (pure over page and size) ---------- */
+  // A board of 8 players sorted descending. The control picks a page (1..n) at a fixed page size of 3. Page p reads
+  // rank indices (p-1)*s through p*s-1, clamped at the member count. ZCARD over the page size gives the page count.
+  // The highlighted indices and the readout are pure over (page, size).
+  var PG = [
+    { id: 'gwen', score: 2450 }, { id: 'bob', score: 2300 }, { id: 'dana', score: 2100 },
+    { id: 'charlie', score: 1800 }, { id: 'finn', score: 1650 }, { id: 'alice', score: 1500 },
+    { id: 'hugo', score: 1200 }, { id: 'erin', score: 900 }
+  ];
+  var PG_SIZE = 3;
+  // pure: page -> { board, lo, hi, pages, n }
+  function paginate(page) {
+    var b = PG.slice().sort(function (a, b2) { return b2.score - a.score; });
+    var n = b.length, pages = Math.ceil(n / PG_SIZE);
+    var lo = (page - 1) * PG_SIZE, hi = Math.min(page * PG_SIZE - 1, n - 1);
+    return { board: b, lo: lo, hi: hi, pages: pages, n: n };
+  }
+  function renderPg(page) {
+    var r = paginate(page), b = r.board;
+    var g = document.getElementById('pgRows');
+    if (g) {
+      var frag = '';
+      for (var i = 0; i < b.length; i++) {
+        var y = 28 + i * 24;
+        var inPage = i >= r.lo && i <= r.hi;
+        frag += '<g class="row ' + (inPage ? 'win' : '') + '"><rect x="20" y="' + y + '" width="420" height="21" rx="6"></rect>' +
+          '<text class="rk" x="32" y="' + (y + 15) + '">#' + i + '</text>' +
+          '<text class="nm" x="78" y="' + (y + 15) + '">player:' + b[i].id + '</text>' +
+          '<text class="sc" x="430" y="' + (y + 15) + '" text-anchor="end">' + b[i].score + '</text></g>';
+      }
+      g.innerHTML = frag;
+    }
+    var out = document.getElementById('pgOut');
+    var cnt = r.hi - r.lo + 1;
+    if (out) out.textContent = 'page ' + page + ' of ' + r.pages + ', size ' + PG_SIZE + '. ZREVRANGE leaderboard ' +
+      r.lo + ' ' + r.hi + ' WITHSCORES reads rank indices ' + r.lo + ' through ' + r.hi + ' — ' + cnt + ' player' +
+      (cnt === 1 ? '' : 's') + ' (ranks ' + (r.lo + 1) + '–' + (r.hi + 1) + ' in 1-based terms). ZCARD = ' + r.n +
+      ', so ⌈' + r.n + ' / ' + PG_SIZE + '⌉ = ' + r.pages + ' pages. Each page is the head-read offset down the order.';
+  }
+  document.querySelectorAll('#pgSel button').forEach(function (bn) {
+    bn.addEventListener('click', function () {
+      var page = parseInt(bn.getAttribute('data-page'), 10);
+      document.querySelectorAll('#pgSel button').forEach(function (x) {
+        var sel = x === bn; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderPg(page);
+    });
+  });
+  renderPg(1); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

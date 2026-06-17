@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4.04 · Backoff &amp; retry — Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R4.04 module hub: backoff and retry. A failed job does not retry immediately — re-schedule it into the future with a delay that grows on each attempt, a delayed job whose fire-time is computed by a backoff formula, so a struggling dependency is not hammered. The delayed-queue pattern applied to retries: exponential backoff (delay = base × 2^(attempt-1)), jitter to break the thundering herd, and reuse of R4.01's delayed sorted set. Grounded in EchoMQ.Backoff.calculate/4 (the formula owner, in Elixir) and retryJob-11.lua's reschedule onto emq:{queue}:delayed with the included promoteDelayedJobs sweep.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- retry / backoff diagram ---- */
+.clk .slot rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.clk .slot.due rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.clk .slot.head rect{fill:rgba(212,168,90,.18);stroke:#d4a85a}
+.clk text{font-family:var(--sans);fill:#d7cfb9}
+.clk .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.clk .job{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
+.clk .sc{font-family:var(--mono);font-size:10px;fill:#a39c89}
+.clk .now{stroke:#d6584f;stroke-width:1.6;stroke-dasharray:4 3}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- when-to-use table ---- */
+.tbl{width:100%;border-collapse:collapse;margin:1.2rem 0 0;font-family:var(--sans);font-size:.9rem}
+.tbl th,.tbl td{text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);font-weight:700}
+.tbl td{color:var(--cream-soft)}
+.tbl td code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+.tbl tr:last-child td{border-bottom:0}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--redis-bright);border-color:var(--redis)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+
+/* ---- door ---- */
+.door{margin:1.7rem 0 0;border:1px solid var(--redis);border-radius:16px;
+  background:linear-gradient(180deg,rgba(214,88,79,.10),rgba(10,14,26,.3));
+  padding:clamp(1rem,2.4vw,1.5rem)}
+.door .dl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--redis-bright);margin:0 0 .6rem}
+.door p{margin:0;font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure)}
+.door a{color:var(--redis-bright);font-weight:600}
+.door a:hover{color:var(--cream)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--redis-bright);
+  border:1px solid var(--redis);border-radius:999px;padding:.16rem .55rem}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- forward note (EchoMQ 2.0) ---- */
+.fwd{margin:1.7rem 0 0;border:1px solid var(--line);border-left:3px solid var(--elixir);
+  border-radius:0 14px 14px 0;background:linear-gradient(180deg,rgba(179,157,219,.08),rgba(10,14,26,.25));
+  padding:1.1rem 1.3rem}
+.fwd .fl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--elixir-bright);margin:0 0 .55rem}
+.fwd p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft);max-width:var(--measure)}
+.fwd p + p{margin-top:.7rem}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the module</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><span class="rcur">backoff-retry</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/redis-patterns">Redis Patterns</a>
+      <span class="sep">/</span>
+      <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+      <span class="sep">/</span>
+      <span class="here">Backoff &amp; retry</span>
+    </div>
+    <p class="eyebrow">R4.04 &middot; Time, Delay &amp; Priority</p>
+    <h1>Backoff &amp; <span class="ex">retry</span></h1>
+    <p class="lede">A failed job does not retry immediately. Re-schedule it into the future with a delay that grows on
+      each attempt &mdash; a delayed job whose fire-time is a backoff formula &mdash; so a struggling dependency is not
+      hammered.</p>
+    <p class="kicker">This module is the delayed queue (R4.01) applied to retries. The textbook note is one line: a
+      failed task re-adds itself with a future score (<code class="inl">ZADD delayed_queue &lt;now + 60&gt;
+      "task:abc123"</code>), and the retry count tracked in the job data drives an exponential backoff or a maximum
+      retry limit. R4.04 takes that idea apart &mdash; the failed job re-enters the same delayed sorted set, scored by
+      a fire-time the backoff formula computes, and is swept back when due. The formula that sizes the delay is
+      <code class="inl">EchoMQ.Backoff.calculate/4</code>, in Elixir; the reschedule and the sweep are the Lua R4.01
+      already taught. One set, two uses.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#retry-is-delayed">A retry is a delayed job</a>
+      <a href="#formula">The backoff formula</a>
+      <a href="#jitter">Jitter</a>
+      <a href="#reuse">Reusing the ZSET</a>
+      <a href="#cap">Capping attempts</a>
+      <a href="#avoid">When backoff hurts</a>
+      <a href="#dives">Dives</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <section id="retry-is-delayed">
+    <h2>A retry is a delayed job</h2>
+    <div class="prose">
+      <p>When a job fails, the worker does not drop it and does not loop on it. It re-schedules the job to run again
+        later &mdash; and "later" is a fire-time, the exact axis the delayed queue already orders by. The source shows
+        the minimal form: re-add the failed job with a future score.</p>
+    </div>
+    <pre class="code"><span class="rdx">ZADD</span> delayed_queue <span class="res">1706649060</span> <span class="str">"task:abc123"</span>   <span class="cmt"># a retry, scheduled 60s out</span></pre>
+    <div class="prose">
+      <p>The member is the same job; the score is <code class="inl">now + 60s</code>. The delayed set sorts it by that
+        fire-time alongside every other deferred job, and the due-sweep brings it back when the clock reaches it. The
+        retry rides the machinery R4.01 already built &mdash; the only new question is what delay goes in the score. The
+        interactive below fails a job at <code class="inl">t = 0</code> and plots five exponential retries: move the base
+        slider and read the next fire-time and the cumulative wall-clock.</p>
+    </div>
+
+    <figure class="fig clk" aria-labelledby="rtTitle">
+      <h4 id="rtTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A retry timeline &middot; five exponential attempts from one failure</h4>
+      <div class="controls">
+        <div class="fold-ctrl">
+          <label for="rtBase">base (s)</label>
+          <input type="range" id="rtBase" min="1" max="8" step="1" value="1">
+          <span class="val" id="rtBaseVal">1</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 150" role="img" aria-label="A job fails at time zero. Five retry attempts are placed left to right; attempt n waits base times two to the power n minus one, so the gaps double each step. Each slot shows the attempt number and its delay in seconds. The base slider scales every gap. The readout names the next fire-time and the cumulative wall-clock to the fifth attempt.">
+        <text class="ttl" x="30" y="22">emq:{queue}:delayed &mdash; retry attempts after a failure at t=0</text>
+        <g id="rtSlots"></g>
+        <line class="now" x1="30" y1="34" x2="30" y2="104"></line>
+        <text class="ttl" x="30" y="120" text-anchor="middle" fill="#f2948c">fail</text>
+        <text class="ttl" id="rtVerd" x="245" y="140" text-anchor="middle">&mdash;</text>
+      </svg>
+
+      <div class="geo-readout" id="rtOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">A retry is a delayed job: re-add the failed job to the delayed set at a future score, and the same
+      due-sweep brings it back when its time comes.</p>
+  </section>
+
+  <section id="formula">
+    <h2>The backoff formula (exponential)</h2>
+    <div class="prose">
+      <p>A fixed delay treats a transient blip and a struggling dependency the same. A backoff delay grows with the
+        attempt, so the first retry is quick and a repeatedly-failing dependency gets progressively more room. The
+        exponential form doubles the delay each attempt.</p>
+      <pre class="code"><span class="cmt"># delay = base × 2^(attempt - 1)</span>
+attempt 1 &rarr; base × 2^0 = <span class="res">base</span>
+attempt 2 &rarr; base × 2^1 = <span class="res">2 × base</span>
+attempt 3 &rarr; base × 2^2 = <span class="res">4 × base</span></pre>
+      <p>With a one-second base the retries land at 1s, 2s, 4s, 8s, 16s out. In EchoMQ this math is owned by
+        <code class="inl">EchoMQ.Backoff.calculate/4</code> &mdash; Elixir, not Lua. The <code class="inl">:exponential</code>
+        clause computes <code class="inl">delay = trunc(:math.pow(2, attempt - 1) &times; base_delay)</code> then
+        <code class="inl">apply_jitter(delay, jitter)</code>. The doc example is exact:
+        <code class="inl">calculate(:exponential, 3, 1000, jitter: 0.2)</code> returns about <code class="inl">4000</code>.
+        The <code class="inl">:fixed</code> strategy is the contrast &mdash; it returns
+        <code class="inl">apply_jitter(base_delay, jitter)</code>, the same base every attempt.</p>
+      <p>The ownership matters: the formula computes the <em>delay value</em>, and the reschedule script is handed that
+        value. The Lua never computes <code class="inl">2^(n-1)</code>. The first dive walks the formula in full.</p>
+    </div>
+    <p class="take">Exponential backoff doubles the delay each attempt, and the doubling lives in
+      <code class="inl">EchoMQ.Backoff.calculate/4</code> &mdash; the reschedule script is given the delay, it does not
+      compute the power.</p>
+  </section>
+
+  <section id="jitter">
+    <h2>Jitter &mdash; breaking the thundering herd</h2>
+    <div class="prose">
+      <p>Exponential backoff alone has a failure mode. If many jobs fail at the same instant &mdash; a dependency that
+        went down took them all out together &mdash; they all compute the same delay and all re-fire at the same future
+        millisecond. The recovery becomes a synchronized spike: the thundering herd. The dependency, newly back on its
+        feet, is hit by the whole batch at once.</p>
+      <p>Jitter spreads the retries. <code class="inl">EchoMQ.Backoff</code> applies it in
+        <code class="inl">apply_jitter/2</code>: for a jitter fraction in (0, 1], it computes
+        <code class="inl">min_delay = trunc(delay &times; (1 - jitter))</code> and
+        <code class="inl">jitter_range = trunc(delay &times; jitter &times; 2)</code>, then returns
+        <code class="inl">min_delay + :rand.uniform(jitter_range + 1) - 1</code>. With <code class="inl">jitter: 0.2</code>
+        on a 4000 ms delay, each retry lands somewhere in <code class="inl">[3200, 4800]</code> &mdash; the delay plus or
+        minus twenty percent. The default config carries it:
+        <code class="inl">%{type: :exponential, delay: 1_000, jitter: 0.2}</code>. A herd that would have re-fired in
+        one spike is smeared across a window instead. The second dive runs the spread.</p>
+    </div>
+    <p class="take">A fixed, exact delay re-synchronizes a failed batch into a spike; jitter widens each delay into a
+      band and draws an independent point per job, so the herd disperses across a window.</p>
+  </section>
+
+  <section id="reuse">
+    <h2>Reusing the delayed ZSET (no new structure)</h2>
+    <div class="prose">
+      <p>A retry is not a new mechanism. It is R4.01's machinery used a second time.
+        <code class="inl">EchoMQ.Scripts.retry_job/5</code> runs <code class="inl">retryJob-11.lua</code>, which re-adds
+        the failed job to the delayed key (<code class="inl">KEYS[7]</code>) scored by the backoff fire-time. That
+        script <em>includes</em> <code class="inl">promoteDelayedJobs</code> &mdash; the same due-sweep R4.01 teaches.</p>
+      <pre class="code"><span class="cmt">-- promoteDelayedJobs (included by retryJob-11.lua) — real</span>
+<span class="op">local</span> jobs = <span class="fn">rcall</span>(<span class="str">"ZRANGEBYSCORE"</span>, delayedKey, <span class="res">0</span>, (timestamp + <span class="res">1</span>) * <span class="res">0x1000</span> - <span class="res">1</span>, <span class="str">"LIMIT"</span>, 0, <span class="res">1000</span>)
+<span class="op">if</span> (#jobs &gt; <span class="res">0</span>) <span class="op">then</span>
+    <span class="fn">rcall</span>(<span class="str">"ZREM"</span>, delayedKey, <span class="fn">unpack</span>(jobs))   <span class="cmt">-- then ZADD onto the wait / prioritized list</span>
+<span class="op">end</span></pre>
+      <p>The retry re-enters <code class="inl">emq:{queue}:delayed</code> exactly the way a freshly-scheduled delayed
+        job does &mdash; scored by <code class="inl">getDelayedScore</code> ((fire-time) &times; <code class="inl">0x1000</code>)
+        &mdash; and is swept back when the clock reaches it. R4.01 schedules; R4.04 sizes the delay with
+        <code class="inl">EchoMQ.Backoff</code> and re-schedules on failure. The structure does not change between them.
+        The third dive walks the reuse end to end.</p>
+    </div>
+    <p class="take">A retry adds no structure: it reuses R4.01's delayed set, score shift, and
+      <code class="inl">promoteDelayedJobs</code> sweep, contributing only the backoff delay that sets the
+      fire-time.</p>
+  </section>
+
+  <section id="cap">
+    <h2>Capping &mdash; max attempts</h2>
+    <div class="prose">
+      <p>A retry loop needs a floor. A job that fails forever should not retry forever. The source's own note is
+        <em>"maximum retry limits"</em>: track the attempt count in the job data and stop re-scheduling once it crosses
+        a configured maximum. In EchoMQ the attempts limit is part of the job's options
+        (<code class="inl">attempts: 5</code> in the <code class="inl">Backoff</code> doc examples), checked on each
+        failure before <code class="inl">retry_job/5</code> is called; past the limit the job moves to the failed set
+        instead of back to delayed. The backoff formula sizes the delays; the attempts cap fixes how many of them there
+        are.</p>
+    </div>
+    <p class="take">The backoff formula sizes each retry's delay; the attempts cap bounds the count, sending an
+      over-budget job to the failed set instead of back to the delayed one.</p>
+  </section>
+
+  <section id="avoid">
+    <h2>When backoff hurts (latency-sensitive work)</h2>
+    <div class="prose">
+      <p>Backoff trades latency for protection. That trade is right for work that tolerates a delayed retry &mdash; an
+        email, a webhook, a batch import &mdash; and wrong for work that must complete now or not at all. A user-facing
+        request waiting on a synchronous response cannot afford an 8-second backoff before its second attempt; it needs
+        a fast in-line retry or an immediate failure, not a deferred one. Backoff also assumes the failure is transient
+        and the dependency will recover; against a permanent failure it only delays the inevitable trip to the failed
+        set, so the attempts cap should be small.</p>
+      <p>For protecting a <em>shared</em> dependency from sustained load &mdash; not merely spacing one job's retries
+        &mdash; rate limiting and the circuit breaker (<strong>R6 &middot; Flow Control</strong>) are the right tools;
+        backoff spaces one job's own retries, it does not cap the fleet.</p>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Backoff fits</th><th>Reach elsewhere when</th></tr></thead>
+      <tbody>
+        <tr><td>Work that tolerates a deferred retry: email, webhook, batch import</td><td>A user-facing request needs a result now &mdash; fast in-line retry or fail</td></tr>
+        <tr><td>A transient failure against a recovering dependency</td><td>A permanent failure &mdash; cap attempts small, the failed set is the destination</td></tr>
+        <tr><td>Spacing one job's own retries over time</td><td>Protecting a shared dependency from the fleet &mdash; rate limiting or the circuit breaker (R6)</td></tr>
+      </tbody>
+    </table>
+    <p class="take">Reach for backoff when a deferred retry is acceptable and the failure is transient; reach for rate
+      limiting or a circuit breaker when a shared dependency needs protection from the whole fleet, not one job's
+      spacing.</p>
+  </section>
+
+  <section id="dives">
+    <h2>The three dives</h2>
+    <div class="prose">
+      <p>Each dive takes one layer of retry-with-backoff, building on the source's retry idea and adding the EchoMQ
+        grounding on top: the formula that sizes the delay, the jitter that spreads a batch, and the reuse of R4.01's
+        delayed set. Read them in order &mdash; the formula first, the jitter second, the reuse third.</p>
+    </div>
+
+    <div class="mods" style="margin-top:1.3rem">
+
+      <a class="mod" href="/redis-patterns/time-delay-priority/backoff-retry/exponential-backoff">
+        <div class="top"><span class="num">R4.04.1</span><span class="pill built">built</span></div>
+        <p class="t">Exponential backoff</p>
+        <p class="o">The formula <code class="inl">delay = base &times; 2^(attempt-1)</code> &mdash; attempt 1 waits base,
+          2 waits 2&times;, 3 waits 4&times;. Owned by <code class="inl">EchoMQ.Backoff.calculate/4</code> in Elixir, not
+          the Lua.</p>
+      </a>
+
+      <a class="mod" href="/redis-patterns/time-delay-priority/backoff-retry/jitter-thundering-herd">
+        <div class="top"><span class="num">R4.04.2</span><span class="pill built">built</span></div>
+        <p class="t">Jitter &amp; the thundering herd</p>
+        <p class="o">A synchronized batch re-fires as one spike; <code class="inl">apply_jitter</code> spreads it &mdash;
+          <code class="inl">jitter: 0.2</code> scatters a 4000 ms delay across <code class="inl">[3200, 4800]</code>.</p>
+      </a>
+
+      <a class="mod" href="/redis-patterns/time-delay-priority/backoff-retry/reuse-the-delayed-zset">
+        <div class="top"><span class="num">R4.04.3</span><span class="pill built">built</span></div>
+        <p class="t">Reusing the delayed ZSET</p>
+        <p class="o">A retry is R4.01's machinery reused: <code class="inl">retryJob-11.lua</code> re-adds to
+          <code class="inl">:delayed</code>, the included <code class="inl">promoteDelayedJobs</code> sweeps it back. No
+          new structure.</p>
+      </a>
+
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>A delayed queue (R4.01) schedules a job for a future time. A retry is the same move, with the future time
+          computed by a backoff formula that grows the delay each attempt.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p><code class="inl">EchoMQ.Backoff.calculate/4</code> sets the delay (<code class="inl">base &times; 2^(n-1)</code>,
+          jittered); <code class="inl">retryJob-11.lua</code> re-adds the job to <code class="inl">emq:{queue}:delayed</code>
+          at that score; the included <code class="inl">promoteDelayedJobs</code> (R4.01's sweep) brings it back when
+          due. One structure, two uses.</p>
+      </div>
+    </div>
+    <p class="take">A retry is a delayed job whose fire-time is a backoff delay; the formula lives in Elixir
+      (<code class="inl">EchoMQ.Backoff</code>), and the reschedule and the sweep live in the Lua R4.01 already
+      taught.</p>
+
+    <div class="fwd">
+      <p class="fl">Where this is heading &mdash; EchoMQ 2.0</p>
+      <p>Today a retry lands on <code class="inl">emq:{queue}:delayed</code> and is swept by
+        <code class="inl">promoteDelayedJobs</code>. The EchoMQ 2.0 protocol break &mdash; the first rung of the EMQ
+        roadmap &mdash; renames this key to <code class="inl">emq:{queue}:delayed</code>, applies the
+        <code class="inl">{queue}</code> hashtag transparently in the core, declares every Lua key in
+        <code class="inl">KEYS[]</code>, and bumps <code class="inl">meta.version</code> from
+        <code class="inl">bullmq:5.65.1</code> to <code class="inl">echomq:2.0.0</code> behind a two-way typed boot
+        fence. The v1 line freezes at <code class="inl">1.3.0</code>; the payoff is DragonflyDB-native multithreading
+        with precise per-queue locks and no escape-hatch flags.</p>
+      <p>The backoff math (<code class="inl">EchoMQ.Backoff.calculate/4</code>) and the due-sweep
+        (<code class="inl">promoteDelayedJobs</code>) are unchanged by the break &mdash; only the prefix and the
+        now-fully-declared keys change. That is why retry-with-backoff is safe to teach before the break ships: the
+        pattern is a property of the sorted set &mdash; the score, the doubling, the sweep &mdash; not of the prefix it
+        rides on.</p>
+    </div>
+
+    <div class="door">
+      <p class="dl">A door, not a depth</p>
+      <p>This module cites one excerpt of EchoMQ's protocol &mdash; <code class="inl">EchoMQ.Backoff.calculate/4</code>
+        and the reschedule in <code class="inl">retryJob-11.lua</code> &mdash; as proof the retry path ships. The full
+        lifecycle subsystem &mdash; how a failed job moves through retry, checkpoint, and the attempts cap across a
+        worker pool, and the polyglot concurrency models &mdash; is the subject of the dedicated
+        <strong>EchoMQ course</strong>, built next with this toolkit. From here, open onto
+        <a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a>. This module teaches retry-with-backoff; that
+        course teaches the lifecycle that runs it.</p>
+    </div>
+
+    <p class="note">After R4.04, the Time, Delay &amp; Priority chapter continues with leaderboards on the prioritized
+      set, closing with the EchoMQ scheduler workshop. Return to the
+      <a href="/redis-patterns/time-delay-priority">Time, Delay &amp; Priority chapter</a> to continue.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The Redis commands behind a retry &mdash; the re-add at a backoff fire-time, the due-sweep that brings it back,
+        the sorted set both reuse &mdash; the queue protocol EchoMQ ports, the direction EchoMQ 2.0 takes native, and
+        where the lifecycle that runs the retry is taught.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; re-add the failed job to the delayed set, scored by the backoff fire-time.</li>
+          <li><a href="https://redis.io/commands/zrangebyscore/">Redis &mdash; <em>ZRANGEBYSCORE</em></a> &mdash; the due-sweep (<code>promoteDelayedJobs</code>) that brings a retry back to wait.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; the timer-wheel the retry reuses, the one set R4.01 already built.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the retry-and-backoff protocol EchoMQ ports, where the Lua scripts are the protocol.</li>
+          <li><a href="https://www.dragonflydb.io/docs/integrations/bullmq">DragonflyDB &mdash; <em>BullMQ on Dragonfly</em></a> &mdash; the BullMQ-on-Dragonfly direction the EchoMQ 2.0 protocol break takes native.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority/backoff-retry/exponential-backoff">R4.04.1 &middot; Exponential backoff</a> &mdash; the formula, owned by <code>EchoMQ.Backoff</code>.</li>
+          <li><a href="/redis-patterns/time-delay-priority/backoff-retry/jitter-thundering-herd">R4.04.2 &middot; Jitter &amp; the thundering herd</a> &mdash; spreading a synchronized batch.</li>
+          <li><a href="/redis-patterns/time-delay-priority/backoff-retry/reuse-the-delayed-zset">R4.04.3 &middot; Reusing the delayed ZSET</a> &mdash; R4.01's set, used twice.</li>
+          <li><a href="/redis-patterns/time-delay-priority/delayed-queue">R4.01 &middot; The delayed queue</a> &mdash; the <code>:delayed</code> machinery this reuses.</li>
+          <li><a href="/redis-patterns/time-delay-priority/schedulers">R4.02 &middot; Scheduler registry</a> &mdash; recurring jobs on the sibling <code>:repeat</code> set.</li>
+          <li><a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a> &mdash; the chapter.</li>
+          <li><a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a> &mdash; the dedicated EchoMQ course: the retry / checkpoint lifecycle in depth.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority"><span aria-hidden="true">&larr;</span>&nbsp; R4 &middot; Time, Delay &amp; Priority</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority/backoff-retry/exponential-backoff">R4.04.1 &middot; Exponential backoff <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/time-delay-priority/backoff-retry/exponential-backoff">R4.04.1 &middot; Exponential backoff</a>
+        <a href="/redis-patterns/time-delay-priority/backoff-retry/jitter-thundering-herd">R4.04.2 &middot; Jitter &amp; the thundering herd</a>
+        <a href="/redis-patterns/time-delay-priority/backoff-retry/reuse-the-delayed-zset">R4.04.3 &middot; Reusing the delayed ZSET</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/lifecycle">The EchoMQ course &middot; the lifecycle</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hub: a retry timeline — five exponential attempts from one failure (pure over base) ---------- */
+  // A job fails at t=0. Attempt n waits delay = base × 2^(n-1) from the failure, so the cumulative wall-clock to
+  // attempt n is base × (2^n - 1). The base slider scales every gap. The slots, the cumulative clock, and the readout
+  // are pure over base.
+  var ATTEMPTS = 5;
+  // pure: base -> { rows:[{n,delay,cum}], total }
+  function plan(base) {
+    var rows = [], cum = 0;
+    for (var n = 1; n <= ATTEMPTS; n++) {
+      var delay = base * Math.pow(2, n - 1);
+      cum += delay;
+      rows.push({ n: n, delay: delay, cum: cum });
+    }
+    return { rows: rows, total: cum };
+  }
+  function renderRt(base) {
+    var r = plan(base);
+    var g = document.getElementById('rtSlots');
+    if (g) {
+      var frag = '';
+      for (var i = 0; i < r.rows.length; i++) {
+        var row = r.rows[i];
+        var x = 70 + i * 76;
+        frag += '<g class="slot head"><rect x="' + x + '" y="38" width="64" height="44" rx="9"></rect>' +
+          '<text class="job" x="' + (x + 32) + '" y="60" text-anchor="middle">#' + row.n + '</text>' +
+          '<text class="sc" x="' + (x + 32) + '" y="76" text-anchor="middle">+' + row.delay + 's</text></g>';
+      }
+      g.innerHTML = frag;
+    }
+    var verd = document.getElementById('rtVerd');
+    var out = document.getElementById('rtOut');
+    var first = r.rows[0], total = r.total;
+    if (verd) { verd.textContent = 'base ' + base + 's · attempts ' + r.rows.map(function (x) { return x.delay + 's'; }).join(' / '); }
+    if (out) {
+      out.textContent = 'base = ' + base + 's. delay = base × 2^(attempt-1), so the gaps double: ' +
+        r.rows.map(function (x) { return '#' + x.n + ' +' + x.delay + 's'; }).join(', ') + '. ' +
+        'The next retry after the failure is attempt 1 at +' + first.delay + 's. Cumulative wall-clock to the fifth ' +
+        'attempt = base × (2^5 - 1) = ' + total + 's — exponential, not linear.';
+    }
+  }
+  var rtRange = document.getElementById('rtBase'), rtRangeV = document.getElementById('rtBaseVal');
+  if (rtRange) rtRange.addEventListener('input', function () {
+    var base = parseInt(rtRange.value, 10); if (rtRangeV) rtRangeV.textContent = String(base);
+    renderRt(base);
+  });
+  renderRt(1); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

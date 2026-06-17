@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C4.11.3 · Backoff as dynamic programming — F# In Depth</title>
+<meta name="description" content="The chapter's payoff: EchoMQ.Backoff is a pure recurrence base times two to the power of n minus one, clamped to a cap — dynamic programming made concrete. Quoted verbatim from echo_fs/EchoMQ/Backoff.fs, the Exponential case is the recurrence and the delay curve is its table; the wire takes a literal delay and never computes a curve. The dive first shows edit distance as the classic two-dimensional Array2D DP, then plots the real backoff curve from its recurrence: for Exponential(100, 10000) the curve climbs 100, 200, 400, 800, 1600, 3200, 6400 then holds at 10000. Dive C4.11.3 of the F# In Depth course. Snippets and curve verified in dotnet fsi against EchoMQ.Tests/BackoffTests.fs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --fsharp:#b48ee0; --fsharp-bright:#d2b8f5;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(180,142,224,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--fsharp-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--fsharp-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="fsharp"]{background:var(--fsharp-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.55rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:8.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--fsharp);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--fsharp-bright);min-width:4.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--fsharp-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .err{color:var(--burgundy)}
+pre.code .str{color:var(--sage-bright)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--fsharp-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pill / legend ---- */
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--fsharp-bright);border-color:var(--fsharp)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- references ---- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.refs li{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.45}
+.refs li a{color:var(--cream-soft)}
+.refs li a:hover{color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.fs .lbl{color:var(--fsharp-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--fsharp-bright);
+  border:1px solid var(--fsharp);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.note.warn{border-left-color:var(--burgundy)}
+.note code.inl{color:var(--cream-soft)}
+pre.code .rdx{background:rgba(180,142,224,.18);border-radius:4px;padding:0 .18em;color:var(--fsharp-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+
+/* ---- Elixir → F# side-by-side ---- */
+.cmp{margin:1.2rem 0 0}
+.cmp .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:1rem 0 .35rem;color:var(--cream-dim)}
+.cmp .lbl.ex{color:var(--sage-bright)}
+.cmp .lbl.fs{color:var(--fsharp-bright)}
+.cmp .lbl:first-child{margin-top:0}
+pre.code .ex{color:var(--sage-bright)}
+
+/* ---- the EchoMQ in F# block ---- */
+.emq{margin:1.6rem 0 0;border:1px solid var(--line);border-left:3px solid var(--fsharp);
+  border-radius:14px;padding:1.2rem 1.4rem;background:linear-gradient(180deg,rgba(180,142,224,.06),rgba(10,14,26,.25))}
+.emq .tag{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--fsharp-bright);margin:0 0 .6rem}
+.emq p{margin:0 0 .7rem;font-family:var(--serif);color:var(--cream-soft)}
+.emq p:last-child{margin-bottom:0}
+.emq .stat{font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);margin-top:.5rem}
+.emq .stat b{color:var(--sage-bright);font-weight:600}
+
+/* ---- the backoff plotter (this dive) ---- */
+.plot-dot{fill:var(--fsharp-bright);stroke:var(--ink);stroke-width:1.5}
+.plot-line{fill:none;stroke:var(--fsharp-bright);stroke-width:2}
+.plot-cap{stroke:var(--gold);stroke-width:1.3;stroke-dasharray:5 5;fill:none}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/fsharp">jonnify<span class="dot"></span><span class="sub">fsharp</span></a>
+    <nav>
+      <a href="/fsharp">F# In Depth</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/fsharp">fsharp</a><span class="rsep">/</span><a href="/fsharp/algorithms">algorithms</a><span class="rsep">/</span><a href="/fsharp/algorithms/dynamic-programming">dynamic-programming</a><span class="rsep">/</span><span class="rcur">backoff-as-dp</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/fsharp">F# In Depth</a><span class="sep">/</span><a href="/fsharp/algorithms">C4 · Algorithms &amp; Data Structures</a><span class="sep">/</span><a href="/fsharp/algorithms/dynamic-programming">C4.11 · Dynamic programming</a><span class="sep">/</span><span class="here">C4.11.3 · Backoff as DP</span>
+    </nav>
+    <p class="eyebrow">Dive C4.11.3 · part 3 of 3 · the payoff</p>
+    <h1>Backoff as <span class="ex">dynamic programming</span></h1>
+    <p class="lede">A retry delay is a recurrence solved once per attempt. The bus already computes it — and never
+      asks the wire to.</p>
+    <p class="kicker">The two styles done, the chapter lands on a recurrence the bus computes in production.
+      <code class="inl">EchoMQ.Backoff</code> — the retry-delay vocabulary of <code class="inl">echo_fs</code>, the
+      F# port of <code class="inl">echo/apps/echo_mq</code> — turns a policy and an attempt count into a literal
+      delay in milliseconds. Its <code class="inl">Exponential</code> case is exactly the shape this module teaches:
+      <code class="inl">base · 2^(attempts-1)</code>, clamped to a ceiling. Tabulate it over attempts 1..N and the
+      whole retry schedule is a delay curve — a one-dimensional DP table the bus never has to keep, because the wire
+      takes the literal and the host computes the curve. This dive first works edit distance as the textbook
+      two-dimensional <code class="inl">Array2D</code> DP, so the arc closes on a named classic, then plots the real
+      backoff curve from its recurrence. Every value was verified in <code class="inl">dotnet fsi</code> against
+      <code class="inl">EchoMQ.Tests/BackoffTests.fs</code>.</p>
+    <div class="cta-row">
+      <a class="btn" href="#plot">Plot the backoff curve <span aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="/fsharp/algorithms/dynamic-programming">Module hub</a>
+    </div>
+  </section>
+
+  <!-- ===================== EDIT DISTANCE (THE 2D CLASSIC) ===================== -->
+  <section id="edit-distance">
+    <div class="dive-head">
+      <span class="dive-tag">C4.11.3 · part 1</span>
+      <h2>Edit distance — the classic two-dimensional DP</h2>
+    </div>
+    <div class="prose">
+      <p>The textbook two-dimensional DP is edit distance: the fewest single-character edits — insert, delete, or
+        substitute — that turn one string into another. Indexed by two positions at once, it fills an
+        <code class="inl">Array2D</code>. Cell <code class="inl">d[i, j]</code> is the distance between the first
+        <em>i</em> characters of one string and the first <em>j</em> of the other; each cell is built from its three
+        neighbours up and to the left. Put to work, it powers a "did you mean" suggestion: the closest catalog title
+        to a misspelled query.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: edit distance filling an Array2D from three neighbours, with verified FSI output."><span class="cmt">// fewest single-character edits from `a` to `b`, an Array2D filled top-left to bottom-right</span>
+<span class="op">let</span> <span class="fn">editDistance</span> (a: string) (b: string) =
+    <span class="op">let</span> m, n = a.Length, b.Length
+    <span class="op">let</span> d = Array2D.zeroCreate (m + 1) (n + 1)
+    <span class="op">for</span> i <span class="op">in</span> 0 .. m <span class="op">do</span> d[i, 0] &lt;- i      <span class="cmt">// base: delete i chars</span>
+    <span class="op">for</span> j <span class="op">in</span> 0 .. n <span class="op">do</span> d[0, j] &lt;- j      <span class="cmt">// base: insert j chars</span>
+    <span class="op">for</span> i <span class="op">in</span> 1 .. m <span class="op">do</span>
+        <span class="op">for</span> j <span class="op">in</span> 1 .. n <span class="op">do</span>
+            <span class="op">let</span> cost = <span class="op">if</span> a[i - 1] = b[j - 1] <span class="op">then</span> 0 <span class="op">else</span> 1
+            d[i, j] &lt;- List.min [ d[i - 1, j] + 1; d[i, j - 1] + 1; d[i - 1, j - 1] + cost ]
+    d[m, n]
+<span class="cmt">// val editDistance: a: string -&gt; b: string -&gt; int</span>
+
+<span class="fn">editDistance</span> <span class="str">"kitten"</span> <span class="str">"sitting"</span>   <span class="cmt">// val it: int = 3</span>
+<span class="fn">editDistance</span> <span class="str">"reciepe"</span> <span class="str">"recipe"</span>    <span class="cmt">// val it: int = 1  — one deletion of the extra e</span></pre>
+
+    <dl class="deflist">
+      <dt>Array2D</dt><dd>F#'s rectangular array, indexed <code class="inl">d[i, j]</code>; allocated with <code class="inl">Array2D.zeroCreate</code> and accessed O(1).</dd>
+      <dt>d[i, j]</dt><dd>the edit distance between the first <em>i</em> and first <em>j</em> characters; built from the cell above, the cell left, and the diagonal.</dd>
+      <dt>cost</dt><dd>0 when the two current characters match, 1 when they differ (a substitution); the diagonal step pays it.</dd>
+      <dt>List.min</dt><dd>picks the cheapest of the three predecessor moves — delete, insert, or substitute — the optimal-substructure choice.</dd>
+    </dl>
+    <p class="note"><code class="inl">editDistance "reciepe" "recipe"</code> is <code class="inl">1</code>: a single
+      deletion of the extra <code class="inl">e</code> turns the misspelling into the catalog title. That one-edit
+      distance is what a "did you mean" search ranks suggestions by.</p>
+  </section>
+
+  <!-- ===================== THE BACKOFF RECURRENCE ===================== -->
+  <section id="recurrence">
+    <div class="dive-head">
+      <span class="dive-tag">C4.11.3 · part 2</span>
+      <h2>The backoff recurrence, verbatim</h2>
+    </div>
+    <div class="prose">
+      <p>The chapter's payoff is shorter than the bridge: a recurrence the bus already runs.
+        <code class="inl">EchoMQ.Backoff</code> is, quoted whole from <code class="inl">echo_fs/EchoMQ/Backoff.fs</code>,
+        a discriminated union of policies and a pure function from a policy and an attempt count to a delay. The
+        module's own documentation states the design — "a pure function from a policy and an attempt count to a
+        literal delay in milliseconds. The wire takes the literal and never computes a curve, so the retry cadence is
+        a value the caller can compute, table, and test without a server."</p>
+    </div>
+
+    <pre class="code" aria-label="The EchoMQ.Backoff module quoted verbatim from echo_fs: the Policy union and the delayMs recurrence."><span class="cmt">// echo_fs/EchoMQ/Backoff.fs — quoted verbatim</span>
+<span class="op">type</span> Policy =
+    | Fixed <span class="op">of</span> ms: int
+    | Exponential <span class="op">of</span> baseMs: int * capMs: int
+    | Jitter <span class="op">of</span> inner: Policy
+
+<span class="op">let rec</span> <span class="fn">delayMsWith</span> (rng: System.Random) (policy: Policy) (attempts: int) : int =
+    <span class="op">match</span> policy <span class="op">with</span>
+    | Fixed ms -&gt; ms
+    | Exponential (baseMs, capMs) -&gt;
+        <span class="op">let</span> shift = attempts - 1
+        <span class="op">if</span> shift &gt;= 62 <span class="op">then</span> capMs
+        <span class="op">else</span> <span class="fn">int</span> (<span class="fn">min</span> (<span class="fn">int64</span> baseMs * (1L &lt;&lt;&lt; shift)) (<span class="fn">int64</span> capMs))
+    | Jitter inner -&gt;
+        <span class="op">let</span> bound = <span class="fn">delayMsWith</span> rng inner attempts
+        <span class="op">if</span> bound &lt;= 0 <span class="op">then</span> 0 <span class="op">else</span> rng.Next(bound + 1)
+
+<span class="op">let</span> <span class="fn">delayMs</span> (policy: Policy) (attempts: int) : int =
+    <span class="fn">delayMsWith</span> System.Random.Shared policy attempts
+<span class="cmt">// val delayMs: policy: Policy -&gt; attempts: int -&gt; int</span></pre>
+
+    <div class="prose">
+      <p>The <code class="inl">Exponential</code> case <em>is</em> the recurrence:
+        <code class="inl">1L &lt;&lt;&lt; shift</code> is <code class="inl">2^shift</code> where
+        <code class="inl">shift = attempts - 1</code>, so the unclamped delay is <code class="inl">base · 2^(n-1)</code>;
+        <code class="inl">min … capMs</code> clamps it to the ceiling; and the <code class="inl">shift &gt;= 62</code>
+        guard stops the <code class="inl">int64</code> shift from overflowing. A subproblem — the delay at attempt
+        <em>n</em> — is computed once; the schedule is the table.</p>
+    </div>
+  </section>
+
+  <!-- ===================== INTERACTIVE: THE PLOTTER ===================== -->
+  <section id="plot">
+    <h2>Plot the backoff curve</h2>
+    <div class="prose">
+      <p>Move <code class="inl">base</code> and <code class="inl">cap</code> and the figure plots
+        <code class="inl">delayMs (Exponential(base, cap)) n</code> over attempts 1..10 — the real recurrence,
+        computed by the same <code class="inl">base · 2^(n-1)</code> clamp as <code class="inl">Backoff.fs</code>.
+        Each point is a tabulated cell; the dashed line is the cap. The static figure below shows
+        <code class="inl">Exponential(100, 10000)</code>, the policy in the tests.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="bkTitle">
+      <h4 id="bkTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">delayMs (Exponential(base, cap)) n · attempts 1..10</h4>
+      <div class="controls" style="flex-direction:column;align-items:stretch;gap:.2rem">
+        <div class="fold-ctrl">
+          <label for="bkBase">base (ms)</label>
+          <input type="range" id="bkBase" min="50" max="1000" step="50" value="100" aria-describedby="bkOut">
+          <span class="val" id="bkBaseV">100</span>
+        </div>
+        <div class="fold-ctrl">
+          <label for="bkCap">cap (ms)</label>
+          <input type="range" id="bkCap" min="1000" max="60000" step="1000" value="10000" aria-describedby="bkOut">
+          <span class="val" id="bkCapV">10000</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 280" role="img" aria-label="A plot of the exponential backoff delay against attempt number from one to ten, on a logarithmic vertical axis; the curve climbs by doubling and then flattens at the cap, shown as a dashed line.">
+        <!-- axes -->
+        <line x1="64" y1="20" x2="64" y2="232" stroke="#2a3252" stroke-width="1.2"></line>
+        <line x1="64" y1="232" x2="690" y2="232" stroke="#2a3252" stroke-width="1.2"></line>
+        <text x="14" y="130" font-family="Manrope, sans-serif" font-size="10" fill="#6b7494" transform="rotate(-90 14 130)" text-anchor="middle">delay (ms, log scale)</text>
+        <text x="377" y="262" font-family="Manrope, sans-serif" font-size="10" fill="#6b7494" text-anchor="middle">attempt number</text>
+        <!-- cap line (static: cap = 10000) -->
+        <line id="bkCapLine" class="plot-cap" x1="64" y1="60" x2="690" y2="60"></line>
+        <text id="bkCapLbl" x="686" y="54" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="#f0cd7f">cap 10000</text>
+        <!-- static curve for Exponential(100, 10000): points + polyline (visible without JS; matches the delayMs recurrence on a log axis) -->
+        <polyline id="bkLine" class="plot-line" points="92,174.7 161,157.4 230,140.1 299,122.9 368,105.6 437,88.4 506,71.1 575,60 644,60 713,60"></polyline>
+        <g id="bkDots">
+          <circle class="plot-dot" cx="92" cy="174.7" r="4"></circle>
+          <circle class="plot-dot" cx="161" cy="157.4" r="4"></circle>
+          <circle class="plot-dot" cx="230" cy="140.1" r="4"></circle>
+          <circle class="plot-dot" cx="299" cy="122.9" r="4"></circle>
+          <circle class="plot-dot" cx="368" cy="105.6" r="4"></circle>
+          <circle class="plot-dot" cx="437" cy="88.4" r="4"></circle>
+          <circle class="plot-dot" cx="506" cy="71.1" r="4"></circle>
+          <circle class="plot-dot" cx="575" cy="60" r="4"></circle>
+          <circle class="plot-dot" cx="644" cy="60" r="4"></circle>
+          <circle class="plot-dot" cx="713" cy="60" r="4"></circle>
+        </g>
+        <!-- attempt ticks -->
+        <g id="bkTicks" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b7494" text-anchor="middle">
+          <text x="92" y="246">1</text><text x="161" y="246">2</text><text x="230" y="246">3</text>
+          <text x="299" y="246">4</text><text x="368" y="246">5</text><text x="437" y="246">6</text>
+          <text x="506" y="246">7</text><text x="575" y="246">8</text><text x="644" y="246">9</text><text x="713" y="246">10</text>
+        </g>
+      </svg>
+
+      <pre class="code" id="bkCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="bkOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">policy: <span id="bkRole" style="color:var(--fsharp-bright)">Exponential(100, 10000)</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">attempts to reach the cap: <span id="bkResult" style="color:var(--cream)">8</span></p>
+    </figure>
+    <p class="take">Every point is a subproblem solved once by the recurrence. The curve doubles until it meets the
+      cap, then flattens — and the bus stores none of it: the host fills the table and hands the wire one literal
+      delay.</p>
+  </section>
+
+  <!-- ===================== ECHOMQ IN F# ===================== -->
+  <section id="echomq">
+    <h2>EchoMQ in F# — the recurrence above the wire</h2>
+    <p class="take">Status &mdash; <code class="inl">echo_fs</code> is an in-memory model. The EchoMQ protocol &mdash; the Lua transitions executing on a Valkey wire &mdash; is <strong>not implemented</strong> (there is no Lua and no Valkey client in the code); that is the coming-soon transport (<code class="inl">EchoMQ.Connector</code>). This block shows how the model uses the structure, not a running bus.</p>
+    <div class="prose">
+      <p>This is the direct hit. Where memoisation and tabulation taught the technique on a track and a credit
+        target, <code class="inl">EchoMQ.Backoff</code> is the technique in the bus itself: a recurrence solved once
+        per attempt, the answer read back as a literal. Because the host computes the curve, the wire stays simple —
+        it takes a number, not a policy — and the cadence is testable without a server, which is why the tests assert
+        exact values rather than approximations.</p>
+    </div>
+
+    <div class="emq">
+      <p class="tag">echo_fs/EchoMQ.Tests/BackoffTests.fs · the curve, asserted</p>
+      <pre class="code" aria-label="The Backoff tests quoted from echo_fs: exponential climbs then holds at the cap, asserting delayMs at attempts 1, 3, and 20."><span class="cmt">// quoted from echo_fs/EchoMQ.Tests/BackoffTests.fs</span>
+[&lt;Fact&gt;]
+<span class="op">let</span> ``exponential climbs then holds at the cap`` () =
+    <span class="op">let</span> p = Backoff.Exponential(100, 10000)
+    Assert.Equal&lt;int&gt;(100, Backoff.delayMs p 1)
+    Assert.Equal&lt;int&gt;(400, Backoff.delayMs p 3)
+    Assert.Equal&lt;int&gt;(10000, Backoff.delayMs p 20)</pre>
+      <p class="stat">The curve for that policy over attempts 1..8 is
+        <b>[100; 200; 400; 800; 1600; 3200; 6400; 10000]</b> — climbing by doubling, then clamped at the
+        <b>10000</b> ms cap from the eighth attempt on. The plotter above computes exactly these values; so does
+        <code class="inl">dotnet fsi</code>.</p>
+      <p class="stat">The F# EchoMQ computes the backoff curve today — built and tested. The Valkey transport
+        <code class="inl">EchoMQ.Connector</code> lands next; when it does, the consumer still computes the curve
+        host-side and the bus still takes the literal, so the design does not move.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">dynamic programming</p>
+        <p>Solve a recurrence once per subproblem; read the answer back from the table.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="cell fs">
+        <p class="lbl">EchoMQ.Backoff</p>
+        <p>The recurrence is <code class="inl">base · 2^(n-1)</code> clamped; the table is the delay curve; the host
+          fills it above the wire.</p>
+      </div>
+    </div>
+    <p class="take">The chapter's last idea is the bus's design stated as an algorithm: a pure recurrence, tabulated
+      host-side, with the wire handed a literal it never has to compute.</p>
+  </section>
+
+  <!-- ===================== WHERE THIS LEADS ===================== -->
+  <section id="next">
+    <h2>Where this leads</h2>
+    <div class="prose">
+      <p>That closes the module: memoisation top-down, tabulation bottom-up, and a recurrence the bus computes in
+        production. The chapter's final module assembles the pieces it has built — <code class="inl">Store</code>
+        and the single-writer <code class="inl">Broker</code> — into the in-memory EchoMQ core, a mini
+        <code class="inl">echo_fs</code>.</p>
+    </div>
+    <div class="toc-mini" aria-label="Continue in this module">
+      <a href="/fsharp/algorithms/dynamic-programming">↑ C4.11 · Dynamic programming</a>
+      <a href="/fsharp/algorithms/dynamic-programming/memoization">C4.11.1 · Memoization</a>
+      <a href="/fsharp/algorithms/dynamic-programming/tabulation">← C4.11.2 · Tabulation</a>
+    </div>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/">Microsoft &mdash; <em>F# documentation</em></a> &mdash; discriminated unions, recursion, and pattern matching.</li>
+          <li><a href="https://fsharp.github.io/fsharp-core-docs/">FSharp.Core API reference</a> &mdash; <code class="inl">Array2D</code> and the core list operators.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/">Microsoft &mdash; <em>.NET documentation</em></a> &mdash; <code class="inl">System.Random</code> and the integer types behind the shift.</li>
+          <li><a href="https://fsharp.org/">The F# Software Foundation</a> &mdash; F# on the .NET runtime.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/elixir/algorithms/dynamic-programming">Elixir &mdash; F4.11 · Dynamic programming</a> &mdash; the E4 sibling this module reflects, the same arc in Elixir.</li>
+          <li><a href="/fsharp/algorithms/dynamic-programming">C4.11 &mdash; Dynamic programming</a> &mdash; the module hub.</li>
+          <li><a href="/fsharp/algorithms/identifiers">C4.07 &mdash; Identifiers, Snowflake &amp; branded ids</a> &mdash; the branded id the same <code class="inl">echo_fs</code> bus mints.</li>
+          <li><a href="/fsharp/algorithms">C4 &mdash; Algorithms &amp; Data Structures</a> &mdash; the chapter.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/fsharp/algorithms/dynamic-programming/tabulation"><span aria-hidden="true">←</span> C4.11.2 · Tabulation</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/fsharp/algorithms/dynamic-programming">Back to the module hub <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="F# In Depth — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/fsharp">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">F# In Depth &mdash; the ML-family language on .NET, taught from first principles to a real DevOps tool shipped in F#.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/fsharp/algorithms">C4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/fsharp/algorithms/dynamic-programming">C4.11 &middot; Dynamic programming &amp; advanced problems</a>
+        <a href="#refs">References</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/fsharp">Course home</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var FS = '#d2b8f5', GOLD = '#f0cd7f';
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
+  /* ---------- the backoff plotter: the real recurrence base * 2^(n-1) clamped to cap ---------- */
+  /* mirrors echo_fs/EchoMQ/Backoff.fs Exponential case (deterministic; no jitter) */
+  function delayMs(baseMs, capMs, attempts) {
+    var shift = attempts - 1;
+    if (shift >= 62) return capMs;
+    var raw = baseMs * Math.pow(2, shift);     // base * 2^(n-1)
+    return Math.min(raw, capMs);               // clamped to the cap
+  }
+  function curve(baseMs, capMs, n) {
+    var out = [];
+    for (var a = 1; a <= n; a++) out.push(delayMs(baseMs, capMs, a));
+    return out;
+  }
+
+  var N = 10;
+  var X0 = 92, X1 = 713, Y0 = 232, Y1 = 60;     // plot box: attempt 1..10 across, log delay up to cap at Y1
+  function xAt(a) { return X0 + (a - 1) / (N - 1) * (X1 - X0); }
+  /* y on a log scale spanning [10ms .. cap]; the cap sits at Y1 */
+  function yAt(ms, capMs) {
+    var lo = Math.log10(10), hi = Math.log10(Math.max(capMs, 20));
+    var clamped = Math.max(10, Math.min(ms, capMs));
+    var t = (Math.log10(clamped) - lo) / (hi - lo);
+    return Y0 - t * (Y0 - Y1);
+  }
+
+  var line = document.getElementById('bkLine');
+  var dots = document.getElementById('bkDots');
+  var SVGNS = 'http://www.w3.org/2000/svg';
+
+  function render(baseMs, capMs) {
+    var ys = curve(baseMs, capMs, N);
+    /* polyline points */
+    var pts = ys.map(function (ms, i) { return xAt(i + 1) + ',' + yAt(ms, capMs).toFixed(1); }).join(' ');
+    if (line) line.setAttribute('points', pts);
+    /* dots */
+    if (dots) {
+      while (dots.firstChild) dots.removeChild(dots.firstChild);
+      ys.forEach(function (ms, i) {
+        var c = document.createElementNS(SVGNS, 'circle');
+        c.setAttribute('class', 'plot-dot');
+        c.setAttribute('cx', xAt(i + 1)); c.setAttribute('cy', yAt(ms, capMs).toFixed(1)); c.setAttribute('r', '4');
+        dots.appendChild(c);
+      });
+    }
+    /* the cap line + label */
+    var capLine = document.getElementById('bkCapLine'), capLbl = document.getElementById('bkCapLbl');
+    var capY = yAt(capMs, capMs);
+    if (capLine) { capLine.setAttribute('y1', capY); capLine.setAttribute('y2', capY); }
+    if (capLbl) { capLbl.setAttribute('y', capY - 6); capLbl.textContent = 'cap ' + capMs; }
+
+    /* attempts to reach the cap: smallest n with base*2^(n-1) >= cap */
+    var hit = N + 1;
+    for (var a = 1; a <= N; a++) { if (delayMs(baseMs, capMs, a) >= capMs) { hit = a; break; } }
+    var hitTxt = hit <= N ? String(hit) : 'beyond 10';
+
+    txt('bkRole', 'Exponential(' + baseMs + ', ' + capMs + ')');
+    txt('bkResult', hitTxt);
+
+    var first6 = ys.slice(0, 6).join('; ');
+    var code = '<span class="cmt">// delayMs (Exponential(' + baseMs + ', ' + capMs + ')) over attempts 1..10</span>\n' +
+      'curve (Backoff.Exponential(' + baseMs + ', ' + capMs + ')) <span class="res">10</span>\n' +
+      '<span class="cmt">// val it: int[] = [|' + ys.join('; ') + '|]</span>';
+    var cEl = document.getElementById('bkCode'); if (cEl) cEl.innerHTML = code;
+
+    var out = 'For <code class="inl">Exponential(' + baseMs + ', ' + capMs + ')</code> the first six delays are ' +
+      '<b style="color:var(--fsharp-bright)">' + first6 + '</b> ms, each <code class="inl">base · 2^(n-1)</code>. ' +
+      (hit <= N
+        ? 'The curve reaches the <b style="color:var(--gold-bright)">' + capMs + '</b> ms cap at attempt <b>' + hit + '</b> and holds there after.'
+        : 'The curve has not reached the <b style="color:var(--gold-bright)">' + capMs + '</b> ms cap within ten attempts.');
+    var oEl = document.getElementById('bkOut'); if (oEl) oEl.innerHTML = out;
+  }
+
+  var baseR = document.getElementById('bkBase'), capR = document.getElementById('bkCap');
+  var baseV = document.getElementById('bkBaseV'), capV = document.getElementById('bkCapV');
+  function update() {
+    var b = +baseR.value, c = +capR.value;
+    if (baseV) baseV.textContent = String(b);
+    if (capV) capV.textContent = String(c);
+    render(b, c);
+  }
+  if (baseR && capR) {
+    baseR.addEventListener('input', update);
+    capR.addEventListener('input', update);
+    update();   // draw the JS curve for the default Exponential(100, 10000)
+  }
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

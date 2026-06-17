@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R2.02.3 · Lease renewal · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R2.02.3 — keep the lease fresh: a 30-second lease and a long job will lapse mid-work. Extend the lock with if GET == token then PEXPIRE, only while the token is yours. The honest applied form: EchoMQ's consumer holds the lease for :lease_ms (default 30_000) and Jobs.reap returns an expired lease to pending on the server clock — crash recovery, not a holder-side timer.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.booknote{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);max-width:82ch}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the renewal-heartbeat figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.tl{width:100%;height:auto;display:block;margin-top:4px}
+.tl .axis{stroke:var(--b-line);stroke-width:1.2}
+.tl .mark{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.tl .work{stroke:var(--b-ts);stroke-width:3;stroke-linecap:round}
+.tl .wlbl{font:10px var(--mono);fill:var(--b-dim)}
+.tl .seq{cursor:pointer;transition:opacity .18s ease}
+.tl .seq .lease{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.4}
+.tl .seq.danger .lease{fill:var(--r-red-tint);stroke:var(--r-red)}
+.tl .seq.safe .lease{fill:#e3efe7;stroke:var(--b-node)}
+.tl .seq .tick{stroke:var(--b-node);stroke-width:1.4;stroke-dasharray:2 3}
+.tl .seq .ev{font:10px var(--mono);text-anchor:middle}
+.tl .seq.danger .ev{fill:var(--r-red)}
+.tl .seq.safe .ev{fill:var(--b-node)}
+.tl.focus .seq{opacity:.16}
+.tl.focus .seq.on{opacity:1}
+.tl.focus .seq.on .lease{stroke-width:2.4}
+/* ---------- the scaling figure (hover-select) ---------- */
+.scal{width:100%;height:auto;display:block;margin-top:4px}
+.scal .lane{font:10px var(--mono);fill:var(--b-dim)}
+.scal .design{cursor:pointer;transition:opacity .18s ease}
+.scal .design .box rect{fill:var(--b-card);stroke:var(--b-dim);stroke-width:1.4}
+.scal .design .box text{font:10px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.scal .design.many .box rect{stroke:var(--r-red)}
+.scal .design.one .box rect{stroke:var(--b-node)}
+.scal .design .clbl{font:10px var(--mono);text-anchor:middle}
+.scal .design.many .clbl{fill:var(--r-red)}
+.scal .design.one .clbl{fill:var(--b-node)}
+.scal.focus .design{opacity:.18}
+.scal.focus .design.on{opacity:1}
+.scal.focus .design.on .box rect{stroke-width:2.6}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/coordination">coordination</a><span class="rsep">/</span><a href="/redis-patterns/coordination/distributed-locking">distributed-locking</a><span class="rsep">/</span><span class="rcur">lease-renewal</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#extend">Extend</a>
+      <a href="#lifecycle">Lifecycle</a>
+      <a href="#scale">Scaling</a>
+      <a href="#applied">On EchoMQ</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R2.02.3 &#183; Distributed locking &#8212; dive 3</p>
+      <h1>Keep the <span class="hns">lease fresh</span>.</h1>
+      <p class="lede">A 30-second lease and a long job will lapse mid-work. The generic fix extends the lock before it
+      expires &#8212; but only while the token is still yours: <code>if GET == token then PEXPIRE</code>.</p>
+      <p class="heronote">Grounding: the honest applied form &#8212; echo/apps/echo_mq/consumer.ex, the loop runs
+      Jobs.reap/2 (jobs.ex:357) on its beat to return an expired lease to pending; <code>:lease_ms</code> default
+      30_000 (consumer.ex:57).</p>
+
+      <figure class="anatomy" aria-labelledby="hbCap">
+        <figcaption id="hbCap"><b>The renewal heartbeat &#8212; a 75 s job under a 30 s lease.</b> Hover a mode to
+        light its timeline and read whether the job survives.</figcaption>
+        <div class="segbar" id="hbSel" role="group" aria-label="Run the long job with or without lease renewal">
+          <button type="button" data-m="danger" aria-pressed="false">no renewal</button>
+          <button type="button" data-m="safe" aria-pressed="false">renew at TTL/2</button>
+        </div>
+        <svg class="tl" id="tl" viewBox="0 0 460 168" role="img" aria-label="A timeline of a 75-second job under a 30-second lease. Without renewal the lease ends at 30 seconds, lapses, and the job is reclaimed and double-run. With renewal at every 15 seconds the lease is pushed out past 75 seconds and stays held, so the job finishes once. Hover a mode to light its timeline.">
+          <line class="axis" x1="40" y1="120" x2="430" y2="120"></line>
+          <text class="mark" x="40" y="138">0s</text>
+          <text class="mark" x="190" y="138">30s</text>
+          <text class="mark" x="340" y="138">60s</text>
+          <text class="mark" x="415" y="138">75s</text>
+          <line class="work" x1="40" y1="92" x2="415" y2="92"></line>
+          <text class="wlbl" x="40" y="84">work &#183; 75 s</text>
+
+          <g class="seq danger" data-m="danger">
+            <rect class="lease" x="40" y="44" width="150" height="22" rx="6"></rect>
+            <text class="ev" x="190" y="38">lapses at 30 s &#183; job reclaimed</text>
+          </g>
+          <g class="seq safe" data-m="safe">
+            <rect class="lease" x="40" y="44" width="385" height="22" rx="6"></rect>
+            <line class="tick" x1="115" y1="40" x2="115" y2="100"></line>
+            <line class="tick" x1="190" y1="40" x2="190" y2="100"></line>
+            <line class="tick" x1="265" y1="40" x2="265" y2="100"></line>
+            <line class="tick" x1="340" y1="40" x2="340" y2="100"></line>
+            <text class="ev" x="232" y="38">renew every 15 s &#183; held to the end</text>
+          </g>
+        </svg>
+        <div class="readout" id="hbOut" aria-live="polite"><span class="rk">readout &#183;</span> A 75-second job runs
+        under a 30-second lease. Hover &#8220;no renewal&#8221; to watch the lease lapse, then &#8220;renew at
+        TTL/2&#8221; to watch it held to the end.</div>
+        <p class="booknote">Static verdicts &#8212; no renewal &#8594; the lease ends at 30 s, lapses, the job is
+        reclaimed and may double-run &#183; renew at TTL/2 &#8594; the lease is pushed out every 15 s, held past 75 s,
+        the job finishes once.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="extend">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Extend before the lease expires</h2>
+        <span class="ssrc">distributed-locking.md.txt &#183; Extending Lock Duration</span>
+      </div>
+      <div class="prose">
+        <p>The lease is a deadline, and a long job can outrun it. A 30-second <code>PX</code> set at acquire is a guess
+        at how long the work will take; for work that may take longer, the holder extends the lease while it is still
+        held. The extension resets the TTL &#8212; but it must be conditional. Extend the key only if the value under
+        it is still the token the holder acquired with.</p>
+      </div>
+      <pre class="code"><span class="cmt"># extend: reset the TTL only if the stored token is still ours</span>
+if redis.call(<b>"get"</b>, KEYS[1]) == ARGV[1] then
+  return redis.call(<b>"pexpire"</b>, KEYS[1], ARGV[2])
+else
+  return 0
+end</pre>
+      <div class="prose">
+        <p>The shape is the token-checked release with <code>pexpire</code> in place of <code>del</code>: the same
+        <code>GET == token</code> admission, a different verb. If the token still matches, the TTL is pushed out; if it
+        does not &#8212; the lease lapsed and another client took the key &#8212; the script returns <code>0</code> and
+        the holder has lost the lock. A holder that renews on a fixed cadence shorter than the lease keeps the lock for
+        as long as it still owns it, and stops the instant the lock is gone.</p>
+      </div>
+      <dl class="deflist">
+        <dt>PEXPIRE key ms</dt><dd>Reset a key's time to live, in milliseconds. The extend swaps it in for <code>DEL</code>: the lock survives instead of being removed.</dd>
+        <dt>GET == token</dt><dd>The owner check. The same guard that makes release safe, reused: extend only what is still yours.</dd>
+        <dt>cadence</dt><dd>How often the holder renews. Renewing at half the lease leaves a missed tick the full lease's grace before the lock expires.</dd>
+        <dt>returns 0</dt><dd>The token no longer matches &#8212; the lease lapsed and a successor took the key. The renewal is a no-op, and the <code>0</code> tells the holder the lock is gone.</dd>
+      </dl>
+      <p class="take">This extend is the <a href="/redis-patterns/coordination/distributed-locking/fencing-tokens">R2.02.2
+      token-checked release</a> with one verb changed. The acquire that takes the lease is
+      <a href="/redis-patterns/coordination/distributed-locking/set-nx-px">R2.02.1 &#183; SET NX PX</a>.</p>
+    </section>
+
+    <section id="lifecycle">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The lifecycle &#8212; renewal sits inside the work</h2>
+        <span class="ssrc">distributed-locking.md.txt &#183; Lock Lifecycle</span>
+      </div>
+      <div class="prose">
+        <p>The lifecycle the source spells out is: generate a token, acquire (<code>SET … NX PX</code>), check the
+        result, do the work, release with the token-checked script. Renewal sits inside step four. For work that may
+        outrun the lease, the holder renews on a cadence for the whole duration of the work, then releases.</p>
+        <p>Renewal is what makes a short lease safe for a long job. A short lease bounds the damage when a holder
+        crashes &#8212; a crashed holder's lock expires in seconds, not minutes. Renewal lets a live holder keep that
+        short, safe lease as long as it needs it. The two together give a lock that is both <strong>mortal</strong> (it
+        cannot deadlock the key) and <strong>durable</strong> (it does not expire under a holder still doing the
+        work).</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">short lease</span>
+          <p>A crashed holder's lock expires fast, so the resource is freed in seconds &#8212; the safety the
+          <code>PX</code> on acquire buys.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">+</div>
+        <div class="cell idea">
+          <span class="lbl">renewal</span>
+          <p>A live holder pushes the lease out on a cadence, so a long job keeps its lock &#8212; the durability the
+          <code>PEXPIRE</code> extend buys.</p>
+        </div>
+      </div>
+      <p class="take">A short lease bounds a crash; renewal extends a live holder. The lock is mortal and durable at
+      once &#8212; neither alone is enough.</p>
+    </section>
+
+    <section id="scale">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>One timer per job does not scale</h2>
+        <span class="ssrc">distributed-locking.md.txt &#183; the renewal layer</span>
+      </div>
+      <div class="prose">
+        <p>The straightforward implementation is one renewal timer per held lock: a job acquires, schedules a timer at
+        half its lease, the timer fires a single-key extend, reschedules, and cancels on release. For one job that is
+        fine. For a worker running many jobs at once it is not. K jobs means K timers, K wake-ups per renewal cycle, and
+        K separate round-trips each cycle. The work each call does is small &#8212; a <code>GET</code>, a compare, a
+        <code>PEXPIRE</code> &#8212; but the count grows with the number of held jobs, and the renewal layer becomes
+        load that scales with concurrency rather than with the work. Hover the two designs below to compare the
+        round-trips each renewal tick costs.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="scalCap">
+        <figcaption id="scalCap"><b>Per-job timers vs one server-side sweep &#8212; round-trips per renewal tick.</b>
+        Hover a design to light it and read the cost for a worker holding K jobs.</figcaption>
+        <div class="segbar" id="scalSel" role="group" aria-label="Which renewal design to inspect">
+          <button type="button" data-d="many" aria-pressed="false">K per-job timers</button>
+          <button type="button" data-d="one" aria-pressed="false">one server-side sweep</button>
+        </div>
+        <svg class="scal" id="scal" viewBox="0 0 460 168" role="img" aria-label="Two renewal designs for a worker holding K jobs. The per-job-timer design fires K separate extend round-trips per tick, scaling with concurrency. The one-sweep design fires a single bounded server-side reaper sweep per tick, scaling with ticks. Hover a design to light it.">
+          <text class="lane" x="20" y="20">worker holds K = 6 jobs</text>
+          <g class="design many" data-d="many">
+            <g class="box"><rect x="30" y="38" width="44" height="26" rx="5"></rect><text x="52" y="55">timer 1</text></g>
+            <g class="box"><rect x="84" y="38" width="44" height="26" rx="5"></rect><text x="106" y="55">timer 2</text></g>
+            <g class="box"><rect x="138" y="38" width="44" height="26" rx="5"></rect><text x="160" y="55">timer 3</text></g>
+            <g class="box"><rect x="192" y="38" width="44" height="26" rx="5"></rect><text x="214" y="55">…</text></g>
+            <g class="box"><rect x="246" y="38" width="44" height="26" rx="5"></rect><text x="268" y="55">timer K</text></g>
+            <text class="clbl" x="160" y="86">K per-job timers &#8594; K round-trips / tick</text>
+          </g>
+          <g class="design one" data-d="one">
+            <g class="box"><rect x="30" y="106" width="120" height="26" rx="5"></rect><text x="90" y="123">one reaper beat</text></g>
+            <text class="clbl" x="160" y="150">one server-side sweep &#8594; 1 round-trip / tick</text>
+          </g>
+        </svg>
+        <div class="readout" id="scalOut" aria-live="polite"><span class="rk">readout &#183;</span> A worker holds
+        K = 6 jobs. Hover &#8220;K per-job timers&#8221; for the per-job cost, then &#8220;one server-side sweep&#8221;
+        for the bounded one.</div>
+        <p class="booknote">Static verdicts &#8212; K per-job timers &#8594; 6 extend round-trips per tick, scaling with
+        held jobs &#183; one server-side sweep &#8594; 1 bounded sweep per tick, scaling with ticks not jobs.</p>
+      </figure>
+
+      <p class="take">Per-job timers make the renewal traffic scale with the held-job count. A single server-side sweep
+      makes it scale with the number of ticks instead.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The applied form &#8212; the consumer's lease and the reaper</h2>
+        <span class="ssrc">echo_mq/consumer.ex:91 &#183; jobs.ex:357</span>
+      </div>
+      <div class="prose">
+        <p>EchoMQ does not renew a worker-held lock on a holder-side timer in the shipped claim path. The honest applied
+        form is simpler and lives on the server clock: the <strong>consumer holds the lease for
+        <code>:lease_ms</code></strong>, and a single loop &#8212; the <strong>reaper</strong> &#8212; returns any
+        expired lease to pending. Crash recovery is the server clock, not a holder heartbeat.
+        <code>EchoMQ.Consumer</code> is one supervised loop that beats on a cadence and runs the reaper first on every
+        beat.</p>
+      </div>
+      <pre class="code"><span class="cmt"># echo/apps/echo_mq/lib/echo_mq/consumer.ex:91 — the loop runs the reaper each beat.</span>
+defp loop(s) do
+  check_control()
+  {:ok, _} = <b>Jobs.reap</b>(s.conn, s.queue)              <span class="cmt"># return expired leases to pending</span>
+  {:ok, _} = Jobs.promote(s.conn, s.queue, s.pump_batch)
+  drain(s)                                            <span class="cmt"># claim and run ready jobs</span>
+  park(s)                                             <span class="cmt"># BLPOP on the wake key until a wake or the beat elapses</span>
+  loop(s)
+end</pre>
+      <div class="prose">
+        <p><code>Jobs.reap/2</code> (jobs.ex:357) runs the <code>@reap</code> script, which reads the server clock and
+        returns every job in <code>emq:{q}:active</code> whose lease score is past <code>now</code> back to
+        <code>emq:{q}:pending</code>:</p>
+      </div>
+      <pre class="code"><span class="cmt"># echo/apps/echo_mq/lib/echo_mq/jobs.ex:245 — @reap returns expired leases on the server clock.</span>
+local t = redis.call('TIME')
+local now = t[1] * 1000 + math.floor(t[2] / 1000)
+local exp = redis.call(<b>'ZRANGEBYSCORE'</b>, KEYS[1], '-inf', now, 'LIMIT', 0, 100)   <span class="cmt"># KEYS[1] = emq:{q}:active</span>
+for _, id in ipairs(exp) do
+  redis.call('ZREM', KEYS[1], id)
+  <span class="cmt"># ... ZADD the id back into emq:{q}:pending at score 0, HSET state = pending ...</span>
+end
+return #exp</pre>
+      <div class="prose">
+        <p>The default <code>:lease_ms</code> is <code>30_000</code> (consumer.ex:57). A crashed worker's lease is never
+        renewed, so its deadline passes; the next reaper beat returns its job to pending; another worker re-leases it by
+        re-claiming. The <code>PEXPIRE</code>-extend of the generic pattern becomes a server-side reaper sweep &#8212;
+        no holder-side timer, no per-job round-trip, one bounded <code>ZRANGEBYSCORE</code> per beat. The re-claim runs
+        <code>HINCRBY attempts 1</code> again, so the crashed worker's stale attempt count fences it out if it ever
+        resumes.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>ZRANGEBYSCORE</code> with a <code>LIMIT</code>
+      reads a bounded slice of a sorted set by score, so the reaper sweeps at most a fixed batch of expired leases per
+      beat &#8212; <a href="https://valkey.io/commands/zrangebyscore/" rel="noopener">valkey.io/commands/zrangebyscore</a>.</p>
+
+      <div class="door">
+        <span class="dr">the consumer &#183; the reaper, against live Valkey</span>
+        <h3>The lease set, recovered on the server clock</h3>
+        <p>The lease is a score in the <code>active</code> sorted set, and the reaper returns it on the server's own
+        <code>TIME</code> (<a href="https://valkey.io/commands/zrangebyscore/" rel="noopener">valkey.io/commands/zrangebyscore</a>);
+        the <code>emq:{q}:active</code> hashtag keeps it on one slot. The committed manuscript line names the
+        keyspace:</p>
+        <figure class="frozen">
+          <figcaption>content/bcs3.1.md &#183; the v2 keyspace, the lease set among the per-queue keys<span class="tag">frozen</span></figcaption>
+          <pre>emq:{orders}:pending          <span class="fd">&#8592; where the reaper returns an expired lease</span>
+emq:{orders}:job:ORD0NgWEfAEJfs   <span class="fd">&#8592; the three-field row: state, attempts, payload</span>
+<b>{emq}:version</b> | <b>{emq}:locks</b>      <span class="fd">&#8592; 17 bytes before the payload</span></pre>
+        </figure>
+        <p>The worker-side lock-subkey renewal plane &#8212; the <code>emq:{q}:job:&lt;id&gt;:lock</code> subkey a
+        long-running worker holds and renews, which <code>remove_job</code> refuses to clear with the
+        <code>EMQLOCK</code> class &#8212; is taught in the dedicated <a href="/echomq">EchoMQ course</a>.</p>
+      </div>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Recap &#8212; the reaper renews on the server clock</h2>
+        <span class="ssrc">back &#8594; R2.02</span>
+      </div>
+      <div class="prose">
+        <p>A lock with a short lease will lapse under a long job. The generic fix is conditional renewal:
+        <code>if GET == token then PEXPIRE</code>. One timer per job does not scale. EchoMQ's answer is the reaper: the
+        consumer holds the lease for <code>:lease_ms</code>, and on every beat <code>Jobs.reap</code> returns any active
+        job whose server-clock deadline has passed back to pending, where another worker re-leases it by re-claiming.
+        That closes R2.02: lease one holder via the claim, fence a stale worker on <code>attempts</code>, and recover
+        an expired lease with the reaper on the server clock.</p>
+      </div>
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Extend the lease before it lapses: <code>if GET == token then PEXPIRE</code>, renew only while you still
+          own the lock &#8212; and at scale, one timer rather than one per job.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">the reaper in EchoMQ</span>
+          <p><code>EchoMQ.Consumer</code> holds the lease for <code>:lease_ms</code> and runs <code>Jobs.reap</code> on
+          its beat; the <code>@reap</code> script returns any expired lease to pending on the server clock &#8212; one
+          bounded sweep, no holder-side timer.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/docs/latest/develop/use/patterns/distributed-locks/" rel="noopener">Redis &mdash; <em>Distributed Locks</em></a> &mdash; single-instance lock acquisition, owner-token release, and lock extension.</li>
+            <li><a href="https://valkey.io/commands/pexpire/" rel="noopener">Valkey &mdash; <em>PEXPIRE</em></a> &mdash; reset a key's time to live in milliseconds; the verb the generic extend swaps in for <code>DEL</code>.</li>
+            <li><a href="https://valkey.io/commands/zrangebyscore/" rel="noopener">Valkey &mdash; <em>ZRANGEBYSCORE</em></a> &mdash; the bounded range read the reaper uses to find leases past the server clock.</li>
+            <li><a href="https://valkey.io/topics/programmability/" rel="noopener">Valkey &mdash; <em>Programmability</em></a> &mdash; why the reaper's read-and-move runs as one atomic script.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/coordination/distributed-locking">R2.02 &#183; Distributed locking</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/coordination/distributed-locking/set-nx-px">R2.02.1 &#183; SET NX PX</a><span class="rs">the claim lease the reaper recovers</span></li>
+            <li><a href="/redis-patterns/coordination/distributed-locking/fencing-tokens">R2.02.2 &#183; Fencing tokens</a><span class="rs">why a re-claimed job fences the lapsed worker</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the EchoMQ protocol &#183; the worker-side lock renewal plane</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/coordination/distributed-locking/fencing-tokens"><span class="pk">previous</span>&#8592; R2.02.2 &#183; Fencing tokens</a>
+      <a class="pgx" href="/redis-patterns/coordination/distributed-locking"><span class="pk">up</span>R2.02 &#183; Distributed locking &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/coordination/distributed-locking/set-nx-px">R2.02.1 &#183; SET NX PX</a>
+        <a href="/redis-patterns/coordination/distributed-locking/fencing-tokens">R2.02.2 &#183; Fencing tokens</a>
+        <a href="/redis-patterns/coordination/distributed-locking/lease-renewal">R2.02.3 &#183; Lease renewal</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the renewal heartbeat (pure over a fixed dataset) ---------- */
+  // A 75s job under a 30s lease. danger = no renewal (lapses at 30s). safe = renew at TTL/2 (held to the end).
+  function runHeartbeat(m) {
+    if (m === 'danger') {
+      return 'no renewal — the 30 s lease set at acquire is never extended. At 30 s the lease lapses while the work is still in flight; the reaper returns the job to pending and another worker re-claims it. The job runs twice. Held to the end: no.';
+    }
+    return 'renew at TTL/2 — the holder pushes the lease out every 15 s while the token is still its own. The lease stays ahead of the work for all 75 s, so its score never falls past the reaper sweep, and the job finishes once before release. Held to the end: yes.';
+  }
+  var tl = document.getElementById('tl');
+  var hbButtons = document.querySelectorAll('#hbSel button');
+  var hbOut = document.getElementById('hbOut');
+  function selectHb(m) {
+    hbButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-m') === m ? 'true' : 'false');
+    });
+    if (tl) {
+      tl.classList.toggle('focus', !!m);
+      tl.querySelectorAll('.seq').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-m') === m);
+      });
+    }
+    if (hbOut) {
+      hbOut.innerHTML = m
+        ? '<span class="rk">mode &#183;</span> ' + runHeartbeat(m)
+        : '<span class="rk">readout &#183;</span> A 75-second job runs under a 30-second lease. Hover &#8220;no renewal&#8221; to watch the lease lapse, then &#8220;renew at TTL/2&#8221; to watch it held to the end.';
+    }
+  }
+  hbButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var m = b.getAttribute('data-m');
+      selectHb(b.getAttribute('aria-pressed') === 'true' ? null : m);
+    });
+  });
+  if (tl) {
+    tl.querySelectorAll('.seq').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectHb(g.getAttribute('data-m')); });
+      g.addEventListener('mouseleave', function () { selectHb(null); });
+    });
+  }
+
+  /* ---------- Interactive 2: the scaling comparison (pure over a fixed K) ---------- */
+  var K = 6;
+  // pure: design -> readout text. many = K round-trips per tick; one = 1 bounded sweep per tick.
+  function runScaling(d) {
+    if (d === 'many') {
+      return 'K per-job timers — a worker holding ' + K + ' jobs schedules ' + K + ' independent timers. Each tick fires ' +
+        K + ' separate extend round-trips (a GET, a compare, a PEXPIRE per job). Double the concurrency and the renewal traffic doubles: ' +
+        K + ' calls / tick, scaling with held jobs.';
+    }
+    return 'one server-side sweep — a worker holding ' + K + ' jobs runs one loop. Each tick fires a single bounded reaper sweep ' +
+      'over the active set, returning any expired lease in one round-trip regardless of how many jobs are held: 1 call / tick, scaling with ticks not jobs.';
+  }
+  var scal = document.getElementById('scal');
+  var scalButtons = document.querySelectorAll('#scalSel button');
+  var scalOut = document.getElementById('scalOut');
+  function selectScal(d) {
+    scalButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-d') === d ? 'true' : 'false');
+    });
+    if (scal) {
+      scal.classList.toggle('focus', !!d);
+      scal.querySelectorAll('.design').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-d') === d);
+      });
+    }
+    if (scalOut) {
+      scalOut.innerHTML = d
+        ? '<span class="rk">design &#183;</span> ' + runScaling(d)
+        : '<span class="rk">readout &#183;</span> A worker holds K = 6 jobs. Hover &#8220;K per-job timers&#8221; for the per-job cost, then &#8220;one server-side sweep&#8221; for the bounded one.';
+    }
+  }
+  scalButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var d = b.getAttribute('data-d');
+      selectScal(b.getAttribute('aria-pressed') === 'true' ? null : d);
+    });
+  });
+  if (scal) {
+    scal.querySelectorAll('.design').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectScal(g.getAttribute('data-d')); });
+      g.addEventListener('mouseleave', function () { selectScal(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

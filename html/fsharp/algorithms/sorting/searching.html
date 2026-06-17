@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C4.03.3 · Searching — F# In Depth</title>
+<meta name="description" content="Searching in F#: a linear scan over any list at O(n), a binary search over a sorted array at O(log n), and the same O(log n) lookup in a Set or a Map — verified in dotnet fsi. Binary search needs random access, so it wants an array, not a singly-linked list. The EchoMQ in F# block grounds in how the bus finds work: a job by id is a Map lookup, and the due scheduled jobs are a range query over Store.Schedule by due time — the ZRANGEBYSCORE analog — quoted from the echo_fs port. Dive C4.03.3 of the F# In Depth course.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --fsharp:#b48ee0; --fsharp-bright:#d2b8f5;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(180,142,224,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--fsharp-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--fsharp-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="fsharp"]{background:var(--fsharp-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--fsharp-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .err{color:var(--burgundy)}
+pre.code .str{color:var(--sage-bright)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--fsharp-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pill / legend ---- */
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--fsharp-bright);border-color:var(--fsharp)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- references ---- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.refs li{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.45}
+.refs li a{color:var(--cream-soft)}
+.refs li a:hover{color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.fs .lbl{color:var(--fsharp-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--fsharp-bright);
+  border:1px solid var(--fsharp);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.note.warn{border-left-color:var(--burgundy)}
+.note code.inl{color:var(--cream-soft)}
+pre.code .rdx{background:rgba(180,142,224,.18);border-radius:4px;padding:0 .18em;color:var(--fsharp-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+
+/* ---- Elixir → F# side-by-side ---- */
+.cmp{margin:1.2rem 0 0}
+.cmp .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:1rem 0 .35rem;color:var(--cream-dim)}
+.cmp .lbl.ex{color:var(--sage-bright)}
+.cmp .lbl.fs{color:var(--fsharp-bright)}
+.cmp .lbl:first-child{margin-top:0}
+pre.code .ex{color:var(--sage-bright)}
+
+/* ---- EchoMQ block ---- */
+.emq{margin:1.7rem 0 0;border:1px solid var(--fsharp);border-radius:16px;
+  background:linear-gradient(180deg,rgba(180,142,224,.10),rgba(10,14,26,.35));
+  padding:clamp(1.1rem,2.6vw,1.7rem)}
+.emq .emq-h{font-family:var(--sans);font-size:.66rem;font-weight:700;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--fsharp-bright);margin:0 0 .7rem;
+  display:inline-flex;align-items:center;gap:.55rem}
+.emq .emq-h::before{content:"";width:22px;height:1px;background:var(--fsharp-bright);display:inline-block}
+.emq h3{margin:.1rem 0 .6rem}
+.emq p{font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure);margin:0 0 .9rem}
+.emq .status{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);
+  border-top:1px dashed var(--line);margin-top:1rem;padding-top:.8rem}
+.emq .status b{color:var(--fsharp-bright);font-weight:600}
+
+/* ---- the search svg (this dive) ---- */
+.se-node rect{transition:fill .2s ease, stroke .2s ease}
+.se-node{cursor:pointer}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/fsharp">jonnify<span class="dot"></span><span class="sub">fsharp</span></a>
+    <nav>
+      <a href="/fsharp">F# In Depth</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/fsharp">fsharp</a><span class="rsep">/</span><a href="/fsharp/algorithms">algorithms</a><span class="rsep">/</span><a href="/fsharp/algorithms/sorting">sorting</a><span class="rsep">/</span><span class="rcur">searching</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/fsharp">F# In Depth</a><span class="sep">/</span><a href="/fsharp/algorithms">C4 · Algorithms &amp; Data Structures</a><span class="sep">/</span><a href="/fsharp/algorithms/sorting">C4.03 · Sorting &amp; searching</a><span class="sep">/</span><span class="here">C4.03.3 · Searching</span>
+    </nav>
+    <p class="eyebrow">Dive C4.03.3</p>
+    <h1>Search<span class="ex">ing</span></h1>
+    <p class="lede">An unordered sequence answers "where is 20?" by checking everything. A sorted one answers it by halving.</p>
+    <p class="kicker">This is the second half of the sorting bargain. <strong>Linear search</strong> walks a sequence
+      from the front, comparing each element — O(n), and it needs no order. <strong>Binary search</strong> starts in
+      the middle of a <em>sorted</em> sequence and discards the half that cannot hold the target each step — O(log n) —
+      but only if it can reach the middle in one step, which means an <code class="inl">array</code>, not a
+      singly-linked <code class="inl">list</code>. The same O(log n) is what an F# <code class="inl">Set</code> and
+      <code class="inl">Map</code> give, because each is a balanced tree. This dive writes all three in F#, verified in
+      <code class="inl">dotnet fsi</code>, and closes the module on how the bus finds work: a job by its id, and the
+      due jobs by their run time.</p>
+    <div class="cta-row">
+      <a class="btn" href="#explore">Find 20, two ways <span aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="/fsharp/algorithms/sorting">Module hub</a>
+    </div>
+  </section>
+
+  <!-- ===================== LINEAR ===================== -->
+  <section id="linear">
+    <div class="dive-head">
+      <span class="dive-tag">C4.03.3 · part 1</span>
+      <h2>Linear search — O(n) over anything</h2>
+    </div>
+    <div class="prose">
+      <p>The simplest search walks the list and stops at the first element that matches, returning its index. It works
+        on any list, in any order, and touches up to every element — O(n). In F# it is a three-clause recursion: an
+        empty list returns <code class="inl">None</code>; a head that matches returns <code class="inl">Some</code> the
+        current index; otherwise advance.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: linear search over a list returning an index option, verified in FSI."><span class="cmt">// linear search: first index whose element satisfies pred</span>
+<span class="op">let rec</span> linear pred i lst =
+    <span class="op">match</span> lst <span class="op">with</span>
+    | [] -&gt; None
+    | x :: _ <span class="op">when</span> pred x -&gt; Some i
+    | _ :: t -&gt; linear pred (i + <span class="res">1</span>) t
+
+<span class="cmt">// val linear : pred:('a -> bool) -> i:int -> lst:'a list -> int option</span>
+
+linear (<span class="op">fun</span> x -&gt; x = <span class="res">20</span>) <span class="res">0</span> [<span class="res">5</span>; <span class="res">8</span>; <span class="res">10</span>; <span class="res">12</span>; <span class="res">20</span>; <span class="res">30</span>; <span class="res">42</span>]
+<span class="cmt">// val it : int option = Some 4</span>
+
+linear (<span class="op">fun</span> x -&gt; x = <span class="res">99</span>) <span class="res">0</span> [<span class="res">5</span>; <span class="res">8</span>; <span class="res">10</span>; <span class="res">12</span>; <span class="res">20</span>; <span class="res">30</span>; <span class="res">42</span>]
+<span class="cmt">// val it : int option = None</span></pre>
+
+    <dl class="deflist">
+      <dt>int option</dt><dd>the result type: <code class="inl">Some i</code> for a hit, <code class="inl">None</code> for a miss — the typed, total alternative to a sentinel like <code class="inl">-1</code>.</dd>
+      <dt>when pred x</dt><dd>a guard on the match clause: the head matches only if the predicate holds. The clause order makes the empty case and the hit case unambiguous.</dd>
+      <dt>O(n)</dt><dd>worst case touches every element, so a single search of an unsorted sequence costs no more than a scan — but no less, either.</dd>
+    </dl>
+  </section>
+
+  <!-- ===================== BINARY ===================== -->
+  <section id="binary">
+    <div class="dive-head">
+      <span class="dive-tag">C4.03.3 · part 2</span>
+      <h2>Binary search — O(log n) over a sorted array</h2>
+    </div>
+    <div class="prose">
+      <p>If the sequence is sorted <em>and</em> indexable, each comparison can discard half of what remains. Probe the
+        middle: if it equals the target, done; if it is too small, search the right half; if too large, the left. The
+        bounds close in until they cross. In F# this wants an <code class="inl">array</code> — indexing
+        <code class="inl">arr.[mid]</code> is O(1) on a CLR array — and is a tail recursion over the
+        <code class="inl">lo</code> / <code class="inl">hi</code> window.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: binary search over a sorted array returning an index option, verified in FSI."><span class="cmt">// binary search over a sorted array (random access is O(1))</span>
+<span class="op">let</span> binarySearch (arr: int[]) target =
+    <span class="op">let rec</span> go lo hi =
+        <span class="op">if</span> lo &gt; hi <span class="op">then</span> None
+        <span class="op">else</span>
+            <span class="op">let</span> mid = (lo + hi) / <span class="res">2</span>
+            <span class="op">if</span> arr.[mid] = target <span class="op">then</span> Some mid
+            <span class="op">elif</span> arr.[mid] &lt; target <span class="op">then</span> go (mid + <span class="res">1</span>) hi
+            <span class="op">else</span> go lo (mid - <span class="res">1</span>)
+    go <span class="res">0</span> (arr.Length - <span class="res">1</span>)
+
+<span class="cmt">// val binarySearch : arr:int[] -> target:int -> int option</span>
+
+<span class="op">let</span> arr = [| <span class="res">5</span>; <span class="res">8</span>; <span class="res">10</span>; <span class="res">12</span>; <span class="res">20</span>; <span class="res">30</span>; <span class="res">42</span> |]
+binarySearch arr <span class="res">20</span>
+<span class="cmt">// val it : int option = Some 4   ·  probed 12, then 30, then 20</span>
+binarySearch arr <span class="res">99</span>
+<span class="cmt">// val it : int option = None</span></pre>
+
+    <div class="note warn">Binary search over a <code class="inl">list</code> is a trap: reaching the middle of a
+      singly-linked list is itself an O(n) walk, so "binary search" over a list is O(n log n) — slower than a plain
+      scan. Sorted data you intend to search lives in an <code class="inl">array</code>, exactly as the Elixir version
+      wants a tuple, not a list.</div>
+  </section>
+
+  <!-- ===================== INTERACTIVE: TWO WAYS TO FIND 20 ===================== -->
+  <section id="explore">
+    <h2>Two ways to find 20</h2>
+    <div class="prose">
+      <p>Over the sorted sequence <code class="inl">[5; 8; 10; 12; 20; 30; 42]</code>, linear search walks from the
+        left and reaches 20 at index 4 in five comparisons; binary search probes 12, then 30, then 20 in three. Select
+        a strategy: the diagram marks the elements each one touches, and the readout names the probes and the cost.
+        Both return <code class="inl">Some 4</code> — the difference is how many comparisons it took.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="seTitle">
+      <h4 id="seTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">find 20 · select a strategy</h4>
+      <div class="controls">
+        <div class="solid-select" id="seSel" role="group" aria-label="The strategy">
+          <button type="button" data-k="linear" data-c="blue" class="active">linear</button>
+          <button type="button" data-k="binary" data-c="sage">binary</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 176" role="img" aria-label="The sorted sequence 5, 8, 10, 12, 20, 30, 42 as seven boxes; a linear or binary search marks the elements it touches and the index it finds.">
+        <rect id="seBox0" x="35" y="74" width="86" height="56" rx="10" fill="#10162b" stroke="#9fc0ea" stroke-width="2.5"></rect>
+        <text x="78" y="108" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="16" fill="#ece4d0">5</text>
+        <text x="78" y="148" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a39c89">0</text>
+        <rect id="seBox1" x="129" y="74" width="86" height="56" rx="10" fill="#10162b" stroke="#9fc0ea" stroke-width="2.5"></rect>
+        <text x="172" y="108" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="16" fill="#ece4d0">8</text>
+        <text x="172" y="148" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a39c89">1</text>
+        <rect id="seBox2" x="223" y="74" width="86" height="56" rx="10" fill="#10162b" stroke="#9fc0ea" stroke-width="2.5"></rect>
+        <text x="266" y="108" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="16" fill="#ece4d0">10</text>
+        <text x="266" y="148" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a39c89">2</text>
+        <rect id="seBox3" x="317" y="74" width="86" height="56" rx="10" fill="#10162b" stroke="#9fc0ea" stroke-width="2.5"></rect>
+        <text x="360" y="108" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="16" fill="#ece4d0">12</text>
+        <text x="360" y="148" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a39c89">3</text>
+        <rect id="seBox4" x="411" y="74" width="86" height="56" rx="10" fill="#10162b" stroke="#a7c9b1" stroke-width="3"></rect>
+        <text x="454" y="108" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="16" fill="#ece4d0">20</text>
+        <text x="454" y="148" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a39c89">4</text>
+        <rect id="seBox5" x="505" y="74" width="86" height="56" rx="10" fill="#10162b" stroke="#2a3252" stroke-width="2"></rect>
+        <text x="548" y="108" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="16" fill="#8b93b0">30</text>
+        <text x="548" y="148" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a39c89">5</text>
+        <rect id="seBox6" x="599" y="74" width="86" height="56" rx="10" fill="#10162b" stroke="#2a3252" stroke-width="2"></rect>
+        <text x="642" y="108" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="16" fill="#8b93b0">42</text>
+        <text x="642" y="148" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a39c89">6</text>
+
+        <text id="seCaption" x="360" y="44" text-anchor="middle" font-family="Manrope, sans-serif" font-size="11" letter-spacing="0.04em" fill="#9fc0ea">linear: probe each from the left until 20 — 5 probes</text>
+      </svg>
+
+      <pre class="code" id="seCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="seOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">cost: <span id="seBadge" style="color:var(--blue-bright);font-size:1.05rem">O(n)</span> &nbsp;&middot;&nbsp; <span id="seSteps" style="color:var(--cream)">probes elements one by one — 5 here</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">result: <span id="seResult" style="color:var(--sage-bright)">Some 4</span></p>
+    </figure>
+    <p class="take">Both find 20; binary search asks sharper questions. Each comparison it makes discards half of what
+      remains, so it needs about <span class="math">log₂ n</span> of them — three for seven elements, twenty for a
+      million.</p>
+  </section>
+
+  <!-- ===================== SET & MAP ===================== -->
+  <section id="set-map">
+    <div class="dive-head">
+      <span class="dive-tag">C4.03.3 · part 3</span>
+      <h2>The same O(log n) in a Set and a Map</h2>
+    </div>
+    <div class="prose">
+      <p>Binary search is the descent of a balanced tree flattened onto an array. F# gives that descent directly:
+        <code class="inl">Set</code> and <code class="inl">Map</code> are immutable balanced trees, so
+        <code class="inl">Set.contains</code> and <code class="inl">Map.tryFind</code> are O(log n) — the same as
+        binary search, but with cheap insertion too, since adding an element shares most of the existing tree rather
+        than rewriting an array. This is the structure the next module, C4.04, takes apart in full; here it is the
+        bridge from "search a sorted array" to "look up a key".</p>
+    </div>
+
+    <pre class="code" aria-label="F#: Set.contains and Map.tryFind are O(log n), verified in FSI."><span class="op">let</span> s = <span class="fn sage">Set</span>.<span class="fn">ofList</span> [<span class="res">5</span>; <span class="res">8</span>; <span class="res">10</span>; <span class="res">12</span>; <span class="res">20</span>; <span class="res">30</span>; <span class="res">42</span>]
+<span class="fn sage">Set</span>.<span class="fn">contains</span> <span class="res">20</span> s     <span class="cmt">// val it : bool = true     · O(log n)</span>
+<span class="fn sage">Set</span>.<span class="fn">contains</span> <span class="res">99</span> s     <span class="cmt">// val it : bool = false</span>
+
+<span class="op">let</span> m = <span class="fn sage">Map</span>.<span class="fn">ofList</span> [(<span class="str">"JOB0000000001"</span>, <span class="res">100L</span>); (<span class="str">"JOB0000000002"</span>, <span class="res">250L</span>)]
+<span class="fn sage">Map</span>.<span class="fn">tryFind</span> <span class="str">"JOB0000000002"</span> m
+<span class="cmt">// val it : int64 option = Some 250L   ·  O(log n) keyed lookup</span></pre>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">Binary search</p>
+        <p>O(log n) over a sorted array, but each update rewrites the array — costly to keep current.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="cell fs">
+        <p class="lbl">Set / Map</p>
+        <p>O(log n) lookup <em>and</em> O(log n) insert, with structural sharing — the structure a live queue is built on.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ECHOMQ BLOCK ===================== -->
+  <section id="emq">
+    <div class="dive-head">
+      <span class="dive-tag">C4.03.3 · the bus</span>
+      <h2>EchoMQ in F#</h2>
+    <p class="take">Status &mdash; <code class="inl">echo_fs</code> is an in-memory model. The EchoMQ protocol &mdash; the Lua transitions executing on a Valkey wire &mdash; is <strong>not implemented</strong> (there is no Lua and no Valkey client in the code); that is the coming-soon transport (<code class="inl">EchoMQ.Connector</code>). This block shows how the model uses the structure, not a running bus.</p>
+    </div>
+    <div class="prose">
+      <p>The bus searches in two shapes, and both are this dive. To look up a single job it keys into the
+        <code class="inl">Rows</code> map — a <code class="inl">Map.tryFind</code>, O(log n), the keyed search above. To
+        decide which scheduled jobs are ready to run, it asks a <em>range</em> question: which parked jobs have a
+        due-time at or before now. That is a search by score — the range query a sorted-by-time index answers, the
+        analog of Valkey's <code class="inl">ZRANGEBYSCORE</code>.</p>
+    </div>
+
+    <div class="emq">
+      <p class="emq-h">EchoMQ in F#</p>
+      <h3>Finding due jobs by their run time</h3>
+      <p>Quoted from <code class="inl">echo_fs/EchoMQ/Store.fs</code>: <code class="inl">Schedule</code> is a
+        <code class="inl">Map&lt;string, int64&gt;</code> from a job id to its due-at millisecond. The
+        <code class="inl">promote</code> pump filters that map for the entries due at or before
+        <code class="inl">now</code> and moves them back to pending — a search by score over the schedule. The lease
+        reaper does the same shape over <code class="inl">Active</code>, keyed on the lease deadline.</p>
+      <pre class="code" aria-label="The Schedule field and the promote filter quoted from echo_fs/EchoMQ/Store.fs."><span class="cmt">// echo_fs/EchoMQ/Store.fs — id -> due-at (ms): jobs parked until run-at</span>
+Schedule: Map&lt;string, int64&gt;
+
+<span class="cmt">// promote: which scheduled jobs are due at or before now?</span>
+<span class="op">let</span> due =
+    st.Schedule
+    |&gt; <span class="fn sage">Map</span>.<span class="fn">filter</span> (<span class="op">fun</span> _ dueAt -&gt; dueAt &lt;= now)
+    |&gt; <span class="fn sage">Map</span>.<span class="fn">toList</span>
+    |&gt; <span class="fn sage">List</span>.<span class="fn">map</span> <span class="fn">fst</span></pre>
+      <p>So the queue's two finds are this module's two searches: a keyed lookup for one job (O(log n) into
+        <code class="inl">Rows</code>), and a range query for the due jobs (a scan-by-score over
+        <code class="inl">Schedule</code>) — the ZRANGEBYSCORE the Valkey transport will push to the server.</p>
+      <p class="status"><b>Status.</b> The in-memory <code class="inl">Store.promote</code> and
+        <code class="inl">Store.reap</code> run these scans today, and <code class="inl">EchoMQ.Tests</code> covers
+        them. The Valkey transport (<code class="inl">EchoMQ.Connector</code>) replaces the host-side
+        <code class="inl">Map.filter</code> with a server-side range query when it lands; the wire is the coming-soon
+        part.</p>
+    </div>
+  </section>
+
+  <!-- ===================== SORT ONCE, SEARCH MANY ===================== -->
+  <section id="advanced">
+    <h2>Sort once, search many — and the comparison floor</h2>
+    <div class="prose">
+      <p>Sorting is an investment. To search a sequence once, a linear scan at O(n) beats paying
+        <span class="math">n log n</span> to sort it first. To search it many times, sorting once and then binary
+        searching — or holding it in a <code class="inl">Set</code> — wins quickly; the break-even is a handful of
+        lookups. That same logic, in C4.04, picks a map: a hash pays once up front to make every lookup O(1) on
+        average, no ordering required.</p>
+      <p>There is a hard limit on the sorting half. Any sort that works only by comparing pairs is, in effect, walking
+        a decision tree whose leaves are the <span class="math">n!</span> possible orderings; a binary tree with that
+        many leaves is at least <span class="math">log₂(n!) ≈ n log n</span> deep. So no comparison sort beats
+        <span class="math">n log n</span> in the worst case — merge sort meets that floor, and only sorts that exploit
+        the keys (counting, radix) can go lower. The bus sidesteps the whole question by never re-sorting: its
+        <code class="inl">Set</code> holds a total order at all times.</p>
+    </div>
+    <pre class="code" aria-label="F#: sort once, then search cheaply; and the comparison-sort floor."><span class="cmt">// one sort, then many fast searches</span>
+<span class="op">let</span> sorted = <span class="fn sage">List</span>.<span class="fn">sort</span> data       <span class="cmt">// O(n log n), once</span>
+binarySearch (<span class="fn sage">List</span>.<span class="fn">toArray</span> sorted) <span class="res">20</span>  <span class="cmt">// O(log n), each lookup</span>
+
+<span class="cmt">// comparison-sort floor:  log2(n!) ~ n log n  (no comparison sort beats it)</span></pre>
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">Elixir / F4.03 · sort, then halve</p>
+        <p>Pay <span class="math">n log n</span> once; binary search wants a tuple, where <code class="inl">elem/2</code> is O(1).</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="cell fs">
+        <p class="lbl">F# / C4.03 · the same, statically typed</p>
+        <p>Binary search wants an <code class="inl">array</code>; a <code class="inl">Set</code> / <code class="inl">Map</code> gives ordered O(log n) lookup with cheap inserts — the bus's choice.</p>
+      </div>
+    </div>
+    <p class="note">That closes the module. Next module: <strong>C4.04 — Maps, sets &amp; hashing</strong>, where a hash
+      trades ordering for average-O(1) lookup — and where the bus's <code class="inl">Rows</code> map gets its full
+      treatment.</p>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://fsharp.github.io/fsharp-core-docs/">FSharp.Core API reference</a> &mdash; the <code class="inl">Array</code>, <code class="inl">List</code>, <code class="inl">Set</code>, and <code class="inl">Map</code> modules.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/">Microsoft &mdash; <em>F# documentation</em></a> &mdash; arrays, recursion, and the F# collection types.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/">Microsoft &mdash; <em>.NET documentation</em></a> &mdash; the CLR array and O(1) indexing.</li>
+          <li><a href="https://fsharp.org/">The F# Software Foundation</a> &mdash; F# on the .NET runtime.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/elixir/algorithms/sorting/search">Elixir &mdash; F4.03.2 · Linear &amp; binary search</a> &mdash; the same two searches, the E4 sibling.</li>
+          <li><a href="/fsharp/algorithms">C4 &mdash; Algorithms &amp; Data Structures</a> &mdash; the chapter this dive sits in.</li>
+          <li><a href="/fsharp/language/collections">C1.07 &mdash; Collections</a> &mdash; the F# <code class="inl">array</code>, <code class="inl">Set</code>, and <code class="inl">Map</code> this dive searches.</li>
+          <li><a href="/fsharp/algorithms/sorting/merge-sort">C4.03.1 &mdash; Merge sort</a> &middot; <a href="/fsharp/algorithms/sorting/quicksort">C4.03.2 &mdash; Quicksort</a></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/fsharp/algorithms/sorting/quicksort"><span aria-hidden="true">←</span> C4.03.2 · Quicksort</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/fsharp/algorithms/sorting">C4.03 · Module hub <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="F# In Depth — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/fsharp">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">F# In Depth &mdash; the ML-family language on .NET, taught from first principles to a real DevOps tool shipped in F#.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/fsharp/algorithms">C4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/fsharp/algorithms/sorting">C4.03 &middot; Sorting &amp; searching</a>
+        <a href="#refs">References</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/fsharp">Course home</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Interactive: linear vs binary search for 20 over [5;8;10;12;20;30;42] (pure) ---------- */
+  var SEQ = [5, 8, 10, 12, 20, 30, 42];
+  var TARGET = 20;
+  var BLUE = '#9fc0ea', SAGE = '#a7c9b1', DIM = '#2a3252', FOUND = '#a7c9b1';
+
+  function el(id) { return document.getElementById(id); }
+  function box(i, c, w) { var e = el('seBox' + i); if (e) { e.setAttribute('stroke', c); e.setAttribute('stroke-width', w); } }
+
+  // recompute the actual probes for honesty
+  function linearProbes() {
+    var probes = [];
+    for (var i = 0; i < SEQ.length; i++) { probes.push(i); if (SEQ[i] === TARGET) break; }
+    return probes; // [0,1,2,3,4]
+  }
+  function binaryProbes() {
+    var lo = 0, hi = SEQ.length - 1, probes = [];
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1; probes.push(mid);
+      if (SEQ[mid] === TARGET) break;
+      else if (SEQ[mid] < TARGET) lo = mid + 1; else hi = mid - 1;
+    }
+    return probes; // [3,5,4]
+  }
+
+  var CASES = {
+    linear: {
+      probes: linearProbes(),
+      caption: 'linear: probe each from the left until 20 — 5 probes', captionFill: BLUE,
+      badge: 'O(n)', badgeFill: BLUE, steps: 'probes elements one by one — 5 here',
+      code: 'linear (<span class="op">fun</span> x -&gt; x = <span class="res">20</span>) <span class="res">0</span> [<span class="res">5</span>; <span class="res">8</span>; <span class="res">10</span>; <span class="res">12</span>; <span class="res">20</span>; ...]\n<span class="cmt">// 5? 8? 10? 12? 20! — Some 4 in 5 probes</span>\n<span class="cmt">// O(n): worst case touches every element</span>',
+      out: '<b style="color:var(--blue-bright)">Linear search</b> compares from the left until it reaches 20 — five elements here, and up to all seven if the target were last or absent. It needs no ordering, but it is O(n).'
+    },
+    binary: {
+      probes: binaryProbes(),
+      caption: 'binary: probe 12 (mid), then 30, then 20 — 3 probes', captionFill: SAGE,
+      badge: 'O(log n)', badgeFill: SAGE, steps: 'each probe discards half — 3 here',
+      code: '<span class="op">let</span> arr = [| <span class="res">5</span>; <span class="res">8</span>; <span class="res">10</span>; <span class="res">12</span>; <span class="res">20</span>; <span class="res">30</span>; <span class="res">42</span> |]\nbinarySearch arr <span class="res">20</span>\n<span class="cmt">// mid 12 &lt; 20 -> right ; mid 30 &gt; 20 -> left ; mid 20 = found</span>\n<span class="cmt">// Some 4 in 3 probes  ·  O(log n)</span>',
+      out: '<b style="color:var(--sage-bright)">Binary search</b> probes the middle (12), discards the half that cannot hold 20, and repeats — 30, then 20. Three probes instead of five, because the array is sorted and indexable.'
+    }
+  };
+
+  function pick(k) {
+    var c = CASES[k]; if (!c) return;
+    document.querySelectorAll('#seSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    // reset all to dim, then mark probed, then mark found
+    for (var i = 0; i < 7; i++) box(i, DIM, '2');
+    c.probes.forEach(function (i) { box(i, k === 'linear' ? BLUE : '#f0cd7f', '2.5'); });
+    box(4, FOUND, '3'); // the hit
+    var t;
+    t = el('seCaption'); if (t) { t.textContent = c.caption; t.setAttribute('fill', c.captionFill); }
+    t = el('seCode'); if (t) t.innerHTML = c.code;
+    t = el('seOut'); if (t) t.innerHTML = c.out;
+    t = el('seBadge'); if (t) { t.textContent = c.badge; t.style.color = c.badgeFill; }
+    t = el('seSteps'); if (t) t.textContent = c.steps;
+    t = el('seResult'); if (t) t.textContent = 'Some 4';
+  }
+  document.querySelectorAll('#seSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('linear');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (sel, txt) { var e = document.getElementById(sel); if (e) e.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R3.03.3 · Atomic vs non-atomic — Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The centrepiece: the atomic recovery sweep moveStalledJobsToWait-8.lua runs detect-and-move as one EVALSHA inside Redis's single thread, so no second sweep interleaves and each stalled job is reclaimed once. The Go port's StalledChecker does the same work app-side in separate round trips — LRANGE active, then per job EXISTS lock, then LREM/LPUSH — opening a double-recovery window between detect and recover, and a client-side lost-update race on the attempt counter. The honest atomic-vs-non-atomic contrast in real code.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- interleave diagram ---- */
+.itl .lane{stroke:#2a3252;stroke-width:1}
+.itl text{font-family:var(--sans);fill:#d7cfb9}
+.itl .who{font-family:var(--mono);font-size:11px;fill:#a39c89;letter-spacing:.04em}
+.itl .op rect{fill:#10162b;stroke:#2a3252;transition:.18s ease}
+.itl .op.x rect{fill:rgba(90,135,196,.14);stroke:#5a87c4}
+.itl .op.move rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
+.itl .op.atomic rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
+.itl .op.skip rect{opacity:.34}
+.itl .ol{font-family:var(--mono);font-size:10px;fill:#d7cfb9}
+.itl .band{fill:rgba(214,88,79,.07);stroke:none}
+/* atm race */
+.atm .box rect{fill:#10162b;stroke:#2a3252;transition:.18s ease}
+.atm .box.good rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
+.atm .box.bad rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
+.atm text{font-family:var(--sans);fill:#d7cfb9}
+.atm .al{font-family:var(--mono);font-size:11px;fill:#a39c89}
+.atm .av{font-family:var(--serif-display);font-size:22px;font-weight:600;fill:#f0cd7f}
+.atm .vd{font-family:var(--mono);font-size:12px;font-weight:700}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
+.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
+.door a{color:var(--gold-bright)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><a href="/redis-patterns/queues/stalled-recovery">stalled-recovery</a><span class="rsep">/</span><span class="rcur">atomic-vs-non-atomic</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/queues/stalled-recovery">Stalled recovery</a>
+        <span class="sep">/</span>
+        <span class="here">Atomic vs non-atomic</span>
+      </div>
+      <p class="eyebrow">R3.03.3 &middot; dive 3 &middot; the centrepiece</p>
+      <h1>Atomic vs <span class="ex">non-atomic</span></h1>
+      <p class="lede">Detect, then move. Joined as one EVALSHA the sweep is exact; joined as two round trips a second
+        sweep slips between them and reclaims the same job twice.</p>
+      <p class="kicker">The recovery sweep is two moves: <em>is this job stalled?</em> and <em>remove it from
+        <code class="inl">active</code>, push it to <code class="inl">wait</code></em>. How they are joined determines
+        whether the sweep is correct under concurrency. Pick atomic or non-atomic below and run two overlapping checkers
+        over one stalled job: in atomic mode the move is one indivisible step; in non-atomic mode the second checker
+        slips between detect and recover, and the job is recovered twice.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#onestep">The move as one step</a>
+        <a href="#roundtrips">The two round trips</a>
+        <a href="#applied">In EchoMQ</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig itl" aria-labelledby="itlTitle">
+      <h4 id="itlTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Two overlapping checkers &middot; one stalled job &mdash; how many recoveries</h4>
+      <div class="controls">
+        <div class="solid-select" id="itlSel" role="group" aria-label="Whether the recovery sweep is one atomic script or separate round trips">
+          <button type="button" data-mode="atomic" data-c="sage" class="active" aria-pressed="true">atomic (one EVALSHA)</button>
+          <button type="button" data-mode="nonatomic" data-c="redis" aria-pressed="false">non-atomic (Go round trips)</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 220" role="img" aria-label="Two checkers run over one stalled job. In atomic mode, checker one runs the whole detect-and-move as a single step, so checker two waits and then finds the job already recovered — one recovery. In non-atomic mode, checker one runs EXISTS lock and finds the job stalled, then before it runs LREM and LPUSH, checker two runs EXISTS lock and also finds it stalled, so both run LREM and LPUSH and the job lands in wait twice — two recoveries.">
+        <rect class="band" id="windowBand" x="120" y="32" width="0" height="120"></rect>
+        <text class="who" x="30" y="30">checker 1</text>
+        <line class="lane" x1="120" y1="44" x2="440" y2="44"></line>
+        <text class="who" x="30" y="118">checker 2</text>
+        <line class="lane" x1="120" y1="132" x2="440" y2="132"></line>
+
+        <!-- checker 1 ops -->
+        <g class="op" id="c1a"><rect x="124" y="26" width="92" height="34" rx="8"></rect></g>
+        <text class="ol" id="c1aL" x="170" y="47" text-anchor="middle">EXISTS lock</text>
+        <g class="op" id="c1b"><rect x="244" y="26" width="92" height="34" rx="8"></rect></g>
+        <text class="ol" id="c1bL" x="290" y="47" text-anchor="middle">LREM / LPUSH</text>
+
+        <!-- checker 2 ops -->
+        <g class="op" id="c2a"><rect x="184" y="114" width="92" height="34" rx="8"></rect></g>
+        <text class="ol" id="c2aL" x="230" y="135" text-anchor="middle">EXISTS lock</text>
+        <g class="op" id="c2b"><rect x="304" y="114" width="92" height="34" rx="8"></rect></g>
+        <text class="ol" id="c2bL" x="350" y="135" text-anchor="middle">LREM / LPUSH</text>
+
+        <text class="who" id="winLbl" x="230" y="172" text-anchor="middle" fill="#f2948c" style="display:none">double-recovery window</text>
+        <text class="who" id="itlVerd" x="230" y="200" text-anchor="middle">atomic · the move is one step → checker 2 finds it already done → 1 recovery</text>
+      </svg>
+
+      <div class="geo-readout" id="itlOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="onestep">
+    <h2>The detect-and-move as one step</h2>
+    <div class="prose">
+      <p>The atomic form runs detect-and-move as a single Lua script. <code class="inl">moveStalledJobsToWait-8.lua</code>
+        is invoked with one <code class="inl">EVALSHA</code>: its body reads the in-flight list, tests each job's lock,
+        and moves the stalled ones to <code class="inl">wait</code> &mdash; all inside Redis's single command thread. No
+        other command runs between the script's first line and its last. A second sweep that fires during the script does
+        not interleave with it; it waits its turn and then finds the work already done. Each stalled job is reclaimed
+        once per sweep, and the attempt count is incremented in the script, on the value the script itself read.</p>
+      <pre class="code"><span class="cmt">-- moveStalledJobsToWait-8.lua — atomic detect-and-move, one EVALSHA (real, Elixir)</span>
+<span class="cmt">-- KEYS: stalled(SET) wait(LIST) active(LIST) failed(ZSET) stalled-check meta paused marker</span>
+<span class="cmt">-- for each job in `active` whose lock has expired:</span>
+<span class="cmt">--   mark it on the first pass; on the next pass move it to `wait` (or `failed` past max attempts)</span>
+<span class="cmt">--   and increment attemptsMade — all in one indivisible step, nothing interleaves</span></pre>
+      <p>The script is the lock. Because the read, the decision, and the writes are one step, there is no window between
+        the check and the move for a second sweep to act in.</p>
+    </div>
+    <p class="take">One <code class="inl">EVALSHA</code> runs the read, the decision, and the writes inside Redis's single
+      thread &mdash; no second sweep interleaves, so each stalled job is reclaimed once.</p>
+  </section>
+
+  <section id="roundtrips">
+    <h2>The two separate round trips</h2>
+    <div class="prose">
+      <p>The non-atomic form is the Go port's <code class="inl">StalledChecker</code>, the cautionary contrast &mdash; the
+        Go runtime's path, not EchoMQ's recommended one. It does the same work app-side, in separate commands:
+        <code class="inl">LRANGE active 0 -1</code> lists the in-flight jobs; then for each job
+        <code class="inl">EXISTS lock</code> is the stalled test (<code class="inl">isJobStalled</code>); then
+        <code class="inl">recoverStalledJob</code> runs <code class="inl">HGETALL job</code>, reads and increments the
+        <code class="inl">atm</code> (attemptsMade) field in Go, runs <code class="inl">LREM active</code>, branches to
+        <code class="inl">failed</code> past max attempts, and runs <code class="inl">LPUSH wait</code> with a pipelined
+        <code class="inl">HSET atm</code>. Each is a round trip, and the gaps between them are open.</p>
+      <pre class="code"><span class="cmt">// stalled.go — the non-atomic Go path (the cautionary contrast, NOT "EchoMQ")</span>
+activeJobs, _ := redis.<span class="fn blue">LRange</span>(ctx, kb.<span class="fn">Active</span>(), <span class="res">0</span>, <span class="res">-1</span>).Result()   <span class="cmt">// list in-flight jobs</span>
+<span class="op">for</span> _, jobID := <span class="op">range</span> activeJobs {
+    <span class="op">if</span> exists, _ := redis.<span class="fn blue">Exists</span>(ctx, kb.<span class="fn">Lock</span>(jobID)).Result(); exists == <span class="res">0</span> {  <span class="cmt">// stalled?</span>
+        <span class="cmt">// ...a second checker can BOTH reach here for the same job — double-recovery window</span>
+        redis.<span class="fn burg">LRem</span>(ctx, kb.<span class="fn">Active</span>(), <span class="res">1</span>, jobID)   <span class="cmt">// separate round trip</span>
+        redis.<span class="fn burg">LPush</span>(ctx, kb.<span class="fn">Wait</span>(), jobID)       <span class="cmt">// separate round trip</span>
+        <span class="cmt">// atm (attemptsMade) read + incremented client-side, then HSet — a lost-update race</span>
+    }
+}</pre>
+      <p>Two gaps in this loop are the bugs the atomic script does not have.</p>
+      <p><strong>The double-recovery window.</strong> Between <code class="inl">EXISTS lock</code> (the job is stalled) and
+        <code class="inl">LREM</code>/<code class="inl">LPUSH</code> (reclaim it), a second checker can run the same
+        <code class="inl">EXISTS lock</code> for the same job, also find it stalled, and also run
+        <code class="inl">LREM</code>/<code class="inl">LPUSH</code>. The job lands in <code class="inl">wait</code> twice.
+        One stalled job is redelivered to two workers &mdash; at-least-once becomes at-least-twice, by accident.</p>
+      <p><strong>The client-side attempt-count race.</strong> The Go path reads <code class="inl">atm</code> with
+        <code class="inl">HGETALL</code>, increments it in Go, and writes it back with <code class="inl">HSET</code>. Two
+        checkers that read the same <code class="inl">atm</code> before either writes both compute the same next value
+        and both write it &mdash; a lost update on the attempt counter, so a job that stalled twice records one attempt.
+        The atomic Lua increments the field in the script, on the value the script itself read, with nothing in between.</p>
+    </div>
+
+    <dl class="deflist">
+      <dt>double-recovery window</dt><dd>The gap between <code class="inl">EXISTS lock</code> and <code class="inl">LREM</code>/<code class="inl">LPUSH</code>; a second checker that runs <code class="inl">EXISTS</code> in it reclaims the same job again.</dd>
+      <dt>lost-update race</dt><dd>Two checkers read the same <code class="inl">atm</code>, both increment in Go, both write back the same value &mdash; one increment is lost.</dd>
+    </dl>
+
+    <p class="take">The Go loop is correct until two checkers overlap: the gap between detect and recover redelivers the
+      job, and the client-side <code class="inl">atm</code> increment loses a count.</p>
+  </section>
+
+  <section id="applied">
+    <h2>In EchoMQ &mdash; the atomic form, the Go port as contrast</h2>
+    <div class="prose">
+      <p>EchoMQ uses the atomic form. <code class="inl">EchoMQ.Scripts.move_stalled_jobs_to_wait/4</code> wraps
+        <code class="inl">moveStalledJobsToWait-8.lua</code>, an eight-key script over <code class="inl">stalled</code>,
+        <code class="inl">wait</code>, <code class="inl">active</code>, <code class="inl">failed</code>,
+        <code class="inl">stalled-check</code>, <code class="inl">meta</code>, <code class="inl">paused</code>, and
+        <code class="inl">marker</code>. One <code class="inl">EVALSHA</code> reclaims each stalled job once per sweep and
+        increments its attempt count in-script &mdash; both gaps closed by construction.</p>
+      <p>The Go port <code class="inl">apps/echomq-go/pkg/echomq/stalled.go</code> keeps the same job model but does the
+        recovery in separate round trips, and so carries both windows. It is shown here not as EchoMQ but as the contrast
+        that makes the atomic form's value concrete: the multi-round-trip loop is correct until two sweeps overlap, and a
+        recovery sweep, by its nature, runs concurrently. The slider below contrasts the two attempt-count increments
+        directly.</p>
+    </div>
+
+    <figure class="fig atm" aria-labelledby="atmTitle">
+      <h4 id="atmTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The attempt counter under two checkers &middot; in-script vs client-side</h4>
+      <div class="controls">
+        <div class="solid-select" id="atmSel" role="group" aria-label="Where the attempt count is incremented">
+          <button type="button" data-where="script" data-c="sage" class="active" aria-pressed="true">in-script (atomic Lua)</button>
+          <button type="button" data-where="client" data-c="redis" aria-pressed="false">client-side (Go)</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 168" role="img" aria-label="A job with attempt count atm equal to 4, recovered by two overlapping checkers. With the in-script increment, each checker increments atm on the value Redis itself read, so atm goes 4 to 5 to 6 — both increments land, the count is correct at 6. With the client-side increment, both checkers read atm 4 before either writes, both compute 5, and both write 5 — one increment is lost, the count is 5 instead of 6.">
+        <g class="box" id="atmBox"><rect x="120" y="34" width="220" height="74" rx="14"></rect></g>
+        <text class="al" x="230" y="58" text-anchor="middle">atm starts at 4 · two recoveries</text>
+        <text class="av" id="atmVal" x="230" y="92" text-anchor="middle">4 → 5 → 6</text>
+        <text class="vd" id="atmVerd" x="230" y="138" text-anchor="middle" fill="#a7c9b1">in-script: both increments land · atm = 6, correct</text>
+      </svg>
+
+      <div class="geo-readout" id="atmOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>The detect-and-move must be one step, or two overlapping sweeps reclaim the same job twice and miscount its
+          attempts. The script is the lock: read, decide, and write with nothing in between.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p><code class="inl">moveStalledJobsToWait-8.lua</code> is one <code class="inl">EVALSHA</code> &mdash; reclaim
+          once, increment in-script. The Go port's separate-round-trip <code class="inl">StalledChecker</code> is the
+          cautionary contrast: correct until two sweeps overlap.</p>
+      </div>
+    </div>
+
+    <p class="take">The atomic Lua closes the double-recovery window and the lost-update race by construction; the Go
+      port's round-trip loop shows exactly what those windows cost when two sweeps run at once.</p>
+
+    <div class="door">
+      <span class="lbl">Door &middot; not depth</span>
+      The script dispatch in full &mdash; the <code class="inl">EVALSHA</code> cache, the
+      <code class="inl">stalled-check</code> throttle, and the pool-wide coordination that keeps two sweeps from racing in
+      the first place &mdash; is the dedicated <strong>EchoMQ course</strong>. From here, this dive opens onto
+      <a href="/echomq/core">E2 &middot; the engine</a> &mdash; the worker fetch loop and the script dispatch. This dive
+      teaches why the move must be one step; that course teaches the engine that runs it.
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The cached-script call that runs the move as one step, why a script is indivisible, the in-flight commands both
+        forms run, and the queue protocol both runtimes port.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the cached-script call that runs the detect-and-move as one EVALSHA.</li>
+          <li><a href="https://redis.io/commands/eval/">Redis &mdash; <em>EVAL / scripting</em></a> &mdash; why a Lua script is one indivisible step, so no second sweep interleaves.</li>
+          <li><a href="https://redis.io/commands/lrem/">Redis &mdash; <em>LREM</em></a> &mdash; the in-flight removal both forms run; in the Go path a separate round trip.</li>
+          <li><a href="https://redis.io/commands/lmove/">Redis &mdash; <em>LMOVE</em></a> &mdash; the atomic move back to wait, the one-step alternative to the Go loop's separate <code>LREM</code>/<code>LPUSH</code>.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the stalled-check worker path both runtimes port.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/queues/stalled-recovery">R3.03 &middot; Stalled recovery</a> &mdash; the module: the recovery sweep in full.</li>
+          <li><a href="/redis-patterns/queues/stalled-recovery/lock-expiry-detection">R3.03.1 &middot; Lock-expiry detection</a> &mdash; the lease the sweep tests.</li>
+          <li><a href="/redis-patterns/queues/stalled-recovery/two-phase-mark-recover">R3.03.2 &middot; Two-phase mark/recover</a> &mdash; the prior dive: mark once, recover on the next sweep.</li>
+          <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &middot; Atomic updates</a> &mdash; the one-step atomic move this sweep needs.</li>
+          <li><a href="/redis-patterns/queues/the-reliable-queue">R3 &middot; The reliable queue</a> &mdash; the family in one place: the three guarantees.</li>
+          <li><a href="/echomq/core">E2 &middot; The lifecycle, components &amp; runtimes</a> &mdash; the dedicated EchoMQ course: the worker fetch loop and the script dispatch.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/queues/stalled-recovery/two-phase-mark-recover"><span aria-hidden="true">&larr;</span>&nbsp; R3.03.2 &middot; Two-phase mark/recover</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/queues/stalled-recovery">R3.03 &middot; Stalled recovery &middot; hub <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/queues/stalled-recovery">R3.03 &middot; Stalled recovery &middot; hub</a>
+        <a href="/redis-patterns/queues/stalled-recovery/lock-expiry-detection">R3.03.1 &middot; Lock-expiry detection</a>
+        <a href="/redis-patterns/queues/stalled-recovery/two-phase-mark-recover">R3.03.2 &middot; Two-phase mark/recover</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/core">The EchoMQ course &middot; the engine</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: two overlapping checkers over one stalled job (pure over the mode) ---------- */
+  // In atomic mode, checker 1 runs the whole detect-and-move as one step; checker 2 then finds the job already gone — 1
+  // recovery. In non-atomic mode, checker 2 runs EXISTS between checker 1's EXISTS and LREM/LPUSH, also finds it stalled,
+  // and also moves it — 2 recoveries. The state is a pure function of the mode.
+  // pure: mode -> { recoveries, window, c2detect, verd, verdColor, text }
+  function interleave(mode) {
+    if (mode === 'atomic') {
+      return {
+        recoveries: 1, window: false, c2skip: true,
+        verd: 'atomic · the move is one step → checker 2 finds it already done → 1 recovery',
+        verdColor: '#a7c9b1',
+        text: 'Checker 1 runs moveStalledJobsToWait as one EVALSHA: detect and move are one indivisible step inside ' +
+          'Redis. Checker 2 cannot run during it — it waits, then finds the job already in wait and the lock cleared, ' +
+          'so it detects nothing. The job is recovered exactly once.'
+      };
+    }
+    return {
+      recoveries: 2, window: true, c2skip: false,
+      verd: 'non-atomic · checker 2 slips between EXISTS and LREM → 2 recoveries',
+      verdColor: '#f2948c',
+      text: 'Checker 1 runs EXISTS lock and finds the job stalled, but before it runs LREM/LPUSH, checker 2 runs ' +
+        'EXISTS lock for the same job and also finds it stalled. Both then run LREM/LPUSH, so the job lands in ' +
+        'emq:{queue}:wait twice — recovered twice, redelivered to two workers. The double-recovery window opened.'
+    };
+  }
+  function setInterleave(mode) {
+    var r = interleave(mode);
+    var c1a = document.getElementById('c1a'), c1b = document.getElementById('c1b'),
+        c2a = document.getElementById('c2a'), c2b = document.getElementById('c2b'),
+        c1aL = document.getElementById('c1aL'), c1bL = document.getElementById('c1bL'),
+        band = document.getElementById('windowBand'), winLbl = document.getElementById('winLbl'),
+        verd = document.getElementById('itlVerd'), out = document.getElementById('itlOut');
+    if (mode === 'atomic') {
+      // checker 1 is one fused atomic op spanning both boxes; checker 2 does nothing
+      if (c1a) { c1a.setAttribute('class', 'op atomic'); }
+      if (c1b) { c1b.setAttribute('class', 'op atomic'); }
+      if (c1aL) c1aL.textContent = 'EVALSHA — detect+move';
+      if (c1bL) c1bL.textContent = 'one step';
+      if (c2a) c2a.setAttribute('class', 'op skip');
+      if (c2b) c2b.setAttribute('class', 'op skip');
+      if (band) band.setAttribute('width', '0');
+      if (winLbl) winLbl.style.display = 'none';
+    } else {
+      if (c1a) c1a.setAttribute('class', 'op x');
+      if (c1b) c1b.setAttribute('class', 'op move');
+      if (c1aL) c1aL.textContent = 'EXISTS lock';
+      if (c1bL) c1bL.textContent = 'LREM / LPUSH';
+      if (c2a) c2a.setAttribute('class', 'op x');
+      if (c2b) c2b.setAttribute('class', 'op move');
+      // the window spans from checker 1's EXISTS end (216) to checker 1's LREM start (244) and checker 2's EXISTS (184)
+      if (band) { band.setAttribute('x', '184'); band.setAttribute('width', '152'); }
+      if (winLbl) winLbl.style.display = '';
+    }
+    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', r.verdColor); }
+    if (out) out.textContent = r.text;
+  }
+  document.querySelectorAll('#itlSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var mode = b.getAttribute('data-mode');
+      document.querySelectorAll('#itlSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setInterleave(mode);
+    });
+  });
+  setInterleave('atomic'); // initial render — correct without interaction
+
+  /* ---------- content: the attempt counter under two checkers (pure over where it increments) ---------- */
+  // atm starts at 4; two checkers each recover the job. In-script: each increments on the value Redis itself read, so
+  // 4 -> 5 -> 6. Client-side: both read 4, both compute 5, both write 5 — atm = 5, one increment lost. Pure over `where`.
+  var ATM0 = 4;
+  // pure: where -> { result, expected, lost, val, verd, verdColor, text }
+  function counter(where) {
+    var expected = ATM0 + 2; // two recoveries should add 2
+    if (where === 'script') {
+      return {
+        result: expected, lost: false, val: ATM0 + ' → ' + (ATM0 + 1) + ' → ' + expected,
+        verd: 'in-script: both increments land · atm = ' + expected + ', correct',
+        verdColor: '#a7c9b1',
+        text: 'The atomic Lua increments atm on the value Redis itself read, inside the script. Checker 1 takes atm ' +
+          ATM0 + ' to ' + (ATM0 + 1) + '; checker 2 takes ' + (ATM0 + 1) + ' to ' + expected + '. Both increments ' +
+          'land — atm is ' + expected + ', the correct count for two recoveries.'
+      };
+    }
+    return {
+      result: ATM0 + 1, lost: true, val: ATM0 + ' → ' + (ATM0 + 1) + ' (lost)',
+      verd: 'client-side: both read ' + ATM0 + ', both write ' + (ATM0 + 1) + ' · atm = ' + (ATM0 + 1) + ', one lost',
+      verdColor: '#f2948c',
+      text: 'The Go path reads atm with HGETALL, increments in Go, writes with HSET. Both checkers read atm ' + ATM0 +
+        ' before either writes, both compute ' + (ATM0 + 1) + ', and both write ' + (ATM0 + 1) + '. One increment is ' +
+        'lost — atm is ' + (ATM0 + 1) + ' though the job was recovered twice. A lost-update race on the counter.'
+    };
+  }
+  function setCounter(where) {
+    var r = counter(where);
+    var box = document.getElementById('atmBox'), val = document.getElementById('atmVal'),
+        verd = document.getElementById('atmVerd'), out = document.getElementById('atmOut');
+    if (box) { box.classList.remove('good', 'bad'); box.classList.add(r.lost ? 'bad' : 'good'); }
+    if (val) { val.textContent = r.val; val.setAttribute('fill', r.lost ? '#f2948c' : '#f0cd7f'); }
+    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', r.verdColor); }
+    if (out) out.textContent = r.text;
+  }
+  document.querySelectorAll('#atmSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var where = b.getAttribute('data-where');
+      document.querySelectorAll('#atmSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setCounter(where);
+    });
+  });
+  setCounter('script'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

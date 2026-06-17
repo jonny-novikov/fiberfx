@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4.01.2 · ZRANGEBYSCORE promotion · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R4.01.2 — the due-sweep. Range the delayed set from 0 to the current clock with ZRANGEBYSCORE, claim each member with ZREM, and move it to the wait list. EchoMQ runs this as the included promoteDelayedJobs function inside moveToActive-11.lua, retryJob-11.lua, and moveToFinished-14.lua — ZRANGEBYSCORE delayedKey 0 (timestamp + 1) × 0x1000 - 1 LIMIT 0 1000, then ZREM and LPUSH to wait (or ZADD to prioritized) — never a standalone script. EchoMQ.Scripts.promote/3 runs promote-9.lua to promote one named job on demand.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- sweep diagram ---- */
+.sw .slot rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.sw .slot.due rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.sw .slot.gone rect{fill:rgba(214,88,79,.12);stroke:#d6584f}
+.sw .slot.pend rect{fill:#10162b;stroke:#2a3252}
+.sw .wait rect{fill:rgba(212,168,90,.10);stroke:#2a3252;transition:.18s ease}
+.sw .wait.hot rect{fill:rgba(212,168,90,.18);stroke:#d4a85a}
+.sw text{font-family:var(--sans);fill:#d7cfb9}
+.sw .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.sw .job{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
+.sw .sc{font-family:var(--mono);font-size:9px;fill:#a39c89}
+.sw .now{stroke:#d6584f;stroke-width:1.6;stroke-dasharray:4 3}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
+.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
+.door a{color:var(--gold-bright)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority/delayed-queue">delayed-queue</a><span class="rsep">/</span><span class="rcur">zrangebyscore-promotion</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority/delayed-queue">The delayed queue</a>
+        <span class="sep">/</span>
+        <span class="here">ZRANGEBYSCORE promotion</span>
+      </div>
+      <p class="eyebrow">R4.01.2 &middot; dive 2</p>
+      <h1>ZRANGEBYSCORE <span class="ex">promotion</span></h1>
+      <p class="lede">The due-sweep: range the delayed set from <code class="inl">0</code> to now, claim each member
+        with <code class="inl">ZREM</code>, and move it to the wait list.</p>
+      <p class="kicker">A delayed job scored by its fire-time sits in the set until its time comes; something has to
+        notice it is due and move it to where workers fetch. That move is the sweep &mdash; a range query for everything
+        at or below the current clock, an atomic <code class="inl">ZREM</code> per due member, and a push to the wait
+        list. EchoMQ folds it into the scripts the workers already run. Step the clock on the right to sweep the due head
+        and watch the set shrink.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#read">The due-range read</a>
+        <a href="#claim">The atomic claim</a>
+        <a href="#script">Folding it into one script</a>
+        <a href="#applied">In EchoMQ</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig sw" aria-labelledby="swTitle">
+      <h4 id="swTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Step the clock, sweep the due head &middot; ZRANGEBYSCORE 0 → now, then ZREM</h4>
+      <div class="controls">
+        <div class="solid-select" id="swSel" role="group" aria-label="Step the clock forward through three stages of the sweep">
+          <button type="button" data-step="0" data-c="blue" class="active" aria-pressed="true">t = 0s</button>
+          <button type="button" data-step="40" data-c="sage" aria-pressed="false">t = 40s</button>
+          <button type="button" data-step="90" data-c="gold" aria-pressed="false">t = 90s</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 180" role="img" aria-label="Five jobs sit in a delayed set ordered by fire-time. A dashed red line marks the current clock. Stepping the clock forward sweeps the line right; jobs at or below the clock fall in the due range, are claimed by ZREM, and leave the set, shown red, while their ids appear in the wait list at the bottom, shown gold. Jobs still in the future stay pending. The buttons step the clock through three stages.">
+        <text class="ttl" x="30" y="22">emq:{queue}:delayed &mdash; five jobs by fire-time (s)</text>
+        <g id="swSlots"></g>
+        <line class="now" id="swNowLine" x1="30" y1="34" x2="30" y2="92"></line>
+        <text class="ttl" id="swNowLbl" x="30" y="108" text-anchor="middle" fill="#f2948c">now</text>
+
+        <text class="ttl" x="30" y="128">emq:{queue}:wait (promoted)</text>
+        <g class="wait" id="swWait"><rect x="30" y="136" width="400" height="30" rx="8"></rect></g>
+        <text class="job" id="swWaitJobs" x="230" y="156" text-anchor="middle">—</text>
+      </svg>
+
+      <div class="geo-readout" id="swOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="read">
+    <h2>The due-range read</h2>
+    <div class="prose">
+      <p>The read is a range query bounded above by the current clock. Every member from the start of the set up to now
+        is due.</p>
+      <pre class="code"><span class="rdx">ZRANGEBYSCORE</span> delayed_queue <span class="res">-inf</span> <span class="res">&lt;now&gt;</span> <span class="res">LIMIT</span> 0 10   <span class="cmt"># the due head, earliest first</span></pre>
+      <p><code class="inl">-inf</code> is "no floor" &mdash; start from the lowest score. The upper bound is the current
+        time. <code class="inl">LIMIT 0 10</code> caps the batch to ten so one sweep claims a bounded slice and a
+        backlog drains over several sweeps rather than one giant move. The result is the due head: the members whose
+        fire-time has passed, earliest first. The range is a read only &mdash; it names the due jobs but does not remove
+        them. Between the read and the removal another worker can read the same members, which is why the claim must be
+        atomic and separate.</p>
+    </div>
+    <p class="take">The due-range read is <code class="inl">ZRANGEBYSCORE -inf now</code>: it names the members whose
+      fire-time has passed, earliest first, capped by <code class="inl">LIMIT</code> &mdash; a read, not a claim.</p>
+  </section>
+
+  <section id="claim">
+    <h2>The atomic claim</h2>
+    <div class="prose">
+      <p>Each due member is claimed with a <code class="inl">ZREM</code>. The removal is the claim.</p>
+      <pre class="code"><span class="rdx">ZREM</span> delayed_queue <span class="str">"task:abc123"</span>   <span class="cmt"># 1 if this caller promoted it, 0 if another already did</span></pre>
+      <p><code class="inl">ZREM</code> returns <code class="inl">1</code> when this call removed the member &mdash; the
+        caller owns the task &mdash; or <code class="inl">0</code> when another worker already removed it. A worker
+        proceeds with a task only when its <code class="inl">ZREM</code> returns <code class="inl">1</code>. With many
+        workers sweeping the same set, the range may hand the same member to several of them, but only one
+        <code class="inl">ZREM</code> returns <code class="inl">1</code>; the rest get <code class="inl">0</code> and drop
+        it. The removal establishes the owner, atomically, with no extra lock.</p>
+    </div>
+    <p class="take">Range the set to read the head, then <code class="inl">ZREM</code> each member to claim it; the
+      removal is the claim, so only one worker promotes each due job.</p>
+  </section>
+
+  <section id="script">
+    <h2>Folding it into one script</h2>
+    <div class="prose">
+      <p>The range and the <code class="inl">ZREM</code> are two commands, and between them a second worker can
+        interleave. To make poll-and-claim a single atomic step, run both inside a Lua script.</p>
+      <pre class="code"><span class="op">local</span> tasks = <span class="fn">redis.call</span>(<span class="str">'ZRANGEBYSCORE'</span>, KEYS[1], <span class="str">'-inf'</span>, ARGV[1], <span class="str">'LIMIT'</span>, 0, ARGV[2])
+<span class="op">for</span> i, task <span class="op">in</span> <span class="fn">ipairs</span>(tasks) <span class="op">do</span>
+    <span class="fn">redis.call</span>(<span class="str">'ZREM'</span>, KEYS[1], task)
+<span class="op">end</span>
+<span class="op">return</span> tasks</pre>
+      <p>The script reads the due head and removes every member in one round trip; no other worker can claim a job
+        between the range and the <code class="inl">ZREM</code>. This is the shape EchoMQ's sweep takes &mdash; a range, a
+        <code class="inl">ZREM</code>, and a move to the target list, all inside one script, on the worker path.</p>
+    </div>
+    <p class="take">A Lua script folds the range and the <code class="inl">ZREM</code> into one atomic step, so no second
+      worker interleaves between reading the due head and removing it.</p>
+  </section>
+
+  <section id="applied">
+    <h2>In EchoMQ &mdash; promoteDelayedJobs, in real code</h2>
+    <div class="prose">
+      <p>In EchoMQ the sweep is <code class="inl">promoteDelayedJobs</code>, an included function &mdash; an identical
+        copy compiled into <code class="inl">moveToActive-11.lua</code>, <code class="inl">retryJob-11.lua</code>, and
+        <code class="inl">moveToFinished-14.lua</code>. It is not a standalone script and is never called as one; it
+        runs as part of the scripts the workers already execute, so a due delayed job is promoted on the path of normal
+        work, not by a separate poller. Its body is the range-then-claim, with the shifted upper bound the fire-time
+        score requires.</p>
+      <pre class="code"><span class="cmt">-- promoteDelayedJobs (included in moveToActive-11 / retryJob-11 / moveToFinished-14) — the due-sweep (real)</span>
+<span class="op">local</span> jobs = <span class="fn">rcall</span>(<span class="str">"ZRANGEBYSCORE"</span>, delayedKey, <span class="res">0</span>, (timestamp + <span class="res">1</span>) * <span class="res">0x1000</span> - <span class="res">1</span>, <span class="str">"LIMIT"</span>, 0, <span class="res">1000</span>)
+<span class="op">if</span> #jobs > <span class="res">0</span> <span class="op">then</span>
+  <span class="fn">rcall</span>(<span class="str">"ZREM"</span>, delayedKey, <span class="fn">unpack</span>(jobs))            <span class="cmt">-- claim the whole due head atomically</span>
+  <span class="op">for</span> _, jobId <span class="op">in</span> <span class="fn">ipairs</span>(jobs) <span class="op">do</span>
+    <span class="cmt">-- priority 0 → LPUSH onto the wait list; priority > 0 → ZADD onto the prioritized set</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+      <p>The upper bound is <code class="inl">(timestamp + 1) &times; 0x1000 - 1</code>, not
+        <code class="inl">timestamp</code>, because the score is the fire-time shifted twelve bits: that bound is the top
+        of the current millisecond's band, so the range catches every job due in this millisecond including its
+        within-millisecond tie-breaks. The <code class="inl">LIMIT 0 1000</code> caps each sweep at a thousand jobs. Each
+        promoted job goes to the wait list when its priority is <code class="inl">0</code>, or onto the prioritized set
+        when it carries a priority &mdash; the priority reading a later module takes up. A distinct script promotes a
+        single named job on demand: <code class="inl">EchoMQ.Scripts.promote/3</code> runs
+        <code class="inl">promote-9.lua</code>, which <code class="inl">ZREM</code>s one job from the delayed set
+        (<code class="inl">KEYS[1]</code>) and moves it to the wait list (<code class="inl">KEYS[2]</code>). The bulk
+        sweep moves the whole due head by score; <code class="inl">promote-9.lua</code> moves one job by name, now.</p>
+    </div>
+
+    <figure class="fig sw" aria-labelledby="pdTitle">
+      <h4 id="pdTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The sweep bound &middot; (now + 1) × 0x1000 - 1, capped by LIMIT 0 1000</h4>
+      <div class="controls">
+        <div class="fold-ctrl">
+          <label for="pdNow">now (ms)</label>
+          <input type="range" id="pdNow" min="1706649000000" max="1706649000010" step="1" value="1706649000005">
+          <span class="val" id="pdNowVal">5</span>
+        </div>
+        <div class="solid-select" id="pdSel" role="group" aria-label="Show the bound, or run the ZREM that claims the due head">
+          <button type="button" data-act="bound" data-c="blue" class="active" aria-pressed="true">show bound</button>
+          <button type="button" data-act="claim" data-c="redis" aria-pressed="false">ZREM the head</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 120" role="img" aria-label="The sweep upper bound is now plus one, times 0x1000, minus one — the top of the current millisecond band. Setting the clock recomputes the bound; the due head is every member at or below it. Running ZREM claims and removes the whole due head atomically and reports how many were promoted.">
+        <text class="ttl" x="30" y="24">upper bound = (now + 1) × 0x1000 - 1</text>
+        <rect x="30" y="32" width="400" height="30" rx="8" fill="rgba(90,135,196,.14)" stroke="#5a87c4"></rect>
+        <text class="job" id="pdBound" x="230" y="52" text-anchor="middle">—</text>
+        <text class="ttl" id="pdVerd" x="230" y="100" text-anchor="middle">—</text>
+      </svg>
+
+      <div class="geo-readout" id="pdOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>Sweep the delayed set by reading the due head with a range query and claiming each member with an atomic
+          <code class="inl">ZREM</code>, then move it to the queue workers fetch from.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p><code class="inl">promoteDelayedJobs</code> is an included function in <code class="inl">moveToActive-11.lua</code>,
+          <code class="inl">retryJob-11.lua</code>, and <code class="inl">moveToFinished-14.lua</code> &mdash; it runs
+          <code class="inl">ZRANGEBYSCORE delayedKey 0 (timestamp + 1) &times; 0x1000 - 1 LIMIT 0 1000</code>,
+          <code class="inl">ZREM</code>s the due head, and moves each to wait or prioritized;
+          <code class="inl">EchoMQ.Scripts.promote/3</code> promotes one named job on demand.</p>
+      </div>
+    </div>
+
+    <p class="take">The due-sweep is a range to read the head and a <code class="inl">ZREM</code> to claim it; EchoMQ
+      folds it into the worker scripts as <code class="inl">promoteDelayedJobs</code>, so a delayed job is promoted on
+      the path of normal work, never by a separate poller.</p>
+
+    <div class="door">
+      <span class="lbl">Door &middot; not depth</span>
+      The full scheduler subsystem &mdash; how the promote sweep runs alongside the retry reschedule and the worker
+      fetch loop across a worker pool &mdash; is the subject of the dedicated <strong>EchoMQ course</strong>. The delay,
+      promote, and retry coordination is <a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a>. This dive
+      teaches the sweep; that course teaches the scheduler that runs it.
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The range query that reads the due head, the <code>ZREM</code> that claims each member, the sorted set behind
+        the sweep, and the queue protocol EchoMQ ports.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/zrangebyscore/">Redis &mdash; <em>ZRANGEBYSCORE</em></a> &mdash; read the due head: every member from the start of the set up to the current clock.</li>
+          <li><a href="https://redis.io/commands/zrem/">Redis &mdash; <em>ZREM</em></a> &mdash; the atomic claim: <code>1</code> means this caller promoted the job, <code>0</code> means another already did.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; the data type the sweep ranges over, ordered by fire-time score.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the delayed-promotion sweep EchoMQ ports, where the Lua scripts are the protocol.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority/delayed-queue">R4.01 &middot; The delayed queue</a> &mdash; the module hub.</li>
+          <li><a href="/redis-patterns/time-delay-priority/delayed-queue/score-is-fire-time">R4.01.1 &middot; The score is the fire-time</a> &mdash; the fire-time score the sweep ranges over.</li>
+          <li><a href="/redis-patterns/time-delay-priority/delayed-queue/the-next-wake">R4.01.3 &middot; The next wake</a> &mdash; not sweeping an empty set, waking on the marker instead.</li>
+          <li><a href="/redis-patterns/queues/processing-list">R3.01 &middot; The processing list</a> &mdash; the wait/active lists the swept job lands in.</li>
+          <li><a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a> &mdash; the chapter.</li>
+          <li><a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a> &mdash; the dedicated EchoMQ course: the promote and retry scheduler in depth.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority/delayed-queue/score-is-fire-time"><span aria-hidden="true">&larr;</span>&nbsp; R4.01.1 &middot; The score is the fire-time</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority/delayed-queue/the-next-wake">R4.01.3 &middot; The next wake <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/time-delay-priority/delayed-queue/score-is-fire-time">R4.01.1 &middot; The score is the fire-time</a>
+        <a href="/redis-patterns/time-delay-priority/delayed-queue/zrangebyscore-promotion">R4.01.2 &middot; ZRANGEBYSCORE promotion</a>
+        <a href="/redis-patterns/time-delay-priority/delayed-queue/the-next-wake">R4.01.3 &middot; The next wake</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/lifecycle">The EchoMQ course &middot; the lifecycle</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: step the clock, sweep the due head — ZRANGEBYSCORE 0 → now, then ZREM (pure over t) ---------- */
+  // Five jobs in a delayed set, fire-times in seconds. At clock t, the due head is every job with fire <= t; those are
+  // ZREM'd from the set and pushed to the wait list. Pending jobs stay. The full state is pure over t.
+  var JOBS = [
+    { id: 'A', fire: 15 }, { id: 'B', fire: 35 }, { id: 'C', fire: 60 },
+    { id: 'D', fire: 80 }, { id: 'E', fire: 105 }
+  ];
+  // pure: t -> { slots:[{id,fire,due}], promoted:[ids], pending:[ids] }
+  function sweepAt(t) {
+    var sorted = JOBS.slice().sort(function (a, b) { return a.fire - b.fire; });
+    var promoted = [], pending = [];
+    var slots = sorted.map(function (j) {
+      var due = j.fire <= t;
+      if (due) promoted.push(j.id); else pending.push(j.id);
+      return { id: j.id, fire: j.fire, due: due };
+    });
+    return { slots: slots, promoted: promoted, pending: pending };
+  }
+  function nowX(t) { var x0 = 30, x1 = 430; return x0 + (Math.max(0, Math.min(120, t)) / 120) * (x1 - x0); }
+  function renderSw(t) {
+    var r = sweepAt(t);
+    var g = document.getElementById('swSlots');
+    if (g) {
+      var frag = '';
+      for (var i = 0; i < r.slots.length; i++) {
+        var s = r.slots[i];
+        var x = 30 + i * 80;
+        var cls = s.due ? 'gone' : 'pend';
+        frag += '<g class="slot ' + cls + '"><rect x="' + x + '" y="38" width="64" height="44" rx="9"></rect>' +
+          '<text class="job" x="' + (x + 32) + '" y="60" text-anchor="middle">' + (s.due ? '·' : s.id) + '</text>' +
+          '<text class="sc" x="' + (x + 32) + '" y="76" text-anchor="middle">' + s.fire + 's</text></g>';
+      }
+      g.innerHTML = frag;
+    }
+    var nx = nowX(t);
+    var line = document.getElementById('swNowLine'), lbl = document.getElementById('swNowLbl');
+    if (line) { line.setAttribute('x1', nx.toFixed(1)); line.setAttribute('x2', nx.toFixed(1)); }
+    if (lbl) lbl.setAttribute('x', nx.toFixed(1));
+    var wait = document.getElementById('swWait'), waitJobs = document.getElementById('swWaitJobs');
+    if (wait) wait.classList.toggle('hot', r.promoted.length > 0);
+    if (waitJobs) waitJobs.textContent = r.promoted.length ? r.promoted.join('  ') : '—';
+    var out = document.getElementById('swOut');
+    if (out) {
+      out.textContent = 'clock = ' + t + 's. ZRANGEBYSCORE delayed 0 ' + t + ' LIMIT 0 10 returns ' +
+        r.promoted.length + ' due job' + (r.promoted.length === 1 ? '' : 's') + ': ' +
+        (r.promoted.length ? r.promoted.join(', ') : 'none') + '. ZREM claims each and pushes it to the wait list. ' +
+        (r.pending.length ? (r.pending.length + ' job' + (r.pending.length === 1 ? '' : 's') + ' stay pending: ' +
+          r.pending.join(', ') + '.') : 'No jobs left in the delayed set.');
+    }
+  }
+  document.querySelectorAll('#swSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var t = parseInt(b.getAttribute('data-step'), 10);
+      document.querySelectorAll('#swSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderSw(t);
+    });
+  });
+  renderSw(0); // initial render — correct without interaction
+
+  /* ---------- content: the sweep bound — (now + 1) × 0x1000 - 1, ZREM the head (pure over now + act) ---------- */
+  // A fixed set of jobs with shifted scores around a base ms. The slider sets now (ms). The sweep bound is
+  // (now + 1) × 0x1000 - 1. The due head is every job whose shifted score is at or below the bound. ZREM claims them.
+  var BASE = 1706649000000;
+  var PJOBS = [ // jobs at fixed fire-time ms offsets from BASE, scored × 0x1000
+    { id: 'P1', off: 1 }, { id: 'P2', off: 3 }, { id: 'P3', off: 5 },
+    { id: 'P4', off: 7 }, { id: 'P5', off: 9 }
+  ];
+  // pure: (nowOff, act) -> { bound, due:[ids], text, verd }
+  function bounded(nowOff, act) {
+    var now = BASE + nowOff;
+    var bound = (now + 1) * 0x1000 - 1;
+    var due = [];
+    PJOBS.forEach(function (j) {
+      var score = (BASE + j.off) * 0x1000; // the job's shifted score
+      if (score <= bound) due.push(j.id);
+    });
+    var text, verd;
+    if (act === 'claim') {
+      text = 'now = BASE + ' + nowOff + ' ms. The sweep bound is (now + 1) × 0x1000 - 1 = ' + bound + '. ' +
+        'ZRANGEBYSCORE delayed 0 ' + bound + ' LIMIT 0 1000 returns ' + due.length + ' due job' +
+        (due.length === 1 ? '' : 's') + ': ' + (due.length ? due.join(', ') : 'none') + '. ' +
+        'ZREM delayedKey unpack(jobs) claims the whole due head atomically and moves each to wait.';
+      verd = 'ZREM promoted ' + due.length + ' job' + (due.length === 1 ? '' : 's');
+    } else {
+      text = 'now = BASE + ' + nowOff + ' ms. The sweep bound is (now + 1) × 0x1000 - 1 = ' + bound + ' — the top of ' +
+        'the current millisecond band, so the range catches every job due this ms including within-ms tie-breaks. ' +
+        'Jobs at or below the bound: ' + (due.length ? due.join(', ') : 'none') + '.';
+      verd = 'bound = ' + bound;
+    }
+    return { bound: bound, due: due, text: text, verd: verd };
+  }
+  var pdNowOff = 5, pdAct = 'bound';
+  function renderPd() {
+    var r = bounded(pdNowOff, pdAct);
+    var bd = document.getElementById('pdBound'), verd = document.getElementById('pdVerd'), out = document.getElementById('pdOut');
+    if (bd) bd.textContent = String(r.bound);
+    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', pdAct === 'claim' ? '#f2948c' : '#a39c89'); }
+    if (out) out.textContent = r.text;
+  }
+  var pdRange = document.getElementById('pdNow'), pdRangeV = document.getElementById('pdNowVal');
+  if (pdRange) pdRange.addEventListener('input', function () {
+    pdNowOff = parseInt(pdRange.value, 10) - BASE; if (pdRangeV) pdRangeV.textContent = String(pdNowOff);
+    renderPd();
+  });
+  document.querySelectorAll('#pdSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      pdAct = b.getAttribute('data-act');
+      document.querySelectorAll('#pdSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderPd();
+    });
+  });
+  renderPd(); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

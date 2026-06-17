@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M7.3 · Placement Without a Coordinator — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="Which node owns a given instrument is not assigned by a coordinator but computed from the instrument's branded identity, by hashing it onto a ring and walking clockwise to the node that owns that arc — consistent hashing, in which adding or removing a node remaps only a small fraction of owners and no central authority is consulted. The same function computes the owner whether there is one node or a thousand, so the placement logic does not change with scale. This closes the chapter's argument that infrastructure is a transparent property of the design.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-mesh)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the consistent-hashing ring emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.ringsvg{width:100%;height:auto;display:block;max-width:560px;margin:0 auto}
+.ringsvg .ringtrk{fill:none;stroke:var(--m-line);stroke-width:14}
+.ringsvg .ringarc{fill:none;stroke-width:14;stroke-linecap:butt;transition:stroke .25s ease,opacity .25s ease}
+.ringsvg .node{fill:var(--m-mesh);stroke:var(--m-card);stroke-width:3;transition:transform .25s ease,opacity .25s ease}
+.ringsvg .node.faded{opacity:.18}
+.ringsvg .nlbl{font:12px var(--mono);fill:var(--m-ink);font-weight:700;text-anchor:middle;transition:opacity .25s ease}
+.ringsvg .nlbl.faded{opacity:.18}
+.ringsvg .keymrk{fill:var(--m-edge);stroke:var(--m-card);stroke-width:2.5;transition:transform .25s ease}
+.ringsvg .keylbl{font:11.5px var(--mono);fill:var(--m-edge);font-weight:700;text-anchor:middle}
+.ringsvg .walk{fill:none;stroke:var(--m-edge);stroke-width:2.5;stroke-dasharray:4 4;transition:opacity .25s ease}
+.ringsvg .owner{fill:none;stroke:var(--m-avail);stroke-width:4;transition:transform .25s ease,opacity .25s ease}
+.ringsvg .cw{font:11px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.ringsvg .ctr{font:12px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.ringsvg .ctr b{font-weight:700;fill:var(--m-mesh)}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the three-mechanism thesis ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-cons);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-edge)}
+.tri article:nth-child(3){border-top-color:var(--m-avail)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the two-end compare ---------- */
+.cmp{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:6px}
+.cmp article{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px}
+.cmp article.reg{border-left:3px solid var(--m-cons)}
+.cmp article.con{border-left:3px solid var(--m-avail)}
+.cmp .ck{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.cmp article.reg .ck{color:var(--m-cons)}
+.cmp article.con .ck{color:var(--m-avail)}
+.cmp h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.cmp p{font-size:.9rem;color:var(--m-ink)}
+.cmp .ex{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);border-top:1px dashed var(--m-line);padding-top:9px}
+.cmp .ex b{color:var(--m-ink)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.doors,.cmp{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.doors,.cmp{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><a href="/mesh/transparent">transparent</a><span class="rsep">/</span><span class="rcur">placement</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#question">The question</a>
+      <a href="#ring">The ring</a>
+      <a href="#key">The key</a>
+      <a href="#scale">Any scale</a>
+      <a href="#thesis">Transparent</a>
+      <a href="#small">Small enough</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M7.3 &#183; Transparent Infrastructure</p>
+      <h1>Placement without a <span class="hns">coordinator</span>.</h1>
+      <p class="lede">Which node owns a given instrument is not assigned by a coordinator but <b>computed</b> &#8212; the
+      instrument's branded identity is hashed onto a ring, and the owner is the node that owns the arc the key falls into.
+      It is the <b>same function</b> whether the ring holds one node or a thousand, so placement never branches on scale.
+      This dive builds placement on consistent hashing and the branded identity, and closes the chapter's argument that
+      infrastructure is a transparent property of the design.</p>
+      <p class="heronote">No measurement here: this dive reads a placement mechanism and closes an argument, not a
+      benchmark. Two primary sources carry it (<a href="#refs">consistent hashing, and the Snowflake lineage of the
+      branded identity that serves as the placement key</a>); both are external and settled. Out of frame: the same-code
+      foundation of M7.1, the ephemeral execution of M7.2, and the identity contract itself, which is the <code>/bcs</code>
+      course.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>Consistent hashing and the self-contained, time-ordered branded identity are settled external results. EchoMesh's
+        proposal is the use: placing owners by hashing the branded identity onto a ring, the same function at any scale, and
+        the claim that this leaves a small implementation because the design carries the weight. That use is separated from
+        the shipped substrate at M8.2; the shipped-versus-proposed line is drawn there.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>The ring of one fleet &#183; <b>place an identity</b> by hashing it to a point, then walk clockwise to
+        the node that owns that arc &#8212; the owner is computed, never looked up. Hover a state to <b>add</b> or
+        <b>remove</b> a node and watch how few owners remap, or to read the placement at one node versus a thousand &#8212;
+        the same function either way (the ring of <b>Karger et al. 1997</b>, keyed by the <b>Snowflake-lineage</b> branded
+        identity)</figcaption>
+        <svg class="ringsvg" id="ringsvg" viewBox="0 0 380 380" role="img" aria-label="A consistent-hashing ring drawn as a circle. Several nodes sit at fixed positions around the ring, each owning the arc that runs clockwise up to it. An amber marker shows where the instrument's branded identity hashes onto the ring; a dashed line walks clockwise from that point to the first node, and that node's owning arc is highlighted in green as the computed owner. In the add-a-node state a new node appears between two existing ones and only the keys in its small arc change owner — a small fraction, not nearly all. In the remove-a-node state a node disappears and only its arc's keys move to the next node clockwise. In the one-node-versus-a-thousand states the same walk computes the owner with no central authority consulted; the magnitudes shown are qualitative — a small fraction, unchanged, clockwise — none is an invented number.">
+          <!-- the ring track -->
+          <circle class="ringtrk" cx="190" cy="190" r="130"></circle>
+          <!-- the owning-arc highlight, redrawn by JS (the node that owns the key's arc) -->
+          <path class="owner" id="ownerArc" d=""></path>
+          <!-- the dashed clockwise walk from the key to its owner -->
+          <path class="walk" id="walkPath" d="" opacity="0"></path>
+          <!-- nodes + labels rendered by JS into these groups -->
+          <g id="nodeLayer"></g>
+          <g id="labelLayer"></g>
+          <!-- the hashed key marker -->
+          <g id="keyMarker" opacity="0">
+            <circle class="keymrk" cx="0" cy="0" r="7"></circle>
+            <text class="keylbl" id="keyLbl" x="0" y="-13">id</text>
+          </g>
+          <!-- clockwise hint + centre readout -->
+          <text class="cw" x="190" y="40">clockwise &#8594;</text>
+          <text class="ctr" id="ctrTop" x="190" y="184">owner</text>
+          <text class="ctr" id="ctrMain" x="190" y="202"><tspan>&#8212;</tspan></text>
+          <text class="ctr" id="ctrSub" x="190" y="220">walk clockwise to the next node</text>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">placement &#183; hover a state to drive the ring</span>
+          The branded identity hashes to a point on the ring; the owner is the <b>first node clockwise</b> from there,
+          computed from the key and the ring alone with <span class="vc">no central authority consulted</span>. Hover a
+          state below to add or remove a node &#8212; only <span class="vc">a small fraction</span> of owners remap
+          &#8212; or to read the placement at one node versus a thousand: the <span class="vc">same function</span> either
+          way.
+        </p>
+        <div class="htabs" id="ringw">
+          <div class="htabs-bar" role="tablist" aria-label="Drive the consistent-hashing ring">
+            <button type="button" role="tab" data-tab="place" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>Place an identity</button>
+            <button type="button" role="tab" data-tab="add" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>Add a node</button>
+            <button type="button" role="tab" data-tab="remove" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>Remove a node</button>
+            <button type="button" role="tab" data-tab="scale" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>One node vs a thousand</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="place" role="tabpanel"><span class="tag e">Place an identity.</span> The branded identity hashes to a point on the ring. The owner is the first node clockwise from that point &#8212; the node that owns the arc the key fell into. Nothing is looked up: the owner is computed from the key and the current ring alone, so any node can work out who owns any instrument with nothing to consult.</div>
+            <div class="htabs-p" data-tab="add" role="tabpanel"><span class="tag m">Add a node.</span> A new node takes a position on the ring and claims the arc that runs clockwise up to it. Only the keys that fell in that arc change owner &#8212; a small fraction of the total, the keys the new node now sits in front of. Every other key keeps the owner it had. No central authority is consulted to decide the remap; the ring and the keys settle it.</div>
+            <div class="htabs-p" data-tab="remove" role="tabpanel"><span class="tag c">Remove a node.</span> A node leaves and its arc folds into the next node clockwise. Only the keys that node owned move &#8212; again a small fraction, not nearly all of them as a modulo-by-node-count scheme would force. The rest of the ring is untouched, and the move is computed, not coordinated.</div>
+            <div class="htabs-p" data-tab="scale" role="tabpanel"><span class="tag a">One node vs a thousand.</span> The placement logic is a function of the identity and the current ring membership, and it is the same function whether the ring holds one node or a thousand. Adding nodes changes the ring the function reads, not the function. Scaling the fleet does not edit the placement code &#8212; the last place infrastructure could leak into the program is closed, because the calculation does not branch on scale.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a state to drive the ring; click to pin. Without scripting, all four states read in sequence and the ring shows its default placement. Magnitudes are qualitative &#8212; a small fraction, unchanged, clockwise &#8212; none is a measured number.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="question">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The placement question</h2>
+        <span class="ssrc">mesh.7.3.md &#183; M5.3</span>
+      </div>
+      <p class="body">Every node in the fleet has to agree on which node owns a given instrument, and the way that agreement
+      is reached decides whether infrastructure leaks into the code. The naive answer is a <b>coordinator</b>: a central
+      authority that hands out ownership and that every node consults to learn who owns what. That answer is the bottleneck
+      and the partition-vulnerable dependency the seam dive warned against in M5.3 &#8212; a single place that must be
+      reachable for the system to function, which the CAP limit punishes.</p>
+      <p class="body">The better answer is to <b>compute the owner rather than look it up</b>: derive it deterministically
+      from the instrument's identity, so any node can work out who owns any instrument on its own, with nothing to consult.
+      Placement becomes a calculation, not a query &#8212; and a calculation has no central place that must be reachable, so
+      the dependency the CAP limit punishes is gone.</p>
+      <figure class="frozen">
+        <figcaption>the two answers to "who owns this instrument?"<span class="tag">mesh.7.3.md</span></figcaption>
+<pre><span class="fd">// the naive answer — a coordinator, the bottleneck M5.3 warned against:</span>
+owner = coordinator.lookup(instrument)   <span class="fe"># a central place all nodes must reach</span>
+                                         <span class="fd"># the partition-vulnerable dependency CAP punishes</span>
+
+<span class="fd">// the better answer — compute the owner from the identity, consult nothing:</span>
+owner = <b>placement</b>(instrument.id, ring)   <span class="fd"># a calculation, not a query</span>
+&#8658; any node works out any owner on its own, with <b>nothing to consult.</b></pre>
+      </figure>
+    </section>
+
+    <section id="ring">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Consistent hashing, the ring</h2>
+        <span class="ssrc">mesh.7.3.md &#183; Karger et al. 1997</span>
+      </div>
+      <p class="body">The calculation is consistent hashing. Both the nodes and the instruments are mapped onto a <b>ring</b>
+      &#8212; a hash space wrapped into a circle &#8212; and the owner of an instrument is the <b>first node clockwise</b>
+      from where the instrument's key falls. The property that makes this the right mechanism is what happens when membership
+      changes: adding or removing a node remaps only the keys in that node's arc, <b>a small fraction</b> of the total,
+      rather than nearly all of them as a modulo-by-node-count scheme would. The owner of a key is determined by the key
+      and the ring alone, with no central authority consulted, and giving each physical node several positions on the ring
+      evens out the distribution.</p>
+      <p class="body">One point of vocabulary matters in this course especially: the word <b>consistent</b> in consistent
+      hashing names the stability of the assignment under membership change, and is unrelated to the CAP and transactional
+      consistency the rest of the course is about. It is a collision of terms, not of concepts &#8212; the ring is a placement
+      mechanism, not a consistency level.</p>
+      <figure class="frozen">
+        <figcaption>the ring &#183; assign each key to the next node clockwise<span class="tag">Karger et al. 1997 &#183; STOC</span></figcaption>
+<pre><span class="fd">// map both nodes and keys onto one hash space wrapped into a circle:</span>
+ring = hash space, wrapped into a circle
+owner(key) = <span class="fc">first node clockwise</span> from hash(key)   <span class="fd"># the node that owns that arc</span>
+
+<span class="fd">// on a membership change, only the affected arc remaps:</span>
+add or remove a node &#8594; remap only that node's arc   <span class="fa"># a small fraction, not nearly all</span>
+virtual nodes (several positions per machine)     <span class="fd"># even out the distribution</span>
+&#8658; the owner is the key and the ring alone, <b>no central authority consulted.</b></pre>
+      </figure>
+    </section>
+
+    <section id="key">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The branded identity as the placement key</h2>
+        <span class="ssrc">mesh.7.3.md &#183; Snowflake lineage</span>
+      </div>
+      <p class="body">The key hashed onto the ring is the instrument's <b>branded identity</b> &#8212; the same
+      location-independent identifier that serves as the seam in M5.3. The fit is not a coincidence: a placement key must be
+      unique, stable, and computable anywhere without coordination, and that is exactly what the branded identity already is,
+      by its Snowflake lineage of a self-contained, time-ordered value any node can read. Because the identity is
+      self-contained, any node can hash it and find its owner with no lookup against a registry; because it is the same
+      identity the seam uses, an instrument's placement and its cross-surface coherence are anchored on <b>one value rather
+      than two</b>.</p>
+      <p class="body">The identity does double duty &#8212; it is the name that keeps a fill coherent across surfaces and the
+      key that decides which node owns it &#8212; and its contract is the <code>/bcs</code> course, pointed to here rather
+      than restated.</p>
+      <p class="compose"><b>Where the identity comes from:</b> the placement key is the branded identity specified in the
+      <b>/bcs</b> course &#8212; a self-contained, time-ordered value any node can read and hash without coordination. It is
+      carried here under a <b>Proposed &#183; not shipped</b> note: the use of that identity as the placement key is
+      EchoMesh's proposal, separated from the shipped substrate at M8.2.</p>
+      <figure class="frozen">
+        <figcaption>one identity, two jobs &#183; the seam and the placement key<span class="tag">mesh.7.3.md &#183; M5.3</span></figcaption>
+<pre><span class="fd">// a placement key must be: unique, stable, computable anywhere</span>
+<span class="fd">// with no coordination — which the branded identity already is:</span>
+id = branded identity   <span class="fd"># self-contained, time-ordered (Snowflake lineage)</span>
+
+<span class="fc">job 1</span> the seam &#8594; keeps a fill coherent across surfaces      <span class="fd"># M5.3</span>
+<span class="fa">job 2</span> the placement key &#8594; owner = first node clockwise from hash(id)
+&#8658; placement and coherence anchored on <b>one value, not two</b> &#183; the contract is /bcs.</pre>
+      </figure>
+    </section>
+
+    <section id="scale">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The same function at any scale</h2>
+        <span class="ssrc">mesh.7.3.md &#183; M7.1</span>
+      </div>
+      <p class="body">The placement logic is a function of the identity and the current ring membership, returning the
+      owning node, and it is the <b>same function</b> whether the ring holds one node or a thousand. Adding nodes changes the
+      ring the function reads, not the function; scaling the fleet does not edit the placement code. This is the last place
+      infrastructure could have leaked into the program &#8212; a conditional on how many machines exist, or a special case
+      for small versus large deployments &#8212; and consistent hashing closes it, because the calculation does not branch
+      on scale.</p>
+      <p class="body">With placement computed the same way everywhere, the same-code-everywhere property of M7.1 extends to
+      the one piece of logic most tempted to depend on the size of the deployment. The hover state above marked "one node vs
+      a thousand" is exactly this: the ring the function reads grows, the function does not.</p>
+      <figure class="frozen">
+        <figcaption>placement does not branch on scale<span class="tag">mesh.7.3.md &#183; M7.1</span></figcaption>
+<pre><span class="fd">// the placement function reads the ring; it never branches on its size:</span>
+placement(id, ring) = first node clockwise from hash(id)
+
+ring of 1   &#8594; placement(id, ring) = the one node
+ring of 1000 &#8594; placement(id, ring) = a node, <span class="fa">same function</span>
+
+<span class="fd">// scaling changes the ring the function reads, not the function:</span>
+&#8658; no conditional on machine count, no special case for small vs large
+&#8658; the last place infrastructure could leak into the code is <b>closed.</b></pre>
+      </figure>
+    </section>
+
+    <section id="thesis">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Infrastructure as a transparent property</h2>
+        <span class="ssrc">mesh.7.3.md &#183; M7.1 &amp; M7.2</span>
+      </div>
+      <p class="body">The three mechanisms now stand together, and the chapter's thesis follows. <b>Location transparency</b>
+      means a process is addressed the same wherever it runs; <b>ephemeral execution</b> means modular work runs on machines
+      summoned and dismissed by the design; <b>coordinator-free placement</b> means ownership is computed from an identity
+      rather than handed down. None of the three appears in the code as a conditional on locality or scale, which is what it
+      means to say infrastructure is a transparent property of the design rather than a target operated alongside it.</p>
+      <p class="body">The developer writes processes, functions, and a placement rule, and the system runs on one machine or a
+      fleet without those writings changing. That is the full answer to why EchoMesh's infrastructure is transparent: every
+      place it could have intruded on the code has been closed by a mechanism that is indifferent to where and how much.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">M7.1</p>
+          <h3>Location transparency</h3>
+          <p>A process is addressed the same wherever it runs &#8212; the code names the process, not the machine. Where it
+          runs is the runtime's concern, not the program's.</p>
+          <p class="note">addressed the same wherever it runs &#183; <b>M7.1</b></p>
+        </article>
+        <article>
+          <p class="cno">M7.2</p>
+          <h3>Ephemeral execution</h3>
+          <p>Modular work runs on machines summoned and dismissed by the design. The lifetime of a machine is decided by the
+          work, not operated alongside it.</p>
+          <p class="note">summoned and dismissed by the design &#183; <b>M7.2</b></p>
+        </article>
+        <article>
+          <p class="cno">M7.3</p>
+          <h3>Coordinator-free placement</h3>
+          <p>Ownership is computed from an identity rather than handed down. No central authority is consulted; the key and
+          the ring settle who owns what.</p>
+          <p class="note">computed from an identity, not handed down &#183; <b>M7.3</b></p>
+        </article>
+      </div>
+      <p class="compose"><b>The thesis, stated:</b> none of the three mechanisms appears in the code as a conditional on
+      locality or scale. That is what it means to call infrastructure a <b>transparent property of the design</b> &#8212;
+      not a target operated alongside the program, but a property the program already carries. Carried under a <b>Proposed
+      &#183; not shipped</b> note; the substrate-versus-proposal line is drawn at M8.2.</p>
+    </section>
+
+    <section id="small">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>Why the implementation is small &#8212; and why that is enough</h2>
+        <span class="ssrc">mesh.7.3.md &#183; M1&#8211;M6</span>
+      </div>
+      <p class="body">Which answers the chapter's second question. The implementation EchoMesh asks for is small &#8212; a
+      supervised process that owns a book, a function wrapped to run on an ephemeral machine, a hash of an identity onto a
+      ring &#8212; and it is small for a reason the whole course has been assembling. The proof of M1 set the terms; the
+      per-surface trades of M2 through M4 decided what each surface owes; the segmentation and seam of M5 made the surfaces
+      cohere; the stack of M6 grounded them; and this chapter made their infrastructure transparent.</p>
+      <p class="body">The hard parts were <b>decisions, not lines of code</b>, and a correct set of decisions expressed on a
+      runtime that supplies coordination, ordering, supervision, and distribution as language properties does not need a
+      large implementation to carry it. The implementation is small because the design is right, and it is enough because
+      nothing is missing &#8212; there is no gap the decisions left for the code to paper over. That is the note M8 opens on:
+      the small implementation and the whole architecture, presented together at last as EchoMesh.</p>
+      <div class="cmp">
+        <article class="reg">
+          <p class="ck">The hard parts</p>
+          <h3>Decisions</h3>
+          <p>The proof of M1, the per-surface trades of M2&#8211;M4, the segmentation and seam of M5, the stack of M6, and
+          this chapter's transparency. The weight is in the decisions.</p>
+          <p class="ex"><b>where the work went:</b> deciding what each surface owes and how they cohere</p>
+        </article>
+        <article class="con">
+          <p class="ck">What is left</p>
+          <h3>A small implementation</h3>
+          <p>A supervised process that owns a book, a function on an ephemeral machine, a hash onto a ring. Small because the
+          design carried the weight; enough because nothing is missing.</p>
+          <p class="ex"><b>why it is enough:</b> no gap the decisions left for the code to paper over</p>
+        </article>
+      </div>
+      <p class="compose"><b>The synthesis:</b> M8 opens on the small implementation and the whole architecture, presented
+      together at last as EchoMesh &#8212; the small code and the right decisions, met as one thing, under the same
+      <b>Proposed &#183; not shipped</b> note this chapter has carried.</p>
+    </section>
+
+    <section id="transparent">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>What makes placement transparent</h2>
+        <span class="ssrc">mesh.7.3.md &#183; the three claims</span>
+      </div>
+      <p class="body">Placement is transparent in three senses, and the page's argument rests on all three holding at once.
+      The branded identity computes the owner, no central authority is consulted, and the same function runs at any scale
+      &#8212; hover each below to read why none of them shows up in the code as a conditional on locality or size.</p>
+      <div class="htabs" id="transw">
+        <div class="htabs-bar" role="tablist" aria-label="What makes placement a transparent property">
+          <button type="button" role="tab" data-tab="computed" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>Computed, not assigned</button>
+          <button type="button" role="tab" data-tab="nocoord" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>No coordinator</button>
+          <button type="button" role="tab" data-tab="anyscale" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>Same function at any scale</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="computed" role="tabpanel"><span class="tag e">Computed, not assigned.</span> The owner is derived from the instrument's branded identity by hashing it onto the ring, not handed out by an authority. Placement is a calculation any node can run from the key and the ring alone, so it never appears in the code as a request to ask who owns what.</div>
+          <div class="htabs-p" data-tab="nocoord" role="tabpanel"><span class="tag c">No coordinator consulted.</span> There is no central place that must be reachable to decide ownership, so the partition-vulnerable dependency M5.3 warned against is gone. A node finds any owner on its own; the CAP limit has nothing to punish because there is nothing central to be cut off from.</div>
+          <div class="htabs-p" data-tab="anyscale" role="tabpanel"><span class="tag a">Same function at any scale.</span> The placement logic does not branch on the size of the deployment &#8212; the same function runs whether the ring holds one node or a thousand. Scaling changes the ring the function reads, not the function, so the last place infrastructure could leak into the code is closed.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus a sense to read it; click to pin. Without scripting, all three read in sequence. The three hold together: computed, with no coordinator, the same function at any scale.</p>
+      </div>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;8</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh/transparent">
+          <span class="dr">/mesh/transparent</span>
+          <h3>M7 &#8212; Transparent Infrastructure</h3>
+          <p>The chapter landing: location transparency, ephemeral execution, and coordinator-free placement &#8212; the
+          three mechanisms that make infrastructure a property of the design.</p>
+          <p class="dnote"><b>this dive</b> is M7.3, placement; same-code is M7.1, ephemeral machines is M7.2.</p>
+        </a>
+        <a class="door" href="/mesh/segmenting/branded-seam">
+          <span class="dr">/mesh/segmenting/branded-seam</span>
+          <h3>M5.3 &#8212; The Branded Seam</h3>
+          <p>The location-independent identity that keeps a fill coherent across surfaces &#8212; the same value this dive
+          hashes onto the ring, doing double duty as the placement key.</p>
+          <p class="dnote"><b>the identity</b> that is both seam and placement key &#8212; one value, two jobs &#8212; is
+          built there.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract, proven by frozen transcripts
+          across five runtimes.</p>
+          <p class="dnote"><b>the contract</b> of the self-contained, time-ordered identity used as the placement key is
+          specified here.</p>
+        </a>
+        <a class="door" href="/mesh/stack">
+          <span class="dr">/mesh/stack</span>
+          <h3>M6 &#8212; The Stack</h3>
+          <p>The owned runtime the surfaces stand on &#8212; the BEAM, the bus, the cache, the durable edge &#8212; the
+          ground the small implementation of this chapter rests on.</p>
+          <p class="dnote"><b>the runtime</b> that supplies coordination, ordering, supervision, and distribution as
+          language properties is grounded here.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;9</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://dl.acm.org/doi/10.1145/258533.258660" rel="noopener">Karger, D. et al. (1997) &#8212; Consistent Hashing and Random Trees (STOC 1997)</a><span class="rs">maps keys and nodes onto a ring and assigns each key to the next node clockwise, so adding or removing a node remaps only a fraction of keys and the owner of a key is computed deterministically from the key alone, without a central coordinator; virtual nodes even the distribution</span></li>
+          <li><a href="https://singhajit.com/snowflake-id-guide/" rel="noopener">Twitter &#8212; Snowflake (2010): distributed, time-ordered ID generation</a><span class="rs">a self-contained, time-ordered identifier minted on any node without coordination &#8212; unique and readable anywhere &#8212; which is exactly what a placement key hashed onto the ring must be</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh/transparent">M7 &#8212; Transparent Infrastructure</a><span class="rs">the chapter landing: the three mechanisms whose argument this dive closes</span></li>
+          <li><a href="/mesh/segmenting/branded-seam">M5.3 &#8212; The Branded Seam</a><span class="rs">the location-independent identity that is both the seam and the placement key hashed onto the ring</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the identity contract: the self-contained, time-ordered value used as the placement key</span></li>
+          <li><a href="/mesh/stack">M6 &#8212; The Stack</a><span class="rs">the owned runtime that supplies coordination, ordering, supervision, and distribution as language properties</span></li>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the engine and the BEAM, where a placeless process runs and where the identity library lives</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh/transparent/ephemeral-machines"><span class="pk">previous &#183; dive</span>&#8592; M7.2 &#183; A Million Ephemeral Machines</a>
+      <a class="pgx" href="/mesh/transparent"><span class="pk">back to the chapter</span>M7 &#183; Transparent Infrastructure &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <a href="/mesh/best-effort-availability">M2 &#183; Best Effort Availability</a>
+        <a href="/mesh/best-effort-consistency">M3 &#183; Best Effort Consistency</a>
+        <a href="/mesh/trading">M4 &#183; Trading the Trade</a>
+        <a href="/mesh/segmenting">M5 &#183; Segmenting</a>
+        <a href="/mesh/stack">M6 &#183; The Stack</a>
+        <a href="/mesh/transparent">M7 &#183; Transparent Infrastructure</a>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0MtpiJs6i</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 17:57:38 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the consistent-hashing ring emulator: the state tabs drive an inline SVG ring + an aria-live readout ----------
+     PURE over fixed data — no network, no storage, no measurement. The ring is a circle of radius R about (CX,CY).
+     Nodes sit at fixed angles; the key sits at a fixed angle; the owner is the FIRST NODE CLOCKWISE from the key's
+     angle (walking in increasing-angle order). Each state re-renders the same way; "add"/"remove" change the node set,
+     "scale" annotates the centre. Every magnitude shown is QUALITATIVE (a small fraction / unchanged / clockwise / the
+     same function) — no count, no percentage, no SLA is invented or displayed. */
+  var CX = 190, CY = 190, R = 130;
+  /* angles in DEGREES, clockwise from 12 o'clock; geometry maps deg->xy. Names are labels only, not counts. */
+  var BASE_NODES = [
+    { name: "node A", deg: 20 },
+    { name: "node B", deg: 130 },
+    { name: "node C", deg: 250 }
+  ];
+  var ADDED_NODE = { name: "node D", deg: 300 };   /* falls between C (250) and A (20, i.e. 380) */
+  var KEY_DEG = 285;                               /* the hashed identity's fixed point on the ring */
+
+  /* deg (clockwise from 12) -> {x,y} on the ring of radius rad */
+  function pt(deg, rad) {
+    var a = (deg - 90) * Math.PI / 180;            /* -90 so 0deg is at 12 o'clock */
+    return { x: CX + rad * Math.cos(a), y: CY + rad * Math.sin(a) };
+  }
+  /* the first node clockwise from a given angle: smallest node-deg that is >= keyDeg (wrapping the ring) */
+  function ownerOf(keyDeg, nodes) {
+    var sorted = nodes.slice().sort(function (a, b) { return a.deg - b.deg; });
+    for (var i = 0; i < sorted.length; i++) {
+      if (sorted[i].deg >= keyDeg) return sorted[i];
+    }
+    return sorted[0];                              /* wrap clockwise to the first node past 360 */
+  }
+  /* an SVG arc path from a->b clockwise along the ring (large-arc auto), used for the owner's arc highlight */
+  function arcPath(fromDeg, toDeg, rad) {
+    var span = (toDeg - fromDeg + 360) % 360;
+    var p0 = pt(fromDeg, rad), p1 = pt(toDeg, rad);
+    var large = span > 180 ? 1 : 0;
+    return "M " + p0.x.toFixed(2) + " " + p0.y.toFixed(2) +
+           " A " + rad + " " + rad + " 0 " + large + " 1 " + p1.x.toFixed(2) + " " + p1.y.toFixed(2);
+  }
+
+  var nodeLayer  = document.getElementById('nodeLayer');
+  var labelLayer = document.getElementById('labelLayer');
+  var ownerArc   = document.getElementById('ownerArc');
+  var walkPath   = document.getElementById('walkPath');
+  var keyMarker  = document.getElementById('keyMarker');
+  var keyLbl     = document.getElementById('keyLbl');
+  var ctrTop     = document.getElementById('ctrTop');
+  var ctrMain    = document.getElementById('ctrMain');
+  var ctrSub     = document.getElementById('ctrSub');
+  var emit       = document.getElementById('emit');
+  var SVGNS = "http://www.w3.org/2000/svg";
+
+  function renderRing(nodes, opts) {
+    opts = opts || {};
+    /* clear node + label layers */
+    while (nodeLayer.firstChild) nodeLayer.removeChild(nodeLayer.firstChild);
+    while (labelLayer.firstChild) labelLayer.removeChild(labelLayer.firstChild);
+
+    var owner = ownerOf(KEY_DEG, nodes);
+    /* the predecessor node (the arc the owner owns runs from predecessor -> owner clockwise) */
+    var sorted = nodes.slice().sort(function (a, b) { return a.deg - b.deg; });
+    var oi = sorted.indexOf(owner);
+    var pred = sorted[(oi - 1 + sorted.length) % sorted.length];
+    if (ownerArc) ownerArc.setAttribute('d', arcPath(pred.deg, owner.deg, R));
+    if (ownerArc) ownerArc.style.opacity = opts.showOwner === false ? '0' : '1';
+
+    /* draw nodes + labels */
+    nodes.forEach(function (n) {
+      var p = pt(n.deg, R);
+      var c = document.createElementNS(SVGNS, 'circle');
+      c.setAttribute('class', 'node' + (opts.faded && opts.faded.indexOf(n.name) >= 0 ? ' faded' : ''));
+      c.setAttribute('cx', p.x.toFixed(2)); c.setAttribute('cy', p.y.toFixed(2)); c.setAttribute('r', '9');
+      nodeLayer.appendChild(c);
+      var lp = pt(n.deg, R + 22);
+      var t = document.createElementNS(SVGNS, 'text');
+      t.setAttribute('class', 'nlbl' + (opts.faded && opts.faded.indexOf(n.name) >= 0 ? ' faded' : ''));
+      t.setAttribute('x', lp.x.toFixed(2)); t.setAttribute('y', (lp.y + 4).toFixed(2));
+      t.textContent = n.name;
+      labelLayer.appendChild(t);
+    });
+
+    /* the hashed key marker + the dashed clockwise walk to its owner */
+    var kp = pt(KEY_DEG, R);
+    if (keyMarker) {
+      keyMarker.setAttribute('transform', 'translate(' + kp.x.toFixed(2) + ',' + kp.y.toFixed(2) + ')');
+      keyMarker.style.opacity = '1';
+    }
+    if (keyLbl) keyLbl.textContent = 'id';
+    if (walkPath) {
+      walkPath.setAttribute('d', arcPath(KEY_DEG, owner.deg, R));
+      walkPath.style.opacity = '1';
+    }
+    return owner;
+  }
+
+  function setCentre(top, main, sub) {
+    if (ctrTop)  ctrTop.textContent = top;
+    if (ctrMain) ctrMain.textContent = main;
+    if (ctrSub)  ctrSub.textContent = sub;
+  }
+
+  var STATES = {
+    place: function () {
+      var owner = renderRing(BASE_NODES, {});
+      setCentre('owner', owner.name, 'first node clockwise');
+      return { step: 'placement · place an identity',
+        h: 'The branded identity hashes to a point; the owner is the <b>first node clockwise</b> from there — ' +
+           owner.name + ', the node that owns the arc the key fell into. The owner is computed from the key and the ring ' +
+           'alone, with <span class="vc">nothing to consult</span>.' };
+    },
+    add: function () {
+      var nodes = BASE_NODES.concat([ADDED_NODE]);
+      var owner = renderRing(nodes, {});
+      setCentre('owner', owner.name, 'only this arc remapped');
+      return { step: 'placement · add a node',
+        h: 'A new node (' + ADDED_NODE.name + ') takes a position and claims the arc clockwise up to it. Only the keys in ' +
+           'that arc change owner — <span class="vc">a small fraction</span>, not nearly all. The key now resolves to ' +
+           '<b>' + owner.name + '</b>; every other key keeps its owner, and <span class="vc">no central authority</span> ' +
+           'was consulted.' };
+    },
+    remove: function () {
+      var nodes = BASE_NODES.filter(function (n) { return n.name !== 'node C'; });
+      var owner = renderRing(nodes, {});
+      setCentre('owner', owner.name, 'C’s arc folded clockwise');
+      return { step: 'placement · remove a node',
+        h: 'A node leaves and its arc folds into the next node clockwise. Only the keys it owned move — again ' +
+           '<span class="vc">a small fraction</span>. The key now resolves to <b>' + owner.name + '</b>; the rest of the ' +
+           'ring is untouched, and the move was <span class="vc">computed, not coordinated</span>.' };
+    },
+    scale: function () {
+      var owner = renderRing(BASE_NODES, {});
+      setCentre('same function', 'place(id, ring)', 'ring of 1 → ring of many');
+      return { step: 'placement · one node vs a thousand',
+        h: 'The placement logic is a function of the identity and the current ring — the <b>same function</b> whether ' +
+           'the ring holds one node or a thousand. Scaling changes the ring the function reads, not the function; ' +
+           'placement <span class="vc">does not branch on scale</span>.' };
+    }
+  };
+
+  wireHtabs(document.getElementById('ringw'), function (key) {
+    var fn = STATES[key];
+    if (!fn) return;
+    var r = fn();
+    if (emit) emit.innerHTML = '<span class="step">' + r.step + '</span>' + r.h;
+  });
+
+  /* the "what makes placement transparent" tabs are a plain reuse of the same component */
+  wireHtabs(document.getElementById('transw'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

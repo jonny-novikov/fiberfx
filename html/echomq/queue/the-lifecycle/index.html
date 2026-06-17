@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The lifecycle · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="A job's whole life is four sorted sets and one row: pending → active → done, or active → scheduled → pending on a retry, or active → dead at max attempts, or active → pending when a lease lapses. The module hub for the-four-sets, claim-and-the-lease, and completion-and-recovery — grounded in the real EchoMQ.Jobs state machine in echo/apps/echo_mq.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero / crumbs ---- */
+.hero{padding-top:clamp(2.4rem,6vw,4.4rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- lifecycle map svg ---- */
+.lcm .st rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+.lcm .st.from rect{fill:rgba(212,168,90,.14);stroke:#d4a85a}
+.lcm .st.to rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.lcm text{font-family:var(--sans);fill:#d7cfb9}
+.lcm .stt{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.lcm .edge{stroke:#2a3252;stroke-width:1.4;fill:none;transition:stroke .18s ease,opacity .18s ease;opacity:.35}
+.lcm .edge.on{stroke:#6fdccf;opacity:1}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- contents cards ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.6rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.soon{color:var(--echo-bright);border-color:var(--echo)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:1rem 1.05rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.2rem;font-weight:600;color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);line-height:1.45}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- applied (reverse door) ---- */
+.applied{margin:1.7rem 0 0;border:1px solid var(--echo);border-radius:14px;
+  padding:1.1rem 1.2rem;background:linear-gradient(180deg,rgba(42,161,152,.1),rgba(10,14,26,.25))}
+.applied .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--echo-bright);margin:0 0 .55rem}
+.applied p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.applied a{color:var(--echo-bright)}
+.applied a:hover{color:var(--cream)}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.mods{grid-template-columns:1fr}.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the contents</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/queue">queue</a><span class="rsep">/</span><span class="rcur">the-lifecycle</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/queue">The Queue</a>
+      <span class="sep">/</span>
+      <span class="here">The lifecycle</span>
+    </nav>
+    <p class="eyebrow">The Queue &middot; module 01</p>
+    <h1>The <span class="ex">lifecycle</span></h1>
+    <p class="lede">A job has a life, and the whole of it is four sorted sets and one row.</p>
+    <p class="kicker">A producer enqueues a job; a worker claims it, runs it, and completes it; a failure retries with a
+      delay or dies into a morgue; a crash returns the job to the queue. There is <strong>no separate state table, no
+      lock service, no second index</strong> — a job moves between four sorted sets (<code class="inl">pending</code>,
+      <code class="inl">active</code>, <code class="inl">schedule</code>, <code class="inl">dead</code>) and its own row
+      carries a <code class="inl">state</code> field that says where it is. This module reads that machine: the four
+      sets, the claim and its lease, and the token-fenced completion and recovery.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#machine">The state machine</a>
+      <a href="#mods">The dives</a>
+      <a href="#bridge">Pattern &amp; implementation</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- ===================== FRAMING INTERACTIVE: the lifecycle map ===================== -->
+  <section id="machine">
+    <h2>Four sets, one row</h2>
+    <div class="prose">
+      <p>Every transition moves a job between two of the four sets and rewrites its row's <code class="inl">state</code>.
+        Pick a transition and read which set a job leaves, which it enters, and what the row says afterward. The map below
+        is the real machine: the five transitions of <code class="inl">EchoMQ.Jobs</code> over a fixed example job.</p>
+    </div>
+
+    <figure class="fig lcm" aria-labelledby="lcmTitle">
+      <h4 id="lcmTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The state machine &middot; pick a transition</h4>
+      <div class="controls">
+        <div class="solid-select" id="lcmSel" role="group" aria-label="Which transition to trace">
+          <button type="button" data-tx="claim" data-c="echo" class="active" aria-pressed="true">claim</button>
+          <button type="button" data-tx="complete" data-c="echo" aria-pressed="false">complete</button>
+          <button type="button" data-tx="retry" data-c="echo" aria-pressed="false">retry</button>
+          <button type="button" data-tx="dead" data-c="echo" aria-pressed="false">dead</button>
+          <button type="button" data-tx="reap" data-c="echo" aria-pressed="false">reap</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 210" role="img" aria-label="The four sorted sets — pending, active, schedule, dead — and the done terminal, with arrows for the five transitions: claim (pending to active), complete (active to done), retry (active to schedule), promote (schedule to pending), dead (active to dead), and reap (active to pending). The selected transition highlights its from-set, to-set, and edge.">
+        <!-- edges (drawn first, under the boxes) -->
+        <path class="edge" id="e-claim" d="M120 52 L200 52"></path>
+        <path class="edge" id="e-complete" d="M280 52 L360 52"></path>
+        <path class="edge" id="e-retry" d="M240 76 L160 120"></path>
+        <path class="edge" id="e-promote" d="M100 120 L80 76"></path>
+        <path class="edge" id="e-dead" d="M240 76 L320 120"></path>
+        <path class="edge" id="e-reap" d="M210 70 Q150 100 120 64"></path>
+        <!-- pending -->
+        <g class="st" id="s-pending"><rect x="14" y="32" width="106" height="40" rx="9"></rect></g>
+        <text x="67" y="50" text-anchor="middle" font-size="13">pending</text>
+        <text x="67" y="64" text-anchor="middle" class="stt">ZSET · score 0</text>
+        <!-- active -->
+        <g class="st" id="s-active"><rect x="174" y="32" width="106" height="40" rx="9"></rect></g>
+        <text x="227" y="50" text-anchor="middle" font-size="13">active</text>
+        <text x="227" y="64" text-anchor="middle" class="stt">ZSET · lease</text>
+        <!-- done -->
+        <g class="st" id="s-done"><rect x="360" y="32" width="106" height="40" rx="9"></rect></g>
+        <text x="413" y="50" text-anchor="middle" font-size="13">done</text>
+        <text x="413" y="64" text-anchor="middle" class="stt">row DEL'd</text>
+        <!-- schedule -->
+        <g class="st" id="s-schedule"><rect x="94" y="120" width="106" height="40" rx="9"></rect></g>
+        <text x="147" y="138" text-anchor="middle" font-size="13">schedule</text>
+        <text x="147" y="152" text-anchor="middle" class="stt">ZSET · run-at</text>
+        <!-- dead -->
+        <g class="st" id="s-dead"><rect x="280" y="120" width="106" height="40" rx="9"></rect></g>
+        <text x="333" y="138" text-anchor="middle" font-size="13">dead</text>
+        <text x="333" y="152" text-anchor="middle" class="stt">ZSET · morgue</text>
+        <line x1="14" y1="188" x2="466" y2="188" stroke="#2aa198" stroke-dasharray="4 3"></line>
+        <text x="240" y="202" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#6fdccf">each transition is one atomic Lua script on one slot</text>
+      </svg>
+      <div class="geo-readout" id="lcmOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">The lifecycle is not a status column you update — it is a set a job is a member of. Move the id, and
+      the state has changed.</p>
+  </section>
+
+  <!-- ===================== THE DIVES ===================== -->
+  <section id="mods">
+    <h2>The dives</h2>
+    <div class="prose">
+      <p>Three dives read the machine in depth, each grounded in real <code class="inl">echo/apps/echo_mq</code> code:
+        the four sets and why the members are the ids themselves, the claim and its lease-and-token, and the token-fenced
+        completion plus the recovery transitions.</p>
+    </div>
+    <div class="legend">
+      <span><span class="pill built">built</span> page ready to read</span>
+    </div>
+    <div class="mods">
+      <a class="mod" href="/echomq/queue/the-lifecycle/the-four-sets"><div class="top"><span class="num">01</span><span class="pill built">built</span></div><p class="t">The four sets</p><p class="o">pending / active / schedule / dead are sorted sets whose members are the branded ids themselves — so byte order is mint order and the queue needs no second index. browse/3 and pending_size/2.</p></a>
+      <a class="mod" href="/echomq/queue/the-lifecycle/claim-and-the-lease"><div class="top"><span class="num">02</span><span class="pill built">built</span></div><p class="t">Claim &amp; the lease</p><p class="o">The @claim transition in two beats: ZPOPMIN, HINCRBY attempts, set active, ZADD at now + lease. The active-set score IS the lease deadline; attempts IS the fencing token.</p></a>
+      <a class="mod" href="/echomq/queue/the-lifecycle/completion-and-recovery"><div class="top"><span class="num">03</span><span class="pill built">built</span></div><p class="t">Completion &amp; recovery</p><p class="o">The token-fenced terminal (@complete) and the recovery transitions: @retry parks or dead-letters, @reap returns a lapsed lease, reprocess_job re-enters a dead job.</p></a>
+    </div>
+  </section>
+
+  <!-- ===================== BRIDGE ===================== -->
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="prose">
+      <p>Where <a href="/redis-patterns">Redis Patterns Applied</a> teaches the reliable queue — a job's state is the
+        collection it lives in, and every move is atomic so a crash loses nothing — this module is where the pattern
+        lands as one shipped state machine.</p>
+    </div>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A reliable queue moves a job between named locations atomically and recovers a crashed worker's job from a
+          visibility timeout. <a href="/redis-patterns/queues/states-as-locations">States as locations</a> and
+          <a href="/redis-patterns/queues/the-reliable-queue">The reliable queue</a> teach the move.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">EchoMQ.Jobs</code> runs <code class="inl">@claim</code> / <code class="inl">@complete</code>
+          / <code class="inl">@retry</code> / <code class="inl">@reap</code> — four sorted sets and one row, every
+          transition one atomic script on one slot.</p>
+      </div>
+    </div>
+    <p class="note">Take the dives in order, or jump to completion-and-recovery if you already know the four sets and the
+      claim. The next module — <strong>Jobs, lanes &amp; the consumer</strong> — reads the producer, the fair worker, and
+      the loop that owns the rhythm.</p>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/zadd/">Valkey &mdash; <em>ZADD</em></a> &mdash; the score-carrying set insertion every transition uses.</li>
+          <li><a href="https://valkey.io/commands/zpopmin/">Valkey &mdash; <em>ZPOPMIN</em></a> &mdash; the atomic pop the claim transition begins with.</li>
+          <li><a href="https://valkey.io/commands/zrangebyscore/">Valkey &mdash; <em>ZRANGEBYSCORE</em></a> &mdash; the due-window read promote and reap run.</li>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the load-once dispatch each transition runs by SHA.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/queue">The Queue</a> &mdash; the chapter this module belongs to.</li>
+          <li><a href="/echomq/protocol/the-lua-layer">The Lua layer</a> &mdash; the scripts the transitions are.</li>
+          <li><a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a> &mdash; where the four set keys are built.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns &middot; Reliable Queues</a> &mdash; the pattern this machine implements.</li>
+          <li><a href="/redis-patterns/queues/states-as-locations">redis-patterns &middot; States as locations</a> &mdash; state is the set you live in.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/echomq/queue"><span aria-hidden="true">&larr;</span>&nbsp; The Queue</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/queue/the-lifecycle/the-four-sets">The four sets <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/queue/the-lifecycle">The lifecycle</a>
+        <a href="/echomq/queue/the-lifecycle/the-four-sets">The four sets</a>
+        <a href="/echomq/queue/the-lifecycle/claim-and-the-lease">Claim &amp; the lease</a>
+        <a href="/echomq/queue/the-lifecycle/completion-and-recovery">Completion &amp; recovery</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- framing interactive: the lifecycle map (pure lookup over a fixed dataset) ---------- */
+  /* The five real EchoMQ.Jobs transitions, each naming the set a job leaves, the
+     set it enters, the script, and the resulting row state. Pure over this fixed
+     dataset — no network, no accumulation. The example job is JOB0KHTOWnGLuC. */
+  var JOB = 'JOB0KHTOWnGLuC';
+  var TX = {
+    claim: { from: 'pending', to: 'active', edge: 'claim', script: '@claim', state: 'active',
+      detail: 'ZPOPMIN pending, HINCRBY attempts, HSET state active, ZADD active at now + lease — the oldest pending id becomes active and gets a lease deadline' },
+    complete: { from: 'active', to: 'done', edge: 'complete', script: '@complete', state: '(row deleted)',
+      detail: 'the attempts token matches, so ZREM active and DEL the row — a completed job leaves no row; metrics:completed is bumped' },
+    retry: { from: 'active', to: 'schedule', edge: 'retry', script: '@retry', state: 'scheduled',
+      detail: 'below max attempts: HSET last_error, ZREM active, HSET state scheduled, ZADD schedule at now + delay — then @promote returns it to pending when due' },
+    dead: { from: 'active', to: 'dead', edge: 'dead', script: '@retry', state: 'dead',
+      detail: 'at max attempts: HSET last_error, HSET state dead, ZADD dead — the morgue, the only finished-and-retained state; metrics:failed is bumped' },
+    reap: { from: 'active', to: 'pending', edge: 'reap', script: '@reap', state: 'pending',
+      detail: 'the lease score is in the past, so the claimant is gone: ZREM active, ZADD pending — crash recovery on the server clock, no heartbeat' }
+  };
+  var SETS = ['pending', 'active', 'schedule', 'dead', 'done'];
+  var EDGES = ['claim', 'complete', 'retry', 'promote', 'dead', 'reap'];
+  function setTx(key) {
+    var t = TX[key];
+    SETS.forEach(function (s) {
+      var g = document.getElementById('s-' + s);
+      if (g) { g.classList.toggle('from', s === t.from); g.classList.toggle('to', s === t.to); }
+    });
+    EDGES.forEach(function (e) {
+      var p = document.getElementById('e-' + e);
+      if (p) p.classList.toggle('on', e === t.edge);
+    });
+    var out = document.getElementById('lcmOut');
+    if (out) {
+      out.innerHTML = '<b>' + t.script + '</b> &middot; ' + JOB +
+        '<br><span class="dim">' + t.from + '</span> &rarr; <span class="ok">' + t.to + '</span>' +
+        ' &middot; row state <b>' + t.state + '</b>' +
+        '<br><span class="dim">' + t.detail + '</span>';
+    }
+  }
+  document.querySelectorAll('#lcmSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-tx');
+      document.querySelectorAll('#lcmSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setTx(key);
+    });
+  });
+  setTx('claim'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

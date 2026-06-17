@@ -1,0 +1,34 @@
+# R4 · Time, Delay & Priority — Redis Patterns Applied
+
+> The sorted set as a clock: one ZSET read two ways — a timer wheel (score = a future fire-time) and a priority ladder
+> (score = a composite priority). Score a job by its fire-time and a range query sweeps the due head to the wait list;
+> pack a priority and an arrival counter into one score and a pop of the smallest returns the next job. Grounded in
+> EchoMQ's real `:delayed`/`:prioritized`/`:repeat` sorted sets (the iconic Elixir app echo/apps/echomq). Depends on
+> R3's reliable job. Served at /redis-patterns/time-delay-priority. The chapter is fully built: the landing, three
+> orientation dives, and all six granular modules R4.01–R4.06 (the workshop is the capstone). Every module carries a
+> forward note on the settled EchoMQ 2.0 design — the protocol break (`emq:` replacing `emq:`, every Lua key
+> declared, `meta.version` `echomq:2.0.0`) — framed as designed, not shipped; the patterns are properties of the
+> sorted set, unchanged by the rename.
+
+## The chapter — three orientation dives (built)
+
+- [R4 · The sorted set as a clock](/redis-patterns/time-delay-priority/the-sorted-set-as-a-clock): one data structure, two readings — a timer wheel (emq:{queue}:delayed, score = (timestamp + delay) × 0x1000, swept by promoteDelayedJobs) and a priority ladder (emq:{queue}:prioritized, getPriorityScore, read by ZPOPMIN). The member is constant; the score is the meaning.
+- [R4 · Score as meaning](/redis-patterns/time-delay-priority/score-as-meaning): the score is the whole semantic axis — fire-time ((ts+delay)×0x1000), composite priority (priority × 0x100000000 + INCR pc), and next-run millis (the :repeat ZSET, upserted via ZSCORE). Same commands (ZADD/ZRANGEBYSCORE/ZPOPMIN/ZSCORE), three meanings.
+- [R4 · The road ahead](/redis-patterns/time-delay-priority/the-road-ahead): the arc R4.01→R4.06 and the door into the living EchoMQ course's scheduler subsystem (E6 · Lifecycle controls, E4 · Groups, per echomq.toc.md).
+
+## The granular modules (all built — each a hub + three dives; the workshop is a single-page capstone)
+
+- [R4.01 · The delayed queue](/redis-patterns/time-delay-priority/delayed-queue): score a job by its fire-time, sweep by score — the :delayed ZSET (getDelayedScore, delayedTimestamp × 0x1000, so the low 12 bits discriminate jobs due in the same ms) and the promoteDelayedJobs range (ZRANGEBYSCORE delayedKey 0 (timestamp+1)×0x1000-1 LIMIT 0 1000, then ZREM). Dives: [score-is-fire-time](/redis-patterns/time-delay-priority/delayed-queue/score-is-fire-time) · [zrangebyscore-promotion](/redis-patterns/time-delay-priority/delayed-queue/zrangebyscore-promotion) · [the-next-wake](/redis-patterns/time-delay-priority/delayed-queue/the-next-wake). ✓ built
+- [R4.02 · Schedulers & repeatable jobs](/redis-patterns/time-delay-priority/schedulers): recurring jobs via cron or interval on the :repeat ZSET, upserted (storeRepeatableJob ZADD repeatKey nextMillis customKey, probed by ZSCORE) so a boot adds no duplicate; per-scheduler opts in a companion hash at repeat:<customKey>. Dives: [cron-vs-interval](/redis-patterns/time-delay-priority/schedulers/cron-vs-interval) · [upsert-no-duplicates](/redis-patterns/time-delay-priority/schedulers/upsert-no-duplicates) · [start-to-start-cadence](/redis-patterns/time-delay-priority/schedulers/start-to-start-cadence). ✓ built
+- [R4.03 · Priority with composite scores](/redis-patterns/time-delay-priority/priority-scores): pack the priority tier AND the arrival order into one numeric score — getPriorityScore = priority × 0x100000000 + (INCR pc) % 0x100000000 (tier in the high 32 bits, arrival counter in the low 32) over the :prioritized ZSET, read by ZPOPMIN (smallest score = highest priority, earliest arrival; the :pc counter key is EchoMQ.Keys.pc/1). Dives: [packing-two-keys-in-one-score](/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score) · [fifo-within-tier](/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier) · [zpopmin](/redis-patterns/time-delay-priority/priority-scores/zpopmin). ✓ built
+- [R4.04 · Backoff & retry](/redis-patterns/time-delay-priority/backoff-retry): a retry is a delayed job whose fire-time a backoff formula computes — EchoMQ.Backoff.calculate/4 owns the math (`trunc(:math.pow(2, attempt - 1) * base_delay)` then apply_jitter; the formula is Elixir's, never the Lua's), retryJob-11.lua reschedules onto the same :delayed ZSET, promoteDelayedJobs sweeps the retry back when due. Dives: [exponential-backoff](/redis-patterns/time-delay-priority/backoff-retry/exponential-backoff) · [jitter-thundering-herd](/redis-patterns/time-delay-priority/backoff-retry/jitter-thundering-herd) · [reuse-the-delayed-zset](/redis-patterns/time-delay-priority/backoff-retry/reuse-the-delayed-zset). ✓ built
+- [R4.05 · Leaderboards](/redis-patterns/time-delay-priority/leaderboards): the sorted set as a ranking — ZADD a score, ZREVRANK/ZREVRANGE read rank, top-N, and around-me; the rank is computed on read, never stored. Grounded in a clean standalone board and bridged honestly to Portal.Enrollment.Progress (a percent per lesson, namespace PRG — Portal runs no Redis sorted set; the ranking is the applied pattern over that percent). Dives: [zadd-and-zrank](/redis-patterns/time-delay-priority/leaderboards/zadd-and-zrank) · [top-n-and-around-me](/redis-patterns/time-delay-priority/leaderboards/top-n-and-around-me) · [the-score-update-path](/redis-patterns/time-delay-priority/leaderboards/the-score-update-path). ✓ built
+- [R4.06 · Workshop](/redis-patterns/time-delay-priority/workshop) — the capstone, one page, no dives: EchoMQ schedules a Portal LMS's notification and digest jobs, folding all five modules (a 24h lesson reminder on :delayed, a weekly digest upserted on :repeat, a password-reset jumping bulk mail on :prioritized, a failed send backing off exponentially onto :delayed, the digest ranking learners by progress percent). Closes with the chapter's EchoMQ 2.0 statement. ✓ built
+
+## The door to EchoMQ
+
+R4 opens onto the living EchoMQ course (a depth course that tracks the EMQ build rung by rung): E6 · Lifecycle controls (/echomq/lifecycle) — the TTL clock, the delay and promote path, the retry/checkpoint machinery — and E4 · Groups (/echomq/groups) — intra-group priority and the control plane. The course home is /echomq. Served as the EchoMQ build lands.
+
+## Up
+
+- [Course home](/redis-patterns) · [R3 · Reliable Queues](/redis-patterns/queues) · next: R5 · Streams & Events (soon)

@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C4.11.1 · Memoization &amp; overlapping subproblems — F# In Depth</title>
+<meta name="description" content="Top-down dynamic programming in F#: keep the natural recursion and add a store. The Fibonacci recurrence re-derives a shared subproblem along every path that reaches it — the per-call counts are the Fibonacci numbers, so the work grows exponentially. A store flattens every count to one. F# offers two caches: a mutable Dictionary for O(1) amortised lookup, or an immutable Map threaded through the recursion to stay pure. A consumer can memoise its retry schedule so a repeated attempt-count never recomputes its delay. Dive C4.11.1 of the F# In Depth course, reflecting Elixir E4.11.1. Snippets verified in dotnet fsi.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --fsharp:#b48ee0; --fsharp-bright:#d2b8f5;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(180,142,224,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--fsharp-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--fsharp-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="fsharp"]{background:var(--fsharp-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--fsharp-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .err{color:var(--burgundy)}
+pre.code .str{color:var(--sage-bright)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--fsharp-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pill / legend ---- */
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--fsharp-bright);border-color:var(--fsharp)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- references ---- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.refs li{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.45}
+.refs li a{color:var(--cream-soft)}
+.refs li a:hover{color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.fs .lbl{color:var(--fsharp-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--fsharp-bright);
+  border:1px solid var(--fsharp);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.note.warn{border-left-color:var(--burgundy)}
+.note code.inl{color:var(--cream-soft)}
+pre.code .rdx{background:rgba(180,142,224,.18);border-radius:4px;padding:0 .18em;color:var(--fsharp-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+
+/* ---- Elixir → F# side-by-side ---- */
+.cmp{margin:1.2rem 0 0}
+.cmp .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:1rem 0 .35rem;color:var(--cream-dim)}
+.cmp .lbl.ex{color:var(--sage-bright)}
+.cmp .lbl.fs{color:var(--fsharp-bright)}
+.cmp .lbl:first-child{margin-top:0}
+pre.code .ex{color:var(--sage-bright)}
+
+/* ---- the EchoMQ in F# block ---- */
+.emq{margin:1.6rem 0 0;border:1px solid var(--line);border-left:3px solid var(--fsharp);
+  border-radius:14px;padding:1.2rem 1.4rem;background:linear-gradient(180deg,rgba(180,142,224,.06),rgba(10,14,26,.25))}
+.emq .tag{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--fsharp-bright);margin:0 0 .6rem}
+.emq p{margin:0 0 .7rem;font-family:var(--serif);color:var(--cream-soft)}
+.emq p:last-child{margin-bottom:0}
+.emq .stat{font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);margin-top:.5rem}
+.emq .stat b{color:var(--sage-bright);font-weight:600}
+
+/* ---- the eval-count svg (this dive) ---- */
+.mz-node circle{transition:stroke .2s ease, stroke-width .2s ease}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/fsharp">jonnify<span class="dot"></span><span class="sub">fsharp</span></a>
+    <nav>
+      <a href="/fsharp">F# In Depth</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/fsharp">fsharp</a><span class="rsep">/</span><a href="/fsharp/algorithms">algorithms</a><span class="rsep">/</span><a href="/fsharp/algorithms/dynamic-programming">dynamic-programming</a><span class="rsep">/</span><span class="rcur">memoization</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/fsharp">F# In Depth</a><span class="sep">/</span><a href="/fsharp/algorithms">C4 · Algorithms &amp; Data Structures</a><span class="sep">/</span><a href="/fsharp/algorithms/dynamic-programming">C4.11 · Dynamic programming</a><span class="sep">/</span><span class="here">C4.11.1 · Memoization</span>
+    </nav>
+    <p class="eyebrow">Dive C4.11.1 · part 1 of 3</p>
+    <h1>Memoization &amp; overlapping <span class="ex">subproblems</span></h1>
+    <p class="lede">Keep the recursion exactly as written, and hang a store off it. In F#, that store is a
+      <code class="inl">Dictionary</code> or a <code class="inl">Map</code>.</p>
+    <p class="kicker">Top-down dynamic programming is the smallest possible change to a recursion: before computing a
+      subproblem, check a store; after, save the answer. Because the recursion is still driven by demand, it stays
+      <strong>lazy</strong> — it only ever evaluates the subproblems the answer needs. The worked recurrence is
+      <code class="inl">fib n = fib (n-1) + fib (n-2)</code>. Without a store, a shared subproblem is re-derived
+      along every path that reaches it, and the per-call counts <em>are</em> the Fibonacci numbers, so the work
+      grows exponentially. With a store, each subproblem is evaluated once. F# gives two idiomatic stores — a
+      mutable <code class="inl">Dictionary</code> and an immutable <code class="inl">Map</code> threaded through the
+      recursion — and this dive uses both. Every <code class="inl">// val it :</code> echo below was produced by
+      <code class="inl">dotnet fsi</code>.</p>
+    <div class="cta-row">
+      <a class="btn" href="#count">Count the evaluations <span aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="/fsharp/algorithms/dynamic-programming">Module hub</a>
+    </div>
+  </section>
+
+  <!-- ===================== THE RECURRENCE REPEATS ===================== -->
+  <section id="repeats">
+    <div class="dive-head">
+      <span class="dive-tag">C4.11.1 · part 1</span>
+      <h2>The recursion that repeats itself</h2>
+    </div>
+    <div class="prose">
+      <p>Written plainly, the Fibonacci recursion is honest about the recurrence and wasteful about the work. To
+        compute <code class="inl">fib 5</code> it computes <code class="inl">fib 4</code> and
+        <code class="inl">fib 3</code>; to compute <code class="inl">fib 4</code> it computes
+        <code class="inl">fib 3</code> again, and so on. The same subproblem is solved on every branch that needs
+        it, and the number of calls grows like the Fibonacci numbers themselves.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: the plain Fibonacci recursion, with no cache, and its FSI signature."><span class="cmt">// plain recursion — every shared subproblem re-derived per branch</span>
+<span class="op">let rec</span> <span class="fn">fib</span> n =
+    <span class="op">if</span> n &lt; 2 <span class="op">then</span> n
+    <span class="op">else</span> <span class="fn">fib</span> (n - 1) + <span class="fn">fib</span> (n - 2)
+<span class="cmt">// val fib: n: int -&gt; int</span>
+
+<span class="fn">fib</span> 10   <span class="cmt">// val it: int = 55  — but 177 calls to get there</span></pre>
+
+    <div class="prose">
+      <p>The answer is right; the cost is the problem. The repeated subproblems are the definition of an
+        <strong>overlapping</strong> recurrence, and they are exactly what a store removes.</p>
+    </div>
+  </section>
+
+  <!-- ===================== TWO F# STORES ===================== -->
+  <section id="stores">
+    <div class="dive-head">
+      <span class="dive-tag">C4.11.1 · part 2</span>
+      <h2>Two stores: a Dictionary and a Map</h2>
+    </div>
+    <div class="prose">
+      <p>F# offers two idiomatic ways to hold the store, and the choice is the imperative-shell-versus-pure-core
+        trade in miniature. A mutable <code class="inl">System.Collections.Generic.Dictionary</code>, captured in a
+        closure, gives O(1) amortised lookup and insert and reads naturally. An immutable
+        <code class="inl">Map</code>, threaded in and out of every call, keeps the recursion pure and referentially
+        transparent at O(log n) per access. Both turn exponential work into one evaluation per distinct subproblem;
+        the <code class="inl">Map</code> behind it is the same one from <a href="/fsharp/algorithms/maps">C4.04</a>.</p>
+    </div>
+
+    <div class="cmp">
+      <p class="lbl fs">F# — top-down with a mutable Dictionary (verified in FSI)</p>
+      <pre class="code" aria-label="F#: a memoised Fibonacci with a Dictionary cache captured in a closure, and its verified FSI output."><span class="cmt">// the cache lives in a closure; the recursion mutates it in place</span>
+<span class="op">open</span> System.Collections.Generic
+
+<span class="op">let</span> <span class="fn">memo</span> () =
+    <span class="op">let</span> cache = Dictionary&lt;int, int64&gt;()
+    <span class="op">let rec</span> fib n =
+        <span class="op">if</span> n &lt; 2 <span class="op">then</span> int64 n
+        <span class="op">else</span>
+            <span class="op">match</span> cache.TryGetValue n <span class="op">with</span>
+            | <span class="res">true</span>, v -&gt; v                          <span class="cmt">// cache hit — O(1)</span>
+            | _ -&gt;
+                <span class="op">let</span> v = fib (n - 1) + fib (n - 2)
+                cache[n] &lt;- v                       <span class="cmt">// store, then return</span>
+                v
+    fib
+<span class="cmt">// val memo: unit -&gt; (int -&gt; int64)</span>
+
+<span class="op">let</span> fib = <span class="fn">memo</span> ()
+fib 40   <span class="cmt">// val it: int64 = 102334155L  — each of fib 0..40 evaluated once</span></pre>
+
+      <p class="lbl fs">F# — top-down with an immutable Map, threaded (verified in FSI)</p>
+      <pre class="code" aria-label="F#: a memoised pacing count threading an immutable Map through the recursion, returning the value and the updated map, with verified FSI output."><span class="cmt">// the cache is a value, threaded in and returned out — the recursion stays pure</span>
+<span class="op">let rec</span> <span class="fn">waysMemo</span> (cache: Map&lt;int, int&gt;) n : int * Map&lt;int, int&gt; =
+    <span class="op">match</span> Map.tryFind n cache <span class="op">with</span>
+    | <span class="res">Some</span> v -&gt; v, cache                          <span class="cmt">// hit — O(log n)</span>
+    | <span class="res">None</span> -&gt;
+        <span class="op">if</span> n &lt;= 2 <span class="op">then</span> n, cache
+        <span class="op">else</span>
+            <span class="op">let</span> a, c1 = <span class="fn">waysMemo</span> cache (n - 1)
+            <span class="op">let</span> b, c2 = <span class="fn">waysMemo</span> c1 (n - 2)    <span class="cmt">// reuse the updated cache</span>
+            a + b, Map.add n (a + b) c2
+<span class="cmt">// val waysMemo: cache: Map&lt;int,int&gt; -&gt; n: int -&gt; int * Map&lt;int,int&gt;</span>
+
+<span class="op">let</span> w, _ = <span class="fn">waysMemo</span> Map.empty 10
+w   <span class="cmt">// val it: int = 89</span></pre>
+    </div>
+
+    <dl class="deflist">
+      <dt>Dictionary</dt><dd>a mutable hash map from <code class="inl">System.Collections.Generic</code>; O(1) amortised lookup and insert. Captured in a closure so the recursion mutates one cache in place.</dd>
+      <dt>Map</dt><dd>F#'s immutable balanced-tree map; O(log n) lookup. Threaded in and out of each call, so no value is ever mutated and the function stays pure.</dd>
+      <dt>TryGetValue</dt><dd>the .NET pattern for a lookup-or-miss; in F# it returns a tuple <code class="inl">bool * 'T</code> matched as <code class="inl">true, v</code> / <code class="inl">_</code>.</dd>
+      <dt>the trade</dt><dd>the <code class="inl">Dictionary</code> is faster and reads naturally; the threaded <code class="inl">Map</code> is pure. Both make the work one evaluation per distinct subproblem.</dd>
+    </dl>
+  </section>
+
+  <!-- ===================== INTERACTIVE: COUNT THE EVALUATIONS ===================== -->
+  <section id="count">
+    <h2>Count the evaluations</h2>
+    <div class="prose">
+      <p>Six lessons, each building on the two before it; <code class="inl">depth(Lk) = 1 + max(depth of its
+        prerequisites)</code>, the same overlapping recurrence. Switch between the plain recursion and the memoised
+        one and count how many times each lesson's depth is evaluated when computing <code class="inl">depth(L6)</code>.
+        The counts are real — the plain ones are the Fibonacci numbers.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="mzTitle">
+      <h4 id="mzTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Mode · select one</h4>
+      <div class="controls">
+        <div class="solid-select" id="mzSel" role="group" aria-label="Recursion mode">
+          <button type="button" data-k="naive" data-c="gold" class="active">plain recursion</button>
+          <button type="button" data-k="memo" data-c="fsharp">memoised</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 210" role="img" aria-label="Six lessons on a line, each depending on the two before it; a badge above each shows how many times its depth is evaluated when computing the depth of the last lesson.">
+        <!-- 2-step prerequisite arcs (deeper dip) -->
+        <path d="M280 130 Q180 178 80 130" fill="none" stroke="#2f3756" stroke-width="1.3"></path>
+        <path d="M380 130 Q280 178 180 130" fill="none" stroke="#2f3756" stroke-width="1.3"></path>
+        <path d="M480 130 Q380 178 280 130" fill="none" stroke="#2f3756" stroke-width="1.3"></path>
+        <path d="M580 130 Q480 178 380 130" fill="none" stroke="#2f3756" stroke-width="1.3"></path>
+        <!-- 1-step prerequisite arcs (shallow dip) -->
+        <path d="M180 130 Q130 154 80 130" fill="none" stroke="#3a4263" stroke-width="1.3"></path>
+        <path d="M280 130 Q230 154 180 130" fill="none" stroke="#3a4263" stroke-width="1.3"></path>
+        <path d="M380 130 Q330 154 280 130" fill="none" stroke="#3a4263" stroke-width="1.3"></path>
+        <path d="M480 130 Q430 154 380 130" fill="none" stroke="#3a4263" stroke-width="1.3"></path>
+        <path d="M580 130 Q530 154 480 130" fill="none" stroke="#3a4263" stroke-width="1.3"></path>
+
+        <g id="mzNodes"></g>
+
+        <text x="40" y="200" font-family="Manrope, sans-serif" font-size="9.5" fill="#6b7494">badge = times depth() is evaluated · arcs = prerequisites</text>
+        <text id="mzTotalT" x="680" y="200" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="11" fill="#f0cd7f">total: 20 evaluations</text>
+      </svg>
+
+      <pre class="code" id="mzCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="mzOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">evaluations: <span id="mzRole" style="color:var(--gold-bright)">20</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">depth(L6): <span id="mzResult" style="color:var(--cream)">6</span></p>
+    </figure>
+    <p class="take">The plain recursion evaluates the deepest-shared lessons many times over — the counts are the
+      Fibonacci numbers, growing with the chain. The store flattens every count to one, so the work is one
+      evaluation per lesson.</p>
+  </section>
+
+  <!-- ===================== WHEN IT FITS ===================== -->
+  <section id="fits">
+    <div class="dive-head">
+      <span class="dive-tag">C4.11.1 · part 3</span>
+      <h2>Lazy by construction</h2>
+    </div>
+    <div class="prose">
+      <p>Because memoisation keeps a demand-driven recursion, it is lazy: it evaluates only the subproblems the
+        target actually depends on, and skips any the target never reaches. That makes it the natural fit when the
+        subproblem space is large but only a sparse part of it is needed for a given query — for instance, the depth
+        of one lesson in a large prerequisite graph. The price is a recursion as deep as the longest chain and a
+        lookup on every call. The next dive turns the same idea inside out: tabulation fills the whole table from
+        the base case up, eager rather than lazy.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">a recursion</p>
+        <p><code class="inl">fib n = fib (n-1) + fib (n-2)</code>, re-deriving shared subproblems on every branch.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="cell fs">
+        <p class="lbl">a recursion plus a store</p>
+        <p>Each subproblem evaluated once; the rest are lookups. Lazy — only what the target needs.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ECHOMQ IN F# ===================== -->
+  <section id="echomq">
+    <h2>EchoMQ in F# — memoise the retry schedule</h2>
+    <p class="take">Status &mdash; <code class="inl">echo_fs</code> is an in-memory model. The EchoMQ protocol &mdash; the Lua transitions executing on a Valkey wire &mdash; is <strong>not implemented</strong> (there is no Lua and no Valkey client in the code); that is the coming-soon transport (<code class="inl">EchoMQ.Connector</code>). This block shows how the model uses the structure, not a running bus.</p>
+    <div class="prose">
+      <p>The chapter's bus, <code class="inl">echo_fs</code>, computes a retry delay from a policy and an attempt
+        count with <code class="inl">EchoMQ.Backoff.delayMs</code>. The function is pure and deterministic for the
+        <code class="inl">Fixed</code> and <code class="inl">Exponential</code> policies, so a consumer that retries
+        repeatedly can memoise the schedule: cache the delay by attempt count, and a repeated attempt-count is a
+        lookup rather than a recompute. The same top-down store this dive teaches applies unchanged.</p>
+    </div>
+
+    <div class="emq">
+      <p class="tag">echo_fs/EchoMQ/Backoff.fs · a memoised schedule</p>
+      <pre class="code" aria-label="F#: memoising EchoMQ.Backoff.delayMs by attempt count with a Dictionary, so a repeated attempt-count is a lookup."><span class="cmt">// cache delayMs by attempt count — a repeated attempt is a lookup, not a recompute</span>
+<span class="op">let</span> <span class="fn">scheduleFor</span> (policy: Backoff.Policy) =
+    <span class="op">let</span> cache = Dictionary&lt;int, int&gt;()
+    <span class="op">fun</span> attempts -&gt;
+        <span class="op">match</span> cache.TryGetValue attempts <span class="op">with</span>
+        | <span class="res">true</span>, ms -&gt; ms
+        | _ -&gt;
+            <span class="op">let</span> ms = Backoff.delayMs policy attempts   <span class="cmt">// the pure recurrence</span>
+            cache[attempts] &lt;- ms
+            ms</pre>
+      <p class="stat">For <code class="inl">Exponential(100, 10000)</code> the first six delays are
+        <b>100, 200, 400, 800, 1600, 3200</b> ms; once cached, asking for attempt 3 again is an O(1) read of
+        <b>400</b>. Because <code class="inl">delayMs</code> is deterministic for this policy, the cached value is
+        always correct.</p>
+      <p class="stat">Grounded in <code class="inl">echo_fs/EchoMQ/Backoff.fs</code> — built and tested
+        (<code class="inl">EchoMQ.Tests/BackoffTests.fs</code>). The Valkey transport
+        <code class="inl">EchoMQ.Connector</code> lands next.</p>
+    </div>
+    <p class="note">The third dive, <a href="/fsharp/algorithms/dynamic-programming/backoff-as-dp">backoff as
+      dynamic programming</a>, plots this curve from its recurrence. The
+      <code class="inl">Jitter</code> policy is the exception — it draws a fresh random value each call, so it is
+      not memoised.</p>
+  </section>
+
+  <!-- ===================== WHERE THIS LEADS ===================== -->
+  <section id="next">
+    <h2>Where this leads</h2>
+    <div class="prose">
+      <p>That is solve-each-once from the top down: a recursion plus a store, lazy by construction. The next dive
+        runs the same idea bottom-up — tabulation fills a table from the smallest subproblem to the largest, trading
+        the lookups for a flat pass over an array.</p>
+    </div>
+    <div class="toc-mini" aria-label="Continue in this module">
+      <a href="/fsharp/algorithms/dynamic-programming">↑ C4.11 · Dynamic programming</a>
+      <a href="/fsharp/algorithms/dynamic-programming/tabulation">C4.11.2 · Tabulation →</a>
+      <a href="/fsharp/algorithms/dynamic-programming/backoff-as-dp">C4.11.3 · Backoff as DP</a>
+    </div>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/">Microsoft &mdash; <em>F# documentation</em></a> &mdash; recursion, closures, and pattern matching.</li>
+          <li><a href="https://fsharp.github.io/fsharp-core-docs/">FSharp.Core API reference</a> &mdash; the immutable <code class="inl">Map</code> module.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/">Microsoft &mdash; <em>.NET documentation</em></a> &mdash; <code class="inl">Dictionary&lt;TKey,TValue&gt;</code> and <code class="inl">TryGetValue</code>.</li>
+          <li><a href="https://fsharp.org/">The F# Software Foundation</a> &mdash; F# on the .NET runtime.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/elixir/algorithms/dynamic-programming/memoization">Elixir &mdash; F4.11.1 · Memoization</a> &mdash; the E4 sibling, the same recurrence cached in Elixir.</li>
+          <li><a href="/fsharp/algorithms/dynamic-programming">C4.11 &mdash; Dynamic programming</a> &mdash; the module hub.</li>
+          <li><a href="/fsharp/algorithms/maps">C4.04 &mdash; Maps, sets &amp; hashing</a> &mdash; the <code class="inl">Map</code> behind the cache.</li>
+          <li><a href="/fsharp/algorithms">C4 &mdash; Algorithms &amp; Data Structures</a> &mdash; the chapter.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/fsharp/algorithms/dynamic-programming"><span aria-hidden="true">←</span> C4.11 · Module hub</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/fsharp/algorithms/dynamic-programming/tabulation">Next · C4.11.2 Tabulation <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="F# In Depth — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/fsharp">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">F# In Depth &mdash; the ML-family language on .NET, taught from first principles to a real DevOps tool shipped in F#.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/fsharp/algorithms">C4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/fsharp/algorithms/dynamic-programming">C4.11 &middot; Dynamic programming &amp; advanced problems</a>
+        <a href="#refs">References</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/fsharp">Course home</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var GOLD = '#f0cd7f', FS = '#d2b8f5';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
+  /* L1..L6: each depends on the two before it. depth(Lk) = 1 + max(depth of prereqs). */
+  var XS = { L1: 80, L2: 180, L3: 280, L4: 380, L5: 480, L6: 580 };
+  var ORDER = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6'];
+  var DEPTH = { L1: 1, L2: 2, L3: 3, L4: 4, L5: 5, L6: 6 };
+  /* naive evaluation multiplicities when computing depth(L6) — the Fibonacci numbers */
+  var NAIVE = { L1: 8, L2: 5, L3: 3, L4: 2, L5: 1, L6: 1 };
+  var NAIVE_TOTAL = 20, MEMO_TOTAL = 6;
+
+  /* build the six nodes + badges once */
+  var g = document.getElementById('mzNodes');
+  function mk(tag, attrs, text) { var el = document.createElementNS(SVGNS, tag); for (var k in attrs) el.setAttribute(k, attrs[k]); if (text != null) el.textContent = text; return el; }
+  if (g) {
+    ORDER.forEach(function (id) {
+      var x = XS[id];
+      g.appendChild(mk('circle', { id: 'mzN_' + id, cx: x, cy: 130, r: 16, fill: '#161d38', stroke: '#3a4263', 'stroke-width': '1.8' }));
+      g.appendChild(mk('text', { x: x, y: 128, 'text-anchor': 'middle', 'font-family': 'JetBrains Mono, monospace', 'font-size': '11', fill: '#d7cfb9' }, id));
+      g.appendChild(mk('text', { x: x, y: 140, 'text-anchor': 'middle', 'font-family': 'Manrope, sans-serif', 'font-size': '7.5', fill: '#6b7494' }, 'd' + DEPTH[id]));
+      /* eval-count badge above */
+      g.appendChild(mk('rect', { id: 'mzB_' + id, x: x - 13, y: 86, width: 26, height: 18, rx: 5, fill: '#10162b', stroke: '#3a4263', 'stroke-width': '1.2' }));
+      g.appendChild(mk('text', { id: 'mzC_' + id, x: x, y: 99, 'text-anchor': 'middle', 'font-family': 'JetBrains Mono, monospace', 'font-size': '10.5', fill: '#a39c89' }, '1'));
+    });
+  }
+
+  function pick(k) {
+    document.querySelectorAll('#mzSel button').forEach(function (b) {
+      var on = b.getAttribute('data-k') === k; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var naive = (k === 'naive');
+    ORDER.forEach(function (id) {
+      var count = naive ? NAIVE[id] : 1;
+      var repeated = naive && count > 1;
+      var node = document.getElementById('mzN_' + id), badge = document.getElementById('mzB_' + id), ctext = document.getElementById('mzC_' + id);
+      var col = repeated ? GOLD : FS;
+      if (node) { node.setAttribute('stroke', col); node.setAttribute('stroke-width', repeated ? '2.4' : '1.8'); }
+      if (badge) { badge.setAttribute('stroke', col); }
+      if (ctext) { ctext.textContent = String(count); ctext.setAttribute('fill', col); }
+    });
+    var total = naive ? NAIVE_TOTAL : MEMO_TOTAL;
+    var accent = naive ? GOLD : FS;
+    var tEl = document.getElementById('mzTotalT'); if (tEl) { tEl.textContent = 'total: ' + total + ' evaluations'; tEl.setAttribute('fill', accent); }
+    var rEl = document.getElementById('mzRole'); if (rEl) { rEl.textContent = String(total); rEl.style.color = accent; }
+    txt('mzResult', '6');
+
+    var code, out;
+    if (naive) {
+      code = '<span class="cmt">// plain recursion — shared subproblems re-derived per branch</span>\ndepth <span class="str">"L6"</span>\n<span class="cmt">// evaluates L1 8x, L2 5x, L3 3x, L4 2x, L5 1x, L6 1x</span>\n<span class="cmt">// => 20 evaluations for one answer of 6</span>';
+      out = 'The plain recursion evaluates <code class="inl">depth</code> <b style="color:var(--gold-bright)">20</b> times to find <code class="inl">depth(L6) = 6</code> &mdash; L1 alone eight times, because eight branches reach it. The per-lesson counts are the Fibonacci numbers, so the total grows exponentially with the chain.';
+    } else {
+      code = '<span class="cmt">// memoised — first visit computes, the rest are store hits</span>\ndepthMemo <span class="str">"L6"</span>\n<span class="cmt">// each of L1..L6 evaluated once, then read from the store</span>\n<span class="cmt">// => 6 evaluations for the same answer of 6</span>';
+      out = 'With the store, each of the six lessons is evaluated <b style="color:var(--fsharp-bright)">once</b> and every later visit is a lookup &mdash; <b>6</b> evaluations for the same <code class="inl">depth(L6) = 6</code>. The exponential repetition collapses to one pass over the lessons the target depends on.';
+    }
+    var cEl = document.getElementById('mzCode'); if (cEl) cEl.innerHTML = code;
+    var oEl = document.getElementById('mzOut'); if (oEl) oEl.innerHTML = out;
+  }
+  document.querySelectorAll('#mzSel button').forEach(function (b) { b.addEventListener('click', function () { pick(b.getAttribute('data-k')); }); });
+  pick('naive');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

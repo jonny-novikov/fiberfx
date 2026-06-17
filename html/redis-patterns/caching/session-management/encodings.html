@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R1.06.1 · Hash, String &amp; JSON · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R1.06.1 — the session encoding choice: a HSET Hash gives field-level reads and writes, an opaque SET string holds the record as one blob, and JSON nests structure inside that blob. The trade-off is field access against a single round trip and a read-modify-write. Grounded in EchoCache.Table — the framed version<>value write.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.range{display:flex;align-items:center;gap:1rem;margin:10px 0 12px;font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.range label{min-width:9rem}
+.range input[type=range]{flex:1;accent-color:var(--r-red);height:2px}
+.range .val{color:var(--b-ink);min-width:3rem;text-align:right}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+pre.code .str{color:var(--b-node)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .cell p code{font-size:.86em}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+dl.deflist{display:grid;grid-template-columns:auto 1fr;gap:.4rem 1.1rem;font-family:var(--mono);font-size:13px;margin:0 0 18px}
+dl.deflist dt{color:var(--r-red);font-weight:700}
+dl.deflist dd{color:var(--b-ink)}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  dl.deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the encodings figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.lstack{width:100%;height:auto;display:block;margin-top:4px}
+.lstack .shape{cursor:pointer;transition:opacity .18s ease}
+.lstack .shape rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.lstack .shape.blob rect{fill:var(--b-card);stroke:var(--b-dim);stroke-width:1.5;stroke-dasharray:5 4}
+.lstack .slbl{font:11px var(--mono);fill:var(--b-ink)}
+.lstack .ssub{font:10px var(--mono);fill:var(--b-dim)}
+.lstack .skey{font:11px var(--mono);fill:var(--r-red)}
+.lstack.focus .shape{opacity:.3}
+.lstack.focus .shape.on{opacity:1}
+.lstack.focus .shape.on rect{stroke-width:2.6}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/caching">caching</a><span class="rsep">/</span><a href="/redis-patterns/caching/session-management">session-management</a><span class="rsep">/</span><span class="rcur">encodings</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#three">The three shapes</a>
+      <a href="#update">A single-field update</a>
+      <a href="#echocache">On EchoCache</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R1.06.1 &#183; Session management &#8212; dive 1</p>
+      <h1>Three shapes for <span class="hns">one record</span>.</h1>
+      <p class="lede">A Hash for field-level reads and writes. A string for one opaque blob. JSON when the blob has
+      structure. The trade-off is <b>field access against a single round trip</b>.</p>
+      <p class="heronote">Grounding: echo/apps/echo_cache/lib/echo_cache/table.ex (put/3, the framed version&lt;&gt;value
+      write) &#8212; the encoding the store holds.</p>
+
+      <figure class="anatomy" aria-labelledby="shapeCap">
+        <figcaption id="shapeCap"><b>Same record, three shapes.</b> Select an encoding to read its commands and what a
+        single-field update costs.</figcaption>
+        <div class="segbar" id="shapeSel" role="group" aria-label="Select an encoding to inspect">
+          <button type="button" data-shape="hash" aria-pressed="false">Hash</button>
+          <button type="button" data-shape="string" aria-pressed="false">String</button>
+          <button type="button" data-shape="json" aria-pressed="false">JSON</button>
+        </div>
+        <svg class="lstack" id="lstack" viewBox="0 0 460 168" role="img" aria-label="The session key session:abc123 holds the same record three ways. As a Hash, three separate named-field boxes. As a String, one value box. As JSON, one value box with nested structure. Select an encoding to highlight its boxes; its commands appear in the readout.">
+          <text class="skey" x="20" y="20">session:abc123</text>
+          <g class="shape" data-shape="hash"><rect x="20" y="32" width="130" height="44" rx="6"></rect><text class="slbl" x="32" y="52">Hash</text><text class="ssub" x="32" y="68">named fields</text></g>
+          <g class="shape blob" data-shape="string"><rect x="165" y="32" width="130" height="44" rx="6"></rect><text class="slbl" x="177" y="52">String</text><text class="ssub" x="177" y="68">one blob</text></g>
+          <g class="shape blob" data-shape="json"><rect x="310" y="32" width="130" height="44" rx="6"></rect><text class="slbl" x="322" y="52">JSON</text><text class="ssub" x="322" y="68">nested blob</text></g>
+
+          <g class="shape" data-shape="hash"><rect x="20" y="96" width="40" height="30" rx="5"></rect><rect x="66" y="96" width="40" height="30" rx="5"></rect><rect x="112" y="96" width="38" height="30" rx="5"></rect></g>
+          <text class="ssub" x="20" y="144">a Hash exposes each field on its own; a blob is read and written whole</text>
+        </svg>
+        <div class="readout" id="shapeOut" aria-live="polite"><span class="rk">readout &#183;</span> Select an encoding.
+        The record is the same everywhere; the Redis type that holds it is the access-pattern choice.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="three">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>One record, three encodings</h2>
+        <span class="ssrc">source &#183; Hash / String / JSON</span>
+      </div>
+      <div class="prose">
+        <p>The record is the same everywhere: a handful of facts about one signed-in user. What changes is the Redis type
+        that holds it, and that choice is driven by one question &#8212; how is the record read and written.</p>
+        <p>A <strong>Hash</strong> stores the record as named fields under the key. <code>HSET session:abc123 user_id "1"
+        created_at "1706648400" last_access "1706648400"</code> writes them; <code>HGETALL session:abc123</code> reads
+        them all; <code>HGET session:abc123 user_id</code> reads one. The win is field-level access: a sliding-expiry
+        update writes only <code>last_access</code>, leaving the rest untouched and never re-sending the whole record over
+        the wire.</p>
+        <p>A <strong>string</strong> stores the record as one value. <code>SET session:abc123 &lt;serialized&gt; PX
+        1800000</code> writes it whole; <code>GET session:abc123</code> reads it whole. There are no fields: every update
+        is a read of the whole value, a change in the application, and a write of the whole value back. Simpler to reason
+        about, but a single-field change is a full round-trip rewrite.</p>
+        <p><strong>JSON</strong> is the string case with structure inside the blob &#8212;
+        <code>{"user_id":1,"cart":["item1","item2"],"prefs":{"theme":"dark"}}</code>. It earns its keep when the session
+        carries nested data a flat Hash cannot model cleanly: a cart, a preferences tree. The cost is the same as the
+        plain string: the whole document is read and written on every change.</p>
+      </div>
+      <dl class="deflist">
+        <dt>Hash</dt><dd>Named fields. <code>HSET</code> / <code>HGET</code> / <code>HGETALL</code>. Field-level reads and writes; the natural fit for a flat session.</dd>
+        <dt>String</dt><dd>One opaque value. <code>SET</code> / <code>GET</code>. Read-modify-write the whole record on any change.</dd>
+        <dt>JSON</dt><dd>A string holding a nested document. Best for sessions with structure (carts, preference trees); same whole-document read and write.</dd>
+      </dl>
+      <p class="take">All three set the deadline the same way &#8212; <code>EXPIRE</code> on the Hash key, or
+      <code>PX</code> on the <code>SET</code>. The expiry choice is the next dive,
+      <a href="/redis-patterns/caching/session-management/ttl-expiry">R1.06.2 &#183; TTL expiry</a>.</p>
+    </section>
+
+    <section id="update">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The cost of a single-field update</h2>
+        <span class="ssrc">source &#183; Memory Optimization</span>
+      </div>
+      <div class="prose">
+        <p>Sliding expiry touches one field on every request: <code>last_access</code> moves forward. That single-field
+        update is where the encodings diverge. A Hash writes the one field with <code>HSET session:abc123 last_access
+        &lt;now&gt;</code> &#8212; one command, one field, the rest of the record untouched. A string or JSON value has no
+        fields: the application reads the whole value, changes <code>last_access</code> in memory, and writes the whole
+        value back &#8212; a read-modify-write, two commands, the entire record over the wire twice.</p>
+        <p>Pick a field to update and an encoding to see what the change costs. The readout names the commands and the
+        bytes moved; a Hash touches one field, a blob moves the whole record.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="updCap">
+        <figcaption id="updCap"><b>Update one field &#8212; Hash vs blob.</b> Choose the field, the encoding, and the
+        record size; the readout names the commands and the bytes moved.</figcaption>
+        <div class="segbar" id="fieldSel" role="group" aria-label="Which field to update">
+          <button type="button" data-field="last_access" aria-pressed="true">last_access (sliding)</button>
+          <button type="button" data-field="theme" aria-pressed="false">prefs.theme</button>
+        </div>
+        <div class="segbar" id="encSel" role="group" aria-label="Which encoding to update under">
+          <button type="button" data-enc="hash" aria-pressed="true">Hash</button>
+          <button type="button" data-enc="blob" aria-pressed="false">String / JSON</button>
+        </div>
+        <div class="range">
+          <label for="sizeRange">record size (B)</label>
+          <input type="range" id="sizeRange" min="64" max="2048" step="64" value="256">
+          <span class="val" id="sizeVal">256</span>
+        </div>
+        <div class="readout" id="updOut" aria-live="polite"></div>
+      </figure>
+
+      <p class="take">Field access is the whole trade-off: a Hash updates one field in one command; a string or JSON value
+      reads and rewrites the whole record. Flat session, pick a Hash; nested data, accept the blob.</p>
+    </section>
+
+    <section id="echocache">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The session record on EchoCache</h2>
+        <span class="ssrc">table.ex:290, :429 &#183; verbatim</span>
+      </div>
+      <div class="prose">
+        <p>EchoCache stores its values in the String shape, with one addition: it frames the bytes with a 14-byte branded
+        <strong>version</strong> prefix. <code>EchoCache.Table.put/3</code> writes <code>SET ecc:{&lt;table&gt;}:&lt;id&gt;
+        (version&lt;&gt;value) PX ttl_ms</code> (<code>table.ex:290</code>), and a read splits the frame back apart &#8212;
+        <code>&lt;&lt;version::binary-14, value::binary&gt;&gt;</code> (<code>table.ex:429</code>). The framed prefix is
+        what lets a later coherence message compare two writes newer-wins; a plain unframed <code>SET</code> is the
+        simpler choice when no cross-node coherence is needed.</p>
+        <p>A session record is flat and few-field &#8212; a <code>SES</code> id, a user id, an opaque token &#8212; the
+        shape a Hash backs cleanly when the store is bare Valkey; the framed-String form is what EchoCache itself holds.
+        How a credential is verified and the <code>SES</code> id is minted is the functional-Elixir and OTP craft of the
+        <a href="/elixir">/elixir</a> course; this dive is the encoding the store holds.</p>
+      </div>
+      <pre class="code"><span class="cmt"># EchoCache.Table.put/3 — the writer path, set both layers under the declared TTL (table.ex:290)</span>
+SET ecc:{sessions}:SES0KH... <span class="str">&lt;version&lt;&gt;value&gt;</span> PX <span class="str">1800000</span>
+
+<span class="cmt"># a read splits the 14-byte version prefix back off the value (table.ex:429)</span>
+GET ecc:{sessions}:SES0KH...        <span class="cmt"># -> &lt;&lt;version::binary-14, value::binary&gt;&gt;</span></pre>
+
+      <div class="door">
+        <span class="dr">the application &#183; the framed write, value and TTL in one command</span>
+        <h3>SET &#8230; PX against live Valkey</h3>
+        <p>The L2 row carries its expiry on the server&#8217;s own clock, written in one command &#8212; the committed
+        cache record against live Valkey:</p>
+        <figure class="frozen">
+          <figcaption>content/bcs4.1.md &#183; the L2 row, written with SET &#8230; PX<span class="tag">frozen</span></figcaption>
+          <pre>the L2 row                    SET &#8230; PX, <b>PTTL 300 ms of 300</b>
+L1 hit reads                  <b>1311621 / s</b>   <span class="fd">&#8592; 762 ns each, caller-side ETS</span>
+L2 GET on the same wire       31 us          <span class="fd">&#8592; the round trip a hit replaces</span></pre>
+        </figure>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Encode the session by its access pattern: a Hash for flat field-level reads and writes, a string or JSON blob
+          for a record read and written whole. Field access against one round trip.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoCache application</span>
+          <p>EchoCache holds the framed-String form &#8212; <code>version&lt;&gt;value</code> under a branded
+          <code>SES</code> key &#8212; so a coherence message can compare writes newer-wins. The session is flat, so the
+          frame, not nesting, is the work.</p>
+        </div>
+      </div>
+      <p class="take">The encoding follows the access pattern. A flat session fits a Hash on bare Valkey; EchoCache frames
+      it as a versioned String; a nested cart fits JSON &#8212; all end with the same <code>PX</code> deadline.</p>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>SET &#8230; PX</code> sets the value and the TTL in
+      one command, so the framed row and its deadline land together &#8212;
+      <a href="https://valkey.io/commands/set/" rel="noopener">valkey.io/commands/set</a>.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Recap &#8212; shape follows access</h2>
+        <span class="ssrc">encode &#8594; expire</span>
+      </div>
+      <div class="prose">
+        <p>A session record fits three shapes, and the access pattern picks one. A Hash exposes named fields, so a
+        single-field update &#8212; the sliding-expiry write &#8212; costs one <code>HSET</code>. A string or JSON value
+        is opaque, so any change is a read-modify-write of the whole record. Flat sessions take the Hash; nested data
+        takes JSON; EchoCache frames its bytes as a versioned String. The deadline is set the same way for all of them.
+        The next dive is that deadline: how a TTL is set, slid, and reclaimed.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/commands/hset" rel="noopener">Redis &mdash; <em>HSET</em></a> &mdash; set named fields of a Hash; the field-level write a Hash session uses.</li>
+            <li><a href="https://redis.io/commands/hgetall" rel="noopener">Redis &mdash; <em>HGETALL</em></a> &mdash; read every field of a Hash in one command; the full-session read.</li>
+            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; set a key to one value with <code>PX</code>; the framed-String encoding <code>EchoCache.Table.put</code> writes.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; the Hash and String types and when each fits a record.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/caching/session-management">R1.06 &#183; Session management</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/caching/session-management/ttl-expiry">R1.06.2 &#183; TTL expiry</a><span class="rs">the next dive</span></li>
+            <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
+            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under the Exchange Platform</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the protocol the coherence lane rides</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/redis-patterns/caching/session-management"><span class="pk">previous</span>&#8592; R1.06 &#183; Session management</a>
+      <a class="pgx" href="/redis-patterns/caching/session-management/ttl-expiry"><span class="pk">next</span>R1.06.2 &#183; TTL expiry &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/caching/session-management/encodings">R1.06.1 &#183; Hash, String &amp; JSON</a>
+        <a href="/redis-patterns/caching/session-management/ttl-expiry">R1.06.2 &#183; TTL expiry</a>
+        <a href="/redis-patterns/caching/session-management/auth-session">R1.06.3 &#183; The auth tie-in</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: same record, three shapes (pure lookup over a fixed dataset) ---------- */
+  var SHAPES = {
+    hash:   { read: 'Hash. Read: HGETALL session:abc123 (all fields) or HGET for one. Write: HSET per field. A single-field update is HSET session:abc123 last_access <now> — one command, the rest untouched.' },
+    string: { read: 'String. Read: GET session:abc123 (the whole value). Write: SET session:abc123 <value> PX 1800000. A single-field update is read-modify-write: GET, change it in the app, SET the whole record back.' },
+    json:   { read: 'JSON. Read: GET session:abc123 then parse the document. Write: SET the whole document. Best for nested data (cart, prefs); any change rewrites the entire document.' }
+  };
+  var lstack = document.getElementById('lstack');
+  var shapeButtons = document.querySelectorAll('#shapeSel button');
+  var shapeOut = document.getElementById('shapeOut');
+  // pure: highlight a shape in the diagram, sync the buttons, fill the readout — hover or click.
+  function selectShape(key) {
+    shapeButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-shape') === key ? 'true' : 'false');
+    });
+    if (lstack) {
+      lstack.classList.toggle('focus', !!key);
+      lstack.querySelectorAll('.shape').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-shape') === key);
+      });
+    }
+    if (shapeOut) {
+      shapeOut.innerHTML = key
+        ? '<span class="rk">readout &#183;</span> ' + SHAPES[key].read
+        : '<span class="rk">readout &#183;</span> Select an encoding. The record is the same everywhere; the Redis type that holds it is the access-pattern choice.';
+    }
+  }
+  shapeButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-shape');
+      selectShape(b.getAttribute('aria-pressed') === 'true' ? null : key);
+    });
+  });
+  if (lstack) {
+    lstack.querySelectorAll('.shape').forEach(function (g) {
+      var s = g.getAttribute('data-shape');
+      g.addEventListener('mouseenter', function () { selectShape(s); });
+      g.addEventListener('mouseleave', function () { selectShape(null); });
+    });
+  }
+
+  /* ---------- Interactive 2: single-field update cost (pure over a fixed dataset) ---------- */
+  var FIELD_LABEL = { last_access: 'last_access', theme: 'prefs.theme' };
+  // pure: (field, encoding, recordBytes) -> readout text
+  function updateCost(field, enc, bytes) {
+    var label = FIELD_LABEL[field];
+    if (enc === 'hash') {
+      if (field === 'theme') {
+        return 'Update ' + label + ' under a Hash: a nested field has no flat Hash field, so it falls back to ' +
+          'HGET prefs + rewrite — Hashes model flat fields, not trees. For a flat field this would be HSET, ~12 B moved.';
+      }
+      return 'Update ' + label + ' under a Hash: HSET session:abc123 ' + field + ' <now>. Commands: 1. Bytes moved: ~12 B (one field). The other ' + (bytes - 12) + ' B of the record stay put.';
+    }
+    // blob: read-modify-write the whole record
+    return 'Update ' + label + ' under a String/JSON blob: GET session:abc123 (read ' + bytes + ' B) -> change it in the app -> SET session:abc123 <value> (write ' + bytes + ' B). Commands: 2. Bytes moved: ~' + (bytes * 2) + ' B (the whole record, twice).';
+  }
+  var updOut = document.getElementById('updOut');
+  var sizeRange = document.getElementById('sizeRange'), sizeVal = document.getElementById('sizeVal');
+  var curField = 'last_access', curEnc = 'hash';
+  function renderUpd() {
+    var bytes = sizeRange ? parseInt(sizeRange.value, 10) : 256;
+    if (sizeVal) sizeVal.textContent = String(bytes);
+    if (updOut) updOut.innerHTML = '<span class="rk">readout &#183;</span> ' + updateCost(curField, curEnc, bytes);
+  }
+  document.querySelectorAll('#fieldSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      curField = b.getAttribute('data-field');
+      document.querySelectorAll('#fieldSel button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      renderUpd();
+    });
+  });
+  document.querySelectorAll('#encSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      curEnc = b.getAttribute('data-enc');
+      document.querySelectorAll('#encSel button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      renderUpd();
+    });
+  });
+  if (sizeRange) sizeRange.addEventListener('input', renderUpd);
+  renderUpd(); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4.01.3 · The next wake · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R4.01.3 — the next wake. Do not busy-poll an empty delayed set: read the head, compute the next due time, and wait until then. EchoMQ carries the next fire-time on a delay marker so a blocked worker wakes exactly when due. Verified in addDelayedJob-6.lua: getNextDelayedTimestamp reads the head and returns nextTimestamp / 0x1000 (the real millisecond), and addDelayMarkerIfNeeded runs ZADD markerKey nextTimestamp '1' — distinct from the base marker ZADD markerKey 0 '0' that wakes a worker for a plain due-now job. A worker blocked on BZPOPMIN wakes at the next fire-time, not on a poll tick.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- wake diagram ---- */
+.wk .node rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.wk .node.poll rect{fill:rgba(214,88,79,.14);stroke:#d6584f}
+.wk .node.wait rect{fill:rgba(90,135,196,.14);stroke:#5a87c4}
+.wk .marker rect{fill:#161d38;stroke:#2a3252;transition:.18s ease}
+.wk .marker.set rect{fill:rgba(212,168,90,.16);stroke:#d4a85a}
+.wk text{font-family:var(--sans);fill:#d7cfb9}
+.wk .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.wk .st{font-family:var(--mono);font-size:12px;font-weight:700}
+.wk .tick{fill:#d6584f}
+.wk .tick.skip{fill:#5a87c4;opacity:.45}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
+.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
+.door a{color:var(--gold-bright)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority/delayed-queue">delayed-queue</a><span class="rsep">/</span><span class="rcur">the-next-wake</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority/delayed-queue">The delayed queue</a>
+        <span class="sep">/</span>
+        <span class="here">The next wake</span>
+      </div>
+      <p class="eyebrow">R4.01.3 &middot; dive 3</p>
+      <h1>The next <span class="ex">wake</span></h1>
+      <p class="lede">Do not busy-poll an empty set. Read the head, compute the next due time, and wait until then
+        &mdash; EchoMQ carries the next fire-time on a marker so a blocked worker wakes exactly when due.</p>
+      <p class="kicker">A delayed set sits idle most of the time: its jobs are due in the future, not now. A worker that
+        re-runs the sweep on a fixed tick spends round trips finding the same empty due head over and over. The set
+        already holds the answer &mdash; its head's score is when the next job is due. Toggle busy-poll against the
+        head-wait on the right to count the round trips each costs.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#cost">The cost of busy-polling</a>
+        <a href="#head">Read the head</a>
+        <a href="#marker">The delay marker</a>
+        <a href="#applied">In EchoMQ</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig wk" aria-labelledby="bpTitle">
+      <h4 id="bpTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Busy-poll vs head-wait &middot; round trips over an idle window</h4>
+      <div class="controls">
+        <div class="solid-select" id="bpSel" role="group" aria-label="Poll the empty set on a fixed tick, or wait once to the head's fire-time">
+          <button type="button" data-mode="poll" data-c="redis" class="active" aria-pressed="true">busy-poll (fixed tick)</button>
+          <button type="button" data-mode="wait" data-c="blue" aria-pressed="false">head-wait (one sleep)</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 160" role="img" aria-label="An idle window of sixty seconds with the next job due at sixty seconds. Under busy-poll, a tick every five seconds spends a round trip each time and finds the empty due head, twelve wasted polls shown red. Under head-wait, the worker reads the head once and sleeps the whole sixty seconds, a single block shown blue, with no wasted polls. The toggle switches the timeline and the count.">
+        <text class="ttl" x="30" y="22">idle window — next job due at 60s</text>
+        <line x1="30" y1="64" x2="430" y2="64" stroke="#2a3252" stroke-width="1.4"></line>
+        <g id="bpTicks"></g>
+        <g class="node wait" id="bpDue"><rect x="396" y="48" width="34" height="32" rx="8"></rect></g>
+        <text class="st" x="413" y="69" text-anchor="middle" fill="#9fc0ea" font-size="10">due</text>
+        <text class="ttl" id="bpVerd" x="230" y="118" text-anchor="middle">—</text>
+        <text class="ttl" id="bpVerd2" x="230" y="138" text-anchor="middle" fill="#a7c9b1">—</text>
+      </svg>
+
+      <div class="geo-readout" id="bpOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="cost">
+    <h2>The cost of busy-polling</h2>
+    <div class="prose">
+      <p>Polling an empty set on a fixed tick wastes work. Every tick the worker runs the due-range, gets nothing back,
+        and sleeps a fixed interval &mdash; then repeats, whether or not anything has changed. The shorter the tick the
+        more round trips wasted on an empty set; the longer the tick the later a due job is noticed. A fixed poll cadence
+        cannot be both responsive and cheap.</p>
+      <p>The waste is not a job that runs slowly; it is a worker spending round trips to learn nothing. On an idle set,
+        every poll returns the same empty due head, and the interval between polls is latency added to whatever job
+        lands next.</p>
+    </div>
+    <p class="take">A fixed poll tick is a trade with no good setting: short ticks waste round trips on an empty set,
+      long ticks add latency to the next due job.</p>
+  </section>
+
+  <section id="head">
+    <h2>Read the head, compute the next wake</h2>
+    <div class="prose">
+      <p>The set already holds the answer. Its head is the earliest-due job, and its score is when that job is due.</p>
+      <pre class="code"><span class="rdx">ZRANGE</span> delayed_queue <span class="res">0</span> <span class="res">0</span> <span class="res">WITHSCORES</span>   <span class="cmt"># the earliest task and its scheduled time</span></pre>
+      <p>This returns the earliest task and its scheduled time in one command. When the head's time is at or below now,
+        a job is due and the worker sweeps it. When the head is still in the future, the worker sleeps until that time,
+        or a bounded maximum interval, whichever is sooner &mdash; and wakes with a job due, having spent no round trips
+        in between. The sleep is computed from the head's score: <code class="inl">next_wake = head_score - now</code>.
+        This replaces a fixed tick with a head-driven wait: an empty set sleeps the maximum interval, a job far out
+        sleeps until that job is due, a job due now does not sleep at all. The polling overhead collapses toward zero
+        when the set is idle or the next job is far off.</p>
+    </div>
+    <p class="take">The head's score is the next wake; sleeping to it instead of polling on a tick makes an idle set
+      nearly free, and notices a due job the instant it is due.</p>
+  </section>
+
+  <section id="marker">
+    <h2>The delay marker: wake exactly when due</h2>
+    <div class="prose">
+      <p>EchoMQ does not sleep-and-recompute. It carries the next fire-time on a marker so a worker blocked on the
+        marker wakes at exactly the right time. A worker parks on <code class="inl">BZPOPMIN</code> on the marker set
+        (the blocking pop covered in R3.05). For a plain job the producer rings the marker with a score of zero
+        &mdash; <code class="inl">ZADD markerKey 0 "0"</code> &mdash; which wakes the worker now, because a plain job is
+        due now. For a delayed job the marker carries the fire-time instead. <code class="inl">addDelayMarkerIfNeeded</code>
+        reads the head of the delayed set, recovers its real time, and writes that time as the marker's score.</p>
+      <pre class="code"><span class="cmt">-- addDelayMarkerIfNeeded.lua (included by addDelayedJob-6) — carry the next fire-time on the marker (real)</span>
+<span class="op">local</span> nextTimestamp = <span class="fn">getNextDelayedTimestamp</span>(delayedKey)   <span class="cmt">-- reads the head, returns headScore / 0x1000</span>
+<span class="op">if</span> nextTimestamp ~= <span class="op">nil</span> <span class="op">then</span>
+  <span class="fn">rcall</span>(<span class="str">"ZADD"</span>, markerKey, nextTimestamp, <span class="str">"1"</span>)              <span class="cmt">-- marker score = the next fire-time (ms)</span>
+<span class="op">end</span></pre>
+      <p><code class="inl">getNextDelayedTimestamp</code> reads the delayed head and returns
+        <code class="inl">nextTimestamp / 0x1000</code> &mdash; it divides out the twelve-bit shift the fire-time score
+        carries, recovering the real millisecond. That millisecond is written as the marker's score with
+        <code class="inl">ZADD markerKey nextTimestamp "1"</code>. A worker blocked on the marker wakes when the marker's
+        lowest score becomes available, which the runtime schedules for the next fire-time &mdash; so the worker wakes
+        exactly when the next delayed job is due, not on a poll tick. The marker's member is <code class="inl">"1"</code>
+        for a delayed wake, distinct from the <code class="inl">"0"</code> of the base marker that wakes a worker for a
+        plain job now.</p>
+    </div>
+
+    <figure class="fig wk" aria-labelledby="mkTitle">
+      <h4 id="mkTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The marker's score is the next wake &middot; ZADD markerKey (headScore / 0x1000) "1"</h4>
+      <div class="controls">
+        <div class="solid-select" id="mkSel" role="group" aria-label="Add or remove the earliest delayed job and watch the marker score">
+          <button type="button" data-act="base" data-c="blue" class="active" aria-pressed="true">head at 5s out</button>
+          <button type="button" data-act="earlier" data-c="gold" aria-pressed="false">add a job at 2s out</button>
+          <button type="button" data-act="empty" data-c="redis" aria-pressed="false">remove all</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 150" role="img" aria-label="The delayed set's head carries a shifted fire-time score. getNextDelayedTimestamp divides it by 0x1000 to recover the real millisecond, and addDelayMarkerIfNeeded writes that millisecond as the marker score with ZADD markerKey nextTimestamp one. Adding an earlier job changes the head and the marker score; removing all jobs leaves the marker unset. The buttons drive the head and recompute the marker.">
+        <text class="ttl" x="30" y="22">emq:{queue}:delayed — head (raw score)</text>
+        <g class="node wait" id="mkHead"><rect x="30" y="32" width="180" height="40" rx="9"></rect></g>
+        <text class="st" id="mkHeadSt" x="120" y="56" text-anchor="middle" fill="#9fc0ea" font-size="11">—</text>
+
+        <text class="ttl" x="250" y="22">emq:{queue}:marker (ZSET)</text>
+        <g class="marker set" id="mkMarker"><rect x="250" y="32" width="180" height="40" rx="9"></rect></g>
+        <text class="st" id="mkMarkerSt" x="340" y="56" text-anchor="middle" fill="#f0cd7f" font-size="11">—</text>
+
+        <text class="ttl" id="mkVerd" x="230" y="110" text-anchor="middle">—</text>
+        <text class="ttl" id="mkVerd2" x="230" y="132" text-anchor="middle" fill="#a7c9b1">recover: headScore / 0x1000 = fire-time ms</text>
+      </svg>
+
+      <div class="geo-readout" id="mkOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">EchoMQ carries the next fire-time on the marker: <code class="inl">ZADD markerKey (headScore /
+      0x1000) "1"</code>, so a worker blocked on <code class="inl">BZPOPMIN</code> wakes when the next delayed job is
+      due, with no poll in between.</p>
+  </section>
+
+  <section id="applied">
+    <h2>In EchoMQ &mdash; the delay marker, in real code</h2>
+    <div class="prose">
+      <p>The whole wake is real code in <code class="inl">echo/apps/echomq</code>, in
+        <code class="inl">addDelayedJob-6.lua</code>. <code class="inl">getNextDelayedTimestamp</code> reads the head and
+        returns <code class="inl">nextTimestamp / 0x1000</code>, dividing out the shift to recover the millisecond.
+        <code class="inl">addDelayMarkerIfNeeded</code> writes that millisecond as the marker score with
+        <code class="inl">rcall("ZADD", markerKey, nextTimestamp, "1")</code>. The base marker for a plain due-now job is
+        <code class="inl">ZADD markerKey 0 "0"</code> instead &mdash; the same marker, a different score, so the worker
+        wakes now for a plain job and at the fire-time for a delayed one.</p>
+      <p>The recovery is the linchpin. Because the fire-time score is <code class="inl">ms &times; 0x1000</code>, the
+        head's raw score is not a time a worker can sleep to; dividing by <code class="inl">0x1000</code> recovers the
+        real millisecond, and that millisecond is what the marker carries. The shift that packs the within-millisecond
+        discriminator is divided back out exactly, so the wake time is precise.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>Do not poll an empty delayed set; read the head, compute when the next job is due, and wait until then rather
+          than re-polling on a tick.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p><code class="inl">getNextDelayedTimestamp</code> reads the head and returns
+          <code class="inl">headScore / 0x1000</code>, and <code class="inl">addDelayMarkerIfNeeded</code> writes it as
+          the marker score with <code class="inl">ZADD markerKey nextTimestamp "1"</code>, so a worker blocked on
+          <code class="inl">BZPOPMIN</code> wakes exactly when the next delayed job is due &mdash; the base marker
+          <code class="inl">ZADD markerKey 0 "0"</code> wakes it now for a plain job.</p>
+      </div>
+    </div>
+
+    <p class="take">The head's score is the next wake; sleeping to it beats polling on a tick, and EchoMQ carries that
+      fire-time on the marker so a blocked worker wakes the instant the next delayed job is due.</p>
+
+    <div class="door">
+      <span class="lbl">Door &middot; not depth</span>
+      The full scheduler subsystem &mdash; how the delay marker coordinates with the worker fetch loop and the heartbeat
+      across a worker pool, and the polyglot concurrency models that govern each runtime's block &mdash; is the subject
+      of the dedicated <strong>EchoMQ course</strong>. The delay marker and scheduler coordination is
+      <a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a>. This dive teaches the next wake; that course
+      teaches the scheduler that schedules it.
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The blocking pop the worker parks on to wake at the next fire-time, the <code>ZADD</code> that writes that
+        time as the marker's score, the sorted set behind both, and the queue protocol EchoMQ ports.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/bzpopmin/">Redis &mdash; <em>BZPOPMIN</em></a> &mdash; block on a sorted set until a member is available; the marker pop the worker parks on to wake at the next fire-time.</li>
+          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; write the next fire-time as the marker's score; the ring that schedules the wake.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; the data type behind both the delayed set's head and the marker the worker blocks on.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the delay-marker wake protocol EchoMQ ports, where the Lua scripts are the protocol.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority/delayed-queue">R4.01 &middot; The delayed queue</a> &mdash; the module hub.</li>
+          <li><a href="/redis-patterns/time-delay-priority/delayed-queue/score-is-fire-time">R4.01.1 &middot; The score is the fire-time</a> &mdash; the shifted score the head carries, recovered by dividing by 0x1000.</li>
+          <li><a href="/redis-patterns/time-delay-priority/delayed-queue/zrangebyscore-promotion">R4.01.2 &middot; ZRANGEBYSCORE promotion</a> &mdash; the sweep the wake triggers when the marker fires.</li>
+          <li><a href="/redis-patterns/queues/blocking-vs-polling">R3.05 &middot; Blocking vs polling</a> &mdash; the BZPOPMIN block and the base marker the delay marker extends.</li>
+          <li><a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a> &mdash; the chapter.</li>
+          <li><a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a> &mdash; the dedicated EchoMQ course: the delay marker and scheduler coordination in depth.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority/delayed-queue/zrangebyscore-promotion"><span aria-hidden="true">&larr;</span>&nbsp; R4.01.2 &middot; ZRANGEBYSCORE promotion</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority/delayed-queue">R4.01 &middot; The delayed queue <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/time-delay-priority/delayed-queue/score-is-fire-time">R4.01.1 &middot; The score is the fire-time</a>
+        <a href="/redis-patterns/time-delay-priority/delayed-queue/zrangebyscore-promotion">R4.01.2 &middot; ZRANGEBYSCORE promotion</a>
+        <a href="/redis-patterns/time-delay-priority/delayed-queue/the-next-wake">R4.01.3 &middot; The next wake</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/lifecycle">The EchoMQ course &middot; the lifecycle</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: busy-poll vs head-wait — round trips over an idle window (pure over mode) ---------- */
+  // An idle window of 60s, next job due at 60s, fixed poll tick of 5s. Under busy-poll the worker spends one round trip
+  // every 5s and finds the empty due head — 12 wasted polls. Under head-wait it reads the head once and sleeps the whole
+  // 60s — 0 wasted polls. The tick marks, count, and readout are pure over the mode.
+  var WINDOW = 60, TICK = 5, DUE_AT = 60;
+  // pure: mode -> { ticks:[{x,wasted}], wasted, verd, verd2, text }
+  function poll(mode) {
+    var ticks = [];
+    var n = WINDOW / TICK; // 12
+    for (var i = 1; i <= n; i++) {
+      var t = i * TICK;
+      var x = 30 + (t / WINDOW) * 400;
+      // under poll: every tick before the due time is a wasted poll on the empty set
+      ticks.push({ x: x, wasted: mode === 'poll' && t < DUE_AT });
+    }
+    var wasted = (mode === 'poll') ? (n - 1) : 0; // ticks at 5..55 are wasted; tick at 60 finds the job
+    if (mode === 'wait') {
+      return {
+        ticks: ticks, wasted: 0,
+        verd: 'head-wait · read head once, sleep ' + DUE_AT + 's',
+        verd2: '0 wasted polls · woke exactly at ' + DUE_AT + 's',
+        text: 'head-wait reads the head once (ZRANGE delayed 0 0 WITHSCORES), learns the next job is due at ' + DUE_AT +
+          's, and sleeps the whole ' + DUE_AT + 's. One round trip, then a single block — 0 wasted polls, and the ' +
+          'worker wakes exactly when the job is due. An idle set costs almost nothing.'
+      };
+    }
+    return {
+      ticks: ticks, wasted: wasted,
+      verd: 'busy-poll · a tick every ' + TICK + 's',
+      verd2: wasted + ' wasted polls on the empty set',
+      text: 'busy-poll runs the due-range every ' + TICK + 's across the ' + WINDOW + 's window. Each of the first ' +
+        wasted + ' ticks finds the empty due head and spends a round trip for nothing; only the tick at ' + DUE_AT +
+        's finds the job. ' + wasted + ' round trips wasted to notice one due job — and a shorter tick wastes more.'
+    };
+  }
+  function renderBp(mode) {
+    var r = poll(mode);
+    var g = document.getElementById('bpTicks');
+    if (g) {
+      var frag = '';
+      for (var i = 0; i < r.ticks.length; i++) {
+        var tk = r.ticks[i];
+        var cls = tk.wasted ? 'tick' : 'tick skip';
+        frag += '<circle class="' + cls + '" cx="' + tk.x.toFixed(1) + '" cy="64" r="' + (tk.wasted ? 5 : 3) + '"></circle>';
+      }
+      g.innerHTML = frag;
+    }
+    var verd = document.getElementById('bpVerd'), verd2 = document.getElementById('bpVerd2'), out = document.getElementById('bpOut');
+    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', mode === 'poll' ? '#f2948c' : '#9fc0ea'); }
+    if (verd2) { verd2.textContent = r.verd2; verd2.setAttribute('fill', mode === 'poll' ? '#f2948c' : '#a7c9b1'); }
+    if (out) out.textContent = r.text;
+  }
+  document.querySelectorAll('#bpSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var mode = b.getAttribute('data-mode');
+      document.querySelectorAll('#bpSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderBp(mode);
+    });
+  });
+  renderBp('poll'); // initial render — correct without interaction
+
+  /* ---------- content: the marker's score is the next wake (pure over act) ---------- */
+  // The delayed head carries a shifted fire-time score. getNextDelayedTimestamp = headScore / 0x1000 recovers the ms.
+  // addDelayMarkerIfNeeded writes ZADD markerKey nextTimestamp "1". Adding an earlier job moves the head; removing all
+  // leaves the marker unset. The head raw score, recovered ms, and marker score are pure over the act.
+  var NOW = 1706649000000, SHIFT = 0x1000;
+  // pure: act -> { hasHead, fireMs, headScore, markerScore, verd, text }
+  function marker(act) {
+    if (act === 'empty') {
+      return {
+        hasHead: false, fireMs: null, headScore: null, markerScore: null,
+        verd: 'delayed set empty · marker unset',
+        text: 'All delayed jobs removed. getNextDelayedTimestamp reads no head, so addDelayMarkerIfNeeded writes no ' +
+          'delay marker — there is nothing to wake for. A worker blocked on BZPOPMIN stays parked until a plain job ' +
+          'rings the base marker (ZADD markerKey 0 "0").'
+      };
+    }
+    var fireMs = (act === 'earlier') ? (NOW + 2000) : (NOW + 5000); // head 2s or 5s out
+    var headScore = fireMs * SHIFT;     // the shifted score in the delayed set
+    var nextTs = headScore / SHIFT;     // getNextDelayedTimestamp recovers the real ms
+    return {
+      hasHead: true, fireMs: fireMs, headScore: headScore, markerScore: nextTs,
+      verd: 'marker score = headScore / 0x1000 = ' + nextTs,
+      text: 'The delayed head fires at ' + fireMs + ' ms (' + ((fireMs - NOW) / 1000) + 's out). Its raw score is ' +
+        'fireMs × 0x1000 = ' + headScore + '. getNextDelayedTimestamp divides by 0x1000 to recover the real ' +
+        'millisecond ' + nextTs + ', and addDelayMarkerIfNeeded runs ZADD markerKey ' + nextTs + ' "1". A worker ' +
+        'blocked on BZPOPMIN wakes at ' + nextTs + ' ms — exactly when this job is due, no poll tick.'
+    };
+  }
+  function renderMk(act) {
+    var r = marker(act);
+    var head = document.getElementById('mkHead'), headSt = document.getElementById('mkHeadSt'),
+        mk = document.getElementById('mkMarker'), mkSt = document.getElementById('mkMarkerSt'),
+        verd = document.getElementById('mkVerd'), out = document.getElementById('mkOut');
+    if (r.hasHead) {
+      if (head) head.classList.add('wait');
+      if (headSt) { headSt.textContent = String(r.headScore); headSt.setAttribute('fill', '#9fc0ea'); }
+      if (mk) mk.classList.add('set');
+      if (mkSt) { mkSt.textContent = 'score ' + r.markerScore + ' · "1"'; mkSt.setAttribute('fill', '#f0cd7f'); }
+      if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', '#f0cd7f'); }
+    } else {
+      if (head) head.classList.remove('wait');
+      if (headSt) { headSt.textContent = 'empty'; headSt.setAttribute('fill', '#a39c89'); }
+      if (mk) mk.classList.remove('set');
+      if (mkSt) { mkSt.textContent = 'unset'; mkSt.setAttribute('fill', '#a39c89'); }
+      if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', '#a39c89'); }
+    }
+    if (out) out.textContent = r.text;
+  }
+  document.querySelectorAll('#mkSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var act = b.getAttribute('data-act');
+      document.querySelectorAll('#mkSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderMk(act);
+    });
+  });
+  renderMk('base'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

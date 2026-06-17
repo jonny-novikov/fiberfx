@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C2.04 · From inheritance to discriminated unions — F# In Depth</title>
+<meta name="description" content="A C# developer models 'one of several shapes' with an abstract base class, subclasses, and virtual dispatch. F# models it with a discriminated union — a closed set of named cases — and a single match. The payoff inheritance cannot give: the compiler checks exhaustiveness (FS0025), so adding a case surfaces every place that must handle it. Module C2.04 of the F# In Depth course — three dives: a class hierarchy to a DU, virtual dispatch to an exhaustive match, and the Visitor pattern to a recursive DU.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --fsharp:#b48ee0; --fsharp-bright:#d2b8f5;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(180,142,224,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--fsharp-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--fsharp-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="fsharp"]{background:var(--fsharp-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--fsharp-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .err{color:var(--burgundy)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--fsharp-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- arc svg ---- */
+.arc-node rect{transition:fill .2s ease, stroke .2s ease}
+.arc-node{cursor:pointer}
+.arc-node .num{font-family:var(--serif-display);font-weight:600;fill:var(--cream)}
+.arc-node .nm{font-family:var(--sans);font-weight:600;fill:var(--cream-dim);letter-spacing:.02em}
+.arc-node:hover rect{stroke:var(--cream-dim)}
+.arc-node.active rect{fill:var(--ink-3);stroke:var(--fsharp-bright)}
+.arc-node.active .num{fill:var(--gold-bright)}
+.arc-node.active .nm{fill:var(--fsharp-bright)}
+.arc-node:focus{outline:none}
+.arc-node:focus-visible rect{stroke:var(--gold-bright)}
+.arc-flow{stroke:var(--line);stroke-width:2;fill:none;stroke-dasharray:6 9}
+.arc-arrow{fill:var(--cream-dim)}
+@media (prefers-reduced-motion: no-preference){
+  .arc-flow{animation:flow 1.6s linear infinite}
+}
+@keyframes flow{to{stroke-dashoffset:-30}}
+.arc-readout{margin-top:1.1rem}
+.arc-readout .nm{font-family:var(--serif-display);font-size:1.5rem;color:var(--cream);font-weight:600}
+.arc-readout .one{font-family:var(--serif);color:var(--cream-soft);margin:.25rem 0 .5rem;max-width:60ch}
+.arc-readout .meta{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;align-items:center}
+.arc-readout .meta b{color:var(--gold)}
+.arc-open{margin-top:.7rem;font-family:var(--sans);font-size:.9rem}
+.arc-open .muted{color:var(--cream-dim)}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--fsharp-bright);border-color:var(--fsharp)}
+.chap{padding-top:2.2rem}
+.chap:first-of-type{padding-top:.4rem}
+.chap-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem 1rem;
+  padding-bottom:.6rem;border-bottom:1px solid var(--line);margin-bottom:1.1rem}
+.chap-head .cid{font-family:var(--mono);font-size:.95rem;color:var(--gold)}
+.chap-head h3{margin:0}
+.chap-head .c-one{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);
+  flex-basis:100%;margin-top:.1rem}
+.chap-head .chap-link{font-family:var(--sans);font-size:.82rem;margin-left:auto}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+.mod.is-quiet{opacity:.66;border-style:dashed}
+.mod.is-quiet .t{color:var(--cream-soft)}
+.mod.lab{border-left:2px solid var(--fsharp)}
+.mod.lab .num::after{content:" · lab";color:var(--fsharp-bright)}
+.dives{list-style:none;margin:.6rem 0 0;padding:.6rem 0 0;border-top:1px dashed var(--line);
+  font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);display:grid;gap:.3rem}
+.dives li{display:flex;gap:.5rem}
+.dives .dn{font-family:var(--mono);color:var(--gold);min-width:3.6rem}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- references ---- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.refs li{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.45}
+.refs li a{color:var(--cream-soft)}
+.refs li a:hover{color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.fs .lbl{color:var(--fsharp-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--fsharp-bright);
+  border:1px solid var(--fsharp);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.note.warn{border-left-color:var(--burgundy)}
+.note code.inl{color:var(--cream-soft)}
+pre.code .rdx{background:rgba(180,142,224,.18);border-radius:4px;padding:0 .18em;color:var(--fsharp-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+
+/* ---- C# → F# side-by-side (stacked .lbl + pre.code; this batch) ---- */
+.cmp{margin:1.2rem 0 0}
+.cmp .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:1rem 0 .35rem;color:var(--cream-dim)}
+.cmp .lbl.cs{color:var(--blue-bright)}
+.cmp .lbl.fs{color:var(--fsharp-bright)}
+.cmp .lbl:first-child{margin-top:0}
+pre.code .cs{color:var(--blue-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the contents</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/fsharp">jonnify<span class="dot"></span><span class="sub">fsharp</span></a>
+    <nav>
+      <a href="/fsharp">F# In Depth</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/fsharp">fsharp</a><span class="rsep">/</span><a href="/fsharp/for-csharp">for-csharp</a><span class="rsep">/</span><span class="rcur">unions-vs-inheritance</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/fsharp">F# In Depth</a><span class="sep">/</span><a href="/fsharp/for-csharp">C2 · F# for C# developers</a><span class="sep">/</span><span class="here">C2.04 · From inheritance to discriminated unions</span>
+    </nav>
+    <p class="eyebrow">Module C2.04</p>
+    <h1>From inheritance <span class="ex">to discriminated unions</span></h1>
+    <p class="lede">A closed set of named cases, read by one match the compiler keeps honest.</p>
+    <p class="kicker">A C# developer models "one of several shapes" with an <strong>abstract base class</strong>, a
+      subclass per shape, and <strong>virtual dispatch</strong> — each subclass overrides
+      <code class="inl">Area()</code> with its own formula. F# models the same domain with a
+      <strong>discriminated union</strong>: a single type that lists every case in one place
+      (<code class="inl">Circle</code>, <code class="inl">Rectangle</code>, <code class="inl">Triangle</code>), and a
+      single <code class="inl">match</code> for each operation. The payoff is the thing inheritance cannot give: the
+      compiler <strong>checks exhaustiveness</strong>. Add a case to the union and every non-total
+      <code class="inl">match</code> in the program warns <code class="inl">FS0025</code> — the places that must change
+      announce themselves. Data and behaviour separate too: the DU holds the shapes, free functions hold the
+      operations, so a new operation is a new function, not an edit to every subclass. This module covers all three
+      shifts in three dives.</p>
+    <div class="cta-row">
+      <a class="btn" href="#dives">The three dives <span aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="/fsharp/for-csharp">Back to C2 · F# for C# developers</a>
+    </div>
+  </section>
+
+  <!-- ===================== WHAT THIS MODULE COVERS ===================== -->
+  <section id="covers">
+    <h2>One type, listing every case</h2>
+    <div class="prose">
+      <p>An abstract base class is an <em>open</em> hierarchy: any file can add a subclass, and the set of shapes is
+        never written down in one place. A discriminated union is a <em>closed</em> sum: every case sits in the one
+        declaration, so the complete set is available to the compiler, which can then check that each
+        <code class="inl">match</code> covers it. The three dives below take the C# habit apart one piece at a time.</p>
+      <p>The first dive replaces the <strong>class hierarchy</strong> itself: the
+        <code class="inl">abstract class Shape</code> with its <code class="inl">CircleC : Shape</code> and
+        <code class="inl">RectC : Shape</code> subclasses becomes one
+        <code class="inl">type Shape = Circle of float | Rectangle of float * float | Triangle of float * float</code>.
+        The second replaces <strong>virtual dispatch</strong>: an operation that C# scatters across subclasses as
+        <code class="inl">override</code> methods becomes one function that <code class="inl">match</code>es every case
+        — and the compiler enforces that the match is total. The third collapses the <strong>Visitor pattern</strong>:
+        a recursive tree of node types, which C# walks with an <code class="inl">IVisitor</code> and double dispatch,
+        becomes a recursive DU read by a recursive <code class="inl">match</code>.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="vsTitle">
+      <h4 id="vsTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The three dives · select one</h4>
+      <svg viewBox="0 0 1080 156" role="group" aria-label="Three dives of module C2.04: a class hierarchy to a DU, virtual dispatch to an exhaustive match, and the Visitor pattern to a recursive DU. Select one for detail.">
+        <line x1="160" y1="64" x2="920" y2="64" class="arc-flow"></line>
+        <g class="arc-arrow"><path d="M380 58 l13 6 l-13 6 z"></path></g>
+        <g class="arc-arrow"><path d="M700 58 l13 6 l-13 6 z"></path></g>
+
+        <g class="vs-node arc-node active" data-d="du" role="button" tabindex="0" aria-label="C2.04.1 — from a class hierarchy to a DU">
+          <rect x="40" y="22" width="240" height="84" rx="16" fill="#10162b" stroke="#2a3252"></rect>
+          <text class="num" x="160" y="58" text-anchor="middle" font-size="18">C2.04.1</text>
+          <text class="nm" x="160" y="84" text-anchor="middle" font-size="12">hierarchy → DU</text>
+        </g>
+        <g class="vs-node arc-node" data-d="match" role="button" tabindex="0" aria-label="C2.04.2 — from virtual dispatch to an exhaustive match">
+          <rect x="420" y="22" width="240" height="84" rx="16" fill="#10162b" stroke="#2a3252"></rect>
+          <text class="num" x="540" y="58" text-anchor="middle" font-size="18">C2.04.2</text>
+          <text class="nm" x="540" y="84" text-anchor="middle" font-size="12">dispatch → match</text>
+        </g>
+        <g class="vs-node arc-node" data-d="visitor" role="button" tabindex="0" aria-label="C2.04.3 — from the Visitor pattern to a recursive DU">
+          <rect x="780" y="22" width="240" height="84" rx="16" fill="#10162b" stroke="#2a3252"></rect>
+          <text class="num" x="900" y="58" text-anchor="middle" font-size="18">C2.04.3</text>
+          <text class="nm" x="900" y="84" text-anchor="middle" font-size="12">Visitor → recursive DU</text>
+        </g>
+
+        <text x="160" y="134" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#7ba387">the data</text>
+        <text x="540" y="134" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#b48ee0">the dispatch</text>
+        <text x="900" y="134" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9fc0ea">the tree</text>
+      </svg>
+
+      <div class="arc-readout">
+        <div class="nm" id="vsNm">C2.04.1 · From a class hierarchy to a DU</div>
+        <p class="one" id="vsOne">An abstract base class with one subclass per shape becomes one discriminated union that lists every case in a single declaration — closed, and in one place.</p>
+        <div class="meta">
+          <span>You learn <b id="vsGets">how a closed sum replaces an open hierarchy</b></span>
+        </div>
+        <p class="arc-open"><a id="vsLink" href="/fsharp/for-csharp/unions-vs-inheritance/class-hierarchy-to-du">Open this dive <span aria-hidden="true">→</span></a> <span class="muted">· or pick another above</span></p>
+      </div>
+    </figure>
+    <p class="take">The hierarchy is open and scattered; the union is closed and in one place. The compiler can only
+      check the cases it can see, and a DU shows it all of them.</p>
+  </section>
+
+  <!-- ===================== THE C# HABIT, IN MINIATURE ===================== -->
+  <section id="habit">
+    <h2>The habit, in miniature</h2>
+    <div class="prose">
+      <p>The shift is concrete. Where C# declares an <code class="inl">abstract class Shape</code> and puts an
+        <code class="inl">Area()</code> override inside each subclass, F# declares one <code class="inl">Shape</code>
+        union and one <code class="inl">area</code> function that <code class="inl">match</code>es every case. The C#
+        below compiles and runs; the F# beside it is its idiomatic translation, with the
+        <code class="inl">// val it :</code> echoes produced by <code class="inl">dotnet fsi</code>.</p>
+    </div>
+
+    <div class="cmp">
+      <p class="lbl cs">C# — an abstract base class and a subclass per shape</p>
+      <pre class="code" aria-label="C# models shapes with an abstract base class and one Area override per subclass."><span class="op">abstract class</span> Shape { <span class="op">public abstract</span> <span class="cs">double</span> Area(); }
+<span class="op">class</span> CircleC : Shape { <span class="op">public</span> <span class="cs">double</span> R; <span class="op">public override</span> <span class="cs">double</span> Area() => Math.PI*R*R; }
+<span class="op">class</span> RectC   : Shape { <span class="op">public</span> <span class="cs">double</span> W, H; <span class="op">public override</span> <span class="cs">double</span> Area() => W*H; }
+<span class="cmt">// the set of shapes is open: any file may add another subclass</span></pre>
+      <p class="lbl fs">F# — one union, one match</p>
+      <pre class="code" aria-label="F# models shapes with one discriminated union and one area function that matches every case, with verified FSI echoes."><span class="op">type</span> Shape =
+    | Circle <span class="op">of</span> <span class="cs">float</span>
+    | Rectangle <span class="op">of</span> <span class="cs">float</span> * <span class="cs">float</span>
+    | Triangle <span class="op">of</span> <span class="cs">float</span> * <span class="cs">float</span>          <span class="cmt">// a closed set of cases</span>
+<span class="op">let</span> area s =                             <span class="cmt">// val area : Shape -> float</span>
+    <span class="op">match</span> s <span class="op">with</span>
+    | Circle r -> System.Math.PI * r * r
+    | Rectangle (w, h) -> w * h
+    | Triangle (b, h) -> 0.5 * b * h
+area (Rectangle (2.0, 3.0))              <span class="cmt">// val it : float = 6.0</span></pre>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">C# habit</p>
+        <p>An <code class="inl">abstract class</code> plus a subclass per case, each carrying its own
+          <code class="inl">override</code> — open, and spread across files.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="cell fs">
+        <p class="lbl">F# form</p>
+        <p>One discriminated union listing every case, read by a total <code class="inl">match</code> — closed, in one
+          place, and checked for exhaustiveness.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== THE DIVES ===================== -->
+  <section id="dives">
+    <h2>The three dives</h2>
+    <div class="prose">
+      <p>Read them in order. Each stands on valid F# beside the idiomatic C# it replaces: every
+        <code class="inl">// val it :</code> echo below was produced by <code class="inl">dotnet fsi</code>, and every
+        C# line compiles. Together they take a C# developer from a base class and <code class="inl">override</code> to
+        a discriminated union and <code class="inl">match</code>, and on to the recursive case the Visitor pattern was
+        built to handle.</p>
+    </div>
+    <div class="legend">
+      <span><span class="pill live">live</span> module hub</span>
+      <span><span class="pill built">built</span> dive ready</span>
+      <span><span class="pill soon">soon</span> specified</span>
+    </div>
+    <div class="chap">
+      <div class="mods">
+        <a class="mod" href="/fsharp/for-csharp/unions-vs-inheritance/class-hierarchy-to-du">
+          <div class="top"><span class="num">C2.04.1</span><span class="pill built">built</span></div>
+          <p class="t">From a class hierarchy to a DU</p>
+          <p class="o">One <code class="inl">type Shape = Circle | Rectangle | Triangle</code> replaces the base class and its subclasses — closed, and in one place.</p>
+          <ul class="dives"><li><span class="dn">the data</span><span>how a closed sum replaces an open hierarchy</span></li></ul>
+        </a>
+        <a class="mod" href="/fsharp/for-csharp/unions-vs-inheritance/dispatch-to-match">
+          <div class="top"><span class="num">C2.04.2</span><span class="pill built">built</span></div>
+          <p class="t">From virtual dispatch to exhaustive match</p>
+          <p class="o">One <code class="inl">area</code> function <code class="inl">match</code>es every case, and the compiler warns <code class="inl">FS0025</code> when a case is missed.</p>
+          <ul class="dives"><li><span class="dn">the dispatch</span><span>exhaustiveness, and the expression-problem trade</span></li></ul>
+        </a>
+        <a class="mod" href="/fsharp/for-csharp/unions-vs-inheritance/the-visitor-pattern">
+          <div class="top"><span class="num">C2.04.3</span><span class="pill built">built</span></div>
+          <p class="t">From the Visitor pattern to a recursive DU</p>
+          <p class="o">A recursive <code class="inl">Expr</code> union read by a recursive <code class="inl">eval</code> — no <code class="inl">IVisitor</code>, no <code class="inl">Accept</code>, no double dispatch.</p>
+          <ul class="dives"><li><span class="dn">the tree</span><span>a tree of node types as data, the fold as a function</span></li></ul>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/language-reference/discriminated-unions">Microsoft &mdash; <em>Discriminated unions</em></a> &mdash; the case declaration, named fields, and recursive unions in F#.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/language-reference/pattern-matching">Microsoft &mdash; <em>Pattern matching</em></a> &mdash; <code class="inl">match</code> over a union and the exhaustiveness check.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/csharp/fundamentals/object-oriented/inheritance">Microsoft &mdash; <em>Inheritance (C#)</em></a> &mdash; abstract classes, <code class="inl">override</code>, and virtual dispatch, the habit this module translates.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/fsharp/for-csharp/unions-vs-inheritance/class-hierarchy-to-du">C2.04.1 &mdash; From a class hierarchy to a DU</a> &mdash; the closed sum, case by case.</li>
+          <li><a href="/fsharp/language/unions-and-records">C1.06 &mdash; Discriminated unions &amp; records</a> &mdash; the same union type, in language depth.</li>
+          <li><a href="/fsharp/for-csharp/modules-vs-classes">C2.01 &mdash; From classes to modules</a> &mdash; data beside behaviour, the move this module continues.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/fsharp/for-csharp"><span aria-hidden="true">←</span> C2 · F# for C# developers</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/fsharp/for-csharp/unions-vs-inheritance/class-hierarchy-to-du">Begin · C2.04.1 From a class hierarchy to a DU <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="F# In Depth — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/fsharp">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">F# In Depth &mdash; the ML-family language on .NET, taught from first principles to a real DevOps tool shipped in F#.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/fsharp/for-csharp">C2 &middot; F# for C# developers</a>
+        <a href="/fsharp/for-csharp/unions-vs-inheritance">C2.04 &middot; From inheritance to discriminated unions</a>
+        <a href="#refs">References</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/fsharp">Course home</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Interactive: the three dives ---------- */
+  var DIVE = [
+    {"id": "du", "num": "C2.04.1", "name": "C2.04.1 · From a class hierarchy to a DU", "gets": "how a closed sum replaces an open hierarchy", "href": "/fsharp/for-csharp/unions-vs-inheritance/class-hierarchy-to-du", "one": "An abstract base class with one subclass per shape becomes one discriminated union that lists every case in a single declaration — closed, and in one place."},
+    {"id": "match", "num": "C2.04.2", "name": "C2.04.2 · From virtual dispatch to exhaustive match", "gets": "exhaustiveness, and the expression-problem trade", "href": "/fsharp/for-csharp/unions-vs-inheritance/dispatch-to-match", "one": "An operation C# scatters across subclasses as overrides becomes one function that matches every case — and the compiler warns FS0025 when a case is missed."},
+    {"id": "visitor", "num": "C2.04.3", "name": "C2.04.3 · From the Visitor pattern to a recursive DU", "gets": "a tree of node types as data, the fold as a function", "href": "/fsharp/for-csharp/unions-vs-inheritance/the-visitor-pattern", "one": "The Visitor pattern — a C# workaround for operating over a tree of node types — collapses to a recursive DU read by a recursive match: no IVisitor, no Accept, no double dispatch."}
+  ];
+  var byId = {};
+  DIVE.forEach(function (d) { byId[d.id] = d; });
+
+  function selectDive(id) {
+    var d = byId[id];
+    if (!d) return;
+    document.querySelectorAll('.vs-node').forEach(function (n) {
+      var on = n.getAttribute('data-d') === id;
+      n.classList.toggle('active', on);
+      n.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var set = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+    set('vsNm', d.name);
+    set('vsOne', d.one);
+    set('vsGets', d.gets);
+    var link = document.getElementById('vsLink');
+    if (link) link.setAttribute('href', d.href);
+  }
+
+  document.querySelectorAll('.vs-node').forEach(function (n) {
+    var go = function () { selectDive(n.getAttribute('data-d')); };
+    n.addEventListener('click', go);
+    n.addEventListener('mouseenter', go);
+    n.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); go(); }
+    });
+  });
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

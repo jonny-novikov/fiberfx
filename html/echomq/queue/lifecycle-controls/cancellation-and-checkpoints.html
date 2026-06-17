@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cancellation &amp; checkpoints · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="Control over the worker in hand in the Queue: the cooperative cancellation token (make_ref, a process message, check/check!) — worker-side, no wire identity; extend_lock checkpoints the lease by re-scoring the active member so a long-but-alive handler is not reaped; the count-thresholded stalled sweep recovers a job below a threshold and dead-letters it at it. Real code from echo/apps/echo_mq, with a lease timeline and a stalled-sweep ladder.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.rng{display:flex;flex-direction:column;gap:.3rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);min-width:170px}
+.rng input[type=range]{width:100%;accent-color:var(--echo)}
+.rng .val{font-family:var(--mono);font-size:.9rem;color:var(--echo-bright)}
+
+/* ---- lease / ladder svg ---- */
+.viz text{font-family:var(--sans);fill:#d7cfb9}
+.viz .vid{font-family:var(--mono);fill:#a39c89;font-size:11px}
+.viz .axis{stroke:#2a3252;stroke-width:1}
+.viz .nowline{stroke:#f0cd7f;stroke-width:1.4;stroke-dasharray:4 3}
+.viz .leasebar{fill:rgba(42,161,152,.4);stroke:#2aa198}
+.viz .deadline{stroke:#c4504c;stroke-width:1.4}
+.viz .step rect{transition:fill .18s ease,stroke .18s ease}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+.handle{font-family:var(--sans);font-size:.7rem;font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--echo-bright);margin:1.4rem 0 .2rem}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/queue">queue</a><span class="rsep">/</span><a href="/echomq/queue/lifecycle-controls">lifecycle-controls</a><span class="rsep">/</span><span class="rcur">cancellation-and-checkpoints</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue">The Queue</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue/lifecycle-controls">Lifecycle controls</a>
+        <span class="sep">/</span>
+        <span class="here">Cancellation &amp; checkpoints</span>
+      </nav>
+      <p class="eyebrow">Lifecycle controls &middot; dive 02</p>
+      <h1>Cancellation <span class="ex">&amp; checkpoints</span></h1>
+      <p class="lede">The lease is a score; a checkpoint moves it; a cancel is a message a handler chooses to honour.</p>
+      <p class="kicker">A claimed job is held by a worker for the length of its lease. Three controls act on that worker
+        <strong>while it runs</strong>. <strong>Cancel it cooperatively</strong> — ask a long handler to stop its own
+        work at a safe point, without a forced kill mid-transaction. <strong>Checkpoint its lease</strong> — re-score the
+        active member to a fresh deadline so a long-but-alive handler is not reaped. <strong>Recover the ones that
+        stalled</strong> — sweep for leases that lapsed without a checkpoint, recover them, and dead-letter the ones that
+        keep stalling. Drag "now" on the right and checkpoint, then read the three below.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#cancel">Cooperative cancel</a>
+        <a href="#checkpoint">extend_lock</a>
+        <a href="#stalled">The stalled sweep</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig viz" aria-labelledby="leaseTitle">
+      <h4 id="leaseTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The lease timeline &middot; drag now, then checkpoint</h4>
+      <div class="controls">
+        <label class="rng">
+          <span>now (seconds from claim): <span class="val" id="nowVal">0</span></span>
+          <input type="range" id="nowRange" min="0" max="90" step="1" value="0" aria-label="Advance now in seconds from claim">
+        </label>
+        <div class="solid-select" id="cpSel" role="group" aria-label="Checkpoint the lease">
+          <button type="button" id="cpBtn" data-c="echo">checkpoint (extend_lock)</button>
+          <button type="button" id="cpReset" data-c="gold">reset</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 150" role="img" aria-label="A claimed job's lease as a bar from the claim instant to its deadline at 30 seconds. A movable now line shows whether the reaper would reclaim the job (now past the deadline). Checkpointing re-scores the deadline to now plus 30 seconds.">
+        <line class="axis" x1="40" y1="104" x2="440" y2="104"></line>
+        <text x="40" y="124" class="vid" text-anchor="middle">claim</text>
+        <text x="440" y="124" class="vid" text-anchor="end">+90s</text>
+        <rect class="leasebar" id="leaseBar" x="40" y="52" width="133" height="30" rx="6"></rect>
+        <line class="deadline" id="deadlineLine" x1="173" y1="44" x2="173" y2="90"></line>
+        <text id="deadlineLabel" x="173" y="38" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#f2948c">deadline 30s</text>
+        <line class="nowline" id="nowLine" x1="40" y1="40" x2="40" y2="96"></line>
+        <text id="nowLabel" x="40" y="34" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#f0cd7f">now</text>
+      </svg>
+      <div class="geo-readout" id="leaseOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="cancel">
+    <h2>Cancellation is cooperative and worker-side</h2>
+    <div class="prose">
+      <p><code class="inl">EchoMQ.Cancel</code> is a host-side primitive with <strong>no wire identity</strong>. The token
+        is a plain <code class="inl">make_ref/0</code>; cancellation is a process message. <code class="inl">new/0</code>
+        mints a token. <code class="inl">cancel/3</code> sends <code class="inl">{:emq_cancel, token, reason}</code> to a
+        pid's mailbox. <code class="inl">check/1</code> is a non-blocking <code class="inl">receive after 0</code> that
+        answers <code class="inl">{:cancelled, reason}</code> if a cancellation for <strong>this</strong> token is
+        waiting, else <code class="inl">:ok</code>. <code class="inl">check!/1</code> raises
+        <code class="inl">EchoMQ.Cancel.Cancelled</code> for a checkpoint-style handler.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Cancel — a cooperative token, worker-side, no wire identity</span>
+<span class="cmt"># new/0 mints a token: a unique reference that names one cancellation.</span>
+<span class="op">def</span> <span class="fn">new</span>, <span class="op">do</span>: make_ref()
+
+<span class="cmt"># cancel/3 sends the cancel message to a pid's mailbox; reason is optional.</span>
+<span class="cmt"># The handler picks it up at its next check/1 — nothing interrupts it here.</span>
+<span class="op">def</span> <span class="fn">cancel</span>(pid, token, reason \\ <span class="op">nil</span>) <span class="op">when</span> is_pid(pid) <span class="op">do</span>
+  send(pid, {<span class="str">:emq_cancel</span>, token, reason})
+  <span class="str">:ok</span>
+<span class="op">end</span>
+
+<span class="cmt"># check/1 is O(1): a receive after 0. The ^token pin matches only THIS token,</span>
+<span class="cmt"># so a handler catches its own cancellation and no one else's.</span>
+<span class="op">def</span> <span class="fn">check</span>(token) <span class="op">do</span>
+  <span class="op">receive</span> <span class="op">do</span>
+    {<span class="str">:emq_cancel</span>, <span class="rdx">^token</span>, reason} -&gt; {<span class="str">:cancelled</span>, reason}
+  <span class="op">after</span>
+    <span class="res">0</span> -&gt; <span class="str">:ok</span>
+  <span class="op">end</span>
+<span class="op">end</span>
+
+<span class="cmt"># check!/1 raises EchoMQ.Cancel.Cancelled when cancelled, so a handler that</span>
+<span class="cmt"># calls it at a safe point aborts cleanly there — else continues.</span>
+<span class="op">def</span> <span class="fn">check!</span>(token) <span class="op">do</span>
+  <span class="op">case</span> <span class="fn">check</span>(token) <span class="op">do</span>
+    <span class="str">:ok</span> -&gt; <span class="str">:ok</span>
+    {<span class="str">:cancelled</span>, reason} -&gt; raise Cancelled, reason: reason
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>Cooperative means a handler that never checks completes normally — cancellation does not interrupt it. The
+        <code class="inl">^token</code> pin ensures a handler only catches its own cancellation. This is a local
+        primitive: a long handler calls <code class="inl">check!/1</code> at safe points and aborts where it is asked to,
+        leaving no half-finished transaction. There is no key, no script, and no set involved — the cancel never touches
+        the wire.</p>
+    </div>
+    <p class="take">A cooperative cancel is a message, not a kill. The handler decides where it is safe to stop; the token
+      pin keeps the cancel its own.</p>
+  </section>
+
+  <section id="checkpoint">
+    <h2>extend_lock checkpoints the lease</h2>
+    <div class="prose">
+      <p>The lease <strong>is</strong> the active-set score. <code class="inl">extend_lock/5</code> runs
+        <code class="inl">@extend_lock</code>: read the row's <code class="inl">attempts</code>, fence the token (a stale
+        token answers <code class="inl">EMQSTALE</code>), read the server <code class="inl">TIME</code>, and
+        <code class="inl">ZADD</code> the active set at <code class="inl">now + lease</code> for this id. It re-scores the
+        member to a fresh deadline.</p>
+      <p><strong>Beat one — the named handle.</strong> <code class="inl">extend_lock/5</code> builds the active set and
+        the row, passes the id, token, and lease, and maps the return.</p>
+    </div>
+
+    <p class="handle">EchoMQ.Jobs @extend_lock &mdash; the handle</p>
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs</span>
+<span class="cmt"># extend_lock/5 re-scores the active member to a fresh deadline. KEYS = [the</span>
+<span class="cmt"># active set, the job row]; ARGV = [id, the attempts token, the lease ms].</span>
+<span class="op">def</span> <span class="fn">extend_lock</span>(conn, queue, job_id, token, lease_ms)
+    <span class="op">when</span> is_integer(lease_ms) <span class="op">and</span> lease_ms &gt; <span class="res">0</span> <span class="op">do</span>
+  keys = [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"active"</span>), Keyspace.<span class="fn">job_key</span>(queue, job_id)]
+  argv = [job_id, Integer.<span class="fn">to_string</span>(token), Integer.<span class="fn">to_string</span>(lease_ms)]
+
+  <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@extend_lock</span>, keys, argv) <span class="op">do</span>
+    {<span class="str">:ok</span>, <span class="res">1</span>} -&gt; <span class="str">:ok</span>                       <span class="cmt"># the lease re-scored to now + lease</span>
+    {<span class="str">:ok</span>, <span class="res">-1</span>} -&gt; {<span class="str">:error</span>, <span class="str">:gone</span>}          <span class="cmt"># no such row</span>
+    {<span class="str">:error</span>, {<span class="str">:server</span>, <span class="str">"EMQSTALE"</span> &lt;&gt; _}} -&gt; {<span class="str">:error</span>, <span class="str">:stale</span>}  <span class="cmt"># not the current holder</span>
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><strong>Beat two — the script body.</strong> <code class="inl">@extend_lock</code> is the token fence then the
+        server-clock re-score. <code class="inl">KEYS[1]</code> is the active set, <code class="inl">KEYS[2]</code> the
+        job row; <code class="inl">ARGV[1]</code> the id, <code class="inl">ARGV[2]</code> the token,
+        <code class="inl">ARGV[3]</code> the lease.</p>
+    </div>
+
+    <p class="handle">@extend_lock &mdash; the body</p>
+    <pre class="code"><span class="cmt">-- the @extend_lock script — re-score one lease, token-fenced, on the server clock</span>
+<span class="cmt">-- The token fence: the row's attempts IS the fencing token. Read it first.</span>
+<span class="op">local</span> att = redis.call(<span class="str">'HGET'</span>, <span class="rdx">KEYS[2]</span>, <span class="str">'attempts'</span>)
+<span class="op">if</span> <span class="op">not</span> att <span class="op">then</span> <span class="op">return</span> <span class="res">-1</span> <span class="op">end</span>          <span class="cmt">-- no row: gone</span>
+<span class="op">if</span> att ~= <span class="rdx">ARGV[2]</span> <span class="op">then</span>
+  <span class="op">return</span> redis.error_reply(<span class="str">'EMQSTALE extend token mismatch'</span>)  <span class="cmt">-- a stale holder may not extend</span>
+<span class="op">end</span>
+<span class="cmt">-- The re-score: read the SERVER clock and set the active member to now + lease.</span>
+<span class="cmt">-- The lease IS the active score, so there is no separate :lock string to refresh.</span>
+<span class="op">local</span> t = redis.call(<span class="str">'TIME'</span>)
+<span class="op">local</span> now = t[<span class="res">1</span>] * <span class="res">1000</span> + math.floor(t[<span class="res">2</span>] / <span class="res">1000</span>)
+redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[1]</span>, now + tonumber(<span class="rdx">ARGV[3]</span>), <span class="rdx">ARGV[1]</span>)
+<span class="op">return</span> <span class="res">1</span></pre>
+
+    <div class="prose">
+      <p>A long-but-alive handler calls <code class="inl">extend_lock/5</code> periodically so its deadline always sits
+        ahead of now — so the reaper never sees it as expired. Because the lease is the active score, there is no separate
+        lock string to refresh; the checkpoint re-scores the one member that already represents the lease, and it is
+        token-fenced so only the current holder may extend. A worker that lost the lease (its token is stale) cannot
+        re-score it, so a redelivered job's old holder cannot keep a dead lease alive.</p>
+    </div>
+    <p class="take">A checkpoint is a re-score, not a new lock. The lease is the active score; moving it ahead of now is
+      all it takes to keep an alive handler from being reaped, and the token keeps it the holder's alone.</p>
+  </section>
+
+  <section id="stalled">
+    <h2>Stalled recovery is count-thresholded, on top of reap</h2>
+    <div class="prose">
+      <p>The reaper (<code class="inl">Jobs.reap/2</code>) returns any expired-lease job from active to pending once, with
+        no count — crash recovery. <code class="inl">EchoMQ.Stalled</code> is the count-thresholded layer above it.
+        <code class="inl">@sweep_stalled</code> reads the expired members on the server clock, and for each one increments
+        a per-job <code class="inl">stalled</code> field. A job below the <code class="inl">max_stalled</code> threshold
+        (default 1) is recovered — back to pending, or to its lane if it is grouped. A job at or above the threshold is
+        dead-lettered.</p>
+      <p><strong>Beat one — the named handle.</strong> <code class="inl">check/3</code> runs one sweep and answers
+        <code class="inl">{:ok, %{recovered: [id], dead: [id]}}</code> — the ids returned to pending and the ids
+        dead-lettered this pass. <code class="inl">job_stalled?/4</code> answers whether a job's
+        <code class="inl">stalled</code> field is present and positive.</p>
+    </div>
+
+    <p class="handle">EchoMQ.Stalled @sweep_stalled &mdash; the handle</p>
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Stalled — one sweep over the active set</span>
+<span class="cmt"># KEYS = [active, pending, dead]; ARGV = [the queue base, max_stalled, limit].</span>
+<span class="op">def</span> <span class="fn">check</span>(conn, queue, opts \\ []) <span class="op">do</span>
+  max_stalled = Keyword.<span class="fn">get</span>(opts, <span class="str">:max_stalled</span>, <span class="res">1</span>)
+  limit = Keyword.<span class="fn">get</span>(opts, <span class="str">:limit</span>, <span class="res">100</span>)
+
+  keys = [
+    Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"active"</span>),
+    Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"pending"</span>),
+    Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"dead"</span>)
+  ]
+  argv = [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">""</span>), Integer.<span class="fn">to_string</span>(max_stalled), Integer.<span class="fn">to_string</span>(limit)]
+
+  <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@sweep_stalled</span>, keys, argv) <span class="op">do</span>
+    {<span class="str">:ok</span>, [recovered, dead]} <span class="op">when</span> is_list(recovered) <span class="op">and</span> is_list(dead) -&gt;
+      {<span class="str">:ok</span>, %{recovered: recovered, dead: dead}}
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><strong>Beat two — the script body.</strong> <code class="inl">@sweep_stalled</code> reads the expired members,
+        and per id increments the <code class="inl">stalled</code> count, then forks on the threshold:
+        <code class="inl">KEYS[1]</code> active, <code class="inl">KEYS[2]</code> pending,
+        <code class="inl">KEYS[3]</code> dead. (The grouped-job branch — a stalled lane job rejoins its lane — is elided
+        for clarity; the flat path is shown.)</p>
+    </div>
+
+    <p class="handle">@sweep_stalled &mdash; the body (flat path)</p>
+    <pre class="code"><span class="cmt">-- the @sweep_stalled script — count stalls, recover or dead-letter</span>
+<span class="op">local</span> p = <span class="rdx">ARGV[1]</span>                        <span class="cmt">-- the queue base root</span>
+<span class="op">local</span> maxst = tonumber(<span class="rdx">ARGV[2]</span>)
+<span class="op">local</span> lim = tonumber(<span class="rdx">ARGV[3]</span>)
+<span class="op">local</span> t = redis.call(<span class="str">'TIME'</span>)
+<span class="op">local</span> now = t[<span class="res">1</span>] * <span class="res">1000</span> + math.floor(t[<span class="res">2</span>] / <span class="res">1000</span>)
+<span class="cmt">-- every active member whose lease has lapsed (score at or before now)</span>
+<span class="op">local</span> exp = redis.call(<span class="str">'ZRANGEBYSCORE'</span>, <span class="rdx">KEYS[1]</span>, <span class="str">'-inf'</span>, now, <span class="str">'LIMIT'</span>, <span class="res">0</span>, lim)
+<span class="op">local</span> recovered = {}
+<span class="op">local</span> dead = {}
+<span class="op">for</span> _, id <span class="op">in</span> ipairs(exp) <span class="op">do</span>
+  redis.call(<span class="str">'ZREM'</span>, <span class="rdx">KEYS[1]</span>, id)        <span class="cmt">-- leave the active set</span>
+  <span class="op">local</span> jk = p .. <span class="str">'job:'</span> .. id
+  <span class="op">local</span> st = redis.call(<span class="str">'HINCRBY'</span>, jk, <span class="str">'stalled'</span>, <span class="res">1</span>)  <span class="cmt">-- count this stall</span>
+  <span class="op">if</span> st &gt;= maxst <span class="op">then</span>               <span class="cmt">-- at or above the threshold: dead-letter</span>
+    redis.call(<span class="str">'HSET'</span>, jk, <span class="str">'state'</span>, <span class="str">'dead'</span>)
+    redis.call(<span class="str">'HSET'</span>, jk, <span class="str">'last_error'</span>, <span class="str">'stalled'</span>)
+    redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[3]</span>, <span class="res">0</span>, id)
+    redis.call(<span class="str">'HINCRBY'</span>, p .. <span class="str">'metrics:failed'</span>, <span class="str">'count'</span>, <span class="res">1</span>)
+    table.insert(dead, id)
+  <span class="op">else</span>                              <span class="cmt">-- below the threshold: recover to pending</span>
+    redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[2]</span>, <span class="res">0</span>, id)
+    redis.call(<span class="str">'HSET'</span>, jk, <span class="str">'state'</span>, <span class="str">'pending'</span>)
+    table.insert(recovered, id)
+  <span class="op">end</span>
+<span class="op">end</span>
+<span class="op">return</span> {recovered, dead}</pre>
+
+    <figure class="fig viz" aria-labelledby="ladderTitle">
+      <h4 id="ladderTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The stalled-sweep ladder &middot; step the passes</h4>
+      <div class="controls">
+        <label class="rng">
+          <span>max_stalled: <span class="val" id="maxVal">1</span></span>
+          <input type="range" id="maxRange" min="1" max="4" step="1" value="1" aria-label="The max_stalled threshold">
+        </label>
+        <div class="solid-select" id="sweepSel" role="group" aria-label="Run a sweep pass">
+          <button type="button" id="sweepBtn" data-c="echo">run a sweep pass</button>
+          <button type="button" id="sweepReset" data-c="gold">reset</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 132" role="img" aria-label="One job's stalled count climbing one per sweep pass. Below the chosen max_stalled threshold the job is recovered to pending; at or above it the job is dead-lettered.">
+        <g class="step" id="cell"><rect x="40" y="34" width="380" height="44" rx="9" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect></g>
+        <text x="60" y="28" class="vid">one poison job</text>
+        <text id="cellLabel" x="230" y="61" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#6fdccf">stalled = 0 · claimed, not yet swept</text>
+        <line x1="40" y1="100" x2="420" y2="100" stroke="#2a3252" stroke-dasharray="4 3"></line>
+        <text id="thLabel" x="230" y="118" text-anchor="middle" class="vid">recover while stalled &lt; max_stalled; dead-letter at or above</text>
+      </svg>
+      <div class="geo-readout" id="ladderOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="prose">
+      <p>So a worker that stalls once is recovered; a worker that keeps stalling on the same job — a poison job that hangs
+        every worker that picks it up — is not recovered forever. The count is the difference between a transient slow
+        handler and a job that should die. The sweep may run on its own opt-in periodic process, or be direct-driven by
+        <code class="inl">check/3</code> for an operator's one-shot recovery.</p>
+      <p><strong>Worked example.</strong> A worker claims a job with a 30-second lease, runs for 90 seconds, and
+        checkpoints with <code class="inl">extend_lock/5</code> every 20 seconds. Its active deadline always sits ahead of
+        now, so neither the reaper nor the stalled sweep touches it. A second worker claims a different job and crashes
+        silently. Its lease lapses; the sweep increments its <code class="inl">stalled</code> field to 1, at the default
+        threshold, so it is dead-lettered with <code class="inl">last_error = "stalled"</code>.</p>
+    </div>
+    <p class="take">Recovery counts how many times a job has stalled before it gives up on it. One stall is a slow worker;
+      repeated stalls on the same job is a poison job that earns the morgue.</p>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A reliable queue checkpoints a worker's lease and reclaims abandoned work on a recovery pass.
+          <a href="/redis-patterns/time-delay-priority">Time, delay &amp; priority</a> and
+          <a href="/redis-patterns/queues">Reliable queues</a> teach the lease-and-recover machinery over Redis.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p>The lease is the active score, <code class="inl">extend_lock/5</code> re-scores it under a token fence, and
+          <code class="inl">EchoMQ.Stalled</code> is the count-thresholded sweep on top of the reaper — recover below a
+          threshold, dead-letter at it. The cancel is host-side, off the wire entirely.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: checkpoint the lease, reclaim the abandoned, give up on the poison. The
+      implementation is <code class="inl">extend_lock</code>, the reaper, and the count-thresholded
+      <code class="inl">Stalled</code> sweep.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; control over the worker in hand</h2>
+    <div class="prose">
+      <p>The lease is a score; a checkpoint moves it (<code class="inl">extend_lock/5</code>, token-fenced on the server
+        clock); a cancel is a message a handler chooses to honour (<code class="inl">EchoMQ.Cancel</code>, off the wire);
+        recovery counts how many times a job has stalled before it dead-letters it (<code class="inl">EchoMQ.Stalled</code>,
+        on top of the reaper). Control over the worker in hand is three small, fenced moves. The next dive widens the lens
+        to the <strong>whole queue</strong> and one job's row — the operator's runbook.</p>
+    </div>
+    <p class="note">Next in lifecycle controls: <strong>The operator plane</strong> &mdash;
+      <code class="inl">EchoMQ.Admin</code> pause / resume / drain / obliterate, and the per-job verbs on
+      <code class="inl">EchoMQ.Jobs</code>.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the lease checkpoint and the stalled sweep are grounded, and the commands their bodies use.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/zadd/">Valkey &mdash; <em>ZADD</em></a> &mdash; the active-set re-score that is the lease checkpoint.</li>
+          <li><a href="https://valkey.io/commands/hincrby/">Valkey &mdash; <em>HINCRBY</em></a> &mdash; the per-job <code>stalled</code> count the sweep increments.</li>
+          <li><a href="https://valkey.io/commands/zrangebyscore/">Valkey &mdash; <em>ZRANGEBYSCORE</em></a> &mdash; the expired-lease read the sweep runs on the server clock.</li>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the load-once dispatch the checkpoint and sweep run by SHA.</li>
+          <li><a href="https://valkey.io/docs/">Valkey &mdash; <em>Documentation</em></a> &mdash; the substrate of record EchoMQ is backed by.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/queue/lifecycle-controls">Lifecycle controls</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/queue">The Queue</a> &mdash; the state machine, the active set whose score is the lease.</li>
+          <li><a href="/echomq/protocol/the-lua-layer">The Lua layer</a> &mdash; how a checkpoint is one atomic, fenced script.</li>
+          <li><a href="/echomq/protocol">The Protocol</a> &mdash; the keyspace and the branded id the fence reads.</li>
+          <li><a href="/redis-patterns/time-delay-priority">redis-patterns &middot; Time, delay &amp; priority</a> &mdash; the lease/recover family.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/queue/lifecycle-controls/scheduling-and-recurrence"><span aria-hidden="true">&larr;</span>&nbsp; Scheduling &amp; recurrence</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/queue/lifecycle-controls/the-operator-plane">The operator plane <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/queue/lifecycle-controls">Lifecycle controls</a>
+        <a href="/echomq/queue/lifecycle-controls/scheduling-and-recurrence">Scheduling &amp; recurrence</a>
+        <a href="/echomq/queue/lifecycle-controls/cancellation-and-checkpoints">Cancellation &amp; checkpoints</a>
+        <a href="/echomq/queue/lifecycle-controls/the-operator-plane">The operator plane</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the lease timeline (pure over a fixed dataset) ---------- */
+  /* A claimed job's lease: a deadline that starts at 30s from claim. now is a
+     slider; the reaper would reclaim when now > deadline. A checkpoint re-scores
+     the deadline to now + 30 (the extend_lock re-score). Reclaim is a pure
+     function of (now, deadline). */
+  var LEASE = 30, T_MAX = 90, X0 = 40, X1 = 440;
+  var state = { now: 0, deadline: LEASE };
+  function xOf(sec) { return X0 + (X1 - X0) * (sec / T_MAX); }
+  function renderLease() {
+    var bar = document.getElementById('leaseBar');
+    var dLine = document.getElementById('deadlineLine');
+    var dLabel = document.getElementById('deadlineLabel');
+    var nLine = document.getElementById('nowLine');
+    var nLabel = document.getElementById('nowLabel');
+    var nowVal = document.getElementById('nowVal');
+    var out = document.getElementById('leaseOut');
+    var dx = xOf(Math.min(state.deadline, T_MAX));
+    var nx = xOf(state.now);
+    if (bar) { bar.setAttribute('x', X0); bar.setAttribute('width', Math.max(2, dx - X0)); }
+    if (dLine) { dLine.setAttribute('x1', dx); dLine.setAttribute('x2', dx); }
+    if (dLabel) { dLabel.setAttribute('x', Math.max(X0 + 30, Math.min(X1 - 30, dx))); dLabel.textContent = 'deadline ' + state.deadline + 's'; }
+    if (nLine) { nLine.setAttribute('x1', nx); nLine.setAttribute('x2', nx); }
+    if (nLabel) { nLabel.setAttribute('x', Math.max(X0 + 12, Math.min(X1 - 12, nx))); }
+    if (nowVal) nowVal.textContent = state.now;
+    if (bar) {
+      var alive = state.now <= state.deadline;
+      bar.setAttribute('fill', alive ? 'rgba(42,161,152,.4)' : 'rgba(196,80,76,.32)');
+      bar.setAttribute('stroke', alive ? '#2aa198' : '#c4504c');
+    }
+    if (!out) return;
+    if (state.now <= state.deadline) {
+      out.innerHTML = 'now = <b>' + state.now + 's</b>, deadline = <b>' + state.deadline + 's</b> &rarr; ' +
+        '<b class="ok">alive</b> <span class="dim">(now &le; deadline — the reaper and the stalled sweep skip it)</span>';
+    } else {
+      out.innerHTML = 'now = <b>' + state.now + 's</b>, deadline = <b>' + state.deadline + 's</b> &rarr; ' +
+        '<b class="bad">reclaimable</b> <span class="dim">(now &gt; deadline — checkpoint with extend_lock to re-score the deadline to now + ' + LEASE + ')</span>';
+    }
+  }
+  var nowRange = document.getElementById('nowRange');
+  if (nowRange) nowRange.addEventListener('input', function () { state.now = parseInt(nowRange.value, 10); renderLease(); });
+  var cpBtn = document.getElementById('cpBtn');
+  if (cpBtn) cpBtn.addEventListener('click', function () { state.deadline = state.now + LEASE; renderLease(); });
+  var cpReset = document.getElementById('cpReset');
+  if (cpReset) cpReset.addEventListener('click', function () {
+    state.now = 0; state.deadline = LEASE; if (nowRange) nowRange.value = 0; renderLease();
+  });
+  renderLease(); // initial render — correct without interaction
+
+  /* ---------- content: the stalled-sweep ladder (the real sweep logic) ---------- */
+  /* One poison job. Each sweep pass increments the stalled count by 1 (HINCRBY).
+     Below max_stalled it is recovered to pending; at or above it is dead-lettered.
+     The verdict is a pure function of (stalled count, max_stalled). */
+  var ladder = { stalled: 0, max: 1, terminal: false };
+  function renderLadder() {
+    var cell = document.getElementById('cell');
+    var cLabel = document.getElementById('cellLabel');
+    var maxVal = document.getElementById('maxVal');
+    var out = document.getElementById('ladderOut');
+    if (maxVal) maxVal.textContent = ladder.max;
+    var rect = cell ? cell.querySelector('rect') : null;
+    if (ladder.stalled === 0) {
+      if (rect) { rect.setAttribute('fill', 'rgba(16,22,43,.6)'); rect.setAttribute('stroke', '#2a3252'); }
+      if (cLabel) { cLabel.textContent = 'stalled = 0 · claimed, not yet swept'; cLabel.setAttribute('fill', '#6fdccf'); }
+      if (out) out.innerHTML = '<span class="dim">stalled = 0, max_stalled = ' + ladder.max +
+        ' — run a sweep pass to lapse the lease and count the stall</span>';
+      return;
+    }
+    var dead = ladder.stalled >= ladder.max;
+    if (rect) {
+      rect.setAttribute('fill', dead ? 'rgba(196,80,76,.32)' : 'rgba(123,163,135,.30)');
+      rect.setAttribute('stroke', dead ? '#c4504c' : '#7ba387');
+    }
+    if (cLabel) {
+      cLabel.setAttribute('fill', dead ? '#f2948c' : '#a7c9b1');
+      cLabel.textContent = 'stalled = ' + ladder.stalled + (dead ? ' · dead-lettered' : ' · recovered to pending');
+    }
+    if (out) {
+      if (dead) {
+        out.innerHTML = 'pass &rarr; HINCRBY stalled = <b>' + ladder.stalled + '</b> &ge; max_stalled ' + ladder.max +
+          ' &rarr; <b class="bad">dead-lettered</b> <span class="dim">(HSET state dead, last_error stalled, ZADD dead) — sweep ends here</span>';
+      } else {
+        out.innerHTML = 'pass &rarr; HINCRBY stalled = <b>' + ladder.stalled + '</b> &lt; max_stalled ' + ladder.max +
+          ' &rarr; <b class="ok">recovered</b> <span class="dim">(ZADD pending, HSET state pending) — run again to stall it once more</span>';
+      }
+    }
+  }
+  var maxRange = document.getElementById('maxRange');
+  if (maxRange) maxRange.addEventListener('input', function () {
+    ladder.max = parseInt(maxRange.value, 10); ladder.stalled = 0; ladder.terminal = false; renderLadder();
+  });
+  var sweepBtn = document.getElementById('sweepBtn');
+  if (sweepBtn) sweepBtn.addEventListener('click', function () {
+    if (ladder.terminal) return;
+    ladder.stalled += 1;
+    if (ladder.stalled >= ladder.max) ladder.terminal = true;
+    renderLadder();
+  });
+  var sweepReset = document.getElementById('sweepReset');
+  if (sweepReset) sweepReset.addEventListener('click', function () {
+    ladder.stalled = 0; ladder.terminal = false; renderLadder();
+  });
+  renderLadder(); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

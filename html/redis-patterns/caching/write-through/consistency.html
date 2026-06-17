@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R1.02.2 · The consistency guarantee · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R1.02.2 — the consistency guarantee of write-through: why a read immediately after a write cannot be stale. Both layers were set under one TTL, framed with the write's mint-time version, so a read-after-write serves the value the write produced; across writers, EchoCache.Coherence.newer? keeps order newer-wins. The engine is Valkey.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:7px 16px;font-family:var(--mono);font-size:13px;margin:0 0 18px}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+  .deflist dd{margin-bottom:8px}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the timeline figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.tline{width:100%;height:auto;display:block;margin-top:4px}
+.tline .axis{stroke:var(--b-line);stroke-width:1.2}
+.tline .ev rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.4}
+.tline .pos{cursor:pointer;transition:opacity .18s ease}
+.tline .pos line{stroke:var(--b-ts);stroke-width:1.8}
+.tline .plbl{font:10.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.tline .row rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:stroke .18s ease}
+.tline .row.fresh rect{stroke:var(--b-node);stroke-width:2}
+.tline .row.stale rect{stroke:var(--r-red);stroke-width:2}
+.tline .rlbl{font:11px var(--mono);fill:var(--b-ink)}
+.tline .rkey{font:10.5px var(--mono);fill:var(--b-dim)}
+.tline.focus .pos{opacity:.3}
+.tline.focus .pos.on{opacity:1}
+.tline.focus .pos.on line{stroke-width:2.8}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/caching">caching</a><span class="rsep">/</span><a href="/redis-patterns/caching/write-through">write-through</a><span class="rsep">/</span><span class="rcur">consistency</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#claim">The guarantee</a>
+      <a href="#read">A read after a write</a>
+      <a href="#apply">On EchoCache</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R1.02.2 &#183; Write-through &#8212; dive 2</p>
+      <h1>The consistency <span class="hns">guarantee</span>.</h1>
+      <p class="lede">A read that follows a write-through write cannot be stale &#8212; because both layers were written
+      on the same path, under one TTL, framed with the write&#8217;s mint-time version.</p>
+      <p class="heronote">Grounding: the <code>version &lt;&gt; value</code> frame in echo/apps/echo_cache (table.ex) +
+      <code>EchoCache.Coherence.newer?/2</code> (coherence.ex) &#8212; the engine is Valkey.</p>
+
+      <figure class="anatomy" aria-labelledby="tlCap">
+        <figcaption id="tlCap"><b>Move the read along the timeline.</b> Select where the read happens to see which
+        strategy stays fresh.</figcaption>
+        <div class="segbar" id="tlSel" role="group" aria-label="When the read happens relative to the write">
+          <button type="button" data-when="during" aria-pressed="false">read during the write</button>
+          <button type="button" data-when="after" aria-pressed="false">read after the write</button>
+          <button type="button" data-when="later" aria-pressed="false">read much later</button>
+        </div>
+        <svg class="tline" id="tline" viewBox="0 0 460 210" role="img" aria-label="A timeline runs left to right with a write event near the left and three read positions: during the write, immediately after it, and much later. The diagram contrasts write-through, fresh at every position after the write completes, with cache-aside, which can be stale in the window right after the write. Select a read position to highlight it; the two strategy rows show fresh or stale.">
+          <line class="axis" x1="30" y1="48" x2="430" y2="48"></line>
+          <g class="ev"><rect x="64" y="32" width="78" height="32" rx="6"></rect></g>
+          <text class="plbl" x="103" y="52">the write</text>
+
+          <g class="pos" data-when="during"><line x1="160" y1="26" x2="160" y2="70"></line></g>
+          <g class="pos" data-when="after"><line x1="250" y1="26" x2="250" y2="70"></line></g>
+          <g class="pos" data-when="later"><line x1="390" y1="26" x2="390" y2="70"></line></g>
+          <text class="plbl" x="160" y="20">during</text>
+          <text class="plbl" x="250" y="20">after</text>
+          <text class="plbl" x="390" y="20">later</text>
+
+          <g class="row fresh" id="row-wt"><rect x="150" y="106" width="280" height="30" rx="6"></rect></g>
+          <text class="rlbl" x="30" y="125">write-through</text>
+          <text class="rkey" id="wt-txt" x="290" y="125" text-anchor="middle">fresh</text>
+
+          <g class="row stale" id="row-ca"><rect x="150" y="150" width="280" height="30" rx="6"></rect></g>
+          <text class="rlbl" x="30" y="169">cache-aside</text>
+          <text class="rkey" id="ca-txt" x="290" y="169" text-anchor="middle">stale window</text>
+        </svg>
+        <div class="readout" id="tlOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a read
+        position. After the write returns, write-through is fresh by construction; cache-aside has a window.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="claim">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The guarantee, stated plainly</h2>
+        <span class="ssrc">write-through.md.txt &#183; Advantages</span>
+      </div>
+      <div class="prose">
+        <p>Write-through guarantees <strong>read-after-write consistency</strong> for the cache: any read that begins
+        after a write has returned serves the value that write produced, not an older one. The reason is structural,
+        not probabilistic. The write does not return until the cache has been written, so by the time a later read
+        runs, the cache already holds the new value. There is no interval in which the cache lags the source after the
+        write completes.</p>
+        <p>In the as-built code the new value carries its own provenance: the put clause stores
+        <code>version &lt;&gt; value</code> &#8212; a 14-byte branded mint-time version in front of the bytes. The
+        version is not for the read after this write (that read is fresh because both layers were set in the one call);
+        it is for the <em>next</em> writer&#8217;s late message. A coherence message compares versions and drops a row
+        only when the incoming version is newer (<code>EchoCache.Coherence.newer?/2</code>), so a late stale
+        invalidation can never erase a newer row. Freshness on the write path; newer-wins across writers.</p>
+        <p>Contrast cache-aside, which invalidates the cache on a write rather than updating it. After a cache-aside
+        write, the cache is empty (or, if invalidation is deferred, briefly stale); the next read takes a miss,
+        re-reads the source, and backfills. That works, but it opens a window: between the write and the backfill, a
+        concurrent reader is served an empty or old cache. Write-through removes the window by paying for the cache
+        write up front, on the write path.</p>
+      </div>
+      <dl class="deflist">
+        <dt>read-after-write</dt><dd>A read that starts after a write has returned. Write-through guarantees it returns the written value.</dd>
+        <dt>stale window</dt><dd>An interval where the cache lags the source. Write-through has none after the write returns; cache-aside has one until the next backfill.</dd>
+        <dt>structural</dt><dd>The guarantee follows from the order of operations, not from timing or luck: the cache write precedes the return.</dd>
+        <dt>framed version</dt><dd><code>version &lt;&gt; value</code>, the write&#8217;s mint-time branded prefix, so coherence across writers can compare newer-wins.</dd>
+      </dl>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>The L2 row written with <code>SET &#8230; PX</code>
+      carries its expiry on the server&#8217;s own clock; the value is the only thing the read returns, so a single-key
+      read is the whole before or the whole after, never a torn mix &#8212;
+      <a href="https://valkey.io/commands/set/" rel="noopener">valkey.io/commands/set</a>.</p>
+    </section>
+
+    <section id="read">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Classify a read after a write</h2>
+        <span class="ssrc">write-through.md.txt &#183; Advantages</span>
+      </div>
+      <div class="prose">
+        <p>Take a single key with an old value and a new value. A write-through write replaces both layers; a later
+        read of that key returns the new value, every time. Pick a read scenario to see exactly what the cache returns
+        and why &#8212; and where cache-aside would differ.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="scCap">
+        <figcaption id="scCap"><b>Classify the read.</b> Select a scenario to read what the cache returns and why.</figcaption>
+        <div class="segbar" id="scSel" role="group" aria-label="Which read scenario to classify">
+          <button type="button" data-sc="hit" aria-pressed="false">read after the write returns</button>
+          <button type="button" data-sc="concurrent" aria-pressed="false">read while the write runs</button>
+          <button type="button" data-sc="expired" aria-pressed="false">read after the TTL expires</button>
+        </div>
+        <div class="readout" id="scOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a scenario.
+        After the write returns the read is fresh; an expired key takes a miss and re-reads the still-current source.</div>
+        <p class="booknote">Static verdicts &#8212; after the write &#8594; fresh (both layers set first) &#183; during
+        the write &#8594; the before or the after, never torn &#183; after the TTL &#8594; a miss, then a re-read of
+        the still-current source.</p>
+      </figure>
+
+      <p class="take">After the write returns, the read is fresh by construction. During the write, a read returns a
+      consistent before-or-after value; only an expired key takes a miss and re-reads the still-current source.</p>
+    </section>
+
+    <section id="apply">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The guarantee on EchoCache</h2>
+        <span class="ssrc">table.ex &#183; coherence.ex &#183; verbatim</span>
+      </div>
+      <div class="prose">
+        <p>Take an instrument reference row that was updated. <code>EchoCache.Table.put</code> sets the L2 Valkey row
+        and the L1 ETS table on the same call; the write returns once both are done. A read of the same id is served
+        from the cache and matches what was written &#8212; there is no moment after the write where the cache could
+        hand back the old value.</p>
+      </div>
+      <pre class="code"><span style="color:var(--b-dim)"># echo/apps/echo_cache — a write-through put, then a fetch.</span>
+EchoCache.Table.<b>put</b>(:instruments, "AST0NgWEfAEJfs", new_value)
+<span style="color:var(--b-dim)">#   handle_call sets L2 (SET … PX) then L1 (insert) under one TTL  -&gt;  {:reply, :ok}</span>
+
+EchoCache.Table.<b>fetch</b>(:instruments, "AST0NgWEfAEJfs")
+<span style="color:var(--b-dim)">#   {:ok, new_value, :hit}   — the L1 row holds the value the put produced</span></pre>
+      <div class="prose">
+        <p>Across writers, the value&#8217;s framed version is what keeps order. The coherence comparison reads the
+        11-byte snowflake payloads &#8212; lexicographic equals chronological &#8212; so a stale late message loses to
+        a newer row:</p>
+      </div>
+
+      <div class="door">
+        <span class="dr">the application &#183; newer-wins across writers</span>
+        <h3>The framed version, compared</h3>
+        <p>The value carries a mint-time version; a coherence message drops a row only when its version is newer
+        &#8212; <code>EchoCache.Coherence.newer?/2</code>, quoted from the as-built coherence module:</p>
+        <figure class="frozen">
+          <figcaption>echo/apps/echo_cache/lib/echo_cache/coherence.ex &#183; newer?/2 &#183; verbatim<span class="tag">as-built</span></figcaption>
+          <pre><span class="fd"># Mint-order comparison across kinds: true when `a` was minted after `b`.</span>
+def newer?(&lt;&lt;_::binary-3, pa::binary-11&gt;&gt;,
+           &lt;&lt;_::binary-3, pb::binary-11&gt;&gt;), do: <b>pa &gt; pb</b>
+<span class="fd">#   compares the 11-byte snowflake payloads — lexicographic equals chronological</span></pre>
+        </figure>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the guarantee</span>
+          <p>Write the cache on the write path, before the write returns; then a read after the write cannot return a
+          value older than that write &#8212; read-after-write freshness with no stale window.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoCache application</span>
+          <p>A <code>fetch</code> after a <code>put</code> returns the value the put produced; both layers were set
+          under one TTL, and the framed version lets <code>Coherence.newer?/2</code> keep order newer-wins across
+          writers.</p>
+        </div>
+      </div>
+      <p class="take">The consistency guarantee is the whole reason to pay for write-through: a read after a write is
+      fresh, by the order of operations, not by chance.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Recap &#8212; no stale window</h2>
+        <span class="ssrc">the order of operations</span>
+      </div>
+      <div class="prose">
+        <p>Because both layers are written on the same synchronous call, under one TTL, a read that begins after a
+        write-through write returns serves the value that write produced. There is no interval where the cache lags the
+        source &#8212; the property cache-aside trades away for a cheaper write. The next dive is about what that
+        guarantee costs: every write pays for the L2 round-trip, and the failure modes when one layer fails.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; the cache write that precedes the return, the reason the read is fresh; the <code>PX</code> expiry the one case a later read can miss.</li>
+            <li><a href="https://valkey.io/topics/" rel="noopener">Valkey &mdash; <em>Topics</em></a> &mdash; single-key value semantics and the engine the L2 layer runs on (Valkey).</li>
+            <li><a href="https://redis.io/commands/get" rel="noopener">Redis &mdash; <em>GET</em></a> &mdash; the single-key read that returns one whole value, never a torn one.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; the read and write commands and their consistency semantics on a single key.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/caching/write-through">R1.02 &#183; Write-through</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/caching/write-through/dual-write">R1.02.1 &#183; The synchronous dual write</a><span class="rs">the previous dive</span></li>
+            <li><a href="/redis-patterns/caching/write-through/latency-cost">R1.02.3 &#183; The latency cost</a><span class="rs">the next dive</span></li>
+            <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the bus behind the coherence lane that carries the framed version</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/redis-patterns/caching/write-through/dual-write"><span class="pk">previous</span>&#8592; R1.02.1 &#183; The synchronous dual write</a>
+      <a class="pgx" href="/redis-patterns/caching/write-through/latency-cost"><span class="pk">next</span>R1.02.3 &#183; The latency cost &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/caching/write-through/dual-write">R1.02.1 &#183; The synchronous dual write</a>
+        <a href="/redis-patterns/caching/write-through/consistency">R1.02.2 &#183; The consistency guarantee</a>
+        <a href="/redis-patterns/caching/write-through/latency-cost">R1.02.3 &#183; The latency cost</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: move the read along the timeline (pure over a fixed model) ---------- */
+  // fixed model: at each read position, whether write-through and cache-aside are fresh
+  var READS = {
+    during: { wt: 'a consistent before-or-after value', ca: 'a consistent before-or-after value', wtFresh: true, caFresh: true,
+              note: 'while the write runs, a read returns the old or new value — never a torn one for a single key' },
+    after:  { wt: 'the new value', ca: 'the OLD value or a miss', wtFresh: true, caFresh: false,
+              note: 'right after the write, write-through is fresh; cache-aside has emptied the cache and may serve stale until the backfill' },
+    later:  { wt: 'the new value', ca: 'the new value', wtFresh: true, caFresh: true,
+              note: 'much later, both are fresh — cache-aside has backfilled; write-through never lagged' }
+  };
+  // pure: read-position key -> readout text
+  function describeRead(when) {
+    var r = READS[when];
+    return 'Read ' + when + ' the write — write-through returns: ' + r.wt +
+      ' (' + (r.wtFresh ? 'fresh' : 'STALE') + '). cache-aside returns: ' + r.ca +
+      ' (' + (r.caFresh ? 'fresh' : 'STALE') + '). ' + r.note + '.';
+  }
+  var tline = document.getElementById('tline');
+  var tlButtons = document.querySelectorAll('#tlSel button');
+  var tlOut = document.getElementById('tlOut');
+  // pure: highlight a position, paint the two rows, sync buttons, fill readout — hover or click.
+  function selectRead(when) {
+    tlButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-when') === when ? 'true' : 'false');
+    });
+    if (tline) {
+      tline.classList.toggle('focus', !!when);
+      tline.querySelectorAll('.pos').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-when') === when);
+      });
+    }
+    var r = when ? READS[when] : null;
+    var rowWt = document.getElementById('row-wt'), rowCa = document.getElementById('row-ca');
+    var wtTxt = document.getElementById('wt-txt'), caTxt = document.getElementById('ca-txt');
+    if (rowWt) rowWt.setAttribute('class', 'row ' + (r ? (r.wtFresh ? 'fresh' : 'stale') : 'fresh'));
+    if (rowCa) rowCa.setAttribute('class', 'row ' + (r ? (r.caFresh ? 'fresh' : 'stale') : 'stale'));
+    if (wtTxt) wtTxt.textContent = r ? (r.wtFresh ? 'fresh' : 'stale') : 'fresh';
+    if (caTxt) caTxt.textContent = r ? (r.caFresh ? 'fresh' : 'stale window') : 'stale window';
+    if (tlOut) {
+      tlOut.innerHTML = when
+        ? '<span class="rk">readout &#183;</span> ' + describeRead(when)
+        : '<span class="rk">readout &#183;</span> Select a read position. After the write returns, write-through is fresh by construction; cache-aside has a window.';
+    }
+  }
+  tlButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var when = b.getAttribute('data-when');
+      selectRead(b.getAttribute('aria-pressed') === 'true' ? null : when);
+    });
+  });
+  if (tline) {
+    tline.querySelectorAll('.pos').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectRead(g.getAttribute('data-when')); });
+      g.addEventListener('mouseleave', function () { selectRead(null); });
+    });
+  }
+
+  /* ---------- Interactive 2: classify a read after a write (pure over a fixed dataset) ---------- */
+  var SCENARIOS = {
+    hit:        { redis: 'GET ecc:{instruments}:<id> -> the new value', result: 'fresh', why: 'both layers were written before the write returned' },
+    concurrent: { redis: 'GET ecc:{instruments}:<id> -> old or new, never torn', result: 'consistent', why: 'a single-key GET returns one whole value, the before or the after, not a mix' },
+    expired:    { redis: 'GET ecc:{instruments}:<id> -> nil (miss), then re-read source', result: 'fresh', why: 'the PX expired, so the loader re-reads the still-current source and backfills' }
+  };
+  // pure: scenario key -> readout text
+  function describeScenario(sc) {
+    var s = SCENARIOS[sc];
+    return 'On the wire: ' + s.redis + '. Result: ' + s.result + '. Why: ' + s.why + '.';
+  }
+  var scButtons = document.querySelectorAll('#scSel button');
+  var scOut = document.getElementById('scOut');
+  function setScenario(sc) {
+    scButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-sc') === sc ? 'true' : 'false');
+    });
+    if (scOut) scOut.innerHTML = '<span class="rk">readout &#183;</span> ' + describeScenario(sc);
+  }
+  scButtons.forEach(function (b) {
+    b.addEventListener('click', function () { setScenario(b.getAttribute('data-sc')); });
+  });
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

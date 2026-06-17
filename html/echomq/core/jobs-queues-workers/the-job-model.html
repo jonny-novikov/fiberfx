@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E2.02.1 — The job model · EchoMQ, the protocol in depth · jonnify</title>
+<meta name="description" content="E2.02.1 — a Job in EchoMQ is a thin Elixir struct over a Redis hash. EchoMQ.Job.new/4 builds a %EchoMQ.Job{}; its id is opts[:job_id] or auto-generated; the opts map routes the job — delay > 0 to delayed via addDelayedJob-6, priority > 0 to prioritized via addPrioritizedJob-9 (priority 0 is highest), else wait via addStandardJob-9. The struct carries pure state predicates and from_redis/4. The hash field names belong to E1; the model names them and links to the protocol. The hash is L1 — the same in every runtime.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .warn{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- router diagram ---- */
+.router .cell rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.router .cell.on rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.router text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.router .rn{fill:#6fdccf;font-size:11px;font-weight:600}
+.router .edge{stroke:#2a3252;stroke-width:1.3;fill:none}
+.router .edge.lit{stroke:#6fdccf;stroke-width:2.2}
+
+/* ---- struct grid diagram ---- */
+.sgrid .cell rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.sgrid .cell.on rect{fill:rgba(42,161,152,.16);stroke:#2aa198}
+.sgrid text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.sgrid .si{fill:#6fdccf;font-size:11px;font-weight:600}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/core">core</a><span class="rsep">/</span><a href="/echomq/core/jobs-queues-workers">jobs-queues-workers</a><span class="rsep">/</span><span class="rcur">the-job-model</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core">E2 &middot; Core</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core/jobs-queues-workers">Jobs, queues &amp; workers</a>
+        <span class="sep">/</span>
+        <span class="here">The job model</span>
+      </div>
+      <p class="eyebrow">E2.02.1 &middot; Jobs, queues &amp; workers &middot; dive 1</p>
+      <h1>The job <span class="ex">model</span></h1>
+      <p class="lede">A Job is a thin Elixir struct over a Redis hash &mdash; the struct is a view, the hash is the truth.</p>
+      <p class="kicker"><code class="inl">EchoMQ.Job.new(queue_name, name, data, opts \\ [])</code> (arity 4) builds a
+        <code class="inl">%EchoMQ.Job{}</code>. The struct is a runtime materialization; the job's canonical state lives in
+        Redis as a hash (E2.01). The <code class="inl">opts</code> map is the router &mdash; <code class="inl">:delay</code>,
+        <code class="inl">:priority</code>, <code class="inl">:parent</code>, <code class="inl">:job_id</code> &mdash; and the
+        struct carries pure predicates over its own fields. Pick the options on the right to read where the job lands.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#struct">The struct</a>
+        <a href="#options">The options route the job</a>
+        <a href="#predicates">State predicates</a>
+        <a href="#rule">The hash is L1</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig router" aria-labelledby="routerTitle">
+      <h4 id="routerTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Job.new(opts) &middot; pick the options</h4>
+      <div class="controls">
+        <div class="solid-select" id="addSel" role="group" aria-label="Which add options">
+          <button type="button" data-add="plain" data-c="echo" class="active" aria-pressed="true">no delay / no priority</button>
+          <button type="button" data-add="delay" data-c="blue" aria-pressed="false">delay &gt; 0</button>
+          <button type="button" data-add="prio" data-c="gold" aria-pressed="false">priority &gt; 0</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 660 170" role="img" aria-label="A Job.new call routing a job to one of three target states by its options. No delay or priority goes to wait via addStandardJob-9; delay greater than zero goes to delayed via addDelayedJob-6; priority greater than zero goes to prioritized via addPrioritizedJob-9. The chosen route is highlighted.">
+        <g><rect x="14" y="65" width="120" height="40" rx="8" fill="rgba(42,161,152,.10)" stroke="#2aa198"></rect></g>
+        <text x="74" y="89" text-anchor="middle" class="rn">Job.new</text>
+        <g>
+          <path class="edge" id="r-plain" d="M134 85 L300 30"></path>
+          <path class="edge" id="r-delay" d="M134 85 L300 85"></path>
+          <path class="edge" id="r-prio" d="M134 85 L300 140"></path>
+        </g>
+        <g class="cell" id="t-plain"><rect x="300" y="12" width="346" height="34" rx="7"></rect></g>
+        <text x="310" y="33" class="rn">wait</text><text x="380" y="33">addStandardJob-9</text>
+        <g class="cell" id="t-delay"><rect x="300" y="68" width="346" height="34" rx="7"></rect></g>
+        <text x="310" y="89" class="rn">delayed</text><text x="392" y="89">addDelayedJob-6</text>
+        <g class="cell" id="t-prio"><rect x="300" y="124" width="346" height="34" rx="7"></rect></g>
+        <text x="310" y="145" class="rn">prioritized</text><text x="404" y="145">addPrioritizedJob-9</text>
+      </svg>
+
+      <div class="geo-readout" id="addOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="struct">
+    <h2>The struct</h2>
+    <div class="prose">
+      <p><code class="inl">new/4</code> sets the loud fields and folds the rest of <code class="inl">opts</code> into the
+        <code class="inl">opts</code> map. The id is <code class="inl">opts[:job_id]</code> if given, else auto-generated;
+        the three positional values become <code class="inl">name</code>, <code class="inl">data</code>, and
+        <code class="inl">queue_name</code>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoMQ.Job.new/4 — the loud fields (lib/echomq/job.ex, verified)</span>
+<span class="fn">def</span> <span class="res">new</span>(queue_name, name, data, opts \\ []) <span class="fn">do</span>
+  opts = opts_to_map(opts)
+  <span class="op">%EchoMQ.Job{</span>
+    id:               Map.get(opts, <span class="str">:job_id</span>) <span class="op">||</span> generate_id(),  <span class="cmt"># custom or auto</span>
+    name:             name,
+    data:             data,
+    queue_name:       queue_name,
+    opts:             opts,
+    prefix:           Map.get(opts, <span class="str">:prefix</span>, <span class="str">"bull"</span>),
+    timestamp:        Map.get(opts, <span class="str">:timestamp</span>, ...),
+    delay:            Map.get(opts, <span class="str">:delay</span>, <span class="res">0</span>),
+    priority:         Map.get(opts, <span class="str">:priority</span>, <span class="res">0</span>),    <span class="cmt"># 0 = highest</span>
+    parent:           Map.get(opts, <span class="str">:parent</span>),
+    parent_key:       build_parent_key(Map.get(opts, <span class="str">:parent</span>)),
+    deduplication_id: get_in(opts, [<span class="str">:deduplication</span>, <span class="str">:id</span>])
+  <span class="op">}</span>
+<span class="fn">end</span></pre>
+
+    <div class="prose">
+      <p>The full verified <code class="inl">defstruct</code> carries <code class="inl">id</code>,
+        <code class="inl">name</code>, <code class="inl">data</code>, <code class="inl">queue_name</code>,
+        <code class="inl">token</code>, <code class="inl">connection</code>, <code class="inl">worker</code>,
+        <code class="inl">parent_key</code>, <code class="inl">parent</code>, <code class="inl">processed_by</code>,
+        <code class="inl">repeat_job_key</code>, <code class="inl">deduplication_id</code>,
+        <code class="inl">deferred_failure</code>, <code class="inl">processed_on</code>,
+        <code class="inl">finished_on</code>, <code class="inl">failed_reason</code>,
+        <code class="inl">return_value</code>, <code class="inl">opts</code> (default <code class="inl">%{}</code>),
+        <code class="inl">prefix</code> (<code class="inl">"bull"</code>), <code class="inl">timestamp</code>,
+        <code class="inl">delay</code>, <code class="inl">priority</code>, <code class="inl">progress</code>,
+        <code class="inl">stacktrace</code>, plus <code class="inl">attempts_made</code>,
+        <code class="inl">attempts_started</code>, and <code class="inl">stalled_counter</code>. The compressed hash field
+        names that back them &mdash; <code class="inl">atm</code> (attemptsMade), <code class="inl">ats</code>,
+        <code class="inl">stc</code>, <code class="inl">deid</code>, <code class="inl">defa</code> &mdash; belong to
+        <strong>E1 · the protocol</strong>; this dive names the model, and the protocol decodes the hash field by field.</p>
+    </div>
+    <p class="note">The hash schema, field by field, is <a href="/echomq/protocol/job-hash">E1 &middot; the job hash</a> &mdash;
+      this dive names the struct and its options; the protocol owns the wire layout.</p>
+  </section>
+
+  <section id="options">
+    <h2>The options route the job</h2>
+    <div class="prose">
+      <p>The <code class="inl">opts</code> map decides where a freshly added job lands, and the add script differs per
+        target. The interactive above reports the target state and the add script for each option set; the table below is
+        its data.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># the opts that route a job → target state → add* Lua script</span>
+  delay &gt; 0      <span class="op">→</span>  <span class="rdx">delayed</span>      addDelayedJob-6
+  priority &gt; 0   <span class="op">→</span>  <span class="rdx">prioritized</span>  addPrioritizedJob-9   <span class="cmt"># 0 = highest priority</span>
+  neither        <span class="op">→</span>  <span class="rdx">wait</span>         addStandardJob-9
+
+<span class="cmt"># other opts (the full job_opts map)</span>
+  :job_id        custom id            :prefix      default "bull"
+  :timestamp     enqueue time         :parent      → parent_key (flows)
+  :deduplication → deduplication_id   :lifo        LIFO ordering
+  :attempts      max retries          :backoff     %{type: :fixed | :exponential, delay: ms}</pre>
+
+    <p class="take">The options decide the location, and the location decides the add script. A plain job lands in
+      <code class="inl">wait</code>; a delay or a priority routes it elsewhere &mdash; and priority 0 is the highest.</p>
+  </section>
+
+  <section id="predicates">
+    <h2>State predicates &mdash; pure functions on the struct</h2>
+    <div class="prose">
+      <p>The Job carries pure predicates over its own fields. Pick one to read what it tests and where it reads.</p>
+    </div>
+
+    <figure class="fig sgrid" aria-labelledby="predTitle">
+      <h4 id="predTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The pure predicates &middot; pick one</h4>
+      <div class="controls">
+        <div class="solid-select" id="predSel" role="group" aria-label="Which predicate to read">
+          <button type="button" data-pred="completed" data-c="sage" class="active" aria-pressed="true">completed?/1</button>
+          <button type="button" data-pred="failed" data-c="gold" aria-pressed="false">failed?/1</button>
+          <button type="button" data-pred="active" data-c="echo" aria-pressed="false">active?/1</button>
+          <button type="button" data-pred="delayed" data-c="blue" aria-pressed="false">delayed?/1</button>
+          <button type="button" data-pred="parent" data-c="blue" aria-pressed="false">has_parent?/1</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 130" role="img" aria-label="Five pure predicates on the job struct, each a box. completed?, failed?, active?, delayed?, and has_parent? — each tests one or two struct fields. The selected predicate is highlighted.">
+        <g class="cell on" id="g-completed"><rect x="14" y="14" width="140" height="40" rx="7"></rect></g>
+        <text x="22" y="30" class="si">completed?/1</text><text x="22" y="46">finished_on, no fail</text>
+        <g class="cell" id="g-failed"><rect x="160" y="14" width="140" height="40" rx="7"></rect></g>
+        <text x="168" y="30" class="si">failed?/1</text><text x="168" y="46">failed_reason set</text>
+        <g class="cell" id="g-active"><rect x="306" y="14" width="140" height="40" rx="7"></rect></g>
+        <text x="314" y="30" class="si">active?/1</text><text x="314" y="46">processed_on, no fin</text>
+        <g class="cell" id="g-delayed"><rect x="14" y="62" width="140" height="40" rx="7"></rect></g>
+        <text x="22" y="78" class="si">delayed?/1</text><text x="22" y="94">delay &gt; 0</text>
+        <g class="cell" id="g-parent"><rect x="160" y="62" width="140" height="40" rx="7"></rect></g>
+        <text x="168" y="78" class="si">has_parent?/1</text><text x="168" y="94">parent / parent_key</text>
+        <g><rect x="306" y="62" width="140" height="40" rx="7" fill="none" stroke="#2a3252" stroke-dasharray="2 3"></rect></g>
+        <text x="314" y="78" class="kty">+ estimated_state/1</text><text x="314" y="94">should_retry?/1</text>
+      </svg>
+
+      <div class="geo-readout" id="predOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">The predicates are pure functions of the struct's fields &mdash; no Redis call. They read the
+      materialized view; the canonical state is still the hash plus the state-key membership.</p>
+  </section>
+
+  <section id="rule">
+    <h2>The hash is L1 &mdash; the runtimes only materialize it</h2>
+    <div class="prose">
+      <p>A Job's canonical state is a Redis hash, and the hash is <strong>L1</strong> &mdash; immutable and shared across the
+        three runtimes. <code class="inl">EchoMQ.Job.from_redis(job_id, queue_name, data, opts \\ [])</code> reconstructs a
+        Job from a Redis <code class="inl">HGETALL</code> of that hash; <code class="inl">to_redis/1</code> serializes it
+        back. The same hash, with the same field names, exists whether the queue is driven from Elixir, Go, or Node.js; only
+        the object each runtime builds from it varies.</p>
+    </div>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the protocol (immutable L1)</span>
+        <p>The job hash schema in Redis and its field names &mdash; <code class="inl">emq:{q}:{id}</code>, the same location
+          and the same field set in every runtime.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">its three runtimes (variable L3/L4)</span>
+        <p>Elixir materializes the hash into <code class="inl">%EchoMQ.Job{}</code> via
+          <code class="inl">Job.from_redis/4</code>; Go materializes it into its own struct; Node.js into its own class.
+          Each runtime builds a different object from the same hash; the wire hash does not move.</p>
+      </div>
+    </div>
+    <p class="take">A Job is a thin view, not the source of truth. Restart the materializer and the hash is still in Redis
+      &mdash; re-read it and you have the same Job again.</p>
+    <p class="note">Next: <a href="/echomq/core/jobs-queues-workers/the-stateless-queue">the stateless queue</a> &mdash; the
+      <code class="inl">add/4</code> path that admits this Job with a string name and a connection, and nothing held in
+      memory.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The Redis hash behind the model, and the BullMQ job options it mirrors.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://docs.bullmq.io/">BullMQ &mdash; <em>Documentation</em></a> &mdash; the job model and its options.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>Home</em></a> &mdash; the project EchoMQ implements.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/hashes/">Redis &mdash; <em>Hashes</em></a> &mdash; the HGETALL the Job is reconstructed from.</li>
+          <li><a href="https://redis.io/commands/hset/">Redis &mdash; <em>HSET</em></a> &mdash; the write that creates a job hash.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/core/jobs-queues-workers">E2.02 &middot; Jobs, queues &amp; workers</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/core/jobs-queues-workers/the-stateless-queue">E2.02.2 &middot; The stateless queue</a> &mdash; the queue that admits the job.</li>
+          <li><a href="/echomq/protocol/job-hash">E1 &middot; The job hash</a> &mdash; the hash field by field.</li>
+          <li><a href="/echomq/core/lifecycle/the-eight-states">E2.01.1 &middot; The eight states</a> &mdash; the states a job's options target.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns R3 &middot; Reliable queues</a> &mdash; states-as-locations, applied.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/core/jobs-queues-workers"><span aria-hidden="true">&larr;</span>&nbsp; E2.02 &middot; Jobs, queues &amp; workers</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/core/jobs-queues-workers/the-stateless-queue">E2.02.2 &middot; The stateless queue <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ &mdash; the polyglot job-queue protocol, taught in depth and tracked as it is built.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/core/jobs-queues-workers">E2.02 &middot; Jobs, queues &amp; workers</a>
+        <a href="/echomq/core/jobs-queues-workers/the-job-model">E2.02.1 &middot; The job model</a>
+        <a href="/echomq/core/jobs-queues-workers/the-stateless-queue">E2.02.2 &middot; The stateless queue</a>
+        <a href="/echomq/core/jobs-queues-workers/the-worker-fetch-loop">E2.02.3 &middot; The worker fetch loop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/core">E2 &middot; The core</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: where a job goes on add (pure over the add-script table) ---------- */
+  var ADD = {
+    plain: { cond: 'no delay, no priority', state: 'wait',        script: 'addStandardJob-9',    edge: 'r-plain', cell: 't-plain' },
+    delay: { cond: 'delay > 0',             state: 'delayed',     script: 'addDelayedJob-6',     edge: 'r-delay', cell: 't-delay' },
+    prio:  { cond: 'priority > 0',          state: 'prioritized', script: 'addPrioritizedJob-9', edge: 'r-prio',  cell: 't-prio' }
+  };
+  var ADD_KEYS = ['plain', 'delay', 'prio'];
+
+  function renderAdd(opt) {
+    var d = ADD[opt];
+    var out = document.getElementById('addOut');
+    if (!d || !out) return;
+    ADD_KEYS.forEach(function (k) {
+      var e = document.getElementById(ADD[k].edge);
+      var c = document.getElementById(ADD[k].cell);
+      if (e) e.classList.toggle('lit', k === opt);
+      if (c) c.classList.toggle('on', k === opt);
+    });
+    var prioNote = (opt === 'prio') ? ' <span class="dim">(0 = highest)</span>' : '';
+    out.innerHTML = '<b>' + d.cond + '</b> <span class="dim">→ lands in</span> <b>' + d.state + '</b>' + prioNote + '<br>' +
+      '<span class="dim">add script:</span> <b>' + d.script + '</b><br>' +
+      '<span class="dim">the opts decide the target state before the job hash is written.</span>';
+  }
+
+  document.querySelectorAll('#addSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#addSel button').forEach(function (o) {
+        var on = o === b; o.classList.toggle('active', on); o.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      renderAdd(b.getAttribute('data-add'));
+    });
+  });
+  renderAdd('plain');
+
+  /* ---------- content: the pure predicates (pure lookup over the real Job functions) ---------- */
+  var PRED = {
+    completed: { fn: 'completed?/1', reads: 'finished_on set, failed_reason nil', ret: 'true if the job finished without a failure reason', g: 'g-completed' },
+    failed:    { fn: 'failed?/1',    reads: 'failed_reason not nil',               ret: 'true once a failure reason is recorded', g: 'g-failed' },
+    active:    { fn: 'active?/1',    reads: 'processed_on set, finished_on nil',   ret: 'true while a worker holds the job', g: 'g-active' },
+    delayed:   { fn: 'delayed?/1',   reads: 'delay > 0',                           ret: 'true when the job carries a delay', g: 'g-delayed' },
+    parent:    { fn: 'has_parent?/1',reads: 'parent or parent_key present',        ret: 'true for a child job in a flow', g: 'g-parent' }
+  };
+  var PRED_KEYS = ['completed', 'failed', 'active', 'delayed', 'parent'];
+
+  function renderPred(p) {
+    var d = PRED[p];
+    var out = document.getElementById('predOut');
+    if (!d || !out) return;
+    PRED_KEYS.forEach(function (k) {
+      var g = document.getElementById(PRED[k].g);
+      if (g) g.classList.toggle('on', k === p);
+    });
+    out.innerHTML = '<b>EchoMQ.Job.' + d.fn + '</b><br>' +
+      '<span class="dim">reads:</span> <b>' + d.reads + '</b><br>' +
+      '<span class="dim">returns:</span> ' + d.ret + ' <span class="dim">— a pure function of the struct, no Redis call.</span>';
+  }
+
+  document.querySelectorAll('#predSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#predSel button').forEach(function (o) {
+        var on = o === b; o.classList.toggle('active', on); o.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      renderPred(b.getAttribute('data-pred'));
+    });
+  });
+  renderPred('completed');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

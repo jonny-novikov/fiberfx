@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E2.01.3 — The lock protocol · EchoMQ, the protocol in depth · jonnify</title>
+<meta name="description" content="E2.01.3 — while a worker runs a job, the job is owned by a lock: a UUID token under a PX TTL at EchoMQ.Keys.lock/2. Pickup acquires it inside moveToActive-11 with SET …:lock uuid PX lockDuration; extendLock-2.lua re-sets the TTL every lockDuration/2 after verifying the token (GET == ARGV) and SREM-ing the stalled set; completion's DEL releases it; a missing or mismatched token returns -2 or -6. The defaults are 30000ms TTL, 15000ms renew, 30000ms stalled check, maxStalledCount 1.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.geo-readout .warn{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.rng{display:flex;flex-direction:column;gap:.3rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim)}
+.rng input[type=range]{width:230px;accent-color:var(--echo)}
+.rng .val{font-family:var(--mono);color:var(--echo-bright);font-size:.84rem}
+
+/* ---- lock timeline diagram ---- */
+.lt .axis{stroke:#2a3252;stroke-width:1.3}
+.lt .ttl{fill:none;stroke:#7ba387;stroke-width:2.4}
+.lt .ttl.warn{stroke:#d6584f}
+.lt .renew{stroke:#6fdccf;stroke-width:1.6}
+.lt .renew.miss{stroke:#d6584f;stroke-dasharray:3 3}
+.lt text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.lt .lab{fill:#6fdccf;font-size:11px;font-weight:600}
+
+/* ---- token-check diagram ---- */
+.tok .cell rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.tok .cell.ok rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.tok .cell.no rect{fill:rgba(214,88,79,.18);stroke:#d6584f}
+.tok text{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.tok .tn{fill:#6fdccf;font-size:11px;font-weight:600}
+.tok .edge{stroke:#2a3252;stroke-width:1.3;fill:none}
+.tok .edge.lit{stroke:#6fdccf;stroke-width:2.2}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .kw{color:var(--blue-bright)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/core">core</a><span class="rsep">/</span><a href="/echomq/core/lifecycle">lifecycle</a><span class="rsep">/</span><span class="rcur">the-lock-protocol</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core">E2 &middot; Core</a>
+        <span class="sep">/</span>
+        <a href="/echomq/core/lifecycle">The lifecycle</a>
+        <span class="sep">/</span>
+        <span class="here">The lock protocol</span>
+      </div>
+      <p class="eyebrow">E2.01.3 &middot; The lifecycle &middot; dive 3</p>
+      <h1>The lock <span class="ex">protocol</span></h1>
+      <p class="lede">While a worker runs a job, the job is owned by one key &mdash; a UUID token under a TTL &mdash; and
+        kept alive by a heartbeat.</p>
+      <p class="kicker">The lock is a single Redis key, <code class="inl">EchoMQ.Keys.lock/2</code>, holding a UUID v4
+        token under a <code class="inl">PX</code> TTL. <strong>Pickup acquires it</strong> inside
+        <code class="inl">moveToActive-11</code> with <code class="inl">SET &hellip;:lock &lt;uuid&gt; PX
+        lockDuration</code>; <strong>a heartbeat keeps it</strong> &mdash; <code class="inl">extendLock-2.lua</code>
+        re-sets the TTL every <code class="inl">lockDuration/2</code> after verifying the token; <strong>completion
+        releases it</strong> with <code class="inl">DEL</code>; and a missing or mismatched token returns
+        <code class="inl">-2</code> or <code class="inl">-6</code>. Move the renew interval on the right to see whether a
+        job stays owned or stalls.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#three">Acquire, heartbeat, verify</a>
+        <a href="#tok">The token check</a>
+        <a href="#timing">The timing</a>
+        <a href="#rule">The Golden Rule</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig lt" aria-labelledby="ltTitle">
+      <h4 id="ltTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The lock timeline &middot; set the renew interval</h4>
+      <div class="controls">
+        <label class="rng">
+          <span>renew interval <span class="val" id="renewVal">15000 ms</span></span>
+          <input type="range" id="renewRng" min="5000" max="45000" step="2500" value="15000" aria-label="Renew interval in milliseconds">
+        </label>
+      </div>
+
+      <svg viewBox="0 0 660 170" role="img" aria-label="A timeline of a job's lock over 60 seconds. The lock is acquired at pickup with a 30000 ms TTL; each renewal re-sets the TTL. When the renew interval is at most lockDuration the lock never lapses; when it exceeds lockDuration the TTL runs out before the next renewal and the job stalls. The chosen renew interval is drawn as renewal ticks against the TTL line.">
+        <line class="axis" x1="40" y1="120" x2="640" y2="120"></line>
+        <text x="40" y="138">0</text>
+        <text x="300" y="138">30 s (lockDuration)</text>
+        <text x="600" y="138">60 s</text>
+        <text x="40" y="36" class="lab">acquire (SET …:lock uuid PX 30000)</text>
+        <path class="ttl" id="ttlPath" d="M40 90 L640 90"></path>
+        <g id="renewTicks"></g>
+        <text x="40" y="64" class="lab" id="ltVerdict">lock held — renews keep the TTL ahead</text>
+      </svg>
+
+      <div class="geo-readout" id="ltOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="three">
+    <h2>Acquire, heartbeat, verify</h2>
+    <div class="prose">
+      <p>The lock key is <code class="inl">EchoMQ.Keys.lock/2</code> —
+        <code class="inl">"#{job(ctx, job_id)}:lock"</code>, that is
+        <code class="inl">emq:{queue}:{jobId}:lock</code>. It has three moves.</p>
+      <p><strong>Acquire</strong> is part of pickup: inside <code class="inl">moveToActive-11</code>, the script sets
+        <code class="inl">SET emq:{queue}:{jobId}:lock &lt;uuid-token&gt; PX &lt;lockDuration&gt;</code>. The token is a
+        UUID v4 unique to the worker; the <code class="inl">PX</code> TTL auto-expires the lock if the worker crashes, so
+        a dead worker's job is not owned forever.</p>
+      <p><strong>The heartbeat</strong> is <code class="inl">extendLock-2.lua</code> — two keys
+        (<code class="inl">[1]</code> the lock, <code class="inl">[2]</code> the stalled set), reached from Elixir as
+        <code class="inl">EchoMQ.Scripts.extend_lock/5</code>. Its whole body is twenty-three lines:</p>
+
+      <pre class="code"><span class="cmt">-- extendLock-2.lua · KEYS[1] lock, KEYS[2] stalled · ARGV token, duration-ms, jobid</span>
+<span class="kw">local</span> rcall = redis.call
+<span class="kw">if</span> rcall(<span class="str">"GET"</span>, KEYS[1]) == ARGV[1] <span class="kw">then</span>
+  <span class="kw">if</span> rcall(<span class="str">"SET"</span>, KEYS[1], ARGV[1], <span class="str">"PX"</span>, ARGV[2]) <span class="kw">then</span>
+    rcall(<span class="str">"SREM"</span>, KEYS[2], ARGV[3])
+    <span class="kw">return</span> <span class="res">1</span>
+  <span class="kw">end</span>
+<span class="kw">end</span>
+<span class="kw">return</span> <span class="res">0</span></pre>
+
+      <p>It verifies the token (no one else holds the lock), re-sets the TTL, and removes the job from the stalled set —
+        returning <code class="inl">1</code> on success and <code class="inl">0</code> if the token no longer matches. A
+        worker renews every <code class="inl">lockDuration/2</code>.</p>
+      <p><strong>Verification</strong> is the other transitions' lock check. <code class="inl">moveToFinished-14</code>
+        confirms the token before completing; a missing lock returns <code class="inl">-2</code>
+        (<code class="inl">JobLockNotExist</code>), a mismatched token <code class="inl">-6</code>
+        (<code class="inl">JobLockMismatch</code>). Release on success is the <code class="inl">DEL</code> step inside
+        <code class="inl">moveToFinished-14</code>.</p>
+    </div>
+  </section>
+
+  <section id="tok">
+    <h2>The token check</h2>
+    <div class="prose">
+      <p>The heartbeat's first line is the guard:
+        <code class="inl">GET lock == ARGV[1] token</code>. Pick the two outcomes below to read what the script does
+        in each.</p>
+    </div>
+
+    <figure class="fig tok" aria-labelledby="tokTitle">
+      <h4 id="tokTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">extendLock-2 · the token check · pick an outcome</h4>
+      <div class="controls">
+        <div class="solid-select" id="tokSel" role="group" aria-label="Which outcome of the token check">
+          <button type="button" data-tok="match" data-c="sage" class="active" aria-pressed="true">token matches</button>
+          <button type="button" data-tok="mismatch" data-c="gold" aria-pressed="false">token differs</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 660 180" role="img" aria-label="The extendLock token check. A GET on the lock key is compared to the worker's token. On a match, the script re-sets the PX TTL and SREMs the job from the stalled set and returns 1. On a mismatch, the script returns 0 without changing anything. The chosen branch is highlighted.">
+        <g><rect x="14" y="70" width="170" height="40" rx="8" fill="rgba(42,161,152,.10)" stroke="#2aa198"></rect></g>
+        <text x="99" y="86" text-anchor="middle" class="tn">GET KEYS[1]</text>
+        <text x="99" y="102" text-anchor="middle">== ARGV[1] ?</text>
+        <g>
+          <path class="edge" id="tk-yes" d="M184 84 L300 40"></path>
+          <path class="edge" id="tk-no" d="M184 96 L300 140"></path>
+        </g>
+        <g class="cell" id="tb-yes"><rect x="300" y="18" width="346" height="44" rx="7"></rect></g>
+        <text x="312" y="38" class="tn">match → SET PX · SREM stalled · return 1</text>
+        <text x="312" y="54">the worker still holds the lock; TTL re-set</text>
+        <g class="cell" id="tb-no"><rect x="300" y="120" width="346" height="44" rx="7"></rect></g>
+        <text x="312" y="140" class="tn">differ → return 0 (no change)</text>
+        <text x="312" y="156">another holder, or the lock has expired</text>
+      </svg>
+
+      <div class="geo-readout" id="tokOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">The heartbeat changes nothing unless the token still matches. A renewal that returns
+      <code class="inl">0</code> means the lock is no longer the worker's — taken by another, or already lapsed.</p>
+  </section>
+
+  <section id="timing">
+    <h2>The timing</h2>
+    <div class="prose">
+      <p>Four parameters set the rhythm, with these defaults (ch03 §3.4).</p>
+    </div>
+    <dl class="deflist">
+      <dt>lockDuration</dt><dd>30000 ms &mdash; the lock TTL set by <code class="inl">SET … PX</code>.</dd>
+      <dt>lockRenewTime</dt><dd>15000 ms (= lockDuration/2) &mdash; the heartbeat interval.</dd>
+      <dt>stalledInterval</dt><dd>30000 ms &mdash; the stalled-check period.</dd>
+      <dt>maxStalledCount</dt><dd>1 &mdash; max stalls before permanent failure.</dd>
+    </dl>
+    <div class="prose">
+      <p>A worker renews every <code class="inl">lockDuration/2</code>, so a healthy job's lock never expires: each
+        renewal extends the 30000 ms TTL while only 15000 ms has elapsed. If a worker crashes and misses a renewal, the
+        TTL runs out; the next stalled sweep (<code class="inl">moveStalledJobsToWait-8</code>) finds the job in
+        <code class="inl">active</code> with no lock and moves it back to <code class="inl">wait</code> — or to
+        <code class="inl">failed</code> once <code class="inl">stc</code> reaches
+        <code class="inl">maxStalledCount</code>. The hero timeline is exactly this arithmetic: a renew interval at or
+        under <code class="inl">lockDuration</code> keeps the job owned; longer lets the lock lapse and the job stall.</p>
+      <p>The heartbeat above renews <strong>one</strong> lock. In production, a worker holds many jobs and renews them
+        <strong>together</strong>: EchoMQ's Elixir runtime drives one <code class="inl">EchoMQ.LockManager</code> timer
+        per worker that batch-renews every tracked job via <code class="inl">EchoMQ.Scripts.extend_locks/5</code>
+        (<code class="inl">extendLocks-1.lua</code>, one stalled key, the job ids and tokens packed into
+        <code class="inl">ARGV</code>) — the one-timer story, taught in the lock-management module of this chapter.</p>
+    </div>
+  </section>
+
+  <section id="rule">
+    <h2>The Golden Rule &mdash; the lock protocol is L1/L2</h2>
+    <div class="prose">
+      <p>The lock key, the <code class="inl">SET &hellip;:lock &lt;uuid&gt; PX</code> acquire, the
+        <code class="inl">extendLock-2.lua</code> heartbeat, and the <code class="inl">-2</code>/<code class="inl">-6</code>
+        verification codes are <strong>L1/L2</strong> — immutable and shared. The same lock protocol runs in every
+        runtime; only the executor that issues the heartbeat and the renew schedule above it vary.</p>
+    </div>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the protocol (immutable L1/L2)</span>
+        <p><code class="inl">EchoMQ.Keys.lock/2</code>, the <code class="inl">SET &hellip;:lock &lt;uuid&gt; PX
+          lockDuration</code> acquire, the <code class="inl">extendLock-2.lua</code> heartbeat, and the closed
+          <code class="inl">-2</code>/<code class="inl">-6</code> lock codes — the same in every runtime.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">its three runtimes (variable L3/L4)</span>
+        <p>Elixir issues the heartbeat with <code class="inl">EchoMQ.Scripts.extend_lock/5</code> over a Redix pool and
+          schedules renewals with one <code class="inl">EchoMQ.LockManager</code> timer per worker; Go and Node.js run
+          the same <code class="inl">extendLock-2.lua</code> their own way. The lock protocol does not move; the schedule
+          above it does.</p>
+      </div>
+    </div>
+    <p class="take">A job is owned by a UUID token under a TTL; the heartbeat re-sets it every
+      <code class="inl">lockDuration/2</code> after a token check, and a missing or mismatched token returns
+      <code class="inl">-2</code>/<code class="inl">-6</code>. The lock protocol is L1/L2 — the same in every runtime.</p>
+    <p class="note">This is the last dive in E2.01. The chapter continues with the components and the lock management;
+      the workshop runs a job through every state — reachable from <a href="/echomq/core">E2 &middot; the core</a>.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The Redis commands the lock protocol issues, and the wire protocol that fixes its timing.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://docs.bullmq.io/">BullMQ &mdash; <em>Documentation</em></a> &mdash; the lock protocol: acquire, heartbeat, verification, and the stalled-recovery timing.</li>
+          <li><a href="https://redis.io/commands/set/">Redis &mdash; <em>SET</em></a> &mdash; the <code>SET key value PX ms</code> acquire and TTL re-set.</li>
+          <li><a href="https://redis.io/commands/srem/">Redis &mdash; <em>SREM</em></a> &mdash; the remove-from-stalled-set step the heartbeat performs.</li>
+          <li><a href="https://redis.io/commands/get/">Redis &mdash; <em>GET</em></a> &mdash; the token read the heartbeat verifies before re-setting the lock.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/core/lifecycle">E2.01 &middot; The lifecycle &amp; state machine</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/core/lifecycle/every-transition-and-its-script">E2.01.2 &middot; Every transition &amp; its script</a> &mdash; where <code>-2</code>/<code>-6</code> are emitted, and the pickup that acquires the lock.</li>
+          <li><a href="/echomq/protocol">E1 &middot; The protocol</a> &mdash; the key taxonomy the lock key belongs to.</li>
+          <li><a href="/redis-patterns/coordination">redis-patterns R2 &middot; Coordination</a> &mdash; the lock-with-fence pattern, applied.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/core/lifecycle/every-transition-and-its-script"><span aria-hidden="true">&larr;</span>&nbsp; E2.01.2 &middot; Every transition &amp; its script</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/core/lifecycle">E2.01 &middot; Back to the module <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ &mdash; the polyglot job-queue protocol, taught in depth and tracked as it is built.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/core/lifecycle">E2.01 &middot; The lifecycle &amp; state machine</a>
+        <a href="/echomq/core/lifecycle/the-eight-states">E2.01.1 &middot; The eight states</a>
+        <a href="/echomq/core/lifecycle/every-transition-and-its-script">E2.01.2 &middot; Every transition &amp; its script</a>
+        <a href="/echomq/core/lifecycle/the-lock-protocol">E2.01.3 &middot; The lock protocol</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/core">E2 &middot; The core</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the lock timeline (pure — does a job stall given a renew interval?) ---------- */
+  var LOCK_DURATION = 30000; /* ms */
+  var WINDOW = 60000;        /* ms drawn on the axis */
+  var X0 = 40, X1 = 640;
+  function xOf(ms) { return X0 + (X1 - X0) * (Math.min(ms, WINDOW) / WINDOW); }
+
+  function computeLock(renew) {
+    /* The job stays owned iff a renewal lands before the TTL set by the previous renewal expires.
+       With renewals every `renew` ms and a TTL of LOCK_DURATION, the lock never lapses iff renew <= LOCK_DURATION. */
+    var stalls = renew > LOCK_DURATION;
+    var firstMissAt = stalls ? LOCK_DURATION : null; /* TTL set at t=0 lapses at LOCK_DURATION before the next renew */
+    return { stalls: stalls, firstMissAt: firstMissAt };
+  }
+
+  function renderLock(renew) {
+    var out = document.getElementById('ltOut');
+    var valEl = document.getElementById('renewVal');
+    var ttlPath = document.getElementById('ttlPath');
+    var ticks = document.getElementById('renewTicks');
+    var verdict = document.getElementById('ltVerdict');
+    if (valEl) valEl.textContent = renew + ' ms';
+    var r = computeLock(renew);
+
+    /* draw renewal ticks at renew, 2*renew, ... within the window (and up to the first miss if it stalls) */
+    if (ticks) {
+      var marks = '';
+      var lapseX = r.stalls ? xOf(r.firstMissAt) : X1;
+      for (var t = renew; t <= WINDOW; t += renew) {
+        if (r.stalls && t > r.firstMissAt) break;
+        var x = xOf(t);
+        marks += '<line class="renew" x1="' + x + '" y1="74" x2="' + x + '" y2="106"></line>';
+      }
+      if (r.stalls) {
+        marks += '<line class="renew miss" x1="' + lapseX + '" y1="68" x2="' + lapseX + '" y2="112"></line>';
+        marks += '<text x="' + (lapseX + 4) + '" y="78" class="lab" style="fill:#f2948c">TTL lapses → stall</text>';
+      }
+      ticks.innerHTML = marks;
+    }
+    if (ttlPath) {
+      ttlPath.setAttribute('class', r.stalls ? 'ttl warn' : 'ttl');
+    }
+    if (verdict) {
+      verdict.textContent = r.stalls
+        ? 'renew > lockDuration — the TTL lapses before the next renewal'
+        : 'lock held — renews keep the TTL ahead';
+      verdict.setAttribute('style', r.stalls ? 'fill:#f2948c' : 'fill:#6fdccf');
+    }
+
+    if (out) {
+      if (r.stalls) {
+        out.innerHTML = 'renew <b>' + renew + ' ms</b> &gt; lockDuration <b>' + LOCK_DURATION + ' ms</b><br>' +
+          '<span class="warn">the lock lapses at ' + r.firstMissAt + ' ms before the next renewal → the job STALLS</span><br>' +
+          '<span class="dim">the next stalled sweep finds active with no lock and moves it back to wait.</span>';
+      } else {
+        out.innerHTML = 'renew <b>' + renew + ' ms</b> &le; lockDuration <b>' + LOCK_DURATION + ' ms</b><br>' +
+          '<span class="ok">the lock is held — each renewal re-sets the TTL before it expires</span><br>' +
+          '<span class="dim">the default renew is 15000 ms = lockDuration/2, with margin to spare.</span>';
+      }
+    }
+  }
+
+  var renewRng = document.getElementById('renewRng');
+  if (renewRng) {
+    renewRng.addEventListener('input', function () { renderLock(parseInt(this.value, 10)); });
+  }
+  renderLock(15000);
+
+  /* ---------- content: the token check (pure over the two branches) ---------- */
+  var TOK = {
+    match:    { branch: 'tb-yes', edge: 'tk-yes', other: 'tb-no',  otherEdge: 'tk-no',
+                ret: '1', line: 'GET lock == token → SET …:lock PX duration, SREM stalled, return 1',
+                note: 'the worker still holds the lock; the TTL is re-set and the job is cleared from the stalled set.' },
+    mismatch: { branch: 'tb-no',  edge: 'tk-no',  other: 'tb-yes', otherEdge: 'tk-yes',
+                ret: '0', line: 'GET lock != token → return 0 (nothing changes)',
+                note: 'another worker holds the lock, or it has already expired; the renewal fails.' }
+  };
+
+  function renderTok(key) {
+    var d = TOK[key];
+    var out = document.getElementById('tokOut');
+    if (!d || !out) return;
+    var yes = document.getElementById('tb-yes'), no = document.getElementById('tb-no');
+    var ey = document.getElementById('tk-yes'), en = document.getElementById('tk-no');
+    if (yes) yes.classList.toggle('ok', key === 'match');
+    if (no) no.classList.toggle('no', key === 'mismatch');
+    if (ey) ey.classList.toggle('lit', key === 'match');
+    if (en) en.classList.toggle('lit', key === 'mismatch');
+    out.innerHTML = '<b>' + d.line + '</b><br>' +
+      '<span class="dim">returns</span> <b>' + d.ret + '</b> &nbsp; <span class="dim">' + d.note + '</span>';
+  }
+
+  document.querySelectorAll('#tokSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#tokSel button').forEach(function (o) {
+        var on = o === b; o.classList.toggle('active', on); o.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      renderTok(b.getAttribute('data-tok'));
+    });
+  });
+  renderTok('match');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

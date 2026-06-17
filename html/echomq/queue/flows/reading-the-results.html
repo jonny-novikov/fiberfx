@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading the results · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="A flow parent runs ON its children's outcomes through three pure reads in EchoMQ: children_values/3 (HGETALL the :processed hash to %{child_id => result}), dependencies/3 (GET the :dependencies counter to a non-negative integer), and ignored_failures/3 (HGETALL the :unsuccessful hash to %{child_id => error}). All id-gated, no state change. Real code from echo/apps/echo_mq, with a subkey inspector and a flow-state reader.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- subkey-inspector svg ---- */
+.keys .row rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+.keys .row.sel rect{fill:rgba(42,161,152,.14);stroke:#2aa198}
+.keys text{font-family:var(--sans);fill:#d7cfb9}
+.keys .kid{font-family:var(--mono);fill:#a39c89;font-size:10px}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/queue">queue</a><span class="rsep">/</span><a href="/echomq/queue/flows">flows</a><span class="rsep">/</span><span class="rcur">reading-the-results</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue">The Queue</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue/flows">Flows</a>
+        <span class="sep">/</span>
+        <span class="here">Reading the results</span>
+      </nav>
+      <p class="eyebrow">Flows &middot; dive 02</p>
+      <h1>Reading <span class="ex">the results</span></h1>
+      <p class="lede">A parent does not merely run after its children — it runs on what they produced.</p>
+      <p class="kicker">As the fan-in fires, each child's outcome is recorded in a subkey of the parent's job key. The
+        parent reads them through three <strong>pure reads</strong> — each gates the parent id, issues one read-class
+        command, and changes no state: <code class="inl">children_values/3</code> over
+        <code class="inl">:processed</code>, <code class="inl">dependencies/3</code> over
+        <code class="inl">:dependencies</code>, and <code class="inl">ignored_failures/3</code> over
+        <code class="inl">:unsuccessful</code>. Pick a read on the right to see which subkey it touches.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#reads">The three reads</a>
+        <a href="#reader">Read a flow</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig keys" aria-labelledby="keysTitle">
+      <h4 id="keysTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The three reads &middot; pick one</h4>
+      <div class="controls">
+        <div class="solid-select" id="keysSel" role="group" aria-label="Which read to inspect">
+          <button type="button" data-read="values" data-c="echo" class="active" aria-pressed="true">children_values/3</button>
+          <button type="button" data-read="deps" data-c="echo" aria-pressed="false">dependencies/3</button>
+          <button type="button" data-read="ignored" data-c="echo" aria-pressed="false">ignored_failures/3</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 180" role="img" aria-label="Three subkeys of the parent's job key — :processed (a hash of results), :dependencies (a string counter), and :unsuccessful (a hash of ignored errors). Each read touches exactly one. The selected read is highlighted in the EchoMQ accent.">
+        <g class="row sel" id="r-values"><rect x="30" y="14" width="400" height="44" rx="9"></rect></g>
+        <text x="50" y="32" class="kid">HGETALL</text>
+        <text x="240" y="38" text-anchor="middle" font-size="13">&lt;parent key&gt;:processed → %{child_id =&gt; result}</text>
+
+        <g class="row" id="r-deps"><rect x="30" y="68" width="400" height="44" rx="9"></rect></g>
+        <text x="50" y="86" class="kid">GET</text>
+        <text x="240" y="92" text-anchor="middle" font-size="13">&lt;parent key&gt;:dependencies → integer ≥ 0</text>
+
+        <g class="row" id="r-ignored"><rect x="30" y="122" width="400" height="44" rx="9"></rect></g>
+        <text x="50" y="140" class="kid">HGETALL</text>
+        <text x="240" y="146" text-anchor="middle" font-size="13">&lt;parent key&gt;:unsuccessful → %{child_id =&gt; error}</text>
+      </svg>
+      <div class="geo-readout" id="keysOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="reads">
+    <h2>Three pure reads of the subkeys</h2>
+    <div class="prose">
+      <p>The fan-in branch inside <code class="inl">@complete</code> writes each child's result into
+        <code class="inl">:processed</code> keyed by the child's id at the same moment it decrements the counter:
+        <code class="inl">redis.call('HSET', KEYS[4], ARGV[1], ARGV[5])</code>. So after <code class="inl">k</code> of
+        <code class="inl">N</code> children complete, <code class="inl">:processed</code> holds exactly those
+        <code class="inl">k</code> results — a partial read is an honest snapshot, not a wait.</p>
+      <p><strong>children_values/3 — the results.</strong> A pure <code class="inl">HGETALL</code> of the parent's
+        <code class="inl">:processed</code> hash, decoded to a <code class="inl">%{child_id =&gt; result}</code> map. A
+        parent with no completed children yet returns <code class="inl">{:ok, %{}}</code>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Flows.children_values/3</span>
+<span class="cmt"># Read the completed children's results keyed by child id — the parent reads</span>
+<span class="cmt"># what its legs produced. A PURE HGETALL of the parent's :processed hash</span>
+<span class="cmt"># (composed onto the gated parent job key the way :logs composes), no state</span>
+<span class="cmt"># change. After k of N children complete, the map holds exactly those k results.</span>
+<span class="op">def</span> <span class="fn">children_values</span>(conn, queue, parent_id) <span class="op">when</span> is_binary(queue) <span class="op">and</span> is_binary(parent_id) <span class="op">do</span>
+  key = Keyspace.<span class="fn">job_key</span>(queue, parent_id) &lt;&gt; <span class="str">":processed"</span>  <span class="cmt"># gates the id; raises if ill-formed</span>
+
+  <span class="op">case</span> Connector.<span class="fn">command</span>(conn, [<span class="str">"HGETALL"</span>, key]) <span class="op">do</span>
+    {<span class="str">:ok</span>, map} <span class="op">when</span> is_map(map) -&gt; {<span class="str">:ok</span>, map}            <span class="cmt"># RESP3 returns a native map</span>
+    {<span class="str">:ok</span>, flat} <span class="op">when</span> is_list(flat) -&gt; {<span class="str">:ok</span>, <span class="fn">hash_pairs</span>(flat)}  <span class="cmt"># RESP2 [k,v,k,v] fallback</span>
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>Each value is the real result the child carried at completion; a child completed through the shipped arity (no
+        result) records a presence marker — its own id — instead.</p>
+      <p><strong>dependencies/3 — the outstanding count.</strong> A pure <code class="inl">GET</code> of the
+        <code class="inl">:dependencies</code> string counter, parsed to a non-negative integer. It is
+        <code class="inl">0</code> once every child has completed, and <code class="inl">{:ok, 0}</code> when there is no
+        counter at all — not a flow parent, or already swept.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Flows.dependencies/3</span>
+<span class="cmt"># Read the parent's outstanding-child COUNT (how many legs are still running).</span>
+<span class="cmt"># A PURE GET of the :dependencies string counter add/3 wrote with SET and the</span>
+<span class="cmt"># fan-in decrements. 0 once every child has completed; {:ok, 0} when there is no</span>
+<span class="cmt"># counter — the honest "zero outstanding" floor, no new error vocabulary.</span>
+<span class="op">def</span> <span class="fn">dependencies</span>(conn, queue, parent_id) <span class="op">when</span> is_binary(queue) <span class="op">and</span> is_binary(parent_id) <span class="op">do</span>
+  key = Keyspace.<span class="fn">job_key</span>(queue, parent_id) &lt;&gt; <span class="str">":dependencies"</span>
+
+  <span class="op">case</span> Connector.<span class="fn">command</span>(conn, [<span class="str">"GET"</span>, key]) <span class="op">do</span>
+    {<span class="str">:ok</span>, nil} -&gt; {<span class="str">:ok</span>, <span class="res">0</span>}                                  <span class="cmt"># no counter -> zero outstanding</span>
+    {<span class="str">:ok</span>, n} <span class="op">when</span> is_binary(n) -&gt; {<span class="str">:ok</span>, String.<span class="fn">to_integer</span>(n)}
+    {<span class="str">:ok</span>, n} <span class="op">when</span> is_integer(n) <span class="op">and</span> n &gt;= <span class="res">0</span> -&gt; {<span class="str">:ok</span>, n}
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>This reads the <strong>count</strong>, not which children remain — <code class="inl">:dependencies</code> is a
+        counter, so the count is the only shape a <code class="inl">GET</code> of it yields.</p>
+      <p><strong>ignored_failures/3 — the failures the parent proceeded past.</strong> The failure counterpart of
+        <code class="inl">children_values/3</code>. A child marked ignore-on-failure that dies is recorded in the parent's
+        <code class="inl">:unsuccessful</code> hash keyed by its id with its error as the value. A pure
+        <code class="inl">HGETALL</code> reads it back.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Flows.ignored_failures/3</span>
+<span class="cmt"># Read the children that DIED but were ignored-on-failure, keyed by child id with</span>
+<span class="cmt"># their error. A PURE HGETALL of the parent's :unsuccessful hash. Disjoint from</span>
+<span class="cmt"># children_values/3 by construction: a child is in :processed (it completed, with</span>
+<span class="cmt"># a result) XOR :unsuccessful (it died and was ignored) — never both. A</span>
+<span class="cmt"># fail-the-parent death lands in :failed and appears in NEITHER read.</span>
+<span class="op">def</span> <span class="fn">ignored_failures</span>(conn, queue, parent_id) <span class="op">when</span> is_binary(queue) <span class="op">and</span> is_binary(parent_id) <span class="op">do</span>
+  key = Keyspace.<span class="fn">job_key</span>(queue, parent_id) &lt;&gt; <span class="str">":unsuccessful"</span>
+
+  <span class="op">case</span> Connector.<span class="fn">command</span>(conn, [<span class="str">"HGETALL"</span>, key]) <span class="op">do</span>
+    {<span class="str">:ok</span>, map} <span class="op">when</span> is_map(map) -&gt; {<span class="str">:ok</span>, map}
+    {<span class="str">:ok</span>, flat} <span class="op">when</span> is_list(flat) -&gt; {<span class="str">:ok</span>, <span class="fn">hash_pairs</span>(flat)}
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><code class="inl">:processed</code> and <code class="inl">:unsuccessful</code> are disjoint: a child completed (a
+        result) XOR died-and-ignored (an error). A child that fails the parent lands in
+        <code class="inl">:failed</code> and appears in neither read.</p>
+    </div>
+    <p class="take">The parent reads its flow with three commands and no locks: the results, the outstanding count, and the
+      ignored failures. None of them changes state — they are an honest snapshot of what the legs have done so far.</p>
+  </section>
+
+  <section id="reader">
+    <h2>Read a flow at a progress point</h2>
+    <div class="prose">
+      <p>A flow of three children: A, B, and C — and C is marked <code class="inl">ignore_dependency_on_failure</code>.
+        Choose a progress point and read all three at once. The readout computes <code class="inl">children_values</code>
+        (the completed map), <code class="inl">dependencies</code> (the outstanding count), and
+        <code class="inl">ignored_failures</code> (the ignored-failure map) as pure functions of the chosen point.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="readerTitle">
+      <h4 id="readerTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Read the flow &middot; pick a progress point</h4>
+      <div class="controls">
+        <div class="solid-select" id="readerSel" role="group" aria-label="The flow's progress point">
+          <button type="button" data-pt="none" data-c="echo" class="active" aria-pressed="true">nothing done</button>
+          <button type="button" data-pt="a" data-c="echo" aria-pressed="false">A done</button>
+          <button type="button" data-pt="ab" data-c="echo" aria-pressed="false">A &amp; B done</button>
+          <button type="button" data-pt="abc" data-c="echo" aria-pressed="false">A, B done · C ignored-fail</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 96" role="img" aria-label="Three subkeys of the parent — :processed, :dependencies, and :unsuccessful — whose contents are read at the chosen progress point.">
+        <rect x="14" y="14" width="148" height="68" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="88" y="34" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a39c89">:processed</text>
+        <text id="rd-proc" x="88" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#6fdccf">{}</text>
+        <rect x="170" y="14" width="140" height="68" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="240" y="34" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a39c89">:dependencies</text>
+        <text id="rd-deps" x="240" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="14" fill="#6fdccf">3</text>
+        <rect x="318" y="14" width="148" height="68" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="392" y="34" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a39c89">:unsuccessful</text>
+        <text id="rd-unsucc" x="392" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#6fdccf">{}</text>
+      </svg>
+      <div class="geo-readout" id="readerOut" aria-live="polite"></div>
+    </figure>
+    <p class="note">A child counts down <code class="inl">:dependencies</code> whether it completes (recorded in
+      <code class="inl">:processed</code>) or dies ignored-on-failure (recorded in <code class="inl">:unsuccessful</code>) —
+      either way it is a satisfied dependency. The two maps stay disjoint, and their sizes plus
+      <code class="inl">:dependencies</code> always sum to N.</p>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A parent step reading its dependencies' results is the flow-control / orchestration angle,
+          <strong>R6 &middot; Flow control</strong>. The near, resolvable door is
+          <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>: each child is one reliable-queue job whose
+          result the parent reads.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p>The fan-in HSETs each result into <code class="inl">:processed</code>;
+          <code class="inl">children_values/3</code> / <code class="inl">dependencies/3</code> /
+          <code class="inl">ignored_failures/3</code> read it back with one read-class command each, id-gated, no state
+          change.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: let a parent read what its legs produced. The implementation is three pure reads of
+      three subkeys — results, count, ignored failures — written by the fan-in.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; the parent runs on the outcomes</h2>
+    <div class="prose">
+      <p>The parent runs on its children's outcomes through three pure reads: <code class="inl">:processed</code> (the
+        results), <code class="inl">:dependencies</code> (the outstanding count), <code class="inl">:unsuccessful</code>
+        (the ignored failures). The next dive reads what changes when a child runs in a <em>different</em> queue, and how
+        a failing child resolves under each policy.</p>
+    </div>
+    <p class="note">Next in Flows: <strong>Cross-queue &amp; the failure policy</strong> &mdash; the host-orchestrated
+      add, the eventually-consistent fan-in through the Pump, and fail-parent vs ignore-dependency.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the three reads are grounded, and the commands they issue.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/hgetall/">Valkey &mdash; <em>HGETALL</em></a> &mdash; the read <code>children_values/3</code> and <code>ignored_failures/3</code> issue.</li>
+          <li><a href="https://valkey.io/commands/get/">Valkey &mdash; <em>GET</em></a> &mdash; the read <code>dependencies/3</code> issues over the counter.</li>
+          <li><a href="https://valkey.io/commands/hset/">Valkey &mdash; <em>HSET</em></a> &mdash; the write the fan-in records each child's result with.</li>
+          <li><a href="https://valkey.io/docs/">Valkey &mdash; <em>Documentation</em></a> &mdash; the substrate of record EchoMQ is backed by.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/queue/flows">Flows</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/queue/flows/parent-and-children">Parent and children</a> &mdash; the fan-in that writes the subkeys.</li>
+          <li><a href="/echomq/queue/flows/cross-queue-and-failure-policy">Cross-queue &amp; the failure policy</a> &mdash; where <code>:unsuccessful</code> is filled.</li>
+          <li><a href="/echomq/protocol">The Protocol</a> &mdash; the owned keyspace the flow subkeys compose onto.</li>
+          <li><a href="/redis-patterns/queues">redis-patterns &middot; Reliable Queues</a> &mdash; the reliable-queue pattern, the near side of the door.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/queue/flows/parent-and-children"><span aria-hidden="true">&larr;</span>&nbsp; Parent and children</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/queue/flows/cross-queue-and-failure-policy">Cross-queue &amp; the failure policy <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/queue/flows">Flows</a>
+        <a href="/echomq/queue/flows/parent-and-children">Parent and children</a>
+        <a href="/echomq/queue/flows/reading-the-results">Reading the results</a>
+        <a href="/echomq/queue/flows/cross-queue-and-failure-policy">Cross-queue &amp; failure policy</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the three-reads subkey inspector (pure lookup over a fixed dataset) ---------- */
+  var READS = {
+    values: {
+      fn: 'EchoMQ.Flows.children_values/3',
+      cmd: 'HGETALL <parent key>:processed',
+      shape: '%{child_id => result}',
+      note: 'the completed children keyed by id; {:ok, %{}} when none have completed yet; after k of N complete it holds those k'
+    },
+    deps: {
+      fn: 'EchoMQ.Flows.dependencies/3',
+      cmd: 'GET <parent key>:dependencies',
+      shape: 'a non-negative integer',
+      note: 'the outstanding-child count; 0 once every child is in, {:ok, 0} when there is no counter at all'
+    },
+    ignored: {
+      fn: 'EchoMQ.Flows.ignored_failures/3',
+      cmd: 'HGETALL <parent key>:unsuccessful',
+      shape: '%{child_id => error}',
+      note: 'the children that died but were ignored-on-failure; disjoint from :processed — a child is in one XOR the other'
+    }
+  };
+  var KORDER = ['values', 'deps', 'ignored'];
+  function describeRead(key) {
+    var r = READS[key];
+    return '<b>' + r.fn + '</b><br><span class="dim">command:</span> ' + r.cmd +
+      '<br><span class="dim">returns:</span> ' + r.shape +
+      '<br><span class="dim">note:</span> ' + r.note + '.';
+  }
+  function setRead(key) {
+    KORDER.forEach(function (k) {
+      var g = document.getElementById('r-' + k);
+      if (g) g.classList.toggle('sel', k === key);
+    });
+    var out = document.getElementById('keysOut');
+    if (out) out.innerHTML = describeRead(key);
+  }
+  document.querySelectorAll('#keysSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-read');
+      document.querySelectorAll('#keysSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setRead(key);
+    });
+  });
+  setRead('values'); // initial render — correct without interaction
+
+  /* ---------- content: read a flow at a progress point (the three reads as pure functions) ---------- */
+  /* A flow of three children A, B, C; C is ignore_dependency_on_failure. Each
+     point fixes which children completed (in :processed) and whether C died
+     ignored (in :unsuccessful). The three reads are computed purely:
+       :processed   = the completed children's results
+       :dependencies = N - (completed + ignored-dead)
+       :unsuccessful = the ignored-on-failure deaths
+     Their sizes always sum to N = 3. */
+  var N = 3;
+  var POINTS = {
+    none: { processed: {}, unsucc: {} },
+    a:    { processed: { 'JOB-A': 'ok:A' }, unsucc: {} },
+    ab:   { processed: { 'JOB-A': 'ok:A', 'JOB-B': 'ok:B' }, unsucc: {} },
+    abc:  { processed: { 'JOB-A': 'ok:A', 'JOB-B': 'ok:B' }, unsucc: { 'JOB-C': 'timeout' } }
+  };
+  function mapStr(m) {
+    var ks = Object.keys(m);
+    if (!ks.length) return '{}';
+    return '{ ' + ks.map(function (k) { return k + ' => ' + m[k]; }).join(', ') + ' }';
+  }
+  function svgMapStr(m) {
+    var ks = Object.keys(m);
+    if (!ks.length) return '{}';
+    return ks.map(function (k) { return k.replace('JOB-', '') + ':' + m[k]; }).join(' ');
+  }
+  function renderReader(pt) {
+    var p = POINTS[pt];
+    var done = Object.keys(p.processed).length;
+    var ignored = Object.keys(p.unsucc).length;
+    var deps = N - done - ignored;
+    var procEl = document.getElementById('rd-proc');
+    var depsEl = document.getElementById('rd-deps');
+    var unsuccEl = document.getElementById('rd-unsucc');
+    if (procEl) procEl.textContent = svgMapStr(p.processed);
+    if (depsEl) { depsEl.textContent = String(deps); depsEl.setAttribute('fill', deps === 0 ? '#f0cd7f' : '#6fdccf'); }
+    if (unsuccEl) unsuccEl.textContent = svgMapStr(p.unsucc);
+    var out = document.getElementById('readerOut');
+    if (!out) return;
+    out.innerHTML =
+      '<span class="dim">children_values/3 →</span> {:ok, ' + mapStr(p.processed) + '}<br>' +
+      '<span class="dim">dependencies/3 →</span> {:ok, <b' + (deps === 0 ? ' class="ok"' : '') + '>' + deps + '</b>}<br>' +
+      '<span class="dim">ignored_failures/3 →</span> {:ok, ' + mapStr(p.unsucc) + '}<br>' +
+      '<span class="dim">' + done + ' completed + ' + ignored + ' ignored-dead + ' + deps + ' outstanding = ' + N + '</span>';
+  }
+  document.querySelectorAll('#readerSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var pt = b.getAttribute('data-pt');
+      document.querySelectorAll('#readerSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderReader(pt);
+    });
+  });
+  renderReader('none'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

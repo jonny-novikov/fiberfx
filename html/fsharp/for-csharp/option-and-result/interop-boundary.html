@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C2.03.3 · The interop boundary — F# In Depth</title>
+<meta name="description" content="Real code calls C# that returns null or throws. Convert at the seam — Option.ofObj and Option.ofNullable for null, a try-wrap for a throw — and keep the F# core all Option and Result. Verified: tryParseInt wraps Int32.Parse in a Result, Option.ofObj and Option.ofNullable convert at the edge. Dive C2.03.3 of the F# In Depth course.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --fsharp:#b48ee0; --fsharp-bright:#d2b8f5;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(180,142,224,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--fsharp-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--fsharp-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="fsharp"]{background:var(--fsharp-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--fsharp-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .err{color:var(--burgundy)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--fsharp-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pill / legend ---- */
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--fsharp-bright);border-color:var(--fsharp)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- references ---- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.refs li{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.45}
+.refs li a{color:var(--cream-soft)}
+.refs li a:hover{color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.fs .lbl{color:var(--fsharp-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--fsharp-bright);
+  border:1px solid var(--fsharp);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.note.warn{border-left-color:var(--burgundy)}
+.note code.inl{color:var(--cream-soft)}
+pre.code .rdx{background:rgba(180,142,224,.18);border-radius:4px;padding:0 .18em;color:var(--fsharp-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+
+/* ---- C# → F# side-by-side (stacked .lbl + pre.code; this batch) ---- */
+.cmp{margin:1.2rem 0 0}
+.cmp .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:1rem 0 .35rem;color:var(--cream-dim)}
+.cmp .lbl.cs{color:var(--blue-bright)}
+.cmp .lbl.fs{color:var(--fsharp-bright)}
+.cmp .lbl:first-child{margin-top:0}
+pre.code .cs{color:var(--blue-bright)}
+
+/* ---- the seam svg (this batch) ---- */
+.seam-line{stroke:var(--line);stroke-width:2;fill:none}
+.seam-live{stroke-dasharray:5 8}
+@media (prefers-reduced-motion: no-preference){
+  .seam-live{animation:seamflow 1.5s linear infinite}
+}
+@keyframes seamflow{to{stroke-dashoffset:-26}}
+.seam-token{fill:var(--gold-bright);stroke:var(--ink);stroke-width:1.5}
+.optgrid{width:100%;border-collapse:collapse;margin-top:1rem;font-family:var(--mono);font-size:.84rem}
+.optgrid caption{font-family:var(--sans);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--cream-dim);text-align:left;margin-bottom:.5rem}
+.optgrid th{font-family:var(--sans);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--gold);text-align:left;padding:.4rem .7rem;border-bottom:1px solid var(--line)}
+.optgrid td{padding:.5rem .7rem;border-bottom:1px solid var(--line);color:var(--cream-soft)}
+.optgrid td .ok{color:var(--sage-bright)}
+.optgrid td .err{color:var(--burgundy)}
+.optgrid td .non{color:var(--cream-dim)}
+.optgrid tr.on td{background:rgba(180,142,224,.08)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/fsharp">jonnify<span class="dot"></span><span class="sub">fsharp</span></a>
+    <nav>
+      <a href="/fsharp">F# In Depth</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/fsharp">fsharp</a><span class="rsep">/</span><a href="/fsharp/for-csharp">for-csharp</a><span class="rsep">/</span><a href="/fsharp/for-csharp/option-and-result">option-and-result</a><span class="rsep">/</span><span class="rcur">interop-boundary</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/fsharp">F# In Depth</a><span class="sep">/</span><a href="/fsharp/for-csharp">C2 · F# for C# developers</a><span class="sep">/</span><a href="/fsharp/for-csharp/option-and-result">C2.03 · From null to Option, from exceptions to Result</a><span class="sep">/</span><span class="here">C2.03.3 · The interop boundary</span>
+    </nav>
+    <p class="eyebrow">Dive C2.03.3</p>
+    <h1>The interop <span class="ex">boundary</span></h1>
+    <p class="lede">Null and throws live at the edge. Convert there, and the core stays clean.</p>
+    <p class="kicker">The two earlier dives describe an F# core with no <code class="inl">null</code> and no failure
+      thrown for control flow. Real programs do not run in isolation: they call .NET libraries written in C#, and
+      those return <code class="inl">null</code> for a missing value and <code class="inl">throw</code> when an
+      operation cannot proceed. The discipline is a <strong>seam</strong>. At the edge where C# results cross into
+      F#, convert each one — a <code class="inl">null</code> reference into an <code class="inl">Option</code> with
+      <code class="inl">Option.ofObj</code>, a <code class="inl">Nullable&lt;T&gt;</code> with
+      <code class="inl">Option.ofNullable</code>, a throwing call into a <code class="inl">Result</code> by catching
+      at the boundary. Past that line, every value is an <code class="inl">Option</code> or a
+      <code class="inl">Result</code>, and the rest of the code never touches a <code class="inl">null</code> or a
+      <code class="inl">try</code> again.</p>
+    <div class="cta-row">
+      <a class="btn" href="#explore">Cross the seam <span aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="/fsharp/for-csharp/option-and-result">Module hub</a>
+    </div>
+  </section>
+
+  <!-- ===================== NULL AT THE SEAM ===================== -->
+  <section id="null-seam">
+    <div class="dive-head">
+      <span class="dive-tag">C2.03.3 · part 1</span>
+      <h2>A null reference becomes an Option</h2>
+    </div>
+    <div class="prose">
+      <p>A C# method may return <code class="inl">null</code> for a reference type. FSharp.Core's
+        <code class="inl">Option.ofObj</code> takes that value and returns <code class="inl">None</code> when it is
+        <code class="inl">null</code> and <code class="inl">Some v</code> otherwise — the conversion is one call. For
+        a value type wrapped in <code class="inl">Nullable&lt;T&gt;</code>,
+        <code class="inl">Option.ofNullable</code> does the same. Both belong at the boundary, applied the moment the
+        value arrives.</p>
+    </div>
+
+    <pre class="code" aria-label="Option.ofObj and Option.ofNullable convert null at the seam, with verified FSI echoes."><span class="cmt">// a reference that might be null -> Option, at the edge</span>
+Option.ofObj <span class="res">"hi"</span>             <span class="cmt">// val it : string option = Some "hi"</span>
+Option.ofObj (<span class="op">null</span>: <span class="fn blue">string</span>)   <span class="cmt">// val it : string option = None</span>
+
+<span class="cmt">// a Nullable&lt;int&gt; -> Option, at the edge</span>
+System.Nullable&lt;<span class="fn blue">int</span>&gt;(5) |&gt; Option.ofNullable   <span class="cmt">// val it : int option = Some 5</span></pre>
+
+    <dl class="deflist">
+      <dt>Option.ofObj</dt><dd>a nullable reference → <code class="inl">Option</code>: <code class="inl">null</code> becomes <code class="inl">None</code>, anything else <code class="inl">Some</code>.</dd>
+      <dt>Option.ofNullable</dt><dd>a <code class="inl">System.Nullable&lt;T&gt;</code> → <code class="inl">Option</code>, the same way for value types.</dd>
+      <dt>the rule</dt><dd>apply the conversion at the call site that crosses the boundary; never let a <code class="inl">null</code> travel deeper into F#.</dd>
+    </dl>
+  </section>
+
+  <!-- ===================== A THROW AT THE SEAM ===================== -->
+  <section id="throw-seam">
+    <div class="dive-head">
+      <span class="dive-tag">C2.03.3 · part 2</span>
+      <h2>A throwing call becomes a Result</h2>
+    </div>
+    <div class="prose">
+      <p>For a call that throws, the boundary wraps it in a <code class="inl">try</code> and returns a
+        <code class="inl">Result</code>: <code class="inl">Ok</code> for the value, <code class="inl">Error</code> for
+        the caught failure. The <code class="inl">with :? System.FormatException</code> pattern catches one specific
+        exception type — a deliberately narrow net, so a genuinely unexpected exception still propagates rather than
+        being silently turned into an <code class="inl">Error</code>.</p>
+    </div>
+
+    <div class="cmp">
+      <p class="lbl cs">C# — the throwing API as the reader knows it</p>
+      <pre class="code" aria-label="C# int.Parse throws FormatException on a non-numeric string."><span class="cs">int</span> n = <span class="cs">int</span>.Parse(s);   <span class="cmt">// returns 5 for "5"; throws FormatException for "x"</span></pre>
+      <p class="lbl fs">F# — caught at the seam, returned as a Result</p>
+      <pre class="code" aria-label="tryParseInt wraps Int32.Parse in a Result at the boundary, with verified FSI echoes."><span class="op">let</span> tryParseInt (s: <span class="fn blue">string</span>) =
+    <span class="op">try</span> Ok (System.Int32.Parse s)
+    <span class="op">with</span> :? System.FormatException -> Error <span class="res">"bad format"</span>
+<span class="cmt">// val tryParseInt : string -> Result&lt;int,string&gt;</span>
+
+tryParseInt <span class="res">"5"</span>               <span class="cmt">// val it : Result&lt;int,string&gt; = Ok 5</span>
+tryParseInt <span class="res">"x"</span>               <span class="cmt">// val it : Result&lt;int,string&gt; = Error "bad format"</span></pre>
+    </div>
+
+    <div class="note">The <code class="inl">try</code> sits at the seam, not scattered through the core. One wrapper
+      converts the throwing call once; every function that uses <code class="inl">tryParseInt</code> downstream reads
+      an <code class="inl">Ok</code> or an <code class="inl">Error</code> and never writes a
+      <code class="inl">try</code> of its own.</div>
+  </section>
+
+  <!-- ===================== INTERACTIVE: THE SEAM ===================== -->
+  <section id="explore">
+    <h2>Cross the seam</h2>
+    <div class="prose">
+      <p>Three calls arrive from the C# side: one returns a value, one returns <code class="inl">null</code>, one
+        throws. Pick one and watch it cross the boundary. The conversion at the seam turns each into a typed F#
+        value — <code class="inl">Some</code> or <code class="inl">None</code> for the nullable lookup,
+        <code class="inl">Ok</code> or <code class="inl">Error</code> for the throwing parse. Past the line, nothing
+        downstream sees a <code class="inl">null</code> or a thrown exception.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="seamTitle">
+      <h4 id="seamTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">the C# side · the seam · the F# core</h4>
+
+      <div class="controls">
+        <div class="solid-select" role="group" aria-label="Choose a C# call to cross the seam">
+          <button type="button" class="seam-btn active" data-k="ok" data-c="fsharp" aria-pressed="true">parse "5"</button>
+          <button type="button" class="seam-btn" data-k="throw" data-c="fsharp" aria-pressed="false">parse "x" (throws)</button>
+          <button type="button" class="seam-btn" data-k="null" data-c="fsharp" aria-pressed="false">lookup (null)</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 1080 230" role="img" aria-label="A seam diagram: a C# call on the left crosses a conversion boundary in the middle and becomes a typed F# Option or Result on the right; null becomes None, a throw becomes Error, a value becomes Some or Ok.">
+        <!-- region labels -->
+        <text x="150" y="24" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#9fc0ea">C# side</text>
+        <text x="540" y="24" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#d2b8f5">the seam · convert</text>
+        <text x="930" y="24" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#a7c9b1">F# core</text>
+
+        <!-- the boundary line -->
+        <line x1="540" y1="44" x2="540" y2="210" stroke="#2a3252" stroke-width="1.5" stroke-dasharray="4 6"></line>
+
+        <!-- the path from call to converted value -->
+        <path id="seamTrack" class="seam-line" d="M260 115 L460 115 L620 115 L820 115"></path>
+
+        <!-- the inbound C# call -->
+        <g>
+          <rect x="40" y="92" width="220" height="46" rx="11" fill="#161d38" stroke="#5a87c4"></rect>
+          <text id="seamCallLbl" x="150" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12.5" fill="#9fc0ea">int.Parse "5"</text>
+        </g>
+        <!-- the conversion gate -->
+        <g>
+          <rect x="460" y="90" width="160" height="50" rx="12" fill="#10162b" stroke="#b48ee0"></rect>
+          <text id="seamConvLbl" x="540" y="112" text-anchor="middle" font-family="Manrope, sans-serif" font-size="11" fill="#d2b8f5">try → Result</text>
+          <text x="540" y="128" text-anchor="middle" font-family="Manrope, sans-serif" font-size="9.5" fill="#a39c89">at the boundary</text>
+        </g>
+        <!-- the converted F# value -->
+        <g>
+          <rect x="820" y="92" width="220" height="46" rx="11" fill="#161d38" stroke="#7ba387"></rect>
+          <text id="seamValLbl" x="930" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12.5" fill="#a7c9b1">Ok 5</text>
+        </g>
+
+        <!-- the travelling token -->
+        <circle id="seamToken" class="seam-token" cx="150" cy="115" r="9"></circle>
+      </svg>
+
+      <div class="geo-readout" id="seamOut" aria-live="polite">
+        <span class="dim">int.Parse "5" ·</span> tryParseInt "5" <span class="dim">=</span> <span style="color:var(--sage-bright)">Ok 5</span></div>
+    </figure>
+
+    <table class="optgrid">
+      <caption>Without JavaScript: the three calls, converted at the seam, by hand</caption>
+      <thead><tr><th>the C# call</th><th>the seam converts with</th><th>the F# value</th></tr></thead>
+      <tbody>
+        <tr id="row-ok" class="on"><td>int.Parse "5"</td><td>try → Result</td><td><span class="ok">Ok 5</span></td></tr>
+        <tr id="row-throw"><td>int.Parse "x" (throws)</td><td>try → Result</td><td><span class="err">Error "bad format"</span></td></tr>
+        <tr id="row-null"><td>lookup → null</td><td>Option.ofObj</td><td><span class="non">None</span></td></tr>
+      </tbody>
+    </table>
+    <p class="take">The seam is one line of code per crossing: a <code class="inl">try</code> wrapper, or an
+      <code class="inl">Option.ofObj</code>. It is the only place in the program that knows
+      <code class="inl">null</code> and throws exist.</p>
+  </section>
+
+  <!-- ===================== THE RULE ===================== -->
+  <section id="rule">
+    <div class="dive-head">
+      <span class="dive-tag">C2.03.3 · part 3</span>
+      <h2>The rule: convert once, at the edge</h2>
+    </div>
+    <div class="prose">
+      <p>The module closes on one discipline. <code class="inl">null</code> and exceptions are facts of the .NET
+        platform, and F# can produce and consume both when it has to. The choice is <em>where</em>: at the boundary,
+        in a thin layer of conversions, and nowhere else. A function deep in the core takes an
+        <code class="inl">Option</code> or a <code class="inl">Result</code> and returns one; it is never handed a
+        <code class="inl">null</code> and never has to guard against a throw, because the seam already did.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">The platform</p>
+        <p>.NET libraries return <code class="inl">null</code> and throw — facts F# inherits at every interop call.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="cell fs">
+        <p class="lbl">The discipline</p>
+        <p>Convert at the seam — <code class="inl">Option.ofObj</code> · <code class="inl">ofNullable</code> · a try-wrap — and keep the core all <code class="inl">Option</code> and <code class="inl">Result</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== THE THREAD ===================== -->
+  <section id="thread">
+    <h2>What this module covered</h2>
+    <div class="prose">
+      <p>Three dives, two types, one boundary. <code class="inl">Option</code> retires
+        <code class="inl">null</code>; <code class="inl">Result</code> retires the exception-as-control-flow; and the
+        seam is where the C# that still does both is converted on the way in. The same two types run deeper through
+        the language in chapter C1 — <code class="inl">bind</code>, the railway, and the computation expressions that
+        thread them.</p>
+    </div>
+    <div class="toc-mini" aria-label="Continue in this module">
+      <a href="/fsharp/for-csharp/option-and-result">↑ C2.03 · From null to Option, from exceptions to Result</a>
+      <a href="/fsharp/for-csharp/option-and-result/null-to-option">C2.03.1 · From null to Option</a>
+      <a href="/fsharp/for-csharp/option-and-result/exceptions-to-result">C2.03.2 · From exceptions to Result</a>
+    </div>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/">Microsoft &mdash; <em>F# documentation</em></a> &mdash; interoperating with .NET, and converting null and exceptions at the boundary.</li>
+          <li><a href="https://fsharp.github.io/fsharp-core-docs/">FSharp.Core API reference</a> &mdash; <code class="inl">Option.ofObj</code> and <code class="inl">Option.ofNullable</code>.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/">Microsoft &mdash; <em>.NET documentation</em></a> &mdash; <code class="inl">Nullable&lt;T&gt;</code>, <code class="inl">FormatException</code>, and exception handling on the CLR.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/fsharp/for-csharp/option-and-result/null-to-option">C2.03.1 &mdash; From null to Option</a> &mdash; the <code class="inl">Option</code> the seam produces.</li>
+          <li><a href="/fsharp/language/option-result">C1.08 &mdash; Option, Result &amp; railway-oriented errors</a> &mdash; threading these types in language depth.</li>
+          <li><a href="/elixir/functional/pure">Elixir &mdash; Purity</a> &mdash; the BEAM's returned <code class="inl">{:ok, v}</code> / <code class="inl">{:error, reason}</code> at its own boundaries.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/fsharp/for-csharp/option-and-result/exceptions-to-result"><span aria-hidden="true">←</span> C2.03.2 · From exceptions to Result</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/fsharp/for-csharp/option-and-result">Back to C2.03 · option-and-result <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="F# In Depth — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/fsharp">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">F# In Depth &mdash; the ML-family language on .NET, taught from first principles to a real DevOps tool shipped in F#.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/fsharp/for-csharp">C2 &middot; F# for C# developers</a>
+        <a href="/fsharp/for-csharp/option-and-result">C2.03 &middot; From null to Option, from exceptions to Result</a>
+        <a href="#refs">References</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/fsharp">Course home</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Interactive: the seam (pure over a fixed set of C# calls) ---------- */
+  // int.Parse "5"  -> tryParseInt -> Ok 5
+  // int.Parse "x"  -> throws FormatException -> tryParseInt -> Error "bad format"
+  // lookup -> null -> Option.ofObj -> None
+  var SEAM = {
+    "ok":    { kind: "ok",   call: "int.Parse \"5\"",            conv: "try → Result", val: "Ok 5",              line: "tryParseInt \"5\"" },
+    "throw": { kind: "err",  call: "int.Parse \"x\" (throws)",   conv: "try → Result", val: "Error \"bad format\"", line: "tryParseInt \"x\"" },
+    "null":  { kind: "none", call: "lookup → null",              conv: "Option.ofObj", val: "None",              line: "Option.ofObj (lookup ())" }
+  };
+  var COLOR = { ok: "var(--sage-bright)", err: "var(--burgundy)", none: "var(--cream-dim)" };
+  var STROKE = { ok: "#7ba387", err: "#c4504c", none: "#a39c89" };
+
+  var track = document.getElementById('seamTrack');
+  var token = document.getElementById('seamToken');
+  var callLbl = document.getElementById('seamCallLbl');
+  var convLbl = document.getElementById('seamConvLbl');
+  var valLbl = document.getElementById('seamValLbl');
+  var valRect = valLbl ? valLbl.previousElementSibling : null;
+  var out = document.getElementById('seamOut');
+  var btns = Array.prototype.slice.call(document.querySelectorAll('.seam-btn'));
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function select(k) {
+    var r = SEAM[k];
+    if (!r) return;
+    btns.forEach(function (b) {
+      var on = b.getAttribute('data-k') === k;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    [['ok', 'row-ok'], ['throw', 'row-throw'], ['null', 'row-null']].forEach(function (pair) {
+      var row = document.getElementById(pair[1]);
+      if (row) row.classList.toggle('on', pair[0] === k);
+    });
+    if (callLbl) callLbl.textContent = r.call;
+    if (convLbl) convLbl.textContent = r.conv;
+    if (valLbl) {
+      valLbl.textContent = r.val;
+      valLbl.setAttribute('fill', COLOR[r.kind]);
+    }
+    if (valRect) valRect.setAttribute('stroke', STROKE[r.kind]);
+    if (track) track.setAttribute('class', 'seam-line' + (reduce ? '' : ' seam-live'));
+    if (token) { token.setAttribute('cx', '930'); token.setAttribute('cy', '115'); }
+    if (out) {
+      out.innerHTML = '<span class="dim">' + r.call + ' ·</span> ' + r.line +
+        ' <span class="dim">=</span> <span style="color:' + COLOR[r.kind] + '">' + r.val + '</span>';
+    }
+  }
+
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () { select(b.getAttribute('data-k')); });
+  });
+  if (btns.length) select('ok');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

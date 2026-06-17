@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4.05.3 · The score-update path · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R4.05.3 — the score-update path. A score changes two ways: ZADD overwrites to an absolute value, ZINCRBY accumulates a delta with no lost update under concurrency. Neither writes a rank — the rank is recomputed from the score order on read in O(log N), so it is always consistent; one update can shift many neighbours' ranks without rewriting any of them. Bridged honestly to Portal.Enrollment.Progress — the percent (0..100, namespace PRG, an in-memory store row) such an update would write; Portal runs no Redis sorted set.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- board diagram ---- */
+.lb .row rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.lb .row.lead rect{fill:rgba(212,168,90,.18);stroke:#d4a85a}
+.lb .row.act rect{fill:rgba(90,135,196,.2);stroke:#5a87c4}
+.lb .row.shift rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
+.lb text{font-family:var(--sans);fill:#d7cfb9}
+.lb .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.lb .rk{font-family:var(--mono);font-size:11px;fill:#a39c89}
+.lb .nm{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
+.lb .sc{font-family:var(--mono);font-size:11px;fill:#a39c89}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
+.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
+.door a{color:var(--gold-bright)}
+.fwd{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(90,135,196,.06),rgba(10,14,26,.2))}
+.fwd .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--blue-bright);display:block;margin:0 0 .5rem}
+.fwd code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority/leaderboards">leaderboards</a><span class="rsep">/</span><span class="rcur">the-score-update-path</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority/leaderboards">Leaderboards</a>
+        <span class="sep">/</span>
+        <span class="here">The score-update path</span>
+      </div>
+      <p class="eyebrow">R4.05.3 &middot; dive 3</p>
+      <h1>The score-update <span class="ex">path</span></h1>
+      <p class="lede">A score changes in one of two ways: <code class="inl">ZADD</code> overwrites it,
+        <code class="inl">ZINCRBY</code> accumulates onto it. Neither touches a rank &mdash; no rank is stored, so the
+        rank is recomputed from the order on the next read.</p>
+      <p class="kicker">Updating a leaderboard means updating a score. There are two updates.
+        <code class="inl">ZADD</code> sets a score to a new absolute value, replacing whatever was there.
+        <code class="inl">ZINCRBY</code> adds a delta to the current score, accumulating. Either way, the member is
+        re-placed in the order by its new score &mdash; and that is the entire update. No rank is written, because no
+        rank is stored; the rank is derived from the order whenever it is next read. Set an update on the right and
+        watch the order, and the ranks, recompute.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#overwrite">ZADD overwrites</a>
+        <a href="#accumulate">ZINCRBY accumulates</a>
+        <a href="#onread">Rank on read</a>
+        <a href="#applied">In Portal</a>
+        <a href="#heading">EchoMQ 2.0</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig lb" aria-labelledby="uTitle">
+      <h4 id="uTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Two updates &middot; ZADD overwrites, ZINCRBY accumulates</h4>
+      <div class="controls">
+        <div class="solid-select" id="uOp" role="group" aria-label="Choose ZADD overwrite or ZINCRBY accumulate">
+          <button type="button" data-op="zadd" data-c="gold" class="active" aria-pressed="true">ZADD (set)</button>
+          <button type="button" data-op="zincrby" data-c="sage" aria-pressed="false">ZINCRBY (add)</button>
+        </div>
+        <div class="fold-ctrl" id="uVctrl">
+          <label for="uV">set to</label>
+          <input type="range" id="uV" min="0" max="2600" step="50" value="1800">
+          <span class="val" id="uVVal">1800</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 220" role="img" aria-label="A fixed roster ordered top to bottom by descending score. One player, alice, is the target of an update. In ZADD mode the slider sets alice's score outright; in ZINCRBY mode it adds a delta to her current score. Her row is highlighted blue and re-placed by the new score, the leader at rank 0 gold. The readout reports the new score, alice's recomputed rank, and that no other player's score was written.">
+        <text class="ttl" x="20" y="18" id="uSubtitle">ZADD leaderboard <v> "player:alice" — rank · player · score</text>
+        <g id="uRows"></g>
+      </svg>
+
+      <div class="geo-readout" id="uOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="overwrite">
+    <h2><code class="inl">ZADD</code> &mdash; overwrite to an absolute value</h2>
+    <div class="prose">
+      <p><code class="inl">ZADD</code> sets a member's score to the value given, whether or not the member is already
+        on the board:</p>
+      <pre class="code"><span class="rdx">ZADD</span> leaderboard <span class="res">2000</span> <span class="str">"player:alice"</span>    <span class="cmt"># alice's score is now 2000, replacing any prior score</span></pre>
+      <p>This is the update to use when the new score is known outright &mdash; a final result, a recomputed total, a
+        snapshot value. The member is re-placed in the order by 2000; if alice was at rank 4 and 2000 lifts her above
+        three players, she moves to rank 1 on the next read. <code class="inl">ZADD</code> carries the whole new state
+        of the score in one write.</p>
+    </div>
+    <p class="take"><code class="inl">ZADD</code> overwrites a member's score to an absolute value and re-places it in
+      the order; reach for it when the new score is known outright.</p>
+  </section>
+
+  <section id="accumulate">
+    <h2><code class="inl">ZINCRBY</code> &mdash; accumulate a delta</h2>
+    <div class="prose">
+      <p><code class="inl">ZINCRBY</code> adds a delta to the current score and returns the new score:</p>
+      <pre class="code"><span class="rdx">ZINCRBY</span> leaderboard <span class="res">50</span> <span class="str">"player:alice"</span>   <span class="cmt"># alice's score rises by 50; returns the new total</span></pre>
+      <p>This is the update to use when points arrive incrementally &mdash; fifty more for a win, ten for a step
+        completed. Because the increment happens inside Redis, two concurrent <code class="inl">ZINCRBY</code> calls on
+        the same member both apply: the score rises by the sum of the deltas, with no lost update. A plain
+        read-modify-write in the application would lose one of two concurrent increments;
+        <code class="inl">ZINCRBY</code> does not. A member not yet on the board is treated as starting from 0, so the
+        first <code class="inl">ZINCRBY</code> of 50 sets the score to 50.</p>
+    </div>
+    <p class="take"><code class="inl">ZINCRBY</code> adds a delta in place and returns the new total; the increment
+      runs inside Redis, so two concurrent calls both apply with no lost update.</p>
+  </section>
+
+  <section id="onread">
+    <h2>The rank is recomputed on read, never stored</h2>
+    <div class="prose">
+      <p>Neither update writes a rank. The rank of any member is its position in the score order, and the set computes
+        that position when <code class="inl">ZREVRANK</code> or a range read asks for it &mdash; in
+        <code class="inl">O(log N)</code>, by walking the order. Two consequences follow. First, the rank is always
+        exactly the current order: there is no stored rank that an update could leave stale, so a score change is
+        reflected the instant the rank is next read. Second, updating one member's score can shift the ranks of many
+        others &mdash; lift one player past three and those three each drop a place &mdash; but none of those
+        neighbours is rewritten. Their scores are unchanged; only their computed position differs on the next read.
+        The work of a score update is <code class="inl">O(log N)</code> for the re-placement; the ripple through
+        everyone else's rank costs nothing at write time, because it is computed at read time.</p>
+    </div>
+
+    <figure class="fig lb" aria-labelledby="rTitle">
+      <h4 id="rTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">One write, many ranks &middot; before and after one ZADD</h4>
+      <div class="controls">
+        <div class="solid-select" id="rSel" role="group" aria-label="Show the board before or after one ZADD on hugo">
+          <button type="button" data-state="before" data-c="blue" class="active" aria-pressed="true">before</button>
+          <button type="button" data-state="after" data-c="sage" aria-pressed="false">after ZADD hugo 2200</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 220" role="img" aria-label="A fixed roster ordered by descending score. The before state shows hugo near the bottom. The after state applies one ZADD lifting hugo's score to 2200; hugo's row is highlighted and re-placed near the top, and the rows it passed are marked as shifted. The readout reports how many neighbours' ranks moved and that only hugo's score was written.">
+        <text class="ttl" x="20" y="18" id="rSubtitle">before — rank · player · score</text>
+        <g id="rRows"></g>
+      </svg>
+
+      <div class="geo-readout" id="rOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">A score update writes one member in <code class="inl">O(log N)</code>; the ranks of every
+      neighbour it passed shift on the next read, none of them rewritten, because the rank is computed from the order,
+      not stored.</p>
+  </section>
+
+  <section id="applied">
+    <h2>In Portal &mdash; updating the progress percent a ranking would read</h2>
+    <div class="prose">
+      <p>The pattern is a score updated two ways, the rank recomputed on read. Portal runs no sorted set. It records a
+        learner's lesson progress as a <strong>percent</strong> &mdash;
+        <code class="inl">Portal.Enrollment.Progress</code>, the field <code class="inl">percent :: 0..100</code>,
+        namespace <code class="inl">PRG</code>, an in-memory store row. There is no progress ranking; the percent is a
+        stored value that the learner's activity moves over time.</p>
+      <pre class="code"><span class="cmt"># Portal.Enrollment.Progress — the real struct (echo/apps/portal): percent 0..100, namespace PRG</span>
+<span class="op">%Portal.Enrollment.Progress</span>{enrollment_id: <span class="str">"ENR…"</span>, lesson_id: <span class="str">"LSN…"</span>, percent: <span class="res">85</span>}
+
+<span class="cmt"># the score update a ranked view would write as the percent advances (the applied pattern — Portal runs no sorted set)</span>
+<span class="rdx">ZADD</span> board <span class="res">85</span> <span class="str">"learner:dana"</span>      <span class="cmt"># set the score to the new percent</span>
+<span class="rdx">ZREVRANK</span> board <span class="str">"learner:dana"</span>      <span class="cmt"># the rank, read from the percent order — not stored</span></pre>
+      <p>A ranking view of learners by progress is this dive applied to that data. As a learner's percent changes, a
+        ranking board would update its score: <code class="inl">ZADD board &lt;new-percent&gt; &lt;learner&gt;</code> to
+        set the percent outright, the way a recomputed progress percent is known as an absolute value. The learner is
+        re-placed by their new percent, and every other learner's rank recomputes on the next read &mdash; no
+        neighbour's percent is touched. State it plainly: Portal updates the percent in its store today; were a ranked
+        view added, the score update is the same <code class="inl">ZADD</code>, and the rank is read from the percent
+        order, never stored.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>A score is updated by <code class="inl">ZADD</code> (overwrite) or <code class="inl">ZINCRBY</code>
+          (accumulate), and the rank is recomputed from the order on read, never stored.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in Portal</span>
+        <p>Portal stores each learner's progress as a <code class="inl">percent</code> (the <code class="inl">PRG</code>
+          struct) and updates it as the learner advances. A ranking view sets the score with
+          <code class="inl">ZADD board percent learner</code> on each change and reads the rank from the percent order
+          &mdash; Portal runs no sorted set; the update is the structure to add over the percent it records.</p>
+      </div>
+    </div>
+
+    <p class="take">Update the score, not the rank &mdash; <code class="inl">ZADD</code> to overwrite,
+      <code class="inl">ZINCRBY</code> to accumulate. The rank is read from the order, so it is never stale. Portal's
+      progress percent is the score such an update would write.</p>
+
+    <div class="door">
+      <span class="lbl">Door &middot; not depth</span>
+      How the queue updates a job's standing within its group, and how the group re-orders on a change, is the subject
+      of the dedicated <strong>EchoMQ course</strong>. The intra-group ranking is
+      <a href="/echomq/groups">E4 &middot; Groups</a>. This dive teaches the score update and the rank-on-read; that
+      course teaches the group re-ordering built on it.
+    </div>
+  </section>
+
+  <section id="heading">
+    <h2>Where this is heading &mdash; EchoMQ 2.0</h2>
+    <div class="prose">
+      <p>The score-update path is generic sorted-set work &mdash; <code class="inl">ZADD</code> to overwrite,
+        <code class="inl">ZINCRBY</code> to accumulate, the rank read from the order. It is not part of the EchoMQ
+        queue protocol. Where EchoMQ does order by a sorted-set score is its priority queue (R4.03's
+        <code class="inl">emq:{queue}:prioritized</code>), and the settled <strong>EchoMQ 2.0</strong> design &mdash;
+        the protocol break on the first EMQ rung, <code class="inl">emq.1</code> &mdash; renames that keyspace to
+        <code class="inl">emq:{queue}:prioritized</code>: the <code class="inl">emq:</code> prefix replacing
+        <code class="inl">emq:</code>, every Lua key declared in <code class="inl">KEYS[]</code>,
+        <code class="inl">meta.version</code> bumped to <code class="inl">echomq:2.0.0</code> &mdash; with the score
+        order unchanged. A score update and the rank it recomputes are a property of the order; they are independent of
+        the prefix or the version.</p>
+    </div>
+    <p class="take">EchoMQ 2.0 renames the priority keyspace from <code class="inl">emq:{queue}:prioritized</code> to
+      <code class="inl">emq:{queue}:prioritized</code> and declares its keys; a score update and the rank it recomputes
+      are a property of the order, unchanged by the prefix or the version.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The two writes that change a score &mdash; the overwrite and the in-place accumulate &mdash; the read that
+        derives the rank from the order, and the sorted set an update re-places a member in.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; set a member's score to an absolute value, overwriting any prior score.</li>
+          <li><a href="https://redis.io/commands/zincrby/">Redis &mdash; <em>ZINCRBY</em></a> &mdash; add a delta to a member's score in place, with no lost update under concurrency.</li>
+          <li><a href="https://redis.io/commands/zrevrank/">Redis &mdash; <em>ZREVRANK</em></a> &mdash; read the rank from the order, recomputed on each read.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; the ordered structure an update re-places a member in.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority/leaderboards">R4.05 &middot; Leaderboards</a> &mdash; the module hub.</li>
+          <li><a href="/redis-patterns/time-delay-priority/leaderboards/top-n-and-around-me">R4.05.2 &middot; Top-N and around-me</a> &mdash; the previous dive: the two reads over the order.</li>
+          <li><a href="/redis-patterns/time-delay-priority/leaderboards/zadd-and-zrank">R4.05.1 &middot; ZADD and ZREVRANK</a> &mdash; the score in, the rank out.</li>
+          <li><a href="/redis-patterns/time-delay-priority/priority-scores">R4.03 &middot; Composite priority scores</a> &mdash; the same sorted-set ordering, packed for ties.</li>
+          <li><a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a> &mdash; the chapter.</li>
+          <li><a href="/echomq/groups">E4 &middot; Groups</a> &mdash; the dedicated EchoMQ course: the group re-ordering on a score change.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority/leaderboards/top-n-and-around-me"><span aria-hidden="true">&larr;</span>&nbsp; R4.05.2 &middot; Top-N and around-me</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority/leaderboards">R4.05 &middot; Leaderboards <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/time-delay-priority/leaderboards/zadd-and-zrank">R4.05.1 &middot; ZADD and ZREVRANK</a>
+        <a href="/redis-patterns/time-delay-priority/leaderboards/top-n-and-around-me">R4.05.2 &middot; Top-N and around-me</a>
+        <a href="/redis-patterns/time-delay-priority/leaderboards/the-score-update-path">R4.05.3 &middot; The score-update path</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/groups">The EchoMQ course &middot; groups</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: two updates — ZADD overwrites, ZINCRBY accumulates (pure over op and slider) ---------- */
+  // A fixed roster of eight players. One player, alice, is the update target (current score 1500). In 'zadd' mode the
+  // slider is the absolute value to set; in 'zincrby' mode it is the delta to add to 1500. The new score, alice's
+  // re-placed position (ZREVRANK), and the readout are pure over (op, sliderValue). No other player's score changes.
+  var ALICE_CUR = 1500;
+  var OTHERS = [
+    { id: 'bob', score: 2300 }, { id: 'charlie', score: 1800 }, { id: 'dana', score: 2100 },
+    { id: 'erin', score: 900 }, { id: 'finn', score: 1650 }, { id: 'gwen', score: 2450 },
+    { id: 'hugo', score: 1200 }
+  ];
+  // pure: (op, sv) -> { board, aliceScore, aliceRank, n }
+  function update(op, sv) {
+    var aliceScore = op === 'zincrby' ? ALICE_CUR + sv : sv;
+    var board = OTHERS.concat([{ id: 'alice', score: aliceScore }])
+      .sort(function (a, b) { return b.score - a.score; });
+    var aliceRank = -1;
+    for (var i = 0; i < board.length; i++) { if (board[i].id === 'alice') { aliceRank = i; break; } }
+    return { board: board, aliceScore: aliceScore, aliceRank: aliceRank, n: board.length };
+  }
+  function renderU(op, sv) {
+    var r = update(op, sv), b = r.board;
+    var g = document.getElementById('uRows');
+    if (g) {
+      var frag = '';
+      for (var i = 0; i < b.length; i++) {
+        var p = b[i];
+        var y = 28 + i * 23;
+        var cls = i === 0 ? 'lead' : (p.id === 'alice' ? 'act' : '');
+        frag += '<g class="row ' + cls + '"><rect x="20" y="' + y + '" width="420" height="20" rx="6"></rect>' +
+          '<text class="rk" x="32" y="' + (y + 14) + '">#' + i + '</text>' +
+          '<text class="nm" x="78" y="' + (y + 14) + '">player:' + p.id + '</text>' +
+          '<text class="sc" x="430" y="' + (y + 14) + '" text-anchor="end">' + p.score + '</text></g>';
+      }
+      g.innerHTML = frag;
+    }
+    var sub = document.getElementById('uSubtitle');
+    var out = document.getElementById('uOut');
+    if (op === 'zincrby') {
+      if (sub) sub.textContent = 'ZINCRBY leaderboard ' + sv + ' "player:alice" — rank · player · score';
+      if (out) out.textContent = 'ZINCRBY leaderboard ' + sv + ' "player:alice" adds ' + sv + ' to alice’s ' +
+        'current ' + ALICE_CUR + ', returning ' + r.aliceScore + '. alice is re-placed: ZREVRANK = ' + r.aliceRank +
+        ' (0-based, ' + r.n + ' players). Two concurrent ZINCRBY would both apply — no lost update. No other ' +
+        'player’s score was written; their ranks only recompute on the next read.';
+    } else {
+      if (sub) sub.textContent = 'ZADD leaderboard ' + sv + ' "player:alice" — rank · player · score';
+      if (out) out.textContent = 'ZADD leaderboard ' + sv + ' "player:alice" sets alice’s score to ' +
+        r.aliceScore + ' outright, replacing the prior ' + ALICE_CUR + '. alice is re-placed: ZREVRANK = ' +
+        r.aliceRank + ' (0-based, ' + r.n + ' players). Only alice was written; every other player keeps its score, ' +
+        'and the ranks of those it passed recompute on the next read, none rewritten.';
+    }
+  }
+  var uOp = 'zadd', uSv = 1800;
+  var uV = document.getElementById('uV'), uVV = document.getElementById('uVVal'),
+      uVctrl = document.getElementById('uVctrl');
+  function syncU() {
+    var lab = uVctrl ? uVctrl.querySelector('label') : null;
+    if (lab) lab.textContent = uOp === 'zadd' ? 'set to' : 'add';
+  }
+  document.querySelectorAll('#uOp button').forEach(function (bn) {
+    bn.addEventListener('click', function () {
+      uOp = bn.getAttribute('data-op');
+      document.querySelectorAll('#uOp button').forEach(function (x) {
+        var sel = x === bn; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      if (uOp === 'zincrby' && uSv > 600) { uSv = 300; if (uV) uV.value = '300'; if (uVV) uVV.textContent = '300'; }
+      syncU();
+      renderU(uOp, uSv);
+    });
+  });
+  if (uV) uV.addEventListener('input', function () {
+    uSv = parseInt(uV.value, 10); if (uVV) uVV.textContent = String(uSv);
+    renderU(uOp, uSv);
+  });
+  syncU();
+  renderU('zadd', 1800); // initial render — correct without interaction
+
+  /* ---------- content: one write, many ranks — before and after one ZADD (pure over state) ---------- */
+  // A fixed roster. The 'before' state holds hugo near the bottom (score 1200). The 'after' state applies one ZADD
+  // lifting hugo to 2200. The set of rows hugo passed (their ranks shifted, none rewritten) and the readout are pure
+  // over the state string.
+  var BASE = [
+    { id: 'gwen', score: 2450 }, { id: 'bob', score: 2300 }, { id: 'dana', score: 2100 },
+    { id: 'charlie', score: 1800 }, { id: 'finn', score: 1650 }, { id: 'alice', score: 1500 },
+    { id: 'hugo', score: 1200 }, { id: 'erin', score: 900 }
+  ];
+  var HUGO_AFTER = 2200;
+  // pure: () -> sorted board for a given hugo score
+  function sortFor(hugoScore) {
+    return BASE.map(function (p) { return p.id === 'hugo' ? { id: 'hugo', score: hugoScore } : p; })
+      .sort(function (a, b) { return b.score - a.score; });
+  }
+  // pure: state -> { board, hugoIdx, shiftedIds, before, after }
+  function ripple(state) {
+    var before = sortFor(1200), after = sortFor(HUGO_AFTER);
+    var rankBefore = {}, rankAfter = {};
+    before.forEach(function (p, i) { rankBefore[p.id] = i; });
+    after.forEach(function (p, i) { rankAfter[p.id] = i; });
+    var shifted = [];
+    Object.keys(rankBefore).forEach(function (id) {
+      if (id !== 'hugo' && rankBefore[id] !== rankAfter[id]) shifted.push(id);
+    });
+    var board = state === 'after' ? after : before;
+    var hugoIdx = -1;
+    for (var i = 0; i < board.length; i++) { if (board[i].id === 'hugo') { hugoIdx = i; break; } }
+    return { board: board, hugoIdx: hugoIdx, shifted: shifted, state: state };
+  }
+  function renderR(state) {
+    var r = ripple(state), b = r.board;
+    var g = document.getElementById('rRows');
+    if (g) {
+      var frag = '';
+      for (var i = 0; i < b.length; i++) {
+        var p = b[i];
+        var y = 28 + i * 23;
+        var cls = p.id === 'hugo' ? 'act' :
+          (r.state === 'after' && r.shifted.indexOf(p.id) >= 0 ? 'shift' : '');
+        frag += '<g class="row ' + cls + '"><rect x="20" y="' + y + '" width="420" height="20" rx="6"></rect>' +
+          '<text class="rk" x="32" y="' + (y + 14) + '">#' + i + '</text>' +
+          '<text class="nm" x="78" y="' + (y + 14) + '">player:' + p.id + '</text>' +
+          '<text class="sc" x="430" y="' + (y + 14) + '" text-anchor="end">' + p.score + '</text></g>';
+      }
+      g.innerHTML = frag;
+    }
+    var sub = document.getElementById('rSubtitle');
+    var out = document.getElementById('rOut');
+    if (r.state === 'after') {
+      if (sub) sub.textContent = 'after ZADD leaderboard 2200 "player:hugo" — rank · player · score';
+      if (out) out.textContent = 'ZADD leaderboard 2200 "player:hugo" sets one score, lifting hugo from rank 6 to ' +
+        'rank ' + r.hugoIdx + '. ' + r.shifted.length + ' other player' + (r.shifted.length === 1 ? '' : 's') +
+        ' (' + r.shifted.join(', ') + ') each drop a place — their ranks recompute on this read, but not one of ' +
+        'their scores was written. One O(log N) write; the ripple costs nothing at write time.';
+    } else {
+      if (sub) sub.textContent = 'before — rank · player · score';
+      if (out) out.textContent = 'before the update: hugo sits at rank 6 with score 1200. One ZADD will set hugo’s ' +
+        'score to 2200. Toggle to "after" to see hugo re-placed and the players it passes drop a rank each — none of ' +
+        'their scores rewritten, only their computed position changed.';
+    }
+  }
+  document.querySelectorAll('#rSel button').forEach(function (bn) {
+    bn.addEventListener('click', function () {
+      var state = bn.getAttribute('data-state');
+      document.querySelectorAll('#rSel button').forEach(function (x) {
+        var sel = x === bn; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderR(state);
+    });
+  });
+  renderR('before'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

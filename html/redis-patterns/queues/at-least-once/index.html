@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R3.02 · At-least-once — Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R3.02 module hub: a reliable queue delivers a job one or more times, never zero. Hold the job until the acknowledgement and recover a crashed one, and a finish-then-crash before the ack makes redelivery inevitable — so the consumer must be idempotent. Three dives, grounded in EchoMQ's producer-side EchoMQ.Keys.dedup/2 (emq:{queue}:de:{id}, cleaned by removeDeduplicationKey-1.lua) — a dedup that stops duplicate submissions, distinct from consumer exactly-once.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- idempotency diagram ---- */
+.idem .slot rect{fill:#10162b;stroke:#2a3252;transition:.18s ease}
+.idem .slot.fire rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
+.idem .slot.skip rect{fill:rgba(123,163,135,.12);stroke:#7ba387}
+.idem text{font-family:var(--mono);fill:#d7cfb9;font-size:12px}
+.idem .ttl{font-family:var(--sans);fill:#a39c89;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.idem .mk{font-weight:700}
+.idem .mk.fire{fill:#f2948c}
+.idem .mk.skip{fill:#a7c9b1}
+.idem .tot{font-family:var(--serif-display);font-size:18px;font-weight:600}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- when-to-use table ---- */
+.tbl{width:100%;border-collapse:collapse;margin:1.2rem 0 0;font-family:var(--sans);font-size:.9rem}
+.tbl th,.tbl td{text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);font-weight:700}
+.tbl td{color:var(--cream-soft)}
+.tbl td code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+.tbl tr:last-child td{border-bottom:0}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--redis-bright);border-color:var(--redis)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+
+/* ---- door ---- */
+.door{margin:1.7rem 0 0;border:1px solid var(--redis);border-radius:16px;
+  background:linear-gradient(180deg,rgba(214,88,79,.10),rgba(10,14,26,.3));
+  padding:clamp(1rem,2.4vw,1.5rem)}
+.door .dl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--redis-bright);margin:0 0 .6rem}
+.door p{margin:0;font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure)}
+.door a{color:var(--redis-bright);font-weight:600}
+.door a:hover{color:var(--cream)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--redis-bright);
+  border:1px solid var(--redis);border-radius:999px;padding:.16rem .55rem}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the module</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><span class="rcur">at-least-once</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/redis-patterns">Redis Patterns</a>
+      <span class="sep">/</span>
+      <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+      <span class="sep">/</span>
+      <span class="here">At-least-once</span>
+    </div>
+    <p class="eyebrow">R3 &middot; Reliable Queues</p>
+    <h1>At-least-<span class="ex">once</span></h1>
+    <p class="lede">Guarantee at-least-once message delivery using LMOVE to atomically transfer messages to a processing
+      list, enabling recovery if consumers crash before completing work.</p>
+    <p class="kicker">R3.01 built the move that loses no job: a worker moves a job <em>into</em> an in-flight list, so
+      a crash leaves it parked and recoverable. That move makes redelivery possible &mdash; and that is the point. The
+      consequence is precise: a reliable queue delivers a job one or more times, never zero. A finish-then-crash before
+      the acknowledgement makes a duplicate inevitable, so the responsibility for absorbing it moves to the consumer,
+      which must be idempotent. This module reads that bargain.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#replay">Delivered N, effect once</a>
+      <a href="#recovery">Recovery from failures</a>
+      <a href="#guarantees">Delivery guarantees</a>
+      <a href="#applied">In EchoMQ</a>
+      <a href="#dives">Dives</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <section id="replay">
+    <h2>Delivered N times, effect once</h2>
+    <div class="prose">
+      <p>A reliable queue can hand the same job to a worker more than once. What separates a correct consumer from a
+        broken one is whether the <em>effect</em> stays at one no matter how many times the job arrives. The toggle below
+        replays one job up to three times against two consumers: an idempotent one that claims a dedup marker with
+        <code class="inl">SET &hellip; NX</code> before the effect, and a non-idempotent one with no marker. The readout
+        reports deliveries and effects side by side.</p>
+    </div>
+
+    <figure class="fig idem" aria-labelledby="hubTitle">
+      <h4 id="hubTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Replay one job N times &middot; the de:&#123;id&#125; marker &middot; how many effects</h4>
+      <div class="controls">
+        <div class="solid-select" id="hubSel" role="group" aria-label="Whether the consumer is idempotent">
+          <button type="button" data-idem="on" data-c="sage" class="active" aria-pressed="true">idempotent (NX marker)</button>
+          <button type="button" data-idem="off" data-c="redis" aria-pressed="false">no marker</button>
+        </div>
+        <div class="fold-ctrl">
+          <label for="hubRange">deliveries</label>
+          <input type="range" id="hubRange" min="1" max="3" step="1" value="2">
+          <span class="val" id="hubVal">2</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 168" role="img" aria-label="One job delivered up to three times. With the NX marker on, the first delivery claims the marker and applies the effect once; every later delivery finds the marker set and skips, so the effect count stays one however many deliveries arrive. With no marker, every delivery applies the effect, so the effect count equals the delivery count.">
+        <text class="ttl" x="30" y="26">deliveries</text>
+        <g class="slot" id="h1"><rect x="30" y="36" width="110" height="44" rx="9"></rect></g>
+        <text x="85" y="56" text-anchor="middle" id="h1t">deliver 1</text>
+        <text class="mk" id="h1m" x="85" y="72" text-anchor="middle">effect</text>
+        <g class="slot" id="h2"><rect x="150" y="36" width="110" height="44" rx="9"></rect></g>
+        <text x="205" y="56" text-anchor="middle" id="h2t">deliver 2</text>
+        <text class="mk" id="h2m" x="205" y="72" text-anchor="middle">effect</text>
+        <g class="slot" id="h3"><rect x="270" y="36" width="110" height="44" rx="9"></rect></g>
+        <text x="325" y="56" text-anchor="middle" id="h3t">deliver 3</text>
+        <text class="mk" id="h3m" x="325" y="72" text-anchor="middle">effect</text>
+        <text class="tot" id="hubTot" x="30" y="124" fill="#a7c9b1">2 deliveries &rarr; 1 effect</text>
+        <text class="ttl" id="hubSub" x="30" y="148">the NX marker absorbs the redeliveries &middot; effect runs once</text>
+      </svg>
+
+      <div class="geo-readout" id="hubOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">Delivered N times, effect once. A reliable queue is at-least-once; an idempotent consumer is what
+      turns that into an exactly-once effect.</p>
+  </section>
+
+  <section id="recovery">
+    <h2>Recovery from Failures</h2>
+    <div class="prose">
+      <p>A separate monitor process &mdash; a reaper &mdash; periodically scans the processing list for stalled messages.
+        For each job that has sat there longer than a timeout, it treats the worker as dead and moves the job back to the
+        main queue with a second atomic move. R3.01 grounded this in EchoMQ's stalled sweep. The recovery path is what
+        makes the queue reliable, and it is also what makes redelivery inevitable.</p>
+      <p>The window is precise. A worker takes a job into the in-flight list under a lock, applies the effect &mdash;
+        charges a card, writes a row, sends a mail &mdash; and then crashes <em>before</em> it can remove the job from
+        the in-flight list. The effect already happened; the acknowledgement did not. The reaper finds a job whose lock
+        expired, returns it to the main queue, and a second worker runs it again. The effect runs twice.</p>
+      <p class="take" style="font-style:italic">This guarantees &ldquo;at-least-once&rdquo; delivery &mdash; messages
+        may be processed multiple times but are never lost.</p>
+      <p>That sentence from the source is the whole bargain. The dependency chain is exact: R3.01's in-flight move makes
+        redelivery <em>possible</em> (that is the design); a finish-then-crash before the acknowledgement makes it
+        <em>inevitable</em>; therefore the consumer must be idempotent. There is no fourth option that removes the
+        duplicate without reintroducing the loss.</p>
+    </div>
+    <p class="take">The recovery path that never loses a job is the same path that can redeliver one. Keep the
+      recovery, accept the duplicate, and move the work to the consumer.</p>
+  </section>
+
+  <section id="guarantees">
+    <h2>Delivery Guarantees</h2>
+    <div class="prose">
+      <p>This pattern provides <strong>at-least-once</strong> delivery, which is two properties stated together:</p>
+      <p><strong>Messages are never lost.</strong> A job always exists in some list &mdash; the main queue or the
+        in-flight list &mdash; so no crash drops it.</p>
+      <p><strong>Messages may be processed multiple times.</strong> A worker that crashes after the effect but before
+        the acknowledgement leaves the job in-flight, and recovery runs it again.</p>
+      <p>The three guarantees that bound the design space are worth naming together. <strong>At-most-once</strong>
+        removes the job before the work, so a crash loses it &mdash; zero or one delivery, never a duplicate, but a job
+        can vanish. <strong>At-least-once</strong> keeps the job until the acknowledgement, so a crash redelivers it
+        &mdash; one or more deliveries, never zero, but a job can repeat. <strong>Exactly-once</strong> would be one
+        delivery and exactly one &mdash; and it is not achievable as a <em>delivery</em> guarantee, because the
+        acknowledgement itself can be lost, which is the subject of the third dive.</p>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Guarantee</th><th>When the job leaves</th><th>Failure outcome</th></tr></thead>
+      <tbody>
+        <tr><td>At-most-once</td><td>before the work (<code>RPOP</code>)</td><td>a crash loses the job &mdash; zero deliveries</td></tr>
+        <tr><td>At-least-once</td><td>after the acknowledgement (<code>LMOVE</code> + <code>LREM</code>)</td><td>a crash redelivers &mdash; one or more deliveries</td></tr>
+        <tr><td>Exactly-once</td><td>&mdash;</td><td>not a deliverable guarantee &mdash; build it as an idempotent effect</td></tr>
+      </tbody>
+    </table>
+    <div class="prose">
+      <p class="take" style="font-style:italic">For exactly-once semantics, make message handlers idempotent &mdash;
+        processing the same message twice should produce the same result as processing it once.</p>
+      <p>This is where the work moves to the consumer. Idempotency converts at-least-once <em>delivery</em> into an
+        exactly-once <em>effect</em>. Some effects are naturally idempotent &mdash; a <code class="inl">SET key value</code>
+        overwrites to the same value however many times it runs. Others are not &mdash; an <code class="inl">INCR</code>,
+        a charge, a row insert &mdash; and those need a guard: a dedup marker claimed with <code class="inl">SET &hellip; NX</code>
+        keyed by a stable job id, so the second delivery finds the marker and skips.</p>
+    </div>
+    <p class="take">A reliable queue must keep the job until it is acknowledged, so it is at-least-once &mdash; the only
+      point on the spectrum that loses no job.</p>
+  </section>
+
+  <section id="applied">
+    <h2>In EchoMQ &mdash; producer dedup, not consumer exactly-once</h2>
+    <div class="prose">
+      <p>EchoMQ carries a real deduplication key, and it is worth being precise about what it does.
+        <code class="inl">EchoMQ.Keys.dedup/2</code> builds <code class="inl">emq:{queue}:de:{id}</code>
+        (<code class="inl">"#{base(ctx)}:de:#{dedup_id}"</code>). A producer enqueuing a job with a deduplication id
+        claims this marker; a second enqueue carrying the same id is dropped because the marker is already present. The
+        Lua script <code class="inl">removeDeduplicationKey-1.lua</code> cleans it up: it <code class="inl">GET</code>s
+        the key and <code class="inl">DEL</code>s it only when the stored value matches the job id, so the cleanup never
+        deletes a marker some other job holds.</p>
+      <pre class="code"><span class="cmt"># at-least-once delivery + an idempotent effect = exactly-once effect (the consumer's job)</span>
+<span class="op">if</span> <span class="rdx">SET</span> dedup:{job_id} 1 <span class="op">NX</span>:     <span class="cmt"># claim the marker; NX = only if absent</span>
+    apply_effect(job)           <span class="cmt"># first delivery: run the effect once</span>
+<span class="op">else</span>:
+    skip()                      <span class="cmt"># a redelivery: the marker is already set, do nothing</span></pre>
+      <pre class="code"><span class="cmt">-- EchoMQ.Keys.dedup/2 — producer-side dedup key (real)</span>
+<span class="op">def</span> <span class="fn gold">dedup</span>(ctx, dedup_id), <span class="op">do</span>: <span class="str">"#{base(ctx)}:de:#{dedup_id}"</span>   <span class="cmt"># emq:my_queue:de:&lt;id&gt;</span></pre>
+      <p>This is <strong>producer-side</strong> deduplication. It stops two identical jobs from entering the queue at
+        enqueue time. It is <strong>not</strong> consumer exactly-once: it says nothing about a single job being
+        <em>delivered</em> twice to a worker, because the in-flight recovery path can still redeliver a job that entered
+        the queue once. Producer dedup and consumer idempotency are two different keys protecting two different moments
+        &mdash; the enqueue and the effect. The exactly-once <em>effect</em> a reliable queue ships is the consumer's
+        job: a naturally idempotent effect, or a marker claimed at effect-time with <code class="inl">SET &hellip; NX</code>.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>A reliable queue is at-least-once; the consumer must be idempotent. The exactly-once effect is the consumer's
+          to build &mdash; a naturally idempotent effect, or a marker claimed at effect-time.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p>The producer-side <code class="inl">EchoMQ.Keys.dedup/2</code> marker
+          (<code class="inl">emq:{queue}:de:{id}</code>, cleaned by <code class="inl">removeDeduplicationKey-1.lua</code>)
+          dedups at enqueue, while the consumer's effect must still be made idempotent to absorb a redelivery the
+          recovery path cannot avoid.</p>
+      </div>
+    </div>
+    <p class="take">EchoMQ's <code class="inl">de:{id}</code> marker stops duplicate <em>submissions</em>; an idempotent
+      consumer absorbs duplicate <em>deliveries</em>. Two keys, two moments.</p>
+
+    <div class="door">
+      <p class="dl">A door, not a depth</p>
+      <p>This module cites one excerpt of EchoMQ's protocol &mdash; the producer dedup key &mdash; as proof the pattern
+        ships. The worker fetch loop that delivers a job is <a href="/echomq/core">E2 &middot; the EchoMQ core</a>, and
+        the acknowledge/finish lifecycle that closes a job out is <a href="/echomq/lifecycle">E6 &middot; the
+        lifecycle</a> &mdash; both in the dedicated <strong>EchoMQ course</strong>, built next with this toolkit. This
+        module teaches the at-least-once bargain; that course teaches the engine that runs it.</p>
+    </div>
+  </section>
+
+  <section id="dives">
+    <h2>The three dives</h2>
+    <div class="prose">
+      <p>Each dive takes one face of the bargain, in order: the three guarantees and why the move-under-lock yields
+        at-least-once; making the consumer idempotent so a redelivery changes nothing; and the acknowledgement-gap
+        argument that proves exactly-once delivery cannot exist. Read them in order &mdash; the semantics first, the
+        idempotent consumer second, the impossibility proof third.</p>
+    </div>
+
+    <div class="mods" style="margin-top:1.3rem">
+
+      <a class="mod" href="/redis-patterns/queues/at-least-once/at-least-once-semantics">
+        <div class="top"><span class="num">R3.02.1</span><span class="pill built">built</span></div>
+        <p class="t">At-least-once semantics</p>
+        <p class="o">The three delivery guarantees, why the move-under-lock yields at-least-once, and the
+          finish-then-crash-before-ack window. Never lost; possibly twice.</p>
+      </a>
+
+      <a class="mod" href="/redis-patterns/queues/at-least-once/idempotent-consumers">
+        <div class="top"><span class="num">R3.02.2</span><span class="pill built">built</span></div>
+        <p class="t">Idempotent consumers</p>
+        <p class="o">A naturally idempotent <code class="inl">SET</code> versus a dedup marker for a non-idempotent
+          <code class="inl">INCR</code> or charge. Worked example: a Portal enrollment.</p>
+      </a>
+
+      <a class="mod" href="/redis-patterns/queues/at-least-once/why-exactly-once-is-a-lie">
+        <div class="top"><span class="num">R3.02.3</span><span class="pill built">built</span></div>
+        <p class="t">Why exactly-once is a lie</p>
+        <p class="o">The acknowledgement-gap argument: exactly-once <em>delivery</em> is impossible, exactly-once
+          <em>effect</em> is what you build. <code class="inl">de:{id}</code> is producer dedup.</p>
+      </a>
+
+    </div>
+
+    <p class="note">After R3.02, the Reliable Queues chapter continues with the processing list, stalled recovery, and a
+      workshop. Return to the <a href="/redis-patterns/queues">Reliable Queues chapter</a> to continue.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The Redis mechanisms behind at-least-once delivery and the idempotency marker, and the queue protocol whose
+        producer-side dedup key grounds this module.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/set/">Redis &mdash; <em>SET</em></a> &mdash; the <code>NX</code> option behind the idempotency marker (<code>SET &hellip; NX</code>): claim the key only if absent.</li>
+          <li><a href="https://redis.io/commands/rpoplpush/">Redis &mdash; <em>RPOPLPUSH</em></a> &mdash; the at-least-once move into the in-flight list that makes redelivery possible.</li>
+          <li><a href="https://redis.io/glossary/redis-queue/">Redis &mdash; <em>Redis queue</em></a> &mdash; the queue and its delivery-guarantee overview.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the worker path EchoMQ ports, including custom job ids and deduplication.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/queues/at-least-once/at-least-once-semantics">R3.02.1 &middot; At-least-once semantics</a> &mdash; the three guarantees and the duplicate window.</li>
+          <li><a href="/redis-patterns/queues/at-least-once/idempotent-consumers">R3.02.2 &middot; Idempotent consumers</a> &mdash; the marker and the naturally idempotent effect.</li>
+          <li><a href="/redis-patterns/queues/at-least-once/why-exactly-once-is-a-lie">R3.02.3 &middot; Why exactly-once is a lie</a> &mdash; the acknowledgement-gap argument.</li>
+          <li><a href="/redis-patterns/queues/the-reliable-queue">R3 &middot; The reliable queue</a> &mdash; the family in one place.</li>
+          <li><a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a> &mdash; the chapter.</li>
+          <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &middot; Atomic updates</a> &mdash; the atomic move the move-under-lock rests on.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/redis-patterns/queues"><span aria-hidden="true">&larr;</span>&nbsp; R3 &middot; Reliable Queues</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/queues/at-least-once/at-least-once-semantics">R3.02.1 &middot; At-least-once semantics <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/queues/at-least-once/at-least-once-semantics">R3.02.1 &middot; At-least-once semantics</a>
+        <a href="/redis-patterns/queues/at-least-once/idempotent-consumers">R3.02.2 &middot; Idempotent consumers</a>
+        <a href="/redis-patterns/queues/at-least-once/why-exactly-once-is-a-lie">R3.02.3 &middot; Why exactly-once is a lie</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/core">The EchoMQ course &middot; the engine</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hub: replay one job N times — N deliveries, the NX marker (pure) ---------- */
+  // One job delivered n times (1..3). With the marker ON, the first delivery claims dedup:{job_id} and applies the
+  // effect; every later delivery finds the marker and skips, so effects = 1. With the marker OFF, every delivery applies
+  // the effect, so effects = n. The outcome is a pure function of (idem, n).
+  var GOLD = '#f0cd7f', SAGE = '#a7c9b1', REDIS = '#f2948c';
+  // pure: (idem, n) -> { n, effects, slots:[{on,act}], text }
+  function effects(idem, n) {
+    var slots = [];
+    var count = 0;
+    for (var i = 1; i <= 3; i++) {
+      if (i > n) { slots.push({ on: false, act: false }); continue; }
+      var act = (idem === 'on') ? (i === 1) : true; // marker: only the first delivery fires
+      if (act) count++;
+      slots.push({ on: true, act: act });
+    }
+    var dword = (n === 1 ? 'delivery' : 'deliveries');
+    var redeliver = (n === 2) ? 'delivery 2 finds the marker and skips'
+      : (n === 3) ? 'deliveries 2 and 3 find the marker and skip' : '';
+    var text;
+    if (idem === 'on') {
+      text = n + ' ' + dword + '. Delivery 1 claims dedup:{job_id} with SET NX and applies the effect; ' +
+        (n === 1 ? 'no redeliveries follow' : redeliver) + ' → ' + count +
+        ' effect. At-least-once delivery, exactly-once effect.';
+    } else {
+      text = n + ' ' + dword + ', no NX marker. Every delivery applies the effect → ' +
+        count + ' effect' + (count === 1 ? '' : 's') +
+        '. A non-idempotent consumer repeats the effect on each redelivery.';
+    }
+    return { n: n, effects: count, slots: slots, text: text };
+  }
+  function setIdem(idem, n) {
+    var r = effects(idem, n);
+    for (var i = 1; i <= 3; i++) {
+      var s = r.slots[i - 1];
+      var slot = document.getElementById('h' + i),
+          tl = document.getElementById('h' + i + 't'),
+          mk = document.getElementById('h' + i + 'm');
+      if (!slot) continue;
+      slot.classList.remove('fire', 'skip');
+      if (!s.on) {
+        slot.style.opacity = '.32';
+        if (tl) tl.textContent = '—';
+        if (mk) { mk.textContent = ''; mk.setAttribute('class', 'mk'); }
+        continue;
+      }
+      slot.style.opacity = '1';
+      if (tl) tl.textContent = 'deliver ' + i;
+      if (s.act) { slot.classList.add('fire'); if (mk) { mk.textContent = 'effect'; mk.setAttribute('class', 'mk fire'); } }
+      else { slot.classList.add('skip'); if (mk) { mk.textContent = 'skip'; mk.setAttribute('class', 'mk skip'); } }
+    }
+    var tot = document.getElementById('hubTot'), sub = document.getElementById('hubSub');
+    if (tot) {
+      tot.textContent = r.n + ' deliver' + (r.n === 1 ? 'y' : 'ies') + ' → ' + r.effects + ' effect' + (r.effects === 1 ? '' : 's');
+      tot.setAttribute('fill', (idem === 'on') ? SAGE : REDIS);
+    }
+    if (sub) sub.textContent = (idem === 'on')
+      ? 'the NX marker absorbs the redeliveries · effect runs once'
+      : 'no marker · every delivery fires · effect runs ' + r.effects + ' time' + (r.effects === 1 ? '' : 's');
+    var out = document.getElementById('hubOut');
+    if (out) out.textContent = r.text;
+  }
+  var hubMode = 'on', hubN = 2;
+  document.querySelectorAll('#hubSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      hubMode = b.getAttribute('data-idem');
+      document.querySelectorAll('#hubSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setIdem(hubMode, hubN);
+    });
+  });
+  var hubRange = document.getElementById('hubRange'), hubVal = document.getElementById('hubVal');
+  if (hubRange) {
+    hubRange.addEventListener('input', function () {
+      hubN = parseInt(hubRange.value, 10);
+      if (hubVal) hubVal.textContent = String(hubN);
+      setIdem(hubMode, hubN);
+    });
+  }
+  setIdem('on', 2); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

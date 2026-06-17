@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R3.05 · Blocking vs polling — Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R3.05 module hub: stop busy-polling for the next job. A worker that spins a RPOP/sleep loop on an idle queue burns a round-trip on every empty poll and picks a job up to one interval late. The blocking variant parks the connection on the server and returns the instant work arrives. EchoMQ blocks on a dedicated marker ZSET with BZPOPMIN on a dedicated blocking connection (do_wait_for_job/3 over EchoMQ.RedisConnection.blocking_connection/1), and the producer rings the doorbell with ZADD emq:{queue}:marker 0 0 (addBaseMarkerIfNeeded, verified in addStandardJob-9.lua and drain-5.lua). The Go port's empty-queue worker loop polls on time.Sleep as the cautionary contrast.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- poll/block diagram ---- */
+.pb .lane rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.pb .lane.block rect{fill:rgba(123,163,135,.12);stroke:#7ba387}
+.pb .poll-tick{fill:#5a87c4;transition:fill .18s ease}
+.pb .poll-tick.waste{fill:#d6584f}
+.pb .poll-tick.hit{fill:#7ba387}
+.pb .job-mark{fill:#f0cd7f}
+.pb text{font-family:var(--sans);fill:#d7cfb9}
+.pb .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.pb .jt{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
+.pb .axis{stroke:#2a3252;stroke-width:1}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- when-to-use table ---- */
+.tbl{width:100%;border-collapse:collapse;margin:1.2rem 0 0;font-family:var(--sans);font-size:.9rem}
+.tbl th,.tbl td{text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);font-weight:700}
+.tbl td{color:var(--cream-soft)}
+.tbl td code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+.tbl tr:last-child td{border-bottom:0}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--redis-bright);border-color:var(--redis)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+
+/* ---- door ---- */
+.door{margin:1.7rem 0 0;border:1px solid var(--redis);border-radius:16px;
+  background:linear-gradient(180deg,rgba(214,88,79,.10),rgba(10,14,26,.3));
+  padding:clamp(1rem,2.4vw,1.5rem)}
+.door .dl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--redis-bright);margin:0 0 .6rem}
+.door p{margin:0;font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure)}
+.door a{color:var(--redis-bright);font-weight:600}
+.door a:hover{color:var(--cream)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--redis-bright);
+  border:1px solid var(--redis);border-radius:999px;padding:.16rem .55rem}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the module</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><span class="rcur">blocking-vs-polling</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/redis-patterns">Redis Patterns</a>
+      <span class="sep">/</span>
+      <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+      <span class="sep">/</span>
+      <span class="here">Blocking vs polling</span>
+    </div>
+    <p class="eyebrow">R3.05 &middot; Reliable Queues</p>
+    <h1>Blocking vs <span class="ex">polling</span></h1>
+    <p class="lede">Guarantee at-least-once message delivery using LMOVE to atomically transfer messages to a processing
+      list, enabling recovery if consumers crash before completing work.</p>
+    <p class="kicker">The reliable queue answers <em>where a job lives</em>: it parks in an in-flight list under a lock
+      so a crash leaves it recoverable. This module answers a second question that queue raises &mdash; <em>how does a
+      worker take the next job off an empty queue?</em> A queue is empty most of the time. A worker that spins a
+      <code class="inl">RPOP</code>/sleep loop on an idle queue burns a round-trip on every empty poll and picks a job up
+      to one interval late. The blocking variant replaces that spin: the worker parks on a blocking primitive, and Redis
+      returns the instant work arrives. Slide the poll interval below and switch to block to watch the wasted polls and
+      the pickup latency collapse.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#variant">The blocking variant</a>
+      <a href="#cost">The busy-poll cost</a>
+      <a href="#pop">Blocking pop</a>
+      <a href="#marker">The marker wake-up</a>
+      <a href="#when">When to use</a>
+      <a href="#dives">Dives</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <section id="variant">
+    <h2>The blocking variant</h2>
+    <div class="prose">
+      <p>The source's reliable-queue loop, in polling form, pops the work list and falls back to a sleep: pop; if the
+        result is nil, sleep a fixed interval; retry. For efficient consumption <em>without</em> polling, the source
+        offers the blocking form &mdash; <code class="inl">BLMOVE work_queue processing RIGHT LEFT 30</code> &mdash;
+        which waits up to thirty seconds for a message. If the queue is empty, the connection parks on the server rather
+        than returning immediately. There is no poll interval and no wasted round-trip: the call returns the instant an
+        element is available, or after the timeout elapses.</p>
+      <p>EchoMQ keeps the idea and changes the primitive. It does not park on the work list. It parks on a dedicated
+        <strong>marker ZSET</strong>, <code class="inl">emq:{queue}:marker</code>, with
+        <code class="inl">BZPOPMIN</code> &mdash; a doorbell. When a producer adds a job to <code class="inl">wait</code>,
+        it also <code class="inl">ZADD</code>s a member onto the marker, which makes the parked
+        <code class="inl">BZPOPMIN</code> return; the worker then fetches the job from <code class="inl">wait</code> on
+        its main connection. Same trade as <code class="inl">BLMOVE</code> &mdash; block instead of poll, wake the
+        instant work arrives, burn no idle round-trips &mdash; applied through a separate signalling key rather than the
+        work list.</p>
+    </div>
+
+    <figure class="fig pb" aria-labelledby="pbTitle">
+      <h4 id="pbTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Poll vs block &middot; a job arrives at t&nbsp;=&nbsp;330&nbsp;ms over a 1000&nbsp;ms window</h4>
+      <div class="controls">
+        <div class="solid-select" id="pbSel" role="group" aria-label="Whether the worker polls or blocks">
+          <button type="button" data-mode="poll" data-c="redis" class="active" aria-pressed="true">poll on a sleep interval</button>
+          <button type="button" data-mode="block" data-c="sage" aria-pressed="false">block on BZPOPMIN marker</button>
+        </div>
+        <div class="fold-ctrl">
+          <label for="pbRange">poll interval</label>
+          <input type="range" id="pbRange" min="50" max="500" step="50" value="200">
+          <span class="val" id="pbVal">200ms</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 150" role="img" aria-label="A one-second window. A job arrives at 330 milliseconds. In poll mode the worker checks every interval milliseconds; each check before the job is a wasted empty poll, and the job is picked up at the first check after 330 milliseconds, so it waits up to one interval. In block mode the worker parks on BZPOPMIN on the marker and is woken at 330 milliseconds exactly, with no wasted checks. The selected mode marks the checks and the pickup.">
+        <text class="ttl" x="30" y="24" id="pbLaneTtl">worker timeline (1000 ms)</text>
+        <g class="lane" id="pbLane"><rect x="30" y="34" width="400" height="38" rx="9"></rect></g>
+        <line class="axis" x1="30" y1="90" x2="430" y2="90"></line>
+        <!-- job arrival marker at t=330ms -> x = 30 + 400*0.33 = 162 -->
+        <line x1="162" y1="34" x2="162" y2="98" stroke="#f0cd7f" stroke-width="1.5" stroke-dasharray="3 3"></line>
+        <text class="jt" x="162" y="112" text-anchor="middle">job @330ms</text>
+        <g id="pbTicks"></g>
+        <text class="ttl" id="pbVerd" x="230" y="138" text-anchor="middle">&mdash;</text>
+      </svg>
+
+      <div class="geo-readout" id="pbOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">Polling trades latency for round-trips on one dial and pays both; blocking parks the worker and
+      returns the instant work arrives, paying neither. EchoMQ blocks on a marker ZSET, not the work list.</p>
+  </section>
+
+  <section id="cost">
+    <h2>The busy-poll cost</h2>
+    <div class="prose">
+      <p>The naive wait is a spin: <code class="inl">RPOP wait</code>; if the result is nil,
+        <code class="inl">sleep(interval)</code>; repeat. Every pass that returns nil is a <strong>wasted
+        round-trip</strong> &mdash; a command sent and a nil sent back, for no work. On a queue that is empty most of the
+        time, that is the steady state.</p>
+      <p>A job rarely arrives exactly when the worker polls. It arrives in the gap between two polls and waits the rest
+        of the gap before the next poll picks it up, so average pickup latency is about <strong>half the
+        interval</strong>. The interval is the only dial, and it has no good setting: a short interval cuts latency but
+        multiplies the empty round-trips on an idle queue; a long interval cuts the round-trips but lengthens pickup
+        latency. No value is cheap on both axes, because polling pays for <em>checking</em> whether work exists
+        separately from <em>doing</em> the work. The first dive quantifies the trade with a poll-cost calculator.</p>
+    </div>
+    <p class="take">Polling pays a wasted round-trip on every empty poll and adds about half an interval of pickup
+      latency; the interval dials one cost against the other, and no setting wins.</p>
+  </section>
+
+  <section id="pop">
+    <h2>Blocking pop</h2>
+    <div class="prose">
+      <p>A blocking pop &mdash; <code class="inl">BLMOVE</code>, <code class="inl">BRPOPLPUSH</code>, or
+        <code class="inl">BZPOPMIN</code> with a timeout &mdash; parks the connection on the server until an element is
+        available or the timeout elapses. There is no poll interval, so a job is picked up the moment it arrives, not up
+        to one interval later. There are no empty round-trips, because the call does not return until there is work or
+        the timeout fires.</p>
+      <p>The cost is the connection. While a connection is parked on a blocking call, it is busy &mdash; a command sent
+        on the <em>same</em> connection waits behind the block. EchoMQ avoids that by parking the block on a
+        <strong>dedicated</strong> blocking connection (<code class="inl">EchoMQ.RedisConnection.blocking_connection/1</code>,
+        documented as <em>"a dedicated blocking connection for operations like BRPOPLPUSH or BZPOPMIN"</em>), leaving the
+        worker's main command connection free for fetches and acknowledgements. The second dive builds the primitive and
+        the dedicated-connection discipline.</p>
+    </div>
+    <p class="take">A blocking pop parks the connection until work arrives, removing the interval and the empty
+      round-trips; the price is a tied-up connection, which a dedicated blocking connection keeps off the main one.</p>
+  </section>
+
+  <section id="marker">
+    <h2>The marker wake-up</h2>
+    <div class="prose">
+      <p>EchoMQ's blocking-fetch path makes the handshake precise. The worker parks on
+        <code class="inl">emq:{queue}:marker</code> &mdash; a ZSET, built by <code class="inl">EchoMQ.Keys.marker/1</code>
+        and documented as the <em>"marker sorted set (for blocking operations)"</em>. The blocking-fetch internals are
+        <code class="inl">EchoMQ.Worker.wait_for_job/2</code> &rarr; <code class="inl">do_wait_for_job/3</code> (both
+        private worker functions): <code class="inl">do_wait_for_job/3</code> runs
+        <code class="inl">BZPOPMIN marker_key timeout</code> and returns <code class="inl">:job_available</code> when a
+        marker arrived or <code class="inl">:timeout</code> when none did.</p>
+      <p>The producer side rings the doorbell: adding a job runs <code class="inl">addBaseMarkerIfNeeded</code>, which is
+        <code class="inl">ZADD emq:{queue}:marker 0 "0"</code> (verified in <code class="inl">addStandardJob-9.lua</code>
+        and <code class="inl">drain-5.lua</code>). The <code class="inl">ZADD</code> makes the parked
+        <code class="inl">BZPOPMIN</code> return, and the worker fetches the job. The marker is a signal, not a queue:
+        <code class="inl">BZPOPMIN</code> pops the lowest-scored member, so one <code class="inl">ZADD</code> wakes one
+        parked <code class="inl">BZPOPMIN</code>. The third dive walks the full handshake and the fan-out fairness.</p>
+      <pre class="code"><span class="cmt"># EchoMQ.Worker.do_wait_for_job/3 — park on the marker, wake when a job is added (real, Elixir)</span>
+<span class="op">case</span> <span class="fn blue">Redix.command</span>(conn, [<span class="str">"BZPOPMIN"</span>, marker_key, timeout_seconds], timeout: :infinity) <span class="op">do</span>
+  {<span class="res">:ok</span>, <span class="res">nil</span>}                  <span class="op">-&gt;</span> <span class="res">:timeout</span>         <span class="cmt"># the park elapsed, no job</span>
+  {<span class="res">:ok</span>, [_key, _member, _sc]} <span class="op">-&gt;</span> <span class="res">:job_available</span>   <span class="cmt"># a marker arrived → a job is available</span>
+<span class="op">end</span></pre>
+    </div>
+    <p class="take">EchoMQ's worker parks on <code class="inl">BZPOPMIN emq:{queue}:marker</code>; the producer's
+      <code class="inl">ZADD marker 0 "0"</code> rings the doorbell, and the parked block returns &mdash; one ring wakes
+      one worker.</p>
+  </section>
+
+  <section id="when">
+    <h2>When to Use</h2>
+    <div class="prose">
+      <p>Block instead of poll whenever a worker waits on a queue that is empty much of the time and pickup latency
+        matters. A busy-poll loop is acceptable only when a blocking connection is not available, or when the producer
+        cannot ring a signal and the worker must re-check on its own cadence. Otherwise the blocking form wins on both
+        axes it trades against: lower latency and fewer round-trips at once.</p>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Concern</th><th>Choice</th></tr></thead>
+      <tbody>
+        <tr><td>Wait for the next job</td><td>block on a primitive with a timeout, not a <code>RPOP</code>/sleep loop</td></tr>
+        <tr><td>The primitive</td><td><code>BLMOVE</code>/<code>BRPOPLPUSH</code> on the work list, or <code>BZPOPMIN</code> on a marker ZSET</td></tr>
+        <tr><td>The wake-up signal</td><td>the producer <code>ZADD</code>s the marker (<code>ZADD emq:{queue}:marker 0 "0"</code>)</td></tr>
+        <tr><td>The connection</td><td>a dedicated blocking connection, so the main command connection stays free</td></tr>
+        <tr><td>Bound the wait</td><td>a timeout, so the worker re-checks liveness and is never parked forever</td></tr>
+      </tbody>
+    </table>
+    <p class="take">Block on a primitive with a timeout, ring the marker when a job is added, and park the block on a
+      dedicated connection &mdash; the four choices this module's three dives make precise.</p>
+  </section>
+
+  <section id="dives">
+    <h2>The three dives</h2>
+    <div class="prose">
+      <p>Each dive takes one part of the move, in order: the cost the polling loop pays, the blocking primitive that
+        removes it, and the EchoMQ-specific marker handshake that wakes the worker. Read them in order &mdash; the cost
+        first, the primitive second, the marker wake-up third.</p>
+    </div>
+
+    <div class="mods" style="margin-top:1.3rem">
+
+      <a class="mod" href="/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost">
+        <div class="top"><span class="num">R3.05.1</span><span class="pill built">built</span></div>
+        <p class="t">The busy-poll cost</p>
+        <p class="o">The naive <code class="inl">RPOP</code>/sleep loop: every empty poll is a wasted round-trip, a job
+          waits up to one interval before pickup, and the interval is the only dial &mdash; no setting wins.</p>
+      </a>
+
+      <a class="mod" href="/redis-patterns/queues/blocking-vs-polling/blocking-pop">
+        <div class="top"><span class="num">R3.05.2</span><span class="pill built">built</span></div>
+        <p class="t">Blocking pop</p>
+        <p class="o"><code class="inl">BLMOVE</code>/<code class="inl">BRPOPLPUSH</code>/<code class="inl">BZPOPMIN</code>
+          with a timeout park the connection until work arrives &mdash; no interval, no wasted round-trips &mdash; on a
+          dedicated blocking connection that keeps the main one free.</p>
+      </a>
+
+      <a class="mod" href="/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up">
+        <div class="top"><span class="num">R3.05.3</span><span class="pill built">built</span></div>
+        <p class="t">The marker wake-up</p>
+        <p class="o">The EchoMQ handshake: the worker parks on <code class="inl">BZPOPMIN emq:{queue}:marker</code>; the
+          producer <code class="inl">ZADD</code>s the marker; the parked block returns; one ring wakes one worker.</p>
+      </a>
+
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>Block on a primitive with a timeout instead of polling, so the worker wakes the instant work arrives and burns
+          no idle round-trips. Ring a signal when work is added, so one ring wakes one parked worker.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p>The worker parks on <code class="inl">BZPOPMIN emq:{queue}:marker</code> via
+          <code class="inl">do_wait_for_job/3</code> on a <code class="inl">blocking_connection/1</code>, woken by the
+          producer's <code class="inl">ZADD marker 0 "0"</code> (<code class="inl">addBaseMarkerIfNeeded</code>). The Go
+          port's <code class="inl">time.Sleep</code> empty-queue loop is the cautionary contrast.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says block on a signal and ring it when work arrives; EchoMQ's worker parks on the marker
+      ZSET, the producer rings it with a <code class="inl">ZADD</code>, and the Go port's sleep-poll loop shows the cost
+      of not.</p>
+
+    <div class="door">
+      <p class="dl">A door, not a depth</p>
+      <p>This module cites one excerpt of EchoMQ's protocol &mdash; the marker <code class="inl">BZPOPMIN</code> block and
+        the producer's <code class="inl">ZADD</code> that wakes it &mdash; as proof the blocking fetch ships. The full
+        worker fetch loop, the dedicated blocking connection's lifecycle, and the polyglot concurrency models that govern
+        how each runtime parks and wakes are the subject of the dedicated <strong>EchoMQ course</strong>, built next with
+        this toolkit. The worker fetch loop is <a href="/echomq/core">E2 &middot; the engine</a>; the marker and
+        heartbeat coordination is <a href="/echomq/lifecycle">E6 &middot; the lifecycle</a>. This module teaches the
+        blocking-vs-polling pattern; that course teaches the engine that runs it.</p>
+    </div>
+
+    <p class="note">R3.05 closes the Reliable Queues chapter's pickup story: after the processing list and the
+      at-least-once guarantees, how a worker takes the next job off an empty queue is the last detail. Return to the
+      <a href="/redis-patterns/queues">Reliable Queues chapter</a> to continue.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The Redis primitives behind the blocking wait &mdash; the marker pop, the blocking moves, the sorted set, and
+        the <code>ZADD</code> that rings it &mdash; and where the engine that parks on them is taught.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/bzpopmin/">Redis &mdash; <em>BZPOPMIN</em></a> &mdash; block on a sorted set until a member is added, then pop the lowest-scored; the marker pop EchoMQ's worker parks on.</li>
+          <li><a href="https://redis.io/commands/blmove/">Redis &mdash; <em>BLMOVE</em></a> &mdash; the modern blocking move, the reliable-queue pop that parks on the work list.</li>
+          <li><a href="https://redis.io/commands/brpoplpush/">Redis &mdash; <em>BRPOPLPUSH</em></a> &mdash; the older blocking reliable-queue pop, the form <code>BLMOVE</code> succeeds.</li>
+          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; add a member to a sorted set; the producer's <code>ZADD marker</code> that wakes a blocked worker.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; the ZSET data type behind the marker and the <code>BZPOPMIN</code> pop.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the marker / <code>BZPOPMIN</code> worker wait EchoMQ ports.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost">R3.05.1 &middot; The busy-poll cost</a> &mdash; the cost the polling loop pays.</li>
+          <li><a href="/redis-patterns/queues/blocking-vs-polling/blocking-pop">R3.05.2 &middot; Blocking pop</a> &mdash; the primitive that removes it.</li>
+          <li><a href="/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up">R3.05.3 &middot; The marker wake-up</a> &mdash; the EchoMQ marker handshake.</li>
+          <li><a href="/redis-patterns/queues/the-reliable-queue">R3 &middot; The reliable queue</a> &mdash; the family in one place, where the blocking variant is introduced.</li>
+          <li><a href="/redis-patterns/queues/processing-list">R3.01 &middot; The processing list</a> &mdash; the wait/active lists the worker pops from.</li>
+          <li><a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a> &mdash; the chapter.</li>
+          <li><a href="/echomq/lifecycle">E6 &middot; The job lifecycle</a> &mdash; the dedicated EchoMQ course: the marker / heartbeat coordination and the polyglot concurrency models.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/redis-patterns/queues"><span aria-hidden="true">&larr;</span>&nbsp; R3 &middot; Reliable Queues</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost">R3.05.1 &middot; The busy-poll cost <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost">R3.05.1 &middot; The busy-poll cost</a>
+        <a href="/redis-patterns/queues/blocking-vs-polling/blocking-pop">R3.05.2 &middot; Blocking pop</a>
+        <a href="/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up">R3.05.3 &middot; The marker wake-up</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/core">The EchoMQ course &middot; the engine</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- poll vs block (pure over mode + interval) ---------- */
+  // A 1000ms window. A job arrives at t=330ms. In poll mode the worker checks every `interval` ms; checks before 330
+  // are wasted empty polls, and the job is picked up at the first check after 330 — waiting up to one interval. In
+  // block mode the worker parks on BZPOPMIN on the marker and is woken at 330ms exactly, with 0 wasted checks. The
+  // result is a pure function of (mode, interval).
+  var WINDOW = 1000, ARRIVE = 330, X0 = 30, W = 400;
+  function xOf(t) { return X0 + W * (t / WINDOW); }
+  // pure: (mode, interval) -> { ticks:[{t,kind}], pickup, latency, wasted, text, verd }
+  function plan(mode, interval) {
+    if (mode === 'block') {
+      return {
+        ticks: [{ t: ARRIVE, kind: 'hit' }],
+        pickup: ARRIVE, latency: 0, wasted: 0,
+        verd: 'parked on BZPOPMIN · woken at 330 ms · 0 wasted polls',
+        text: 'The worker parked on BZPOPMIN emq:{queue}:marker. The producer ZADDed the marker at 330 ms, ' +
+          'the parked block returned, and the worker fetched the job — pickup latency 0 ms, 0 wasted round-trips. ' +
+          'No poll interval to dial.'
+      };
+    }
+    var ticks = [], pickup = null;
+    for (var t = interval; t <= WINDOW; t += interval) {
+      if (pickup === null && t >= ARRIVE) { ticks.push({ t: t, kind: 'hit' }); pickup = t; }
+      else if (t < ARRIVE) { ticks.push({ t: t, kind: 'waste' }); }
+      else { ticks.push({ t: t, kind: 'idle' }); }
+    }
+    var wasted = ticks.filter(function (k) { return k.kind === 'waste'; }).length;
+    var latency = (pickup === null) ? null : pickup - ARRIVE;
+    var latStr = (latency === null) ? '>1 window' : latency + ' ms';
+    var pickStr = (pickup === null) ? 'not within the window' : pickup + ' ms';
+    return {
+      ticks: ticks, pickup: pickup, latency: latency, wasted: wasted,
+      verd: interval + ' ms interval · ' + wasted + ' wasted poll' + (wasted === 1 ? '' : 's') + ' · picked up at ' + pickStr,
+      text: 'Polling every ' + interval + ' ms over a 1000 ms window. The job arrived at 330 ms but was not picked up ' +
+        'until the next poll at ' + pickStr + ' — ' + latStr + ' of pickup latency. ' + wasted + ' empty poll' +
+        (wasted === 1 ? '' : 's') + ' ran before the job arrived, each a wasted round-trip. A shorter interval cuts the ' +
+        'latency but adds more empty polls.'
+    };
+  }
+  function render(mode, interval) {
+    var r = plan(mode, interval);
+    var g = document.getElementById('pbTicks');
+    if (g) {
+      var svgns = 'http://www.w3.org/2000/svg', frag = '';
+      r.ticks.forEach(function (k) {
+        var x = xOf(k.t).toFixed(1);
+        var cls = (k.kind === 'waste') ? 'poll-tick waste' : (k.kind === 'hit') ? 'poll-tick hit' : 'poll-tick';
+        var op = (k.kind === 'idle') ? '0.28' : '1';
+        frag += '<circle class="' + cls + '" cx="' + x + '" cy="53" r="5" opacity="' + op + '"></circle>';
+      });
+      g.innerHTML = frag;
+    }
+    var lane = document.getElementById('pbLane');
+    if (lane) lane.classList.toggle('block', mode === 'block');
+    var laneTtl = document.getElementById('pbLaneTtl');
+    if (laneTtl) laneTtl.textContent = (mode === 'block') ? 'parked on BZPOPMIN marker (1000 ms)' : 'polling worker timeline (1000 ms)';
+    var verd = document.getElementById('pbVerd');
+    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', (mode === 'block') ? '#a7c9b1' : '#f2948c'); }
+    var out = document.getElementById('pbOut');
+    if (out) out.textContent = r.text;
+  }
+  var pbMode = 'poll', pbInterval = 200;
+  document.querySelectorAll('#pbSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      pbMode = b.getAttribute('data-mode');
+      document.querySelectorAll('#pbSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      render(pbMode, pbInterval);
+    });
+  });
+  var pbRange = document.getElementById('pbRange'), pbValEl = document.getElementById('pbVal');
+  if (pbRange) {
+    pbRange.addEventListener('input', function () {
+      pbInterval = parseInt(pbRange.value, 10);
+      if (pbValEl) pbValEl.textContent = pbInterval + 'ms';
+      render(pbMode, pbInterval);
+    });
+  }
+  render('poll', 200); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

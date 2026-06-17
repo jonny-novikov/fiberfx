@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EVALSHA dispatch · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="A script's source crosses the wire at most once per connection. EchoMQ.Script.new/2 precomputes each script's SHA1; EchoMQ.Connector.eval/5 runs it with EVALSHA, loads the source once on a NOSCRIPT miss, verifies the returned digest, and maps a re-run error exactly as a first-attempt error. Real code from echo/apps/echo_wire, with an EVALSHA-dispatch simulator.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- dispatch flow svg ---- */
+.dis .node rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+.dis .node.on rect{fill:rgba(42,161,152,.14);stroke:#2aa198}
+.dis .node.warn rect{fill:rgba(212,168,90,.13);stroke:#d4a85a}
+.dis text{font-family:var(--sans);fill:#d7cfb9}
+.dis .nid{font-family:var(--mono);fill:#a39c89;font-size:10px}
+.dis .edge{stroke:#2a3252;stroke-width:1.4;fill:none}
+.dis .edge.lit{stroke:#6fdccf}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/protocol">protocol</a><span class="rsep">/</span><a href="/echomq/protocol/the-lua-layer">the-lua-layer</a><span class="rsep">/</span><span class="rcur">evalsha-dispatch</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/protocol">The Protocol</a>
+        <span class="sep">/</span>
+        <a href="/echomq/protocol/the-lua-layer">The Lua layer</a>
+        <span class="sep">/</span>
+        <span class="here">EVALSHA dispatch</span>
+      </nav>
+      <p class="eyebrow">The Lua layer &middot; dive 03</p>
+      <h1>EVALSHA <span class="ex">dispatch</span></h1>
+      <p class="lede">The source crosses the wire once. After that, every call is a digest.</p>
+      <p class="kicker">A script's source crosses the wire <strong>at most once per connection</strong>.
+        <code class="inl">EchoMQ.Script.new/2</code> precomputes each script's SHA1 when the module loads;
+        <code class="inl">EchoMQ.Connector.eval/5</code> runs the script with <strong>EVALSHA</strong> — sending only the
+        digest, the key count, the keys, and the values. On a cold cache (<code class="inl">NOSCRIPT</code>) the
+        connector loads the source once, confirms the returned SHA matches, and re-runs by SHA. Run the dispatch on the
+        right, then read the two code blocks below.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#struct">Precompute the SHA</a>
+        <a href="#dispatch">Run by SHA, load on NOSCRIPT</a>
+        <a href="#verify">Verify, never trust</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig dis" aria-labelledby="disTitle">
+      <h4 id="disTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">EVALSHA dispatch &middot; warm cache or cold</h4>
+      <div class="controls">
+        <div class="solid-select" id="disSel" role="group" aria-label="The state of the server's script cache">
+          <button type="button" data-case="warm" data-c="echo" class="active" aria-pressed="true">warm cache (SHA known)</button>
+          <button type="button" data-case="cold" data-c="gold" aria-pressed="false">cold cache (NOSCRIPT)</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 188" role="img" aria-label="The dispatch flow: send EVALSHA with the precomputed SHA. On a warm cache the server runs the script. On a cold cache the server answers NOSCRIPT, the connector loads the source once, verifies the digest, and re-runs by SHA.">
+        <g class="node on" id="n-evalsha"><rect x="150" y="12" width="160" height="38" rx="9"></rect></g>
+        <text x="230" y="30" class="nid">step 1</text>
+        <text x="230" y="42" text-anchor="middle" font-size="12">EVALSHA s.sha · KEYS · ARGV</text>
+
+        <g class="node on" id="n-run"><rect x="20" y="74" width="180" height="38" rx="9"></rect></g>
+        <text x="110" y="92" class="nid">warm</text>
+        <text x="110" y="104" text-anchor="middle" font-size="12">server runs the script</text>
+
+        <g class="node" id="n-noscript"><rect x="260" y="74" width="180" height="38" rx="9"></rect></g>
+        <text x="350" y="92" class="nid">cold</text>
+        <text x="350" y="104" text-anchor="middle" font-size="12">NOSCRIPT → SCRIPT LOAD once</text>
+
+        <g class="node" id="n-rerun"><rect x="260" y="134" width="180" height="38" rx="9"></rect></g>
+        <text x="350" y="152" class="nid">cold</text>
+        <text x="350" y="164" text-anchor="middle" font-size="12">verify SHA · re-run by SHA</text>
+
+        <path class="edge" id="e-warm" d="M210 50 L150 74"></path>
+        <path class="edge" id="e-cold" d="M270 50 L330 74"></path>
+        <path class="edge" id="e-rerun" d="M350 112 L350 134"></path>
+      </svg>
+      <div class="geo-readout" id="disOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="struct">
+    <h2>Precompute the SHA, at definition</h2>
+    <div class="prose">
+      <p><code class="inl">EchoMQ.Script.new/2</code> is called once per script when the module loads. It hashes the
+        source to a lowercase SHA1 and keeps the name, the source, and the digest together. The source is retained only
+        for the cold-cache load; the digest is what the hot path sends.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_wire — EchoMQ.Script</span>
+<span class="cmt"># A server-side script with its SHA1 precomputed, so the connector can run</span>
+<span class="cmt"># EVALSHA-first with a load-on-NOSCRIPT fallback. Every key a script touches</span>
+<span class="cmt"># is declared in KEYS — the law; ARGV carries values only.</span>
+<span class="op">def</span> <span class="fn">new</span>(name, source) <span class="op">when</span> is_atom(name) <span class="op">and</span> is_binary(source) <span class="op">do</span>
+  <span class="cmt"># the SHA1 of the source is what EVALSHA addresses; lowercase hex matches</span>
+  <span class="cmt"># the digest SCRIPT LOAD returns, so the two can be compared byte for byte.</span>
+  sha = :crypto.<span class="fn">hash</span>(<span class="str">:sha</span>, source) |&gt; Base.<span class="fn">encode16</span>(case: <span class="str">:lower</span>)
+  %__MODULE__{name: name, source: source, sha: sha}
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>So <code class="inl">@enqueue = Script.new(:enqueue, "...")</code> is computed once. Every later
+        <code class="inl">enqueue/4</code> reuses the same struct — the SHA is never recomputed on the hot path. The
+        struct carries three fields: the <code class="inl">name</code>, the <code class="inl">source</code> (for the cold
+        load), and the <code class="inl">sha</code> (for the dispatch).</p>
+    </div>
+  </section>
+
+  <section id="dispatch">
+    <h2>Run by SHA, load on NOSCRIPT</h2>
+    <div class="prose">
+      <p><code class="inl">EchoMQ.Connector.eval/5</code> builds the <code class="inl">EVALSHA</code> command from the
+        precomputed SHA, the key count, the keys, and the values. On a <code class="inl">NOSCRIPT</code> reply it loads
+        the source once, verifies the SHA, and re-runs; any other server error is mapped to a typed failure.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_wire — EchoMQ.Connector</span>
+<span class="cmt"># EVALSHA-first execution of a declared-keys script. The wire carries the</span>
+<span class="cmt"># 40-char digest, the key count, then KEYS then ARGV — never the source on the</span>
+<span class="cmt"># hot path.</span>
+<span class="op">def</span> <span class="fn">eval</span>(conn, %Script{} = s, keys, argv, timeout \\ <span class="res">5_000</span>) <span class="op">do</span>
+  parts = [<span class="str">"EVALSHA"</span>, s.sha, Integer.<span class="fn">to_string</span>(length(keys))] ++ keys ++ argv
+
+  <span class="op">case</span> <span class="fn">command</span>(conn, parts, timeout) <span class="op">do</span>
+    <span class="cmt"># cold cache: the server has never seen this script. Load it ONCE, confirm</span>
+    <span class="cmt"># the returned digest equals the precomputed one, then re-run by SHA.</span>
+    {<span class="str">:ok</span>, {<span class="str">:error_reply</span>, <span class="str">"NOSCRIPT"</span> &lt;&gt; _}} -&gt;
+      GenServer.<span class="fn">call</span>(conn, {<span class="str">:bump</span>, <span class="res">5</span>})   <span class="cmt"># count the script_load (slot 5)</span>
+
+      <span class="op">case</span> <span class="fn">command</span>(conn, [<span class="str">"SCRIPT"</span>, <span class="str">"LOAD"</span>, s.source], timeout) <span class="op">do</span>
+        {<span class="str">:ok</span>, sha} <span class="op">when</span> sha == s.sha -&gt; <span class="fn">command</span>(conn, parts, timeout) |&gt; <span class="fn">map_script_reply</span>()
+        {<span class="str">:ok</span>, other} -&gt; {<span class="str">:error</span>, {<span class="str">:sha_mismatch</span>, other}}
+        {<span class="str">:error</span>, _} = err -&gt; err
+      <span class="op">end</span>
+
+    <span class="cmt"># any other server error is a verdict — mapped to a typed {:server, msg}.</span>
+    {<span class="str">:ok</span>, {<span class="str">:error_reply</span>, msg}} -&gt;
+      {<span class="str">:error</span>, {<span class="str">:server</span>, msg}}
+
+    other -&gt;
+      other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>The hot path is the first <code class="inl">command(conn, parts, …)</code>: <code class="inl">EVALSHA</code>, the
+        digest, the key count, then the keys, then the values. The source appears only in the
+        <code class="inl">NOSCRIPT</code> branch, run at most once per script per connection. The connector keeps
+        counters — slot 5 <code class="inl">script_loads</code>, slot 6 <code class="inl">evalsha_calls</code> — so a
+        healthy connection shows one load per script and many EVALSHA calls after it.</p>
+    </div>
+    <p class="take">EVALSHA sends a digest, not source. The source crosses once, on a cold cache; every call after that
+      is forty characters and the arguments.</p>
+  </section>
+
+  <section id="verify">
+    <h2>Verify, never trust &mdash; two details</h2>
+    <div class="prose">
+      <p>Two details carry the dispatch's correctness, and both are in the branch above.</p>
+      <p><strong>The SHA is verified, not trusted.</strong> <code class="inl">SCRIPT LOAD</code> returns the server's own
+        digest of the source; the connector accepts the re-run only when that digest equals the precomputed
+        <code class="inl">s.sha</code>. A mismatch (<code class="inl">{:sha_mismatch, other}</code>) means the source the
+        server hashed is not the source the struct holds — a hard fault, not a silent retry.</p>
+      <p><strong>A load-and-retry error maps exactly as the first attempt.</strong> A script can fail on either attempt;
+        <code class="inl">map_script_reply</code> turns the re-run's error reply into the same
+        <code class="inl">{:server, msg}</code> shape a first-attempt error gets, so a caller cannot tell a cold cache
+        from a warm one. The connector found this on a cold script cache during conformance.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="vfTitle">
+      <h4 id="vfTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">After SCRIPT LOAD &middot; what the connector does with the returned digest</h4>
+      <div class="controls">
+        <div class="solid-select" id="vfSel" role="group" aria-label="What SCRIPT LOAD returned">
+          <button type="button" data-vf="match" data-c="echo" class="active">returned digest == s.sha</button>
+          <button type="button" data-vf="mismatch" data-c="gold">returned digest != s.sha</button>
+          <button type="button" data-vf="scripterr" data-c="gold">re-run returns a script error</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 92" role="img" aria-label="The connector compares the digest SCRIPT LOAD returned against the precomputed SHA. A match re-runs by SHA; a mismatch is a hard fault; a script error on the re-run maps to a typed server error.">
+        <rect x="14" y="16" width="200" height="60" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="114" y="38" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#a39c89">SCRIPT LOAD returned</text>
+        <text id="vf-in" x="114" y="60" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#6fdccf">a digest == s.sha</text>
+        <rect x="266" y="16" width="200" height="60" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="366" y="38" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#a39c89">connector does</text>
+        <text id="vf-out" x="366" y="60" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#6fdccf">re-run by SHA</text>
+      </svg>
+      <div class="geo-readout" id="vfOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>Load a script once and run it by SHA with EVALSHA, reloading on a NOSCRIPT miss — scripting is how a pattern
+          becomes a protocol. <a href="/redis-patterns/overview/patterns-become-protocol">Patterns become protocol</a>
+          and <a href="/redis-patterns/coordination">Coordination</a> teach it.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_wire)</span>
+        <p><code class="inl">EchoMQ.Script.new/2</code> precomputes the SHA1; <code class="inl">EchoMQ.Connector.eval/5</code>
+          runs it EVALSHA-first, loads the source once on a NOSCRIPT miss, verifies the returned digest, and maps a
+          re-run error exactly as a first-attempt one.</p>
+      </div>
+    </div>
+    <p class="take">The dispatch trusts nothing it can verify: it confirms the loaded digest, and it makes a cold cache
+      indistinguishable from a warm one.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; the digest, not the source</h2>
+    <div class="prose">
+      <p>EVALSHA dispatch sends a digest, not source. <code class="inl">EchoMQ.Script.new/2</code> precomputes the SHA1;
+        <code class="inl">EchoMQ.Connector.eval/5</code> runs the script by SHA, loads the source once on a NOSCRIPT
+        miss, verifies the returned digest, and maps a re-run error exactly as a first-attempt error. The scripts are
+        the protocol; this is how they run. That closes the Lua layer — the next module reads what holds the wire
+        together.</p>
+    </div>
+    <p class="note">Next module: <strong>Immutability &amp; branded ids</strong> &mdash; why the keys and the Lua are
+      held fixed, the 14-byte branded-id gate, and the version fence.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the EVALSHA dispatch is grounded, and the load path it falls back to.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; run a cached script by its SHA1 digest.</li>
+          <li><a href="https://valkey.io/commands/evalsha/">Valkey &mdash; <em>EVALSHA</em></a> &mdash; the substrate-of-record form of the same dispatch.</li>
+          <li><a href="https://valkey.io/commands/script-load/">Valkey &mdash; <em>SCRIPT LOAD</em></a> &mdash; cache the source and return its digest, the cold-cache path.</li>
+          <li><a href="https://valkey.io/docs/">Valkey &mdash; <em>Documentation</em></a> &mdash; the store the connector speaks to over RESP.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/protocol/the-lua-layer">The Lua layer</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/protocol/the-lua-layer/scripts-are-the-protocol">Scripts are the protocol</a> &mdash; the script this dispatch runs.</li>
+          <li><a href="/echomq/protocol/the-lua-layer/declared-keys">Declared keys</a> &mdash; the keys the dispatch passes after the SHA.</li>
+          <li><a href="/redis-patterns/overview/patterns-become-protocol">redis-patterns &middot; Patterns become protocol</a> &mdash; scripting as protocol, the near side of the door.</li>
+          <li><a href="/redis-patterns/coordination">redis-patterns &middot; Coordination</a> &mdash; atomic updates and one-slot Lua.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/protocol/the-lua-layer/declared-keys"><span aria-hidden="true">&larr;</span>&nbsp; Declared keys</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/protocol/the-lua-layer">Back to the Lua layer <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This chapter</h4>
+        <a href="/echomq/protocol">The Protocol</a>
+        <a href="/echomq/protocol/the-owned-keyspace">The owned keyspace</a>
+        <a href="/echomq/protocol/the-record-hash">The record hash</a>
+        <a href="/echomq/protocol/the-lua-layer">The Lua layer</a>
+        <a href="/echomq/protocol/immutability-and-branded-ids">Immutability &amp; branded ids</a>
+        <a href="/echomq/protocol/workshop">Workshop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/overview">Overview</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: EVALSHA dispatch flow (pure over a fixed dataset) ---------- */
+  var CASES = {
+    warm: {
+      title: 'Warm cache — the SHA is known',
+      path: ['n-evalsha', 'n-run'], edges: ['e-warm'],
+      readout: 'EVALSHA s.sha → the server has the script cached → it runs immediately. One round trip, forty characters of digest plus the keys and values. No source crosses the wire.'
+    },
+    cold: {
+      title: 'Cold cache — NOSCRIPT, then load once',
+      path: ['n-evalsha', 'n-noscript', 'n-rerun'], edges: ['e-cold', 'e-rerun'],
+      readout: 'EVALSHA s.sha → the server answers NOSCRIPT → the connector SCRIPT LOADs the source ONCE (counter slot 5), confirms the returned digest equals s.sha, and re-runs by SHA. The source crosses exactly once per connection.'
+    }
+  };
+  function setCase(key) {
+    var c = CASES[key];
+    ['n-evalsha', 'n-run', 'n-noscript', 'n-rerun'].forEach(function (id) {
+      var g = document.getElementById(id);
+      if (!g) return;
+      var on = c.path.indexOf(id) >= 0;
+      g.classList.toggle('on', on && (id === 'n-evalsha' || id === 'n-run'));
+      g.classList.toggle('warn', on && (id === 'n-noscript' || id === 'n-rerun'));
+      if (!on) { g.classList.remove('on'); g.classList.remove('warn'); }
+      g.setAttribute('opacity', on ? '1' : '.4');
+    });
+    ['e-warm', 'e-cold', 'e-rerun'].forEach(function (id) {
+      var e = document.getElementById(id);
+      if (e) e.classList.toggle('lit', c.edges.indexOf(id) >= 0);
+    });
+    var out = document.getElementById('disOut');
+    if (out) out.innerHTML = '<b>' + c.title + '</b><br><span class="dim">' + c.readout + '</span>';
+  }
+  document.querySelectorAll('#disSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-case');
+      document.querySelectorAll('#disSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      setCase(key);
+    });
+  });
+  setCase('warm'); // initial render — correct without interaction
+
+  /* ---------- content: verify the returned digest (pure over a fixed dataset) ---------- */
+  var VF = {
+    match: { in: 'a digest == s.sha', out: 're-run by SHA', cls: 'ok', verdict: 'PROCEED',
+      note: 'the server hashed the same source the struct holds, so the cached script is the right one — re-run by SHA and map the reply' },
+    mismatch: { in: 'a digest != s.sha', out: '{:sha_mismatch, other}', cls: 'bad', verdict: 'HARD FAULT',
+      note: 'the digest the server returned is not the precomputed one — the source on the server is not the source the struct holds; the connector refuses, it does not silently retry' },
+    scripterr: { in: 'an error on the re-run', out: '{:error, {:server, msg}}', cls: 'bad', verdict: 'TYPED ERROR',
+      note: 'a script can fail on the re-run too; map_script_reply maps that reply to the same {:server, msg} shape a first-attempt error gets, so a cold cache is indistinguishable from a warm one' }
+  };
+  function renderVf(key) {
+    var v = VF[key];
+    var inEl = document.getElementById('vf-in'); if (inEl) inEl.textContent = v.in;
+    var outEl = document.getElementById('vf-out'); if (outEl) outEl.textContent = v.out;
+    var out = document.getElementById('vfOut');
+    if (out) out.innerHTML = 'verdict: <b class="' + v.cls + '">' + v.verdict + '</b><br><span class="dim">' + v.note + '</span>';
+  }
+  document.querySelectorAll('#vfSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-vf');
+      document.querySelectorAll('#vfSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderVf(key);
+    });
+  });
+  renderVf('match'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

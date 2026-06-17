@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B4.3.1 · Two Sequences, One Table · BCS · jonnify</title>
+<meta name="description" content="The ring's runtime is an atomics pair — tail for the producer, head for the applier — and a public ETS table whose rows are reused by rem(seq, capacity). The correctness leans on one documented sentence: all atomic operations are mutually ordered. G2 gates order through batches: 1000 items crossed the ring in publish order exactly through 2 batches (largest 801) on 1 wakes — one message per busy period, not one per item. LMAX and the Disruptor read as prior art.">
+<style>
+/* ============ The BCS identity — the contract sheet ============
+   Copied from the B0 exemplar (html/bcs/index.html). Light
+   engineering-document aesthetic; monospace-forward; the 3/11 id
+   rhythm; transcript evidence blocks. Not the dark-editorial system
+   of the sibling courses. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;      /* namespace — oxide red   */
+  --b-ts:#20618e;      /* timestamp — drafting blue */
+  --b-node:#2e7d5b;    /* node — verdigris        */
+  --b-seq:#7d4e8f;     /* sequence — violet       */
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--b-ns)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--b-ns);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the 3/11 rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--b-ns-tint)}
+.idrule i:nth-child(-n+3){box-shadow:inset 0 0 0 1px var(--b-ns)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--b-ns);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:62ch;color:var(--b-ink)}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--b-ns);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--b-ns)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:70ch}
+
+/* ---------- the anatomy figure (interactive) ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.anat{width:100%;height:auto;display:block}
+.anat .edge{stroke:var(--b-line);stroke-width:2}
+.anat .node{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.anat .node.first{stroke:var(--b-ns)}
+.anat .bar{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.5}
+.anat .bar.hot{fill:var(--b-ns-tint);stroke:var(--b-ns)}
+.anat .bar.wait{fill:none;stroke:var(--b-dim);stroke-dasharray:5 4}
+.anat .ringtrack{fill:none;stroke:var(--b-pay-tint);stroke-width:18}
+.anat .ringocc{fill:none;stroke:var(--b-ns);stroke-width:18;opacity:.5}
+.anat .mk-tail{fill:var(--b-ns)}
+.anat .mk-head{fill:var(--b-ts)}
+.anat .nid{font:700 15px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.anat .nlbl{font:11px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.anat .nlbl.left{text-anchor:start}
+.anat g[data-seg]{cursor:pointer;transition:opacity .18s ease}
+.anat.focus g[data-seg]{opacity:.3}
+.anat.focus g[data-seg].on{opacity:1}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:72ch;margin-bottom:22px}
+
+/* ---------- code figures (page addition) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+
+/* ---------- the module / chapter cards ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pcard{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+a.pcard{border-color:var(--b-ns)}
+a.pcard:hover{border-bottom-color:var(--b-ns);box-shadow:0 1px 0 var(--b-ns)}
+.pcard .bid{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--b-ns);letter-spacing:.08em}
+.pcard h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.pcard p{font-size:.88rem;color:var(--b-dim)}
+.pcard .meta{display:flex;gap:10px;align-items:center;margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.chip{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-radius:3px;padding:1px 7px}
+.chip.now{background:var(--b-ns);color:var(--b-card)}
+.chip.soon{background:var(--b-paper);border:1px solid var(--b-line);color:var(--b-dim)}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:80ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--b-ns)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--b-ns)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .pgrid,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .pgrid,.doors{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>bcs</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/bcs">bcs</a><span class="rsep">/</span><a href="/bcs/cache">cache</a><span class="rsep">/</span><a href="/bcs/cache/single-writer-ring">single-writer-ring</a><span class="rsep">/</span><span class="rcur">two-sequences-one-table</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#transcript">Transcript</a>
+      <a href="#structure">The structure</a>
+      <a href="#order">Order</a>
+      <a href="#prior-art">Prior art</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">B4.3 · dive 1 — two sequences, one table</p>
+      <h1>Two sequences, <span class="hns">one</span> table.</h1>
+      <p class="lede">The ring's runtime is an atomics pair — tail for the producer, head for the applier —
+      and a public ETS table whose rows are reused by <code>rem(seq, capacity)</code>: preallocation,
+      BEAM-style. The correctness of the whole structure leans on one documented sentence: <b>"All atomic
+      operations are mutually ordered"</b> — the slot insert happens before the tail advance, so an applier
+      that reads the new tail finds the slot already written, with no lock anywhere. The committed gate puts
+      order on the record: <b>1000 items crossed the ring in publish order exactly</b>, through <b>2 batches
+      (largest 801) on 1 wakes</b>.</p>
+      <p class="heronote">Source: content/bcs4.3.md, quoting <code>bcs_rung_4_3_check.out</code>; the module
+      is committed at <code>runtimes/elixir/lib/echo_cache/ring.ex</code>.</p>
+
+      <figure class="anatomy">
+        <figcaption><b>The ring walk.</b> A head/tail machine over the G1 ring's committed capacity 512 —
+        publish advances the tail, a drain moves the head to the tail in one pass; the slot of every item is
+        <code>rem(seq, capacity)</code>, and a fresh ring stands at occupancy 0, as G1 declares.</figcaption>
+        <svg class="anat" id="ringsvg" viewBox="0 0 980 270" role="img" aria-label="A ring of 512 slots drawn as a circle. The tail marker belongs to the producer and the head marker to the applier; the filled arc between them is the occupancy, and both markers stand together at occupancy 0 on a fresh ring.">
+          <circle class="ringtrack" cx="220" cy="138" r="100"></circle>
+          <path class="ringocc" id="occarc" d="" aria-hidden="true"></path>
+          <circle class="mk-head" id="mkhead" cx="220" cy="38" r="8"></circle>
+          <circle class="mk-tail" id="mktail" cx="220" cy="38" r="5"></circle>
+          <text class="nlbl left" x="360" y="48">tail — the producer's sequence (oxide red)</text>
+          <text class="nlbl left" x="360" y="72">head — the applier's sequence (drafting blue)</text>
+          <text class="nlbl left" x="360" y="96">occupancy = tail &#8722; head &#183; slot = rem(seq, 512)</text>
+          <text class="nlbl left" x="360" y="132">512 preallocated slots, rows reused by index;</text>
+          <text class="nlbl left" x="360" y="152">the slot insert happens before the tail advance,</text>
+          <text class="nlbl left" x="360" y="172">so a reader of the new tail finds the slot written.</text>
+          <text class="nlbl left" x="360" y="208">fresh ring: tail = head &#8212; occupancy 0;</text>
+          <text class="nlbl left" x="360" y="228">wakes are edge-triggered on empty &#8594; nonempty.</text>
+        </svg>
+        <div class="segbar" id="ringbar" role="group" aria-label="Drive the ring">
+          <button type="button" data-op="pub1">publish &#215;1</button>
+          <button type="button" data-op="pub100">publish &#215;100</button>
+          <button type="button" data-op="drain">drain (apply batch)</button>
+          <button type="button" data-op="reset">reset</button>
+        </div>
+        <div class="readout" id="ringout" aria-live="polite"><span class="rk">readout &#183;</span> A fresh
+        ring stands at occupancy 0 — tail 0, head 0. Publish to advance the tail; drain to move the head to
+        the tail in one pass. Every readout line is computed by the structure's own arithmetic: slot =
+        rem(seq, 512), occupancy = tail &#8722; head.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="transcript">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The transcript</h2>
+        <span class="ssrc">bcs_rung_4_3_check.out &#183; verbatim &#183; this dive reads the surface and order lines</span>
+      </div>
+      <figure class="frozen">
+        <figcaption>content/echo_data/runtimes/elixir/bcs_rung_4_3_check.out &#183; the slice this dive reads<span class="tag">frozen</span></figcaption>
+        <pre>G1 surface ok <span class="fd">-- the ring's surface is whole -- publish, occupancy, stats, stop, a generic one-batch apply function -- and the declaration tells the truth: the broadcast table carries its ring name and capacity 512 in the directory, the :none table carries nil, and a fresh ring stands at occupancy 0</span>
+derive (order): <span class="fd">the applier drains everything between head and tail in one pass, so concatenating the batches must reproduce publish order exactly; wakes are edge-triggered on the empty-to-nonempty transition, so 1000 items published into a draining ring should cost a handful of wakes -- well under fifty -- and more than one batch proves the batching is real</span>
+G2 order ok <span class="fd">-- 1000 items crossed the ring in publish order exactly -- the concatenated batches reproduce the sequence -- through 2 batches (largest 801) on 1 wakes: one message per busy period, not one per item</span>
+<span class="fd">&#8230;</span>
+<b>PASS 6/6</b></pre>
+      </figure>
+      <p class="ethic">The elided lines hold the header, the throughput and full drills, and the storm and
+      convergence drills — dive 2 and dive 3 read them, and the
+      <a href="/bcs/cache/single-writer-ring">module hub</a> freezes the record whole. The derive lines are
+      part of the record: each measurement is bounded before it is taken, and the committed line then lands
+      inside its own band.</p>
+    </section>
+
+    <section id="structure">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Two sequences and a slot table</h2>
+        <span class="ssrc">content/bcs4.3.md &#183; What &#183; Decisions &#183; Boundaries</span>
+      </div>
+      <p class="ethic">The ring's runtime is an atomics pair — tail for the producer, head for the applier —
+      and a public ETS table whose rows are reused by <code>rem(seq, capacity)</code>: preallocation,
+      BEAM-style. The load-bearing sentence is documented, not assumed: "All atomic operations are mutually
+      ordered." The slot insert happens before the tail advance, so an applier that reads the new tail finds
+      the slot already written — no lock anywhere.</p>
+      <p class="ethic">G1 gates the surface and the declaration's truthfulness: publish, occupancy, stats,
+      stop, a generic one-batch apply function — and "the broadcast table carries its ring name and capacity
+      512 in the directory, the :none table carries nil, and a fresh ring stands at occupancy 0". A table that
+      declares no coherence carries no ring; the directory of 4.1 reports both, truthfully.</p>
+      <p class="ethic">Two decisions hold the structure up. <b>Single producer, structurally:</b> the publish
+      path is lock-free because exactly one process calls it — the owner, where pushes already serialize. The
+      simplicity is bought with a rule, the rule is stated in the module doc, and the wake-race analysis in
+      the drain's comment is sound only under it; two producers race the tail and the structure's guarantees
+      evaporate — a second producer needs a second ring, not a clever interleave. <b>Runtime in
+      <code>persistent_term</code>:</b> the producer must reach sequences and slots without a process hop;
+      one <code>persistent_term</code> read per publish is the BEAM's cheapest shared-read path, written once
+      at ring start and erased at stop. A brutal kill skips terminate and leaks one entry until the name is
+      reused — "a stated cost of kill-9 truthfulness."</p>
+    </section>
+
+    <section id="order">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Order through batches</h2>
+        <span class="ssrc">content/bcs4.3.md &#183; What &#183; quoting G2</span>
+      </div>
+      <p class="ethic">The applier drains everything between head and tail in one pass, applies the batch in
+      arrival order, advances head, and re-checks the tail before parking. The committed gate: <code>1000
+      items crossed the ring in publish order exactly -- the concatenated batches reproduce the sequence --
+      through 2 batches (largest 801) on 1 wakes: one message per busy period, not one per item</code>.</p>
+      <p class="ethic">That last clause is the wake economy: the producer sends <code>:wake</code> only on the
+      empty-to-nonempty transition, and the applier's re-check-before-park closes the race where a publish
+      lands after the drain's tail read. The derive line bounds it before the measurement — 1000 items
+      published into a draining ring "should cost a handful of wakes -- well under fifty -- and more than one
+      batch proves the batching is real". The committed line lands at 1.</p>
+
+      <figure class="anatomy">
+        <figcaption><b>The concatenation, checked.</b> The G2 drill's stream of 1000 items in two batches —
+        the record fixes the count and the largest size (801), not which batch came first; the bar widths are
+        computed live from the committed pair, and the check runs the concatenation element by element.</figcaption>
+        <svg class="anat" id="batchsvg" viewBox="0 0 980 150" role="img" aria-label="Two batch bars on one axis of 1000 items: the largest batch carries 801 items and the other carries the remainder; concatenated in drain order they reproduce the published sequence exactly.">
+          <g>
+            <text class="nlbl left" x="14" y="40">largest batch &#183; 801</text>
+            <rect class="bar hot" id="bar-big" x="240" y="24" width="561" height="26" rx="3"></rect>
+            <text class="nlbl left" x="240" y="68">drained in one pass, applied in arrival order</text>
+          </g>
+          <g>
+            <text class="nlbl left" x="14" y="116">the other batch</text>
+            <rect class="bar" id="bar-small" x="240" y="100" width="139" height="26" rx="3"></rect>
+            <text class="nlbl left" x="240" y="144">1000 &#8722; 801, computed live &#183; 2 batches on 1 wakes</text>
+          </g>
+        </svg>
+        <div class="segbar" id="batchbar" role="group" aria-label="Read the order drill">
+          <button type="button" data-op="derive" aria-pressed="false">derive (order)</button>
+          <button type="button" data-op="gate" aria-pressed="false">G2, verbatim</button>
+          <button type="button" data-op="check" aria-pressed="false">run the check</button>
+          <button type="button" data-op="wakes" aria-pressed="false">the wake ledger</button>
+        </div>
+        <div class="readout" id="batchout" aria-live="polite"><span class="rk">readout &#183;</span> Select a
+        view. The derive line bounds the drill, G2 commits it, the check reruns the concatenation over the
+        same shape, and the wake ledger reads the economy: 2 batches, 1 wake.</div>
+      </figure>
+    </section>
+
+    <section id="prior-art">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The prior art</h2>
+        <span class="ssrc">content/bcs4.3.md &#183; Why &#183; How</span>
+      </div>
+      <p class="ethic">LMAX built a retail exchange whose business logic ran on a single thread — "6 million
+      orders per second on a single thread" — fed by the Disruptor, a bounded ring of preallocated slots with
+      sequence counters, where one consumer drains batches in order and the batching happens by itself
+      whenever the consumer falls behind. The chapter translates that shape onto the BEAM, and the
+      correspondence is exact: sequences are atomics; the preallocated slots are ETS rows reused by index; the
+      single business-logic thread is the applier process; the batching effect — a lagging consumer drains
+      everything available in one pass — is the drain loop; and the wait strategy is the BEAM's own: park in
+      the mailbox, wake on the edge. What does not translate is busy-spinning, and nothing is lost in the
+      omission — on this runtime the mailbox is the wait strategy.</p>
+      <p class="ethic">That is why the chapter reads the Disruptor beside the bus's park-don't-poll rather
+      than instead of it — the discipline the manuscript's Part III gave the bus's parked consumers, planned
+      for the course as <strong>B3.4 &#183; Fair Lanes</strong>. Both replace discovery with arrival, and both
+      wake exactly once per busy period: the same edge-triggered discipline, in one process instead of across
+      a wire.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://lmax-exchange.github.io/disruptor/disruptor.html" rel="noopener">LMAX Disruptor — technical paper</a><span class="rs">sequences over preallocated slots, single-writer consumption, batching as the consumer's catch-up effect</span></li>
+          <li><a href="https://www.erlang.org/doc/apps/erts/atomics.html" rel="noopener">Erlang/OTP — atomics</a><span class="rs">hardware atomic operations without software locking, mutually ordered across an array — the visibility guarantee the publish-then-advance leans on</span></li>
+          <li><a href="https://martinfowler.com/articles/lmax.html" rel="noopener">Fowler — The LMAX Architecture</a><span class="rs">the expositional account of the single-threaded processor the ring feeds</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/bcs/cache/single-writer-ring">B4.3 — The Single Writer and the Ring</a><span class="rs">the module hub; the full rung in context</span></li>
+          <li><a href="/bcs/cache">B4 — EchoCache</a><span class="rs">the chapter landing</span></li>
+          <li><a href="/bcs/cache/coherence-by-mint-time">B4.2 — Coherence by Mint Time</a><span class="rs">the messages the ring carries</span></li>
+          <li><a href="/bcs/bus">B3 — The Bus</a><span class="rs">where park-don't-poll wakes consumers across the wire</span></li>
+          <li><a href="/bcs/elixir-core/property-stores">B2.2 — Property Stores</a><span class="rs">the ETS discipline underneath</span></li>
+          <li><a href="/echomq">EchoMQ — the course</a><span class="rs">the bus protocol in rung-level depth</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/bcs/cache/single-writer-ring"><span class="pk">previous</span>&#8592; B4.3 &#183; The Single Writer and the Ring</a>
+      <a class="pgx" href="/bcs/cache/single-writer-ring/occupancy-and-the-bound"><span class="pk">next</span>B4.3.2 &#183; Occupancy and the Bound &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="BCS — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>bcs</span>
+        <p class="foot-tag">The Branded Component System — boundaries around systems, identity as a contract,
+        every figure from a frozen transcript.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/bcs">B0 &#183; Orientation</a>
+        <a href="/bcs/ideas">B1 &#183; Ideas Behind</a>
+        <a href="/bcs/elixir-core">B2 &#183; The Elixir BCS Core</a>
+        <a href="/bcs/bus">B3 &#183; The Bus</a>
+        <a href="/bcs/cache">B4 &#183; EchoCache</a>
+        <span>B5 &#183; Go<i>soon</i></span>
+        <span>B6 &#183; Node 22+<i>soon</i></span>
+        <span>B7 &#183; Production on Fly<i>soon</i></span>
+        <span>B8 &#183; The Trading System<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/bcs">BCS — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">BCS0NvrXuukNaS</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-13 00:48:27 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the ring walk (pure head/tail machine over capacity 512) ---------- */
+  var CAP = 512;            /* G1: "capacity 512 in the directory" */
+  var CX = 220, CY = 138, R = 100;
+
+  function slotFor(seq, cap) { return seq % cap; }
+  function occupancy(tail, head) { return tail - head; }
+  function pointAt(seq) {
+    var a = (slotFor(seq, CAP) / CAP) * 2 * Math.PI - Math.PI / 2;
+    return { x: CX + R * Math.cos(a), y: CY + R * Math.sin(a) };
+  }
+
+  var st = { tail: 0, head: 0, wakes: 0, batches: 0, dropped: 0, lastBatch: 0 };
+
+  function publish(state, n) {
+    var accepted = 0, dropped = 0;
+    for (var i = 0; i < n; i++) {
+      if (occupancy(state.tail, state.head) >= CAP) { dropped++; state.dropped++; continue; }
+      if (occupancy(state.tail, state.head) === 0) { state.wakes++; } /* edge: empty -> nonempty */
+      state.tail++; accepted++;
+    }
+    return { accepted: accepted, dropped: dropped };
+  }
+  function drain(state) {
+    var batch = occupancy(state.tail, state.head);
+    if (batch > 0) { state.head = state.tail; state.batches++; state.lastBatch = batch; }
+    return batch;
+  }
+
+  var mkTail = document.getElementById('mktail');
+  var mkHead = document.getElementById('mkhead');
+  var occArc = document.getElementById('occarc');
+  var ringOut = document.getElementById('ringout');
+
+  function arcPath(head, tail) {
+    var occ = occupancy(tail, head);
+    if (occ <= 0) return '';
+    var p1 = pointAt(head);
+    if (occ >= CAP) {
+      var pm = pointAt(head + CAP / 2);
+      return 'M ' + p1.x + ' ' + p1.y + ' A ' + R + ' ' + R + ' 0 1 1 ' + pm.x + ' ' + pm.y +
+             ' A ' + R + ' ' + R + ' 0 1 1 ' + p1.x + ' ' + p1.y;
+    }
+    var p2 = pointAt(tail);
+    var large = occ > CAP / 2 ? 1 : 0;
+    return 'M ' + p1.x + ' ' + p1.y + ' A ' + R + ' ' + R + ' 0 ' + large + ' 1 ' + p2.x + ' ' + p2.y;
+  }
+
+  function renderRing(note) {
+    var pt = pointAt(st.tail), ph = pointAt(st.head);
+    if (mkTail) { mkTail.setAttribute('cx', String(pt.x)); mkTail.setAttribute('cy', String(pt.y)); }
+    if (mkHead) { mkHead.setAttribute('cx', String(ph.x)); mkHead.setAttribute('cy', String(ph.y)); }
+    if (occArc) { occArc.setAttribute('d', arcPath(st.head, st.tail)); }
+    if (ringOut) {
+      var lastSeq = st.tail > 0 ? st.tail - 1 : 0;
+      ringOut.innerHTML = '<span class="rk">computed &#183;</span> tail=' + st.tail + ', head=' + st.head +
+        ' &#183; occupancy = ' + st.tail + ' &#8722; ' + st.head + ' = <code>' +
+        occupancy(st.tail, st.head) + ' of ' + CAP + '</code>' +
+        (st.tail > 0 ? ' &#183; last item seq ' + lastSeq + ' &#8594; slot rem(' + lastSeq + ', ' + CAP +
+          ') = <code>' + slotFor(lastSeq, CAP) + '</code>' : '') +
+        '<br><span class="rk">ledger &#183;</span> wakes=' + st.wakes + ' (edge-triggered, empty &#8594; nonempty)' +
+        ' &#183; batches=' + st.batches + (st.lastBatch > 0 ? ' (last batch ' + st.lastBatch + ')' : '') +
+        ' &#183; dropped=' + st.dropped + (note ? '<br><span class="rk">note &#183;</span> ' + note : '');
+    }
+  }
+
+  var ringButtons = document.querySelectorAll('#ringbar button');
+  ringButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var op = b.getAttribute('data-op');
+      var note = '';
+      if (op === 'pub1') {
+        var r1 = publish(st, 1);
+        note = r1.dropped > 0 ? 'the ring is full: the publish answered :dropped and the counter moved — never blocked, never overwritten.' : '';
+      } else if (op === 'pub100') {
+        var r100 = publish(st, 100);
+        note = r100.dropped > 0 ? r100.dropped + ' publishes answered :dropped at the bound — counted, never blocked, never overwritten.' : '';
+      } else if (op === 'drain') {
+        var batch = drain(st);
+        note = batch > 0 ? 'one pass drained everything between head and tail: a batch of ' + batch + ', applied in arrival order.'
+                         : 'nothing between head and tail — the applier parks in its mailbox until the next wake.';
+      } else if (op === 'reset') {
+        st = { tail: 0, head: 0, wakes: 0, batches: 0, dropped: 0, lastBatch: 0 };
+        note = 'a fresh ring stands at occupancy 0.';
+      }
+      renderRing(note);
+    });
+  });
+
+  /* ---------- Interactive 2: the concatenation, checked (pure check over the committed shape) ---------- */
+  var TOTAL = 1000, LARGEST = 801, WAKES = 1, BATCHES = 2;
+  var AXIS_PX = 700;
+
+  function otherBatch(total, largest) { return total - largest; }
+  function scaleItems(n, max, px) { return Math.max(2, Math.round(n / max * px)); }
+  function checkConcat(total, splitAt) {
+    var a = [], b = [], i;
+    for (i = 1; i <= splitAt; i++) { a.push(i); }
+    for (i = splitAt + 1; i <= total; i++) { b.push(i); }
+    var cat = a.concat(b);
+    var ordered = true;
+    for (i = 0; i < cat.length; i++) { if (cat[i] !== i + 1) { ordered = false; break; } }
+    return { length: cat.length, ordered: ordered };
+  }
+
+  var barBig = document.getElementById('bar-big');
+  var barSmall = document.getElementById('bar-small');
+  if (barBig && barSmall) {
+    barBig.setAttribute('width', String(scaleItems(LARGEST, TOTAL, AXIS_PX)));
+    barSmall.setAttribute('width', String(scaleItems(otherBatch(TOTAL, LARGEST), TOTAL, AXIS_PX)));
+  }
+
+  var BATCH = {
+    derive: '<span class="rk">verbatim, derive (order) &#183;</span> <code>the applier drains everything ' +
+      'between head and tail in one pass, so concatenating the batches must reproduce publish order exactly; ' +
+      'wakes are edge-triggered on the empty-to-nonempty transition, so 1000 items published into a draining ' +
+      'ring should cost a handful of wakes -- well under fifty -- and more than one batch proves the batching ' +
+      'is real</code>',
+    gate: '<span class="rk">verbatim, G2 &#183;</span> <code>1000 items crossed the ring in publish order ' +
+      'exactly -- the concatenated batches reproduce the sequence -- through 2 batches (largest 801) on 1 ' +
+      'wakes: one message per busy period, not one per item</code>',
+    check: function () {
+      var res = checkConcat(TOTAL, LARGEST);
+      return '<span class="rk">the check, run here &#183;</span> two batches over the committed shape — the ' +
+        'largest carries ' + LARGEST + ', the other, computed, ' + TOTAL + ' &#8722; ' + LARGEST + ' = <code>' +
+        otherBatch(TOTAL, LARGEST) + '</code>; concatenated in drain order they read 1&#8230;' + TOTAL +
+        ' element by element: length=<code>' + res.length + '</code>, ordered=<code>' + res.ordered +
+        '</code>. The record fixes the count and the largest size, not which batch came first — the property ' +
+        'holds either way.';
+    },
+    wakes: '<span class="rk">the wake ledger &#183;</span> one message per item would cost ' + TOTAL +
+      ' messages over ' + TOTAL + ' items; edge-triggered wakes cost <code>' + WAKES + '</code> for <code>' +
+      BATCHES + '</code> batches — <code>one message per busy period, not one per item</code>. The derive ' +
+      'line bounded it first: <code>a handful of wakes -- well under fifty</code>.'
+  };
+
+  var batchOut = document.getElementById('batchout');
+  var batchButtons = document.querySelectorAll('#batchbar button');
+  batchButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      batchButtons.forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      var key = b.getAttribute('data-op');
+      var view = BATCH[key];
+      if (batchOut && view) { batchOut.innerHTML = (typeof view === 'function') ? view() : view; }
+    });
+  });
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

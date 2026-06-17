@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M6.3 · Tigris and Postgres — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="The two persistent stores are the two ends of the CAP dial, and the line of the whole system runs between them. Tigris, the globally replicated, S3-compatible object store, is availability-first by construction: it keeps an object near where it was written and replicates it near readers, answering from a nearby region and accepting a bounded lag. Postgres written through Ecto.Multi is the consistency-first ledger: a fill commits all-or-nothing or not at all, returning {:ok, changes} on success or {:error, failed_operation, failed_value, changes_so_far} on rollback, and a conflicting concurrent write is blocked or aborted rather than allowed to diverge.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-mesh)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the CAP-line emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.capsvg{width:100%;height:auto;display:block}
+.capsvg .track{fill:none;stroke:var(--m-line);stroke-width:8;stroke-linecap:round}
+.capsvg .endlbl{font:12px var(--mono);fill:var(--m-ink);font-weight:700}
+.capsvg .endsub{font:11px var(--mono);fill:var(--m-dim)}
+.capsvg .axt{font:11px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .store{cursor:default;transition:opacity .22s ease}
+.capsvg .store .dot{stroke:var(--m-card);stroke-width:2.5}
+.capsvg .store.dim{opacity:.32}
+.capsvg .store.cons .dot{fill:var(--m-cons)}
+.capsvg .store.avail .dot{fill:var(--m-avail)}
+.capsvg .store .nm{font:12px var(--mono);font-weight:700}
+.capsvg .store.cons .nm{fill:var(--m-cons)}
+.capsvg .store.avail .nm{fill:var(--m-avail)}
+.capsvg .store .sub{font:10.5px var(--mono);fill:var(--m-dim)}
+.capsvg .lineEdge{stroke:var(--m-mesh);stroke-width:2;stroke-dasharray:5 4}
+.capsvg .linelbl{font:11px var(--mono);fill:var(--m-mesh);font-weight:700;text-anchor:middle}
+.capsvg .seam{stroke:var(--m-edge);stroke-width:1.6;marker-end:url(#seamhead)}
+.capsvg .seamlbl{font:10.5px var(--mono);fill:var(--m-edge);text-anchor:middle}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the property duality / thesis ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-cons);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-mesh)}
+.tri article:nth-child(3){border-top-color:var(--m-avail)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the two-end compare ---------- */
+.cmp{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:6px}
+.cmp article{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px}
+.cmp article.con{border-left:3px solid var(--m-cons)}
+.cmp article.avail{border-left:3px solid var(--m-avail)}
+.cmp .ck{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.cmp article.con .ck{color:var(--m-cons)}
+.cmp article.avail .ck{color:var(--m-avail)}
+.cmp h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.cmp p{font-size:.9rem;color:var(--m-ink)}
+.cmp .ex{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);border-top:1px dashed var(--m-line);padding-top:9px}
+.cmp .ex b{color:var(--m-ink)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.doors,.cmp{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.doors,.cmp{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><a href="/mesh/stack">stack</a><span class="rsep">/</span><span class="rcur">tigris-postgres</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#ends">The two ends</a>
+      <a href="#tigris">Tigris</a>
+      <a href="#ledger">The ledger</a>
+      <a href="#blocks">Why it blocks</a>
+      <a href="#line">The line</a>
+      <a href="#stack">The stack</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M6.3 &#183; The Stack</p>
+      <h1>Tigris and <span class="hns">Postgres</span>.</h1>
+      <p class="lede">The two persistent stores are the <b>two ends of the spectrum</b>, and the CAP line of the whole
+      system runs between them. Tigris, the globally replicated object store, is <b>availability-first by
+      construction</b>; Postgres written through <code>Ecto.Multi</code> is the <b>consistency-first ledger</b> that
+      blocks rather than diverges. This dive builds both and draws the line.</p>
+      <p class="heronote">No measurement here: this dive reads two stores, not a benchmark. Three primary sources carry
+      it (<a href="#refs">Tigris global object storage, the <code>Ecto.Multi</code> transaction abstraction, and
+      PostgreSQL's transaction isolation</a>); the stores are external and settled, and the retention tier and the
+      regulated ledger are named as the EchoMesh components built on them. The available substrate is M6.2; the runtime
+      is M6.1; the placement that distributes these stores is M7.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>The globally replicated, S3-compatible retention is Tigris; the all-or-nothing transaction is
+        <code>Ecto.Multi</code>; the serializable isolation that blocks or aborts rather than diverges is PostgreSQL's.
+        These are shipped, settled external results. EchoMesh's proposal is the placement on the spectrum &#8212; Tigris
+        as the availability-first retention and the Postgres ledger as the consistency-first core, with the line between
+        them drawn where the segmentation requires &#8212; composed into the mesh at M8.2, where the shipped-versus-proposed
+        line is drawn.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>The two ends and the line &#183; the two persistent stores sit at the extremes of the CAP dial
+        &#8212; <b>Postgres</b> at the consistency-first end (blue), <b>Tigris</b> at the availability-first end (green)
+        &#8212; and the dashed violet line between them is the CAP boundary of the whole system. Hover a store to read
+        its end; the seam carries the branded identity across the line (the all-or-nothing transaction of
+        <b>Ecto.Multi</b>, the serializable isolation of <b>PostgreSQL</b>, the global retention of <b>Tigris</b>)</figcaption>
+        <svg class="capsvg" id="capsvg" viewBox="0 0 760 260" role="img" aria-label="A horizontal CAP spectrum with two stores at its ends. At the left, consistency-first end, in blue, sits Postgres written through Ecto.Multi: the ledger that commits all-or-nothing and blocks or aborts a conflicting concurrent write rather than letting two histories diverge. At the right, availability-first end, in green, sits Tigris: the globally replicated, S3-compatible object store that answers from a nearby region and accepts a bounded lag. A dashed violet line runs vertically through the middle of the spectrum, marking the CAP boundary the whole system's trade runs along — the cut the segmentation made at the edge of the consistent core. An amber arrow crosses the line from the ledger to Tigris, labelled the branded identity, showing that a name minted at the ledger on the consistent side is carried to the available side. No figure carries a measured number — the placement is qualitative.">
+          <defs>
+            <linearGradient id="dialgrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#2a5b8f"></stop>
+              <stop offset="50%" stop-color="#7b3aa0"></stop>
+              <stop offset="100%" stop-color="#1f7a5e"></stop>
+            </linearGradient>
+            <marker id="seamhead" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L8,4 L0,8 z" fill="#b3631c"></path>
+            </marker>
+          </defs>
+
+          <!-- the spectrum track, coloured along the CAP gradient -->
+          <line class="track" x1="70" y1="118" x2="690" y2="118"></line>
+          <line x1="70" y1="118" x2="690" y2="118" stroke="url(#dialgrad)" stroke-width="8" stroke-linecap="round"></line>
+
+          <!-- end labels -->
+          <text class="endlbl" x="70" y="36" text-anchor="start">consistency-first</text>
+          <text class="endsub" x="70" y="51" text-anchor="start">blocks rather than diverges &#183; M2</text>
+          <text class="endlbl" x="690" y="36" text-anchor="end">availability-first</text>
+          <text class="endsub" x="690" y="51" text-anchor="end">answers and reconciles &#183; M3</text>
+          <text class="axt" x="380" y="36">the CAP line of the whole system runs between the two stores</text>
+
+          <!-- the CAP boundary line at the edge of the consistent core -->
+          <line class="lineEdge" x1="380" y1="62" x2="380" y2="178"></line>
+          <text class="linelbl" x="380" y="200">the line &#183; the edge of the consistent core</text>
+
+          <!-- the consistent store: Postgres / Ecto.Multi -->
+          <g class="store cons" id="storeCons" data-tab="ledger">
+            <circle class="dot" cx="120" cy="118" r="11"></circle>
+            <text class="nm" x="120" y="92" text-anchor="middle">Postgres &#183; Ecto.Multi</text>
+            <text class="sub" x="120" y="142" text-anchor="middle">the regulated ledger</text>
+          </g>
+
+          <!-- the available store: Tigris -->
+          <g class="store avail" id="storeAvail" data-tab="tigris">
+            <circle class="dot" cx="640" cy="118" r="11"></circle>
+            <text class="nm" x="640" y="92" text-anchor="middle">Tigris</text>
+            <text class="sub" x="640" y="142" text-anchor="middle">S3-compatible retention</text>
+          </g>
+
+          <!-- the seam: the branded identity carried across the line, ledger -> Tigris -->
+          <line class="seam" x1="135" y1="160" x2="625" y2="160"></line>
+          <text class="seamlbl" x="380" y="232">the branded identity &#8212; minted at the ledger, carried to the available side (M5.3)</text>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">the two ends &#183; hover a store to read it</span>
+          <b>Postgres</b> on the consistency-first end commits all-or-nothing and blocks or aborts a conflicting write
+          rather than diverging; <b>Tigris</b> on the availability-first end answers from a nearby region and accepts a
+          <span class="vc">bounded lag</span>. The line runs at the edge of the consistent core, and the
+          <span class="vc">branded identity</span> crosses it without erasing it. Hover a store below to read its end.
+        </p>
+        <div class="htabs" id="endw">
+          <div class="htabs-bar" role="tablist" aria-label="The two stores at the ends of the spectrum">
+            <button type="button" role="tab" data-tab="ledger" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>Postgres &#183; Ecto.Multi &#183; the consistent ledger</button>
+            <button type="button" role="tab" data-tab="tigris" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>Tigris &#183; the available edge</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="ledger" role="tabpanel"><span class="tag c">Postgres on Ecto.Multi &#183; the consistency-first end.</span> The ledger of M2.3 pinned to its store. A fill and its effects commit all-or-nothing &#8212; <code>{:ok, changes}</code> or nothing &#8212; and at the serializable level a conflicting concurrent write is blocked or aborted rather than allowed to diverge. The cost is the consistency-first one: under contention a write is delayed or refused. The ledger would rather stop than be wrong.</div>
+            <div class="htabs-p" data-tab="tigris" role="tabpanel"><span class="tag a">Tigris &#183; the availability-first end.</span> The deep retention of M3.3 pinned to its store. A globally distributed, S3-compatible object store that keeps an object near where it was written and replicates it near readers, so reads are served from a nearby region. The cost is the availability-first one: a read in a region the latest write has not yet reached may be behind, bounded by the replication window, with a stronger-consistency read available on demand.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus a store to read its end and dim the other on the dial; click to pin. Without scripting, both ends read in sequence and the dial shows both stores at once with the line between them.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="ends">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The two ends of the spectrum</h2>
+        <span class="ssrc">mesh.6.3.md</span>
+      </div>
+      <p class="body">The earlier dives placed the runtime and the messaging shapes; this one places the two stores, and
+      they are the spectrum's extremes. <b>Tigris</b> holds the deep retention and global delivery &#8212; the cold,
+      broadly-read data &#8212; and it is built to answer from anywhere, fast, accepting that a reader far from a write
+      may be briefly behind. <b>Postgres</b> holds the ledger &#8212; the balances and settlement records &#8212; and it
+      is built to be correct above all, accepting that it may sometimes have to block to stay so.</p>
+      <p class="body">One store leans all the way toward availability and one all the way toward consistency, and the
+      line between them is the CAP boundary of the whole system. Everything the chapter has assembled sits on one side
+      of that line or the other &#8212; which is the dial above, with each store at its end and the line drawn between
+      them.</p>
+    </section>
+
+    <section id="tigris">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Tigris: availability-first retention</h2>
+        <span class="ssrc">mesh.6.3.md &#183; Tigris</span>
+      </div>
+      <p class="body">Tigris is a globally distributed, <b>S3-compatible</b> object store, and its design is
+      availability-first in the literal sense the strategy means. It keeps an object near the region where it was
+      written and, when the object is requested, <b>replicates it near the requesting user</b>, so reads are served
+      from a nearby region at low latency and the store stands in for a CDN with no configuration to manage. This is the
+      deep-retention tier of M3.3 pinned to its store: the ordered records that age out of the hot streams are kept
+      durably here and delivered worldwide from the edge.</p>
+      <p class="body">The cost is the one availability-first surfaces always pay, and it belongs in view: a read taken in
+      a region the latest write has not yet reached may be behind, <b>bounded by the replication window</b> rather than
+      open-ended, with a stronger-consistency read available where a caller needs the authoritative version over the
+      fast one. Tigris answers everywhere and reconciles toward the latest, which is the availability-first shape.</p>
+      <figure class="frozen">
+        <figcaption>Tigris &#8212; write near, replicate near, answer fast<span class="tag">Fly.io &#183; Tigris</span></figcaption>
+<pre><span class="fd">// a globally distributed, S3-compatible object store:</span>
+write(object) &#8594; <span class="fa">kept near the region it was written</span>
+read(object)  &#8594; <span class="fa">replicated near the requesting user, served nearby</span>   <span class="fd"># a CDN with no config</span>
+
+<span class="fd">// the availability-first cost, named:</span>
+a read in a region the latest write has not yet reached <span class="fe">may be behind</span>
+  &#8212; bounded by the replication window, not open-ended
+  &#8212; a <span class="fc">stronger-consistency read</span> available where the authoritative version is needed
+&#8658; answers everywhere and <b>reconciles toward the latest</b> &#8212; the availability-first shape.</pre>
+      </figure>
+    </section>
+
+    <section id="ledger">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Postgres on Ecto.Multi: the consistent ledger</h2>
+        <span class="ssrc">mesh.6.3.md &#183; Ecto.Multi</span>
+      </div>
+      <p class="body">The ledger is Postgres, and it is written through <code>Ecto.Multi</code> so that recording a fill
+      is <b>all-or-nothing</b>. A fill and its effects &#8212; the entry, the balance change, the audit record &#8212;
+      are composed into a single multi whose operations apply in order and commit together as one unit, returning the
+      changes on success as <code>{:ok, changes}</code>; if any operation fails, every operation is rolled back and the
+      failure is reported with the operation that caused it as
+      <code>{:error, failed_operation, failed_value, changes_so_far}</code>.</p>
+      <p class="body">There is no state in which a fill is half-recorded: either the whole effect lands or none of it
+      does. This is the ledger of M2.3 pinned to its store, and the word <b>regulated</b> is apt &#8212; the ledger is
+      the auditable record of what happened to money, so partial or ambiguous writes are the one outcome it cannot
+      permit. The transaction is the unit of correctness, and the multi is how EchoMesh expresses it &#8212; hover the
+      two outcomes below to walk a commit and a rollback.</p>
+      <div class="htabs" id="multiw">
+        <div class="htabs-bar" role="tablist" aria-label="The two outcomes of an Ecto.Multi">
+          <button type="button" role="tab" data-tab="ok" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>Commit &#183; {:ok, changes}</button>
+          <button type="button" role="tab" data-tab="err" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>Rollback &#183; {:error, &#8230;}</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="ok" role="tabpanel"><span class="tag c">All operations apply &#8212; <code>{:ok, changes}</code>.</span> The entry, the balance change, and the audit record apply in order and commit together as one unit. The multi returns <code>{:ok, changes}</code> with the result of every named operation, and the whole effect of the fill has landed. This is the only outcome in which any part of the fill is recorded.</div>
+          <div class="htabs-p" data-tab="err" role="tabpanel"><span class="tag e">One operation fails &#8212; <code>{:error, failed_operation, failed_value, changes_so_far}</code>.</span> If any operation fails, every operation is rolled back: nothing is committed. The failure is reported with the operation that caused it and the value that failed it, alongside the changes made before the failure. There is no half-recorded fill &#8212; either the whole effect lands or none of it does.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus an outcome to read it; click to pin. Without scripting, both outcomes read in sequence. The success tuple is <code>{:ok, changes}</code>; the failure tuple is <code>{:error, failed_operation, failed_value, changes_so_far}</code>.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>Ecto.Multi &#8212; a fill commits all-or-nothing<span class="tag">Ecto &#183; Ecto.Multi</span></figcaption>
+<pre><span class="fd"># a fill and its effects composed into one multi:</span>
+multi = Multi.new()
+  |&gt; Multi.insert(<span class="fc">:entry</span>, ...)        <span class="fd"># the ledger entry</span>
+  |&gt; Multi.update(<span class="fc">:balance</span>, ...)      <span class="fd"># the balance change</span>
+  |&gt; Multi.insert(<span class="fc">:audit</span>, ...)        <span class="fd"># the audit record</span>
+
+<span class="fd"># operations apply in order and commit together as one unit:</span>
+Repo.transaction(multi)
+  &#8594; <span class="fa">{:ok, changes}</span>                                  <span class="fd"># all applied — the whole effect lands</span>
+  &#8594; <span class="fe">{:error, failed_operation, failed_value, changes_so_far}</span>  <span class="fd"># any failure rolls back all</span>
+
+<span class="fd"># no state in which a fill is half-recorded:</span>
+&#8658; <b>either the whole effect lands or none of it does.</b></pre>
+      </figure>
+    </section>
+
+    <section id="blocks">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Why the ledger blocks rather than diverges</h2>
+        <span class="ssrc">mesh.6.3.md &#183; PostgreSQL isolation</span>
+      </div>
+      <p class="body">Atomicity keeps a single write all-or-nothing; <b>isolation</b> is what keeps concurrent writes
+      from diverging, and it is where the ledger's consistency-first stance becomes concrete. At the serializable level,
+      PostgreSQL <b>emulates serial execution</b>: it allows a set of concurrent transactions to commit only if it can
+      prove their effect matches some order in which they had run one at a time, and when it cannot, it rolls one back
+      with a serialization failure carrying <code>SQLSTATE 40001</code>, which the application retries from the
+      beginning.</p>
+      <p class="body">The consequence is precisely the consistency-first choice of M1.2 made concrete. Faced with a
+      conflict it cannot serialize, the ledger does not accept two divergent histories and reconcile later; it
+      <b>blocks or aborts one writer and has it retry</b>, so the history stays single and correct. The cost is the one
+      the consistency-first side always pays: under contention, or when the network keeps a transaction from completing,
+      a write is delayed or refused rather than allowed through. The ledger would rather stop than be wrong.</p>
+      <figure class="frozen">
+        <figcaption>serializable isolation &#8212; block or abort, never diverge<span class="tag">PostgreSQL &#183; transaction-iso</span></figcaption>
+<pre><span class="fd">// the serializable level emulates serial execution:</span>
+commit a set of concurrent transactions <span class="fc">only if</span> their effect
+  matches some order in which they had run one at a time.
+
+<span class="fd">// when it cannot prove that order:</span>
+roll one back &#8594; <span class="fe">serialization failure, SQLSTATE 40001</span>   <span class="fd"># the app retries from the beginning</span>
+
+<span class="fd">// the consistency-first choice of M1.2, made concrete:</span>
+faced with a conflict it cannot serialize, the ledger does <span class="fc">not</span>
+  accept two divergent histories and reconcile later;
+it <b>blocks or aborts one writer and has it retry</b> &#8212; the history stays single and correct.</pre>
+      </figure>
+    </section>
+
+    <section id="line">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The line drawn at the edge</h2>
+        <span class="ssrc">mesh.6.3.md &#183; M5 &amp; M5.3</span>
+      </div>
+      <p class="body">With both stores built, the line is visible. On one side is the <b>available substrate</b> &#8212;
+      the near-cache, the bus, and the streams of M6.2, and Tigris here &#8212; all answering from local or nearby state
+      and marking staleness rather than withholding under partition. On the other side is the <b>consistent core</b>
+      &#8212; the ledger here &#8212; blocking or aborting rather than diverging. The line runs at the edge of that core,
+      and it is not an accident of the technology but the cut the segmentation of M5 made on purpose: the data that must
+      be correct is on the consistent side, and the data that must be available is on the available side.</p>
+      <p class="body"><b>Identity is what crosses the line without erasing it.</b> The branded identity of M5.3 is
+      minted at the ledger, on the consistent side, and carried outward to the cache, the streams, and Tigris on the
+      available side, so a fill decided once on the consistent side is delivered and retained everywhere on the
+      available side under the same name. The line separates deciding a value from delivering it, and the seam carries
+      the name across &#8212; the amber arrow on the dial above.</p>
+      <div class="cmp">
+        <article class="con">
+          <p class="ck">The consistent side &#183; M2</p>
+          <h3>The ledger &#8212; Postgres</h3>
+          <p>Blocks or aborts a conflicting write rather than diverging, and commits all-or-nothing. Correct above all;
+          willing to stop. The data that must be correct lives here.</p>
+          <p class="ex"><b>decides a value:</b> blocks rather than diverges &#183; <b>cost:</b> a write delayed or refused</p>
+        </article>
+        <article class="avail">
+          <p class="ck">The available side &#183; M3</p>
+          <h3>The edge &#8212; cache, bus, streams, Tigris</h3>
+          <p>Answers from local or nearby state and marks how far behind it might be rather than withholding. The data
+          that must be available lives here, reconciling toward correct.</p>
+          <p class="ex"><b>delivers a value:</b> answers and marks the lag &#183; <b>cost:</b> a bounded staleness</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="stack">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>Where this leaves the stack</h2>
+        <span class="ssrc">mesh.6.3.md &#183; M6.1, M6.2, M7</span>
+      </div>
+      <p class="body">The stack is now complete. The owned runtime of M6.1 hosts the coordination; the three messaging
+      shapes of M6.2 carry the available traffic; and the two stores here anchor the spectrum's ends. Every segmented
+      surface of M5 is pinned to the substrate that makes it real and placed on the consistency/availability spectrum
+      with its cost named.</p>
+      <p class="body">What remains is geography: putting each of these surfaces in the right region, close to the readers
+      or the writers it serves, without forking the code that runs them &#8212; the <b>transparent infrastructure</b> of
+      M7, which the location transparency of M6.1 already made possible. The architecture is built and grounded; the
+      next chapter places it in the world.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">M6.1 &#183; the runtime</p>
+          <h3>The owned BEAM</h3>
+          <p>Hosts the coordination &#8212; processes, supervision, location transparency. The substrate every surface
+          runs on, and what makes the placement of M7 possible.</p>
+          <p class="note">the runtime &#183; <b>M6.1</b></p>
+        </article>
+        <article>
+          <p class="cno">M6.2 &#183; the messaging</p>
+          <h3>Three available shapes</h3>
+          <p>The near-cache, the bus, and the per-instrument streams &#8212; the available traffic, answering from local
+          or nearby state and accepting bounded staleness.</p>
+          <p class="note">the available substrate &#183; <b>M6.2</b></p>
+        </article>
+        <article>
+          <p class="cno">M6.3 &#183; the stores</p>
+          <h3>The spectrum's ends</h3>
+          <p>Tigris at the availability-first end, the Postgres ledger at the consistency-first end, and the line drawn
+          at the edge of the consistent core.</p>
+          <p class="note">the two ends and the line &#183; <b>this dive</b></p>
+        </article>
+      </div>
+      <p class="compose"><b>The next chapter:</b> geography. M7 places each segmented surface in the right region,
+      close to the readers or writers it serves, without forking the code &#8212; the transparent infrastructure the
+      location transparency of M6.1 already made possible, carried under a <b>Proposed &#183; not shipped</b> note until
+      the substrate-versus-proposal line is drawn at M8.2.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh/stack">
+          <span class="dr">/mesh/stack</span>
+          <h3>M6 &#8212; The Stack</h3>
+          <p>The chapter landing: the BEAM, the cache, the bus, the store, and the ledger, each segmented surface pinned
+          to the substrate that makes it real.</p>
+          <p class="dnote"><b>this dive</b> is M6.3, the two stores and the line; the runtime is M6.1, the messaging is M6.2.</p>
+        </a>
+        <a class="door" href="/mesh/best-effort-availability">
+          <span class="dr">/mesh/best-effort-availability</span>
+          <h3>M2 &#8212; Best Effort Availability</h3>
+          <p>The consistency-first surface: a single owning writer, the ledger that blocks rather than diverges &#8212;
+          the regulated ledger this dive pins to Postgres and <code>Ecto.Multi</code>.</p>
+          <p class="dnote"><b>the consistent end</b> of the line is M2.3's behavior: block or abort, never diverge.</p>
+        </a>
+        <a class="door" href="/mesh/best-effort-consistency">
+          <span class="dr">/mesh/best-effort-consistency</span>
+          <h3>M3 &#8212; Best Effort Consistency</h3>
+          <p>The availability-first surface: the cache and the per-instrument streams, the deep retention that ages out
+          of the hot streams &#8212; the retention this dive pins to Tigris.</p>
+          <p class="dnote"><b>the available end</b> of the line is M3.3's deep retention: answer everywhere, mark the lag.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract, proven by frozen transcripts
+          across five runtimes.</p>
+          <p class="dnote"><b>the identity</b> that crosses the line &#8212; minted at the ledger, carried to the
+          available side &#8212; is specified here.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;8</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://fly.io/docs/tigris/" rel="noopener">Fly.io &#8212; Tigris Global Object Storage</a><span class="rs">a globally distributed, S3-compatible object store that keeps an object near the region where it is written and replicates it near the requesting user, giving low-latency global reads in place of a CDN, with stronger consistency available on demand</span></li>
+          <li><a href="https://hexdocs.pm/ecto/Ecto.Multi.html" rel="noopener">Ecto &#8212; Ecto.Multi</a><span class="rs">composes transaction operations that apply in order and commit together as {:ok, changes}; on any error every operation is rolled back, returning {:error, failed_operation, failed_value, changes_so_far} &#8212; recording a fill all-or-nothing</span></li>
+          <li><a href="https://www.postgresql.org/docs/current/transaction-iso.html" rel="noopener">PostgreSQL &#8212; Transaction Isolation</a><span class="rs">the serializable level emulates serial execution, allowing concurrent transactions to commit only if their effect matches some serial order and otherwise rolling one back with SQLSTATE 40001 for retry &#8212; blocking or aborting rather than allowing divergence</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh/stack">M6 &#8212; The Stack</a><span class="rs">the chapter landing whose third and final dive this is</span></li>
+          <li><a href="/mesh/stack/cache-bus-streams">M6.2 &#8212; EchoCache, Bus, and Streams</a><span class="rs">the available substrate on the other side of the line this dive draws</span></li>
+          <li><a href="/mesh/best-effort-availability">M2 &#8212; Best Effort Availability</a><span class="rs">the consistency-first ledger pinned here to Postgres and Ecto.Multi</span></li>
+          <li><a href="/mesh/best-effort-consistency">M3 &#8212; Best Effort Consistency</a><span class="rs">the availability-first deep retention pinned here to Tigris</span></li>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the engine and the umbrella where the ledger's Ecto.Multi runs</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh/stack/cache-bus-streams"><span class="pk">previous &#183; dive</span>&#8592; M6.2 &#183; EchoCache, Bus, and Streams</a>
+      <a class="pgx" href="/mesh/stack"><span class="pk">back to the chapter</span>M6 &#183; The Stack &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <a href="/mesh/best-effort-availability">M2 &#183; Best Effort Availability</a>
+        <a href="/mesh/best-effort-consistency">M3 &#183; Best Effort Consistency</a>
+        <a href="/mesh/trading">M4 &#183; Trading the Trade</a>
+        <a href="/mesh/segmenting">M5 &#183; Segmenting</a>
+        <a href="/mesh/stack">M6 &#183; The Stack</a>
+        <a href="/mesh/transparent">M7 &#183; Transparent Infrastructure</a>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0Mtow43zk</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 17:57:38 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the CAP-line emulator: the two-end tabs drive the SVG spectrum + an aria-live readout ----------
+     READOUT is a pure function of the store key over fixed data — no network, no storage, no measurement.
+     Hovering a store dims the other on the dial and reads its end. The line and the seam are static; the
+     magnitudes are qualitative, none invented. */
+  var ENDS = {
+    ledger: { s: "the consistency-first end · Postgres on Ecto.Multi",
+              h: "<b>Postgres</b> on the consistency-first end commits all-or-nothing — <span class='vc'>{:ok, changes}</span> or nothing — and at the serializable level blocks or aborts a conflicting concurrent write rather than letting two histories diverge. The cost is the consistency-first one: under contention a write is <span class='vc'>delayed or refused</span>. The ledger would rather stop than be wrong." },
+    tigris: { s: "the availability-first end · Tigris",
+              h: "<b>Tigris</b> on the availability-first end is a globally distributed, S3-compatible object store: it keeps an object near where it was written and replicates it near readers, so reads are served from a <span class='vc'>nearby region</span>. The cost is the availability-first one: a read in a region the latest write has not yet reached may be behind, <span class='vc'>bounded by the replication window</span>, with a stronger-consistency read available on demand." }
+  };
+  var emit       = document.getElementById('emit');
+  var storeCons  = document.getElementById('storeCons');
+  var storeAvail = document.getElementById('storeAvail');
+
+  wireHtabs(document.getElementById('endw'), function (key) {
+    var d = ENDS[key];
+    if (!d) return;
+    if (emit) emit.innerHTML = '<span class="step">' + d.s + '</span>' + d.h;
+    /* highlight the active store on the dial, dim the other */
+    if (storeCons)  storeCons.classList.toggle('dim', key !== 'ledger');
+    if (storeAvail) storeAvail.classList.toggle('dim', key !== 'tigris');
+  });
+
+  /* the Ecto.Multi outcomes are a plain reuse of the same component */
+  wireHtabs(document.getElementById('multiw'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

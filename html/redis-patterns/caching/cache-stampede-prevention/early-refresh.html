@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R1.05.2 &#183; Probabilistic early refresh &#183; Redis Patterns Applied &#183; jonnify</title>
+<meta name="description" content="R1.05.2 — X-Fetch, probabilistic early expiration. Each read decides whether to recompute the hot key before it expires, using the real formula now - delta * beta * log(rand) >= expiry: the chance of refresh rises as the TTL nears zero, so one request rebuilds early while the rest serve the still-fresh value. The pattern is taught here; the applied mechanism EchoCache really runs is expiry jitter, not XFetch. Backed by Valkey.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+.skip{position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 6px 0;font-family:var(--mono);font-weight:700;z-index:50}
+.skip:focus{left:0}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul,.prose ol{margin:0 0 14px 1.3rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.ctrl{display:flex;align-items:center;gap:12px;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin:4px 0 14px}
+.ctrl label{min-width:9.5rem;color:var(--b-ink)}
+.ctrl input[type=range]{accent-color:var(--r-red);flex:1;max-width:300px}
+.ctrl .val{color:var(--r-red);font-weight:700;min-width:3.2rem;text-align:right}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink);margin:22px 0 6px}
+div.door:hover{box-shadow:none}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.9rem;color:var(--b-dim);max-width:74ch}
+.door .frozen{margin:12px 0 0}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .str{color:var(--b-node)}
+pre.code .cmt{color:var(--b-dim)}
+pre.code .kw{color:var(--b-seq)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-family:var(--mono);font-size:12.5px;margin:0 0 18px}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+.note{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);border-left:3px solid var(--b-ts);padding-left:14px;margin:16px 0 0;max-width:78ch}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){.foot-nav{grid-template-columns:1fr}.topnav{display:none}}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{transition:none}}
+/* ---------- the probability-curve figure ---------- */
+.curvefig{width:100%;height:auto;display:block;margin-top:4px}
+.curvefig .axis{stroke:var(--b-line);stroke-width:1}
+.curvefig .curve{fill:none;stroke:var(--r-red);stroke-width:2}
+.curvefig .mark{transition:cx .2s ease,cy .2s ease}
+.curvefig .clbl{font:10.5px var(--mono);fill:var(--b-dim)}
+/* ---------- the roll figure (hover-select) ---------- */
+.rollfig{width:100%;height:auto;display:block;margin-top:4px}
+.rollfig .row{cursor:pointer;transition:opacity .18s ease}
+.rollfig .track{fill:var(--b-paper);stroke:var(--b-line);stroke-width:1}
+.rollfig .gapbar{fill:var(--b-ts)}
+.rollfig .marginbar{fill:var(--r-red)}
+.rollfig .rlbl{font:10.5px var(--mono);fill:var(--b-dim)}
+.rollfig .rtxt{font:12px var(--mono);font-weight:700}
+.rollfig.focus .row{opacity:.32}
+.rollfig.focus .row.on{opacity:1}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">&#183;</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/caching">caching</a><span class="rsep">/</span><a href="/redis-patterns/caching/cache-stampede-prevention">cache-stampede-prevention</a><span class="rsep">/</span><span class="rcur">early-refresh</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#idea">Logical expiry</a>
+      <a href="#formula">The formula</a>
+      <a href="#roll">Roll it</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R1.05.2 &#183; Cache stampede prevention &#8212; dive 2</p>
+      <h1>Refresh <span class="hns">before expiry</span>.</h1>
+      <p class="lede">No lock, no waiting. Each read may rebuild the key early, with a chance that rises as the TTL
+      nears zero, so one request refreshes moments before it would expire.</p>
+      <p class="heronote">Grounding: content/fundamental/cache-stampede-prevention.md.txt (Solution 1, the X-Fetch
+      formula) &#183; echo/apps/echo_cache/table.ex (the jittered <code>expires_at</code>) &#8212; the pattern, then
+      the real applied mechanism.</p>
+
+      <figure class="anatomy" aria-labelledby="curveCap">
+        <figcaption id="curveCap"><b>Refresh chance vs time-to-expiry.</b> Slide the time-to-expiry; select a
+        <code>beta</code> to shift how eager the early refresh is. The chance is near zero when fresh, rising near
+        expiry.</figcaption>
+        <div class="segbar" id="betaSel" role="group" aria-label="Select a beta tuning factor">
+          <button type="button" data-beta="0.5" aria-pressed="false">beta = 0.5 &#183; lazy</button>
+          <button type="button" data-beta="1" aria-pressed="false">beta = 1.0 &#183; default</button>
+          <button type="button" data-beta="2" aria-pressed="false">beta = 2.0 &#183; eager</button>
+        </div>
+        <div class="ctrl">
+          <label for="gapRange">time to expiry (s)</label>
+          <input type="range" id="gapRange" min="0" max="120" step="2" value="60">
+          <span class="val" id="gapVal">60</span>
+        </div>
+        <svg class="curvefig" id="curveSvg" viewBox="0 0 460 220" role="img" aria-label="A curve of refresh probability against the time remaining before the key expires. On the right, far from expiry, the probability is near zero. Toward the left, as the deadline nears, it rises steeply. A moving marker shows the probability at the selected time-to-expiry; selecting a beta shifts the whole curve.">
+          <line class="axis" x1="42" y1="20" x2="42" y2="180"></line>
+          <line class="axis" x1="42" y1="180" x2="440" y2="180"></line>
+          <text class="clbl" x="42" y="198" text-anchor="start">expiry (0s left)</text>
+          <text class="clbl" x="440" y="198" text-anchor="end">fresh (more time left)</text>
+          <text class="clbl" x="20" y="28" text-anchor="middle" transform="rotate(-90 20 100)">P(refresh)</text>
+          <path id="probCurve" class="curve" d=""></path>
+          <line id="markLine" x1="240" y1="20" x2="240" y2="180" stroke="#68705f" stroke-width="1" stroke-dasharray="3 3"></line>
+          <circle id="probMarker" class="mark" cx="240" cy="120" r="6" fill="#d6584f" stroke="#b23b2e" stroke-width="1.4"></circle>
+          <text id="probTag" class="rtxt" x="240" y="40" text-anchor="middle" fill="#d6584f">0.18</text>
+        </svg>
+        <div class="readout" id="curveOut" aria-live="polite"><span class="rk">readout &#183;</span> Slide and select
+        a beta to read the early-refresh probability.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="idea">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Logical expiry, not physical</h2>
+        <span class="ssrc">source &#183; How It Works</span>
+      </div>
+      <div class="prose">
+        <p>Plain cache-aside sets a physical TTL: at the deadline the key vanishes and the next read misses. X-Fetch
+        keeps a physical TTL too, but treats it as a <em>logical</em> deadline the value tries to beat. The trick is
+        to refresh ahead of the deadline &#8212; while the key is still present and serving &#8212; so the key never
+        has to physically expire under load.</p>
+        <p>To decide when, each read needs two facts stored alongside the value: the time the value was last computed,
+        and how long that computation took (call it <code>delta</code>). The first gives the time remaining before
+        expiry; the second sizes the head start a refresh needs, because a value that takes longer to rebuild should
+        start rebuilding earlier. With those two numbers and one random draw, a read decides whether it is the one to
+        refresh.</p>
+        <p>The outcome is statistical, not coordinated: no lock, no waiting, no central elector. Out of thousands of
+        reads approaching the deadline, the formula makes it overwhelmingly likely that exactly one fires the early
+        rebuild, and the rest carry on serving the fresh value.</p>
+      </div>
+    </section>
+
+    <section id="formula">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The X-Fetch formula</h2>
+        <span class="ssrc">source &#183; The Algorithm</span>
+      </div>
+      <div class="prose">
+        <p>The decision is the one the source gives. A read triggers a refresh when</p>
+      </div>
+      <pre class="code"><span class="cmt"># refresh early when this is true:</span>
+now <span class="kw">-</span> delta <span class="kw">*</span> beta <span class="kw">*</span> log(rand()) <span class="kw">&gt;=</span> expiry
+<span class="cmt"># equivalently, refresh when now is within  delta * beta * (-log(rand))  of expiry</span></pre>
+      <div class="prose">
+        <p>The pieces: <code>delta</code> is the time the last regeneration took; <code>beta</code> is a tuning
+        factor, conventionally 1.0; and <code>rand()</code> is a fresh uniform draw in the open interval (0, 1).
+        Because <code>rand()</code> is below 1, <code>log(rand())</code> is negative, so
+        <code>delta &#183; beta &#183; log(rand())</code> subtracts a positive margin from <code>expiry</code>
+        &#8212; it brings the effective deadline <em>earlier</em> by a random amount.</p>
+        <p>That margin is what shapes the curve. When the key is fresh, <code>now</code> is far below
+        <code>expiry</code>, and only an extreme random draw (a very small <code>rand</code>, giving a large margin)
+        clears the threshold &#8212; so a refresh is rare. As <code>now</code> nears <code>expiry</code>, an
+        ever-larger share of random draws clear it, and the refresh probability climbs toward one. Raising
+        <code>beta</code> shifts the whole curve earlier; a larger <code>delta</code> &#8212; a costlier rebuild
+        &#8212; also refreshes earlier, giving the slow rebuild the head start it needs.</p>
+      </div>
+      <dl class="deflist">
+        <dt>delta</dt><dd>The time the last regeneration took. A costlier value refreshes earlier.</dd>
+        <dt>beta</dt><dd>A tuning factor, typically 1.0. Higher refreshes more eagerly; lower, later.</dd>
+        <dt>rand()</dt><dd>A fresh uniform draw in (0, 1). <code>log(rand())</code> is negative, so it pulls the effective deadline earlier by a random margin.</dd>
+        <dt>now, expiry</dt><dd>The current time and the key&#8217;s logical deadline. The gap between them drives the rising probability.</dd>
+      </dl>
+      <p class="note">The formula is a probability, so on rare runs two requests refresh, or a run of unlucky draws
+      lets the key physically expire and falls back to a normal miss. That is why X-Fetch is often paired with a mutex
+      fallback for the hard miss &#8212; the recommendation the module closes on.</p>
+    </section>
+
+    <section id="roll">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Roll the decision</h2>
+        <span class="ssrc">source &#183; the formula, computed</span>
+      </div>
+      <div class="prose">
+        <p>Run the formula. Pick a time-to-expiry and one of three fixed random draws, and the readout computes
+        <code>now &minus; delta &#183; beta &#183; log(rand)</code> against <code>expiry</code> with
+        <code>delta = 8s</code> and <code>beta = 1.0</code> &#8212; showing the early margin, the threshold, and
+        whether this read fires the refresh. A draw near zero produces a large margin and refreshes early even when
+        there is time left; a draw near one barely moves the deadline.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="rollCap">
+        <figcaption id="rollCap"><b>Compute the X-Fetch decision.</b> <code>delta = 8s</code>, <code>beta = 1.0</code>.
+        Select a random draw, slide the time-to-expiry; when the margin bar reaches the gap, the decision fires.</figcaption>
+        <div class="segbar" id="randSel" role="group" aria-label="Which random draw to use">
+          <button type="button" data-rand="0.5" aria-pressed="false">rand = 0.50</button>
+          <button type="button" data-rand="0.1" aria-pressed="false">rand = 0.10</button>
+          <button type="button" data-rand="0.02" aria-pressed="false">rand = 0.02</button>
+        </div>
+        <div class="ctrl">
+          <label for="leftRange">time to expiry (s)</label>
+          <input type="range" id="leftRange" min="0" max="60" step="1" value="20">
+          <span class="val" id="leftVal">20</span>
+        </div>
+        <svg class="rollfig" id="rollSvg" viewBox="0 0 460 150" role="img" aria-label="Two horizontal bars compared. The upper row is the gap to expiry; the lower row is the computed early-refresh margin from the formula. When the margin bar reaches or passes the gap bar the decision fires. Hover a row to read what it measures.">
+          <g class="row" data-row="gap">
+            <text class="rlbl" x="20" y="36" text-anchor="start">gap to expiry</text>
+            <rect class="track" x="150" y="26" width="290" height="16" rx="4"></rect>
+            <rect id="gapBar" class="gapbar" x="150" y="26" width="120" height="16" rx="4"></rect>
+          </g>
+          <g class="row" data-row="margin">
+            <text class="rlbl" x="20" y="86" text-anchor="start">margin =<tspan x="20" dy="13">delta&#183;beta&#183;(&minus;ln rand)</tspan></text>
+            <rect class="track" x="150" y="76" width="290" height="16" rx="4"></rect>
+            <rect id="marginBar" class="marginbar" x="150" y="76" width="80" height="16" rx="4"></rect>
+          </g>
+          <line id="gapTick" x1="270" y1="20" x2="270" y2="120" stroke="#20618e" stroke-width="1" stroke-dasharray="3 3"></line>
+          <text id="decideTxt" class="rtxt" x="150" y="138" text-anchor="start" fill="#d6584f">margin &lt; gap: serve cached</text>
+        </svg>
+        <div class="readout" id="rollOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a draw and
+        a time-to-expiry to compute the decision.</div>
+      </figure>
+
+      <p class="take">One formula over the time-to-expiry and a random draw decides each read: refresh early by a
+      margin that grows as the deadline nears, so one request rebuilds before the key ever expires.</p>
+    </section>
+
+    <section id="echocache">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>On EchoCache &#8212; jitter, not XFetch</h2>
+        <span class="ssrc">table.ex &#183; expires_at/1 &#183; verbatim</span>
+      </div>
+      <p class="ethic">Here the honesty matters. EchoCache does <strong>not</strong> implement the probabilistic
+      XFetch rule above &#8212; there is no <code>now &minus; delta&#183;beta&#183;log(rand)</code> test in the code,
+      and this dive does not claim one. What EchoCache runs against the same problem &#8212; a cohort that expires
+      together and re-herds &#8212; is <strong>expiry jitter</strong>: every row draws its expiry from
+      <code>ttl &plusmn; ttl&#183;jitter</code>, so no two rows of a cohort hit the deadline at once.</p>
+      <pre class="code"><span class="kw">defp</span> expires_at(spec) <span class="kw">do</span>
+  base = System.monotonic_time(<span class="str">:millisecond</span>) <span class="kw">+</span> spec.ttl_ms
+  spread = trunc(spec.ttl_ms <span class="kw">*</span> spec.jitter)
+
+  <span class="kw">if</span> spread == 0 <span class="kw">do</span>
+    base
+  <span class="kw">else</span>
+    base <span class="kw">+</span> :rand.uniform(2 <span class="kw">*</span> spread <span class="kw">+</span> 1) <span class="kw">-</span> spread <span class="kw">-</span> 1
+  <span class="kw">end</span>
+<span class="kw">end</span></pre>
+      <div class="prose">
+        <p>The two ideas share an aim &#8212; stop a synchronized expiry from creating the herd &#8212; but reach it
+        differently: X-Fetch refreshes one read <em>before</em> the deadline; jitter <em>spreads the deadlines</em>
+        so no two rows of a cohort hit it at once. The moduledoc states the goal directly: <em>&#8220;Rows expire on
+        a jittered clock &#8212; <code>ttl &plusmn; ttl&#183;jitter</code> &#8212; so a cohort filled together never
+        expires together.&#8221;</em></p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>the L2 row carries its expiry on the server&#8217;s own
+      clock via <code>SET &#8230; PX</code>, so Valkey expires it even if every node forgets &#8212; the cohort never
+      re-herds on either layer&#8217;s clock &#8212;
+      <a href="https://valkey.io/commands/set" rel="noopener">valkey.io/commands/set</a>.</p>
+
+      <div class="door">
+        <span class="dr">the application &#183; the jittered expiry, committed</span>
+        <h3>A cohort filled together expires apart</h3>
+        <p>The jitter is not a tuning aspiration &#8212; the committed drill shows the spread doing its work: a cohort
+        filled within a few milliseconds expires over a wide window, with no synchronized re-herd. The zero-jitter
+        control spreads only its own fill walltime, which is what proves the treatment.</p>
+        <figure class="frozen">
+          <figcaption>content/bcs4.1.md &#183; the jittered clock, against live Valkey<span class="tag">frozen</span></figcaption>
+          <pre>400 rows filled in <b>24 ms</b>
+expire <b>138 ms</b> apart at jitter 0.2   <span class="fd">&#8592; no synchronized re-herd</span>
+L2 row                        SET ... PX   <span class="fd">&#8592; PTTL 300 ms of 300, server clock</span></pre>
+        </figure>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Give the key a longer physical TTL and refresh it logically: each read rolls
+          <code>now &minus; delta &#183; beta &#183; log(rand) &ge; expiry</code>, so one request rebuilds early
+          while the rest serve the fresh value. No lock.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoCache application</span>
+          <p>EchoCache reaches the same goal by a different mechanism: <code>expires_at/1</code> draws each
+          row&#8217;s expiry from <code>ttl &plusmn; ttl&#183;jitter</code>, so a cohort filled together never expires
+          together &#8212; jitter spreads the deadlines instead of refreshing ahead of one.</p>
+        </div>
+      </div>
+      <p class="take">Early refresh trades a tiny, bounded staleness for no lock and no waiting; EchoCache reaches the
+      same no-re-herd outcome with jitter &#8212; the deadlines are spread, not beaten.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/set" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; <code>PX</code> for the jittered millisecond TTL EchoCache writes to L2.</li>
+            <li><a href="https://redis.io/commands/ttl" rel="noopener">Redis &mdash; <em>TTL</em></a> &mdash; the remaining time-to-live X-Fetch inspects to size the gap to expiry.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; key expiry and the string commands that store the value with its timestamp and delta.</li>
+            <li><a href="https://antirez.com/" rel="noopener">Sanfilippo, S. &mdash; <em>antirez weblog</em></a> &mdash; the Redis creator on expiry, eviction, and smoothing regeneration load.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/caching/cache-stampede-prevention">R1.05 &#183; Cache stampede prevention</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/caching/cache-stampede-prevention/lock-on-miss">R1.05.1 &#183; Lock-on-miss</a><span class="rs">the deterministic alternative and the X-Fetch fallback</span></li>
+            <li><a href="/redis-patterns/caching/cache-stampede-prevention/coalescing">R1.05.3 &#183; Request coalescing</a><span class="rs">the next dive</span></li>
+            <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
+            <li><a href="/elixir/pragmatic/state">/elixir &#183; State</a><span class="rs">the OTP craft behind the echo data layer</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the protocol behind the coherence lane</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/redis-patterns/caching/cache-stampede-prevention/lock-on-miss"><span class="pk">previous</span>&#8592; R1.05.1 &#183; Lock-on-miss</a>
+      <a class="pgx" href="/redis-patterns/caching/cache-stampede-prevention/coalescing"><span class="pk">next</span>R1.05.3 &#183; Request coalescing &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">&#183;</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/caching/cache-stampede-prevention/lock-on-miss">R1.05.1 &#183; Lock-on-miss</a>
+        <a href="/redis-patterns/caching/cache-stampede-prevention/early-refresh">R1.05.2 &#183; Early refresh</a>
+        <a href="/redis-patterns/caching/cache-stampede-prevention/coalescing">R1.05.3 &#183; Request coalescing</a>
+        <a href="/redis-patterns/caching">R1 &#183; Caching</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- the X-Fetch refresh-probability model (pure) ---------- */
+  // For a uniform rand in (0,1), refresh fires when now - delta*beta*ln(rand) >= expiry,
+  // i.e. when margin -delta*beta*ln(rand) >= gap. P(refresh) = exp(-gap/(delta*beta)).
+  var DELTA = 8;
+  var curBeta = 1.0;
+  // pure: (gap, beta) -> refresh probability in [0,1]
+  function refreshProb(gap, beta) { return gap <= 0 ? 1 : Math.exp(-gap / (DELTA * beta)); }
+
+  /* ---------- Interactive 1: probability curve (slider + hover-select beta) ---------- */
+  var X0 = 42, X1 = 440, Y0 = 180, Y1 = 20, GAP_MAX = 120;
+  function gapToX(gap) { return X1 - (X1 - X0) * (Math.min(gap, GAP_MAX) / GAP_MAX); }
+  function probToY(p) { return Y0 - (Y0 - Y1) * Math.max(0, Math.min(1, p)); }
+  // pure: beta -> the SVG path string for the whole curve
+  function buildCurve(beta) {
+    var pts = [];
+    for (var g = GAP_MAX; g >= 0; g -= 2) {
+      pts.push((g === GAP_MAX ? 'M' : 'L') + gapToX(g).toFixed(1) + ' ' + probToY(refreshProb(g, beta)).toFixed(1));
+    }
+    return pts.join(' ');
+  }
+  var curve = document.getElementById('probCurve');
+  var gapRange = document.getElementById('gapRange'), gapVal = document.getElementById('gapVal');
+  var marker = document.getElementById('probMarker'), markLine = document.getElementById('markLine');
+  var probTag = document.getElementById('probTag'), curveOut = document.getElementById('curveOut');
+  var betaButtons = document.querySelectorAll('#betaSel button');
+  function renderCurve() {
+    if (curve) curve.setAttribute('d', buildCurve(curBeta));
+    var gap = gapRange ? parseInt(gapRange.value, 10) : 60;
+    if (gapVal) gapVal.textContent = String(gap);
+    var p = refreshProb(gap, curBeta);
+    var x = gapToX(gap), y = probToY(p);
+    if (marker) { marker.setAttribute('cx', x.toFixed(1)); marker.setAttribute('cy', y.toFixed(1)); }
+    if (markLine) { markLine.setAttribute('x1', x.toFixed(1)); markLine.setAttribute('x2', x.toFixed(1)); }
+    if (probTag) { probTag.setAttribute('x', x.toFixed(1)); probTag.textContent = p.toFixed(2); }
+    if (curveOut) curveOut.innerHTML = '<span class="rk">readout &#183;</span> With delta = ' + DELTA + 's, beta = ' + curBeta +
+      ': at ' + gap + 's before expiry the chance any one read fires the early refresh is exp(-' + gap + '/' + (DELTA * curBeta) +
+      ') = <b>' + p.toFixed(3) + '</b>. Near zero far out, climbing to 1 at expiry.';
+  }
+  function setBeta(beta) {
+    curBeta = beta;
+    betaButtons.forEach(function (b) { b.setAttribute('aria-pressed', parseFloat(b.getAttribute('data-beta')) === beta ? 'true' : 'false'); });
+    renderCurve();
+  }
+  betaButtons.forEach(function (b) {
+    b.addEventListener('click', function () { setBeta(parseFloat(b.getAttribute('data-beta'))); });
+    b.addEventListener('mouseenter', function () {
+      var prev = curBeta; var bv = parseFloat(b.getAttribute('data-beta'));
+      if (curve) curve.setAttribute('d', buildCurve(bv));
+    });
+    b.addEventListener('mouseleave', function () { if (curve) curve.setAttribute('d', buildCurve(curBeta)); });
+  });
+  if (gapRange) gapRange.addEventListener('input', renderCurve);
+  setBeta(1.0);
+
+  /* ---------- Interactive 2: roll the decision (slider + hover-select rows) ---------- */
+  var curRand = 0.5;
+  var TRACK_X = 150, TRACK_W = 290, SCALE_MAX = 60;
+  function secToW(s) { return Math.max(2, Math.min(TRACK_W, (s / SCALE_MAX) * TRACK_W)); }
+  var ROW = {
+    gap:    'the gap to expiry: how long until the key would physically expire (the blue bar).',
+    margin: 'the margin = delta*beta*(-ln rand): how far before the deadline this draw would refresh (the red bar).'
+  };
+  var rollSvg = document.getElementById('rollSvg');
+  var rollOut = document.getElementById('rollOut');
+  var randButtons = document.querySelectorAll('#randSel button');
+  var leftRange = document.getElementById('leftRange'), leftVal = document.getElementById('leftVal');
+  // pure: (gap, rand) -> readout text. margin = -delta*beta*ln(rand), beta fixed at 1.0 here.
+  function decideXFetch(gap, rand) {
+    var margin = -DELTA * 1.0 * Math.log(rand);
+    var fires = margin >= gap;
+    return 'gap to expiry = ' + gap + 's, rand = ' + rand.toFixed(2) +
+      '. margin = -delta*beta*ln(rand) = -' + (DELTA) + '*ln(' + rand.toFixed(2) + ') = ' + margin.toFixed(2) +
+      's. ' + margin.toFixed(2) + ' >= ' + gap + '? ' + (fires ? 'yes -> THIS read refreshes early' : 'no -> serve the cached value') + '.';
+  }
+  function renderRoll() {
+    var gap = leftRange ? parseInt(leftRange.value, 10) : 20;
+    if (leftVal) leftVal.textContent = String(gap);
+    var margin = -DELTA * 1.0 * Math.log(curRand);
+    var fires = margin >= gap;
+    var gapW = secToW(gap), marginW = secToW(margin);
+    var gapBar = document.getElementById('gapBar'), marginBar = document.getElementById('marginBar');
+    var gapTick = document.getElementById('gapTick'), decideTxt = document.getElementById('decideTxt');
+    if (gapBar) gapBar.setAttribute('width', gapW.toFixed(1));
+    if (marginBar) marginBar.setAttribute('width', marginW.toFixed(1));
+    if (gapTick) { var tx = (TRACK_X + gapW); gapTick.setAttribute('x1', tx.toFixed(1)); gapTick.setAttribute('x2', tx.toFixed(1)); }
+    if (decideTxt) { decideTxt.textContent = fires ? 'margin >= gap: refresh early' : 'margin < gap: serve cached'; decideTxt.setAttribute('fill', fires ? '#2e7d5b' : '#d6584f'); }
+    if (rollOut) rollOut.innerHTML = '<span class="rk">readout &#183;</span> ' + decideXFetch(gap, curRand);
+  }
+  function setRand(rand) {
+    curRand = rand;
+    randButtons.forEach(function (b) { b.setAttribute('aria-pressed', parseFloat(b.getAttribute('data-rand')) === rand ? 'true' : 'false'); });
+    renderRoll();
+  }
+  randButtons.forEach(function (b) { b.addEventListener('click', function () { setRand(parseFloat(b.getAttribute('data-rand'))); }); });
+  if (rollSvg) {
+    rollSvg.querySelectorAll('.row').forEach(function (g) {
+      g.addEventListener('mouseenter', function () {
+        rollSvg.classList.add('focus');
+        rollSvg.querySelectorAll('.row').forEach(function (r) { r.classList.toggle('on', r === g); });
+        if (rollOut) rollOut.innerHTML = '<span class="rk">readout &#183;</span> ' + ROW[g.getAttribute('data-row')];
+      });
+      g.addEventListener('mouseleave', function () {
+        rollSvg.classList.remove('focus');
+        rollSvg.querySelectorAll('.row').forEach(function (r) { r.classList.remove('on'); });
+        renderRoll();
+      });
+    });
+  }
+  if (leftRange) leftRange.addEventListener('input', renderRoll);
+  setRand(0.5);
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

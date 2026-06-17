@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C4.11.2 · Tabulation &amp; bottom-up — F# In Depth</title>
+<meta name="description" content="Bottom-up dynamic programming in F#: rewrite the recursion as a loop that fills a table from the smallest subproblem up. The worked problem is the fewest modules (worth 1, 3, 4 credits) summing to a target — where greedy strands a remainder and the table is optimal: for six credits the table finds two (3 + 3) where greedy takes three (4 + 1 + 1). The F# table is an Array filled with a for loop or Array.fold; an Array2D for a two-dimensional DP. Backoff.delayMs over attempts 1..N is itself a tabulated delay curve. Dive C4.11.2 of the F# In Depth course, reflecting Elixir E4.11.2. Snippets verified in dotnet fsi.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --fsharp:#b48ee0; --fsharp-bright:#d2b8f5;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(180,142,224,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--fsharp-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.hero-copy .lede{font-family:var(--serif);font-style:normal;font-weight:400;font-size:clamp(1.12rem, 1rem + 0.55vw, 1.32rem);line-height:1.6;color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--fsharp-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="fsharp"]{background:var(--fsharp-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--fsharp-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .err{color:var(--burgundy)}
+pre.code .str{color:var(--sage-bright)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--fsharp-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pill / legend ---- */
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--fsharp-bright);border-color:var(--fsharp)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- references ---- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.refs li{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.45}
+.refs li a{color:var(--cream-soft)}
+.refs li a:hover{color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.fs .lbl{color:var(--fsharp-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive{scroll-margin-top:74px}
+.dive-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem .9rem;margin:0 0 .5em}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--fsharp-bright);
+  border:1px solid var(--fsharp);border-radius:999px;padding:.14rem .6rem}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.note.warn{border-left-color:var(--burgundy)}
+.note code.inl{color:var(--cream-soft)}
+pre.code .rdx{background:rgba(180,142,224,.18);border-radius:4px;padding:0 .18em;color:var(--fsharp-bright)}
+pre.code .step{color:var(--cream-dim)}
+.lin-arrow{fill:var(--cream-dim)}
+
+/* ---- Elixir → F# side-by-side ---- */
+.cmp{margin:1.2rem 0 0}
+.cmp .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:1rem 0 .35rem;color:var(--cream-dim)}
+.cmp .lbl.ex{color:var(--sage-bright)}
+.cmp .lbl.fs{color:var(--fsharp-bright)}
+.cmp .lbl:first-child{margin-top:0}
+pre.code .ex{color:var(--sage-bright)}
+
+/* ---- the EchoMQ in F# block ---- */
+.emq{margin:1.6rem 0 0;border:1px solid var(--line);border-left:3px solid var(--fsharp);
+  border-radius:14px;padding:1.2rem 1.4rem;background:linear-gradient(180deg,rgba(180,142,224,.06),rgba(10,14,26,.25))}
+.emq .tag{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--fsharp-bright);margin:0 0 .6rem}
+.emq p{margin:0 0 .7rem;font-family:var(--serif);color:var(--cream-soft)}
+.emq p:last-child{margin-bottom:0}
+.emq .stat{font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);margin-top:.5rem}
+.emq .stat b{color:var(--sage-bright);font-weight:600}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the lesson</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/fsharp">jonnify<span class="dot"></span><span class="sub">fsharp</span></a>
+    <nav>
+      <a href="/fsharp">F# In Depth</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/fsharp">fsharp</a><span class="rsep">/</span><a href="/fsharp/algorithms">algorithms</a><span class="rsep">/</span><a href="/fsharp/algorithms/dynamic-programming">dynamic-programming</a><span class="rsep">/</span><span class="rcur">tabulation</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/fsharp">F# In Depth</a><span class="sep">/</span><a href="/fsharp/algorithms">C4 · Algorithms &amp; Data Structures</a><span class="sep">/</span><a href="/fsharp/algorithms/dynamic-programming">C4.11 · Dynamic programming</a><span class="sep">/</span><span class="here">C4.11.2 · Tabulation</span>
+    </nav>
+    <p class="eyebrow">Dive C4.11.2 · part 2 of 3</p>
+    <h1>Tabulation &amp; <span class="ex">bottom-up</span></h1>
+    <p class="lede">Turn the recursion into a loop, and fill an array from the base case up. The target reads off
+      cells already computed.</p>
+    <p class="kicker">Bottom-up dynamic programming rewrites the recursion as a loop that fills a table from the
+      smallest subproblem to the largest, so the final answer reads off cells already in place. It is
+      <strong>eager</strong> — every cell is filled whether the answer needs it or not — usually with better
+      constant factors and no deep stack. The worked problem is the change-making problem: the fewest modules
+      (worth 1, 3, or 4 credits) summing to a target exactly. The answer for a total is
+      <code class="inl">1 + min over worths w of dp[c-w]</code>, with <code class="inl">dp[0] = 0</code> — optimal
+      substructure. In F# the table is an <code class="inl">Array</code>, filled with a
+      <code class="inl">for</code> loop or <code class="inl">Array.fold</code>; a two-dimensional recurrence uses
+      <code class="inl">Array2D</code>. Where greedy strands a remainder, the table is optimal. Every value below
+      was produced by <code class="inl">dotnet fsi</code>.</p>
+    <div class="cta-row">
+      <a class="btn" href="#fill">Fill from zero up <span aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="/fsharp/algorithms/dynamic-programming">Module hub</a>
+    </div>
+  </section>
+
+  <!-- ===================== THE TABLE ===================== -->
+  <section id="table">
+    <div class="dive-head">
+      <span class="dive-tag">C4.11.2 · part 1</span>
+      <h2>Fill an array, smallest first</h2>
+    </div>
+    <div class="prose">
+      <p>Cell <code class="inl">dp[c]</code> is the fewest modules summing to <em>c</em> credits. It is one more
+        than the best answer for <em>c</em> minus a module's worth, over the worths that fit. Each cell uses only
+        smaller cells, so a single left-to-right pass fills the whole array. In F# the array is mutated in place
+        inside the loop — the contained mutation of an algorithm, with an immutable result handed back.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: the fewest-modules tabulation over an array, with a for loop and its verified FSI output."><span class="cmt">// fewest modules (worth 1, 3, 4) to reach `target` credits, bottom-up</span>
+<span class="op">let</span> <span class="fn">fewest</span> target =
+    <span class="op">let</span> worths = [1; 3; 4]
+    <span class="op">let</span> dp = Array.create (target + 1) System.Int32.MaxValue
+    dp[0] &lt;- 0                                  <span class="cmt">// base case: zero credits, zero modules</span>
+    <span class="op">for</span> c <span class="op">in</span> 1 .. target <span class="op">do</span>
+        <span class="op">for</span> w <span class="op">in</span> worths <span class="op">do</span>
+            <span class="op">if</span> w &lt;= c &amp;&amp; dp[c - w] &lt;&gt; System.Int32.MaxValue <span class="op">then</span>
+                dp[c] &lt;- <span class="fn">min</span> dp[c] (dp[c - w] + 1)  <span class="cmt">// 1 + a smaller, filled cell</span>
+    dp[target]
+<span class="cmt">// val fewest: target: int -&gt; int</span>
+
+<span class="fn">fewest</span> 6    <span class="cmt">// val it: int = 2   — two threes</span>
+<span class="fn">fewest</span> 11   <span class="cmt">// val it: int = 3   — 4 + 4 + 3</span></pre>
+
+    <dl class="deflist">
+      <dt>dp[c]</dt><dd>the fewest modules summing to <em>c</em> credits; the table cell. Built from <code class="inl">dp[c-w]</code> for each worth <em>w</em> that fits.</dd>
+      <dt>Array.create</dt><dd>allocates the table filled with a sentinel (<code class="inl">Int32.MaxValue</code> = "no solution yet"); the indexer <code class="inl">dp[c]</code> is O(1).</dd>
+      <dt>optimal substructure</dt><dd>an optimal answer for <em>c</em> is one module plus an optimal answer for a smaller total — the property that lets the table read off smaller cells.</dd>
+      <dt>the contained mutation</dt><dd>the array is mutated inside the loop, but the function returns a single value; the imperative shell is local to one algorithm.</dd>
+    </dl>
+  </section>
+
+  <!-- ===================== INTERACTIVE: FILL FROM ZERO ===================== -->
+  <section id="fill">
+    <h2>Fill from zero up</h2>
+    <div class="prose">
+      <p>Pick a target and watch the array fill from zero. The target cell is built from one smaller cell — drawn by
+        the arc — and the readout names whether the grabby choice (take the biggest module that fits) matches the
+        table or loses to it. Every number is the real value <code class="inl">fewest</code> computes.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="tbTitle">
+      <h4 id="tbTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Target credits · select one · modules worth 1, 3, 4</h4>
+      <div class="controls">
+        <div class="solid-select" id="tbSel" role="group" aria-label="Target credits">
+          <button type="button" data-n="6" data-c="sage" class="active">6 credits</button>
+          <button type="button" data-n="8" data-c="blue">8 credits</button>
+          <button type="button" data-n="11" data-c="fsharp">11 credits</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 720 200" role="img" aria-label="A row of array cells, one per credit total from zero to the target; each holds the fewest modules summing to that total. The target cell is highlighted along with the smaller cell its answer was built from.">
+        <text x="40" y="30" font-family="Manrope, sans-serif" font-size="10" letter-spacing="0.08em" fill="#6b7494">dp[c] = fewest modules summing to c credits</text>
+        <g id="tbCells"></g>
+        <text id="tbArcLabel" x="360" y="150" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" fill="#9fc0ea">dp[6] = 1 + dp[3] = 2</text>
+        <text id="tbCaption" x="360" y="184" text-anchor="middle" font-family="Manrope, sans-serif" font-size="10.5" fill="#a7c9b1">two modules (3 + 3) — greedy would use three</text>
+      </svg>
+
+      <pre class="code" id="tbCode" aria-live="polite"></pre>
+      <div class="geo-readout" id="tbOut" aria-live="polite"></div>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.6rem 0 0">target: <span id="tbRole" style="color:var(--sage-bright)">6 credits</span></p>
+      <p style="font-family:var(--mono);font-size:.78rem;color:var(--cream-dim);margin:.3rem 0 0">fewest modules: <span id="tbResult" style="color:var(--cream)">2 modules</span></p>
+    </figure>
+    <p class="take">Every cell is solved once, smallest first, and the target reads straight off the array. Because
+      each cell weighs all module choices, the table never gets trapped by a grabby first move.</p>
+  </section>
+
+  <!-- ===================== ARRAY.FOLD & WHY GREEDY LOSES ===================== -->
+  <section id="fold">
+    <div class="dive-head">
+      <span class="dive-tag">C4.11.2 · part 2</span>
+      <h2>Array.fold, and why greedy can lose</h2>
+    </div>
+    <div class="prose">
+      <p>When the recurrence depends on a fixed window of earlier cells — Fibonacci-style — a fold expresses the
+        same fill without the mutable array, carrying the running answers forward. The Fibonacci pacing count from
+        the hub, written with <code class="inl">Array.fold</code> over a range, gives
+        <code class="inl">ways 10 = 89</code> and <code class="inl">ways 20 = 10946</code>, both verified in
+        <code class="inl">dotnet fsi</code>.</p>
+      <p>The grabby alternative — take the biggest module that fits and repeat — is not always optimal. For a target
+        of six it takes four, then two ones: three modules, because the leading four strands a remainder of two that
+        only ones can fill. The table does better: two threes, two modules. The difference is that the grabby choice
+        commits to a locally largest step, while <code class="inl">dp[c]</code> compares <em>every</em> module worth
+        and keeps the best, so a worse-looking step that sets up a better finish is never ruled out.</p>
+    </div>
+
+    <pre class="code" aria-label="F#: the same pacing count written with Array.fold over a range, returning a map of running answers, with verified FSI output."><span class="cmt">// the same recurrence as a fold over 3..n, carrying a Map of running answers</span>
+<span class="op">let</span> <span class="fn">ways</span> n =
+    [3 .. n]
+    |&gt; List.fold (<span class="op">fun</span> (t: Map&lt;int, int&gt;) i -&gt;
+        Map.add i (t[i - 1] + t[i - 2]) t) (Map [1, 1; 2, 2])
+    |&gt; <span class="op">fun</span> t -&gt; t[n]
+<span class="cmt">// val ways: n: int -&gt; int</span>
+
+<span class="fn">ways</span> 10   <span class="cmt">// val it: int = 89</span>
+<span class="fn">ways</span> 20   <span class="cmt">// val it: int = 10946</span></pre>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <p class="lbl">greedy</p>
+        <p>Largest module first — can strand a remainder and lose.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="cell fs">
+        <p class="lbl">a bottom-up table</p>
+        <p>Every total solved from zero up, weighing all worths; the target is optimal.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TWO DIMENSIONS ===================== -->
+  <section id="two-d">
+    <div class="dive-head">
+      <span class="dive-tag">C4.11.2 · part 3</span>
+      <h2>When the table is two-dimensional</h2>
+    </div>
+    <div class="prose">
+      <p>Some recurrences are indexed by two things at once — two strings, a capacity and an item, a row and a
+        column. F# fills those with <code class="inl">Array2D</code>, the runtime's rectangular array, indexed
+        <code class="inl">d[i, j]</code>. The next dive uses it for edit distance — the textbook two-dimensional DP
+        — before the chapter's payoff. Tabulation suits a <strong>dense</strong> table where the answer genuinely
+        needs the smaller cells, so computing them all wastes nothing, and the array index is O(1) with no recursion
+        stack.</p>
+    </div>
+
+    <p class="note">Tabulation is the same solve-each-once as <a href="/fsharp/algorithms/dynamic-programming/memoization">memoisation</a>,
+      run eagerly from the base case up rather than lazily from the target down; here that trades the lookups for a
+      flat pass over an array. The <code class="inl">Array</code> cost model is C4.01's; the choice of array versus
+      map is C4.04's.</p>
+  </section>
+
+  <!-- ===================== ECHOMQ IN F# ===================== -->
+  <section id="echomq">
+    <h2>EchoMQ in F# — the delay curve is a tabulated array</h2>
+    <p class="take">Status &mdash; <code class="inl">echo_fs</code> is an in-memory model. The EchoMQ protocol &mdash; the Lua transitions executing on a Valkey wire &mdash; is <strong>not implemented</strong> (there is no Lua and no Valkey client in the code); that is the coming-soon transport (<code class="inl">EchoMQ.Connector</code>). This block shows how the model uses the structure, not a running bus.</p>
+    <div class="prose">
+      <p>The chapter's bus computes a retry delay with <code class="inl">EchoMQ.Backoff.delayMs policy attempts</code>.
+        Evaluated over attempts 1..N, it is itself a tabulated curve: build an array of the delay at each attempt
+        and the whole retry schedule is a value, computed without a server. The <code class="inl">Exponential</code>
+        case climbs by doubling, then holds at the cap.</p>
+    </div>
+
+    <div class="emq">
+      <p class="tag">echo_fs/EchoMQ/Backoff.fs · the curve as an array</p>
+      <pre class="code" aria-label="F#: tabulating EchoMQ.Backoff.delayMs over attempts one to N into an array, with the verified curve."><span class="cmt">// the retry schedule as a bottom-up array of delays, one per attempt</span>
+<span class="op">let</span> <span class="fn">curve</span> policy n =
+    [| <span class="op">for</span> attempts <span class="op">in</span> 1 .. n -&gt; Backoff.delayMs policy attempts |]
+
+<span class="op">let</span> p = Backoff.Exponential(100, 10000)
+<span class="fn">curve</span> p 8
+<span class="cmt">// val it: int[] = [|100; 200; 400; 800; 1600; 3200; 6400; 10000|]</span></pre>
+      <p class="stat">The curve climbs <b>100, 200, 400, 800, 1600, 3200, 6400</b> ms — each
+        <code class="inl">base · 2^(n-1)</code> — then holds at the <b>10000</b> ms cap. Verified against
+        <code class="inl">dotnet fsi</code> and against the policy's tests
+        (<code class="inl">delayMs p 1 = 100</code>, <code class="inl">delayMs p 3 = 400</code>,
+        <code class="inl">delayMs p 20 = 10000</code> in <code class="inl">EchoMQ.Tests/BackoffTests.fs</code>).</p>
+      <p class="stat">The F# EchoMQ computes the curve today — built and tested. The Valkey transport
+        <code class="inl">EchoMQ.Connector</code> lands next; the bus takes the literal delay and never computes a
+        curve, so the table is the host's to fill.</p>
+    </div>
+    <p class="take">A delay curve is a one-dimensional DP table the bus never has to keep: the host fills it from the
+      recurrence and hands the wire a single literal. The next dive plots that table from its recurrence.</p>
+  </section>
+
+  <!-- ===================== WHERE THIS LEADS ===================== -->
+  <section id="next">
+    <h2>Where this leads</h2>
+    <div class="prose">
+      <p>That is solve-each-once from the bottom up: a loop that fills an array, eager and stack-free. The last dive
+        in this module takes the same machinery to the chapter's payoff — edit distance as a two-dimensional
+        <code class="inl">Array2D</code>, then the EchoMQ backoff recurrence plotted from its definition.</p>
+    </div>
+    <div class="toc-mini" aria-label="Continue in this module">
+      <a href="/fsharp/algorithms/dynamic-programming">↑ C4.11 · Dynamic programming</a>
+      <a href="/fsharp/algorithms/dynamic-programming/memoization">← C4.11.1 · Memoization</a>
+      <a href="/fsharp/algorithms/dynamic-programming/backoff-as-dp">C4.11.3 · Backoff as DP →</a>
+    </div>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://learn.microsoft.com/dotnet/fsharp/">Microsoft &mdash; <em>F# documentation</em></a> &mdash; arrays, loops, and the change-making style of DP.</li>
+          <li><a href="https://fsharp.github.io/fsharp-core-docs/">FSharp.Core API reference</a> &mdash; the <code class="inl">Array</code> module, <code class="inl">Array.fold</code>, and <code class="inl">Array2D</code>.</li>
+          <li><a href="https://learn.microsoft.com/dotnet/">Microsoft &mdash; <em>.NET documentation</em></a> &mdash; the array cost model on the CLR.</li>
+          <li><a href="https://fsharp.org/">The F# Software Foundation</a> &mdash; F# on the .NET runtime.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/elixir/algorithms/dynamic-programming/tabulation">Elixir &mdash; F4.11.2 · Tabulation</a> &mdash; the E4 sibling, the same table filled in Elixir.</li>
+          <li><a href="/fsharp/algorithms/dynamic-programming">C4.11 &mdash; Dynamic programming</a> &mdash; the module hub.</li>
+          <li><a href="/fsharp/algorithms/lists">C4.01 &mdash; Lists, recursion &amp; complexity</a> &mdash; arrays and the cost model on .NET.</li>
+          <li><a href="/fsharp/algorithms">C4 &mdash; Algorithms &amp; Data Structures</a> &mdash; the chapter.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Lesson navigation">
+      <a class="btn ghost" href="/fsharp/algorithms/dynamic-programming/memoization"><span aria-hidden="true">←</span> C4.11.1 · Memoization</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/fsharp/algorithms/dynamic-programming/backoff-as-dp">Next · C4.11.3 Backoff as DP <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="F# In Depth — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/fsharp">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">F# In Depth &mdash; the ML-family language on .NET, taught from first principles to a real DevOps tool shipped in F#.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/fsharp/algorithms">C4 &middot; Algorithms &amp; Data Structures</a>
+        <a href="/fsharp/algorithms/dynamic-programming">C4.11 &middot; Dynamic programming &amp; advanced problems</a>
+        <a href="#refs">References</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/fsharp">Course home</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-05-31 11:28:08 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var SAGE = '#a7c9b1', BLUE = '#9fc0ea', FS = '#d2b8f5';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function txt(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+
+  var WORTHS = [1, 3, 4];
+  /* fill dp[0..n] bottom-up; record which worth gives each cell's min (prefer larger on tie) */
+  function table(n) {
+    var dp = [0], from = [null];
+    for (var c = 1; c <= n; c++) {
+      var best = Infinity, bw = null;
+      for (var i = 0; i < WORTHS.length; i++) {
+        var w = WORTHS[i];
+        if (w <= c && dp[c - w] + 1 <= best) { best = dp[c - w] + 1; bw = w; }
+      }
+      dp[c] = best; from[c] = bw;
+    }
+    return { dp: dp, from: from };
+  }
+  /* greedy: largest worth first */
+  function greedy(n) {
+    var count = 0, c = n, desc = WORTHS.slice().sort(function (a, b) { return b - a; });
+    while (c > 0) { for (var i = 0; i < desc.length; i++) { if (desc[i] <= c) { c -= desc[i]; count++; break; } } }
+    return count;
+  }
+  var FILL = { 6: SAGE, 8: BLUE, 11: FS };
+  var g = document.getElementById('tbCells');
+
+  function pick(n) {
+    document.querySelectorAll('#tbSel button').forEach(function (b) {
+      var on = +b.getAttribute('data-n') === n; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var t = table(n), dp = t.dp, accent = FILL[n], gd = greedy(n), w = t.from[n], pred = n - w;
+    /* (re)build the cells */
+    while (g.firstChild) g.removeChild(g.firstChild);
+    var count = n + 1, cw = Math.floor(648 / count), x0 = 40;
+    for (var c = 0; c <= n; c++) {
+      var x = x0 + c * cw;
+      var isAns = (c === n), isPred = (c === pred);
+      var stroke = isAns ? accent : (isPred ? BLUE : '#3a4263');
+      var rect = document.createElementNS(SVGNS, 'rect');
+      rect.setAttribute('x', x); rect.setAttribute('y', 64); rect.setAttribute('width', cw - 6); rect.setAttribute('height', 40); rect.setAttribute('rx', 6);
+      rect.setAttribute('fill', isAns ? accent : '#10162b'); rect.setAttribute('fill-opacity', isAns ? '0.85' : '1');
+      rect.setAttribute('stroke', stroke); rect.setAttribute('stroke-width', isAns || isPred ? '2.2' : '1.2');
+      g.appendChild(rect);
+      var idx = document.createElementNS(SVGNS, 'text');
+      idx.setAttribute('x', x + (cw - 6) / 2); idx.setAttribute('y', 56); idx.setAttribute('text-anchor', 'middle');
+      idx.setAttribute('font-family', 'Manrope, sans-serif'); idx.setAttribute('font-size', '8.5'); idx.setAttribute('fill', '#6b7494');
+      idx.textContent = c; g.appendChild(idx);
+      var val = document.createElementNS(SVGNS, 'text');
+      val.setAttribute('x', x + (cw - 6) / 2); val.setAttribute('y', 89); val.setAttribute('text-anchor', 'middle');
+      val.setAttribute('font-family', 'JetBrains Mono, monospace'); val.setAttribute('font-size', '13');
+      val.setAttribute('fill', isAns ? '#0f1626' : (isPred ? '#9fc0ea' : '#d7cfb9'));
+      val.textContent = dp[c]; g.appendChild(val);
+    }
+    /* dependency arc from answer cell to its chosen predecessor */
+    var ax = x0 + n * cw + (cw - 6) / 2, px = x0 + pred * cw + (cw - 6) / 2;
+    var arc = document.createElementNS(SVGNS, 'path');
+    arc.setAttribute('d', 'M ' + ax + ' 108 Q ' + ((ax + px) / 2) + ' 134 ' + px + ' 108');
+    arc.setAttribute('fill', 'none'); arc.setAttribute('stroke', BLUE); arc.setAttribute('stroke-width', '1.6'); arc.setAttribute('stroke-dasharray', '3 3');
+    g.appendChild(arc);
+
+    var al = document.getElementById('tbArcLabel'); if (al) al.textContent = 'dp[' + n + '] = 1 + dp[' + pred + '] = ' + dp[n];
+    var beats = gd > dp[n];
+    var cap = document.getElementById('tbCaption');
+    if (cap) { cap.textContent = dp[n] + ' modules' + (beats ? ' — greedy would use ' + gd : ' — greedy matches here'); cap.setAttribute('fill', beats ? accent : '#8b93b0'); }
+    var rEl = document.getElementById('tbRole'); if (rEl) { rEl.textContent = n + ' credits'; rEl.style.color = accent; }
+    txt('tbResult', dp[n] + ' modules');
+
+    var code = '<span class="cmt">// fewest modules (worth 1, 3, 4) summing to ' + n + '</span>\nfewest <span class="res">' + n + '</span>   <span class="cmt">// val it: int = ' + dp[n] + '  (dp[' + n + '] = 1 + dp[' + pred + '])</span>\n<span class="cmt">// greedy (largest first) = ' + gd + (beats ? '  <- worse' : '  <- matches') + '</span>';
+    var cEl = document.getElementById('tbCode'); if (cEl) cEl.innerHTML = code;
+    var out = 'Reaching <b style="color:' + accent + '">' + n + '</b> credits takes <b>' + dp[n] + '</b> modules at fewest, built as <code class="inl">1 + dp[' + pred + ']</code> from a smaller cell. ' + (beats ? 'Greedy takes <b style="color:var(--gold-bright)">' + gd + '</b> here &mdash; the leading 4 strands a remainder &mdash; so the table wins.' : 'Greedy happens to match at <b>' + gd + '</b>, but the table is what guarantees it.');
+    var oEl = document.getElementById('tbOut'); if (oEl) oEl.innerHTML = out;
+  }
+  document.querySelectorAll('#tbSel button').forEach(function (b) { b.addEventListener('click', function () { pick(+b.getAttribute('data-n')); }); });
+  pick(6);
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B8.2.3 · The Double-Entry Ledger · BCS · jonnify</title>
+<meta name="description" content="The platform keeps two records and decides which holds which truth: the stream is the source of truth for unsettled state, the Postgres ledger the regulated record of settled positions. The as-built EchoCache.Journal compacts by coverage — all 50 intents retired in one pass, the applied memory keeping its 50 names; the outbox empties, the memory does not — and prices the memory: 143 us per record-and-mark pair, a remembered lane median of 524 us against the bare lane's committed 148 us, 3.5 times the latency. Every figure verbatim from bcs_rung_4_4_check.out (PASS 6/6). The Trading.Ledger (double-entry in Postgres, one Ecto.Multi per posting) and Exchange.Projection are PROPOSED design objects.">
+<style>
+/* ============ The BCS identity — the contract sheet ============
+   Copied from the B0 exemplar (html/bcs/index.html) via the B8.1
+   the-disruptor-seat dive. Light engineering-document aesthetic;
+   monospace-forward; the 3/11 id rhythm; transcript evidence
+   blocks. Not the dark-editorial system of the sibling courses. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;      /* namespace — oxide red   */
+  --b-ts:#20618e;      /* timestamp — drafting blue */
+  --b-node:#2e7d5b;    /* node — verdigris        */
+  --b-seq:#7d4e8f;     /* sequence — violet       */
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--b-ns)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--b-ns);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the 3/11 rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--b-ns-tint)}
+.idrule i:nth-child(-n+3){box-shadow:inset 0 0 0 1px var(--b-ns)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--b-ns);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:62ch;color:var(--b-ink)}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--b-ns);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--b-ns)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:72ch}
+
+/* ---------- the poster figure (interactive) ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.anat{width:100%;height:auto;display:block}
+.anat .acct{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.5}
+.anat .acct.debit{stroke:var(--b-ts)}
+.anat .acct.credit{stroke:var(--b-node)}
+.anat .acct.bad{stroke:var(--b-ns);stroke-dasharray:4 3}
+.anat .ahd{font:700 12px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.anat .aval{font:700 15px var(--mono);text-anchor:middle}
+.anat .aval.dr{fill:var(--b-ts)}
+.anat .aval.cr{fill:var(--b-node)}
+.anat .aval.bad{fill:var(--b-ns)}
+.anat .nlbl{font:11px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.anat .nlbl.left{text-anchor:start}
+.anat .multi{fill:none;stroke:var(--b-ns);stroke-width:1.5;stroke-dasharray:5 4}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout .ok{color:var(--b-node);font-weight:700}
+.readout .drop{color:var(--b-ns);font-weight:700}
+
+/* ---------- the price bar (interactive) ---------- */
+.pricefig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:6px 0 8px}
+.pricefig svg{width:100%;height:auto;display:block}
+.pricefig .pbar{fill:var(--b-pay-tint);stroke:var(--b-line);stroke-width:1}
+.pricefig .pbar.bare{fill:#e4efe6;stroke:var(--b-node)}
+.pricefig .pbar.remembered{fill:var(--b-ns-tint);stroke:var(--b-ns)}
+.pricefig .pbar.pair{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.5}
+.pricefig .plbl{font:11px var(--mono);fill:var(--b-dim);text-anchor:start}
+.pricefig .pnum{font:700 13px var(--mono);fill:var(--b-ink);text-anchor:start}
+.pricefig .mult{font:700 12px var(--mono);fill:var(--b-ns);text-anchor:middle}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:72ch;margin-bottom:22px}
+
+/* ---------- code figures (page addition) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+
+/* ---------- the split table ---------- */
+.shapes{width:100%;border-collapse:collapse;font-size:.92rem;margin-bottom:8px}
+.shapes th,.shapes td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--b-line);vertical-align:top}
+.shapes th{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--b-dim)}
+.shapes td:first-child{font-family:var(--mono);font-weight:700;color:var(--b-ns);white-space:nowrap}
+
+/* ---------- the module / chapter cards ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pcard{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+a.pcard{border-color:var(--b-ns)}
+a.pcard:hover{border-bottom-color:var(--b-ns);box-shadow:0 1px 0 var(--b-ns)}
+.pcard .bid{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--b-ns);letter-spacing:.08em}
+.pcard h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.pcard p{font-size:.88rem;color:var(--b-dim)}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:80ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--b-ns)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--b-ns)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .pgrid,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .pgrid,.doors{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+  .shapes thead{display:none}
+  .shapes td{display:block;border:none;padding:2px 0}
+  .shapes tr{display:block;border-bottom:1px solid var(--b-line);padding:10px 0}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>bcs</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/bcs">bcs</a><span class="rsep">/</span><a href="/bcs/trading">trading</a><span class="rsep">/</span><a href="/bcs/trading/log-and-ledger">log-and-ledger</a><span class="rsep">/</span><span class="rcur">the-double-entry-ledger</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#compaction">Compaction</a>
+      <a href="#price">The price</a>
+      <a href="#ledger">The ledger</a>
+      <a href="#split">The split</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">B8.2 · dive 3 — the double-entry ledger</p>
+      <h1>The stream for unsettled, the <span class="hns">ledger</span> for settled.</h1>
+      <p class="lede">The platform keeps two records and decides, in the open, which holds which truth. The
+      <b>stream</b> — the journal's log of fills — is the source of truth for <b>unsettled</b> state; the
+      <b>Postgres ledger</b> is the regulated record of <b>settled</b> positions. Settled money posts double-entry,
+      every posting one <code>Ecto.Multi</code>. The compaction that keeps the log small is as-built
+      <code>EchoCache.Journal</code> behavior, quoted from its record; the <code>Trading.Ledger</code> that posts
+      the settled side is a <b>PROPOSED</b> design object.</p>
+      <p class="heronote">Source: <code>compact(j)</code> and the writer's price are real Elixir at
+      <code>echo/apps/echo_cache/lib/echo_cache/journal.ex</code>, recorded in <code>bcs_rung_4_4_check.out</code>
+      (<code>PASS 6/6</code>). <code>Trading.Ledger</code> and <code>Exchange.Projection</code> are <b>PROPOSED</b>
+      (<code>docs/trading/</code>) — taught as design, never as a measured number.</p>
+
+      <figure class="anatomy">
+        <figcaption><b>The double-entry poster (PROPOSED design).</b> A fill posts two balanced entries — a debit
+        and a credit — inside one <code>Ecto.Multi</code>. The readout checks the postings sum to zero, and that a
+        malformed posting aborts the whole multi. The shape is design; no number is claimed.</figcaption>
+        <svg class="anat" id="postsvg" viewBox="0 0 980 176" role="img" aria-label="A fill posts two balanced ledger entries inside one Ecto.Multi: a debit to one account and a credit to another, summing to zero. A malformed posting that does not balance aborts the whole multi, posting neither entry.">
+          <rect class="multi" x="120" y="22" width="740" height="104" rx="8"></rect>
+          <text class="nlbl" x="490" y="42">one Ecto.Multi · all-or-nothing</text>
+          <g>
+            <rect class="acct debit" id="a-debit" x="170" y="56" width="280" height="52" rx="6"></rect>
+            <text class="ahd" x="310" y="78">debit · cash</text>
+            <text class="aval dr" id="debitval" x="310" y="98">—</text>
+          </g>
+          <g>
+            <rect class="acct credit" id="a-credit" x="530" y="56" width="280" height="52" rx="6"></rect>
+            <text class="ahd" x="670" y="78">credit · position</text>
+            <text class="aval cr" id="creditval" x="670" y="98">—</text>
+          </g>
+          <text class="nlbl left" x="120" y="156" id="postsum">a fill posts a debit and a credit that must sum to zero</text>
+        </svg>
+        <div class="segbar" id="postbar" role="group" aria-label="Drive the double-entry poster">
+          <button type="button" data-op="balanced">post a balanced fill (+100 / −100)</button>
+          <button type="button" data-op="bad">attempt an unbalanced posting (+100 / −90)</button>
+          <button type="button" data-op="reset">reset</button>
+        </div>
+        <div class="readout" id="postout" aria-live="polite"><span class="rk">readout &#183;</span> A fill posts two
+        entries inside one <code>Ecto.Multi</code> — a debit and a credit that must sum to zero. Post a balanced
+        fill, or attempt an unbalanced one and watch the whole multi abort. This is <b>PROPOSED</b> design; no
+        latency or posting number is claimed.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="compaction">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Compaction is coverage — the outbox empties, the memory does not</h2>
+        <span class="ssrc">bcs_rung_4_4_check.out &#183; H5 &#183; verbatim</span>
+      </div>
+      <p class="ethic">The same coverage predicate that drives replay retires the outbox: an intent is retired when
+      its name carries an applied version at least as new — coverage, not acknowledgment. After the loss drill
+      closed at 50 of 50, all 50 intents are deletable, the applied memory keeps all 50 names, replay finds nothing,
+      and a reopen still remembers. The committed gate:</p>
+      <figure class="frozen">
+        <figcaption>content/echo_data/runtimes/elixir/bcs_rung_4_4_check.out &#183; compaction by coverage<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd">derive (compaction): an intent is retired when its name carries an applied version at least as new -- coverage, not acknowledgment -- so after H4 all 50 intents are deletable, the applied memory keeps all 50 names, replay finds nothing, and a reopen still remembers</span>
+H5 compaction ok <span class="fd">-- all 50 intents retired by coverage in one pass, the applied memory kept its 50 names, replay over the compacted journal found nothing to do, and a fresh open of the same file still answers the last word -- the outbox empties, the memory does not</span>
+<b>PASS 6/6</b></pre>
+      </figure>
+      <p class="ethic"><code>compact(j)</code> is the retention verb, idempotent and safe to run on a schedule; the
+      outbox stays small, the last word per name persists. Intents are small, coverage is one SQL pass, and an
+      outbox kept under a few thousand rows replays in milliseconds.</p>
+    </section>
+
+    <section id="price">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The price of memory</h2>
+        <span class="ssrc">bcs_rung_4_4_check.out &#183; H6 &#183; verbatim</span>
+      </div>
+      <p class="ethic">The journal's durability is not free, and the record prices it exactly. On prepared-once
+      statements — the single writer's privilege, with bind resetting the statement — the writer's pair is two WAL
+      commits and one cached rowid read at <code>synchronous=NORMAL</code>. The committed gate:</p>
+      <figure class="frozen">
+        <figcaption>content/echo_data/runtimes/elixir/bcs_rung_4_4_check.out &#183; the priced memory<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd">derive (price): on prepared-once statements -- the single writer's privilege, with bind resetting the statement -- the writer's pair is two WAL commits and one cached rowid read at synchronous=NORMAL, so expect between 20 and 250 us on this disk; the remembered lane's end-to-end median should land between 200 us and 2 ms against the bare lane's committed 148 us: dearer, bounded, and the chapter's reason the journal is declared per group rather than assumed</span>
+H6 price ok <span class="fd">-- the memory's price on this disk: 143 us per record-and-mark pair at the writer's edge, and a remembered lane end-to-end median of 524 us against the bare lane's committed 148 us -- 3.5 times the latency buys an outbox, a last word per name, and a replay that survives the bus</span>
+<b>PASS 6/6</b></pre>
+      </figure>
+
+      <figure class="pricefig">
+        <figcaption style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px"><b style="color:var(--b-ink)">The price bar.</b> The bare lane's committed <code>148 µs</code>, the remembered lane's <code>524 µs</code> median, and the <code>143 µs</code> record-and-mark pair — drawn to scale, with the 3.5&#215; multiple labelled. Every value is the H6 record's own; no platform number is added.</figcaption>
+        <svg id="pricesvg" viewBox="0 0 980 200" role="img" aria-label="A bar chart of the H6 record's microsecond figures: the bare lane committed at 148 microseconds, the remembered lane median at 524 microseconds, and the record-and-mark pair at 143 microseconds, with the 3.5 times multiple between the bare and the remembered lane.">
+          <g id="pricebars"></g>
+        </svg>
+        <div class="readout" id="priceout" aria-live="polite" style="margin-top:14px"><span class="rk">readout &#183;</span>
+        The priced pair: the remembered lane's <span class="drop">524 µs</span> median against the bare lane's
+        committed <span class="ok">148 µs</span> — <code>3.5 times the latency</code> — and <code>143 µs</code> per
+        record-and-mark pair at the writer's edge. The two latency numbers travel together.</div>
+      </figure>
+      <p class="ethic">The priced pair is <code>524 µs</code> (the remembered lane's end-to-end median) against the
+      bare lane's committed <code>148 µs</code> — the two numbers travel together — and <code>143 µs</code> is the
+      record-and-mark pair at the writer's edge. At <code>synchronous=NORMAL</code> the WAL issues no per-commit
+      sync — the checkpoint is the sole I/O barrier — which is the journal's speed and its stated power-loss trade.
+      The numbers carry their header: one scheduler, this container's disk, a 29-byte payload; the 3.5 multiple
+      travels better than the 143.</p>
+    </section>
+
+    <section id="ledger">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The regulated ledger — PROPOSED</h2>
+        <span class="ssrc">docs/trading/trading.specs.md &#183; design voice</span>
+      </div>
+      <p class="ethic">The settled side is the design's <code>Trading.Ledger</code> (status <b>PROPOSED</b>).
+      Double-entry in Postgres: branded id columns under the SQL canon with the domain's reject table as the floor,
+      every posting one <code>Ecto.Multi</code> — a single all-or-nothing transaction, so a fill either posts both
+      entries or neither. The directional decision is named in the spec and revisitable only by editing the spec:
+      the stream (the journal, then milestone-B stream lanes) is the source of truth for <em>unsettled</em> state;
+      the Postgres ledger is the regulated record of <em>settled</em> positions.</p>
+      <p class="ethic"><code>Exchange.Projection</code> (also <b>PROPOSED</b>) is the idempotent log consumer that
+      folds the log into Tables — the read path the platform serves positions and balances from. Both modules are
+      taught as design; neither has a rung yet, and so neither claims a latency, throughput, or posting number. The
+      first such number lands when the first rung's harness runs (<code>docs/trading/trading.roadmap.md</code>,
+      TRD.3 and TRD.5).</p>
+    </section>
+
+    <section id="split">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Why the split, weighed</h2>
+        <span class="ssrc">docs/trading/trading.specs.md &#183; the design's reasoning</span>
+      </div>
+      <p class="ethic">The two-store decision is argued, not assumed.</p>
+      <table class="shapes">
+        <thead><tr><th>Option</th><th>What it buys</th><th>Why it is not the whole answer</th></tr></thead>
+        <tbody>
+          <tr><td>one Postgres ledger</td><td>regulated and queryable for everything, settled or not</td><td>every unsettled tick becomes a synchronous SQL write on the hot path, where the fold of an in-memory log answers for free</td></tr>
+          <tr><td>one stream only</td><td>replayable and fast, no relational dependency</td><td>a regulated record of settled money wants the SQL canon's constraints, the reject table, and the audit a relational ledger gives</td></tr>
+          <tr><td>the split (chosen)</td><td>unsettled where replay is cheap, settled where regulation is required</td><td>the boundary is named in the spec, decided in the stream's favor for unsettled and Postgres for settled — revisitable only by editing the spec</td></tr>
+        </tbody>
+      </table>
+      <p class="ethic">The design splits the difference along the settlement boundary. The Postgres canon the ledger
+      posts to is the substrate of <a href="/redis-patterns">/redis-patterns</a> and <a href="/elixir">/elixir</a>;
+      the stream lanes the unsettled log moves to are <a href="/echomq">/echomq</a>. The module returns to the
+      capstone at <a href="/bcs/trading/log-and-ledger">B8.2 · The Log and the Ledger</a>; the strategies that emit
+      intents over this same log are the subject of <strong>B8.3 · Strategies as Deciders</strong>, a PROPOSED
+      forward module.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://microservices.io/patterns/data/transactional-outbox.html" rel="noopener">Richardson — Pattern: Transactional outbox</a><span class="rs">the outbox the journal compacts; coverage retires it without acknowledgment</span></li>
+          <li><a href="https://www.sqlite.org/wal.html" rel="noopener">SQLite — Write-Ahead Logging</a><span class="rs">at synchronous NORMAL the checkpoint is the sole sync barrier — the journal's speed and the price this dive quotes</span></li>
+          <li><a href="https://litestream.io/how-it-works/" rel="noopener">Litestream — How it works</a><span class="rs">the off-box replica that completes the journal's durability story beside the box</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/bcs/trading/log-and-ledger">B8.2 — The Log and the Ledger</a><span class="rs">the module hub; the full journal record in context</span></li>
+          <li><a href="/bcs/cache/the-lane-that-remembers">B4.4 — The Lane That Remembers</a><span class="rs">the journal and the price quoted here, in its home chapter</span></li>
+          <li><a href="/bcs/cache">B4 — EchoCache</a><span class="rs">the chapter the journal lives in</span></li>
+          <li><a href="/bcs/bus">B3 — The Bus</a><span class="rs">the work lanes settlement jobs drain</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the umbrella and the SQL canon</span></li>
+          <li><a href="/redis-patterns">Redis Patterns Applied</a><span class="rs">the durable-memory substrate</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/bcs/trading/log-and-ledger/replay-equals-live"><span class="pk">previous</span>&#8592; B8.2.2 &#183; Replay Equals Live</a>
+      <a class="pgx" href="/bcs/trading/log-and-ledger"><span class="pk">next</span>B8.2 &#183; The Log and the Ledger &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="BCS — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>bcs</span>
+        <p class="foot-tag">The Branded Component System — boundaries around systems, identity as a contract,
+        every figure from a frozen transcript.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/bcs">B0 &#183; Orientation</a>
+        <a href="/bcs/ideas">B1 &#183; Ideas Behind</a>
+        <a href="/bcs/elixir-core">B2 &#183; The Elixir BCS Core</a>
+        <a href="/bcs/bus">B3 &#183; The Bus</a>
+        <a href="/bcs/cache">B4 &#183; EchoCache</a>
+        <span>B5 &#183; Go<i>soon</i></span>
+        <span>B6 &#183; Node 22+<i>soon</i></span>
+        <span>B7 &#183; Production on Fly<i>soon</i></span>
+        <a href="/bcs/trading">B8 &#183; The Trading System</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/bcs">BCS — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">BCS0NwVrLmHAcC</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-13 10:12:35 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+  var svgNS = 'http://www.w3.org/2000/svg';
+
+  /* ---------- Interactive 1: the double-entry poster (PROPOSED design — pure balance check) ---------- */
+  var post = { debit: null, credit: null, ok: null };
+  var aDebit = document.getElementById('a-debit');
+  var aCredit = document.getElementById('a-credit');
+  var debitval = document.getElementById('debitval');
+  var creditval = document.getElementById('creditval');
+  var postsum = document.getElementById('postsum');
+  var postout = document.getElementById('postout');
+
+  function fmt(v) { return v === null ? '—' : (v > 0 ? '+' : '') + v; }
+
+  function paintPost() {
+    if (debitval) { debitval.textContent = fmt(post.debit); debitval.setAttribute('class', 'aval ' + (post.ok === false ? 'bad' : 'dr')); }
+    if (creditval) { creditval.textContent = fmt(post.credit); creditval.setAttribute('class', 'aval ' + (post.ok === false ? 'bad' : 'cr')); }
+    if (aDebit) aDebit.setAttribute('class', 'acct ' + (post.ok === false ? 'bad' : 'debit'));
+    if (aCredit) aCredit.setAttribute('class', 'acct ' + (post.ok === false ? 'bad' : 'credit'));
+  }
+  function setPost(note, sum) {
+    paintPost();
+    if (postsum && sum) postsum.textContent = sum;
+    if (postout) postout.innerHTML = '<span class="rk">computed &#183;</span> ' + note;
+  }
+
+  /* the balance check: a posting is valid only if debit + credit === 0 (one Ecto.Multi posts both or neither) */
+  function balances(d, c) { return (d + c) === 0; }
+
+  document.querySelectorAll('#postbar button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var op = b.getAttribute('data-op'), note = '', sum = '';
+      if (op === 'balanced') {
+        var d = 100, c = -100;
+        post.ok = balances(d, c);
+        post.debit = d; post.credit = c;
+        note = 'the postings sum to <code>' + (d + c) + '</code> &#8212; balanced. <span class="ok">One Ecto.Multi commits both entries</span> atomically (PROPOSED design; no number claimed).';
+        sum = 'debit +100 and credit −100 sum to 0 → the multi commits';
+      } else if (op === 'bad') {
+        var d2 = 100, c2 = -90;
+        post.ok = balances(d2, c2);
+        post.debit = d2; post.credit = c2;
+        note = 'the postings sum to <code>' + (d2 + c2) + '</code> &#8212; not zero. <span class="drop">The whole Ecto.Multi aborts</span>: neither entry is posted. All-or-nothing, by construction.';
+        sum = 'debit +100 and credit −90 sum to 10 → the multi aborts, neither posted';
+      } else if (op === 'reset') {
+        post = { debit: null, credit: null, ok: null };
+        note = 'reset — a fill posts a debit and a credit that must sum to zero.';
+        sum = 'a fill posts a debit and a credit that must sum to zero';
+      }
+      setPost(note, sum);
+    });
+  });
+  setPost('Post a balanced fill, or attempt an unbalanced one and watch the whole multi abort. This is PROPOSED design.', 'a fill posts a debit and a credit that must sum to zero');
+
+  /* ---------- Interactive 2: the price bar (the H6 record's own microsecond figures) ---------- */
+  var PRICE = [
+    { key: 'pair', label: '143 µs · record-and-mark pair (writer’s edge)', us: 143, cls: 'pbar pair' },
+    { key: 'bare', label: '148 µs · bare lane (committed)', us: 148, cls: 'pbar bare' },
+    { key: 'remembered', label: '524 µs · remembered lane (median)', us: 524, cls: 'pbar remembered' }
+  ];
+
+  function drawPrice() {
+    var g = document.getElementById('pricebars');
+    if (!g) return;
+    g.textContent = '';
+    var maxUs = 524, x0 = 40, fullW = 720, rowH = 52, y0 = 22, bh = 26;
+    PRICE.forEach(function (p, i) {
+      var w = Math.max(4, (p.us / maxUs) * fullW);
+      var y = y0 + i * rowH;
+      var r = document.createElementNS(svgNS, 'rect');
+      r.setAttribute('class', p.cls);
+      r.setAttribute('x', String(x0)); r.setAttribute('y', String(y));
+      r.setAttribute('width', String(w)); r.setAttribute('height', String(bh));
+      r.setAttribute('rx', '3'); g.appendChild(r);
+      var num = document.createElementNS(svgNS, 'text');
+      num.setAttribute('class', 'pnum');
+      num.setAttribute('x', String(x0 + w + 10)); num.setAttribute('y', String(y + 18));
+      num.textContent = p.us + ' µs'; g.appendChild(num);
+      var lab = document.createElementNS(svgNS, 'text');
+      lab.setAttribute('class', 'plbl');
+      lab.setAttribute('x', String(x0)); lab.setAttribute('y', String(y - 4));
+      lab.textContent = p.label; g.appendChild(lab);
+    });
+    /* the 3.5x multiple annotation between bare and remembered */
+    var m = document.createElementNS(svgNS, 'text');
+    m.setAttribute('class', 'mult');
+    m.setAttribute('x', String(x0 + fullW / 2)); m.setAttribute('y', String(y0 + 3 * rowH + 14));
+    m.textContent = '524 µs ÷ 148 µs ≈ 3.5× the latency';
+    g.appendChild(m);
+  }
+  drawPrice();
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

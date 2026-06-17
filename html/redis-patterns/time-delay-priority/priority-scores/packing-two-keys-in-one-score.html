@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4.03.1 · Packing two keys in one score · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R4.03.1 — packing two keys in one score. A priority queue needs two orderings at once: by tier, then by arrival within a tier. EchoMQ packs both into one number, priority × 0x100000000 + counter, putting the tier in the high 32 bits and the INCR pc arrival counter in the low 32. Verified in addPrioritizedJob-9.lua's getPriorityScore: priority * 0x100000000 + prioCounter % 0x100000000, with prioCounter = rcall INCR priorityCounterKey, EchoMQ.Keys.prioritized/1 and EchoMQ.Keys.pc/1, added by ZADD prioritizedKey score jobId.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- score-bits diagram ---- */
+.sb .bit{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.sb .bit.hi{fill:rgba(90,135,196,.18);stroke:#5a87c4}
+.sb .bit.lo{fill:rgba(212,168,90,.18);stroke:#d4a85a}
+.sb text{font-family:var(--sans);fill:#d7cfb9}
+.sb .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
+.sb .val{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
+.sb .lbl{font-family:var(--mono);font-size:10px;fill:#a39c89}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
+  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
+  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
+.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
+.door a{color:var(--gold-bright)}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority/priority-scores">priority-scores</a><span class="rsep">/</span><span class="rcur">packing-two-keys-in-one-score</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/time-delay-priority/priority-scores">Priority with composite scores</a>
+        <span class="sep">/</span>
+        <span class="here">Packing two keys in one score</span>
+      </div>
+      <p class="eyebrow">R4.03.1 &middot; dive 1</p>
+      <h1>Packing two keys in one <span class="ex">score</span></h1>
+      <p class="lede">A priority queue needs two orderings at once. EchoMQ packs both into one number &mdash;
+        <code class="inl">priority &times; 0x100000000 + counter</code> &mdash; the tier in the high bits, the arrival
+        in the low.</p>
+      <p class="kicker">The whole pattern rests on one decision: what number goes in the score. A delayed queue puts the
+        fire-time there; a priority queue puts a composite there &mdash; a number whose high thirty-two bits carry the
+        priority tier and whose low thirty-two carry the arrival order. Move the sliders on the right to set a priority
+        and a counter and watch the one score they pack, split into its two fields.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#problem">Two orderings, one score</a>
+        <a href="#formula">The formula</a>
+        <a href="#dominate">The tier dominates</a>
+        <a href="#lower">A lower number wins</a>
+        <a href="#applied">In EchoMQ</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig sb" aria-labelledby="psTitle">
+      <h4 id="psTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The composite score &middot; tier × 0x100000000 + counter</h4>
+      <div class="controls">
+        <div class="fold-ctrl">
+          <label for="psPrio">priority</label>
+          <input type="range" id="psPrio" min="1" max="8" step="1" value="2">
+          <span class="val" id="psPrioVal">2</span>
+        </div>
+        <div class="fold-ctrl">
+          <label for="psCtr">counter</label>
+          <input type="range" id="psCtr" min="1" max="1000" step="1" value="7">
+          <span class="val" id="psCtrVal">7</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 170" role="img" aria-label="A composite score is the priority times 0x100000000 plus the arrival counter. The high thirty-two bits, shown blue, carry the priority tier; the low thirty-two bits, shown gold, carry the counter. The combined score is shown below. The sliders set the priority and the counter and recompute all three. Raising the priority by one jumps the score by a full 0x100000000, dwarfing any counter move.">
+        <text class="ttl" x="30" y="22">composite score = priority × 0x100000000 + counter</text>
+        <g><rect class="bit hi" x="30" y="30" width="240" height="34" rx="8"></rect></g>
+        <text class="lbl" x="40" y="80">high 32 bits = tier × 0x100000000</text>
+        <text class="val" id="psHi" x="150" y="52" text-anchor="middle">—</text>
+        <g><rect class="bit lo" x="270" y="30" width="160" height="34" rx="8"></rect></g>
+        <text class="lbl" x="350" y="80" text-anchor="middle">low 32 = counter</text>
+        <text class="val" id="psLo" x="350" y="52" text-anchor="middle">—</text>
+
+        <text class="ttl" x="30" y="112">combined score</text>
+        <g><rect class="bit hi" x="30" y="120" width="400" height="30" rx="8"></rect></g>
+        <text class="val" id="psScore" x="230" y="140" text-anchor="middle">—</text>
+      </svg>
+
+      <div class="geo-readout" id="psOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="problem">
+    <h2>The problem: two orderings, one score</h2>
+    <div class="prose">
+      <p>A sorted set offers one ordering axis &mdash; the score. A priority queue needs two. Jobs in a higher-priority
+        tier must come out before jobs in a lower tier, and within one tier the earliest-arriving job must come out
+        first. A single number has to express both.</p>
+      <p>The move is positional. Reserve the high bits of the score for the tier and the low bits for the arrival order.
+        Then the score compares tier-first automatically: any difference in the high bits dominates any difference in
+        the low bits, because the high bits are worth more. Comparing two composite scores compares their tiers first
+        and, only when the tiers are equal, their arrival counters.</p>
+    </div>
+    <p class="take">A sorted set offers one ordering axis; a priority queue needs two, so the score reserves its high
+      bits for the tier and its low bits for the arrival order, and the high bits dominate.</p>
+  </section>
+
+  <section id="formula">
+    <h2>The formula</h2>
+    <div class="prose">
+      <p>EchoMQ computes the score with <code class="inl">getPriorityScore</code>, an included Lua function whose
+        canonical home is <code class="inl">addPrioritizedJob-9.lua</code>.</p>
+      <pre class="code"><span class="cmt">-- getPriorityScore.lua (included by addPrioritizedJob-9) — real</span>
+<span class="op">local function</span> <span class="fn gold">getPriorityScore</span>(priority, priorityCounterKey)
+  <span class="op">local</span> prioCounter = <span class="fn">rcall</span>(<span class="str">"INCR"</span>, priorityCounterKey)
+  <span class="op">return</span> priority * <span class="res">0x100000000</span> + prioCounter % <span class="res">0x100000000</span>
+<span class="op">end</span></pre>
+      <p><code class="inl">0x100000000</code> is <code class="inl">2<sup>32</sup></code> &mdash;
+        <code class="inl">4294967296</code>. Multiplying the priority by it shifts the tier left thirty-two binary
+        places, leaving the low thirty-two bits at zero. The arrival counter, taken
+        <code class="inl">% 2<sup>32</sup></code>, then fills those low bits. The result is one number whose top half
+        is the tier and whose bottom half is the position within the tier.</p>
+      <p>One IEEE double carries the whole thing exactly. A double holds fifty-three bits of integer precision; a small
+        priority shifted into the high thirty-two bits plus a counter in the low thirty-two stays well under that
+        ceiling, so the score is exact and the ordering never rounds.</p>
+    </div>
+    <p class="take">The score is <code class="inl">priority &times; 0x100000000 + (INCR pc)</code>: the tier shifted into
+      the high thirty-two bits, the arrival counter in the low &mdash; one double carries both exactly.</p>
+  </section>
+
+  <section id="dominate">
+    <h2>The tier dominates the counter</h2>
+    <div class="prose">
+      <p>Because the tier sits in the high bits, any change in the tier outweighs every value the counter can take. Two
+        jobs in tier 1, however far apart their counters, both score below any job in tier 2 &mdash; the smallest tier-2
+        score is <code class="inl">2 &times; 2<sup>32</sup></code>, larger than the largest tier-1 score, which is
+        <code class="inl">1 &times; 2<sup>32</sup> + (2<sup>32</sup> &minus; 1)</code>. The high bits set the band; the
+        low bits position within it.</p>
+      <p>The hero figure above shows it directly: raise the priority slider by one and the score jumps by a full
+        <code class="inl">0x100000000</code>, dwarfing any counter move. The interactive below makes the comparison
+        explicit, pitting two jobs against each other &mdash; one a step higher in tier, the other far ahead on the
+        counter &mdash; and reporting which composite score is smaller and therefore pops first.</p>
+    </div>
+
+    <figure class="fig sb" aria-labelledby="cmpTitle">
+      <h4 id="cmpTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Tier beats counter &middot; which job pops first</h4>
+      <div class="controls">
+        <div class="solid-select" id="cmpSel" role="group" aria-label="Compare a lower-tier job against a higher-counter job">
+          <button type="button" data-case="tier" data-c="blue" class="active" aria-pressed="true">tier 1, counter 999 vs tier 2, counter 1</button>
+          <button type="button" data-case="same" data-c="gold" aria-pressed="false">same tier, counter 1 vs counter 2</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 150" role="img" aria-label="Two jobs compared by composite score. In the first case a tier-1 job with a high counter is pitted against a tier-2 job with the lowest counter; the tier-1 job still scores smaller and pops first, because the tier dominates. In the second case two jobs share a tier and the smaller counter pops first. The toggle switches the comparison and the readout names the winner.">
+        <text class="ttl" x="30" y="22">two composite scores compared — smaller pops first</text>
+        <g><rect class="bit hi" x="36" y="40" width="180" height="40" rx="8"></rect>
+          <text class="val" id="cmpA" x="126" y="64" text-anchor="middle">—</text></g>
+        <g><rect class="bit lo" x="244" y="40" width="180" height="40" rx="8"></rect>
+          <text class="val" id="cmpB" x="334" y="64" text-anchor="middle">—</text></g>
+        <text class="ttl" id="cmpVerd" x="230" y="118" text-anchor="middle">—</text>
+      </svg>
+
+      <div class="geo-readout" id="cmpOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">The tier sits in the high bits, so a change of tier outweighs any counter value; a tier-1 job at the
+      top of its band still scores below the smallest tier-2 job.</p>
+  </section>
+
+  <section id="lower">
+    <h2>A lower number wins</h2>
+    <div class="prose">
+      <p>The formula makes a higher-precedence job a smaller number: priority 1 produces a smaller high-bit field than
+        priority 2, so its composite score is smaller. The consume command is <code class="inl">ZPOPMIN</code>, which
+        returns the smallest score first. The two compose into the convention a queue user sees: a
+        <strong>lower priority number means higher precedence</strong>. Priority 1 beats priority 2 because 1 makes the
+        smaller score and <code class="inl">ZPOPMIN</code> pops the smallest. The third dive walks that consume in real
+        code.</p>
+    </div>
+    <p class="take">A lower priority number makes a smaller score, and <code class="inl">ZPOPMIN</code> pops the smallest
+      first, so a lower priority number is served sooner &mdash; the precedence is encoded as "smaller is sooner".</p>
+  </section>
+
+  <section id="applied">
+    <h2>In EchoMQ &mdash; the composite score, in real code</h2>
+    <div class="prose">
+      <p>The whole score is real code in <code class="inl">echo/apps/echomq</code>. The prioritized set is
+        <code class="inl">EchoMQ.Keys.prioritized/1</code> &rarr; <code class="inl">emq:{queue}:prioritized</code>. The
+        arrival-counter key is <code class="inl">EchoMQ.Keys.pc/1</code> &rarr; <code class="inl">emq:{queue}:pc</code>.
+        The public entry <code class="inl">EchoMQ.Scripts.add_prioritized_job/4</code> runs
+        <code class="inl">addPrioritizedJob-9.lua</code>, passing <code class="inl">Keys.pc(ctx)</code> as
+        <code class="inl">KEYS[9]</code>; the script calls <code class="inl">getPriorityScore</code> and then
+        <code class="inl">rcall("ZADD", prioritizedKey, score, jobId)</code>.</p>
+      <pre class="code"><span class="cmt">-- addPrioritizedJob-9.lua — score the job, then add it (real)</span>
+<span class="op">local</span> score = <span class="fn gold">getPriorityScore</span>(priority, priorityCounterKey)   <span class="cmt">-- priority × 0x100000000 + INCR pc</span>
+<span class="fn">rcall</span>(<span class="str">"ZADD"</span>, prioritizedKey, score, jobId)             <span class="cmt">-- place the job at its composite score</span></pre>
+      <p>The same <code class="inl">getPriorityScore</code> is reused verbatim across the priority-aware scripts, so
+        every path that scores a prioritized job packs the tier and counter the same way. The number chosen to carry the
+        meaning is the whole pattern: the bare priority says only "this tier"; the composite says "this tier, and this
+        position within it".</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern</span>
+        <p>A composite key packs two fields into one ordering key &mdash; the source packs them into the member and
+          reads with <code class="inl">ZRANGEBYLEX</code>.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">in EchoMQ</span>
+        <p><code class="inl">getPriorityScore</code> packs them into the score:
+          <code class="inl">priority &times; 0x100000000 + (INCR pc)</code> &mdash; the tier in the high thirty-two bits,
+          the arrival counter in the low &mdash; so one numeric score orders by tier first and arrival second, read with
+          one <code class="inl">ZPOPMIN</code>.</p>
+      </div>
+    </div>
+
+    <p class="take">A composite key can pack into the member or the score; EchoMQ packs the tier and the arrival counter
+      into one score, so the high bits set the tier and the low bits keep arrival order, in a single number.</p>
+
+    <div class="door">
+      <span class="lbl">Door &middot; not depth</span>
+      The intra-group priority control plane &mdash; how a group prioritizes the jobs it owns, and how fairness is held
+      across groups &mdash; is the subject of the dedicated <strong>EchoMQ course</strong>. The groups that prioritize
+      within the set are <a href="/echomq/groups">E4 &middot; Groups</a>. This dive teaches the composite score; that
+      course teaches the groups that use it.
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The write that scores a prioritized job by its composite number, the sorted set behind it, the atomic counter
+        folded into the low bits, and the queue protocol EchoMQ ports.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; add a member with its score; the write that scores a prioritized job by its composite number.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; score-then-member ordering, the axis the composite score occupies.</li>
+          <li><a href="https://redis.io/commands/incr/">Redis &mdash; <em>INCR</em></a> &mdash; the atomic increment that produces the arrival counter folded into the low bits.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the prioritized-jobs protocol EchoMQ ports, where the Lua scripts are the protocol.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority/priority-scores">R4.03 &middot; Priority with composite scores</a> &mdash; the module hub.</li>
+          <li><a href="/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier">R4.03.2 &middot; FIFO within a tier</a> &mdash; the next dive: the counter that breaks the within-tier tie.</li>
+          <li><a href="/redis-patterns/time-delay-priority/priority-scores/zpopmin">R4.03.3 &middot; ZPOPMIN</a> &mdash; the smallest-score pop that reads this score.</li>
+          <li><a href="/redis-patterns/time-delay-priority/delayed-queue/score-is-fire-time">R4.01.1 &middot; The score is the fire-time</a> &mdash; the sibling score, shifted twelve bits for time.</li>
+          <li><a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a> &mdash; the chapter.</li>
+          <li><a href="/echomq/groups">E4 &middot; Groups</a> &mdash; the dedicated EchoMQ course: intra-group priority in depth.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority/priority-scores"><span aria-hidden="true">&larr;</span>&nbsp; R4.03 &middot; Priority with composite scores</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier">R4.03.2 &middot; FIFO within a tier <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score">R4.03.1 &middot; Packing two keys in one score</a>
+        <a href="/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier">R4.03.2 &middot; FIFO within a tier</a>
+        <a href="/redis-patterns/time-delay-priority/priority-scores/zpopmin">R4.03.3 &middot; ZPOPMIN</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+        <a href="/echomq/groups">The EchoMQ course &middot; groups</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the composite score — tier × 0x100000000 + counter (pure over priority, counter) ---------- */
+  // The composite score is priority × 0x100000000 + counter. The high 32 bits carry the tier, the low 32 the counter.
+  // Both sliders are bounded small so the packed score stays well inside a double's 53-bit integer precision.
+  var SHIFT = 0x100000000; // 2^32
+  // pure: (prio, ctr) -> { hi, lo, score }
+  function pack(prio, ctr) {
+    var hi = prio * SHIFT;
+    return { hi: hi, lo: ctr, score: hi + ctr };
+  }
+  function renderPs(prio, ctr) {
+    var r = pack(prio, ctr);
+    var h = document.getElementById('psHi'), l = document.getElementById('psLo'),
+        s = document.getElementById('psScore'), out = document.getElementById('psOut');
+    if (h) h.textContent = r.hi.toString();
+    if (l) l.textContent = r.lo.toString();
+    if (s) s.textContent = r.score.toString();
+    if (out) {
+      out.textContent = 'priority = ' + prio + ', counter = ' + ctr + '. High 32 bits = priority × 0x100000000 = ' +
+        r.hi + '. Low 32 bits = counter = ' + ctr + '. Composite score = ' + r.score + '. A double holds 53 bits of ' +
+        'integer precision, so the packed score is exact. Raise the priority by one and the score jumps by 0x100000000 ' +
+        '(' + SHIFT + ') — the tier dominates the counter.';
+    }
+  }
+  var psP = document.getElementById('psPrio'), psPV = document.getElementById('psPrioVal'),
+      psC = document.getElementById('psCtr'), psCV = document.getElementById('psCtrVal');
+  function psUpdate() {
+    var prio = parseInt(psP.value, 10), ctr = parseInt(psC.value, 10);
+    if (psPV) psPV.textContent = String(prio); if (psCV) psCV.textContent = String(ctr);
+    renderPs(prio, ctr);
+  }
+  if (psP) psP.addEventListener('input', psUpdate);
+  if (psC) psC.addEventListener('input', psUpdate);
+  renderPs(2, 7); // initial render — correct without interaction
+
+  /* ---------- content: tier beats counter — which job pops first (pure over case) ---------- */
+  // Two jobs compared by composite score. The "tier" case pits a tier-1 job at the top of its counter band against a
+  // tier-2 job at the bottom; tier-1 still scores smaller and pops first. The "same" case shares a tier; smaller counter wins.
+  function score(prio, ctr) { return prio * SHIFT + ctr; }
+  // pure: case -> { a, b, scoreA, scoreB, winner, text }
+  function compare(kase) {
+    if (kase === 'same') {
+      var sA = score(2, 1), sB = score(2, 2);
+      return {
+        a: 'p2 c1', b: 'p2 c2', scoreA: sA, scoreB: sB, winner: 'A',
+        text: 'Both jobs are tier 2, so they share the same high 32 bits. The tie is broken by the counter: job A ' +
+          '(counter 1, score ' + sA + ') is smaller than job B (counter 2, score ' + sB + '), so A pops first — FIFO ' +
+          'within the tier.'
+      };
+    }
+    var s1 = score(1, 999), s2 = score(2, 1);
+    return {
+      a: 'p1 c999', b: 'p2 c1', scoreA: s1, scoreB: s2, winner: 'A',
+      text: 'Job A is tier 1 with counter 999 (score ' + s1 + '). Job B is tier 2 with counter 1 (score ' + s2 + '). ' +
+        'Even at the top of its counter band, the tier-1 job scores smaller than the smallest tier-2 job, so A pops ' +
+        'first. The tier in the high bits dominates any counter value in the low bits.'
+    };
+  }
+  function renderCmp(kase) {
+    var r = compare(kase);
+    var a = document.getElementById('cmpA'), b = document.getElementById('cmpB'),
+        verd = document.getElementById('cmpVerd'), out = document.getElementById('cmpOut');
+    if (a) a.textContent = r.a + ' = ' + r.scoreA;
+    if (b) b.textContent = r.b + ' = ' + r.scoreB;
+    if (verd) verd.textContent = 'job A (' + r.scoreA + ') < job B (' + r.scoreB + ') → A pops first';
+    if (out) out.textContent = r.text;
+  }
+  document.querySelectorAll('#cmpSel button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var kase = btn.getAttribute('data-case');
+      document.querySelectorAll('#cmpSel button').forEach(function (x) {
+        var sel = x === btn; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderCmp(kase);
+    });
+  });
+  renderCmp('tier'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

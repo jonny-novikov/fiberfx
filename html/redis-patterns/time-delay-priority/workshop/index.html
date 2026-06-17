@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R4.06 · Workshop — One sorted set, five readings — Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R4.06 capstone workshop: fold the five R4 time-delay-priority patterns into one scenario — EchoMQ schedules a Portal LMS's notification and digest jobs. A lesson reminder is a one-shot delayed job (EchoMQ.Keys.delayed/1, getDelayedScore), a weekly digest is a repeatable job upserted on EchoMQ.Keys.repeat/1, a password-reset email is a priority job (EchoMQ.Keys.prioritized/1, getPriorityScore priority × 0x100000000 + INCR pc, EchoMQ.Keys.pc/1), a failed send is a backed-off retry (EchoMQ.Backoff.calculate/4), and the ranking the digest carries is the leaderboard pattern over Portal.Enrollment.Progress. Three sorted sets, one worker, the same ZADD/range/pop machinery — and EchoMQ 2.0 renames the keyspace without changing the patterns.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
+.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
+.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
+.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
+.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- scheduling board diagram (three sets, one worker) ---- */
+.brd .slot rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.brd .slot.due rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.brd .slot.pop rect{fill:rgba(214,88,79,.18);stroke:#d6584f}
+.brd .slot.next rect{fill:rgba(212,168,90,.16);stroke:#d4a85a}
+.brd text{font-family:var(--sans);fill:#d7cfb9}
+.brd .lane{font-family:var(--mono);fill:#a39c89;font-size:10.5px;letter-spacing:.03em}
+.brd .job{font-family:var(--mono);font-size:11px;font-weight:700;fill:#f0cd7f}
+.brd .sc{font-family:var(--mono);font-size:9px;fill:#a39c89}
+.brd .now{stroke:#d6584f;stroke-width:1.5;stroke-dasharray:4 3}
+.brd .laneline{stroke:#2a3252;stroke-width:1}
+/* ---- one-week timeline diagram ---- */
+.wk .ev rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
+.wk .ev.fired rect{fill:rgba(123,163,135,.16);stroke:#7ba387}
+.wk .ev.delayed rect{stroke:#5a87c4}
+.wk .ev.repeat rect{stroke:#7ba387}
+.wk .ev.retry rect{stroke:#d6584f}
+.wk text{font-family:var(--sans);fill:#d7cfb9}
+.wk .ttl{font-family:var(--mono);fill:#a39c89;font-size:10.5px;letter-spacing:.03em}
+.wk .evl{font-family:var(--mono);font-size:9.5px;fill:#a39c89}
+.wk .now{stroke:#f0cd7f;stroke-width:1.6;stroke-dasharray:4 3}
+.wk .axis{stroke:#2a3252;stroke-width:1}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--elixir-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .fn.burg{color:#e08f8b}
+pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- when-to-use / scenario table ---- */
+.tbl{width:100%;border-collapse:collapse;margin:1.2rem 0 0;font-family:var(--sans);font-size:.9rem}
+.tbl th,.tbl td{text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);font-weight:700}
+.tbl td{color:var(--cream-soft)}
+.tbl td code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+.tbl tr:last-child td{border-bottom:0}
+
+/* ---- contents directory ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
+  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
+.pill.soon{color:var(--redis-bright);border-color:var(--redis)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
+  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
+  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+
+/* ---- door ---- */
+.door{margin:1.7rem 0 0;border:1px solid var(--redis);border-radius:16px;
+  background:linear-gradient(180deg,rgba(214,88,79,.10),rgba(10,14,26,.3));
+  padding:clamp(1rem,2.4vw,1.5rem)}
+.door .dl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--redis-bright);margin:0 0 .6rem}
+.door p{margin:0;font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure)}
+.door a{color:var(--redis-bright);font-weight:600}
+.door a:hover{color:var(--cream)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+.colophon{max-width:42ch}
+.colophon b{color:var(--cream-soft)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .mods{grid-template-columns:1fr}
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--redis-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--redis-bright);
+  border:1px solid var(--redis);border-radius:999px;padding:.16rem .55rem}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- forward note (EchoMQ 2.0) ---- */
+.fwd{margin:1.7rem 0 0;border:1px solid var(--line);border-left:3px solid var(--elixir);
+  border-radius:0 14px 14px 0;background:linear-gradient(180deg,rgba(179,157,219,.08),rgba(10,14,26,.25));
+  padding:1.1rem 1.3rem}
+.fwd .fl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--elixir-bright);margin:0 0 .55rem}
+.fwd p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft);max-width:var(--measure)}
+.fwd p + p{margin-top:.7rem}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the workshop</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
+    <nav>
+      <a href="/redis-patterns">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><span class="rcur">workshop</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <section class="hero">
+    <div class="crumbs">
+      <a href="/redis-patterns">Redis Patterns</a>
+      <span class="sep">/</span>
+      <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+      <span class="sep">/</span>
+      <span class="here">Workshop</span>
+    </div>
+    <p class="eyebrow">R4 &middot; Time, Delay &amp; Priority</p>
+    <h1>One sorted set, five <span class="ex">readings</span></h1>
+    <p class="lede">Fold five patterns into one scenario: EchoMQ schedules a Portal LMS's notification and digest jobs &mdash;
+      a reminder, a digest, a reset email, a failed send, a ranking. Every move is one sorted set read a different way.</p>
+    <p class="kicker">The chapter taught five patterns over the sorted set: the delayed queue (R4.01), the scheduler registry
+      (R4.02), the composite priority score (R4.03), backoff-and-retry (R4.04), and the leaderboard ranking (R4.05). This
+      capstone is the one scenario that uses all five at once. Picture a Portal LMS &mdash; courses, lessons, learners
+      &mdash; and the notifications it would send. EchoMQ <em>would</em> schedule those jobs; Portal ships no built
+      notification system, so the scenario is a worked application of the chapter's machinery, not a claim about a Portal
+      feature. A reminder is a one-shot <strong>delayed</strong> job, the digest a <strong>repeatable</strong> one, the
+      reset email a <strong>priority</strong> one, the failed send a <strong>backed-off retry</strong>, and the digest
+      carries a <strong>ranking</strong> &mdash; three sorted sets driving one worker, all on the same
+      <code class="inl">ZADD</code> / range / pop machinery.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#scenario">The scenario</a>
+      <a href="#reminder">Reminder</a>
+      <a href="#digest">Digest</a>
+      <a href="#reset">Priority</a>
+      <a href="#retry">Retry</a>
+      <a href="#ranking">Ranking</a>
+      <a href="#one-set">One set</a>
+      <a href="#echomq2">EchoMQ 2.0</a>
+      <a href="#grounded">Grounded</a>
+      <a href="#refs">References</a>
+    </div>
+
+    <figure class="fig brd" aria-labelledby="brdTitle">
+      <h4 id="brdTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The scheduling board &middot; five jobs on three sorted sets, swept by the clock</h4>
+      <div class="controls">
+        <div class="solid-select" id="brdSel" role="group" aria-label="Step the clock forward across the week">
+          <button type="button" data-now="0" data-c="blue" class="active" aria-pressed="true">Mon 00:00</button>
+          <button type="button" data-now="9" data-c="sage" aria-pressed="false">Mon 09:00</button>
+          <button type="button" data-now="24" data-c="gold" aria-pressed="false">Tue 00:00</button>
+          <button type="button" data-now="36" data-c="redis" aria-pressed="false">Tue 12:00</button>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 230" role="img" aria-label="Five scheduled jobs sit across three sorted sets, drawn as three lanes. The top lane is the delayed set, holding the lesson reminder scored at hour 24 and a backed-off retry scored at hour 9. The middle lane is the repeat registry, holding the weekly digest scored at its next run, hour 9. The bottom lane is the prioritized set, holding the password-reset email scored by a composite priority. A dashed red line marks the current clock in hours from Monday midnight. A delayed or repeat job whose score is at or below the clock is due and shown sage; the prioritized job is popped by ZPOPMIN whenever the worker runs and is shown red; the earliest job still in the future on each time-ordered lane is the next wake, shown gold. Stepping the clock buttons advances the line and recolours the jobs.">
+        <text class="lane" x="20" y="16">three sets, one worker &mdash; clock in hours from Mon 00:00</text>
+
+        <text class="lane" x="20" y="44">:delayed</text>
+        <line class="laneline" x1="14" y1="52" x2="446" y2="52"></line>
+        <g id="brdDelayed"></g>
+
+        <text class="lane" x="20" y="104">:repeat</text>
+        <line class="laneline" x1="14" y1="112" x2="446" y2="112"></line>
+        <g id="brdRepeat"></g>
+
+        <text class="lane" x="20" y="164">:prioritized</text>
+        <line class="laneline" x1="14" y1="172" x2="446" y2="172"></line>
+        <g id="brdPrio"></g>
+
+        <line class="now" id="brdNowLine" x1="60" y1="24" x2="60" y2="200"></line>
+        <text class="lane" id="brdNowLbl" x="60" y="214" text-anchor="middle" fill="#f2948c">now</text>
+      </svg>
+      <div class="geo-readout" id="brdOut" aria-live="polite">Press a clock button to sweep the three sets.</div>
+    </figure>
+    <p class="take">Three sorted sets, one worker: the delayed set fires by time, the repeat set rewrites each cycle, and
+      the prioritized set pops smallest-score first &mdash; the same machinery, read three ways.</p>
+  </section>
+
+  <section id="scenario">
+    <h2>The scenario &mdash; five jobs about Portal entities</h2>
+    <div class="prose">
+      <p>Portal models the entities the jobs are about, each carrying its own branded namespace. The five jobs are
+        scheduled <em>about</em> these entities; none of them asserts Portal runs a scheduler.</p>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Portal entity</th><th>Namespace &amp; struct</th><th>The job about it</th></tr></thead>
+      <tbody>
+        <tr><td><code>Portal.Catalog.Lesson</code></td><td><code>LSN</code> &middot; <code>[:id, :course_id, :title]</code></td><td>the lesson reminder (delayed)</td></tr>
+        <tr><td><code>Portal.Accounts.User</code></td><td><code>USR</code> &middot; <code>[:id, :email, :name]</code></td><td>the password-reset email (priority); the digest recipient</td></tr>
+        <tr><td><code>Portal.Enrollment.Progress</code></td><td><code>PRG</code> &middot; <code>percent :: 0..100</code></td><td>the data the digest's ranking sorts</td></tr>
+      </tbody>
+    </table>
+    <p class="take">The scenario schedules jobs about real Portal entities &mdash; a lesson, a learner, a progress percent
+      &mdash; applying the chapter's patterns to Portal's data, not asserting a Portal feature.</p>
+  </section>
+
+  <section id="reminder">
+    <h2>The lesson reminder &mdash; a one-shot delayed job (R4.01)</h2>
+    <div class="prose">
+      <p>A learner enrols in a lesson that starts tomorrow. EchoMQ schedules a reminder twenty-four hours out &mdash; a
+        one-shot job that runs once and is gone. It lands in the delayed sorted set scored by its fire-time. EchoMQ builds
+        the key with <code class="inl">EchoMQ.Keys.delayed/1</code>
+        (<code class="inl">"#{base}:delayed"</code> &rarr; <code class="inl">emq:{queue}:delayed</code>) and scores it
+        with <code class="inl">getDelayedScore</code> in <code class="inl">addDelayedJob-6.lua</code>.</p>
+    </div>
+    <pre class="code"><span class="cmt">-- addDelayedJob-6.lua — the fire-time score (real)</span>
+<span class="op">local</span> score = delayedTimestamp * <span class="res">0x1000</span>   <span class="cmt">-- low 12 bits discriminate jobs due the same millisecond</span>
+<span class="rdx">ZADD</span> delayedKey score jobId</pre>
+    <div class="prose">
+      <p>The score is <code class="inl">delayedTimestamp &times; 0x1000</code>, so the low twelve bits separate jobs due in
+        the same millisecond. When the clock reaches the score, the included <code class="inl">promoteDelayedJobs</code>
+        sweep &mdash; <code class="inl">ZRANGEBYSCORE delayedKey 0 (timestamp + 1) &times; 0x1000 - 1 LIMIT 0 1000</code>,
+        then <code class="inl">ZREM</code> the due head &mdash; moves the reminder to the wait list and a worker delivers
+        it.</p>
+    </div>
+    <p class="take">The reminder is one member in <code class="inl">:delayed</code>, scored by when it should fire; the
+      sweep promotes it when due, and the shift by <code class="inl">0x1000</code> keeps a millisecond able to hold more
+      than one ordered job.</p>
+  </section>
+
+  <section id="digest">
+    <h2>The weekly digest &mdash; a repeatable job, upserted (R4.02)</h2>
+    <div class="prose">
+      <p>Every Monday at 09:00 each learner gets a progress digest. That is a recurring schedule, so it lives in the
+        repeat registry: a sorted set scored by the <em>next</em> run, one entry per scheduler. EchoMQ builds the key with
+        <code class="inl">EchoMQ.Keys.repeat/1</code> (<code class="inl">"#{base}:repeat"</code> &rarr;
+        <code class="inl">emq:{queue}:repeat</code>). Registering the schedule runs
+        <code class="inl">storeRepeatableJob</code> in <code class="inl">addRepeatableJob-2.lua</code>:
+        <code class="inl">ZADD repeatKey nextMillis customKey</code>, guarded by a
+        <code class="inl">ZSCORE repeatKey customKey</code> probe above it.</p>
+    </div>
+    <pre class="code"><span class="cmt">-- addRepeatableJob-2.lua — the upsert (real)</span>
+<span class="op">local</span> prevMillis = <span class="rdx">ZSCORE</span> repeatKey customKey   <span class="cmt">-- already registered?</span>
+<span class="op">if</span> prevMillis <span class="op">then</span> <span class="cmt">-- reconcile, do not add a second</span> <span class="op">end</span>
+<span class="rdx">ZADD</span> repeatKey nextMillis customKey         <span class="cmt"># same member rewrites its score</span></pre>
+    <div class="prose">
+      <p>The probe is what makes a reboot safe &mdash; a service that boots re-registers all its schedules, and re-adding
+        the same member rewrites its score rather than appending a second row. One schedule key, one registry entry,
+        across any number of boots; no duplicate digest on restart.</p>
+    </div>
+    <p class="take">The digest is one entry in <code class="inl">:repeat</code>, scored by its next run and rewritten each
+      fire; the <code class="inl">ZSCORE</code>-then-<code class="inl">ZADD</code> upsert keeps the registry at one row per
+      scheduler, so a boot adds no duplicate.</p>
+  </section>
+
+  <section id="reset">
+    <h2>The password-reset email &mdash; a priority job (R4.03)</h2>
+    <div class="prose">
+      <p>A learner requests a password reset. That email cannot wait behind a backlog of bulk marketing mail &mdash; it
+        jumps ahead. EchoMQ enqueues it on the prioritized sorted set, built with
+        <code class="inl">EchoMQ.Keys.prioritized/1</code> (<code class="inl">"#{base}:prioritized"</code> &rarr;
+        <code class="inl">emq:{queue}:prioritized</code>), and scores it with <code class="inl">getPriorityScore</code>
+        in <code class="inl">addPrioritizedJob-9.lua</code>.</p>
+    </div>
+    <pre class="code"><span class="cmt">-- getPriorityScore (included by addPrioritizedJob-9) — real</span>
+<span class="op">local</span> prioCounter = <span class="fn">rcall</span>(<span class="str">"INCR"</span>, priorityCounterKey)
+<span class="op">return</span> priority * <span class="res">0x100000000</span> + prioCounter % <span class="res">0x100000000</span>
+<span class="cmt">-- high 32 bits = the tier · low 32 bits = the arrival counter</span></pre>
+    <div class="prose">
+      <p><code class="inl">0x100000000</code> is <code class="inl">2<sup>32</sup></code>, so the priority tier sits in
+        the high thirty-two bits and the arrival counter in the low thirty-two. The counter is the value of
+        <code class="inl">INCR</code> on the priority-counter key &mdash; <code class="inl">EchoMQ.Keys.pc/1</code>
+        (<code class="inl">"#{base}:pc"</code>) &mdash; taken when the job is added, so two jobs in the same tier order by
+        arrival. A worker pops the next job with <code class="inl">ZPOPMIN</code> in
+        <code class="inl">moveToActive-11.lua</code>: the smallest score is the highest-precedence tier and, within it,
+        the earliest arrival. A <strong>lower priority number wins</strong>, because the formula makes a
+        higher-precedence job a smaller number and <code class="inl">ZPOPMIN</code> always returns the smallest first.</p>
+    </div>
+    <p class="take">The reset email is one member in <code class="inl">:prioritized</code>, scored by
+      <code class="inl">priority &times; 0x100000000 + (INCR pc)</code>; one <code class="inl">ZPOPMIN</code> returns the
+      right job &mdash; tier first, arrival second &mdash; so it pops ahead of the bulk mail.</p>
+  </section>
+
+  <section id="retry">
+    <h2>The failed send &mdash; a backed-off retry (R4.04)</h2>
+    <div class="prose">
+      <p>A digest email fails: the mail provider returns a transient error. The worker does not drop the job and does not
+        loop on it. It re-schedules the job to run again later, with a delay that grows on each attempt, so a struggling
+        provider is not hammered. The delay is sized by <code class="inl">EchoMQ.Backoff.calculate/4</code> in Elixir
+        &mdash; the <code class="inl">:exponential</code> clause computes
+        <code class="inl">delay = trunc(:math.pow(2, attempt - 1) &times; base_delay)</code>, then
+        <code class="inl">apply_jitter(delay, jitter)</code>. The doc example is exact:
+        <code class="inl">calculate(:exponential, 3, 1000, jitter: 0.2)</code> returns about
+        <code class="inl">4000</code>.</p>
+      <p>Jitter widens each delay into a band &mdash; <code class="inl">[3200, 4800]</code> for that example &mdash; and
+        draws an independent point per job, so a batch that failed together does not re-fire in one synchronized spike.
+        The reschedule itself adds no new structure: <code class="inl">retryJob-11.lua</code> re-adds the failed job to
+        <code class="inl">emq:{queue}:delayed</code> at the backoff fire-time, and the included
+        <code class="inl">promoteDelayedJobs</code> &mdash; R4.01's sweep &mdash; brings it back when due. The formula
+        chooses the delay; the Lua never computes <code class="inl">2^(n-1)</code>.</p>
+    </div>
+    <p class="take">The failed send is a delayed job whose fire-time is a backoff delay;
+      <code class="inl">EchoMQ.Backoff.calculate/4</code> sizes it, the same <code class="inl">:delayed</code> set holds
+      it, and the same sweep promotes it &mdash; one structure, two uses.</p>
+  </section>
+
+  <section id="ranking">
+    <h2>The ranking the digest carries &mdash; a sorted-set ranking (R4.05)</h2>
+    <div class="prose">
+      <p>The digest's content names the week's top learners. That is a ranking: order learners by their progress, read
+        the top-N. Portal records a learner's progress through a lesson as a <strong>percent</strong> &mdash; the
+        <code class="inl">Portal.Enrollment.Progress</code> struct, the field <code class="inl">percent :: 0..100</code>,
+        the namespace <code class="inl">PRG</code>, held as a row in an in-memory, namespace-partitioned store.
+        <strong>Portal runs no Redis sorted set and has no progress ranking; the percent is a plain stored value.</strong></p>
+      <p>A leaderboard that ranks learners by progress is exactly this pattern applied to that data. Score each learner by
+        their percent &mdash; <code class="inl">ZADD board &lt;percent&gt; &lt;learner&gt;</code> &mdash; and the top-N
+        learners are a <code class="inl">ZREVRANGE</code>, a learner's standing is a <code class="inl">ZREVRANK</code>,
+        and an around-me view is a rank-range read. The rank is computed on read in <code class="inl">O(log N)</code>,
+        never stored. The interactive below ranks a fixed roster of six learners by their progress percent and reads the
+        top-N a digest would carry.</p>
+    </div>
+
+    <figure class="fig wk" aria-labelledby="wkTitle">
+      <h4 id="wkTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The digest ranking &middot; six learners by progress percent, top-N read on the fly</h4>
+      <div class="controls">
+        <div class="fold-ctrl">
+          <label for="wkN">top-N learners</label>
+          <input type="range" id="wkN" min="1" max="6" step="1" value="3">
+          <span class="val" id="wkNVal">3</span>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 460 200" role="img" aria-label="Six learners are ranked by their progress percent, drawn top to bottom by descending percent. Each row shows its 0-based reverse rank, the learner, and the progress percent. The top-N rows the digest would carry are shown sage, where N is set by the slider. The leader at rank zero is the highest progress percent. Moving the slider changes how many rows are highlighted; the order never changes, because the rank is read from the score order, not stored.">
+        <text class="ttl" x="20" y="16">ranking by Portal progress percent &mdash; ZREVRANGE board 0 N-1 (the digest's top learners)</text>
+        <g id="wkRows"></g>
+      </svg>
+      <div class="geo-readout" id="wkOut" aria-live="polite">Move the slider to read the top-N the digest would carry.</div>
+    </figure>
+    <p class="take">The ranking is the leaderboard pattern over the progress percent Portal already records; Portal stores
+      the percent and the ranked view over it is one sorted set away &mdash; no rank is stored, the order is the rank.</p>
+  </section>
+
+  <section id="one-set">
+    <h2>Five patterns, one sorted set</h2>
+    <div class="prose">
+      <p>Read back through the five moves and one structure stands behind all of them. The reminder scores by a fire-time,
+        the digest by a next-run, the reset email by a packed priority, the retry by a backoff delay, and the ranking by a
+        learner's percent &mdash; five different numbers, one sorted set. The score is a fire-time clock, a recurrence
+        registry, a priority ladder, a retry timer, or a player's points, and the <code class="inl">ZADD</code> that
+        writes it, the range that reads the due head, and the pop that takes the smallest are the same three operations
+        every time.</p>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Move</th><th>Set</th><th>The score means</th><th>The read</th></tr></thead>
+      <tbody>
+        <tr><td>Reminder (R4.01)</td><td><code>:delayed</code></td><td>fire-time &times; <code>0x1000</code></td><td><code>ZRANGEBYSCORE</code> sweep</td></tr>
+        <tr><td>Digest (R4.02)</td><td><code>:repeat</code></td><td>the next run</td><td><code>ZSCORE</code> probe + <code>ZADD</code> upsert</td></tr>
+        <tr><td>Reset (R4.03)</td><td><code>:prioritized</code></td><td><code>priority &times; 0x100000000 + (INCR pc)</code></td><td><code>ZPOPMIN</code></td></tr>
+        <tr><td>Retry (R4.04)</td><td><code>:delayed</code></td><td>a backoff delay</td><td>the same sweep</td></tr>
+        <tr><td>Ranking (R4.05)</td><td>a ranking set</td><td>a learner's percent</td><td><code>ZREVRANGE</code> / <code>ZREVRANK</code></td></tr>
+      </tbody>
+    </table>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the chapter</span>
+        <p>Five patterns: the delayed queue (R4.01), the scheduler (R4.02), the composite priority score (R4.03),
+          backoff-and-retry (R4.04), and the leaderboard (R4.05) &mdash; each a different reading of one structure.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">this workshop</span>
+        <p>One Portal LMS scenario reads the sorted set five ways: a fire-time clock (<code class="inl">:delayed</code>), a
+          recurrence registry (<code class="inl">:repeat</code>), a priority ladder
+          (<code class="inl">:prioritized</code>), a retry timer (<code class="inl">:delayed</code> reused), and a ranking
+          &mdash; all the same <code class="inl">ZADD</code> / range / pop machinery.</p>
+      </div>
+    </div>
+    <p class="take">The chapter's five patterns are one sorted set read five times. The score is a fire-time, a next-run, a
+      packed priority, a backoff delay, or a player's points &mdash; and the structure never changes, only the meaning
+      poured into the score.</p>
+  </section>
+
+  <section id="echomq2">
+    <h2>Where this is heading &mdash; EchoMQ 2.0</h2>
+    <div class="prose">
+      <p>Today every job in this scenario rides the v1.x BullMQ-compatible wire: the reminder and the retry on
+        <code class="inl">emq:{queue}:delayed</code>, the digest on <code class="inl">emq:{queue}:repeat</code>, the
+        reset email on <code class="inl">emq:{queue}:prioritized</code>. The chapter's machinery sits one protocol break
+        ahead of a rename.</p>
+    </div>
+    <div class="fwd">
+      <p class="fl">Where this is heading &mdash; EchoMQ 2.0</p>
+      <p>The settled <strong>EchoMQ 2.0</strong> design &mdash; the protocol break on the first EMQ rung,
+        <code class="inl">emq.1</code> &mdash; drops BullMQ compatibility (the v1 line freezes at
+        <code class="inl">1.3.0</code>), renames the whole keyspace to the native <code class="inl">emq:</code> prefix
+        (<code class="inl">emq:{queue}:delayed</code>, <code class="inl">emq:{queue}:repeat</code>,
+        <code class="inl">emq:{queue}:prioritized</code>; the <code class="inl">{queue}</code> hashtag applied
+        transparently in the core, the braced <code class="inl">{emq}:</code> base reserved for the core's own keys),
+        declares every Lua key in <code class="inl">KEYS[]</code> &mdash; the inherited undeclared-keys flaw resolved at
+        the root &mdash; and bumps <code class="inl">meta.version</code> from <code class="inl">bullmq:5.65.1</code> to
+        <code class="inl">echomq:2.0.0</code> behind a two-way typed boot fence, DragonflyDB-native.</p>
+      <p>The whole scenario is unchanged by the break. The fire-time score, the upsert, the composite priority score, the
+        backoff delay, and the ranking are each a property of the sorted set &mdash; the score, the sweep, the pop, the
+        rank &mdash; not of the prefix it rides on. The break renames the keyspace and declares the keys; every pattern in
+        this workshop carries over byte-for-byte. That is why the chapter is safe to teach before EchoMQ 2.0 ships: it
+        teaches the sorted set, and the prefix it rides on is the part that changes.</p>
+    </div>
+    <p class="take">EchoMQ 2.0 renames the keyspace to <code class="inl">emq:</code> and declares every Lua key, version
+      <code class="inl">echomq:2.0.0</code>; every pattern in this workshop is a property of the sorted set, not of the
+      prefix, so the rename leaves all five unchanged.</p>
+  </section>
+
+  <section id="grounded">
+    <h2>Grounded in EchoMQ's real scheduler</h2>
+    <div class="prose">
+      <p>Every symbol in this scenario is a real surface in <code class="inl">echo/apps/echomq</code> and
+        <code class="inl">echo/apps/portal</code>, cited as proof the patterns ship:</p>
+      <ul>
+        <li><strong>The delayed key and score</strong> &mdash; <code class="inl">EchoMQ.Keys.delayed/1</code>,
+          <code class="inl">getDelayedScore</code> (<code class="inl">score = delayedTimestamp &times; 0x1000</code>) in
+          <code class="inl">addDelayedJob-6.lua</code>, swept by the included
+          <code class="inl">promoteDelayedJobs</code>.</li>
+        <li><strong>The repeat registry</strong> &mdash; <code class="inl">EchoMQ.Keys.repeat/1</code>,
+          <code class="inl">storeRepeatableJob</code>'s <code class="inl">ZADD repeatKey nextMillis customKey</code>
+          probed by <code class="inl">ZSCORE</code> in <code class="inl">addRepeatableJob-2.lua</code>.</li>
+        <li><strong>The priority score</strong> &mdash; <code class="inl">EchoMQ.Keys.prioritized/1</code>,
+          <code class="inl">getPriorityScore</code> (<code class="inl">priority &times; 0x100000000 + (INCR pc)</code>) in
+          <code class="inl">addPrioritizedJob-9.lua</code>, the counter key <code class="inl">EchoMQ.Keys.pc/1</code>,
+          consumed by <code class="inl">ZPOPMIN</code> in <code class="inl">moveToActive-11.lua</code>.</li>
+        <li><strong>The backoff delay</strong> &mdash; <code class="inl">EchoMQ.Backoff.calculate/4</code>
+          (<code class="inl">:exponential</code> &rarr;
+          <code class="inl">trunc(:math.pow(2, attempt - 1) &times; base_delay)</code>, then
+          <code class="inl">apply_jitter</code>); <code class="inl">retryJob-11.lua</code> re-adds onto
+          <code class="inl">:delayed</code>.</li>
+        <li><strong>The ranking data</strong> &mdash; <code class="inl">Portal.Enrollment.Progress</code>
+          (<code class="inl">percent :: 0..100</code>, namespace <code class="inl">PRG</code>); Portal runs no sorted
+          set, so the ranking is the applied pattern, phrased counterfactually.</li>
+      </ul>
+    </div>
+    <p class="note">The keys are illustrated in the <code class="inl">emq:{queue}:*</code> v1 form the library speaks
+      today; the EchoMQ 2.0 section above names the <code class="inl">emq:</code> rename ahead. The ranking is drawn as
+      raw <code class="inl">ZADD</code>/<code class="inl">ZREVRANGE</code> over a percent &mdash; the worked application of
+      the leaderboard pattern, not a Portal API; Portal stores the percent and runs no sorted set.</p>
+    <p class="take">Each of the five moves cites one real EchoMQ or Portal surface as a door, not a depth &mdash; the
+      excerpt is the proof, the full subsystem is the EchoMQ course's territory.</p>
+
+    <div class="door">
+      <p class="dl">A door, not a depth</p>
+      <p>This workshop cites one excerpt of each move as proof the patterns ship. The full scheduler subsystem &mdash; the
+        cron parser, the delay / promote / retry coordination across a worker pool, the polyglot concurrency models
+        &mdash; is the subject of the dedicated <a href="/echomq"><strong>EchoMQ course</strong></a>, built next with this
+        toolkit, which opens at <a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a>. This workshop closes R4
+        with five patterns over one sorted set; that course teaches the scheduler that runs them. Return to the
+        <a href="/redis-patterns/time-delay-priority">Time, Delay &amp; Priority chapter</a> to continue.</p>
+    </div>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>The Redis commands behind the five moves &mdash; the single write, the due-range read, the smallest-score pop,
+        the one structure they all share &mdash; and where the scheduler that runs them is taught.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; the single write behind every move: the fire-time score, the repeat upsert, the priority score, the leaderboard score.</li>
+          <li><a href="https://redis.io/commands/zrangebyscore/">Redis &mdash; <em>ZRANGEBYSCORE</em></a> &mdash; the due-range read inside <code>promoteDelayedJobs</code> that promotes the reminder and the retry.</li>
+          <li><a href="https://redis.io/commands/zpopmin/">Redis &mdash; <em>ZPOPMIN</em></a> &mdash; pop the smallest composite score: highest tier, earliest arrival &mdash; how the reset email jumps the queue.</li>
+          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; the one structure the scenario reads five ways: members ordered by a numeric score.</li>
+          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the <code>:delayed</code> / <code>:repeat</code> / <code>:prioritized</code> protocol EchoMQ ports, where the Lua scripts are the protocol.</li>
+          <li><a href="https://www.dragonflydb.io/docs/integrations/bullmq">DragonflyDB &mdash; <em>BullMQ on Dragonfly</em></a> &mdash; the BullMQ-on-Dragonfly direction EchoMQ 2.0 takes native, prefix renamed and keys fully declared.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/redis-patterns/time-delay-priority/delayed-queue">R4.01 &middot; The delayed queue</a> &mdash; the reminder and the retry's fire-time set.</li>
+          <li><a href="/redis-patterns/time-delay-priority/schedulers">R4.02 &middot; Schedulers &amp; repeatable jobs</a> &mdash; the digest's repeat registry and its upsert.</li>
+          <li><a href="/redis-patterns/time-delay-priority/priority-scores">R4.03 &middot; Priority with composite scores</a> &mdash; the reset email's composite priority score.</li>
+          <li><a href="/redis-patterns/time-delay-priority/backoff-retry">R4.04 &middot; Backoff &amp; retry</a> &mdash; the failed send's backoff delay.</li>
+          <li><a href="/redis-patterns/time-delay-priority/leaderboards">R4.05 &middot; Leaderboards</a> &mdash; the ranking the digest carries.</li>
+          <li><a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a> &mdash; the chapter this workshop closes.</li>
+          <li><a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a> &mdash; the dedicated EchoMQ course: the scheduler that runs the five moves in depth.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/redis-patterns/time-delay-priority/leaderboards"><span aria-hidden="true">&larr;</span>&nbsp; R4.05 &middot; Leaderboards</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
+        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+      </div>
+      <div>
+        <h4>The chapter</h4>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/redis-patterns/time-delay-priority/delayed-queue">R4.01 &middot; The delayed queue</a>
+        <a href="/redis-patterns/time-delay-priority/schedulers">R4.02 &middot; Schedulers &amp; repeatable jobs</a>
+        <a href="/redis-patterns/time-delay-priority/priority-scores">R4.03 &middot; Priority with composite scores</a>
+        <a href="/redis-patterns/time-delay-priority/backoff-retry">R4.04 &middot; Backoff &amp; retry</a>
+        <a href="/redis-patterns/time-delay-priority/leaderboards">R4.05 &middot; Leaderboards</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/echomq/lifecycle">The EchoMQ course &middot; the lifecycle</a>
+        <a href="/elixir">Companion &middot; Functional Programming</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- interactive 1 — the scheduling board: five jobs on three sets, swept by the clock (pure over now) ---------- */
+  // Three lanes model three sorted sets driving one worker. Times are HOURS from Monday 00:00, the same clock the
+  // hero buttons step. The :delayed lane holds the reminder (fire-time hour 24) and the backed-off retry (fire-time
+  // hour 9); the :repeat lane holds the weekly digest (next run hour 9); the :prioritized lane holds the reset email
+  // (a composite priority — popped by ZPOPMIN whenever the worker runs, independent of the clock). A delayed/repeat
+  // job is "due" when its fire-time score is <= the clock (the ZRANGEBYSCORE 0 → now semantics). The "next wake" on a
+  // time-ordered lane is the earliest score still strictly above the clock. The board, the due set, and the readout
+  // are pure over `now`.
+  var SHIFT = 0x100000000; // 2^32, the priority shift
+  // each job: lane, id, label, and either fire (hours) for time-ordered lanes or {prio,ctr} for the prioritized lane.
+  var BOARD = {
+    delayed: [
+      { id: 'retry',    label: 'failed-send retry', fire: 9  },
+      { id: 'reminder', label: 'lesson reminder',   fire: 24 }
+    ],
+    repeat: [
+      { id: 'digest',   label: 'weekly digest',     fire: 9  }
+    ],
+    prio: [
+      { id: 'reset',    label: 'password-reset',    prio: 1, ctr: 1 },
+      { id: 'bulk',     label: 'bulk mail',         prio: 5, ctr: 2 }
+    ]
+  };
+  // pure: composite priority score, the real getPriorityScore shape: priority × 0x100000000 + counter
+  function priorityScore(j) { return j.prio * SHIFT + j.ctr; }
+  // pure: for a time-ordered lane, classify each job at clock `now`; return slots + the next-wake (earliest future).
+  function sweepLane(jobs, now) {
+    var sorted = jobs.slice().sort(function (a, b) { return a.fire - b.fire; });
+    var next = null;
+    sorted.forEach(function (j) { if (j.fire > now && next === null) next = j; });
+    var slots = sorted.map(function (j) {
+      return { id: j.id, label: j.label, fire: j.fire,
+               due: j.fire <= now, next: next !== null && j.id === next.id };
+    });
+    return { slots: slots, next: next, dueCount: slots.filter(function (s) { return s.due; }).length };
+  }
+  // pure: the prioritized lane sorted ascending by composite score; the head is the ZPOPMIN target.
+  function sweepPrio(jobs) {
+    var sorted = jobs.slice().sort(function (a, b) { return priorityScore(a) - priorityScore(b); });
+    var slots = sorted.map(function (j, i) {
+      return { id: j.id, label: j.label, prio: j.prio, ctr: j.ctr, score: priorityScore(j), pop: i === 0 };
+    });
+    return { slots: slots, head: sorted[0] };
+  }
+  function renderLane(gId, lane, kind) {
+    var g = document.getElementById(gId);
+    if (!g) return;
+    var frag = '';
+    for (var i = 0; i < lane.slots.length; i++) {
+      var s = lane.slots[i];
+      var x = 60 + i * 132;
+      var cls, sub;
+      if (kind === 'prio') {
+        cls = s.pop ? 'pop' : '';
+        sub = 'p' + s.prio + ' c' + s.ctr;
+      } else {
+        cls = s.due ? 'due' : (s.next ? 'next' : '');
+        sub = 'h' + s.fire;
+      }
+      frag += '<g class="slot ' + cls + '"><rect x="' + x + '" y="' + (kind === 'prio' ? 178 : (gId === 'brdDelayed' ? 56 : 116)) + '" width="124" height="34" rx="9"></rect>' +
+        '<text class="job" x="' + (x + 8) + '" y="' + (kind === 'prio' ? 192 : (gId === 'brdDelayed' ? 70 : 130)) + '">' + s.id + '</text>' +
+        '<text class="sc" x="' + (x + 8) + '" y="' + (kind === 'prio' ? 204 : (gId === 'brdDelayed' ? 82 : 142)) + '">' + sub + '</text></g>';
+    }
+    g.innerHTML = frag;
+  }
+  function renderBoard(now) {
+    var d = sweepLane(BOARD.delayed, now);
+    var r = sweepLane(BOARD.repeat, now);
+    var p = sweepPrio(BOARD.prio);
+    renderLane('brdDelayed', d, 'time');
+    renderLane('brdRepeat', r, 'time');
+    renderLane('brdPrio', p, 'prio');
+    // place the now line: clock 0..48 hours mapped across x 60..430
+    var x0 = 60, x1 = 430, nx = x0 + (Math.max(0, Math.min(48, now)) / 48) * (x1 - x0);
+    var line = document.getElementById('brdNowLine'), lbl = document.getElementById('brdNowLbl');
+    if (line) { line.setAttribute('x1', nx.toFixed(1)); line.setAttribute('x2', nx.toFixed(1)); }
+    if (lbl) lbl.setAttribute('x', nx.toFixed(1));
+    var out = document.getElementById('brdOut');
+    if (out) {
+      var dueNames = d.slots.filter(function (s) { return s.due; }).map(function (s) { return s.id; })
+        .concat(r.slots.filter(function (s) { return s.due; }).map(function (s) { return s.id; }));
+      var dueTxt = dueNames.length ? dueNames.join(', ') : 'none';
+      out.textContent = 'clock = hour ' + now + ' from Mon 00:00. The :delayed and :repeat sweep (ZRANGEBYSCORE 0 ' +
+        now + ') promotes ' + dueNames.length + ' due job' + (dueNames.length === 1 ? '' : 's') + ': ' + dueTxt + '. ' +
+        'The :prioritized set is clock-independent — ZPOPMIN pops ' + p.head.id + ' first (priority ' + p.head.prio +
+        ', composite score ' + p.head.score + '), ahead of ' + p.slots[1].id + '. ' +
+        (d.next ? ('Next wake on :delayed is ' + d.next.id + ' at hour ' + d.next.fire + '.') : 'The :delayed set is idle.');
+    }
+  }
+  document.querySelectorAll('#brdSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#brdSel button').forEach(function (x) {
+        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderBoard(parseInt(b.getAttribute('data-now'), 10));
+    });
+  });
+  renderBoard(0); // initial render — correct without interaction
+
+  /* ---------- interactive 2 — the digest ranking: six learners by progress percent, top-N read on the fly (pure over N) ---------- */
+  // A fixed roster of six learners, each with a progress percent (the Portal.Enrollment.Progress percent field,
+  // 0..100). The ranking is the leaderboard pattern: ZADD board <percent> <learner>, then ZREVRANGE board 0 N-1 for
+  // the top-N the digest carries. The rank is computed on read (descending percent), never stored. The board and the
+  // readout are pure over N. (Portal runs no sorted set; this is the applied pattern over the percent it records.)
+  var LEARNERS = [
+    { id: 'ada',   pct: 92 }, { id: 'bo',   pct: 78 }, { id: 'cy',   pct: 64 },
+    { id: 'di',    pct: 55 }, { id: 'evan', pct: 41 }, { id: 'fen',  pct: 30 }
+  ];
+  // pure: N -> { rows:[{rank,id,pct,inTop}], top:[ids] }
+  function rank(n) {
+    var sorted = LEARNERS.slice().sort(function (a, b) { return b.pct - a.pct; }); // ZREVRANGE order
+    var rows = sorted.map(function (l, i) {
+      return { rank: i, id: l.id, pct: l.pct, inTop: i < n };
+    });
+    return { rows: rows, top: rows.filter(function (r) { return r.inTop; }).map(function (r) { return r.id; }) };
+  }
+  function renderRank(n) {
+    var r = rank(n);
+    var g = document.getElementById('wkRows');
+    if (g) {
+      var frag = '';
+      for (var i = 0; i < r.rows.length; i++) {
+        var row = r.rows[i];
+        var y = 30 + i * 26;
+        var cls = row.inTop ? 'fired repeat' : 'ev';
+        frag += '<g class="ev ' + cls + '"><rect x="20" y="' + y + '" width="420" height="22" rx="7"></rect>' +
+          '<text class="evl" x="32" y="' + (y + 15) + '">rank ' + row.rank + '</text>' +
+          '<text class="evl" x="120" y="' + (y + 15) + '" style="fill:#f0cd7f;font-weight:700">' + row.id + '</text>' +
+          '<text class="evl" x="360" y="' + (y + 15) + '">' + row.pct + '% progress</text></g>';
+      }
+      g.innerHTML = frag;
+    }
+    var out = document.getElementById('wkOut');
+    if (out) {
+      out.textContent = 'top-N = ' + n + '. ZREVRANGE board 0 ' + (n - 1) + ' returns the ' + n + ' highest-progress ' +
+        'learner' + (n === 1 ? '' : 's') + ' the digest would carry: ' + r.top.join(', ') + '. The leader is ' +
+        r.rows[0].id + ' at ' + r.rows[0].pct + '% (rank 0). The rank is read from the percent order, never stored — ' +
+        'Portal records the percent, the ranked view over it is one sorted set away.';
+    }
+  }
+  var wkRange = document.getElementById('wkN'), wkRangeV = document.getElementById('wkNVal');
+  if (wkRange) wkRange.addEventListener('input', function () {
+    var n = parseInt(wkRange.value, 10); if (wkRangeV) wkRangeV.textContent = String(n);
+    renderRank(n);
+  });
+  renderRank(3); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

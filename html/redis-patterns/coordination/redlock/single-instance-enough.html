@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R2.03.3 — When single-instance is enough · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R2.03.3 — When the single-Valkey lease from R2.02 is enough and Redlock's five-instance cost is not justified. The decision turns on one axis: does a lost lock cause catastrophic corruption (consensus or a fenced resource) or a recoverable retry (a single-instance lease and idempotent work). EchoMQ's answer is the latter — the @claim script holds the lease on one Valkey against one server clock with the attempts fence (HINCRBY), refused stale with EMQSTALE; the Consumer holds it for :lease_ms (default 30_000) and Jobs.reap reclaims a lapsed lease. Grounded in echo/apps/echo_mq.">
+<style>
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.segrow{display:flex;flex-wrap:wrap;gap:18px;margin:4px 0 12px}
+.segrow .grp{display:flex;flex-direction:column;gap:6px}
+.segrow .axl{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--b-dim)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.booknote{font-family:var(--mono);font-size:12px;color:var(--b-dim);max-width:80ch;margin-top:12px}
+.booknote code{background:#ecf0e9}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- comparison table ---------- */
+.tbl{width:100%;border-collapse:collapse;margin:6px 0 14px;font-family:var(--sans);font-size:.9rem}
+.tbl th,.tbl td{text-align:left;padding:.55rem .8rem;border-bottom:1px solid var(--b-line);vertical-align:top}
+.tbl th{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--b-dim);font-weight:700}
+.tbl td{color:var(--b-ink)}
+.tbl td code{background:#ecf0e9}
+.tbl td.si{color:var(--b-node)}
+.tbl td.rd{color:var(--r-red)}
+.tbl tr:last-child td{border-bottom:0}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink);margin:22px 0 6px}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.9rem;color:var(--b-ink);max-width:74ch}
+.door p code{background:#ecf0e9}
+.door a{font-weight:600}
+div.door:hover{box-shadow:none}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .cell p code{background:#ecf0e9}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.vnote code{background:#ecf0e9}
+.door .frozen{margin:12px 0 0}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the decision-matrix figure (hover-select) ---------- */
+.dm{width:100%;height:auto;display:block;margin-top:4px}
+.dm .quad rect{fill:var(--b-card);stroke:var(--b-line);transition:fill .18s ease,stroke .18s ease}
+.dm .quad.on rect{fill:var(--b-pay-tint);stroke:var(--b-ts)}
+.dm .quad.on.single rect{fill:rgba(46,125,91,.16);stroke:var(--b-node)}
+.dm .quad.on.redlock rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.dm .quad.on.consensus rect{fill:rgba(32,97,142,.14);stroke:var(--b-ts)}
+.dm .quad{cursor:pointer}
+.dm .qlbl{font:9.5px var(--mono);fill:var(--b-dim)}
+.dm .qrec{font:11px var(--mono);font-weight:700;fill:var(--b-ink)}
+.dm .axt{font:9.5px var(--mono);fill:var(--b-dim)}
+.dm .pin{fill:var(--r-red);stroke:var(--b-card);stroke-width:1.4;transition:cx .2s ease,cy .2s ease}
+/* ---------- the scenario-bars figure (hover-select) ---------- */
+.sv{width:100%;height:auto;display:block;margin-top:4px}
+.sv .row{cursor:pointer}
+.sv .row rect.track{fill:var(--b-paper);stroke:var(--b-line)}
+.sv .row rect.fill{transition:width .2s ease,fill .18s ease}
+.sv .row.single rect.fill{fill:rgba(46,125,91,.5);stroke:var(--b-node)}
+.sv .row.harder rect.fill{fill:var(--r-red-tint);stroke:var(--r-red)}
+.sv .row.on rect.track{stroke:var(--b-ts);stroke-width:1.6}
+.sv .rlbl{font:11px var(--mono);fill:var(--b-ink)}
+.sv .rlbl.on{fill:var(--b-ts);font-weight:700}
+.sv .rverdict{font:9.5px var(--mono)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/coordination">coordination</a><span class="rsep">/</span><a href="/redis-patterns/coordination/redlock">redlock</a><span class="rsep">/</span><span class="rcur">single-instance-enough</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#when">When to use</a>
+      <a href="#decision">The decision</a>
+      <a href="#summary">Summary</a>
+      <a href="#contrast">The contrast</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R2.03.3 &#183; The Redlock algorithm &#8212; dive 3</p>
+      <h1>When single-instance is <span class="hns">enough</span>.</h1>
+      <p class="lede">Redlock works. The question this dive resolves is whether a workload needs what it buys &#8212;
+      because the five-instance cost is real.</p>
+      <p class="heronote">Grounding (contrast): echo/apps/echo_mq/jobs.ex:126 &#183; consumer.ex:57,93 &#8212; EchoMQ
+      deliberately chose the single-Valkey lease: <code>@claim</code> against one server clock, the
+      <code>attempts</code> fence, the Consumer&#8217;s <code>:lease_ms</code> default <code>30_000</code>, and
+      <code>Jobs.reap</code>.</p>
+
+      <figure class="anatomy" aria-labelledby="dmCap">
+        <figcaption id="dmCap"><b>The decision matrix &#8212; set the two axes.</b> Choose the consequence of a lost
+        lock and the budget; the matrix names the right tool, and the readout explains it.</figcaption>
+        <div class="segrow">
+          <div class="grp">
+            <span class="axl" id="dmConsLbl">consequence of a lost lock</span>
+            <div class="segbar" role="group" aria-labelledby="dmConsLbl">
+              <button type="button" id="dmConsRec" aria-pressed="true">recoverable retry</button>
+              <button type="button" id="dmConsCat" aria-pressed="false">catastrophic corruption</button>
+            </div>
+          </div>
+          <div class="grp">
+            <span class="axl" id="dmBudLbl">infrastructure budget</span>
+            <div class="segbar" role="group" aria-labelledby="dmBudLbl">
+              <button type="button" id="dmBudOne" aria-pressed="true">one Valkey</button>
+              <button type="button" id="dmBudFive" aria-pressed="false">five masters</button>
+            </div>
+          </div>
+        </div>
+        <svg class="dm" id="dm" viewBox="0 0 460 270" role="img" aria-label="A two-by-two matrix. The columns are the infrastructure budget: one Valkey on the left, five independent masters on the right. The rows are the consequence of a lost lock: a recoverable retry on the top, catastrophic corruption on the bottom. Each cell names the recommended tool. Recoverable with one Valkey recommends a single-instance lease; recoverable with five masters notes the single-instance lease still suffices and Redlock over-provisions; catastrophic with one Valkey recommends a consensus system; catastrophic with five masters recommends Redlock with a fencing token, or consensus where the resource cannot fence. A marker sits on the selected cell.">
+          <text class="axt" x="120" y="20" text-anchor="middle">budget: one Valkey</text>
+          <text class="axt" x="330" y="20" text-anchor="middle">budget: five masters</text>
+          <text class="axt" x="14" y="80" transform="rotate(-90 14 80)" text-anchor="middle">lost lock: recoverable</text>
+          <text class="axt" x="14" y="195" transform="rotate(-90 14 195)" text-anchor="middle">lost lock: catastrophic</text>
+          <g class="quad single on" id="dmQ_rec_one" data-cons="recoverable" data-bud="one"><rect x="32" y="30" width="196" height="100" rx="8"></rect></g>
+          <text class="qlbl" x="44" y="48">recoverable &#183; one Valkey</text>
+          <text class="qrec" x="44" y="72">single-instance lease</text>
+          <text class="qlbl" x="44" y="90">(EchoMQ&#8217;s choice)</text>
+          <g class="quad" id="dmQ_rec_five" data-cons="recoverable" data-bud="five"><rect x="232" y="30" width="196" height="100" rx="8"></rect></g>
+          <text class="qlbl" x="244" y="48">recoverable &#183; five masters</text>
+          <text class="qrec" x="244" y="72">single-instance suffices</text>
+          <text class="qlbl" x="244" y="90">Redlock over-provisions</text>
+          <g class="quad" id="dmQ_cat_one" data-cons="catastrophic" data-bud="one"><rect x="32" y="138" width="196" height="100" rx="8"></rect></g>
+          <text class="qlbl" x="44" y="156">catastrophic &#183; one Valkey</text>
+          <text class="qrec" x="44" y="180">consensus (etcd / ZK)</text>
+          <text class="qlbl" x="44" y="198">a lock is not enough</text>
+          <g class="quad" id="dmQ_cat_five" data-cons="catastrophic" data-bud="five"><rect x="232" y="138" width="196" height="100" rx="8"></rect></g>
+          <text class="qlbl" x="244" y="156">catastrophic &#183; five masters</text>
+          <text class="qrec" x="244" y="180">Redlock + fencing token</text>
+          <text class="qlbl" x="244" y="198">consensus if no fence</text>
+          <circle class="pin" id="dmPin" cx="130" cy="80" r="7"></circle>
+          <text class="axt" id="dmPinLbl" x="130" y="256" text-anchor="middle" fill="#d6584f">selected: recoverable &#183; one Valkey</text>
+        </svg>
+        <div class="readout" id="dmOut" aria-live="polite"></div>
+        <p class="booknote">Static verdicts &#8212; recoverable + one Valkey &#8594; single-instance lease &#183;
+        recoverable + five &#8594; single-instance suffices, Redlock over-provisions &#183; catastrophic + one Valkey
+        &#8594; consensus &#183; catastrophic + five &#8594; Redlock + fence.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="when">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>When to use Redlock</h2>
+        <span class="ssrc">redlock.md.txt &#183; when to use</span>
+      </div>
+      <div class="prose">
+        <p>Redlock is the right tool for a specific shape of problem: coordination across machines where a lost lock
+        is costly enough to justify fault tolerance, but not so catastrophic that only a consensus system will do. The
+        source names four fits and four signals to reach elsewhere.</p>
+        <p>Redlock is appropriate for coordinating access to an <strong>external resource</strong> that has no
+        concurrency control of its own; for preventing <strong>duplicate job execution</strong> in a distributed task
+        queue; for <strong>distributed rate limiting</strong> where approximate correctness is acceptable; and for
+        <strong>leader election</strong> among application instances. Each shares a trait: the work is coordination,
+        the consequence of a brief overlap is tolerable or recoverable, and the operational cost of five masters is
+        worth paying for fault tolerance a single instance cannot give.</p>
+        <p>Reach for an alternative when the shape is different. Use a <strong>consensus system</strong> &#8212; etcd
+        or ZooKeeper &#8212; when absolute correctness is required and a lock violation cannot be tolerated. Use
+        <strong>fencing at a linearizable resource</strong> when the storage layer can enforce a monotonic token,
+        a stronger guarantee than any lock. Stay with <strong>single-instance Redis</strong> when its reliability is
+        sufficient. And avoid Redlock when the operational complexity of five independent masters is not justified by
+        the failure it prevents. That last line is the hinge: Redlock&#8217;s price is not the algorithm &#8212; it is
+        the infrastructure.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="svCap">
+        <figcaption id="svCap"><b>Cost vs guarantee &#8212; step through the workloads.</b> Select a workload; the bar
+        is the guarantee the work demands, and the readout names the right tool.</figcaption>
+        <div class="segbar" id="svSel" role="group" aria-label="Pick a workload">
+          <button type="button" data-sv="0" aria-pressed="true">job queue</button>
+          <button type="button" data-sv="1" aria-pressed="false">money transfer</button>
+          <button type="button" data-sv="2" aria-pressed="false">leader election</button>
+          <button type="button" data-sv="3" aria-pressed="false">rate limit</button>
+        </div>
+        <svg class="sv" id="sv" viewBox="0 0 460 210" role="img" aria-label="Four workloads, each a horizontal bar. A short bar means a single-instance lease is sufficient; a long bar means a stronger guarantee is required. The job queue and the rate limit are short. Leader election is medium. The money transfer is long because a lock violation corrupts a balance. The selected workload is highlighted.">
+          <text class="rverdict" x="40" y="18" fill="#2e7d5b">&#9632; single-instance sufficient</text>
+          <text class="rverdict" x="250" y="18" fill="#d6584f">&#9632; stronger guarantee required</text>
+          <g class="row single" id="svRow0" data-sv="0"><text class="rlbl" id="svLbl0" x="40" y="48">job queue</text><rect class="track" x="40" y="54" width="380" height="16" rx="5"></rect><rect class="fill" id="svFill0" x="40" y="54" width="110" height="16" rx="5"></rect></g>
+          <g class="row harder" id="svRow1" data-sv="1"><text class="rlbl" id="svLbl1" x="40" y="92">money transfer</text><rect class="track" x="40" y="98" width="380" height="16" rx="5"></rect><rect class="fill" id="svFill1" x="40" y="98" width="360" height="16" rx="5"></rect></g>
+          <g class="row single" id="svRow2" data-sv="2"><text class="rlbl" id="svLbl2" x="40" y="136">leader election</text><rect class="track" x="40" y="142" width="380" height="16" rx="5"></rect><rect class="fill" id="svFill2" x="40" y="142" width="180" height="16" rx="5"></rect></g>
+          <g class="row single" id="svRow3" data-sv="3"><text class="rlbl" id="svLbl3" x="40" y="180">rate limit</text><rect class="track" x="40" y="186" width="380" height="16" rx="5"></rect><rect class="fill" id="svFill3" x="40" y="186" width="95" height="16" rx="5"></rect></g>
+        </svg>
+        <div class="readout" id="svOut" aria-live="polite"></div>
+        <p class="booknote">Static verdicts &#8212; job queue / rate limit &#8594; single-instance sufficient (short)
+        &#183; leader election &#8594; Redlock-class fits (medium) &#183; money transfer &#8594; a fence or consensus
+        (long, corrupts a balance).</p>
+      </figure>
+
+      <p class="take">The bar is the guarantee the work demands, not the lock on offer. Three of the four workloads
+      are short; the money transfer is long, because a lost lock corrupts a balance and only a fence or a consensus
+      system holds.</p>
+    </section>
+
+    <section id="decision">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The decision</h2>
+        <span class="ssrc">redlock.md.txt &#183; the decision</span>
+      </div>
+      <div class="prose">
+        <p>The whole module collapses to one decision, and it is about the <strong>consequence of a lost lock</strong>,
+        not the lock itself. A lock can always be lost &#8212; a failover, a clock jump, a process pause past the
+        lease. What separates the right answer is what happens next.</p>
+        <p>If a lost lock causes <strong>catastrophic corruption</strong> &#8212; two writers mutate a balance, a
+        transfer is applied twice with no record, an external system is driven into an inconsistent state it cannot
+        recover from &#8212; then the lock is a correctness boundary, and a lock that can fail under timing assumptions
+        is the wrong boundary. The answer is a consensus system that does not rest on bounded clocks, or a resource
+        that enforces a fencing token, so a stale holder is rejected where the data changes.</p>
+        <p>If a lost lock causes a <strong>recoverable retry</strong> &#8212; the same work runs twice, and running it
+        twice is safe because the operation is idempotent and a recovery path reclaims the orphaned unit &#8212; then
+        the lock is an optimization, not a correctness boundary. Here a single-instance lease is sufficient, and the
+        five-master cost buys a guarantee the workload does not need. A job queue lands squarely on the recoverable
+        side, and that is the contrast EchoMQ makes concrete.</p>
+      </div>
+      <p class="take">The axis is the consequence of a lost lock: catastrophic corruption needs more than a lock; a
+      recoverable retry needs less. A job queue reads the recoverable cell.</p>
+    </section>
+
+    <section id="summary">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The summary table</h2>
+        <span class="ssrc">redlock.md.txt &#183; the trade</span>
+      </div>
+      <div class="prose">
+        <p>The source closes on a four-row comparison. It is the trade in one frame: Redlock buys fault tolerance with
+        complexity, and a single instance keeps it simple at the cost of surviving a node failure.</p>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>Aspect</th><th>Single instance</th><th>Redlock</th></tr></thead>
+        <tbody>
+          <tr><td>Fault tolerance</td><td class="si">None &#8212; a node failure loses the lock</td><td class="rd">Tolerates a minority of node failures</td></tr>
+          <tr><td>Complexity</td><td class="si">Low &#8212; one Redis, one <code>SET … NX PX</code></td><td class="rd">Higher &#8212; five independent masters, the acquire-and-time-check protocol</td></tr>
+          <tr><td>Consistency</td><td class="si">Lost on failover (the master-replica race)</td><td class="rd">Maintained while a majority survives</td></tr>
+          <tr><td>Use case</td><td class="si">Non-critical coordination, or recoverable work</td><td class="rd">Important distributed coordination</td></tr>
+        </tbody>
+      </table>
+      <p class="take">The trade has no universal winner. Redlock buys fault tolerance with five masters; a single
+      instance keeps one and accepts that a failover drops the lock. The workload picks the axis.</p>
+    </section>
+
+    <section id="contrast">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The contrast, resolved &#8212; EchoMQ keeps one Valkey</h2>
+        <span class="ssrc">echo_mq/jobs.ex:126 &#183; consumer.ex:57,93</span>
+      </div>
+      <div class="prose">
+        <p>EchoMQ takes the single-instance side, and the choice is deliberate, not a compromise. A job queue does not
+        need absolute mutual exclusion; it needs one active worker per job in the common case and a safe recovery when
+        that breaks. The lock is the claim lease on <strong>one</strong> Valkey. The <code>@claim</code> script
+        (<code>echo/apps/echo_mq/lib/echo_mq/jobs.ex:126</code>, run by <code>Jobs.claim/3</code> at jobs.ex:283)
+        reads <strong>one</strong> server clock and stamps the lease &#8212; no majority of N and no second master.</p>
+      </div>
+      <pre class="code"><span class="cmt"># @claim (jobs.ex:126) — the single-Valkey lease, on one server clock, with the attempts fence</span>
+local att = redis.call(<b>'HINCRBY'</b>, jk, 'attempts', 1)   <span class="cmt"># the monotone fence, returned to the worker</span>
+redis.call(<b>'HSET'</b>, jk, 'state', 'active')
+local t = redis.call(<b>'TIME'</b>)                           <span class="cmt"># one clock — no five masters, no vote</span>
+local now = t[1] * 1000 + math.floor(t[2] / 1000)
+redis.call(<b>'ZADD'</b>, KEYS[2], now + tonumber(ARGV[2]), id)</pre>
+      <div class="prose">
+        <p>The reason this is safe is the recovery path, not the lock. The <code>EchoMQ.Consumer</code> holds the lease
+        for <code>:lease_ms</code> (default <code>30_000</code>, <code>echo/apps/echo_mq/lib/echo_mq/consumer.ex:57</code>);
+        on each beat it calls <code>Jobs.reap</code> (<code>consumer.ex:93</code>), which returns every expired lease
+        in <code>active</code> to <code>pending</code> on the same server clock. The next worker re-claims the job and
+        increments <code>attempts</code>; when the original worker resumes, <code>@complete</code>/<code>@retry</code>
+        refuse its stale token with <code>EMQSTALE … token mismatch</code>. Because the handler is idempotent, the
+        re-run produces the same result. A lost lease becomes a double-run the queue recovers from, not two writers
+        corrupting a resource &#8212; exactly the move Redlock&#8217;s critics prescribe, applied where the data
+        changes instead of at the lock.</p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>TIME</code> reads the server&#8217;s own clock,
+      and a Lua script runs atomically, so the lease, the fence, and the reclaim each land as one transition &#8212;
+      one Valkey, no majority &#8212;
+      <a href="https://valkey.io/topics/programmability/" rel="noopener">valkey.io/topics/programmability</a>.</p>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Redlock buys fault tolerance with five independent masters &#8212; the right call when a lost lock
+          corrupts data and no cheaper guarantee holds the line.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>@claim</code> holds the lease on <strong>one</strong> Valkey against one server clock, with
+          <code>attempts</code> (<code>HINCRBY</code>) the fence refused stale with <code>EMQSTALE</code>; the
+          <code>EchoMQ.Consumer</code> holds it for <code>:lease_ms</code> (<code>30_000</code>) and
+          <code>Jobs.reap</code> reclaims a lapsed lease as a safe idempotent re-claim &#8212; so the queue keeps one
+          Valkey instead of five.</p>
+        </div>
+      </div>
+      <p class="take">Reach for Redlock when a lost lock corrupts; a queue makes the work idempotent, reads one server
+      clock, and keeps one Valkey. The five-master cost buys a guarantee a recoverable workload does not need.</p>
+
+      <div class="door">
+        <span class="dr">a door, not a depth &#183; the EchoMQ course</span>
+        <h3>The single-Valkey lease, the version fence</h3>
+        <p>EchoMQ does <strong>not</strong> implement Redlock &#8212; this dive cites the single-Valkey lease as the
+        road not taken: <code>@claim</code> on one Valkey, the <code>attempts</code> fence refused stale with
+        <code>EMQSTALE</code>, the Consumer&#8217;s <code>:lease_ms</code>, and <code>Jobs.reap</code> reclaiming a
+        lapsed lease. The committed keyspace record:</p>
+        <figure class="frozen">
+          <figcaption>content/bcs3.1.md &#183; the v2 keyspace, the version fence<span class="tag">frozen</span></figcaption>
+          <pre>emq:{orders}:pending | emq:{orders}:job:ORD0NgWEfAEJfs | {emq}:version | {emq}:locks   <span class="fd">&#8592; 17 bytes before the payload</span>
+GET {emq}:version              <b>echomq:2.0.0</b>   <span class="fd">&#8592; the version fence, through the fenced connector</span></pre>
+        </figure>
+        <p>The worker-side lock plane and the full v2 script bundle are the subject of the dedicated
+        <a href="/echomq">EchoMQ course</a>; where a cache fact applies, open
+        <a href="/bcs">The Branded Component System</a>.</p>
+      </div>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Recap &#8212; the contrast resolved</h2>
+        <span class="ssrc">back &#8594; R2.03</span>
+      </div>
+      <div class="prose">
+        <p>Redlock is a real tool with a real price: five independent masters, no replication, the
+        acquire-and-time-check protocol. The source names where it fits &#8212; external resources, duplicate-job
+        prevention, approximate rate limiting, leader election &#8212; and where to reach past it: a consensus system
+        when correctness is absolute, a fenced resource when the storage layer supports a token, a single instance
+        when its reliability is sufficient. The whole module reduces to one axis: a lost lock that causes catastrophic
+        corruption needs more than a lock; a lost lock that causes a recoverable retry needs less. EchoMQ reads the
+        recoverable cell &#8212; <code>@claim</code> on one Valkey, the <code>attempts</code> fence, and
+        <code>Jobs.reap</code> reclaiming a lapsed lease, with an idempotent handler that makes a re-run safe &#8212;
+        and keeps one Valkey.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/docs/latest/develop/use/patterns/distributed-locks/" rel="noopener">Redis &mdash; <em>Distributed Locks (and Redlock)</em></a> &mdash; the canonical algorithm and the when-to-use guidance: the four fits, the four signals to reach for a consensus system, and the operational cost of five independent masters.</li>
+            <li><a href="https://antirez.com/news/101" rel="noopener">Sanfilippo, S. &mdash; <em>Is Redlock safe?</em></a> &mdash; the Redis creator&#8217;s defence: for the coordination tasks Redlock targets, the timing checks are sufficient in practice.</li>
+            <li><a href="https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html" rel="noopener">Kleppmann, M. &mdash; <em>How to do distributed locking</em></a> &mdash; the critique that draws the line: when a lock violation corrupts data, fence at the resource or use consensus.</li>
+            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; <code>SET resource &lt;token&gt; NX PX &lt;ttl&gt;</code>, the single-instance lease that is the contrast Redlock weighs against.</li>
+            <li><a href="https://valkey.io/topics/programmability/" rel="noopener">Valkey &mdash; <em>Programmability</em></a> &mdash; atomic Lua execution: why EchoMQ&#8217;s <code>@claim</code> is one transition over the single-Valkey lease.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/coordination/redlock">R2.03 &#183; The Redlock algorithm</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/coordination/distributed-locking">R2.02 &#183; Distributed locking</a><span class="rs">the single-Valkey lease that is the contrast</span></li>
+            <li><a href="/redis-patterns/coordination">R2 &#183; Coordination &amp; Consistency</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq">/echomq</a><span class="rs">the EchoMQ protocol the claim lease lives in</span></li>
+            <li><a href="/elixir/pragmatic/cqrs">/elixir &#183; CQRS</a><span class="rs">the functional-Elixir &amp; OTP craft behind the echo umbrella</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/coordination/redlock/clock-assumptions"><span class="pk">previous</span>&#8592; R2.03.2 &#183; Clock assumptions</a>
+      <a class="pgx" href="/redis-patterns/coordination/redlock"><span class="pk">up</span>R2.03 &#183; The Redlock hub &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/coordination/redlock/majority-of-n">R2.03.1 &#183; The majority of N</a>
+        <a href="/redis-patterns/coordination/redlock/clock-assumptions">R2.03.2 &#183; Clock assumptions</a>
+        <a href="/redis-patterns/coordination/redlock/single-instance-enough">R2.03.3 &#183; When single-instance is enough</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the decision matrix (pure over a fixed rule table) ---------- */
+  var DM_RULES = {
+    'recoverable|one': { cell: 'dmQ_rec_one', kind: 'single', tool: 'single-instance lease',
+      text: 'A lost lock is a recoverable retry and the budget is one Valkey → the single-instance lease is sufficient (EchoMQ’s choice): one @claim against one server clock, idempotent work, and Jobs.reap reclaim a lapsed lease.' },
+    'recoverable|five': { cell: 'dmQ_rec_five', kind: 'single', tool: 'single-instance suffices',
+      text: 'A lost lock is a recoverable retry, so even with five masters available a single-instance lease is sufficient — Redlock over-provisions for work the recovery path already absorbs. Spend the masters where a lost lock would corrupt.' },
+    'catastrophic|one': { cell: 'dmQ_cat_one', kind: 'consensus', tool: 'consensus (etcd / ZooKeeper)',
+      text: 'A lost lock causes catastrophic corruption and the budget is one Valkey → a lock is not enough: reach for a consensus system that does not rest on bounded clocks, or fence at the resource.' },
+    'catastrophic|five': { cell: 'dmQ_cat_five', kind: 'redlock', tool: 'Redlock + fencing token',
+      text: 'A lost lock causes catastrophic corruption and five independent masters are on the budget → Redlock with a fencing token at the resource; where the resource cannot fence, a consensus system instead.' }
+  };
+  var DM_CELLS = ['dmQ_rec_one', 'dmQ_rec_five', 'dmQ_cat_one', 'dmQ_cat_five'];
+  var DM_PIN = {
+    'recoverable|one': { x: 130, y: 80 }, 'recoverable|five': { x: 330, y: 80 },
+    'catastrophic|one': { x: 130, y: 188 }, 'catastrophic|five': { x: 330, y: 188 }
+  };
+  var DM_CONS_LBL = { recoverable: 'recoverable', catastrophic: 'catastrophic' };
+  var DM_BUD_LBL = { one: 'one Valkey', five: 'five masters' };
+  function decide(consequence, budget) { return DM_RULES[consequence + '|' + budget]; }
+  var dmState = { consequence: 'recoverable', budget: 'one' };
+  var dmEls = {
+    consRec: document.getElementById('dmConsRec'), consCat: document.getElementById('dmConsCat'),
+    budOne: document.getElementById('dmBudOne'), budFive: document.getElementById('dmBudFive'),
+    pin: document.getElementById('dmPin'), pinLbl: document.getElementById('dmPinLbl'), out: document.getElementById('dmOut')
+  };
+  function dmSetPressed(btn, on) { if (!btn) return; btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+  function renderDecision() {
+    var r = decide(dmState.consequence, dmState.budget);
+    dmSetPressed(dmEls.consRec, dmState.consequence === 'recoverable');
+    dmSetPressed(dmEls.consCat, dmState.consequence === 'catastrophic');
+    dmSetPressed(dmEls.budOne, dmState.budget === 'one');
+    dmSetPressed(dmEls.budFive, dmState.budget === 'five');
+    DM_CELLS.forEach(function (id) {
+      var g = document.getElementById(id);
+      if (!g) return;
+      var on = (id === r.cell);
+      g.classList.toggle('on', on);
+      g.classList.toggle('single', on && r.kind === 'single');
+      g.classList.toggle('redlock', on && r.kind === 'redlock');
+      g.classList.toggle('consensus', on && r.kind === 'consensus');
+    });
+    var p = DM_PIN[dmState.consequence + '|' + dmState.budget];
+    if (dmEls.pin && p) { dmEls.pin.setAttribute('cx', p.x); dmEls.pin.setAttribute('cy', p.y); }
+    if (dmEls.pinLbl) dmEls.pinLbl.textContent = 'selected: ' + DM_CONS_LBL[dmState.consequence] + ' · ' + DM_BUD_LBL[dmState.budget];
+    if (dmEls.out) dmEls.out.innerHTML = '<span class="rk">readout ·</span> lost lock = ' + DM_CONS_LBL[dmState.consequence] + ', budget = ' + DM_BUD_LBL[dmState.budget] + ' → <b>' + r.tool + '</b>. ' + r.text;
+  }
+  function dmBind(btn, axis, value) { if (!btn) return; btn.addEventListener('click', function () { dmState[axis] = value; renderDecision(); }); }
+  dmBind(dmEls.consRec, 'consequence', 'recoverable');
+  dmBind(dmEls.consCat, 'consequence', 'catastrophic');
+  dmBind(dmEls.budOne, 'budget', 'one');
+  dmBind(dmEls.budFive, 'budget', 'five');
+  // hover/click the cells too
+  var dm = document.getElementById('dm');
+  if (dm) {
+    DM_CELLS.forEach(function (id) {
+      var g = document.getElementById(id);
+      if (!g) return;
+      g.addEventListener('click', function () { dmState.consequence = g.getAttribute('data-cons'); dmState.budget = g.getAttribute('data-bud'); renderDecision(); });
+      g.addEventListener('mouseenter', function () { dmState.consequence = g.getAttribute('data-cons'); dmState.budget = g.getAttribute('data-bud'); renderDecision(); });
+    });
+  }
+  renderDecision();
+
+  /* ---------- Interactive 2: cost vs guarantee (pure over a fixed scenario set) ---------- */
+  var SV_SCENARIOS = [
+    { key: 'job queue', sufficient: true, bar: 110,
+      verdict: 'job queue with an idempotent handler → single-instance is sufficient. A lost lock is a recovered re-claim: Jobs.reap reclaims the lapsed lease and the second run is safe. One Valkey.' },
+    { key: 'money transfer', sufficient: false, bar: 360,
+      verdict: 'money transfer → single-instance is NOT sufficient. A lost lock can apply a transfer twice and corrupt a balance; the guarantee belongs at the resource (a fenced, linearizable store) or a consensus system.' },
+    { key: 'leader election', sufficient: false, bar: 180,
+      verdict: 'leader election → Redlock-class fault tolerance fits: a brief two-leader overlap on failover is tolerable, and the five-master majority survives a minority of node failures a single instance cannot.' },
+    { key: 'rate limit', sufficient: true, bar: 95,
+      verdict: 'rate limit (approximate) → single-instance is sufficient. Approximate correctness is acceptable, so a dropped lock that lets a few extra requests through is within tolerance — no majority of N required.' }
+  ];
+  var svButtons = Array.prototype.slice.call(document.querySelectorAll('#svSel button'));
+  var sv = document.getElementById('sv');
+  var svRows = sv ? Array.prototype.slice.call(sv.querySelectorAll('.row')) : [];
+  var svOut = document.getElementById('svOut');
+  function describeScenario(i) {
+    var s = SV_SCENARIOS[i];
+    if (!s) return '';
+    var tag = s.sufficient ? 'single-instance sufficient' : 'stronger guarantee required';
+    return s.key + ' → ' + tag + '. ' + s.verdict;
+  }
+  function renderScenario(active) {
+    SV_SCENARIOS.forEach(function (s, i) {
+      var row = document.getElementById('svRow' + i);
+      var lbl = document.getElementById('svLbl' + i);
+      var fill = document.getElementById('svFill' + i);
+      if (fill) fill.setAttribute('width', s.bar);
+      if (row) row.classList.toggle('on', i === active);
+      if (lbl) lbl.classList.toggle('on', i === active);
+    });
+    svButtons.forEach(function (b) { b.setAttribute('aria-pressed', parseInt(b.getAttribute('data-sv'), 10) === active ? 'true' : 'false'); });
+    if (svOut) svOut.innerHTML = '<span class="rk">readout ·</span> ' + describeScenario(active);
+  }
+  svButtons.forEach(function (b) { b.addEventListener('click', function () { renderScenario(parseInt(b.getAttribute('data-sv'), 10)); }); });
+  svRows.forEach(function (g) {
+    g.addEventListener('click', function () { renderScenario(parseInt(g.getAttribute('data-sv'), 10)); });
+    g.addEventListener('mouseenter', function () { renderScenario(parseInt(g.getAttribute('data-sv'), 10)); });
+  });
+  renderScenario(0);
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggleStamp = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggleStamp);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggleStamp(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

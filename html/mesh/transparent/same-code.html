@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M7.1 · The Same Code, Everywhere — EchoMesh, In Depth · jonnify</title>
+<meta name="description" content="The BEAM's location transparency: one umbrella application — the supervised processes, the surfaces, the placement rule — runs unchanged on a single node on a laptop and on a multi-region cluster, because a message to a process is the same code whether the process is local or remote, and supervision spans nodes the same way it spans one. There is one program; the number of nodes is a fact of deployment. What it removes: no separate serverless rewrite, no bespoke runtime, no glue between a small local version and a large deployed one.">
+<style>
+/* ============ The EchoMesh identity — the CAP contract sheet ============
+   Defined on the M0 landing exemplar (html/mesh/index.html). The /bcs
+   contract-sheet BASIS (warm paper, mono-forward, numbered sections,
+   frozen-transcript evidence) carried into its own surface: EchoMesh violet
+   as the house lead, and the CAP trade made visible — consistency-first
+   (safety) blue against availability-first (liveness) green, with amber for
+   the staleness/edge dial. NOT the dark-editorial system. The signature
+   primitive is .htabs — hover-to-switch tabs. */
+:root{
+  --m-paper:#f6f3ec;
+  --m-card:#fffefa;
+  --m-ink:#22282b;
+  --m-dim:#68705f;
+  --m-line:#d9d2bf;
+  --m-mesh:#7b3aa0;    /* house lead — EchoMesh violet           */
+  --m-cons:#2a5b8f;    /* consistency-first — safety blue        */
+  --m-avail:#1f7a5e;   /* availability-first — liveness green     */
+  --m-edge:#b3631c;    /* staleness / trade dial / edge — amber  */
+  --m-mesh-tint:#efe4f3;
+  --m-cons-tint:#dde7f1;
+  --m-avail-tint:#d7ece4;
+  --m-edge-tint:#f1e3d2;
+  --m-term-bg:#171c1e;
+  --m-term-fg:#cfdacc;
+  --m-term-dim:#7e8c80;
+  --m-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--m-paper);color:var(--m-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--m-cons);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--m-cons)}
+a:focus-visible{outline:2px solid var(--m-cons);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--m-line);background:var(--m-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--m-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--m-mesh)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--m-dim);background:var(--m-paper);border:1px solid var(--m-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--m-dim);border-bottom:none}
+.route-tag a:hover{color:var(--m-mesh)}
+.route-tag .rsep{color:var(--m-line);margin:0 1px}
+.route-tag .rcur{color:var(--m-mesh);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--m-ink)}
+
+/* ---------- the CAP-spectrum rule device ---------- */
+.caprule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.caprule i{height:4px;border-radius:2px;background:var(--m-line)}
+.caprule i:nth-child(-n+6){background:var(--m-cons-tint);box-shadow:inset 0 0 0 1px var(--m-cons)}
+.caprule i:nth-child(7),.caprule i:nth-child(8){background:var(--m-mesh-tint);box-shadow:inset 0 0 0 1px var(--m-mesh)}
+.caprule i:nth-child(n+9){background:var(--m-avail-tint);box-shadow:inset 0 0 0 1px var(--m-avail)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--m-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--m-mesh);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--m-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--m-ink)}
+.body{font-size:.98rem;color:var(--m-ink);max-width:74ch;margin-bottom:14px}
+.body b{font-weight:650}
+.body + .body{margin-top:0}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--m-mesh);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--m-mesh)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--m-dim);max-width:78ch;line-height:1.7}
+.heronote a{color:var(--m-cons)}
+.proposed{margin:20px 0 4px;background:var(--m-mesh-tint);border:1px solid var(--m-mesh);border-radius:var(--rad);padding:12px 16px}
+.proposed .pflag{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-card);background:var(--m-mesh);border-radius:3px;padding:2px 8px;margin-right:10px}
+.proposed p{display:inline;font-family:var(--mono);font-size:13px;color:var(--m-ink)}
+
+/* ---------- the same-code emulator (signature interactive) ---------- */
+.spectrum{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:22px;margin:30px 0 6px}
+.spectrum figcaption{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);margin-bottom:14px}
+.spectrum figcaption b{color:var(--m-ink)}
+.capsvg{width:100%;height:auto;display:block}
+.capsvg .nodebox{fill:var(--m-paper);stroke:var(--m-line);stroke-width:1.5}
+.capsvg .nodebox.active{stroke:var(--m-mesh);stroke-width:2}
+.capsvg .nodelbl{font:11px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .proc{fill:var(--m-card);stroke:var(--m-cons);stroke-width:2}
+.capsvg .proc.owner{stroke:var(--m-avail)}
+.capsvg .proclbl{font:11px var(--mono);fill:var(--m-ink);font-weight:700;text-anchor:middle}
+.capsvg .procsub{font:10px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.capsvg .msg{fill:none;stroke:var(--m-mesh);stroke-width:2.5;marker-end:url(#arrow)}
+.capsvg .msglbl{font:11.5px var(--mono);fill:var(--m-mesh);font-weight:700;text-anchor:middle}
+.capsvg .netlbl{font:10.5px var(--mono);fill:var(--m-edge);font-weight:700;text-anchor:middle}
+.capsvg .hideable{opacity:0;transition:opacity .22s ease}
+.capsvg .hideable.show{opacity:1}
+.capsvg .axt{font:11px var(--mono);fill:var(--m-dim);text-anchor:middle}
+.emit-readout{margin-top:14px;background:var(--m-term-bg);border-radius:var(--rad);border:1px solid #0d1112;padding:12px 15px;font:13px/1.6 var(--mono);color:var(--m-term-fg);min-height:3.4em}
+.emit-readout .step{color:var(--m-term-dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px;display:block;margin-bottom:5px}
+.emit-readout b{color:var(--m-term-ok);font-weight:700}
+.emit-readout .vc{color:#e6a36b;font-weight:700}
+
+/* ---------- .htabs — the hover-to-switch tab component (the toolkit primitive) ---------- */
+.htabs{margin:16px 0 4px}
+.htabs-bar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.htabs-bar button{font-family:var(--mono);font-size:13px;padding:7px 13px;border-radius:var(--rad);border:1px solid var(--m-line);background:var(--m-paper);color:var(--m-ink);cursor:pointer;text-align:left}
+.htabs-bar button:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.htabs-bar button[aria-selected="true"]{border-color:var(--m-ink);background:var(--m-ink);color:var(--m-paper)}
+.htabs-bar .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+.htabs-panel{background:var(--m-paper);border:1px dashed var(--m-line);border-radius:var(--rad);padding:14px 16px;min-height:5.2em}
+.htabs-p{font-family:var(--mono);font-size:13.5px;line-height:1.62;color:var(--m-ink)}
+.htabs-p + .htabs-p{margin-top:14px;padding-top:14px;border-top:1px solid var(--m-line)}
+.js .htabs-p{display:none}
+.js .htabs-p.on{display:block}
+.js .htabs-p + .htabs-p{margin-top:0;padding-top:0;border-top:none}
+.htabs-p .tag{font-weight:700;letter-spacing:.04em}
+.htabs-p .tag.c{color:var(--m-cons)}
+.htabs-p .tag.a{color:var(--m-avail)}
+.htabs-p .tag.e{color:var(--m-edge)}
+.htabs-p .tag.m{color:var(--m-mesh)}
+.htabs-hint{font-family:var(--mono);font-size:11.5px;color:var(--m-dim);margin-top:8px}
+
+/* ---------- the property triptych / thesis ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri article{background:var(--m-card);border:1px solid var(--m-line);border-top:3px solid var(--m-cons);border-radius:var(--rad);padding:20px}
+.tri article:nth-child(2){border-top-color:var(--m-edge)}
+.tri article:nth-child(3){border-top-color:var(--m-avail)}
+.tri .cno{font-family:var(--mono);font-size:12px;color:var(--m-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.tri h3{font-family:var(--mono);font-size:1.02rem;line-height:1.4;margin-bottom:10px}
+.tri p{font-size:.95rem;color:var(--m-ink)}
+.tri .note{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.tri .note b{color:var(--m-mesh);font-weight:700}
+.compose{margin-top:18px;font-family:var(--mono);font-size:13.5px;color:var(--m-dim);max-width:84ch}
+.compose b{color:var(--m-ink)}
+
+/* ---------- frozen / derived evidence ---------- */
+.frozen{background:var(--m-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--m-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--m-term-bg);background:var(--m-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--m-term-fg)}
+.frozen pre b{color:var(--m-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--m-term-dim)}
+.frozen pre .fc{color:#7bb0d6}
+.frozen pre .fa{color:#88c9a8}
+.frozen pre .fe{color:#e6a36b}
+
+/* ---------- the two-end compare ---------- */
+.cmp{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:6px}
+.cmp article{background:var(--m-card);border:1px solid var(--m-line);border-radius:var(--rad);padding:18px}
+.cmp article.reg{border-left:3px solid var(--m-cons)}
+.cmp article.con{border-left:3px solid var(--m-avail)}
+.cmp .ck{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.cmp article.reg .ck{color:var(--m-cons)}
+.cmp article.con .ck{color:var(--m-avail)}
+.cmp h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.cmp p{font-size:.9rem;color:var(--m-ink)}
+.cmp .ex{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);border-top:1px dashed var(--m-line);padding-top:9px}
+.cmp .ex b{color:var(--m-ink)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--m-card);border:1px solid var(--m-line);border-left:3px solid var(--m-cons);border-radius:var(--rad);padding:18px;color:var(--m-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--m-cons)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--m-cons);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.89rem;color:var(--m-dim);margin-bottom:10px}
+.door .dnote{font-family:var(--mono);font-size:12px;color:var(--m-ink);border-top:1px dashed var(--m-line);padding-top:9px}
+.door .dnote b{color:var(--m-cons)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--m-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--m-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--m-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--m-line);background:var(--m-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--m-ink);font-size:15px}
+.foot-logo .bdot{color:var(--m-mesh)}
+.foot-tag{font-size:.86rem;color:var(--m-dim);margin-top:8px;max-width:40ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--m-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--m-ink);padding:2px 0}
+.foot-links span{color:var(--m-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--m-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--m-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--m-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--m-dim);cursor:pointer;border:1px dashed var(--m-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--m-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--m-mesh)}
+.stamp:focus-visible{outline:2px solid var(--m-mesh);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--m-term-bg);color:var(--m-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--m-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .tri,.doors,.cmp{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .tri,.doors,.cmp{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>mesh</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/mesh">mesh</a><span class="rsep">/</span><a href="/mesh/transparent">transparent</a><span class="rsep">/</span><span class="rcur">same-code</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#one">One program</a>
+      <a href="#transparency">Transparency</a>
+      <a href="#removes">Removed</a>
+      <a href="#fidelity">One node</a>
+      <a href="#first">First move</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">M7.1 &#183; Transparent Infrastructure</p>
+      <h1>The same code, <span class="hns">everywhere</span>.</h1>
+      <p class="lede">There is one program, and it runs <b>unchanged</b> whether it is one node on a laptop or many
+      across regions. This dive reads the runtime property that makes that true &#8212; <b>location transparency</b>,
+      where addressing a process is the same code wherever the process lives &#8212; and what it removes: the separate
+      serverless rewrite, the bespoke runtime, the glue between a small local version and a large deployed one.</p>
+      <p class="heronote">No measurement here: this dive reads a runtime property and its consequence, not a benchmark.
+      Two primary sources carry it (<a href="#refs">the BEAM's location-transparent message passing, and an account of
+      supervision and process registration spanning nodes</a>). The property is cited; how EchoMesh relies on it is
+      named as design. It is the foundation the ephemeral execution of M7.2 and the placement of M7.3 stand on.</p>
+      <div class="proposed">
+        <span class="pflag">Proposed &#183; not shipped</span>
+        <p>Location-transparent message passing and node-spanning supervision are the BEAM's &#8212; external and
+        settled [1][2]. EchoMesh's proposal is the use: running its whole architecture as one umbrella whose node count
+        and placement are deployment parameters, so development and production are the same program at different scales.
+        That use is the proposal, separated from the shipped runtime at M8.2.</p>
+      </div>
+
+      <figure class="spectrum">
+        <figcaption>One program, two environments &#183; the SAME message from a process to the owner of an instrument,
+        addressed <b>identically</b> &#8212; hover an environment to see what changes (<b>only the number of nodes</b>)
+        and what does not (<b>the code that sends</b>). Location-transparent message passing is the BEAM's
+        (<b>refs [1][2]</b>); running the architecture this way is EchoMesh's proposal.</figcaption>
+        <svg class="capsvg" id="locsvg" viewBox="0 0 760 250" role="img" aria-label="One program shown in two environments. In the first, the laptop, a single node holds two processes — a sender and the owner of an instrument — both in one memory, and a message arrow runs from the sender straight to the owner. In the second, the multi-region cluster, the same two processes sit on two different nodes, and the same message arrow runs from the sender to the owner, this time labelled as crossing the network. The code that sends the message is the same in both pictures; the only thing that changes is the number of nodes and whether the target is local or remote. No measured number, latency, or node count appears — the only quantity is one node versus many.">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#7b3aa0"></path>
+            </marker>
+          </defs>
+
+          <text class="axt" x="380" y="26">one program &#183; one call shape &#183; the node count is a deployment fact</text>
+
+          <!-- ONE NODE (laptop): both processes in one memory box -->
+          <g id="envOne">
+            <rect class="nodebox" id="boxLaptop" x="120" y="56" width="520" height="120" rx="8"></rect>
+            <text class="nodelbl" x="380" y="76">node A &#183; one memory (the laptop)</text>
+
+            <circle class="proc" cx="250" cy="128" r="26"></circle>
+            <text class="proclbl" x="250" y="125">sender</text>
+            <text class="procsub" x="250" y="140">process</text>
+
+            <circle class="proc owner" cx="510" cy="128" r="26"></circle>
+            <text class="proclbl" x="510" y="125">owner</text>
+            <text class="procsub" x="510" y="140">instrument</text>
+
+            <line class="msg" x1="278" y1="128" x2="482" y2="128"></line>
+            <text class="msglbl" x="380" y="118">send(owner, msg)</text>
+            <text class="procsub" x="380" y="160">local delivery, same memory</text>
+          </g>
+
+          <!-- A CLUSTER (fleet): same processes, two node boxes, message crosses the network -->
+          <g id="envMany">
+            <rect class="nodebox" x="120" y="56" width="230" height="120" rx="8"></rect>
+            <text class="nodelbl" x="235" y="76">node A &#183; region 1</text>
+            <circle class="proc" cx="235" cy="128" r="26"></circle>
+            <text class="proclbl" x="235" y="125">sender</text>
+            <text class="procsub" x="235" y="140">process</text>
+
+            <rect class="nodebox" x="410" y="56" width="230" height="120" rx="8"></rect>
+            <text class="nodelbl" x="525" y="76">node B &#183; region 2</text>
+            <circle class="proc owner" cx="525" cy="128" r="26"></circle>
+            <text class="proclbl" x="525" y="125">owner</text>
+            <text class="procsub" x="525" y="140">instrument</text>
+
+            <line class="msg" x1="263" y1="128" x2="497" y2="128"></line>
+            <text class="msglbl" x="380" y="118">send(owner, msg)</text>
+            <text class="netlbl" x="380" y="160">runtime routes across the network</text>
+          </g>
+
+          <text class="axt" x="380" y="206">the call is unchanged &#183; the runtime delivers locally or routes when the target is remote</text>
+          <text class="axt" x="380" y="226" id="locWhat">the laptop: one node, every process in one memory</text>
+        </svg>
+        <p class="emit-readout" id="emit" role="status" aria-live="polite">
+          <span class="step">environment &#183; hover to switch</span>
+          On <b>one node</b> the sender and the owner share one memory and the message is delivered locally. On
+          <b>a cluster</b> the same processes sit on different nodes and the runtime routes the message across the
+          network. The call <span class="vc">send(owner, msg)</span> is identical; the only thing that changes is the
+          <span class="vc">number of nodes</span>. Hover an environment below to switch.
+        </p>
+        <div class="htabs" id="locw">
+          <div class="htabs-bar" role="tablist" aria-label="Switch the environment one program runs in">
+            <button type="button" role="tab" data-tab="one" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>One node &#183; the laptop</button>
+            <button type="button" role="tab" data-tab="many" aria-selected="false"><span class="sw" style="background:var(--m-edge)"></span>A multi-region cluster &#183; the fleet</button>
+          </div>
+          <div class="htabs-panel">
+            <div class="htabs-p" data-tab="one" role="tabpanel"><span class="tag m">One node &#183; the laptop.</span> The whole umbrella runs as a single node, with every process &#8212; the sender and the owner of an instrument &#8212; in one memory. A message from the sender to the owner is addressed and delivered <b>without leaving the node</b>. The code that sends it is the call the application writes once.</div>
+            <div class="htabs-p" data-tab="many" role="tabpanel"><span class="tag e">A multi-region cluster &#183; the fleet.</span> The same umbrella runs as many nodes across regions, with the same processes spread among them. The sender addresses the owner the <b>same way</b>; because the owner is on another node, the runtime routes the message across the network [1]. The call is unchanged &#8212; the only difference from the laptop is the number of nodes.</div>
+          </div>
+          <p class="htabs-hint">Hover or focus an environment to switch; click to pin. Without scripting, both environments read in sequence and the diagram shows the one-node case with the cluster overlaid. Qualitative only &#8212; one node versus many, no measured count.</p>
+        </div>
+      </figure>
+    </section>
+
+    <div class="caprule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="one">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>One program, any number of nodes</h2>
+        <span class="ssrc">mesh.7.1.md</span>
+      </div>
+      <p class="body">EchoMesh is one umbrella application &#8212; the supervised processes that own instrument books,
+      the surfaces that serve and retain, and the rule that says which node owns which instrument &#8212; and that
+      <b>one program</b> is what runs in every environment. On a laptop it runs as a single node, with every process in
+      one memory. In production it runs as many nodes across regions, with processes spread among them.</p>
+      <p class="body">The source code is identical in both; the <b>number of nodes is a fact of deployment</b>, set by
+      how the program is launched, not by which program is launched. There is no laptop edition and no production
+      edition. This is the claim the rest of the dive grounds: that the count and placement of machines are parameters
+      of running the program, not branches within it.</p>
+      <figure class="frozen">
+        <figcaption>one program; the node count is a launch parameter, not a branch<span class="tag">mesh.7.1.md</span></figcaption>
+<pre><span class="fd">// one umbrella application — the same source in every environment:</span>
+umbrella = { <span class="fc">owners of instrument books</span>, <span class="fa">surfaces that serve and retain</span>, placement rule }
+
+<span class="fd">// the laptop:</span>   launch <b>one node</b>   &#8594; every process in one memory
+<span class="fd">// production:</span>  launch <b>many nodes</b> &#8594; processes spread across regions
+
+<span class="fd">// the difference is how the program is launched, not which program:</span>
+nodes = a <span class="fe">deployment parameter</span>, never a conditional inside the code
+&#8658; <b>no laptop edition, no production edition</b> &#8212; one program.</pre>
+      </figure>
+    </section>
+
+    <section id="transparency">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Location transparency, precisely</h2>
+        <span class="ssrc">mesh.7.1.md &#183; BEAM [1][2]</span>
+      </div>
+      <p class="body">The property that makes one program span any number of nodes is location transparency, and it is
+      <b>exact</b> rather than aspirational. On the BEAM, sending a message to a process is the same code whether the
+      process runs in the same memory or on another node in the cluster: a sender addresses the process and the runtime
+      delivers the message, routing it across the network when the target is remote [1].</p>
+      <p class="body">Supervision and the registration of process names extend the same way, spanning nodes and hosts so
+      a named process can be supervised and addressed regardless of which node currently runs it [2]. The consequence
+      for the code is that a caller <b>never branches on locality</b> &#8212; it does not test whether the owner of an
+      instrument is local before sending to it, because the answer would not change what it writes. Locality is the
+      runtime's concern, and it is kept out of the program.</p>
+      <figure class="frozen">
+        <figcaption>the same call, local or remote &#183; supervision spans nodes<span class="tag">Erlang Solutions [1] &#183; Chechina et al. 2017 [2]</span></figcaption>
+<pre><span class="fd">// addressing a process is the same code, wherever the process lives [1]:</span>
+send(owner, msg)        <span class="fd"># target local  &#8594; runtime delivers in-memory</span>
+send(owner, msg)        <span class="fd"># target remote &#8594; runtime routes across the network</span>
+
+<span class="fd">// the caller never branches on locality — same write either way:</span>
+<span class="fe">no</span> if local? then send-here else send-there   <b>// the test does not exist</b>
+
+<span class="fd">// supervision + a node-spanning name registry [2]:</span>
+a named process is <b>supervised and addressed</b> regardless of which node runs it.</pre>
+      </figure>
+    </section>
+
+    <section id="removes">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>What transparency removes</h2>
+        <span class="ssrc">mesh.7.1.md</span>
+      </div>
+      <p class="body">The value of the property is in what it <b>deletes</b> from the usual gap between development and
+      production. There is no separate serverless rewrite, no bespoke runtime to target, no glue to maintain between a
+      small local version and a large deployed one. The class of defect where a system behaves on one machine but not
+      across the cluster shrinks, because the cluster is the same program with more nodes.</p>
+      <p class="body">The costs named in M6.1 do not vanish &#8212; messages between nodes are copied rather than shared,
+      and a fully-connected cluster has a practical size limit &#8212; but those are <b>operational facts the runtime
+      absorbs</b>, not conditionals the application has to carry. Hover the three things the property removes.</p>
+      <div class="htabs" id="removew">
+        <div class="htabs-bar" role="tablist" aria-label="What location transparency removes">
+          <button type="button" role="tab" data-tab="rewrite" aria-selected="false"><span class="sw" style="background:var(--m-cons)"></span>No serverless rewrite</button>
+          <button type="button" role="tab" data-tab="runtime" aria-selected="false"><span class="sw" style="background:var(--m-mesh)"></span>No bespoke runtime</button>
+          <button type="button" role="tab" data-tab="glue" aria-selected="false"><span class="sw" style="background:var(--m-avail)"></span>No glue</button>
+        </div>
+        <div class="htabs-panel">
+          <div class="htabs-p" data-tab="rewrite" role="tabpanel"><span class="tag c">No separate serverless rewrite.</span> The code that runs in production is the code that ran on the laptop, not a reimplementation in a function-as-a-service dialect. There is one source, and deploying it does not mean rebuilding it for a different execution model.</div>
+          <div class="htabs-p" data-tab="runtime" role="tabpanel"><span class="tag m">No bespoke runtime to target.</span> The program runs on the same virtual machine everywhere &#8212; the BEAM on the laptop is the BEAM in production. There is no second runtime to learn, port to, or keep in step with the first.</div>
+          <div class="htabs-p" data-tab="glue" role="tabpanel"><span class="tag a">No glue between versions.</span> There is no integration layer to maintain between a small local version and a large deployed one, because there is one version. The defect class &#8220;works on the machine, fails on the cluster&#8221; shrinks: the cluster is the same program with more nodes.</div>
+        </div>
+        <p class="htabs-hint">Hover or focus an item to read it; click to pin. Without scripting, all three read in sequence. The costs of distribution named in M6.1 remain, absorbed by the runtime rather than carried by the application.</p>
+      </div>
+    </section>
+
+    <section id="fidelity">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Development is production, at one node</h2>
+        <span class="ssrc">mesh.7.1.md</span>
+      </div>
+      <p class="body">The practical shape of this is that the development environment is the production system with the
+      <b>node count turned down to one</b>. A developer runs the real surfaces, the real supervision, and the real
+      placement rule, not mocks that approximate them, so what is tested is what ships.</p>
+      <p class="body">Turning the system up to production scale is a matter of launching more nodes and letting the
+      placement rule spread the owners across them, not of swapping in different components. The fidelity is the point:
+      behavior observed at one node is behavior the deployed fleet will share, because the fleet differs only in
+      <b>how many nodes</b> run the same code. Scale is a dial on the deployment, and the program runs the same wherever
+      the dial is set.</p>
+      <div class="cmp">
+        <article class="reg">
+          <p class="ck">At one node</p>
+          <h3>Development</h3>
+          <p>The real surfaces, the real supervision, the real placement rule &#8212; the production system with the node
+          count turned down to one. What is tested is what ships, because there are no mocks standing in for the real
+          components.</p>
+          <p class="ex"><b>differs by:</b> one node &#183; <b>same:</b> the program, the surfaces, the rule</p>
+        </article>
+        <article class="con">
+          <p class="ck">At many nodes</p>
+          <h3>Production</h3>
+          <p>The same program, launched with more nodes, the placement rule spreading owners across them. Behavior the
+          one-node run showed is behavior the fleet shares, because the fleet is the same code at a higher node
+          count.</p>
+          <p class="ex"><b>differs by:</b> many nodes &#183; <b>same:</b> the program, the surfaces, the rule</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="first">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Why this is the first move</h2>
+        <span class="ssrc">mesh.7.1.md &#183; M7.2 &amp; M7.3</span>
+      </div>
+      <p class="body">The same-code-everywhere property is the foundation the other two mechanisms require. Neither works
+      without a single program that is indifferent to where it runs &#8212; so the answer to why EchoMesh's
+      infrastructure is transparent <b>begins here</b>: because there is one program, and locality is the runtime's
+      business rather than the code's. The next two dives build the mechanisms this foundation makes possible.</p>
+      <div class="tri">
+        <article>
+          <p class="cno">This dive &#183; M7.1</p>
+          <h3>The same code, everywhere</h3>
+          <p>One umbrella runs unchanged at one node or many. A message to a process is the same code local or remote;
+          supervision spans nodes the same way it spans one.</p>
+          <p class="note">one program, locality is the runtime's &#183; <b>the foundation</b></p>
+        </article>
+        <article>
+          <p class="cno">Next &#183; M7.2</p>
+          <h3>A million ephemeral machines</h3>
+          <p>A modular piece of work runs on a short-lived copy of the whole app &#8212; which presupposes that there is
+          one app that runs anywhere, including on a machine that exists for seconds.</p>
+          <p class="note">presupposes one app that runs anywhere &#183; <b>built on M7.1</b></p>
+        </article>
+        <article>
+          <p class="cno">Then &#183; M7.3</p>
+          <h3>Coordinator-free placement</h3>
+          <p>The same owner is computed from the same rule on any node &#8212; which presupposes that the rule is part of
+          the one program every node runs.</p>
+          <p class="note">presupposes the rule is in the one program &#183; <b>built on M7.1</b></p>
+        </article>
+      </div>
+      <p class="compose"><b>The boundary:</b> this dive reads one property and its consequence; it does not build the
+      ephemeral execution of <b>M7.2</b> or the placement of <b>M7.3</b>. It treats the runtime's distribution as
+      established in M6.1 and reads it here at the level of the whole program, carrying forward the costs named there
+      rather than restating them. The language in depth is the <b>/elixir</b> course.</p>
+    </section>
+
+    <section id="doors">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The doors</h2>
+        <span class="ssrc">course-to-course references</span>
+      </div>
+      <div class="doors">
+        <a class="door" href="/mesh/transparent">
+          <span class="dr">/mesh/transparent</span>
+          <h3>M7 &#8212; Transparent Infrastructure</h3>
+          <p>The chapter landing: the three mechanisms that make infrastructure disappear into the design &#8212; the
+          same code everywhere, ephemeral machines, and coordinator-free placement.</p>
+          <p class="dnote"><b>this dive</b> is M7.1, the same-code foundation; ephemeral machines are M7.2, placement is
+          M7.3.</p>
+        </a>
+        <a class="door" href="/mesh/stack/beam">
+          <span class="dr">/mesh/stack/beam</span>
+          <h3>M6.1 &#8212; The BEAM</h3>
+          <p>The runtime this dive builds on, read at the level of message passing and supervision &#8212; the
+          distribution this property reads at the scale of the whole program.</p>
+          <p class="dnote"><b>the distribution</b> treated as established here &#8212; copied messages, a cluster's
+          practical size &#8212; is the substance of M6.1.</p>
+        </a>
+        <a class="door" href="/elixir">
+          <span class="dr">/elixir</span>
+          <h3>Functional Programming in Elixir</h3>
+          <p>The language and runtime in depth, the umbrella where the architecture lives, through to the Fly deployment
+          chapter that puts the nodes on machines.</p>
+          <p class="dnote"><b>the language</b> behind location-transparent message passing and node-spanning supervision
+          is taught here.</p>
+        </a>
+        <a class="door" href="/bcs">
+          <span class="dr">/bcs</span>
+          <h3>The Branded Component System</h3>
+          <p>The law in three clauses and the 14-byte branded-snowflake identity contract &#8212; the identity that
+          names the owner of an instrument the placement rule resolves.</p>
+          <p class="dnote"><b>the identity</b> a process owns is specified here, under a Proposed &#183; not shipped note
+          until the line is drawn at M8.2.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://www.erlang-solutions.com/blog/beam-jvm-virtual-machines-comparing-and-contrasting/" rel="noopener">Erlang Solutions &#8212; The BEAM: Erlang and Elixir's virtual machine</a><span class="rs">message passing is location-transparent: the code to send to a process is the same whether the process is local or on another node, so a caller never branches on where the target runs &#8212; the property the whole dive reads</span></li>
+          <li><a href="https://arxiv.org/pdf/1704.07234" rel="noopener">Chechina, N. et al. (2017) &#8212; Scaling Reliably: Improving the Scalability of the Erlang Distributed Actor Platform (arXiv:1704.07234)</a><span class="rs">supervision trees and a global namespace mapping process names to pids span nodes and hosts, so a named process can be supervised and addressed regardless of which node runs it &#8212; supervision extending the same way addressing does</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/mesh/transparent">M7 &#8212; Transparent Infrastructure</a><span class="rs">the chapter landing: the three mechanisms that make the infrastructure transparent, this dive the first</span></li>
+          <li><a href="/mesh/stack/beam">M6.1 &#8212; The BEAM</a><span class="rs">the runtime this property reads at the level of the whole program &#8212; message passing and supervision</span></li>
+          <li><a href="/mesh/stack">M6 &#8212; The Stack</a><span class="rs">the surfaces on the trade and the runtime they sit on, where the distribution costs are named</span></li>
+          <li><a href="/elixir">Functional Programming in Elixir</a><span class="rs">the language and runtime in depth, and the Fly deployment chapter that puts the nodes on machines</span></li>
+          <li><a href="/mesh">EchoMesh, In Depth &#8212; the course</a><span class="rs">the landing: the thesis, the four-strategies signature, and the full chapter map</span></li>
+          <li><a href="/bcs">The Branded Component System</a><span class="rs">the law and the 14-byte identity contract that names the owner of an instrument</span></li>
+          <li><a href="/echomq">EchoMQ &#8212; the protocol</a><span class="rs">the bus and stream tier the surfaces use, owned and Valkey-native</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/mesh/transparent"><span class="pk">the chapter</span>&#8592; M7 &#183; Transparent Infrastructure</a>
+      <a class="pgx" href="/mesh/transparent/ephemeral-machines"><span class="pk">next &#183; dive</span>M7.2 &#183; A Million Ephemeral Machines &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMesh — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>mesh</span>
+        <p class="foot-tag">EchoMesh, In Depth &#8212; the CAP theorem as a menu, segmented across an owned stack, on
+        infrastructure that disappears into the design.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/mesh/overview">M0 &#183; Overview</a>
+        <a href="/mesh/impossible">M1 &#183; Doing the Impossible</a>
+        <a href="/mesh/best-effort-availability">M2 &#183; Best Effort Availability</a>
+        <a href="/mesh/best-effort-consistency">M3 &#183; Best Effort Consistency</a>
+        <a href="/mesh/trading">M4 &#183; Trading the Trade</a>
+        <a href="/mesh/segmenting">M5 &#183; Segmenting</a>
+        <a href="/mesh/stack">M6 &#183; The Stack</a>
+        <a href="/mesh/transparent">M7 &#183; Transparent Infrastructure</a>
+        <span>M8 &#183; The Future Is Now<i>soon</i></span>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/mesh">EchoMesh, In Depth — this course</a>
+        <a href="/art">The Art of BCS</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">MSH0O0MtpJuMvA</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">2026-06-15 17:57:38 UTC</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- .htabs — the hover-to-switch tab component (reused everywhere) ----------
+     Pure: each group is independent; show(key) is a pure function of the data-tab key.
+     mouseenter / focus switch; click pins; leaving the group restores the pin. Degrades:
+     without the 'js' class every panel is visible (CSS), so the page reads with no script. */
+  function wireHtabs(group, onShow) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll('.htabs-bar button'));
+    var panels = Array.prototype.slice.call(group.querySelectorAll('.htabs-p'));
+    if (!tabs.length) return;
+    var pinned = tabs[0].getAttribute('data-tab');
+
+    function show(key) {
+      tabs.forEach(function (t) {
+        t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-tab') === key);
+      });
+      if (typeof onShow === 'function') onShow(key);
+    }
+
+    tabs.forEach(function (t) {
+      var key = t.getAttribute('data-tab');
+      t.addEventListener('mouseenter', function () { show(key); });
+      t.addEventListener('focus', function () { show(key); });
+      t.addEventListener('click', function () { pinned = key; show(key); });
+    });
+    group.addEventListener('mouseleave', function () { show(pinned); });
+    show(pinned);
+  }
+
+  /* ---------- the same-code emulator: the environment tabs drive the SVG + an aria-live readout ----------
+     READOUT and the two environment groups are pure functions of the setting key over fixed data — no network,
+     no storage, no measurement. The SAME message arrow and the SAME call shape appear in both environments; the
+     only difference shown is the number of nodes and whether the target is local or remote. Magnitudes are
+     qualitative only (one node / many nodes), none invented. The diagram degrades: without the 'js' class
+     both environment groups are visible (CSS opacity), so the cluster overlays the one-node case. */
+  var ENV = {
+    one:  { s: "environment · one node — the laptop", show: "envOne", hide: "envMany",
+            box: true,
+            what: "the laptop: one node, every process in one memory",
+            h: "On <b>one node</b> the sender and the owner of an instrument share one memory; the message is delivered <span class='vc'>without leaving the node</span>. The call is the one the application writes once: <span class='vc'>send(owner, msg)</span>." },
+    many: { s: "environment · a multi-region cluster — the fleet", show: "envMany", hide: "envOne",
+            box: false,
+            what: "the fleet: many nodes, processes spread across regions",
+            h: "On <b>a cluster</b> the same processes sit on different nodes; the sender addresses the owner the <span class='vc'>same way</span> and the runtime routes across the network. The call <span class='vc'>send(owner, msg)</span> is unchanged — only the <span class='vc'>number of nodes</span> differs." }
+  };
+  var emit   = document.getElementById('emit');
+  var envOne = document.getElementById('envOne');
+  var envMany= document.getElementById('envMany');
+  var locWhat= document.getElementById('locWhat');
+
+  /* present one environment group, hide the other (opacity, so the SVG reads either way) */
+  function setEnv(key) {
+    var on = ENV[key];
+    if (!on) return;
+    if (envOne)  envOne.classList.toggle('hideable',  key !== 'one');
+    if (envOne)  envOne.classList.toggle('show',       key === 'one');
+    if (envMany) envMany.classList.toggle('hideable',  key !== 'many');
+    if (envMany) envMany.classList.toggle('show',      key === 'many');
+    if (locWhat) locWhat.textContent = on.what;
+    if (emit)    emit.innerHTML = '<span class="step">' + on.s + '</span>' + on.h;
+  }
+
+  wireHtabs(document.getElementById('locw'), setEnv);
+
+  /* the "what transparency removes" tabs are a plain reuse of the same component */
+  wireHtabs(document.getElementById('removew'));
+
+  /* ---------- Branded Snowflake decoder (the page's own MSH stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>
