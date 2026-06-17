@@ -13,7 +13,7 @@ import (
 )
 
 // stopGrace bounds how long we wait for a graceful SIGTERM exit before SIGKILL.
-// It must exceed msh's 5s shutdown drain (apps/msh/cmd/main.go); aaw has no
+// It must exceed msh's 5s shutdown drain (go/msh/cmd/main.go); aaw has no
 // handler and dies immediately, so this only ever bites msh.
 const stopGrace = 9 * time.Second
 
@@ -24,8 +24,9 @@ const stopGrace = 9 * time.Second
 // completely untouched — this is the core safety property of the hot-swap: a
 // broken tree never takes down a healthy server. Rename-over-a-running-binary is
 // safe on Unix (the live process keeps its open inode; the new dirent is used by
-// the next exec). All builds force GOWORK=off — go.work has broken members and
-// apps/aaw isn't even a member.
+// the next exec). All builds force GOWORK=off so each server compiles hermetically
+// from its own go.mod — independent of go/go.work (which spans aaw/msh/mcpd/mcp-go
+// for interactive dev) and reproducible regardless of workspace state.
 func buildSwap(s Server, root string) error {
 	tmp := s.tmpBuildPath(root)
 	cmd := exec.Command("go", "build", "-o", tmp, s.BuildPkg)
@@ -186,7 +187,7 @@ func waitStartable(s Server) error {
 
 // waitFlockFree blocks until the instance flock is acquirable, i.e. the previous
 // instance fully exited and the kernel released its LOCK_EX. aaw takes this lock
-// before binding and holds it for its whole life (apps/aaw/internal/store/lock.go),
+// before binding and holds it for its whole life (go/aaw/internal/store/lock.go),
 // so flock-free is the authoritative, PID-reuse-immune "old instance is gone"
 // signal. We acquire non-blocking and release immediately; mcpd is the only
 // thing that starts aaw (serialised by the orchestrator lock), so the very next

@@ -87,7 +87,7 @@ func TestStateWord(t *testing.T) {
 func TestResolveRoot(t *testing.T) {
 	// A directory that holds the repo markers resolves; a bare temp dir does not.
 	repo := t.TempDir()
-	for _, m := range []string{".mcp.json", "apps/aaw", "apps/msh"} {
+	for _, m := range []string{".mcp.json", "go/aaw", "go/msh"} {
 		p := filepath.Join(repo, m)
 		if filepath.Ext(p) == ".json" {
 			if err := os.WriteFile(p, []byte("{}"), 0o644); err != nil {
@@ -104,7 +104,7 @@ func TestResolveRoot(t *testing.T) {
 		t.Error("resolveRoot of a non-repo dir must error")
 	}
 	// Walk-up: a nested dir under the repo finds the root.
-	nested := filepath.Join(repo, "apps", "aaw", "cmd")
+	nested := filepath.Join(repo, "go", "aaw", "cmd")
 	if err := os.MkdirAll(nested, 0o755); err != nil {
 		t.Fatal(err)
 	}

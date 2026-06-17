@@ -1,5 +1,5 @@
-// Command mcpd controls the local MCP servers — aaw (apps/aaw, :8905) and msh
-// (apps/msh, :8899) — as background daemons living in <repo>/bin.
+// Command mcpd controls the local MCP servers — aaw (go/aaw, :8905) and msh
+// (go/msh, :8899) — as background daemons living in <repo>/bin.
 //
 // With no arguments it opens a Bubble Tea control panel. For scripting it offers
 // plain subcommands:

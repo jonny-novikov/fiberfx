@@ -31,14 +31,14 @@ type Server struct {
 
 // servers is the static registry of everything mcpd manages, parameterised by
 // the resolved repo root. Ground truth for both invocations is the as-built
-// boot code: apps/aaw/cmd/aaw/main.go (flags-before-serve, strict wire-check vs
-// the repo-root .mcp.json which pins aaw→localhost:8905) and apps/msh/cmd/main.go
+// boot code: go/aaw/cmd/aaw/main.go (flags-before-serve, strict wire-check vs
+// the repo-root .mcp.json which pins aaw→localhost:8905) and go/msh/cmd/main.go
 // (msh mcp serve --port 8899; memory root from .msh-memory.json → <root>/memory).
 func servers(root string) []Server {
 	return []Server{
 		{
 			Name:      "aaw",
-			AppDir:    filepath.Join(root, "apps", "aaw"),
+			AppDir:    filepath.Join(root, "go", "aaw"),
 			BuildPkg:  "./cmd/aaw",
 			Port:      8905,
 			ServeArgs: []string{"-workspace", root, "-addr", "localhost:8905", "serve"},
@@ -48,7 +48,7 @@ func servers(root string) []Server {
 		},
 		{
 			Name:      "msh",
-			AppDir:    filepath.Join(root, "apps", "msh"),
+			AppDir:    filepath.Join(root, "go", "msh"),
 			BuildPkg:  "./cmd",
 			Port:      8899,
 			ServeArgs: []string{"mcp", "serve", "--port", "8899", "--root", filepath.Join(root, "memory")},
@@ -74,7 +74,7 @@ func (s Server) tmpBuildPath(root string) string {
 type bindAddr struct{ network, addr string }
 
 // bindAddrs mirrors exactly how the server itself binds, so a free-port probe
-// is faithful. aaw binds dual-stack all-or-nothing (apps/aaw/cmd/aaw/main.go
+// is faithful. aaw binds dual-stack all-or-nothing (go/aaw/cmd/aaw/main.go
 // bindLocalhost); msh binds a single localhost socket.
 func (s Server) bindAddrs() []bindAddr {
 	p := strconv.Itoa(s.Port)
@@ -100,7 +100,7 @@ func resolveRoot(explicit string) (string, error) {
 		if isRepoRoot(abs) {
 			return abs, nil
 		}
-		return "", fmt.Errorf("--root %s is not the jonnify repo root (need .mcp.json + apps/aaw + apps/msh)", abs)
+		return "", fmt.Errorf("--root %s is not the jonnify repo root (need .mcp.json + go/aaw + go/msh)", abs)
 	}
 	var starts []string
 	if exe, err := os.Executable(); err == nil {
@@ -133,7 +133,7 @@ func walkUpForRoot(dir string) string {
 // isRepoRoot is true when dir holds the markers that identify THIS repo: the
 // .mcp.json aaw's wire-check needs, plus both managed app dirs.
 func isRepoRoot(dir string) bool {
-	for _, marker := range []string{".mcp.json", filepath.Join("apps", "aaw"), filepath.Join("apps", "msh")} {
+	for _, marker := range []string{".mcp.json", filepath.Join("go", "aaw"), filepath.Join("go", "msh")} {
 		if _, err := os.Stat(filepath.Join(dir, marker)); err != nil {
 			return false
 		}
