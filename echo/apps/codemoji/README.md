@@ -1,4 +1,4 @@
-# Codemoji: The Art of Scoring
+# Codemoji: The Art of Mastermind
 
 ## Prelude
 
