@@ -33,7 +33,7 @@ Shipped: emq.0 · emq.1 · emq.2.1/2.2/2.3/2.4 (parity cluster CLOSED) · emq.3.
 conf 47). **emq.3.4 failure-policy + bulk SHIPPED `4c401479`** (the additive `@retry` dead-letter branch + `@flow_fail_deliver`
 over the §6-reserved `:failed`/`:unsuccessful`; both enqueue scripts + `@complete`/`@flow_deliver` byte-frozen;
 `add_bulk/3` sequential/fail-closed-per-flow + `ignored_failures/3`; conf 50; Apollo BUILD-GRADE; the `emq-3-4-build`
-lead-team). **emq.3.5 (grandchildren / deep recursion) SHIPPED `cd3c383a` 2026-06-15 — MOVEMENT I CLOSED** (the `/echo-mq-ship`
+lead-team). **emq.3.5 (grandchildren / deep recursion) SHIPPED 2026-06-15 — MOVEMENT I CLOSED** (the `/echo-mq-ship`
 Flat-L2 run; Apollo BUILD-GRADE, NORMAL-risk, Arm A). Forks RULED (ledger D-1): **S2 · Arm A** = host/sweep re-emit
 over byte-frozen Lua → **S1 · NORMAL-risk**; S3 · Arm A (unified `add/3` nested-tree clause); S-Bound · 8. D3
 completion composes recursively FREE over the byte-frozen `@complete`; the recursive FAILURE hook (D4, the SOLE new

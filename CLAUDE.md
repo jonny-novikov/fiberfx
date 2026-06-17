@@ -1,5 +1,7 @@
 # CLAUDE.md — echo_mq · spec-driven · the Branded Component System stack
 
+> **Go work? → [`go/CLAUDE.md`](go/CLAUDE.md).** This file + `echo/CLAUDE.md` govern the echo_mq / BCS Elixir stack. The `go/` agent-OS modules (`aaw` task-management · `msh` memory · `mcpd` · `mcp-go`) have their own guide — read it **only when working those Go projects**, unless the Operator directs otherwise.
+
 Guidance for Claude agents working the **echo_mq bus program** and the **Branded Component System (BCS)** stack it lives in. Tuned for the spec-driven lead-team (Venus / Mars / Apollo via the `echo-mq-*` skills). The **specs are the source of truth**; this file is *how to work against them*, not a second copy of them.
 
 ## Scope
