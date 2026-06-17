@@ -40,7 +40,7 @@ DIRECTOR'S GROUND-TRUTH RISK (named for Venus to pin, Mars to build, Apollo to v
 
 THE SMALLEST CHANGE THAT PRESERVES CORRECTNESS: a NEW flows.ex (no shipped-surface risk) + ONE conditioned branch in @complete (gated on was_active==1 + a declared parent-deps KEYS[n]; non-flow path byte-unchanged) + ONE state value in get_job_state (preserving unknown_state) + 2 additive conformance scenarios. NO @claim edit, NO keyspace grammar edit, NO echo_wire change, NO new key type/wire class/transport.
 
-PIPELINE: Venus (Stage-0 reconcile + fork-confirm) → Mars-1 (build) → Director solo review (gate re-run on 6390 + declared-keys/fan-in/idempotency/byte-unchanged probes + mutation spot-check) → Mars-2 (harden + full ladder + ≥100 loop) → Apollo MANDATORY (independent re-run + §11.2 charter) → Venus post-build reconcile → Director ship (ONE LAW-4 pathspec commit + the family-open fold). Boundary: echo/apps/echo_mq only; EXCLUDE Operator out-of-band (docs/echo/art, docs/mercury, echo/apps/exchange, html, the F# course, any [emq]/[mercury]/[exchange]/[fsharp] commits).
+PIPELINE: Venus (Stage-0 reconcile + fork-confirm) → Mars-1 (build) → Director solo review (gate re-run on 6390 + declared-keys/fan-in/idempotency/byte-unchanged probes + mutation spot-check) → Mars-2 (harden + full ladder + ≥100 loop) → Apollo MANDATORY (independent re-run + §11.2 charter) → Venus post-build reconcile → Director ship (ONE LAW-4 pathspec commit + the family-open fold). Boundary: echo/apps/echo_mq only; EXCLUDE Operator out-of-band (docs/echo/art, docs/mercury, the consumer app, html, the F# course, any [emq]/[mercury]/[consumer]/[fsharp] commits).
 
 ### T-2 — Stage-0 lag-1 reconcile: every as-built anchor re-probed against the post-emq.2.4 tree (2026-06-15)
 

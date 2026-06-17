@@ -7,7 +7,7 @@
 > Who needs the v1→v2 crossing, what they need, and how acceptance is known. Derived from
 > [`./emq.2.md`](emq.2.md) (SPECCED, not built — acceptance runs at the build run). The beneficiary is the
 > operator who runs the crossing and the program that can then dissolve `apps/echomq`; this rung is PROGRAM
-> HYGIENE and names no Exchange-platform consumer (recorded, not asserted). The mechanism ground is the frozen
+> HYGIENE and names no downstream consumer (recorded, not asserted). The mechanism ground is the frozen
 > v1 tool (`echo/apps/echomq/lib/echomq/migration.ex`) and its guide
 > (`echo/apps/echomq/guides/migration_v1_to_v2.md`); the law ground is the design's §2 branding lane, §3 fence
 > merge, §6 grammar, and §10 seam 1.

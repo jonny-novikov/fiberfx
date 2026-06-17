@@ -126,9 +126,9 @@ Out** (V-1, the scope fork — recorded NOT built).
   D-2): failure-policy + bulk; grandchildren the locked Out → emq.3.5.
 - **Who** — the program (the rung that closes the flow family's failure half and the last v1 producer verb); the
   bus's consumers, who gain robust flows (a parent that **fails** when a child dies, or **proceeds** past an
-  ignored failure — never an indefinitely-hung parent) and bulk flow submission. **Exchange** (prospective): a
-  multi-leg settlement where one failed leg must **fail the settlement** (`fail_parent_on_failure`) or be
-  **recorded-and-skipped** (`ignore_dependency_on_failure`) — *no TRD rung names flows today*
+  ignored failure — never an indefinitely-hung parent) and bulk flow submission. **codemoji** (prospective): a
+  job whose one failed leg must **fail the parent** (`fail_parent_on_failure`) or be
+  **recorded-and-skipped** (`ignore_dependency_on_failure`) — *it names no flows today*
   ([`../emq.features.md`](../../../emq.features.md) — recorded, not asserted). The conformance harness, which grows by
   three scenarios (additive minor).
 - **When** — Movement I, the flow family's **fourth** sub-rung, after emq.3.1 + emq.3.2 + emq.3.3 shipped
@@ -192,7 +192,7 @@ Out** (V-1, the scope fork — recorded NOT built).
   propagation/deliver are plain `HSET`/`HSETNX`/`DECR`/`ZADD`/`RPUSH`; no fence code, no `EMQ…` class); any **new
   transport** (none — the connector `eval` carries both new scripts); any **`keyspace.ex` grammar edit** (none —
   `:failed`/`:unsuccessful` are §6-reserved and compose via the existing `job_key/2`); any **edit to the frozen
-  v1 line**; the in-flight `echo/apps/exchange/` + `docs/exchange/*`; the Operator's concurrent
+  v1 line**; the Operator's concurrent
   `docs/echo/mesh/**` course work.
 
 ### The honest bounds + carried follow-ups (surfaced at authoring — recorded, not papered over)

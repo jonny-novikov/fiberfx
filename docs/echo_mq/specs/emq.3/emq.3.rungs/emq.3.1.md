@@ -66,8 +66,8 @@ path is **byte-unchanged**, and the shipped `@claim` is **untouched** (the gate 
 - **Who** — the program (the rung that founds the flow family and unblocks 3.2–3.4); the bus's consumers, who
   gain single-queue fan-out/fan-in (do the parts, then the whole, within one queue); the conformance harness,
   which grows by `flow_add` + `flow_fanin`; Apollo, who re-runs the gate ladder + the ≥100 loop independently
-  (MANDATORY — the rung edits a shipped script + mints multiple ids per call). **Exchange** (prospective): a
-  same-queue multi-leg job whose parent gates on its child legs (no TRD rung names flows today — recorded, not
+  (MANDATORY — the rung edits a shipped script + mints multiple ids per call). **codemoji** (prospective): a
+  same-queue job whose parent gates on its child legs (it names no flows today — recorded, not
   asserted).
 - **When** — Movement I, the flow family's **first** sub-rung, after the emq.2 cluster ships (emq.3.1 stands ON
   the as-built `EchoMQ.Jobs` `@enqueue`/`@claim`/`@complete`, proven at depth at emq.2.4). SPECCED this design
@@ -111,8 +111,7 @@ path is **byte-unchanged**, and the shipped `@claim` is **untouched** (the gate 
   dead child — a flow whose child dies hangs its parent by design until emq.3.4 adds the failure policy, stated
   honestly, NOT silently); **`add_bulk`** (multiple flows in one call — **emq.3.4**); any **new key type** or
   **new wire class** (none — the §6 subkeys + `EMQKIND` are reused); any **`@claim` edit** (the gate is the
-  parent's absence from `pending`); any **`echo_wire`/transport** change; any **edit to the frozen v1 line**;
-  the in-flight `echo/apps/exchange/` + `docs/exchange/*`.
+  parent's absence from `pending`); any **`echo_wire`/transport** change; any **edit to the frozen v1 line**.
 
 ### The honest bounds + carried follow-ups (as-built, surfaced at the build — recorded, not papered over)
 

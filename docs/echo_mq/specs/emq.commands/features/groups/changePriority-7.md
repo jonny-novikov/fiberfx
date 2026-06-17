@@ -116,4 +116,4 @@ HSET jobKey priority ARGV[1]                      -- re-aim, NOT re-implement; n
 
 **Decision.** **Re-aim, not re-implement** — a job's fairness is its *group membership* + the rotating ring, never a per-job numeric score. The forward equivalent of "this venue's work matters more now" is `Lanes` group control: re-assign the lane, or tune weighted/deficit rotation + ceilings (the emq.4 "groups deepened" rung). No `prioritized` ZSET re-implement.
 
-**BCS** per-venue fairness (one Lanes group per venue) replaces per-job priority for the work surface. · **EchoMesh** lane fairness is the AP-leaning "keep all venues answering under contention" dial (emq.4, TRD.8). · **[when]** "this venue's work matters more now" — re-aimed to a Lanes weighting, not a per-job re-score.
+**BCS** per-player fairness (one Lanes group per player) replaces per-job priority for the work surface. · **EchoMesh** lane fairness is the AP-leaning "keep all players answering under contention" dial (emq.4). · **[when]** "this player's work matters more now" — re-aimed to a Lanes weighting, not a per-job re-score.

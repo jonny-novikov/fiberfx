@@ -12,7 +12,7 @@
 > an at-rest copy-verify-DELETE tool whose every produced key is braced `emq:{q}:` and whose every migrated
 > job id is a branded `JOB`, the typed refusal that turns an unmigratable id back at the boundary, and the
 > v1-side terminal `1.3.1` fence-only patch. This rung is PROGRAM HYGIENE — it retires the push source's
-> deployments so `apps/echomq` can dissolve; no Exchange-platform rung gates on it (recorded, not asserted).
+> deployments so `apps/echomq` can dissolve; no consumer rung gates on it (recorded, not asserted).
 
 ## Goal
 
@@ -56,9 +56,9 @@ an Operator ruling on the in-place treatment seam (design §10 seam 1).
   `apps/echomq` `1.3.x` maintenance branch (the mirror preflight: refuse `:v2_keyspace` on a v2-stamped
   keyspace, refuse `:migration_tombstone` on its own tombstoned meta — design §11.5).
 - **Who** — operators of a v1 (`1.3.0`) deployment crossing to 2.0; the program itself (the rung un-blocks the
-  push source's dissolution — seam 5). **No Exchange-platform rung names this surface.** The program front door
-  records it as hygiene, not a feature: "program hygiene rather than a platform feature: it retires the push
-  source's deployments; no TRD rung gates on it (recorded, not asserted)" ([`../echo_mq.md`](../../echo_mq.md),
+  push source's dissolution — seam 5). **No consumer rung names this surface.** The program front door
+  records it as hygiene, not a feature: "program hygiene rather than a consumer feature: it retires the push
+  source's deployments; no consumer rung gates on it (recorded, not asserted)" ([`../echo_mq.md`](../../echo_mq.md),
   the emq.2 ladder row). This rung manufactures no consumer trace; the crossing's beneficiary is the operator
   who runs it and the program that can then dissolve `apps/echomq`.
 - **When** — Movement I, after emq.1 closes (planned-abstract on the confirmed ladder). SPECCED this run,
@@ -186,4 +186,4 @@ merge + tombstone discrimination), §6 (the braced grammar), §10 seam 1 (the in
 -on-main), §11.5 (the v1 terminal fence-only patch), §1 S-1 / §11.1 (`v1_prefix` is config input, default
 `"bull"`) · Mechanism precedent: `echo/apps/echomq/lib/echomq/migration.ex`,
 `echo/apps/echomq/guides/migration_v1_to_v2.md` · Program front door: [`../echo_mq.md`](../../echo_mq.md) (emq.2 =
-hygiene, no TRD gate) · Approach: [`../../elixir/specs/specs.approach.md`](../../../elixir/specs/specs.approach.md)
+hygiene, no consumer gate) · Approach: [`../../elixir/specs/specs.approach.md`](../../../elixir/specs/specs.approach.md)

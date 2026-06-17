@@ -1,4 +1,4 @@
-# getCountsPerPriority-4  →  re-derived as per-lane depth EchoMQ.Metrics.lane_depths/3 (also metrics: per-lane / per-instrument backlog the trading bus reads)
+# getCountsPerPriority-4  →  re-derived as per-lane depth EchoMQ.Metrics.lane_depths/3 (also metrics: per-lane / per-player backlog the consuming app reads)
 
 > Feature: **groups** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -10,7 +10,7 @@
 --@status    RETIRED (retired by design)
 --@rung      emq.1
 --@v1        registry/getCountsPerPriority-4.lua   (KEYS arity 4)
---@v3        re-derived as per-lane depth EchoMQ.Metrics.lane_depths/3 (also metrics: per-lane / per-instrument backlog the trading bus reads)
+--@v3        re-derived as per-lane depth EchoMQ.Metrics.lane_depths/3 (also metrics: per-lane / per-player backlog the consuming app reads)
 ```
 
 ## v1 source
@@ -81,4 +81,4 @@ p!=0 -> ZCOUNT prioritized p*2^32 ..(p+1)*2^32-1  -- per-lane depth; no prioriti
 
 **Decision.** Re-derive as per-lane depth over the lane ZSETs, branded-group-gated; read-only. **PROPOSED** delta (emq.4): an intra-lane priority dimension is a `ZCOUNT` over a score *window* on the same `g:<group>:pending` ZSET — **no new key** — never the v1 64-bit-packed `prioritized` band, never a `meta.paused` branch that picks the key.
 
-**BCS** per-lane backlog is the fair-lane / per-instrument depth the trading bus reads. · **EchoMesh** availability-first — per-segment (per-instrument lane) depth, observational only. · **[when]** the per-lane / per-instrument backlog the trading bus reads to balance work across groups.
+**BCS** per-lane backlog is the fair-lane / per-player depth the consuming app reads. · **EchoMesh** availability-first — per-segment (per-player lane) depth, observational only. · **[when]** the per-lane / per-player backlog codemoji reads to balance work across lanes.

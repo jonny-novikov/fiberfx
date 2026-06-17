@@ -2,8 +2,8 @@
 
 > **Status: LIVING DOCUMENT — Operator-governed.** The front door of the EchoMQ program: what it is, how
 > its spec home reads, the complete roadmap — the ratified program ladder and the proposed 3.x stream
-> tier — and the milestone layer that binds each Movement's completion to a concrete Exchange-platform
-> ship (`docs/exchange/` → `echo/apps/exchange/`). The milestone layer is what this file ADDS (the
+> tier — and the milestone layer that binds each Movement's completion to the capability a real consumer
+> needs. The milestone layer is what this file ADDS (the
 > Operator's directive, recorded in the run ledger as D-11/D-12); everything else links to where it
 > already lives. This file PLANS; [`./emq.design.md`](./emq.design.md) and the [`./specs/`](./specs/)
 > triads DEFINE. Corrections ride Operator checkpoints; feedback edits this file, never an
@@ -28,18 +28,16 @@ movement lives in [`./emq.roadmap.md`](./emq.roadmap.md); one line each here:
 - **Movement II · The Extension** — the family depth a multi-tenant production bus needs: groups
   deepened, batches, lifecycle controls, the cache deepened, the proof stack (**emq.4–emq.8**).
 
-**The delivery thesis.** The movements exist to ship the Exchange platform. The five-document PROPOSED
-suite under `docs/exchange/` ([front door](../exchange/exchange.md) ·
-[ladder](../exchange/exchange.roadmap.md) · [specification](../exchange/exchange.specs.md) ·
-[engine patterns](../exchange/exchange.patterns.md) ·
-[strategy patterns](../exchange/exchange.strategies.md)) becomes `echo/apps/exchange/` code as the
-movements complete — each Movement done is a milestone with a named Exchange ship (the milestone blocks
-below). The platform already records this program as its substrate: its specification names the bus as
-the work surface ("Settlement, notifications, end-of-day reporting, reconciliation: `EchoMQ.Jobs` …
-drained by `EchoMQ.Consumer`, shaped by `EchoMQ.Lanes` with one group per venue" —
-[`exchange.specs.md`](../exchange/exchange.specs.md) §Jobs) and traces its scheduled-jobs needs to
-Movement I's opening rung ("scheduled and repeatable jobs remain the EchoMQ roadmap's 2.1 row, with
-this platform's needs recorded there as an input" — the same section).
+**The delivery thesis.** The movements exist to carry real consumers. The worked consumer that already
+rides this program as its substrate is **codemoji** (`echo/apps/codemoji`) — a code-breaking game that
+mints branded `RND`/`USR`/`JOB`/`GES` ids, enqueues per-player guesses on `EchoMQ.Lanes`, drains them
+with two `EchoMQ.Consumer` instances (a score queue then a settle queue), scores under a single
+authority, publishes `EchoMQ.Events`, holds a Valkey sorted-set leaderboard, and settles prizes on a
+second queue (move-then-settle). The forward-looking headline consumer is **echo_bot**
+(`echo/apps/echo_bot`): the Telegram-bot notifications at scale that *could* enqueue Telegram sends onto
+the bus once its notification path moves off the direct synchronous `sendMessage` it ships with today —
+a planned consumer, not a shipped integration. Each Movement done is a milestone that unblocks the
+capability such a consumer needs (the milestone blocks below).
 
 ## The spec home — how to read it
 

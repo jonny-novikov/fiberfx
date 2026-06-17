@@ -236,9 +236,9 @@ echo/apps/echo_mq/lib/echo_mq/conformance.ex  (the depth scenarios, additive)
 echo/apps/echo_mq/test/                        (metrics_depth + admin_depth + watch_depth + the conformance pins)
 ```
 
-**EXCLUDE** (Operator out-of-band — never sweep into the rung commit): `echo/apps/exchange/**`,
+**EXCLUDE** (Operator out-of-band — never sweep into the rung commit):
 `echo/apps/live_svelte/**`, `echo/apps/mercury_cms/**`, `echo/apps/mercury_live_admin/**`, `html/**`, the F#
-course, and any `[emq]`/`[bcs]`/`[mercury]`/`[exchange]` doc commits the Operator lands between stages. The
+course, and any `[emq]`/`[bcs]`/`[mercury]` doc commits the Operator lands between stages. The
 **emq.2.3 watch-plane code is already committed** (`3c6461ff` the rung + `5a3fdd73` the docs fold) — the
 emq.2.4 LAW-4 commit records exactly emq.2.4's own surface (the depth suites + the §0 residue + the C1 file
 rename + the conformance re-pin), never re-sweeping emq.2.3's shipped surface. `echo/apps/echomq` (frozen v1) + `echo/mix.lock`

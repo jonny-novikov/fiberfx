@@ -1,0 +1,418 @@
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue">The Queue</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue/lifecycle-controls">Lifecycle controls</a>
+        <span class="sep">/</span>
+        <span class="here">The operator plane</span>
+      </nav>
+      <p class="eyebrow">Lifecycle controls &middot; dive 03</p>
+      <h1>The operator <span class="ex">plane</span></h1>
+      <p class="lede">An operator's runbook drives a live queue with real transitions: over the whole queue, and over one job's row.</p>
+      <p class="kicker">Two scopes. <strong>Queue scope</strong> (<code class="inl">EchoMQ.Admin</code>) pauses and resumes
+        claiming on the entire queue, drains the pending backlog, and obliterates a paused queue down to its keyspace
+        footprint. <strong>Job scope</strong> (<code class="inl">EchoMQ.Jobs</code>) reaches into one row to replace its
+        payload, write progress, append logs, remove it, or reprocess a dead one. Every verb is a fenced transition that
+        either succeeds or refuses cleanly with a typed reason. Toggle the gate on the right, then run a claim.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#pause">Pause is a gate</a>
+        <a href="#drain">Drain the backlog</a>
+        <a href="#obliterate">Obliterate, bounded</a>
+        <a href="#perjob">The per-job verbs</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig viz" aria-labelledby="gateTitle">
+      <h4 id="gateTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The separate gate &middot; toggle pause, then claim</h4>
+      <div class="controls">
+        <div class="solid-select" id="pauseSel" role="group" aria-label="Pause or resume the queue">
+          <button type="button" id="pauseBtn" data-c="gold" aria-pressed="false">pause</button>
+          <button type="button" id="resumeBtn" data-c="echo" aria-pressed="true">resume</button>
+        </div>
+        <div class="solid-select" id="claimSel" role="group" aria-label="Run a claim">
+          <button type="button" id="claimBtn" data-c="echo">run a claim</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 150" role="img" aria-label="A pending set of four jobs and the queue's meta hash with a paused field. A claim reads the paused field first: when the field is set the claim answers empty and the pending set is untouched; when it is clear the claim serves the head of pending.">
+        <g class="keybox" id="pendBox"><rect x="34" y="40" width="150" height="74" rx="9"></rect></g>
+        <text x="44" y="34" class="vid">emq:{q}:pending</text>
+        <text x="109" y="66" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#6fdccf">JOB… &middot; JOB… &middot; JOB…</text>
+        <text id="depthLabel" x="109" y="90" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#d7cfb9">depth 4</text>
+        <g class="keybox" id="metaBox"><rect x="276" y="40" width="150" height="48" rx="9"></rect></g>
+        <text x="286" y="34" class="vid">emq:{q}:meta</text>
+        <text id="flagLabel" x="351" y="69" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="12" fill="#a39c89">paused = (unset)</text>
+        <line class="gate" id="gateLine" x1="230" y1="30" x2="230" y2="124" opacity="0"></line>
+        <line class="flow" id="flowLine" x1="184" y1="77" x2="276" y2="64" marker-end="url(#opArrow)"></line>
+        <defs><marker id="opArrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#2a3252"></path></marker></defs>
+      </svg>
+      <div class="geo-readout" id="gateOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="pause">
+    <h2>Pause is a separate gate, so the claim script never changes</h2>
+    <div class="prose">
+      <p><code class="inl">EchoMQ.Admin.pause/2</code> runs <code class="inl">@pause</code>: <code class="inl">HSET</code>
+        the <code class="inl">paused</code> field on <code class="inl">emq:{q}:meta</code>. <code class="inl">resume/2</code>
+        runs <code class="inl">@resume</code>: <code class="inl">HDEL</code> that field. The pause is a field on the
+        queue's meta hash &mdash; not a move on any set.</p>
+      <p>The claim path reads that field <strong>first</strong> and answers <code class="inl">:empty</code> when it is set,
+        even with a non-empty pending set; the pending backlog is untouched. This is the separate-gate form: the claim
+        script stays byte-unchanged, and the gate lives above it in <code class="inl">Jobs.claim/3</code> (and
+        <code class="inl">Lanes.claim/3</code>, so a queue-wide pause gates both the flat and the grouped claim). A paused
+        queue stops serving work without losing a single member.</p>
+    </div>
+
+    <p class="handle">EchoMQ.Admin pause/2 &amp; resume/2 &mdash; the handle</p>
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Admin — a claim gate over the WHOLE queue, the meta field form</span>
+<span class="cmt"># pause/2 sets the paused field; the claim path reads it first and answers :empty.</span>
+<span class="op">def</span> <span class="fn">pause</span>(conn, queue) <span class="op">do</span>
+  <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@pause</span>, [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"meta"</span>)], []) <span class="op">do</span>
+    {<span class="str">:ok</span>, <span class="res">1</span>} -&gt; <span class="str">:ok</span>
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span>
+
+<span class="cmt"># resume/2 clears the field, so a subsequent claim serves the head of pending again.</span>
+<span class="op">def</span> <span class="fn">resume</span>(conn, queue) <span class="op">do</span>
+  <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@resume</span>, [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"meta"</span>)], []) <span class="op">do</span>
+    {<span class="str">:ok</span>, <span class="res">1</span>} -&gt; <span class="str">:ok</span>
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <p class="handle">@pause &amp; @resume &mdash; the bodies</p>
+    <pre class="code"><span class="cmt">-- the @pause script — set the paused field on the queue's meta hash</span>
+<span class="cmt">-- KEYS[1] is emq:{q}:meta. No set is moved: the backlog is untouched.</span>
+redis.call(<span class="str">'HSET'</span>, <span class="rdx">KEYS[1]</span>, <span class="str">'paused'</span>, <span class="str">'1'</span>)
+<span class="op">return</span> <span class="res">1</span>
+
+<span class="cmt">-- the @resume script — clear the field; claiming resumes at the head of pending</span>
+redis.call(<span class="str">'HDEL'</span>, <span class="rdx">KEYS[1]</span>, <span class="str">'paused'</span>)
+<span class="op">return</span> <span class="res">1</span></pre>
+
+    <div class="prose">
+      <p>Because the gate is a field and not a set move, the <code class="inl">@claim</code> and <code class="inl">@gclaim</code>
+        scripts are unchanged by pause: they keep their exact transition, and the read of the <code class="inl">paused</code>
+        field happens above them in the claim function. Pause and resume are both idempotent &mdash; pausing a paused queue
+        and resuming a running one each answer <code class="inl">:ok</code> and change nothing observable.</p>
+    </div>
+    <p class="take">Pause is a field the claim reads, not a move on a set. The backlog survives a pause intact, and the
+      claim script never has to know the queue was paused.</p>
+  </section>
+
+  <section id="drain">
+    <h2>Drain empties the backlog; active and the cadence survive</h2>
+    <div class="prose">
+      <p><code class="inl">drain/3</code> runs <code class="inl">@drain</code>: for the pending set (and the schedule set
+        when asked), read the members, delete each job's row and its <code class="inl">:logs</code> subkey, then delete the
+        set. It answers <code class="inl">{:ok, n}</code>, the count drained. Two things it does <strong>not</strong> touch:
+        the <strong>active</strong> set (those jobs are in flight) and the <strong>repeat</strong> registry (a registered
+        repeatable keeps producing after a drain).</p>
+    </div>
+
+    <p class="handle">EchoMQ.Admin drain/3 &mdash; the handle</p>
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Admin — empty the backlog; active and the repeat registry survive</span>
+<span class="cmt"># KEYS = [the queue base, pending, (schedule when include_schedule: true)].</span>
+<span class="op">def</span> <span class="fn">drain</span>(conn, queue, opts \\ []) <span class="op">do</span>
+  base = Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">""</span>)
+
+  keys =
+    [base, Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"pending"</span>)] ++
+      <span class="op">if</span> Keyword.<span class="fn">get</span>(opts, <span class="str">:include_schedule</span>, <span class="op">false</span>),
+        <span class="op">do</span>: [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"schedule"</span>)],
+        <span class="op">else</span>: []
+
+  <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@drain</span>, keys, []) <span class="op">do</span>
+    {<span class="str">:ok</span>, n} <span class="op">when</span> is_integer(n) -&gt; {<span class="str">:ok</span>, n}
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <p class="handle">@drain &mdash; the body</p>
+    <pre class="code"><span class="cmt">-- the @drain script — wipe a set's rows + logs, then the set itself</span>
+<span class="cmt">-- KEYS[1] = the queue base root; KEYS[2] = pending; KEYS[3] = schedule (optional).</span>
+<span class="op">local</span> base = <span class="rdx">KEYS[1]</span>
+<span class="op">local</span> <span class="op">function</span> wipe(setkey)
+  <span class="op">local</span> ids = redis.call(<span class="str">'ZRANGE'</span>, setkey, <span class="res">0</span>, <span class="res">-1</span>)
+  <span class="op">for</span> _, id <span class="op">in</span> ipairs(ids) <span class="op">do</span>
+    <span class="op">local</span> jk = base .. <span class="str">'job:'</span> .. id      <span class="cmt">-- the row key derives from the base root</span>
+    redis.call(<span class="str">'DEL'</span>, jk, jk .. <span class="str">':logs'</span>)        <span class="cmt">-- row + its logs subkey</span>
+  <span class="op">end</span>
+  redis.call(<span class="str">'DEL'</span>, setkey)                  <span class="cmt">-- then the set</span>
+  <span class="op">return</span> #ids
+<span class="op">end</span>
+<span class="op">local</span> n = wipe(<span class="rdx">KEYS[2]</span>)                    <span class="cmt">-- pending</span>
+<span class="op">if</span> <span class="rdx">KEYS[3]</span> <span class="op">then</span> n = n + wipe(<span class="rdx">KEYS[3]</span>) <span class="op">end</span> <span class="cmt">-- schedule, when asked</span>
+<span class="op">return</span> n</pre>
+
+    <div class="prose">
+      <p>A drain clears the backlog of already-enqueued work; it does not cancel work in hand or stop the cadence that
+        produces more. An operator who has paused a queue and wants to clear what is queued without disturbing the jobs
+        being worked or the registered repeatables reaches for <code class="inl">drain/3</code>.</p>
+    </div>
+    <p class="take">Drain spares what is in flight and the cadence that produces more. It empties the queued backlog and
+      nothing else &mdash; <code class="inl">active</code> and the repeat registry are left alone.</p>
+  </section>
+
+  <section id="obliterate">
+    <h2>Obliterate destroys a paused queue, bounded</h2>
+    <div class="prose">
+      <p><code class="inl">obliterate/3</code> runs <code class="inl">@obliterate</code>. It refuses a non-paused queue
+        (<code class="inl">EMQSTATE not paused</code> &rarr; <code class="inl">{:error, :not_paused}</code>) and, unless
+        forced, a queue with live active jobs (<code class="inl">EMQSTATE active jobs present</code> &rarr;
+        <code class="inl">{:error, :active}</code>). Otherwise it deletes every state set
+        (<code class="inl">pending</code>/<code class="inl">active</code>/<code class="inl">schedule</code>/<code class="inl">dead</code>),
+        every reachable job row, and the auxiliary keys &mdash; the metrics hashes, the lane structures, the repeat records,
+        and the meta hash with the paused flag. It is bounded per invocation by a budget: it answers
+        <code class="inl">:more</code> while work remains (call again) and <code class="inl">:ok</code> when the queue is gone.</p>
+    </div>
+
+    <p class="handle">EchoMQ.Admin obliterate/3 &mdash; the handle</p>
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Admin — destroy a PAUSED queue, bounded by a per-call budget</span>
+<span class="cmt"># KEYS = [meta, the queue base root]; ARGV = [force?, budget]. :more / :ok / refusals.</span>
+<span class="op">def</span> <span class="fn">obliterate</span>(conn, queue, opts \\ []) <span class="op">do</span>
+  force = <span class="op">if</span> Keyword.<span class="fn">get</span>(opts, <span class="str">:force</span>, <span class="op">false</span>), <span class="op">do</span>: <span class="str">"force"</span>, <span class="op">else</span>: <span class="str">""</span>
+  budget = Keyword.<span class="fn">get</span>(opts, <span class="str">:budget</span>, <span class="res">1000</span>)
+  keys = [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"meta"</span>), Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">""</span>)]
+
+  <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@obliterate</span>, keys, [force, Integer.<span class="fn">to_string</span>(budget)]) <span class="op">do</span>
+    {<span class="str">:ok</span>, <span class="res">0</span>} -&gt; <span class="str">:ok</span>                            <span class="cmt"># the queue is gone</span>
+    {<span class="str">:ok</span>, <span class="res">1</span>} -&gt; <span class="str">:more</span>                          <span class="cmt"># budget spent, work remains — call again</span>
+    {<span class="str">:error</span>, {<span class="str">:server</span>, <span class="str">"EMQSTATE not paused"</span> &lt;&gt; _}} -&gt; {<span class="str">:error</span>, <span class="str">:not_paused</span>}
+    {<span class="str">:error</span>, {<span class="str">:server</span>, <span class="str">"EMQSTATE active"</span> &lt;&gt; _}} -&gt; {<span class="str">:error</span>, <span class="str">:active</span>}
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <p class="handle">@obliterate &mdash; the body (the guards and the bounded state-set sweep)</p>
+    <pre class="code"><span class="cmt">-- the @obliterate script — refuse unless paused; then delete, bounded by budget</span>
+<span class="op">local</span> meta = <span class="rdx">KEYS[1]</span>
+<span class="op">local</span> base = <span class="rdx">KEYS[2]</span>
+<span class="op">if</span> redis.call(<span class="str">'HGET'</span>, meta, <span class="str">'paused'</span>) == <span class="op">false</span> <span class="op">then</span>
+  <span class="op">return</span> redis.error_reply(<span class="str">'EMQSTATE not paused'</span>)   <span class="cmt">-- order matters: pause before obliterate</span>
+<span class="op">end</span>
+<span class="op">local</span> force = <span class="rdx">ARGV[1]</span> == <span class="str">'force'</span>
+<span class="op">local</span> budget = tonumber(<span class="rdx">ARGV[2]</span>)
+
+<span class="op">local</span> <span class="op">function</span> del_job(id)
+  <span class="op">local</span> jk = base .. <span class="str">'job:'</span> .. id
+  redis.call(<span class="str">'DEL'</span>, jk, jk .. <span class="str">':logs'</span>, jk .. <span class="str">':lock'</span>)
+<span class="op">end</span>
+
+<span class="cmt">-- active first: refuse on live active jobs unless forced</span>
+<span class="op">local</span> active = base .. <span class="str">'active'</span>
+<span class="op">local</span> act = redis.call(<span class="str">'ZRANGE'</span>, active, <span class="res">0</span>, budget - <span class="res">1</span>)
+<span class="op">if</span> #act &gt; <span class="res">0</span> <span class="op">and</span> <span class="op">not</span> force <span class="op">then</span>
+  <span class="op">return</span> redis.error_reply(<span class="str">'EMQSTATE active jobs present'</span>)
+<span class="op">end</span>
+<span class="op">for</span> _, id <span class="op">in</span> ipairs(act) <span class="op">do</span> del_job(id) <span class="op">end</span>
+<span class="cmt">-- ...then pending / schedule / dead the same way, each ZREM'd under the budget;</span>
+<span class="cmt">-- return 1 (:more) the moment the budget is spent. When every set is empty,</span>
+<span class="cmt">-- the lane structures, repeat records, metrics hashes and meta are DEL'd,</span>
+<span class="cmt">-- and the script returns 0 (:ok) — the queue is gone.</span></pre>
+
+    <div class="prose">
+      <p>The order matters: a queue must be paused before it can be obliterated, and (unforced) it must have no jobs in
+        flight. The destructive verb refuses to run on a live queue. There is no <code class="inl">completed</code> or
+        <code class="inl">failed</code> set to destroy &mdash; the metrics hashes are the throughput record, deleted as keys
+        like everything else. Bounding the work by a budget keeps one obliterate call from blocking the wire on a queue with
+        a large backlog; the operator loops on <code class="inl">:more</code> until <code class="inl">:ok</code>.</p>
+    </div>
+    <p class="take">Obliterate refuses a live queue. Paused, no jobs in flight, bounded by a budget &mdash; the destructive
+      verb is gated by the same preconditions an operator would check by hand.</p>
+  </section>
+
+  <section id="perjob">
+    <h2>The per-job verbs reach into one row</h2>
+    <div class="prose">
+      <p>The per-job plane lives on <code class="inl">EchoMQ.Jobs</code>, beside the state machine it extends. Each is one
+        inline script that declares its keys; the branded id is gated at the key builder; a missing job answers a typed
+        <code class="inl">{:error, :gone}</code> and changes nothing. The most expressive of them,
+        <code class="inl">update_progress/4</code>, both writes the row and emits an event on the per-queue events channel.</p>
+      <p><strong>Beat one &mdash; the named handle.</strong> <code class="inl">update_progress/4</code> declares the row key,
+        passes the progress value, the job id, and the queue base, and maps the return.</p>
+    </div>
+
+    <p class="handle">EchoMQ.Jobs update_progress/4 &mdash; the handle</p>
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs — write the progress field AND publish a progress event</span>
+<span class="op">def</span> <span class="fn">update_progress</span>(conn, queue, job_id, progress) <span class="op">when</span> is_binary(progress) <span class="op">do</span>
+  keys = [Keyspace.<span class="fn">job_key</span>(queue, job_id)]
+  argv = [progress, job_id, Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">""</span>)]
+
+  <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@update_progress</span>, keys, argv) <span class="op">do</span>
+    {<span class="str">:ok</span>, <span class="res">1</span>} -&gt; <span class="str">:ok</span>
+    {<span class="str">:ok</span>, <span class="res">-1</span>} -&gt; {<span class="str">:error</span>, <span class="str">:gone</span>}      <span class="cmt"># no such row</span>
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><strong>Beat two &mdash; the script body.</strong> After the field write, the script <code class="inl">PUBLISH</code>es
+        on the per-queue events channel <code class="inl">emq:{q}:events</code> a <code class="inl">cjson</code>-encoded object.
+        The event name rides the payload's <code class="inl">event</code> field, so one channel per queue carries every
+        lifecycle event. A subscriber-less <code class="inl">PUBLISH</code> is a no-op.</p>
+    </div>
+
+    <p class="handle">@update_progress &mdash; the body</p>
+    <pre class="code"><span class="cmt">-- the @update_progress script — write the field, then publish the event</span>
+<span class="op">if</span> redis.call(<span class="str">'EXISTS'</span>, <span class="rdx">KEYS[1]</span>) == <span class="res">0</span> <span class="op">then</span> <span class="op">return</span> <span class="res">-1</span> <span class="op">end</span>  <span class="cmt">-- no row: gone</span>
+redis.call(<span class="str">'HSET'</span>, <span class="rdx">KEYS[1]</span>, <span class="str">'progress'</span>, <span class="rdx">ARGV[1]</span>)
+<span class="cmt">-- ARGV[3] is the queue base; ARGV[3] .. 'events' is the per-queue events channel.</span>
+redis.call(<span class="str">'PUBLISH'</span>, <span class="rdx">ARGV[3]</span> .. <span class="str">'events'</span>,
+  cjson.encode({event = <span class="str">'progress'</span>, job = <span class="rdx">ARGV[2]</span>, progress = <span class="rdx">ARGV[1]</span>}))
+<span class="op">return</span> <span class="res">1</span></pre>
+
+    <div class="prose">
+      <p>The other five verbs follow the same shape &mdash; declared keys, the id gated at the key builder, a typed refusal
+        that changes nothing:</p>
+      <ul>
+        <li><code class="inl">update_data/4</code> &mdash; replace the row's <code class="inl">payload</code> field
+          (<code class="inl">:ok</code> | <code class="inl">{:error, :gone}</code>).</li>
+        <li><code class="inl">add_log/5</code> &mdash; <code class="inl">RPUSH</code> a line onto the job's logs list
+          (<code class="inl">emq:{q}:job:&lt;id&gt;:logs</code>) and answer the count; with a <code class="inl">keep</code>
+          argument it <code class="inl">LTRIM</code>s to the last <em>keep</em> lines. <code class="inl">get_job_logs/3</code>
+          reads the list in append order (<code class="inl">{:ok, []}</code> when empty).</li>
+        <li><code class="inl">remove_job/4</code> &mdash; <code class="inl">ZREM</code> the job from whichever of the four sets
+          holds it, delete the row and its <code class="inl">:logs</code> subkey, and release a held dedup key when its id is
+          supplied. It <strong>refuses a locked job</strong> (<code class="inl">emq:{q}:job:&lt;id&gt;:lock</code> present)
+          with <code class="inl">{:error, :locked}</code>, leaving it untouched.</li>
+        <li><code class="inl">reprocess_job/3</code> &mdash; move a dead job back to pending: clear
+          <code class="inl">last_error</code>, set <code class="inl">state = pending</code>, add it to the pending set. It
+          <strong>refuses a job not in dead</strong> with <code class="inl">{:error, :not_dead}</code>.</li>
+      </ul>
+    </div>
+
+    <figure class="fig viz" aria-labelledby="consoleTitle">
+      <h4 id="consoleTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The operator console &middot; pick a verb and a queue state</h4>
+      <div class="controls">
+        <label class="opt">
+          <span>verb</span>
+          <select id="verbSel" aria-label="Operator verb">
+            <option value="pause">Admin.pause/2</option>
+            <option value="resume">Admin.resume/2</option>
+            <option value="drain">Admin.drain/3</option>
+            <option value="obliterate">Admin.obliterate/3</option>
+            <option value="update_data">Jobs.update_data/4</option>
+            <option value="update_progress">Jobs.update_progress/4</option>
+            <option value="add_log">Jobs.add_log/5</option>
+            <option value="remove_job">Jobs.remove_job/4</option>
+            <option value="reprocess_job">Jobs.reprocess_job/3</option>
+          </select>
+        </label>
+        <label class="opt">
+          <span>queue / job state</span>
+          <select id="stateSel" aria-label="Queue or job state">
+            <option value="running">running</option>
+            <option value="paused_idle">paused, no active</option>
+            <option value="paused_active">paused, active jobs present</option>
+            <option value="job_dead">job is dead</option>
+            <option value="job_locked">job is locked</option>
+            <option value="job_gone">job is gone</option>
+          </select>
+        </label>
+      </div>
+      <svg viewBox="0 0 460 132" role="img" aria-label="The queue's keyspace footprint as labelled boxes — the four state sets, the meta hash, one job row, and the events channel. Selecting a verb highlights the keys it touches; a destructive verb highlights them in the refusal colour.">
+        <g class="keybox" id="kb-pending"><rect x="20" y="20" width="86" height="34" rx="7"></rect></g>
+        <text x="63" y="41" text-anchor="middle" class="vid">pending</text>
+        <g class="keybox" id="kb-active"><rect x="116" y="20" width="86" height="34" rx="7"></rect></g>
+        <text x="159" y="41" text-anchor="middle" class="vid">active</text>
+        <g class="keybox" id="kb-schedule"><rect x="212" y="20" width="86" height="34" rx="7"></rect></g>
+        <text x="255" y="41" text-anchor="middle" class="vid">schedule</text>
+        <g class="keybox" id="kb-dead"><rect x="308" y="20" width="86" height="34" rx="7"></rect></g>
+        <text x="351" y="41" text-anchor="middle" class="vid">dead</text>
+        <g class="keybox" id="kb-meta"><rect x="20" y="74" width="120" height="34" rx="7"></rect></g>
+        <text x="80" y="95" text-anchor="middle" class="vid">meta (paused)</text>
+        <g class="keybox" id="kb-row"><rect x="150" y="74" width="130" height="34" rx="7"></rect></g>
+        <text x="215" y="95" text-anchor="middle" class="vid">job:&lt;id&gt; (+ logs)</text>
+        <g class="keybox" id="kb-events"><rect x="290" y="74" width="104" height="34" rx="7"></rect></g>
+        <text x="342" y="95" text-anchor="middle" class="vid">events</text>
+      </svg>
+      <div class="geo-readout" id="consoleOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">Every per-job verb is a fenced transition that refuses cleanly: <code class="inl">:gone</code> for a
+      missing row, <code class="inl">:locked</code> for a held job, <code class="inl">:not_dead</code> for a reprocess of a
+      live job. The operator plane is the runbook, in real transitions.</p>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>Operating a queue at scale &mdash; pausing intake, clearing a backlog, retrying a failure &mdash; is the
+          operational side of the delay/schedule/priority family.
+          <a href="/redis-patterns/time-delay-priority">Time, delay &amp; priority</a> teaches it, and
+          <a href="/redis-patterns/queues">Reliable queues</a> the machinery underneath.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">EchoMQ.Admin</code> is the queue-scope plane: pause as a separate gate, drain that spares the
+          active set and the cadence, bounded obliterate that refuses a live queue. The per-job verbs on
+          <code class="inl">EchoMQ.Jobs</code> reach into one row, each one fenced and typed.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: pause intake, clear the backlog, mend one job, retire the queue. The implementation is
+      <code class="inl">Admin</code>'s four queue-scope verbs and the six per-job verbs on <code class="inl">Jobs</code>.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; control over the whole queue, and one row</h2>
+    <div class="prose">
+      <p>Pause is a field the claim reads, so the claim script never changes (<code class="inl">Admin.pause/2</code> /
+        <code class="inl">resume/2</code>); drain spares what is in flight and the cadence that produces more
+        (<code class="inl">drain/3</code>); obliterate refuses a live queue and is bounded by a budget
+        (<code class="inl">obliterate/3</code>); and every per-job verb is a fenced transition that refuses cleanly
+        (<code class="inl">update_data</code>, <code class="inl">update_progress</code> with its events publish,
+        <code class="inl">add_log</code>/<code class="inl">get_job_logs</code>, <code class="inl">remove_job</code>,
+        <code class="inl">reprocess_job</code>). This dive closes lifecycle controls: time, the worker in hand, and now the
+        whole queue and one row.</p>
+    </div>
+    <p class="note">Back to the module: <strong>Lifecycle controls</strong> &mdash; scheduling and recurrence,
+      cancellation and checkpoints, and the operator plane &mdash; the control plane beyond enqueue, claim, complete.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the operator verbs are grounded, and the commands their bodies run.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/hset/">Valkey &mdash; <em>HSET</em></a> &mdash; the meta field pause sets and the row fields the per-job verbs write.</li>
+          <li><a href="https://valkey.io/commands/hdel/">Valkey &mdash; <em>HDEL</em></a> &mdash; the field resume clears.</li>
+          <li><a href="https://valkey.io/commands/publish/">Valkey &mdash; <em>PUBLISH</em></a> &mdash; the progress event <code>update_progress</code> emits on the events channel.</li>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the load-once dispatch every operator verb runs by SHA.</li>
+          <li><a href="https://valkey.io/docs/">Valkey &mdash; <em>Documentation</em></a> &mdash; the substrate of record EchoMQ is backed by.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/queue/lifecycle-controls">Lifecycle controls</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/queue">The Queue</a> &mdash; the state machine the operator verbs act on.</li>
+          <li><a href="/echomq/protocol/the-lua-layer">The Lua layer</a> &mdash; how each operator verb is one atomic, declared-key script.</li>
+          <li><a href="/echomq/protocol">The Protocol</a> &mdash; the keyspace and the branded id every verb's keys derive from.</li>
+          <li><a href="/redis-patterns/time-delay-priority">redis-patterns &middot; Time, delay &amp; priority</a> &mdash; the operational delay/schedule family.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/queue/lifecycle-controls/cancellation-and-checkpoints"><span aria-hidden="true">&larr;</span>&nbsp; Cancellation &amp; checkpoints</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/queue/lifecycle-controls">Lifecycle controls <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>

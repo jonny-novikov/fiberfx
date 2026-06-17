@@ -11,13 +11,13 @@
 
 - [`./emq.1.md`](emq.1.md) — the contract (D1–D7, INV1–INV7); the spec body is authoritative.
 - [`./emq.1.stories.md`](../../epics/emq.epic.1/emq.1.stories.md) — acceptance (US1–US7, incl. the standing EMQ.1-US-GATE).
-- The consumer's stated needs (no-invent applies to these docs exactly as to code):
-  `docs/exchange/exchange.specs.md` §Jobs ("Settlement, notifications, end-of-day reporting,
-  reconciliation: EchoMQ.Jobs … scheduled and repeatable jobs remain the EchoMQ roadmap's 2.1 row, with
-  this platform's needs recorded there as an input") · `docs/exchange/exchange.roadmap.md` §Dependencies +
-  TRD.3's "settlement trigger — per-fill or batched" feedback · `docs/exchange/exchange.strategies.md`
-  Pattern IV ("Reconciliation as a consumer: a periodic sweep") · `docs/exchange/exchange.md` (the Work
-  shape: "retriable follow-ups: settlement, risk jobs, reporting").
+- The worked consumer (no-invent applies to its real surface exactly as to this code):
+  `echo/apps/codemoji` — guesses enqueued on per-player `EchoMQ.Lanes`, drained by two `EchoMQ.Consumer`
+  instances (score + settle), scored under a single authority, prizes settled on a second queue
+  (move-then-settle), `EchoMQ.Events` published. Forward, echo_bot (`echo/apps/echo_bot`) will reach for
+  this vocabulary to fan Telegram notifications at scale (today a direct synchronous `sendMessage`, no bus
+  coupling). The capability row anchors the scheduled/repeatable/retry shape, with retriable follow-ups
+  and a periodic sweep consumer as honest uses.
 - The capability row: `docs/echo/code/ROADMAP.md` §2.1 (retry vocabulary + poison-job drill;
   scheduled/repeatable with the visibility-fence constraint; connector auto-resubscribe).
 - The design law: [`../emq.design.md`](../../emq.design.md) §11.10 (the scheduler family deferral — "root key
@@ -159,8 +159,9 @@ LAWS (carried from emq.0 + the design):
 - The pump is supervised, OPT-IN, pure-cored, with stated restart semantics (INV5).
 - Per-app tests only + TMPDIR=/tmp; toolchain re-probed (asdf current erlang), never hardcoded; Valkey
   6390 PONG before wire steps; apps/echomq untouched; no agent git; the lock-delta law (INV6).
-- The consumer's needs are the Exchange platform's STATED ones (exchange.specs.md §Jobs; exchange.roadmap.md
-  §Dependencies; exchange.strategies.md Pattern IV) — cite them, never invent platform requirements.
+- The consumer's needs are codemoji's REAL ones (`echo/apps/codemoji` — guesses on per-player lanes, a
+  single scoring authority, prize settlement on a second queue) — cite the real surface, never invent
+  consumer requirements; keep echo_bot's notification reach forward-tense.
 
 BUILD ORDER: B0 reconcile → B1 design+STOP → B2 run-at/run-in → B3 repeatables → B4 backoff+drill →
 B5 the pump → B6 resubscribe → B7 conformance additions + the emq.0 ladder end-to-end.

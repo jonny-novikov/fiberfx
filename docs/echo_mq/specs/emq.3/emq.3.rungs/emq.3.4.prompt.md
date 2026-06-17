@@ -201,9 +201,9 @@ docs/echo_mq/emq.progress.md                            (the dashboard fold)
 docs/echo_mq/emq.features.md                            (the flow row → emq.3.4 shipped)
 ```
 
-**EXCLUDE** (Operator out-of-band — never sweep into the rung commit): `echo/apps/exchange/**`,
+**EXCLUDE** (Operator out-of-band — never sweep into the rung commit):
 `echo/apps/mercury_*/**`, `html/**`, the F# course, `docs/echo/mesh/**` (the Operator's concurrent course), and
-any `[emq]`/`[bcs]`/`[mercury]`/`[exchange]` commits the Operator lands between stages. **`keyspace.ex` and
+any `[emq]`/`[bcs]`/`[mercury]` commits the Operator lands between stages. **`keyspace.ex` and
 `admin.ex` are UNTOUCHED** (verify they are NOT in the diff — the `:failed`/`:unsuccessful` subkeys are §6-reserved
 and compose via the existing `job_key/2`; the lifecycle carry is deferred). **`@complete` and `@flow_deliver` are
 BYTE-UNCHANGED** (verify in the `jobs.ex`/`pump.ex` diffs). **Never `git add -A`.** The build agents run **no git**

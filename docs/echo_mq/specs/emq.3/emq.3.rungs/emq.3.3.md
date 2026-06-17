@@ -101,9 +101,10 @@ is **untouched** (the cross-queue add is host-orchestrated per-slot, NOT one new
   Pump), **D-3** (the `:processed` HSETNX guard), **D-4** (the additive `@complete` branch).
 - **Who** — the program (the rung that closes the flow family's core by crossing the slot boundary); the bus's
   consumers, who gain cross-queue flows (a parent that fans in over children in *other* queues — the v1
-  surface); the conformance harness, which grows by `flow_cross_queue` (additive minor). **Exchange**
-  (prospective): a cross-queue order pipeline (a parent `order` job in `orders` fanning in over `validation` /
-  `inventory` / `payments` legs) — *no TRD rung names flows today* ([`../emq.features.md`](../../../emq.features.md) —
+  surface); the conformance harness, which grows by `flow_cross_queue` (additive minor). **codemoji**
+  (prospective): a cross-queue pipeline (a parent job on one queue fanning in over legs on other queues — the
+  shape codemoji's score-then-settle hop across queues already sketches) — *it names no flows today*
+  ([`../emq.features.md`](../../../emq.features.md) —
   recorded, not asserted).
 - **When** — Movement I, the flow family's **third** sub-rung, after emq.3.1 + emq.3.2 shipped (emq.3.3 extends
   the `add/3` admit path emq.3.1 built, emits through the `@complete` seam emq.3.1 built, and the deliver records
@@ -151,8 +152,8 @@ is **untouched** (the cross-queue add is host-orchestrated per-slot, NOT one new
   (`@enqueue`/`@claim`/`@retry`/`@promote`/`@reap`/`@schedule`/`@enqueue_flow` — none); any **new wire class**
   (none — the emit/deliver are plain `RPUSH`/`HSETNX`/`DECR`/`ZADD`; no fence code, no `EMQ…` class); any **new
   transport** (none — the connector `eval` carries both scripts); any **`keyspace.ex` grammar-enforcement edit**
-  (none — `queue_key/2` composes the outbox key already); any **edit to the frozen v1 line**; the in-flight
-  `echo/apps/exchange/` + `docs/exchange/*`; the Operator's concurrent `docs/echo/mesh/**` course work.
+  (none — `queue_key/2` composes the outbox key already); any **edit to the frozen v1 line**; the Operator's
+  concurrent `docs/echo/mesh/**` course work.
 
 ### The honest bounds + carried follow-ups (surfaced at authoring — recorded, not papered over)
 

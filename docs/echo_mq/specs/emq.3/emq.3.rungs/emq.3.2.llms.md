@@ -177,4 +177,4 @@ untouched**, **`keyspace.ex` untouched**, **`apps/echomq` untouched**):
 **Agents run NO git** (the Director commits once at the rung's close by pathspec; the Operator commits
 out-of-band mid-flight — watch for `AM`-status files and exclude them). The boundary is
 `echo/apps/echo_mq` only; exclude the Operator out-of-band paths (`docs/echo/art`, `docs/mercury`,
-`echo/apps/exchange`, `html`, the F# course, any `[emq]`/`[mercury]`/`[exchange]`/`[fsharp]` commits).
+`html`, the F# course, any `[emq]`/`[mercury]`/`[fsharp]` commits).

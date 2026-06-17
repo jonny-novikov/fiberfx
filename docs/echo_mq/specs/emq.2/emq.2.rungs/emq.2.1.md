@@ -3,7 +3,7 @@
 > **Status: BUILT** (the first rung of the emq.2 full-parity cluster; the carve + the ADRs are
 > [`./emq.2.design.md`](../emq.2.design.md)). The read plane shipped inside `echo/apps/echo_mq` as a new
 > module **`EchoMQ.Metrics`** (`lib/echo_mq/metrics.ex`) under the v2 laws — the introspection and metrics
-> surface a Exchange dashboard, an operator runbook, and the later parity rungs read the queue through. It
+> surface an operator dashboard, an operator runbook, and the later parity rungs read the queue through. It
 > ports the v1 `echomq` read capabilities (counts by state, job-and-state lookups, the completed/failed
 > metrics, the rate-limit read-and-gate) onto `echo_mq`'s **as-built** structures (the three-field row, the
 > four sorted sets `pending`/`active`/`schedule`/`dead`), inventing no v1-shaped state type the bus does not
@@ -49,7 +49,7 @@ where the ceiling is met), not a new transition over the row.
   **first** because the later parity rungs' acceptance reads through it — emq.2.2's pause/drain/obliterate
   effects are observed by emq.2.1's counts; emq.2.3's stalled-recovery is observed by emq.2.1's state
   lookups. The front door records the consumer story: "the operational floor every consumer reads through
-  … the counts/metrics/state introspection a Exchange dashboard reads" ([`../echo_mq.md`](../../../echo_mq.md),
+  … the counts/metrics/state introspection an operator dashboard reads" ([`../echo_mq.md`](../../../echo_mq.md),
   the reframed emq.2 row).
 - **What** — emq.2.1 builds, inside `echo_mq`: the read module **`EchoMQ.Metrics`** (the placement ruled at
   the design gate — D1; the fold-onto-`Jobs`/`Lanes` and per-verb-split alternatives steelmanned and
@@ -60,13 +60,12 @@ where the ceiling is met), not a new transition over the row.
   (`get_rate_limit_ttl` reads the limiter TTL; the `is_maxed`/concurrency gate refuses an over-ceiling
   claim with an `EMQ*` class — the read-and-refuse). The exact verb set traces to the v1 read API
   (Deliverables below); no read surface here is invented.
-- **Who** — the bus's operators and observers: a Exchange dashboard reading queue depth and throughput, an
+- **Who** — the bus's operators and observers: an operator dashboard reading queue depth and throughput, an
   operator runbook reading job state before a mutation (emq.2.2), the conformance harness asserting the
-  read verdicts, and the later parity rungs whose acceptance reads through these verbs. The Exchange
-  platform reads positions/exposure and queue health through exactly this kind of surface ("Positions and
-  exposure read from Tables" — `exchange.patterns.md` Pattern V; the queue-health reads are the operator's
-  dashboard). No single TRD rung *gates* on emq.2.1 by name (it is the floor, not a feature), recorded not
-  asserted.
+  read verdicts, and the later parity rungs whose acceptance reads through these verbs. A worked consumer
+  like codemoji reads its guess-queue depth and throughput through exactly this kind of surface (the
+  queue-health reads are the operator's dashboard). No single consumer rung *gates* on emq.2.1 by name (it
+  is the floor, not a feature), recorded not asserted.
 - **When** — Movement I, after emq.1 closes, **first of the emq.2 cluster** (emq.2.1 → emq.2.2 → emq.2.3;
   [`./emq.2.design.md`](../emq.2.design.md) ADR-1's dependency order). SPECCED this run; BUILT a later run.
   The parity carve's one open sequencing fork (does the Operator keep the cluster to the floor, or pull

@@ -138,4 +138,4 @@ priority==0 ? wait : prioritized ; HINCRBY atm   -- prioritized arm RETIRED (§6
 
 **Decision.** Re-derive the v1 effect under braces as a declared-keys `requeue_active/4` (`active`→`pending`, lane-aware): no data-value lock token (the `attempts`-token `EMQSTALE` fence instead), the lease retired by the `ZREM active`, the destination `pending` (or the grouped id's lane). The v1 `prioritized` arm does not return (retired, §6). *(Prose until the rung authors it.)*
 
-**BCS** the operator "kick a stuck claim back to the front" control for an Exchange settlement/notification lane. · **EchoMesh** consistency-first (CP-side) operator action — manual, audited, single-writer-serialized, not an availability path. · **[when]** an Exchange operator kicking a stuck claim back to the front of a settlement/notification lane.
+**BCS** the operator "kick a stuck claim back to the front" control for a scoring/settlement lane. · **EchoMesh** consistency-first (CP-side) operator action — manual, audited, single-writer-serialized, not an availability path. · **[when]** an operator kicking a stuck claim back to the front of a scoring/settlement lane.

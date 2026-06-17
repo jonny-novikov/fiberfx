@@ -71,8 +71,8 @@ shipped `@enqueue_flow` is **untouched**; `apps/echomq` is **untouched** (the ca
   `dependencies/3` outstanding **count**).
 - **Who** — the program (the rung that makes single-queue flows result-consumable and closes O1); the bus's
   consumers, who gain `children_values` / `dependencies` (the parent handler reads what its legs produced, the
-  v1 surface); the conformance harness, which grows by `flow_children_values` (additive minor). **Exchange**
-  (prospective): a same-queue parent that aggregates its child legs' results — *no TRD rung names flows today*
+  v1 surface); the conformance harness, which grows by `flow_children_values` (additive minor). **codemoji**
+  (prospective): a same-queue parent that aggregates its child legs' results — *it names no flows today*
   ([`../emq.features.md`](../../../emq.features.md) — recorded, not asserted).
 - **When** — Movement I, the flow family's **second** sub-rung, after emq.3.1 shipped (emq.3.2 reads the
   `:processed`/`:dependencies` subkeys emq.3.1 writes; it extends the `complete`/`ARGV[5]` seam emq.3.1 built).
@@ -113,7 +113,7 @@ shipped `@enqueue_flow` is **untouched**; `apps/echomq` is **untouched** (the ca
   host path, see the honest bounds — but it is **not required** and is **out of the read API's stated scope**);
   any **edit to a shipped Lua script** (`@enqueue`/`@claim`/`@complete`/`@enqueue_flow` — none; R1·B is
   host-only); any **new key type** or **new wire class** (none); any **`echo_wire`/transport** change; any
-  **edit to the frozen v1 line**; the in-flight `echo/apps/exchange/` + `docs/exchange/*`.
+  **edit to the frozen v1 line**.
 
 ### The honest bounds + carried follow-ups (surfaced at authoring — recorded, not papered over)
 

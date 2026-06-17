@@ -52,7 +52,7 @@
 |---|---|---|
 | [`addPrioritizedJob-9`](groups/addPrioritizedJob-9.md) | SHIPPED (ported, re-aimed) | EchoMQ.Lanes.enqueue/5 (@genqueue, lanes.ex:102), no prioritized set (D-9) |
 | [`changePriority-7`](groups/changePriority-7.md) | RETIRED (capability retired by design, §6) | no priority re-score; Lanes group re-assignment / weighted rotation (emq.4) |
-| [`getCountsPerPriority-4`](groups/getCountsPerPriority-4.md) | RETIRED (retired by design) | re-derived as per-lane depth EchoMQ.Metrics.lane_depths/3 (also metrics: per-lane / per-instrument backlog the trading bus reads) |
+| [`getCountsPerPriority-4`](groups/getCountsPerPriority-4.md) | RETIRED (retired by design) | re-derived as per-lane depth EchoMQ.Metrics.lane_depths/3 (also metrics: per-lane / per-player backlog the consuming app reads) |
 
 ## lifecycle
 

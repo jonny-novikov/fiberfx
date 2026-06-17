@@ -15,9 +15,9 @@
   `echo/apps/echo_mq/lib/echo_mq/` (6 modules), `echo/apps/echo_cache/lib/echo_cache/` (9 files;
   `Directory` nested at `echo_cache.ex:41`), `echo/apps/echo_data/lib/echo_data/bcs.ex` + `bcs/`.
 - [`../emq.design.md`](../../emq.design.md) §6 (the grammar, for Keyspace expectations) · §1 S-4 (honest-row
-  reporting). [`../emq.roadmap.md`](../../emq.roadmap.md) — the movement frame; the Exchange platform
-  (`docs/exchange/exchange.roadmap.md` §Where-this-starts) lists EchoWire + the pluggable Shadow in its
-  as-built starting inventory — this import completes that inventory.
+  reporting). [`../emq.roadmap.md`](../../emq.roadmap.md) — the movement frame; the worked consumer
+  (codemoji, `echo/apps/codemoji`) draws on EchoWire + the pluggable Shadow behind the bus it enqueues on —
+  this import completes that inventory.
 - Existing test floor: `resp_test.exs` (relocates to `apps/echo_wire/test/`), `keyspace_test.exs`
   (stays in `apps/echo_mq/test/`), `coherence_test.exs` (stays in `apps/echo_cache/test/`) — all three
   byte-unmodified and green; helpers read `ExUnit.start(exclude: [:valkey])` (the new echo_wire helper is

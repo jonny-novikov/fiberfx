@@ -67,4 +67,4 @@ return {metrics, data, LLEN KEYS[2]}               + LLEN …:<which>:data  -> 0
 
 **Decision.** Keep the honest counter read. **PROPOSED**: write the `metrics:<which>:data` series as a bounded ring on the same terminal transitions (trimmed by count/age) so the v1 `{metrics, data, numPoints}` slice is re-derivable; the Prometheus/OpenTelemetry **format** wrapper stays emq.8 (the raw read is the floor). The live `:telemetry` surface (`EchoMQ.Meter`, `[:emq, :job, …]`, zero-cost when absent) already ships.
 
-**BCS** the completed/failed throughput an Exchange capacity/SLO dashboard reads. · **EchoMesh** availability-first — a metered observation off the side, never on the order-of-record write path; a stale/absent metric degrades, never blocks. · **[when]** the throughput an Exchange capacity/SLO dashboard reads.
+**BCS** the completed/failed throughput a capacity/SLO dashboard reads. · **EchoMesh** availability-first — a metered observation off the side, never on the record-of-write path; a stale/absent metric degrades, never blocks. · **[when]** the throughput a capacity/SLO dashboard reads.

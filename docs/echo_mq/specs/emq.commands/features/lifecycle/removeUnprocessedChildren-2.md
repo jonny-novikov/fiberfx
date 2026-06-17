@@ -81,4 +81,4 @@ removeJobChildren(prefix, jobKey, options)         :processed/:failed/:unsuccess
 
 **Decision.** A bounded `Flows.remove_children/3` walks the parent's declared §6 subkeys to enumerate same-queue children and `@remove_job` each on the parent's `{q}` slot; cross-queue via `flow:outbox` + sweep; FLAT first (grandchildren = emq.3.5 V-1). `ignore_locked` maps to the v2 `EMQLOCK` skip; bounded per call (the `obliterate` budget pattern).
 
-**BCS** tearing down a cancelled `Exchange.*` fan-out's child legs without touching the parent's own state. · **EchoMesh** consistency-side — same-queue children mutated under one slot's gate, cross-queue via the outbox hop. · **[when]** tearing down a cancelled fan-out's child legs.
+**BCS** tearing down a cancelled fan-out's child legs without touching the parent's own state. · **EchoMesh** consistency-side — same-queue children mutated under one slot's gate, cross-queue via the outbox hop. · **[when]** tearing down a cancelled fan-out's child legs.

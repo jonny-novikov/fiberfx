@@ -2,7 +2,7 @@
 
 > Who wants the watch plane, what they need, and how acceptance is known. Derived from
 > [`./emq.2.3.md`](emq.2.3.md) (BUILT — acceptance has run at the build run). The
-> consumer ground is the bus's observers and long-running consumers — a Exchange dashboard, the platform's
+> consumer ground is the bus's observers and long-running consumers — an operator dashboard, a consumer's
 > telemetry, a long-running handler, an operator's recovery sweep, the conformance harness. The capability
 > ground is the v1 `echomq` watch surface (`EchoMQ.QueueEvents`, `EchoMQ.Telemetry`, `EchoMQ.LockManager`,
 > `EchoMQ.StalledChecker`, `EchoMQ.CancellationToken`) and its scripts, ported onto `echo_mq`'s as-built
@@ -12,7 +12,7 @@
 
 ## EMQ.2.3-US1 — subscribe to the work, not the keys
 
-As a Exchange dashboard reading queue health, I want to subscribe to a queue's lifecycle events (completed,
+As an operator dashboard reading queue health, I want to subscribe to a queue's lifecycle events (completed,
 failed, scheduled, stalled), so that the dashboard reacts to work as it happens without polling the sets, and
 the feed survives a dropped socket.
 

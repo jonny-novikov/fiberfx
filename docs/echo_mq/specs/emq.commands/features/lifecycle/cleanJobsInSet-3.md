@@ -111,4 +111,4 @@ XADD events cleaned count                         -- event = PUBLISH emq:{q}:eve
 
 **Decision.** Add `Admin.clean/4` over the four v2 sets with a server-clock `TIME` age grace + a limit (`:more`/`:ok`) + a scheduler-skip + an honest count; every job key derives from the declared queue base root, never the ARGV `jobKeyPrefix`. The event is the emq.2.3 watch-plane PUBLISH, replacing v1's `XADD … cleaned`.
 
-**BCS** an operator's age-based hygiene over `Exchange.*` work lanes during an incident. · **EchoMesh** consistency-side — bounded removal under one `{q}` gate. · **[when]** age-based queue hygiene during an incident.
+**BCS** an operator's age-based hygiene over the consuming app's work lanes during an incident. · **EchoMesh** consistency-side — bounded removal under one `{q}` gate. · **[when]** age-based queue hygiene during an incident.

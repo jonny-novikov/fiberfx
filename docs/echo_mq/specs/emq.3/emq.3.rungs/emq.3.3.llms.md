@@ -196,7 +196,7 @@ D-1..D-5 locked under the 2026-06-15 delegated-authority directive). Build to **
 - `test/conformance_run_test.exs` + `test/conformance_scenarios_test.exs` (EDIT — the count re-pin to 47).
 - **UNTOUCHED:** `lib/echo_mq/keyspace.ex` (the outbox key composes via the existing `queue_key/2`; no grammar
   allowlist), `lib/echo_mq/admin.ex` (the lifecycle carry — B5/INV9), `@enqueue_flow` (the add is host-orchestrated),
-  every other shipped `Script.new/2` body, `echo_wire`, `apps/echomq`, `apps/exchange`, `docs/echo/mesh/**`.
+  every other shipped `Script.new/2` body, `echo_wire`, `apps/echomq`, `docs/echo/mesh/**`.
 
 ## Agent stories (each a Directive + an Acceptance gate — the contract Apollo + the Director accept at)
 

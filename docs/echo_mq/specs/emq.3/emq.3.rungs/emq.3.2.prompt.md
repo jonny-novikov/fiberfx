@@ -242,9 +242,9 @@ echo/apps/echo_mq/lib/echo_mq/conformance.ex  (flow_children_values, additive)
 echo/apps/echo_mq/test/                        (flow_children_values + the conformance pins)
 ```
 
-**EXCLUDE** (Operator out-of-band — never sweep into the rung commit): `echo/apps/exchange/**`,
+**EXCLUDE** (Operator out-of-band — never sweep into the rung commit):
 `echo/apps/live_svelte/**`, `echo/apps/mercury_cms/**`, `echo/apps/mercury_live_admin/**`, `html/**`, the F#
-course, and any `[emq]`/`[bcs]`/`[mercury]`/`[exchange]` doc commits the Operator lands between stages.
+course, and any `[emq]`/`[bcs]`/`[mercury]` doc commits the Operator lands between stages.
 `echo/apps/echomq` (frozen v1 — the capability reference) + `echo/apps/echo_wire` (the reads ride the shipped
 connector) + `echo/apps/echo_mq/lib/echo_mq/keyspace.ex` (no grammar edit) + `echo/apps/echo_mq/lib/echo_mq/admin.ex`
 (the L-5/N1 lifecycle carry — NOT this rung) + `echo/mix.lock` (emq.3.2 adds no dep — expect `mix.lock`

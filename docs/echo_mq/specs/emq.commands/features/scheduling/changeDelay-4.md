@@ -103,4 +103,4 @@ EXISTS ARGV[4] ?                                 not on schedule -> EMQSTATE ; m
 
 **Decision.** A declared-keys `reschedule/4` (queue, job_id, new_run_at | new_delay) over `[schedule, job_key]`, branded id gated at `Keyspace.job_key/2`, server clock (DQ-2c); additive, no new score scheme. *(Schematic withheld per NO-INVENT — prose until the rung authors it.)*
 
-**BCS** lets an operator push out / pull in a scheduled end-of-day/repeatable job without drop-and-re-add. · **EchoMesh** a CP-side admin write; staleness here is a *budget knob* (M4 dial), not an availability path. · **[when]** an Exchange operator pushing out a scheduled reconciliation during an incident.
+**BCS** lets an operator push out / pull in a scheduled or repeatable job without drop-and-re-add. · **EchoMesh** a CP-side admin write; staleness here is a *budget knob* (M4 dial), not an availability path. · **[when]** an operator pushing out a scheduled job during an incident.

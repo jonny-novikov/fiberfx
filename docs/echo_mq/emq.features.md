@@ -31,8 +31,13 @@
 
 EchoMQ is one program in three movements; all code converges in `echo/apps/echo_mq` above
 `echo/apps/echo_wire` ([`./emq.roadmap.md`](./emq.roadmap.md) §The epic). The exemplar consumer throughout is
-the **Exchange platform** (`docs/exchange/` — the proposed `Exchange.*` suite standing on exactly this tree;
-the TRD.* traces are cited as they are recorded, never invented).
+**codemoji** (`echo/apps/codemoji` — a code-breaking game standing on exactly this tree: it mints branded
+`RND`/`USR`/`JOB`/`GES` ids, enqueues guesses on `EchoMQ.Lanes`, drains them with two `EchoMQ.Consumer`
+instances, scores under a single authority, publishes `EchoMQ.Events`, and settles prizes on a second queue;
+every claim is grounded in that real surface, never invented). The forward-looking consumer is **echo_bot**
+(`echo/apps/echo_bot`): Telegram-bot notifications at scale that *could* enqueue Telegram sends onto the bus
+once the bot's notification path moves off the direct synchronous `sendMessage` it ships with today — a
+planned consumer, named in forward tense, never asserted as a shipped integration.
 
 ### Movement 0 · the substrate — the wire, the cache, the canon (shipped)
 
@@ -45,10 +50,10 @@ the TRD.* traces are cited as they are recorded, never invented).
 | **The canon (identity + structures)** | The lock-free `:atomics` Snowflake mint, the 14-byte `BrandedId` (the `JOB`/`ORD` brand domains), and the CHAMP family — Ecto-free, the in-umbrella dep every key and id gates on. | `echo/apps/echo_data` (the additive `bcs/` subtree) | ✅ |
 
 **Use cases.** *Consumers/systems:* any BEAM service needing an audited keyspace and a self-healing connector
-to Valkey; the cache fronts hot reads (positions, term-resolved claims). *Exchange:* the wire is
-`EchoMQ.Connector` over `EchoWire` (refereed in `bcsH`); the cache is the term-cache resolving market-data
-claims warm (`exchange.roadmap.md` TRD.4); `EchoData.BrandedId.hash32/1` is the audited hash
-`Exchange.Placement` routes books by (`exchange.specs.md` §Placement).
+to Valkey; the cache fronts hot reads for a read-heavy consumer. *codemoji:* the wire is `EchoMQ.Connector`
+over `EchoWire`; branded `RND`/`USR`/`JOB`/`GES` ids mint on `EchoData.BrandedId` and gate every key the game
+touches. *echo_bot (planned):* a notifications consumer would mint and carry the same branded id from enqueue
+to delivery.
 
 ### Movement I · the core — push the v1 capability surface to state-of-the-art
 
@@ -68,12 +73,11 @@ claims warm (`exchange.roadmap.md` TRD.4); `EchoData.BrandedId.hash32/1` is the 
 | **Honest-row conformance** | A self-describing scenario harness — `scenarios/0` + `run/2 → {:ok, n}`, one CONF line per scenario, the count pinned in two tests; **37 scenarios today** (18 state-machine/emq.1 + 6 read + 8 ops + 5 watch), each addition an additive minor with its probe. | `conformance.ex` (`scenarios/0`, `conformance.ex:25`) | ✅ |
 
 **Use cases.** *Consumers/systems:* any producer/worker needing exactly-the-state-it-claims with at-least-once
-delivery, retries with backoff, and scheduled/repeatable work. *Exchange:* the Jobs surface —
-**settlement, notifications, end-of-day reporting, reconciliation** — is `EchoMQ.Jobs` with branded job ids,
-drained by `EchoMQ.Consumer`, shaped by `EchoMQ.Lanes` **one group per venue** (`exchange.specs.md` §Jobs);
-TRD.3 settles **on a venue lane** and a settlement job drains it (`exchange.roadmap.md` TRD.3); scheduled &
-repeatable jobs trace to **this movement's emq.1 row** with the platform's needs recorded there as an input
-(`exchange.specs.md` §Jobs — closed now that emq.1 is shipped).
+delivery, retries with backoff, and scheduled/repeatable work. *codemoji:* the work surface — **guess
+scoring then prize settlement** — is `EchoMQ.Jobs` with branded job ids, drained by two `EchoMQ.Consumer`
+instances (a score queue then a settle queue, move-then-settle), shaped by `EchoMQ.Lanes` **per player** so
+one player's flood cannot starve another. *echo_bot (planned):* scheduled and repeatable notification sends
+would land on **this movement's emq.1 row** — the bus's scheduled-jobs surface a forward consumer can build on.
 
 #### The full-parity cluster — emq.2 (building: read ✅ · ops ✅ · watch 🔨 · closer 🔨)
 
@@ -100,9 +104,9 @@ Each rung stands ON the as-built floor and is acceptance-checked through the pri
 - **Per-lane introspection** — `lane_depth/3`, `lane_depths/3` over the lane sets.
 
 *Use cases — consumers/systems:* an operator dashboard reading queue depth and throughput; a runbook reading a
-job's state before mutating it; the rate gate a claimer consults before claiming. *Exchange:* the
-counts/metrics/state introspection a Exchange operator dashboard reads queue health through
-(`echo_mq.md` reframed emq.2 row; the read side of `exchange.patterns.md` Pattern V).
+job's state before mutating it; the rate gate a claimer consults before claiming. *Consuming app:* the
+counts/metrics/state introspection an operator dashboard reads queue health through — for codemoji, the
+depth and throughput of the per-player score and settle queues (`echo_mq.md` reframed emq.2 row).
 
 **emq.2.2 · the operator plane (lifecycle & mutation ops) — ✅ shipped (`76fc947c`).** `EchoMQ.Admin` (the
 four queue-scope verbs) + six job-mutation verbs on `EchoMQ.Jobs`:
@@ -124,9 +128,9 @@ four queue-scope verbs) + six job-mutation verbs on `EchoMQ.Jobs`:
 
 *Use cases — consumers/systems:* an operator pausing/draining a runaway queue during an incident; a control
 plane obliterating ephemeral test queues; an on-call removing a poisoned job or reprocessing a dead one after
-fixing its cause. *Exchange:* the operator runbook that drives the work queues' lifecycle — the mutation side
-of the venue lanes (`echo_mq.md` reframed emq.2 row; the operator counterpart to `exchange.patterns.md`
-Pattern V).
+fixing its cause. *Consuming app:* the operator runbook that drives the work queues' lifecycle — the
+mutation side of the per-consumer lanes, e.g. draining or clearing codemoji's score/settle queues
+(`echo_mq.md` reframed emq.2 row).
 
 **emq.2.3 · the watch plane (observability & recovery) — 🔨 built on disk (the cluster's third rung).** Five
 modules, the lease lifecycle completed and the observability plane lit up:
@@ -155,8 +159,8 @@ emq.2.3 grows the conformance set to **37** (+5: `lock_extend`, `stalled`, `even
 
 *Use cases — consumers/systems:* a dashboard subscribing to completed/failed events; the platform attaching a
 `:telemetry` handler; a long-running handler extending its lease so it is not reaped mid-work; an operator's
-recovery sweep reclaiming genuinely stalled jobs. *Exchange:* the dashboard's live feed — the work surface and
-position lifecycle watched through events + telemetry (`exchange.patterns.md` Pattern V's watched side);
+recovery sweep reclaiming genuinely stalled jobs. *codemoji:* the live feed — guess scoring and prize
+settlement watched through `EchoMQ.Events` + telemetry as jobs move across the two queues;
 emq.6's distributed cancel coordinates the local token this rung ships.
 
 **emq.2.4 · the parity-closing stage — 🔨 the cluster closer (this design cycle specs it).** emq.2.4 is the
@@ -169,8 +173,8 @@ emq.2.4 is process/mint-touching → HIGH-RISK → Apollo mandatory at build.
 
 *Use cases — consumers/systems:* the parity guarantee itself — `echo_mq` carries the whole shipped v1
 read/ops/watch surface, proven at v1's scenario depth, so `apps/echomq`'s dissolution can close (the program
-thesis). *Exchange:* the assurance that every queue-health, operator, and watch read the platform makes is
-exercised at depth before the platform builds on it.
+thesis). *Consuming app:* the assurance that every queue-health, operator, and watch read a consumer makes is
+exercised at depth before that consumer builds on it.
 
 #### The parent/flow family — emq.3 (🔨 OPEN — single-queue + child-result reads + cross-queue shipped; failure-policy specced)
 
@@ -209,10 +213,9 @@ v1 `flow_producer.ex` (`add/2` + the child-result reads + the cross-queue flow r
 failure-policy options → emq.3.4; the recursive tree → the deferred rung).
 
 *Use cases — consumers/systems:* fan-out/fan-in pipelines where a parent job completes only when its children
-do (or fails / proceeds when one dies — emq.3.4). *Exchange:* a multi-leg settlement or a reconciliation that
-gates on a set of per-venue child jobs — one failed leg failing the settlement (`fail_parent_on_failure`) or
-recorded-and-skipped (`ignore_dependency_on_failure`) (prospective — no TRD rung names flows today; recorded,
-not asserted).
+do (or fails / proceeds when one dies — emq.3.4). *Consuming app:* a multi-leg work unit that gates on a set
+of child jobs — one failed leg failing the parent (`fail_parent_on_failure`) or recorded-and-skipped
+(`ignore_dependency_on_failure`) (prospective — no current consumer wires flows today; recorded, not asserted).
 
 ### Movement II · the extension — the EMQ family ladder (📋 planned)
 
@@ -229,10 +232,10 @@ roadmap plans five families, one rung each ([`./emq.roadmap.md`](./emq.roadmap.m
 
 **Use cases.** *Consumers/systems:* multi-tenant operators needing fair rotation under contention (emq.4),
 high-throughput bulk drains (emq.5), bounded worker lifecycles and cross-node cancel (emq.6), a deepened
-near-cache (emq.7), and engine claims turned into a parse + a benchmark (emq.8). *Exchange:* **per-venue
-fairness at cluster scale** — flood one venue, the others hold (`exchange.roadmap.md` TRD.8 re-gates Lanes
-fairness cluster-wide, building on emq.4's deepened groups); the risk consumer's bounded lifecycle (emq.6);
-the telemetry contract the platform's observability gates on (emq.8).
+near-cache (emq.7), and engine claims turned into a parse + a benchmark (emq.8). *codemoji:* **per-player
+fairness at cluster scale** — flood one player's guess lane, the others hold (emq.4's deepened groups carry
+codemoji's per-player `EchoMQ.Lanes` to cluster scale); a settle-worker's bounded lifecycle (emq.6).
+*echo_bot (planned):* the telemetry contract a notifications consumer's observability would gate on (emq.8).
 
 ### EchoMQ 3.x · the stream tier (🔭 proposed — awaiting Operator slot ratification)
 
@@ -252,11 +255,11 @@ wire + the pluggable shadow, both closed). Consolidated into [`./emq.roadmap.md`
 
 **Use cases.** *Consumers/systems:* per-key event streams with replay, polyglot readers on ordinary Redis
 clients over claims-only payloads, declared retention, deep history restorable after box loss, and mint-time
-window queries. *Exchange:* **every fill an immutable event on a per-instrument stream lane** that projections
-and polyglot consumers replay (`exchange.roadmap.md` §the durable core); **TRD.4** retargets its event log to
-emq3.2; **TRD.6** runs **risk as a consumer group** beside a non-BEAM reader on emq3.3 (`exchange.roadmap.md`
-TRD.6); the strategies' run-id replay discipline gates on emq3.4's windows and emq3.5's archive
-(`exchange.roadmap.md` §the stream-tier dependencies).
+window queries. *Consuming app (prospective):* every domain event an immutable entry on a per-key stream lane
+that projections and polyglot consumers replay — for codemoji, each scored guess or settled prize as a
+mint-ordered event a downstream reader could replay; a non-BEAM reader could ride emq3.3 as a consumer group
+beside a BEAM one; a replay discipline would gate on emq3.4's windows and emq3.5's archive (proposed — no
+current consumer wires the stream tier today).
 
 ### The unslotted proposals (🔭 held at the program seam)
 
@@ -528,8 +531,8 @@ pause/resume) ship; emq.4 adds the fairness knobs a production multi-tenant bus 
 limits) beside the existing concurrency ceiling, and recovery that re-admits a lane the instant a slot frees.
 
 **5W** — *Who*: a multi-tenant operator running one shared queue across many tenants (the per-user transcoding
-case); **Exchange**: per-venue throttling so one hot venue cannot consume the drain budget
-(`exchange.roadmap.md` TRD.8 re-gates Lanes fairness cluster-wide). *What*: per-group rate limiting (global +
+case); **codemoji**: per-player throttling so one hot player's guess lane cannot consume the drain budget
+(emq.4 carries codemoji's per-player `EchoMQ.Lanes` fairness to cluster scale). *What*: per-group rate limiting (global +
 per-group override), default + per-group concurrency, max group size (back-pressure with a typed refusal),
 intra-group priority, group-aware recovery. *When*: emq.4 (Movement II; the per-group ceiling + pause/resume
 SHIPPED in Movement 0, the deepening is the rung). *Where*: extends `EchoMQ.Lanes` (`@gclaim` rotation,
@@ -574,7 +577,7 @@ with the emq.4 groups to keep per-tenant batches fair; partial-failure isolation
 `@complete`/`@retry` so one poison job does not fail the whole batch.
 
 **5W** — *Who*: a high-throughput consumer where the per-job round-trip dominates (bulk ingestion, log shipping,
-reporting); **Exchange**: end-of-day reporting draining thousands of settled-trade rows in batches. *What*: batch
+reporting); **a downstream consumer**: a periodic sweep draining thousands of accumulated rows in batches. *What*: batch
 consume + `min_size`/`timeout` shaping + group affinity + batch concurrency + partial-failure isolation + batch
 events + dynamic rate + manual pull + dynamic delay. *When*: emq.5 (Movement II; the bulk PRODUCE half
 `enqueue_many/3` ships, the consume family is the rung). *Where*: extends the claim surface
@@ -621,9 +624,9 @@ propagate to the node actually running the handler, and a long job that fails pa
 restart.
 
 **5W** — *Who*: an operator/handler stopping a running job from anywhere (a UI cancel button, a supervisor
-abandoning work), bounding a job's wall-clock time, or running long stateful restartable jobs; **Exchange**: the
-risk consumer's bounded lifecycle — a long risk computation canceled cluster-wide or auto-canceled on TTL, a
-multi-stage report resuming from its last completed stage. *What*: a distributed cancel that reaches a handler on
+abandoning work), bounding a job's wall-clock time, or running long stateful restartable jobs; **a downstream
+consumer**: a long-running worker's bounded lifecycle — a long computation canceled cluster-wide or auto-canceled
+on TTL, a multi-stage job resuming from its last completed stage. *What*: a distributed cancel that reaches a handler on
 any node; a TTL that auto-cancels a job exceeding its max processing time; checkpoints (the persisted last value
 a retried job resumes from). *When*: emq.6 (Movement II; the LOCAL cooperative token + lock plane + stalled sweep
 ship at emq.2.3). *Where*: extends `EchoMQ.CancellationToken` (the shipped worker-side token) coordinated across
@@ -703,7 +706,7 @@ keeps the engine-version claims honest; the telemetry contract proves the surfac
 benchmark records the rival numbers beside EchoMQ's rather than claiming a win.
 
 **5W** — *Who*: the program (the proof the whole bus stands on); a consumer trusting the engine claims;
-**Exchange**: the telemetry contract its observability gates on. *What*: the conformance corpus (the additive-minor
+**echo_bot (planned)**: the telemetry contract a notifications consumer's observability would gate on. *What*: the conformance corpus (the additive-minor
 scenario set), the engine matrix (Valkey current stable the truth row + Redis 7.2.x the historical row, the
 computed floor in every row), the telemetry contract (asserting the `[:emq, …]` surface fires — ADR-2's
 two-layer split), the benchmark gate (the published table, rival strengths recorded). *When*: emq.8 (Movement
@@ -729,6 +732,6 @@ corpus (every ARGV-rooted derived key slot-provable). The conformance generated 
 
 The binding design: [`./emq.design.md`](./emq.design.md). The delivery plan: [`./emq.roadmap.md`](./emq.roadmap.md).
 The emq.2 parity carve: [`./specs/emq.2.design.md`](specs/emq.2/emq.2.design.md). The parity-closing triad:
-[`./specs/emq.2.4.md`](specs/emq.2/emq.2.rungs/emq.2.4.md). The named consumer: [`../exchange/exchange.roadmap.md`](../exchange/exchange.roadmap.md).
+[`./specs/emq.2.4.md`](specs/emq.2/emq.2.rungs/emq.2.4.md). The worked consumer: `echo/apps/codemoji`; the planned consumer: `echo/apps/echo_bot`.
 The as-built floor: `echo/apps/echo_mq/lib/echo_mq/*.ex` + `echo/apps/echo_wire`. The v1 feature reference:
 `echo/apps/echomq/lib/echomq/*.ex` + `echo/apps/echomq/priv/scripts/*.lua`.

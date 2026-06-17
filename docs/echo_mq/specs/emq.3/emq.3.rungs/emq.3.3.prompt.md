@@ -219,8 +219,8 @@ docs/echo_mq/emq.features.md                   (the flow row → emq.3.3 specced
 ```
 
 **EXCLUDE** (Operator out-of-band — never sweep into the cycle commit): `echo/apps/**` (no code this cycle),
-`echo/apps/exchange/**`, `echo/apps/mercury_*/**`, `html/**`, the F# course, and any
-`[emq]`/`[bcs]`/`[mercury]`/`[exchange]` commits the Operator lands between stages. **Never `git add -A`.** The
+`echo/apps/mercury_*/**`, `html/**`, the F# course, and any
+`[emq]`/`[bcs]`/`[mercury]` commits the Operator lands between stages. **Never `git add -A`.** The
 authoring agents run **no git** (the Director commits by pathspec).
 
 ## Acceptance — "the design is authored" means
@@ -411,9 +411,9 @@ docs/echo_mq/emq.progress.md                            (the dashboard fold)
 docs/echo_mq/emq.features.md                            (the flow row → emq.3.3 shipped, if touched)
 ```
 
-**EXCLUDE** (Operator out-of-band — never sweep into the rung commit): `echo/apps/exchange/**`,
+**EXCLUDE** (Operator out-of-band — never sweep into the rung commit):
 `echo/apps/mercury_*/**`, `html/**`, the F# course, `docs/echo/mesh/**` (the Operator's concurrent course), and
-any `[emq]`/`[bcs]`/`[mercury]`/`[exchange]` commits the Operator lands between stages. **`keyspace.ex` and
+any `[emq]`/`[bcs]`/`[mercury]` commits the Operator lands between stages. **`keyspace.ex` and
 `admin.ex` are UNTOUCHED** (verify they are NOT in the diff — the outbox composes via the existing `queue_key/2`;
 the lifecycle carry is deferred). **Never `git add -A`.** The build agents run **no git** (the Director commits by
 pathspec).

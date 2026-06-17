@@ -157,4 +157,4 @@ parentKey=args[5] ; parentDeps=args[6]  -- DATA  ZADD KEYS[2] score ARGV[1]     
 
 **Decision.** The `schedule` set is a visibility fence, not a second queue (§6): the promote pump (`Jobs.promote/3`) releases due members to `pending`, where the mint-ordered id is the sort key; server `TIME` replaces the client clock (the lease/clock law). **PROPOSED**: a handler-driven dynamic-delay re-score onto the same `schedule` set (emq.4, beside `changeDelay`).
 
-**BCS** scheduled settlement and retry jobs share one `schedule` set and one timing source. · **EchoMesh** the trade-staleness-for-availability dial made physical — a server-clock fence is sound from a laptop to a Fly fleet. · **[when]** an Exchange end-of-day report or backoff-retry job parked to a future run-at.
+**BCS** scheduled settlement and retry jobs share one `schedule` set and one timing source. · **EchoMesh** the trade-staleness-for-availability dial made physical — a server-clock fence is sound from a laptop to a Fly fleet. · **[when]** a scheduled or backoff-retry job parked to a future run-at.

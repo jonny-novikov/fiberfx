@@ -237,9 +237,9 @@ echo/apps/echo_mq/lib/echo_mq/conformance.ex  (flow_add + flow_fanin, additive)
 echo/apps/echo_mq/test/                        (flow_add + flow_fanin + the dead-child limit + the conformance pins)
 ```
 
-**EXCLUDE** (Operator out-of-band — never sweep into the rung commit): `echo/apps/exchange/**`,
+**EXCLUDE** (Operator out-of-band — never sweep into the rung commit):
 `echo/apps/live_svelte/**`, `echo/apps/mercury_cms/**`, `echo/apps/mercury_live_admin/**`, `html/**`, the F#
-course, and any `[emq]`/`[bcs]`/`[mercury]`/`[exchange]` doc commits the Operator lands between stages.
+course, and any `[emq]`/`[bcs]`/`[mercury]` doc commits the Operator lands between stages.
 `echo/apps/echomq` (frozen v1 — the capability reference) + `echo/apps/echo_wire` (the flow rides the shipped
 connector) + `echo/apps/echo_mq/lib/echo_mq/keyspace.ex` (no grammar edit) + `echo/mix.lock` (emq.3.1 adds no
 dep — expect `mix.lock` EXCLUDED) UNTOUCHED. **Never `git add -A`.**

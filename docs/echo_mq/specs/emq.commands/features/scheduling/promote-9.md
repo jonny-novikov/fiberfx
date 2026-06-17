@@ -109,4 +109,4 @@ priority = HGET jobKey priority  -- arm by DATA  for id in due: ZREM schedule id
 
 **Decision.** Retain the due-sweep `@promote`; **PROPOSED** a sibling `promote_now/3` (declared `[schedule, pending]`, id gated at `Keyspace.job_key/2`) — a single `ZREM schedule id` + `ZADD pending 0 id` (or the grouped id's lane) ignoring due-time; honest-row `{:ok,1}`/`{:ok,0}` (the v1 `-3`). No `prioritized` arm (retired §6).
 
-**BCS** operator/early-trigger of a scheduled settlement or reconciliation job. · **EchoMesh** consistency-first — a targeted single-slot move, deterministic, no clock-skew dependence. · **[when]** an Exchange operator force-promoting one scheduled job ahead of its due time.
+**BCS** operator/early-trigger of a scheduled job. · **EchoMesh** consistency-first — a targeted single-slot move, deterministic, no clock-skew dependence. · **[when]** an operator force-promoting one scheduled job ahead of its due time.

@@ -255,7 +255,7 @@ The **failure-policy mechanism** is decided by the body + the inherited emq.3.3 
   the existing `job_key/2`; no grammar allowlist), `lib/echo_mq/admin.ex` (the lifecycle carry — B6/INV10),
   `@complete` (incl. the fan-in `:212-219` + cross-queue emit `:205-206`), `@flow_deliver` (`pump.ex:42`),
   `@enqueue_flow`/`@hold_parent`/`@enqueue_flow_child` script bodies, every other shipped `Script.new/2` body,
-  `echo_wire`, `apps/echomq`, `apps/exchange`, `docs/echo/mesh/**`.
+  `echo_wire`, `apps/echomq`, `docs/echo/mesh/**`.
 
 ## Agent stories (each a Directive + an Acceptance gate — the contract Apollo + the Director accept at)
 

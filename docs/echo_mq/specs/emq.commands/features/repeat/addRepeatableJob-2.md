@@ -134,4 +134,4 @@ ZADD repeat next customKey ; HMSET opts          -- no delayed-twin: fresh JOB m
 
 **Decision.** Keep the registry + the fresh-mint-per-occurrence law; both keys gated at the builder, co-located by `{q}` grammar (S-6). **PROPOSED** delta: carry the v1 `pattern`/`tz`/`endDate` cron fields as extra hash fields, the next score computed host-side — never a Lua key rooted in a data value.
 
-**BCS** a daily reconciliation/settlement sweep registers once; every run is a first-class, mint-ordered, browsable job. · **EchoMesh** consistency-side — one queue owns its `{q}` repeat slot; the owning node's pump is the single writer that mints + advances. · **[when]** an Exchange venue registering a daily settlement cadence once.
+**BCS** a recurring sweep registers once; every run is a first-class, mint-ordered, browsable job. · **EchoMesh** consistency-side — one queue owns its `{q}` repeat slot; the owning node's pump is the single writer that mints + advances. · **[when]** a consumer registering a recurring cadence once.

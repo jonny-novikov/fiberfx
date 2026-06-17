@@ -2,14 +2,14 @@
 > **Status: BUILT** (design-gate adopted, built, hardened, and gated PASS in the emq-1 run; this body is
 > the post-build reconcile against the as-built tree, the spec authoritative as the contract). emq.1
 > builds, inside `echo/apps/echo_mq` under the v2 laws, the time-and-retry vocabulary the drop's own
-> roadmap names thin and the Exchange platform records as its input — designed A-1-compatible FIRST (the
+> roadmap names thin and the worked consumer draws on — designed A-1-compatible FIRST (the
 > opening design gate, [`./emq.1.design.md`](emq.1.design.md), adopted-as-built), then built. The six
 > design forks settled (the relocated EMQ.1-D1 gate's decisions — recorded in the design doc §8 and the
 > run ledger D-1..D-7); the surfaces below are real, named at their as-built `file:line`.
 
 ## Goal
 
-emq.1 builds the bus's time vocabulary for its named consumer: scheduled enqueue (run-at / run-in as a
+emq.1 builds the bus's time vocabulary for its worked consumer: scheduled enqueue (run-at / run-in as a
 visibility fence over the schedule set — never a new queue), repeatable jobs (each occurrence a fresh
 branded `JOB` mint, so mint-ordered ids stay the sort key), the attempts-with-backoff retry vocabulary
 above the wire with the poison-job drill closing the max-attempts blind spot, a supervised promote pump
@@ -23,11 +23,11 @@ registered with every addition), opened by an Operator-gated A-1-compatible sche
   found thin": the retry vocabulary ("attempts-with-backoff on the lease/reap base; the max-attempts blind
   spot … closes here, gated by a poison-job drill"), scheduled and repeatable jobs (with the stated design
   constraint: "mint-ordered ids stay the sort key; a delay is a visibility fence, not a new queue"), and
-  connector auto-resubscribe ("today the table's restart is the resubscription"). The Exchange platform —
-  the program's named consumer — records its needs against exactly that row: "scheduled and repeatable
-  jobs remain the EchoMQ roadmap's 2.1 row, with this platform's needs recorded there as an input"
-  (`docs/exchange/exchange.specs.md` §Jobs; the same trace in `docs/exchange/exchange.roadmap.md`
-  §Dependencies). And the design defers the scheduler script family typed-never-silent with the open
+  connector auto-resubscribe ("today the table's restart is the resubscription"). codemoji —
+  the program's worked consumer — draws on exactly that row: it enqueues guesses on per-player
+  `EchoMQ.Lanes`, drains them with an `EchoMQ.Consumer`, and settles prizes on a second queue, so the
+  scheduled/repeatable/retry vocabulary is the work surface its scoring and settlement stand on. And the
+  design defers the scheduler script family typed-never-silent with the open
   problem named: the v1 family's forms "root key operands in data values, structurally inexpressible under
   the declared-keys invariant"; "an A-1-compatible flow design is real design work for the family rungs"
   ([`../emq.design.md`](../../emq.design.md) §11.10) — that design work opens this rung.
@@ -44,12 +44,12 @@ registered with every addition), opened by an Operator-gated A-1-compatible sche
   registry each tick; and `EchoMQ.Connector` re-issuing its recorded subscription set after `:reconnect`
   (the re-issue at `connector.ex:606`, called in the `:reconnect` success arm `connector.ex:334`;
   `subscribe/2` at `connector.ex:109`, the companion `unsubscribe/2` at `connector.ex:119`).
-- **Who** — the Exchange platform's Jobs surface: "Settlement, notifications, end-of-day reporting,
-  reconciliation: `EchoMQ.Jobs` with branded job ids, drained by `EchoMQ.Consumer`, shaped by
-  `EchoMQ.Lanes` with one group per venue" (`exchange.specs.md` §Jobs); the batched settlement trigger
-  TRD.3's feedback asks about ("per-fill or batched" — `exchange.roadmap.md`); the OMS's "periodic sweep"
-  reconciliation consumer (`exchange.strategies.md` Pattern IV); the claims-bus subscribers that must
-  survive a reconnect (the auto-resubscribe consumer). Plus every umbrella consumer of the bus.
+- **Who** — codemoji's work surface: guesses with branded `JOB` ids, drained by `EchoMQ.Consumer`, shaped
+  by `EchoMQ.Lanes` with one group per player, scored under a single authority, with prizes settled on a
+  second queue (the move-then-settle split). Forward, echo_bot will reach for the same vocabulary to fan
+  Telegram notifications at scale through the bus. A periodic sweep consumer; the `EchoMQ.Events`
+  subscribers that must survive a reconnect (the auto-resubscribe consumer). Plus every umbrella consumer
+  of the bus.
 - **When** — Movement I's opening rung, after emq.0 closes; SPECCED in the emq-0 run, BUILT next run; the
   A-1 scheduler design gate settles with the Operator BEFORE the build starts.
 - **Where** — `echo/apps/echo_mq` (the verb family on `EchoMQ.Jobs`, `EchoMQ.Repeat`, `EchoMQ.Backoff`,
@@ -65,9 +65,9 @@ registered with every addition), opened by an Operator-gated A-1-compatible sche
 - **In** — the A-1-compatible scheduler design (the gate); the four capability clusters above; the
   conformance-scenario and probe additions that register every new surface; pure + `:valkey` suites; the
   poison-job drill as a recorded check.
-- **Out** — per-instrument stream lanes (`XADD`, consumer groups — TRD.6's recorded dependency on
+- **Out** — per-lane stream lanes (`XADD`, consumer groups — a downstream consumer's recorded dependency on
   conn.1–conn.2 of the connector's forward specification, its own ladder, never this rung); batched
-  settlement shaping (the batches family, emq.5 — the Exchange spec maps batched settlement to the as-built
+  settlement shaping (the batches family, emq.5 — batched settlement maps to the as-built
   one-flush pipeline posture "until a batching rung earns its own record"); groups deepening (emq.4); the
   parent/flow family (emq.3 — §11.10's other half); any wire break (additions ride protocol minors — the
   program's master invariant); any edit to the frozen v1 line.
@@ -147,6 +147,6 @@ emq.1 builds (each now realized; the as-built surface is named):
 
 Stories: [`./emq.1.stories.md`](../../epics/emq.epic.1/emq.1.stories.md) · Agent brief: [`./emq.1.llms.md`](emq.1.llms.md) ·
 Roadmap: [`../emq.roadmap.md`](../../emq.roadmap.md) · Design: [`../emq.design.md`](../../emq.design.md) §5,
-§11.10, §4 row 30 · Consumer: `docs/exchange/exchange.specs.md` §Jobs, `docs/exchange/exchange.roadmap.md`
-§Dependencies · The 2.1 row: `docs/echo/code/ROADMAP.md` ·
+§11.10, §4 row 30 · Consumer: `echo/apps/codemoji` (the worked game consumer) · The 2.1 row:
+`docs/echo/code/ROADMAP.md` ·
 Approach: [`../../elixir/specs/specs.approach.md`](../../../elixir/specs/specs.approach.md)

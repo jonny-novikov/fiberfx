@@ -144,9 +144,9 @@ the host re-emit) → **NORMAL-risk**; an S2 · Arm B ruling (in-script recursiv
   **S1** (the gate fork, decided by S2). All three OPEN for the Operator.
 - **Who** — the program (the rung that **closes Movement I** and unblocks the `apps/echomq` dissolution for the
   whole flow surface); the bus's consumers, who gain **arbitrary-depth** fan-out/fan-in pipelines (a multi-stage
-  pipeline whose stages are themselves sub-pipelines — the v1 `grandchild` shape). **Exchange** (prospective): a
-  multi-leg settlement whose legs are themselves multi-venue sub-settlements (a tree, not a flat fan) — *no TRD rung
-  names flows today* ([`../emq.features.md`](../../../emq.features.md) — recorded, not asserted). The conformance
+  pipeline whose stages are themselves sub-pipelines — the v1 `grandchild` shape). **codemoji** (prospective): a
+  multi-stage job whose legs are themselves sub-pipelines (a tree, not a flat fan) — *it names no flows
+  today* ([`../emq.features.md`](../../../emq.features.md) — recorded, not asserted). The conformance
   harness, which grows by two scenarios (additive minor).
 - **When** — Movement I, the flow family's **fifth and final** sub-rung, after emq.3.1 + emq.3.2 + emq.3.3 + emq.3.4
   shipped (emq.3.5 walks the `add/3` admit machinery emq.3.1/3.3 built, composes over the `@complete` fan-in
@@ -203,7 +203,7 @@ the host re-emit) → **NORMAL-risk**; an S2 · Arm B ruling (in-script recursiv
   controls, the distributed/TTL cancel, [`../emq.features.md`](../../../emq.features.md) Movement II — not a flow rung);
   (h) the **flow-subkey CLEANUP/lifecycle** at any level (a **NAMED CARRY** to the emq.3.x lifecycle rung, D5 + the
   honest bounds — emq.3.5 **populates** the same subkeys at MORE levels, it does not retire them); (i) any **edit to
-  the frozen v1 line**; the in-flight `echo/apps/exchange/` + `docs/exchange/*`; the Operator's concurrent
+  the frozen v1 line**; the Operator's concurrent
   `echo/apps/mercury*` / `docs/mercury/**` and `docs/echo/{art,mesh}/**` work; the repo-root `html/` (and **never**
   `html/ru/`).
 

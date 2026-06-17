@@ -3,7 +3,7 @@
 > **Status: BUILT** (the third and final rung of the emq.2 full-parity cluster; the carve + the
 > ADRs are [`./emq.2.design.md`](../emq.2.design.md)). emq.2.3 builds,
 > inside `echo/apps/echo_mq` (with the one named `echo/apps/echo_wire` connector seam it reads), the **watch
-> plane** of the bus — the observability and lease-recovery surface a Exchange dashboard, the platform's
+> plane** of the bus — the observability and lease-recovery surface an operator dashboard, a consumer's
 > telemetry, and a long-running handler stand on. It ports the v1 `echomq` watch capabilities (the per-queue
 > event stream, the `:telemetry` attach/emit/span surface, the worker-side lock plane with lease extension,
 > the explicit stalled-recovery sweep, the cooperative cancellation token) onto `echo_mq`'s **as-built**
@@ -67,16 +67,15 @@ conformance scenario in the same change (the additive-minor law).
   `new`/`cancel`/`check`). The exact verb-and-event set traces to the v1 watch surface (Deliverables below);
   no watch surface here is invented, and the **distributed** cancel + the **durable replayable event stream**
   are explicitly out of scope (emq.6 and emq3.2 — ADR-2/ADR-4).
-- **Who** — the bus's observers and long-running consumers: a Exchange dashboard subscribing to completed/
-  failed events and plotting throughput from telemetry, the platform attaching a `:telemetry` handler to the
+- **Who** — the bus's observers and long-running consumers: an operator dashboard subscribing to completed/
+  failed events and plotting throughput from telemetry, a consumer attaching a `:telemetry` handler to the
   job lifecycle, a long-running handler extending its lease so it is not reaped mid-work, an operator's
   recovery sweep reclaiming genuinely stalled jobs, and a cooperative handler checking a cancellation token
-  at a safe point. The Exchange platform observes the work surface and the position lifecycle through exactly
-  this kind of event-and-telemetry plane ("Positions and exposure read from Tables", the work surface watched
-  through events — `exchange.patterns.md` Pattern V; the dashboard's live feed). emq.6's **distributed** cancel
-  coordinates the local cooperative token this rung ships; emq.8's proof stack asserts the telemetry
-  **contract** over the surface this rung fires (ADR-2's two-layer split). No single TRD rung *gates* on
-  emq.2.3 by name (it is the floor, not a feature), recorded not asserted.
+  at a safe point. A worked consumer like codemoji observes its work surface through exactly this kind of
+  event-and-telemetry plane (it publishes a `scored` event per guess through `EchoMQ.Events`; the dashboard's
+  live feed). emq.6's **distributed** cancel coordinates the local cooperative token this rung ships; emq.8's
+  proof stack asserts the telemetry **contract** over the surface this rung fires (ADR-2's two-layer split).
+  No single consumer rung *gates* on emq.2.3 by name (it is the floor, not a feature), recorded not asserted.
 - **When** — Movement I, after emq.1 closes and the emq.2 cluster's read (emq.2.1) and operator (emq.2.2)
   planes land, **last of the emq.2 cluster** (emq.2.1 → emq.2.2 → emq.2.3;
   [`./emq.2.design.md`](../emq.2.design.md) ADR-1's dependency order). BUILT — the watch plane lives in

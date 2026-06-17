@@ -94,4 +94,4 @@ return 1                                         GET de:<did> == id ? DEL de:<di
 
 **Decision.** Keep the six-declared-keys form verbatim (already state-of-the-art); the locked refusal reads the Locks presence marker, the dedup release is GET-compare-DEL. **PROPOSED** delta: a declared-keys **recursive** variant walking the `Flows` `:dependencies`/`:processed` subkeys, never the v1 data-value `parent_key`; FLAT first (grandchildren → emq.3.5).
 
-**BCS** an `Exchange.*` settlement-job cleanup removes one branded id cleanly, refusing while a worker holds the lock. · **EchoMesh** consistency-side — a single-slot, partition-local teardown of one `{q}`-gated job. · **[when]** an operator runbook removing one branded settlement job.
+**BCS** a settlement-job cleanup removes one branded id cleanly, refusing while a worker holds the lock. · **EchoMesh** consistency-side — a single-slot, partition-local teardown of one `{q}`-gated job. · **[when]** an operator runbook removing one branded settlement job.

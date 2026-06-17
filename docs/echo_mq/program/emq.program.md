@@ -13,42 +13,49 @@
 ## The program in one paragraph
 
 `echo/apps/echo_mq` is **THE** EchoMQ 2.0 library — the Valkey-native bus, the single convergence target, above
-`echo/apps/echo_wire` (the extracted wire: `EchoMQ.{RESP,Connector,Script}` under the `EchoWire` facade).
-`apps/echomq` is the **FROZEN v1 line** (1.3.0) — the push source + feature reference, untouched, clear to
-dissolve. One program, three movements: **Movement 0** (the substrate — shipped `a2d599c8`), **Movement I**
-(the core — push the v1 capability surface to state-of-the-art: emq.1 scheduler/retry · the emq.2 parity
-cluster CLOSED · the emq.3 flow family), **Movement II** (the extension — groups/batches/lifecycle/proof stack,
-emq.4–emq.8). The named consumer is the **Exchange platform** (`echo/apps/exchange`, the `TRD.*` rungs).
+`echo/apps/echo_wire` (the extracted wire: `EchoMQ.{RESP,Connector,Script}` under the `EchoWire` facade). The
+legacy v1 line was **rewritten fresh into `echo_mq`** under the v2 laws (never migrated) and **removed** — single
+source of truth, no compatibility layer. One program: a **foundation** (EchoMQ protocol v2 + the BCS substrate —
+established as `emq.0`), **Movement I** (the core — the v1 capability surface pushed to state-of-the-art: emq.1
+scheduler/retry · the emq.2 parity cluster · the emq.3 flow family — **CLOSED, conformance 52/52**), and
+**Movement II** (the extension — groups/batches/lifecycle/cache/proof stack, emq.4–emq.8 — open). The **worked
+consumer** is **codemoji** (`echo/apps/codemoji` — the Mastermind-style game on `EchoMQ.Lanes`/`Consumer`/
+`Events` + the `EchoData.Bcs` stores); the **headline-planned consumer** is **echo_bot** (`echo/apps/echo_bot` —
+Telegram notifications at scale; the seam is `EchoBot.Platform.Telegram.send_reply/3`).
 
 ## The AAW team + the pipeline (Flat-L2)
 
-One rung per run through the aaw lead-team, Director-supervised, to one ratifying **LAW-4** commit. The pipeline
-is `/x-mode` bound to echo_mq (the skill `echo-mq-ship`). The roster + the standing calibration:
+One rung per run through the aaw lead-team, **Director-orchestrated**, to one ratifying **LAW-4** commit. The
+pipeline is `/x-mode` bound to echo_mq (the skill `echo-mq-ship`). The roster + the standing calibration:
 
-- **Venus — the architect / spec-steward** ([`./emq.venus.md`](./emq.venus.md)). Reconciles the triad lag-1
-  against the as-built tree, **surfaces (never rules)** the forks, authors the brief. Owns the spec
-  organization + the forward-feature catalog. Edits ONLY the spec triad; never code; no git.
-- **Mars — the implementor + THE PRIMARY CODE-QUALITY GATE** ([`./emq.mars.md`](./emq.mars.md)). **The rebalance
-  (2026-06-15):** Mars is materially stronger in coding than Apollo, so Mars OWNS code quality — builds the
+- **Venus — the architect / spec-steward / strawman author** ([`./emq.venus.md`](./emq.venus.md)). Authors the
+  strawman triad, reconciles it lag-1 against the as-built tree, and **frames the seam forks as four-part Arms**
+  (Rationale / 5W / Steelman / Steward — [`aaw.architect-approach.md`](../../aaw/aaw.architect-approach.md)) for
+  the Director to rule. Surfaces, never rules. Owns the spec organization + the forward-feature catalog. Edits
+  ONLY the spec triad; never code; no git.
+- **Director — the orchestrator + the verifier.** Rules each Arm *with the Operator* via the **mandatory
+  `AskUserQuestion`** (a fork is never decided silently); then **independently verifies code + invariants** (a
+  real gate re-run on Valkey 6390 + an adversarial probe incl. declared-keys + a net-zero mutation spot-check);
+  runs the REMEDIATE loop; **consolidates the rung's findings + learnings for Apollo**; lands the LAW-4 pathspec
+  commit + the Stage-6 fold. Calls no Edit on production code except a net-zero mutation spot-check (LAW-1a).
+- **Mars — the implementor + THE PRIMARY CODE-QUALITY GATE** ([`./emq.mars.md`](./emq.mars.md)). Builds the
   increment AND adversarially self-verifies (the full gate ladder + the declared-keys grep + the Lua mutation
-  kill-rate with `SCRIPT FLUSH` + the order theorem + the destructive probes) **BEFORE reporting**. Proactive:
-  find your own defects; do not wait for a verifier. Edits code + tests; never the spec; no git.
-- **Apollo — the fast finisher** ([`./emq.apollo.md`](./emq.apollo.md)). **The rebalance:** Apollo's heavy
-  independent adversarial marathon (the ~1h47m "cold runs") is RETIRED to Mars. Apollo now (a) ensures the
-  rung's new capability has a **story-generation test** (`echo/apps/echo_mq/test/stories/<feature>_story_test.exs`)
-  so `mix echo_mq.stories` regenerates the executable acceptance catalog `docs/echo_mq/stories/`, and (b) writes
-  the **closure report** (a LIGHT post-build reconcile + the spec sync + the mentoring). Fast, focused, no cold
-  runs. Edits the spec triad + the story tests + the closure record; never production code; no git.
-- **Director — the supervisor.** The Stage-3 independent review (the one independent adversarial pass that
-  stays a hard floor), the REMEDIATE loop, the LAW-4 pathspec commit, the Stage-6 fold. Calls no Edit on
-  production code except a net-zero mutation spot-check (LAW-1a).
+  kill-rate with `SCRIPT FLUSH` + the order theorem + the destructive probes) **BEFORE reporting**, AND ships
+  the **story-generation test** (moved from Apollo) so `mix echo_mq.stories` keeps `docs/echo_mq/stories/`
+  current. Proactive: find your own defects; do not lean on the Director's verify. Edits code + tests; never the
+  spec; no git.
+- **Apollo — the Mentor (exclusively), out of the pipeline** ([`./emq.apollo.md`](./emq.apollo.md)). Receives
+  the Director's consolidated findings + learnings and turns them into **better agents + a better process** — one
+  guardrail per finding aimed at the implicated contract, sharpen-don't-stack, **PROPOSE-ONLY** (the Director
+  ratifies under an Operator grant). No build, no verify, no story coverage (→ Mars), no closure reconcile (→ the
+  Director). The cold runs are retired.
 
-**The pipeline:** Venus → **Mars (build + STRONG self-verify)** → Director review → Mars-2 (remediate + harden)
-→ **Apollo (story coverage + closure report)** → Director ship. **The verification floor** = Mars's adversarial
-self-verification **+** the Director's Stage-3 review **+** Apollo's reconcile. The slow
-independent-Apollo-marathon is gone — that is the cold-run fix, and it works because a strong implementor
-running the mutation kill-rate on their own code finds the defects earlier than a separate agent re-deriving
-them cold (the Stage-3 review keeps a genuine independent pass).
+**The pipeline:** Venus (strawman + Arms) → **Director (rules the Arms via `AskUserQuestion`)** → **Mars (build +
+self-verify + stories)** → **Director (verify code + invariants + REMEDIATE)** → Mars-2 (remediate + harden) →
+**Director (ship + consolidate findings)** → **Apollo (calibrate the agents)**. **The verification floor** =
+Mars's adversarial self-verification **+** the Director's independent verify. The slow independent-Apollo marathon
+is gone (the cold-run fix); Apollo's value moved off the critical path — it makes the *next* rung's agents better
+rather than this rung's build slower.
 
 **LAW-1 (no role-play):** every peer is a REAL `Agent` spawn that self-registers (`mcp__aaw__agent_register`);
 a registered id without a spawned agent is FAKE-N. **The persistence law:** a verifier records its verdict
@@ -59,9 +66,10 @@ emq-3-3 Apollo halt — ~1h47m, then idle, no Y-n — is why this is a law).
 ## The boundary
 
 `echo/apps/echo_mq` (+ the ONE named `echo/apps/echo_wire` seam a rung touches — the emq.1 resubscribe
-precedent). `apps/echomq` (frozen v1) UNTOUCHED. No third app. `echo/mix.lock` ships only if a real dep moved
-(expect EXCLUDED). **Out-of-band — never in an emq commit:** `echo/apps/{exchange,investex}`,
-`docs/{exchange,echo/art,echo/mesh}`, `docs/fsharp`, `html/`, `.claude/skills/mesh-writer`.
+precedent). **No third app** — a rung builds the bus, never its consumers. `echo/mix.lock` ships only if a real
+dep moved (expect EXCLUDED). **Out-of-band — never in an emq commit:** the sibling/consumer apps
+`echo/apps/{codemoji,echo_bot}`, `docs/{echo/art,echo/mesh}`, `docs/fsharp`, `html/`, `.claude/skills/mesh-writer`.
+The `git commit -- <pathspec>` law (never `git add -A`) protects against sweeping any pre-staged sibling.
 
 ## The gate ladder (the operating procedure)
 
@@ -117,12 +125,13 @@ precedent). `apps/echomq` (frozen v1) UNTOUCHED. No third app. `echo/mix.lock` s
 
 ## The live frontier (re-true at each rung close)
 
-- **Shipped:** emq.0 · emq.1 · emq.2.1/2.2/2.3/**2.4** (the parity cluster CLOSED) · emq.3.1 (single-queue flow,
-  `f9849efe`) · emq.3.2 (child-result reads, `68b6baed`) · **emq.3.3 (cross-queue flow, `7de4e90a`)** — the
-  completion signal hops the slot boundary via an outbox on the child slot + the Pump sweep + the `:processed`
-  HSETNX idempotent deliver. Conformance **47**.
-- **Specced:** **emq.3.4** (failure-policy `fail_parent_on_failure`/`ignore_dependency_on_failure` over the
-  §6-reserved `:failed`/`:unsuccessful` subkeys + `add_bulk/3`; **Arm A** — grandchildren deferred to emq.3.5,
-  the V-1 fork ruled D-2). **HIGH-risk** (a shipped `@retry` dead-letter edit + cross-slot failure delivery).
-- **NEXT:** the **emq.3.4 BUILD** (runbook `specs/emq.3/emq.3.4.prompt.md`) → emq.3.5 grandchildren → Movement I
-  CLOSES → Movement II (emq.4 groups · emq.5 batches · emq.6 lifecycle · emq.8 proof stack).
+- **Movement I CLOSED — conformance 52/52.** Shipped: the foundation `emq.0` · `emq.1` (scheduler/retry) · the
+  `emq.2` parity cluster (2.1 read · 2.2 operator · 2.3 watch · 2.4 closer) · the `emq.3` flow family (3.1
+  single-queue · 3.2 child-result reads · 3.3 cross-queue · 3.4 failure-policy/bulk · 3.5 grandchildren/deep
+  recursion). The flow fan-in is eventually-consistent across queues (the `flow:outbox` on the child slot + the
+  `Pump` sweep + the `:processed` HSETNX idempotent deliver); grandchildren are host-orchestrated over byte-frozen
+  scripts.
+- **NEXT — Movement II (emq.4–emq.8):** emq.4 groups deepened (4.1–4.4) · emq.5 batches · emq.6 lifecycle
+  controls · emq.7 cache deepened · emq.8 the proof stack (conformance + engine matrix + telemetry + benchmark).
+  emq.7 is least coupled to the machine and may be pulled forward (an Operator call). The 3.x stream tier
+  (`emq3.*`) is PROPOSED, hard-gated on emq.0.

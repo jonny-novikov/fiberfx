@@ -71,4 +71,4 @@ else return 0                                     ZADD active now+lease_ms <id> 
 
 **Decision.** Hold the shipped server-clock, token-fenced, lease-IS-score form; no `:lock` string. **PROPOSED** delta: return the computed `lease_deadline` (`now + lease_ms`) so a consumer fences its own headroom — a return-shape additive minor, no protocol break.
 
-**BCS** the token-fence is the single-writer guarantee for a long handler (a Decider step) holding a row mid-work. · **EchoMesh** a Best-Effort-Availability corner — a consistency-first lease, correct-always (the CP dial). · **[when]** a long Exchange handler (a Decider step) renewing its lease so it is not reaped mid-work.
+**BCS** the token-fence is the single-writer guarantee for a long handler (a scoring step) holding a row mid-work. · **EchoMesh** a Best-Effort-Availability corner — a consistency-first lease, correct-always (the CP dial). · **[when]** a long scoring handler renewing its lease so it is not reaped mid-work.

@@ -243,9 +243,9 @@ echo/apps/echo_mq/test/                        (the new suites + the operator co
 echo/apps/echo_wire/lib/echo_wire.ex           (ONLY if a delegate was added — expect EXCLUDED)
 ```
 
-**EXCLUDE** (Operator out-of-band — never sweep into the rung commit): `echo/apps/exchange/**`,
+**EXCLUDE** (Operator out-of-band — never sweep into the rung commit):
 `echo/apps/live_svelte/**`, `echo/apps/mercury_cms/**`, `echo/apps/mercury_live_admin/**`, `html/**`, and
-any `[emq]`/`[bcs]`/`[mercury]`/`[exchange]` doc commits the Operator lands between stages. `apps/echomq` is
+any `[emq]`/`[bcs]`/`[mercury]` doc commits the Operator lands between stages. `apps/echomq` is
 untouched by construction (the capability reference). `echo/mix.lock` ships ONLY if a real dep moved
 (emq.2.2 adds none — expect it EXCLUDED). **Never `git add -A`.**
 

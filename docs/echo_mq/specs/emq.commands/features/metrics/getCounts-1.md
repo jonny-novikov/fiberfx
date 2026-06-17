@@ -82,4 +82,4 @@ active -> LLEN ; else -> ZCARD                   -- no wait/paused/prioritized L
 
 **Decision.** Keep the shipped `@counts` verbatim — declared-keys-clean and slot-sound (even a metric-only request pins `{q}` via the declared base). **PROPOSED**: a one-shot multi-set **snapshot** + an honest `as_of` server-`TIME` stamp (the per-surface staleness budget); no open concatenation reintroduced.
 
-**BCS** the per-state depth row an Exchange operator dashboard reads. · **EchoMesh** availability-first — observational, stale-tolerant; it degrades, never refuses (served from the nearest replica). · **[when]** the per-state depth an Exchange operator dashboard reads.
+**BCS** the per-state depth row an operator dashboard reads. · **EchoMesh** availability-first — observational, stale-tolerant; it degrades, never refuses (served from the nearest replica). · **[when]** the per-state depth an operator dashboard reads.

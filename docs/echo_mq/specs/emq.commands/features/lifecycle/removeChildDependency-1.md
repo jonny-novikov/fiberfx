@@ -84,4 +84,4 @@ HDEL jobKey parentKey parent                      -- cross-queue detach rides fl
 
 **Decision.** Add `Flows.drop_dependency/3`: on the parent's `{q}` slot record the child in the declared `:processed` HASH, `DECR` the declared `:dependencies` counter, release at zero — every key host-built from `Keyspace.job_key`, never a value-read `parent_key`. A cross-queue detach rides the same `flow:outbox` hop.
 
-**BCS** a multi-leg `Exchange.*` flow cancels one leg without failing the parent. · **EchoMesh** consistency-side — a single parent slot's fan-in fact, partition-local. · **[when]** cancelling one leg of a multi-leg flow without failing the parent.
+**BCS** a multi-leg flow cancels one leg without failing the parent. · **EchoMesh** consistency-side — a single parent slot's fan-in fact, partition-local. · **[when]** cancelling one leg of a multi-leg flow without failing the parent.

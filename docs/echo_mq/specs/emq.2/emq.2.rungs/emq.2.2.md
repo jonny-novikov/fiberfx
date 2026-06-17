@@ -72,10 +72,10 @@ emq.2.2's pause gates claiming on the whole queue.
   queue during an incident, a control plane obliterating ephemeral test queues, a worker (or a dashboard)
   rewriting a stuck job's data/progress/log, an on-call removing a poisoned job, an operator reprocessing a
   dead job after fixing its cause, the conformance harness asserting the mutation verdicts, and the watch
-  plane (emq.2.3) whose events fire on exactly these transitions. The Exchange platform's operator surface
-  drives the work queues through this kind of lifecycle ("Positions and exposure read from Tables" —
-  `exchange.patterns.md` Pattern V is the read side; the operator's runbook is the mutation side). No single
-  TRD rung *gates* on emq.2.2 by name (it is the floor, not a feature), recorded not asserted.
+  plane (emq.2.3) whose events fire on exactly these transitions. A worked consumer's operator surface
+  drives the work queues through this kind of lifecycle (the metrics plane is the read side; the operator's
+  runbook is the mutation side). No single consumer rung *gates* on emq.2.2 by name (it is the floor, not a
+  feature), recorded not asserted.
 - **When** — Movement I, **second of the emq.2 cluster** (emq.2.1 → **emq.2.2** → emq.2.3;
   [`./emq.2.design.md`](../emq.2.design.md) ADR-1's dependency order), after emq.2.1 (the read plane) closed
   — emq.2.1's reads are this rung's acceptance lens. BUILT; reconciled to the as-built tree this run. The
@@ -125,7 +125,7 @@ emq.2.2's pause gates claiming on the whole queue.
   outside the §6 grammar (drain/obliterate touch the registered sets + the registered `metrics:`/`de:`/`logs`
   suffixes — no new type); any v1-shaped state type the bus does not have (`wait`/`paused`-LIST/`completed`/
   `failed`/`prioritized`/`waiting-children`); any wire break (every addition is an additive protocol minor);
-  any edit to the frozen v1 line; the in-flight `echo/apps/exchange/` + `docs/exchange/*`.
+  any edit to the frozen v1 line.
 
 ## Deliverables
 

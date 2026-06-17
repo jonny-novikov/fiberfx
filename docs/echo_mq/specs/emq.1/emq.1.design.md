@@ -125,7 +125,7 @@ additive law).
 ## 5 · ADR-4 — the promote pump: supervised, opt-in, pure-cored
 
 **Alternatives.** (a) *Do nothing* — promote stays a manual/consumer-loop call: scheduled work has no
-standing release cadence; the Exchange platform's run-at settlement would depend on incidental traffic.
+standing release cadence; a consumer's run-at work would depend on incidental traffic.
 (b) *Engine-side eventing* (keyspace notifications waking the sweep): a cadence improvement candidate,
 but fire-and-forget delivery and engine-posture configuration make it an augmentation to evaluate at a
 later rung, not the baseline. (c) **Chosen-proposed: a supervised, OPT-IN cadence process** — the
@@ -221,7 +221,7 @@ DEFERRED, not resolved here.
 
 ## 9 · Out of scope (the triad's fences, carried)
 
-Per-instrument stream lanes (TRD.6's recorded dependency; the 3.x tier), batches (emq.5), the
+Per-lane stream lanes (a downstream consumer's recorded dependency; the 3.x tier), batches (emq.5), the
 parent/flow family (emq.3 — §11.10's other half), any wire break (additions ride protocol minors), any
 edit to the frozen v1 line.
 
@@ -231,4 +231,4 @@ The triad this design opens: [`./emq.1.md`](emq.1.md) · [`./emq.1.stories.md`](
 [`./emq.1.llms.md`](emq.1.llms.md). The canon: [`../emq.design.md`](../../emq.design.md) (§11.10, §4
 rows 28/30, S-6, §5, §6). The program: [`../emq.roadmap.md`](../../emq.roadmap.md) ·
 [`../echo_mq.md`](../../echo_mq.md). The 2.1 row: `../../echo/code/ROADMAP.md`. The consumer:
-[`../../exchange/exchange.specs.md`](../../../exchange/exchange.specs.md) §Jobs.
+`echo/apps/codemoji` (the worked game consumer).

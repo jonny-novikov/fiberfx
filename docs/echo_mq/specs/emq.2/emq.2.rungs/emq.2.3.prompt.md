@@ -274,9 +274,9 @@ echo/apps/echo_mq/test/                        (the new suites + the re-pinned c
 echo/apps/echo_wire/lib/echo_wire.ex           (ONLY if a facade delegate was added — expect EXCLUDED, the events ride the existing subscribe/unsubscribe)
 ```
 
-**EXCLUDE** (Operator out-of-band — never sweep into the rung commit): `echo/apps/exchange/**`,
+**EXCLUDE** (Operator out-of-band — never sweep into the rung commit):
 `echo/apps/live_svelte/**`, `echo/apps/mercury_cms/**`, `echo/apps/mercury_live_admin/**`, `html/**`, and any
-`[emq]`/`[bcs]`/`[mercury]`/`[exchange]` doc commits the Operator lands between stages. `apps/echomq` is
+`[emq]`/`[bcs]`/`[mercury]` doc commits the Operator lands between stages. `apps/echomq` is
 untouched by construction (the capability reference). `echo/mix.lock` ships ONLY if a real dep moved (emq.2.3
 adds none — `:telemetry` is a guarded optional use, the `Connector.emit/3` precedent; expect it EXCLUDED —
 confirm at D1). **Never `git add -A`.**

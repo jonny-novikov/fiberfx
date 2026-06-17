@@ -1,0 +1,244 @@
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue">The Queue</a>
+        <span class="sep">/</span>
+        <a href="/echomq/queue/the-lifecycle">The lifecycle</a>
+        <span class="sep">/</span>
+        <span class="here">Claim &amp; the lease</span>
+      </nav>
+      <p class="eyebrow">The lifecycle &middot; dive 02</p>
+      <h1>Claim <span class="ex">&amp; the lease</span></h1>
+      <p class="lede">One script pops the oldest job, stamps it with an expiry, and hands the worker a token.</p>
+      <p class="kicker">To claim a job is to run <code class="inl">@claim</code>: pop the oldest pending id, increment
+        <code class="inl">attempts</code>, set the row <code class="inl">active</code>, and add the id to the active set
+        at <code class="inl">now + lease</code>. Two facts carry the rest of the lifecycle and need no lock service: the
+        <strong>active-set score IS the lease deadline</strong>, and <strong><code class="inl">attempts</code> IS the
+        fencing token</strong>. Step the four moves on the right, then read the two beats.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#beats">The two beats</a>
+        <a href="#inspect">Lease &amp; token</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig step" aria-labelledby="stepTitle">
+      <h4 id="stepTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The @claim transition &middot; step the moves</h4>
+      <div class="controls">
+        <div class="solid-select" id="stepSel" role="group" aria-label="Which move of the claim transition">
+          <button type="button" data-move="0" data-c="echo" class="active" aria-pressed="true">1 · pop</button>
+          <button type="button" data-move="1" data-c="echo" aria-pressed="false">2 · token</button>
+          <button type="button" data-move="2" data-c="echo" aria-pressed="false">3 · active</button>
+          <button type="button" data-move="3" data-c="echo" aria-pressed="false">4 · lease</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 250" role="img" aria-label="The four moves of the @claim script, top to bottom: ZPOPMIN the oldest pending id, HINCRBY attempts to mint the fencing token, HSET state active, ZADD to the active set at now + lease as the deadline. The selected move is highlighted in the EchoMQ accent.">
+        <g class="mv on" id="m-0"><rect x="40" y="14" width="380" height="44" rx="9"></rect></g>
+        <text x="60" y="34" class="mid">move 1</text>
+        <text x="230" y="40" text-anchor="middle" font-size="13">pop: ZPOPMIN KEYS[1] → oldest pending id (or {})</text>
+
+        <g class="mv" id="m-1"><rect x="40" y="68" width="380" height="44" rx="9"></rect></g>
+        <text x="60" y="88" class="mid">move 2</text>
+        <text x="230" y="94" text-anchor="middle" font-size="13">token: HINCRBY attempts 1 → the fencing token</text>
+
+        <g class="mv" id="m-2"><rect x="40" y="122" width="380" height="44" rx="9"></rect></g>
+        <text x="60" y="142" class="mid">move 3</text>
+        <text x="230" y="148" text-anchor="middle" font-size="13">state: HSET state active</text>
+
+        <g class="mv" id="m-3"><rect x="40" y="176" width="380" height="44" rx="9"></rect></g>
+        <text x="60" y="196" class="mid">move 4</text>
+        <text x="230" y="202" text-anchor="middle" font-size="13">lease: ZADD KEYS[2] (now + lease) id → deadline</text>
+
+        <line x1="40" y1="234" x2="420" y2="234" stroke="#2aa198" stroke-dasharray="4 3"></line>
+        <text x="230" y="247" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#6fdccf">one atomic step — two claimers cannot pop the same id</text>
+      </svg>
+      <div class="geo-readout" id="stepOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="beats">
+    <h2>The claim transition, in two beats</h2>
+    <div class="prose">
+      <p><strong>Beat one — the handle.</strong> <code class="inl">claim/3</code> checks the queue-wide pause flag first
+        (the separate-gate form that keeps <code class="inl">@claim</code> byte-unchanged), then builds the two keys the
+        script touches — the pending set and the active set — passes the row-key base and the lease window as
+        <code class="inl">ARGV</code>, and maps the reply to <code class="inl">:empty</code> or
+        <code class="inl">{:ok, {id, payload, att}}</code>. A paused queue answers <code class="inl">:empty</code> and
+        leaves the pending set untouched.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Jobs</span>
+<span class="cmt"># claim/3 is the handle. It honors the queue-wide pause flag FIRST (a paused</span>
+<span class="cmt"># queue answers :empty and leaves the pending set unmutated), then runs @claim.</span>
+<span class="cmt"># KEYS = [pending, active]; ARGV[1] the job-key base ("emq:{q}:job:"),</span>
+<span class="cmt"># ARGV[2] the lease window in ms. The script's reply IS the claim result.</span>
+<span class="op">def</span> <span class="fn">claim</span>(conn, queue, lease_ms) <span class="op">when</span> is_integer(lease_ms) <span class="op">and</span> lease_ms &gt; <span class="res">0</span> <span class="op">do</span>
+  <span class="op">if</span> <span class="fn">paused?</span>(conn, queue) <span class="op">do</span>
+    <span class="str">:empty</span>
+  <span class="op">else</span>
+    keys = [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"pending"</span>), Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"active"</span>)]
+    argv = [Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"job:"</span>), Integer.<span class="fn">to_string</span>(lease_ms)]
+
+    <span class="op">case</span> Connector.<span class="fn">eval</span>(conn, <span class="rdx">@claim</span>, keys, argv) <span class="op">do</span>
+      {<span class="str">:ok</span>, []} -&gt; <span class="str">:empty</span>                              <span class="cmt"># pending was empty</span>
+      {<span class="str">:ok</span>, [id, payload, att]} -&gt; {<span class="str">:ok</span>, {id, payload, att}}  <span class="cmt"># the job + its fencing token</span>
+      other -&gt; other
+    <span class="op">end</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><strong>Beat two — the script body.</strong> <code class="inl">@claim</code> is the transition.
+        <code class="inl">KEYS[1]</code> is the pending set, <code class="inl">KEYS[2]</code> the active set;
+        <code class="inl">ARGV[1]</code> is the job-key base, <code class="inl">ARGV[2]</code> the lease window. The
+        empty-pop branch returns an empty table, which the handle reads as <code class="inl">:empty</code>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt">-- the @claim script — one atomic transition</span>
+<span class="cmt">-- Pop the oldest pending id. The pending set is scored at 0, so ZPOPMIN returns</span>
+<span class="cmt">-- the lexically-smallest member — and because the member is the branded id,</span>
+<span class="cmt">-- lexically-smallest is mint-oldest. An empty pop returns {} (the handle's :empty).</span>
+<span class="op">local</span> popped = redis.call(<span class="str">'ZPOPMIN'</span>, <span class="rdx">KEYS[1]</span>)
+<span class="op">if</span> #popped == <span class="res">0</span> <span class="op">then</span> <span class="op">return</span> {} <span class="op">end</span>
+<span class="op">local</span> id = popped[<span class="res">1</span>]
+<span class="op">local</span> jk = <span class="rdx">ARGV[1]</span> .. id
+<span class="cmt">-- Increment attempts and KEEP the new value: this number IS the fencing token.</span>
+<span class="cmt">-- The worker that holds it is the current claimant; a later complete or extend</span>
+<span class="cmt">-- must present this exact number or be refused as stale.</span>
+<span class="op">local</span> att = redis.call(<span class="str">'HINCRBY'</span>, jk, <span class="str">'attempts'</span>, <span class="res">1</span>)
+redis.call(<span class="str">'HSET'</span>, jk, <span class="str">'state'</span>, <span class="str">'active'</span>)
+<span class="cmt">-- The SERVER clock, not the caller's. now + lease is the lease DEADLINE, and it</span>
+<span class="cmt">-- is stored as the active-set SCORE — so the active set is, by construction, an</span>
+<span class="cmt">-- index of leases ordered by expiry. Recovery is a range query over it.</span>
+<span class="op">local</span> t = redis.call(<span class="str">'TIME'</span>)
+<span class="op">local</span> now = t[<span class="res">1</span>] * <span class="res">1000</span> + math.floor(t[<span class="res">2</span>] / <span class="res">1000</span>)
+redis.call(<span class="str">'ZADD'</span>, <span class="rdx">KEYS[2]</span>, now + tonumber(<span class="rdx">ARGV[2]</span>), id)
+<span class="cmt">-- Return the id, the payload, and the fencing token to the worker.</span>
+<span class="op">return</span> {id, redis.call(<span class="str">'HGET'</span>, jk, <span class="str">'payload'</span>), att}</pre>
+
+    <div class="prose">
+      <p>No part of this can interleave with another claim: <code class="inl">ZPOPMIN</code> removes the id before any
+        other claimer can pop it, and the whole script runs as one server-side step. <strong>Two workers cannot claim the
+        same job.</strong> The two outputs that matter most are not the payload — they are the lease deadline written into
+        the active set, and the token handed back to the worker.</p>
+    </div>
+    <p class="take">A claim is not "take a job." It is: pop it, lease it on the server clock, and fence it with a token —
+      all in one indivisible step, so the active set records when the lease ends and the worker holds the only token that
+      can finish it.</p>
+  </section>
+
+  <section id="inspect">
+    <h2>The lease and the token</h2>
+    <div class="prose">
+      <p>Pick a "now" and a lease window and read what the claim writes: the active-set score
+        (<code class="inl">now + lease</code>) that the reaper will later compare against, and the new
+        <code class="inl">attempts</code> value the worker must present to complete. Then see why a second claimer, racing
+        the first, finds the pending set already popped. The model is the real <code class="inl">@claim</code> arithmetic
+        over a fixed job — pure, no network.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="inspTitle">
+      <h4 id="inspTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Claim arithmetic &middot; lease deadline + fencing token</h4>
+      <div class="controls">
+        <div class="ctl">
+          <label for="nowRange">now (server clock, ms)</label>
+          <input type="range" id="nowRange" min="1700000000000" max="1700000060000" step="1000" value="1700000000000">
+          <span class="val" id="nowVal">1700000000000</span>
+        </div>
+        <div class="ctl">
+          <label for="leaseRange">lease window (ms)</label>
+          <input type="range" id="leaseRange" min="5000" max="60000" step="1000" value="30000">
+          <span class="val" id="leaseVal">30000</span>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 96" role="img" aria-label="A job being claimed: its attempts counter increments from a prior value and the active set receives the id at a score equal to now plus the lease window, the lease deadline.">
+        <rect x="14" y="16" width="220" height="64" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="124" y="38" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a39c89">row attempts (HINCRBY)</text>
+        <text id="insp-att" x="124" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#6fdccf">·</text>
+        <rect x="246" y="16" width="220" height="64" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="356" y="38" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a39c89">active score (ZADD)</text>
+        <text id="insp-score" x="356" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#6fdccf">·</text>
+      </svg>
+      <div class="geo-readout" id="inspOut" aria-live="polite"></div>
+    </figure>
+    <p class="note">The lease deadline is computed from the <strong>server's</strong> <code class="inl">TIME</code>, not
+      the worker's clock — so the reaper and the claimer always agree on what "expired" means. The fencing token is the
+      post-increment <code class="inl">attempts</code>; a worker that was reaped and whose job was re-claimed holds an
+      older number, and its completion will be refused.</p>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A reliable claim atomically moves a job out of the wait list and stamps it with an expiry, so a dead worker's
+          job can be recovered. <a href="/redis-patterns/queues/the-reliable-queue">The reliable queue</a> teaches the
+          claim-with-visibility-timeout; <a href="/redis-patterns/queues">Reliable Queues</a> is the chapter.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">@claim</code> pops, fences (<code class="inl">attempts</code>), and leases (the active-set
+          score) in one atomic script; <code class="inl">claim/3</code> gates on <code class="inl">paused?/2</code> first
+          and returns the fencing token to the worker.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: claim atomically and stamp an expiry. The implementation makes the active-set score
+      the expiry and the <code class="inl">attempts</code> the token — no lock string, no separate timeout map.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; pop, lease, fence</h2>
+    <div class="prose">
+      <p>The claim is one atomic script: <code class="inl">ZPOPMIN</code> the oldest pending id, <code class="inl">HINCRBY
+        attempts</code> to mint the fencing token, set the row <code class="inl">active</code>, and
+        <code class="inl">ZADD</code> the id to the active set at the server-clock lease deadline.
+        <code class="inl">claim/3</code> honors <code class="inl">paused?/2</code> first. The next dive reads how the job
+        leaves the active set: the token-fenced completion, and the recovery transitions when it does not.</p>
+    </div>
+    <p class="note">Next in the lifecycle: <strong>Completion &amp; recovery</strong> &mdash; the token fence in
+      <code class="inl">@complete</code>, the schedule-or-dead fork in <code class="inl">@retry</code>, and the
+      lapsed-lease reaper.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the atomic claim, the lease, and the fencing token are grounded, and the commands the body uses.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/zpopmin/">Valkey &mdash; <em>ZPOPMIN</em></a> &mdash; the atomic pop of the oldest pending member the claim begins with.</li>
+          <li><a href="https://valkey.io/commands/zadd/">Valkey &mdash; <em>ZADD</em></a> &mdash; the active-set insertion that scores the lease deadline.</li>
+          <li><a href="https://valkey.io/commands/hincrby/">Valkey &mdash; <em>HINCRBY</em></a> &mdash; the attempts increment that mints the fencing token.</li>
+          <li><a href="https://redis.io/commands/evalsha/">Redis &mdash; <em>EVALSHA</em></a> &mdash; the load-once dispatch the handle runs @claim by.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/queue/the-lifecycle">The lifecycle</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/queue/the-lifecycle/the-four-sets">The four sets</a> &mdash; the active set the lease score lives in.</li>
+          <li><a href="/echomq/queue/the-lifecycle/completion-and-recovery">Completion &amp; recovery</a> &mdash; where the token is checked.</li>
+          <li><a href="/echomq/protocol/the-lua-layer">The Lua layer</a> &mdash; the scripts the transitions are.</li>
+          <li><a href="/redis-patterns/queues/the-reliable-queue">redis-patterns &middot; The reliable queue</a> &mdash; the claim-with-timeout pattern.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/queue/the-lifecycle/the-four-sets"><span aria-hidden="true">&larr;</span>&nbsp; The four sets</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/queue/the-lifecycle/completion-and-recovery">Completion &amp; recovery <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+

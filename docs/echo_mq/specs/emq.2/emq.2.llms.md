@@ -60,7 +60,7 @@
 - Upstream rung: [`./emq.1.md`](../emq.1.md) — the gate ladder this rung must keep green (its build moves the
   `echo_mq` surface before emq.2 reads it — the lag-1 reconcile is non-optional).
 - The seam ground: [`../emq.roadmap.md`](../../emq.roadmap.md) §Seams (seam 1 OPEN, seam 5 dissolution) ·
-  [`../echo_mq.md`](../../echo_mq.md) (emq.2 = hygiene, no TRD gate).
+  [`../echo_mq.md`](../../echo_mq.md) (emq.2 = hygiene, no consumer gate).
 
 ## Requirements
 
@@ -224,7 +224,7 @@ LAWS (carried from emq.1/emq.0 + the design):
   (design S-1/§11.1) — parametric across every source pattern and the tombstone target.
 - Per-app tests only + TMPDIR=/tmp; toolchain re-probed (asdf current erlang), never hardcoded; Valkey 6390
   PONG before wire steps; no agent git; the lock-delta law.
-- This rung is PROGRAM HYGIENE — it names NO Exchange-platform consumer (echo_mq.md, the emq.2 row: "no TRD rung
+- This rung is PROGRAM HYGIENE — it names NO downstream consumer (echo_mq.md, the emq.2 row: "no consumer rung
   gates on it (recorded, not asserted)"). Manufacture no consumer trace.
 
 BUILD ORDER: B0 reconcile -> B1 seam ruling+STOP -> B2 EchoMQ.Version -> B3 the at-rest tool skeleton ->

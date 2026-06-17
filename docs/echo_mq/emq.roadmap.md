@@ -21,11 +21,15 @@ Read [Echo References](./emq.references.md) before EXPANDING this roadmap.
   Script}` frozen-named under the `EchoWire` facade) beside it. The legacy v1 line (frozen at `1.3.0`) has been
   **rewritten fresh into `echo_mq` and removed** — single source of truth; the /echomq and /redis-patterns
   course re-grounding is a dissolution-time operator concern, not a program blocker.
-- **Who.** The Operator owns the goal and every fork; the aaw lead team (venus architect → mars implementor →
-  Director-supervised evaluator → mars remediate → Director Reconcile) ships the rungs. Downstream: **the Exchange platform** (`docs/exchange/` —
-  the proposed `Exchange.*` suite standing on exactly this tree; the program's named consumer), the
-  /bcs · /echomq · /redis-patterns courses as teaching surfaces, and the cross-runtime fleet (the Go sibling;
-  echomq-node strictly PROPOSED).
+- **Who.** The Operator owns the goal and every fork; the aaw lead team ships the rungs — **Venus** (spec-steward
+  + strawman spec author) → **Director** (orchestrator; surfaces the design Arms and rules them with the Operator
+  via the mandatory `AskUserQuestion`) → **Mars** (implementor) → **Director** (verifies code + invariants) → the
+  Director consolidates findings + learnings to **Apollo** (the standing Mentor, who calibrates the agents and
+  drives remediation). Downstream consumers: **codemoji** (`echo/apps/codemoji` — the Mastermind-style game that
+  drains `EchoMQ.Lanes`/`Consumer` and publishes `EchoMQ.Events` today, the program's worked consumer) and,
+  headline-planned, **echo_bot** (`echo/apps/echo_bot` — Telegram-bot notifications at scale; the seam is
+  `EchoBot.Platform.Telegram.send_reply/3`); plus the /bcs · /echomq · /redis-patterns courses as teaching
+  surfaces.
 - **When.** The foundation (EchoMQ protocol v2 + the BCS substrate) is **established** — shipped as `emq.0`.
   **Movement I is CLOSED** (emq.1 · the emq.2 parity cluster · the emq.3 flow family; conformance **52/52**).
   Movement II (emq.4–emq.8) opens on a complete core — one increment per run.
@@ -52,8 +56,8 @@ pure + `:valkey` test pass. Movement I builds on it.
 The v1 capability surface, **rewritten state-of-the-art inside `echo_mq`** under the v2 laws (declared keys ·
 branded `JOB` ids · the closed wire-class registry · the server-clock lease law). Nothing was migrated from the
 legacy v1 line — every capability was rewritten fresh, and the v1 app was then removed. Three planes landed on
-the foundation, with **the Exchange platform the named consumer** (`EchoMQ.Jobs` work drained by
-`EchoMQ.Consumer`, shaped by `EchoMQ.Lanes`):
+the foundation, with **codemoji the worked consumer** (`echo/apps/codemoji` — `EchoMQ.Jobs`/`Lanes` work drained
+by `EchoMQ.Consumer`, scored by a single authority, results published on `EchoMQ.Events`):
 
 - **Scheduler & retry** (emq.1) — delayed / repeatable jobs, attempts-with-backoff + the poison-job drill,
   connector auto-resubscribe.
@@ -84,11 +88,11 @@ the foundation, with **the Exchange platform the named consumer** (`EchoMQ.Jobs`
 
 - **Why** — a multi-tenant production bus needs the pattern depth the established queueing systems proved at
   scale (groups, batches, lifecycle controls), the near-cache the chapter invented (landed structurally in
-  Movement 0; its deepening knobs are recorded), and the proof stack that turns engine claims into a parse
+  the foundation; its deepening knobs are recorded), and the proof stack that turns engine claims into a parse
   (the conformance suite, the matrix, the benchmark with honest rival numbers).
 - **What** — five families, one rung each: **groups** (the displaced fair-lanes family: the control plane,
   group-aware recovery, the park-don't-poll metronome, weighted/deficit rotation — the basics shipped in
-  Movement 0 as `EchoMQ.Lanes`, gated G1–G8); **batches** (bulk consumption, `min_size`/`timeout` shaping,
+  the foundation as `EchoMQ.Lanes`, gated G1–G8); **batches** (bulk consumption, `min_size`/`timeout` shaping,
   affinity, the partitioned finish); **lifecycle controls** (TTL per worker/name, distributed cancel,
   checkpoints); **the cache deepened** (BCAST tracking option, absorbed-fills compaction, journal
   `synchronous=FULL` per group, the invalidation-transport evaluation — design §12.3's named reopening);
@@ -121,25 +125,20 @@ pre-build reconcile re-trues its abstract against the as-built tree before its t
 **The old ladder → this ladder** (the design's §4/§10 rung references name the OLD, pre-program ladder; read
 them through this map):
 
-1) old remapped emq.2 — The BCS state machine
-
-largely CLOSED BY THE DROP: the as-built `echo_mq` carries the three-field row, the four sets, attempts-as-token `EMQSTALE`, completion-deletes, server-clock reap, 
-REV BYLEX browse (the 14 conformance scenarios assert them); the residue (the §4 HOLD rows; the connect-fence audit) is re-dispositioned at the Movement-I reconciles.
-
-2) remaining old remapped specs:
-
-| Old rung (the design's references)              | Disposition in this program                                                                  |
-|-------------------------------------------------|----------------------------------------------------------------------------------------------|
-| old emq.3 — batches                             | emq.5                                                                                        |
-| old emq.4 — lifecycle                           | emq.6                                                                                        |
-| old emq.5 — EchoCache                           | the near-cache landed structurally in Movement 0 (`apps/echo_cache`); the deepening is emq.7 |
-| old emq.6 — conformance/proof                   | emq.8                                                                                        |
-| the displaced groups family (the old open seam) | emq.4 — RULED with the confirmed ladder (Stage-1b; seam 2 closed)                            |
+| Old rung (the design's §4/§10 references) | Disposition in this program |
+|---|---|
+| old emq.2 — the BCS state machine | CLOSED in Movement I (the as-built `echo_mq`: three-field row · four sets · attempts-as-token `EMQSTALE` · completion-deletes · server-clock reap · REV BYLEX browse) |
+| old emq.3 — batches | emq.5 |
+| old emq.4 — lifecycle | emq.6 |
+| old emq.5 — EchoCache | the near-cache landed structurally in the foundation (`echo/apps/echo_cache`); the deepening is emq.7 |
+| old emq.6 — conformance/proof | emq.8 |
+| the displaced groups family (the old open seam) | emq.4 — RULED (Stage-1b; seam 2 closed) |
 
 ## How the program runs
 
 Two roles, the loop every chapter uses:
-the Author (the aaw lead team: Venus specs, Mars builds, the Director review ratifies and calibrate the team in /Users/jonny/dev/jonnify/docs/echo_mq/program) 
+the Author (the aaw lead team: Venus authors the strawman spec, Mars builds, the Director verifies + ratifies,
+and Apollo calibrates the team — the [`program/`](./program/) calibrations)
 turns each rung into a spec triad and a build at the established quality bar; the Operator reviews the increment and
 returns feedback; **feedback edits the spec**. Per rung: sharpen → build → ship → demo → review → feedback →
 adapt. Grounding law: every EchoMQ reference is a real module or file; every BCS requirement cites its
@@ -171,7 +170,8 @@ honest-row reporting (§1 S-4). Process laws bind every rung in this repo: per-a
    stays recoverable via `git show 1f03d579:docs/echomq/specs/emq/design/emq.design.md`).
 3. **Commit packaging** — **RULED (Stage-1b): one commit, full pivot** (the Director's Stage-5 concern).
    CLOSED for planning purposes.
-4. **`apps/echomq` dissolution timing** + the course re-grounding it triggers — operator-owned (the record §1).
+4. **The v1-line dissolution** — DONE: the legacy line was rewritten fresh into `echo_mq` and removed. The one
+   remaining operator-owned concern is the /echomq · /redis-patterns course re-grounding it triggers (the record §1).
 5. **Toolchain + umbrella root** — superseded environment facts (Stage-1c): erlang `28.5.0.1` is installed
    and the `mercury_cms` phantom dep is fixed (the umbrella root compile is viable; mercury_cms's cms gate
    needs Postgres and its admin needs epmd — both outside this rung's gates). Build briefs RE-PROBE the
@@ -210,7 +210,7 @@ document points at one truth):
 
 ### Where this tier starts
 
-On this program's Movement 0: the extracted wire (`echo_wire`) is the hard dependency — emq3.1's verbs land
+On this program's foundation: the extracted wire (`echo_wire`) is the hard dependency — emq3.1's verbs land
 there and nowhere else — and the pluggable `EchoCache.Shadow` is the second (emq3.5's archive lives under
 it). Both closed with rung emq.0. Beyond those, the tier stands on committed records only: the connector
 referee (BCS App. H), the journal's fold (BCS Chapter 4.4), the shadow drill (BCS App. D), the staleness
@@ -250,8 +250,8 @@ commits it.
 The binding design: [`./emq.design.md`](./emq.design.md). The references:
 [`./emq.references.md`](./emq.references.md). The program front door:
 [`./echo_mq.md`](./echo_mq.md). The progress dashboard: [`./emq.progress.md`](./emq.progress.md). The
-line/tier specifications (the laws this delivery plan delivers): [`./emq2.specs.md`](./emq2.specs.md) (the
-2.x line) · [`./emq3.specs.md`](./emq3.specs.md) (the 3.x stream tier). Rung triads: [`./specs/`](./specs/) — `emq.0`/`emq.1`/`emq.2`/`emq.3`
+binding line laws: the design canon [`./emq.design.md`](./emq.design.md) (the 2.x line, S-1..S-7); the 3.x
+stream tier is §EchoMQ 3.x above (PROPOSED). Rung triads: [`./specs/`](./specs/) — `emq.0`/`emq.1`/`emq.2`/`emq.3`
 shipped.
 
 The forward-feature 5-section catalog: [`./emq.features.md`](./emq.features.md) 

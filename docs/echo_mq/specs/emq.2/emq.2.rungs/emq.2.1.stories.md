@@ -2,8 +2,8 @@
 
 > Who wants the read plane, what they need, and how acceptance is known. Derived from
 > [`./emq.2.1.md`](emq.2.1.md) (**BUILT** — the acceptance below is proven against the as-shipped
-> `EchoMQ.Metrics` surface; the body is authoritative). The consumer ground is the bus's observers — a
-> Exchange dashboard, an operator runbook, the conformance harness, and the later parity rungs (emq.2.2/2.3)
+> `EchoMQ.Metrics` surface; the body is authoritative). The consumer ground is the bus's observers — an
+> operator dashboard, an operator runbook, the conformance harness, and the later parity rungs (emq.2.2/2.3)
 > whose acceptance reads through these verbs. The capability ground is the v1 `echomq` read API
 > (`EchoMQ.Queue`) and its read scripts, ported onto `echo_mq`'s as-built structures (never the v1 state
 > names). The as-built verbs carry the `conn` first: `get_counts/3` · `get_job/3` · `get_job_state/3` ·
@@ -51,7 +51,7 @@ Priority: must · Size: 3 · Implements deliverables: EMQ.2.1-D3.
 
 ## EMQ.2.1-US3 — throughput, honestly
 
-As a Exchange dashboard owner reading queue health, I want the completed/failed throughput metrics, so
+As an operator dashboard owner reading queue health, I want the completed/failed throughput metrics, so
 that a dashboard plots work done and work failed from the bus's own counters, not from a derived guess.
 
 Acceptance criteria

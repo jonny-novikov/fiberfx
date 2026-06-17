@@ -43,4 +43,4 @@ job-level bulk add = queue.add_bulk              job-level bulk = Jobs.enqueue_m
 
 **Decision.** Keep `add_bulk/3` (N flows, fail-closed per flow) + `enqueue_many/3` — both already declared-keys, branded, honest-row. No re-derivation owed.
 
-**BCS** bulk submission of N multi-leg settlement flows in one call. · **EchoMesh** consistency-side per flow (each flow's same-queue subtree atomic); availability-side for any cross-queue leg. · **[when]** an Exchange venue submitting N multi-leg settlement flows at once.
+**BCS** bulk submission of N multi-leg flows in one call. · **EchoMesh** consistency-side per flow (each flow's same-queue subtree atomic); availability-side for any cross-queue leg. · **[when]** a consumer submitting N multi-leg flows at once.

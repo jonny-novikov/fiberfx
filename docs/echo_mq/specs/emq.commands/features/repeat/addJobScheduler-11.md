@@ -248,4 +248,4 @@ storeJobScheduler ; addJobFromScheduler          -- cadence host-side (Pump); ne
 
 **Decision.** Keep `register/6`; **PROPOSED**: add `upsert` (a re-register of a live name updates `every_ms`/`template` and re-scores, vs the shipped `:exists` no-op) to recover the v1 override intent under braces (S-1); next-millis from server `TIME` at the pump sweep (DQ-2c); every occurrence a fresh branded `JOB` gated at `Keyspace.job_key/2`. The v1 eviction-of-previous is dropped.
 
-**BCS** a venue registers reconciliation cadences once; each run a browsable `JOB` on the venue's slot. · **EchoMesh** consistency-side — the registry is a per-`{q}` slot fact, so a partition isolates one queue's cadence, never the mesh's. · **[when]** an Exchange venue upserting a reconciliation cadence.
+**BCS** a consumer registers recurring cadences once; each run a browsable `JOB` on the queue's slot. · **EchoMesh** consistency-side — the registry is a per-`{q}` slot fact, so a partition isolates one queue's cadence, never the mesh's. · **[when]** a consumer upserting a recurring cadence.

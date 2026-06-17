@@ -104,7 +104,7 @@ The Director git-rm's roadmap/ ONLY after verifying this 1:1 mapping (no feature
 
 THE FORMAT (Operator directive). Every forward feature is described in the canonical roadmap docs in this 5-section format, categorized by feature name/area:
 - **Goal** — the capability in one statement (what it delivers).
-- **Rationale** — why: the forcing function, the gap it closes, the consumer/Exchange value.
+- **Rationale** — why: the forcing function, the gap it closes, the consumer value.
 - **5W** — Who / What / When (rung + sequencing) / Where (module · key · slot surface) / Why.
 - **Scope (In / Out)** — what the feature includes; what is explicitly deferred (and to which rung).
 - **Acceptance Criteria** — runnable checks. For a DELIVERED feature, AC reference the generated stories/ catalog; for an UNBUILT feature, AC are the forward spec the rung turns into code.
@@ -266,7 +266,7 @@ TWO STATUS RECONCILES surfaced by the fold (for the Director):
 - docs/echo_mq/emq.progress.md — the ANSI block + roll-up + one-line + ladder row + Frontier table + "closed since" note
 - docs/echo_mq/specs/emq-3-4.progress.md — the ledger (T-1 reconcile, T-2 fold mapping, V-1 fork, this Y-1)
 
-NEXT (the Director): (1) coverage-verify the T-2 1:1 mapping, then git-rm docs/echo_mq/roadmap/ (4 files); (2) ship emq.3.3 (the LAW-4 close — the gate-green as-built); (3) rule the V-1 scope fork at the emq.3.4 build's Stage 0 (Arm A recommended). Boundary held: stories/ untouched (generated); no frozen ledger rewritten; echo/apps/* + the Operator out-of-band paths (mesh, exchange, html, fsharp) untouched.
+NEXT (the Director): (1) coverage-verify the T-2 1:1 mapping, then git-rm docs/echo_mq/roadmap/ (4 files); (2) ship emq.3.3 (the LAW-4 close — the gate-green as-built); (3) rule the V-1 scope fork at the emq.3.4 build's Stage 0 (Arm A recommended). Boundary held: stories/ untouched (generated); no frozen ledger rewritten; echo/apps/* + the Operator out-of-band paths (mesh, the consumer app, html, fsharp) untouched.
 
 ## {emq-3-4-complete} Complete
 

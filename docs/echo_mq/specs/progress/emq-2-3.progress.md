@@ -120,9 +120,9 @@ the transitions the events fire on).
   (`EchoMQ.LockManager`, the Pump `:transient` shape) · the explicit stalled-sweep (`EchoMQ.StalledChecker`,
   stall-count threshold beyond the reaper) · the cooperative cancellation token (`EchoMQ.CancellationToken`,
   worker-side new/cancel/check/check!).
-- **Who** — the bus's observers + long-running consumers: a Exchange dashboard subscribing to completed/failed +
-  plotting telemetry throughput, the platform attaching a lifecycle handler, a long-running handler extending its
-  lease, an operator's recovery sweep, a cooperative handler checking a token. No TRD rung gates on emq.2.3 by
+- **Who** — the bus's observers + long-running consumers: a consumer dashboard subscribing to completed/failed +
+  plotting telemetry throughput, the consuming app attaching a lifecycle handler, a long-running handler extending its
+  lease, an operator's recovery sweep, a cooperative handler checking a token. No downstream rung gates on emq.2.3 by
   name (the floor, not a feature) — recorded, not asserted.
 - **When** — Movement I, last of the emq.2 cluster (2.1 → 2.2 → 2.3). Built this run.
 - **Where** — `echo/apps/echo_mq` (the new modules + the lock-extension & stalled scripts as inline `Script.new/2`
@@ -198,7 +198,7 @@ SHARPENS the rung within its concern (the watch plane), does NOT cross the bound
 
 ## Toolchain (re-probed, not hardcoded)
 erlang 28.1 (from ~/.tool-versions); Valkey on **6390** → PONG. No rebase in progress. The tree is ENTANGLED
-(Operator out-of-band: docs/redis-patterns/** staged, Dockerfile/Makefile/cmd/sitemap, docs/exchange/trd-9-1,
+(Operator out-of-band: docs/redis-patterns/** staged, Dockerfile/Makefile/cmd/sitemap, a downstream consumer's docs,
 docs/portal, docs/mercury, docs/fwhd deletions) → the LAW-4 commit at close is a NARROW pathspec over the rung's
 surface ONLY; NEVER git add -A.
 

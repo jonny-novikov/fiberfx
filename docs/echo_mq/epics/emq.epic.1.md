@@ -35,7 +35,7 @@ feature files. Each command section carries exactly these fields (and only what 
 - **decision** — the v3 design choice (the v2-law re-derivation; the seam it keeps or drops).
 - **BCS** — what the Branded Component System needs from it (the property it must carry).
 - **EchoMesh** — its place on the CAP dial (consistency-first ↔ availability-first), proposed voice.
-- **use-cases** — the real consumer scenarios (Exchange settlement/market-data, the operator runbook, …).
+- **use-cases** — the real consumer scenarios (codemoji scoring / prize settlement, the operator runbook, …).
 - **Given/When/Then** — acceptance in **Elixir**, referencing the executable story under
   [`../stories/`](../stories/) (`docs/echo_mq/stories/<feature>.stories.md`, generated from a story test —
   never hand-edited).

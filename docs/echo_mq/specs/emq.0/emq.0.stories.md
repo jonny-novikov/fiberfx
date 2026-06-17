@@ -170,8 +170,8 @@ EMQ.0-D4).
 
 ## EMQ.0-US7 — the wire layer extracted, frozen names intact
 
-As the Exchange platform's author (the platform's client surface is "`EchoMQ.Connector` via `EchoWire`" —
-`docs/exchange/exchange.md` §Rationale), I want the wire layer landed as its own dependency-free app with the
+As a worked consumer's author (codemoji's client surface is `EchoMQ.Connector` via `EchoWire`), I want the
+wire layer landed as its own dependency-free app with the
 `EchoWire` facade in front and the `EchoMQ.*` module names frozen, so that new consumers hold one front-door
 name while every committed record's citation stays valid.
 
@@ -202,8 +202,8 @@ Priority: must · Size: 5 · Implements deliverables: EMQ.0-D9, EMQ.0-D5 (the wi
 
 ## EMQ.0-US8 — the journal's shadow, pluggable and proven
 
-As the Exchange platform's author (milestone A's event store is "`EchoCache.Journal` under a pluggable
-`EchoCache.Shadow`" — `docs/exchange/exchange.md` §Rationale), I want the shadow subsystem imported and its
+As a cache-layer author (the cache's durable edge is `EchoCache.Journal` under a pluggable
+`EchoCache.Shadow`), I want the shadow subsystem imported and its
 contract proven — the behaviour, the laptop `Copy` implementation, `Litestream` conforming — so that the
 journal's box-loss posture runs on a development machine with zero binaries and zero credentials.
 

@@ -275,7 +275,7 @@ byte-frozen failure machinery.
   `lib/echo_mq/flows.ex`'s scripts `@enqueue_flow`/`@hold_parent`/`@enqueue_flow_child` bodies; `pump.ex`'s
   `@flow_deliver`/`@flow_fail_deliver` bodies; `lib/echo_mq/keyspace.ex` (every flow subkey §6-reserved, composes
   via the existing `job_key/2`); `lib/echo_mq/admin.ex` (the lifecycle carry — B6/INV10); `echo_wire`,
-  `apps/echomq`, `apps/exchange`, `apps/mercury*`, `docs/echo/{art,mesh}/**`, `html/` (and **never** `html/ru/`).
+  `apps/echomq`, `apps/mercury*`, `docs/echo/{art,mesh}/**`, `html/` (and **never** `html/ru/`).
   *(Under S2 · Arm B, `jobs.ex` + `pump.ex` gain an additive `@retry`/`@flow_fail_deliver` recursive branch → the
   shipped-script edit + HIGH-risk + Apollo MANDATORY.)*
 
@@ -353,7 +353,7 @@ byte-frozen failure machinery.
   (the v1 contract too — B-Out, INV8); validate acyclicity host-side and raise on a cycle.
 - **Do NOT add a §6 key type, a wire class, or a transport.** Every node's subkeys are §6-reserved; the failure
   re-emit reuses the existing fail-entry KIND; the connector `eval`/`pipeline` carries the recursion (INV1).
-- **Do NOT touch the boundary's outside.** `echo_wire`, `apps/echomq` (the v1 reference — READ-ONLY), `apps/exchange`,
+- **Do NOT touch the boundary's outside.** `echo_wire`, `apps/echomq` (the v1 reference — READ-ONLY),
   `apps/mercury*`, `docs/echo/{art,mesh}/**`, the repo-root `html/` (and **never** `html/ru/`). Agents run **no
   git**; the Director commits by pathspec at the rung's close. Per-app testing only; `TMPDIR=/tmp`; Valkey on 6390;
   erlang re-probed from the app dir.
