@@ -76,7 +76,7 @@ interior-state verbs for agents or software — components read, compute, refuse
 - **The engineering roadmap** — [`docs/echo_mq/emq.roadmap.md`](../../docs/echo_mq/emq.roadmap.md): the
   three movements, the rung ladder emq.0–emq.8, the master invariant, seams 1–9.
 - **The program front door** — [`docs/echo_mq/echo_mq.md`](../../docs/echo_mq/echo_mq.md): the milestone
-  layer (M0/M1/M2) binding each Movement to a trading-platform ship.
+  layer (M0/M1/M2) binding each Movement to a consumer ship.
 - **The bibliography** — [`docs/echo_mq/emq.references.md`](../../docs/echo_mq/emq.references.md).
 
 ## The v2 laws (the protocol's load-bearing properties — S-1..S-7)
@@ -100,9 +100,10 @@ A surface a rung builds must satisfy every one; an invariant that asserts one is
   `emq:{q}:`, the first-byte-disjoint `{emq}:` reserve, the gated branded `job:` position), every Lua key
   declared-or-rooted, the version record (`{emq}:version` = `echomq:2.0.0`) monotone behind the five-code
   fence — and **no later rung re-breaks the wire**.
-- **The consumer.** The trading platform (`docs/trading/`) is the named consumer — `Exchange.*` PROPOSED,
-  standing on `EchoMQ.Jobs` drained by `EchoMQ.Consumer`, shaped by `EchoMQ.Lanes`. echo_mq is the
-  substrate; the platform is the ship.
+- **The consumer.** codemoji (`echo/apps/codemoji`) is the worked consumer — a six-emoji code-breaking
+  game standing on `EchoMQ.Jobs` drained by `EchoMQ.Consumer`, shaped by `EchoMQ.Lanes`. Forward, echo_bot
+  (`echo/apps/echo_bot`) is the headline-planned consumer (Telegram notifications at scale). echo_mq is the
+  substrate; the consumer is the ship.
 - **The frozen v1 line.** `echo/apps/echomq` (frozen at `1.3.0`) is the **push source / feature
   reference** — a capability list to port, never a thing migrated-FROM, never edited. **Zero
   "1.3.1"/"old"/"legacy"/"migrate-from-v1" framing** in the new documentation: echo_mq is the single

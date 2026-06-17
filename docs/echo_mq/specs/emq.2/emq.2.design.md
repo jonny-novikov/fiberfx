@@ -275,8 +275,8 @@ stream's value *rises* under completion-deletes because "the event record is the
    *stream* with ids and range reads is the 3.x tier's `EchoMQ.Stream`, emq3.2 — out of emq.2's scope).
    Inventing a transport here would pre-empt emq3.x and violate no-invent.
 2. **Skip events; ship telemetry only.** *Rejected:* the v1 `QueueEvents` surface is a named parity
-   capability (a consumer that subscribes to `:completed`/`:failed`); dropping it leaves a real gap a
-   Exchange dashboard reads through.
+   capability (a consumer that subscribes to `:completed`/`:failed`); dropping it leaves a real gap an
+   operator dashboard reads through.
 3. **`EchoMQ.Events` over the existing connector pub/sub seam + `EchoMQ.Telemetry` over `:telemetry`.**
    *CHOSEN.*
 
@@ -323,9 +323,9 @@ concrete edits (applied this run by Venus-1):
   whole ladder (Movements 0–II), the emq.2 cluster row, and the dependencies (emq3.x's hard-gate on emq.0).
   There is no longer a separate per-tier roadmap file to maintain.
 - **[`../echo_mq.md`](../../echo_mq.md)** — the emq.2 ladder row's "Ships" + "Unblocks" reframe: from
-  "program hygiene … no TRD rung gates on it" to "**the operational floor every consumer reads through**:
-  the counts/metrics/state introspection a Exchange dashboard reads (emq.2.1), the operator lifecycle verbs
-  a runbook drives (emq.2.2), and the event/telemetry plane the platform observes the work surface through
+  "program hygiene … no consumer rung gates on it" to "**the operational floor every consumer reads through**:
+  the counts/metrics/state introspection an operator dashboard reads (emq.2.1), the operator lifecycle verbs
+  a runbook drives (emq.2.2), and the event/telemetry plane a consumer observes the work surface through
   (emq.2.3)"; Movement I's one-line summary drops "the v1→v2 migration path" for "the full-parity rewrite
   of the v1 capability surface."
 
@@ -341,8 +341,7 @@ addition is an additive protocol minor — new conformance scenarios, at most an
 extension spelled against §6). No new event transport / `SSUBSCRIBE` (design §12.3 — the cache rung's
 evaluation; the durable stream is emq3.2). No feature family the confirmed ladder owns: flows (emq.3),
 groups *deepened* (emq.4), batch *consume* (emq.5), **distributed** cancel / TTL / checkpoints (emq.6),
-the proof stack (emq.8) — ADR-2. No edit to the frozen v1 `apps/echomq` (it is a reference). The
-in-flight `echo/apps/exchange/` (trd.1.1) + `docs/exchange/*` stay untouched and out of any emq-2 work.
+the proof stack (emq.8) — ADR-2. No edit to the frozen v1 `apps/echomq` (it is a reference).
 
 ---
 

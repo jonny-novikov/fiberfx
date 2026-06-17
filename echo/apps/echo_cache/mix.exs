@@ -28,7 +28,10 @@ defmodule EchoCache.MixProject do
       # Chapter 4.4: the journal's SQLite — hex, pinned to the drop's vendored version (D4/D10).
       # Journal uses the raw Exqlite.Sqlite3 NIF API only; db_connection/elixir_make/
       # cc_precompiler/telemetry resolve transitively at production's already-locked versions.
-      {:exqlite, "0.23.0"}
+      {:exqlite, "0.23.0"},
+      # Graft local store: the append-only, immutable B-tree whose zero-cost MVCC
+      # snapshots are Graft's snapshot model. Pure Elixir — no C, no NIF.
+      {:cubdb, "~> 2.0"}
     ]
   end
 end

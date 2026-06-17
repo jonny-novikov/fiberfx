@@ -100,7 +100,7 @@ Columns: **Command** · **v1 (purpose)** · **v2 status** · **v3 decision (PROP
 | `getMetrics-2` | Completed/failed throughput series | **PARTIAL** — `Metrics.get_metrics/3` reads the `count`; the `:data` time-series + Prometheus export are unbuilt (emq.8) | Keep the counter read; build the `metrics:<which>:data` ring honestly behind it; the Prometheus *format* wrapper stays emq.8 | Terminal-outcome throughput for capacity/SLO dashboards | Availability-first: a metered observation surface, never on the order-of-record write path |
 | `getState-8` | A job's state across 8 sets | **PORTED** — `Metrics.get_job_state/3` (`@state_lookup`; 4 sets + the row-field branch) | Keep the four-set + `awaiting_children` row-field probe; the closed `@lookup_states` table is the honest-row guard; add owning-slot/`as_of` on a replica read | A runbook reads a job's state before any mutate; the flow-parent `awaiting_children` verdict | Consistency-first: the authoritative state-of-record read for one branded id |
 | `getStateV2-8` | The `LPOS`-based state read (newer-Valkey variant) | **PORTED (subsumed)** — folded into `Metrics.get_job_state/3`; the bus has no wait/paused LISTs, all four states are ZSETs (`ZSCORE`) | No separate verb — the ZSET keyspace makes the LIST-vs-ZSET split moot; one `get_job_state/3` | Same as `getState` — one canonical state read | Consistency-first: same single-id state-of-record read; the variant collapses |
-| `getDependencyCounts-4` | Counts per child state (processed/unprocessed/ignored/failed) for a flow parent | **PARTIAL (split, not aggregated)** — count is `Flows.dependencies/3`; per-state reads are `children_values/3` + `ignored_failures/3`; no single aggregate verb | A `Flows.child_counts/3` composing the declared `:dependencies` counter + `:processed`/`:failed` subkeys on the parent slot — NOT a SET-cardinality lift | The fan-in progress a multi-leg/saga parent reads before proceeding | Consistency-first: a flow parent's child-state read is on the strong-consistency (matching/ledger) axis |
+| `getDependencyCounts-4` | Counts per child state (processed/unprocessed/ignored/failed) for a flow parent | **PARTIAL (split, not aggregated)** — count is `Flows.dependencies/3`; per-state reads are `children_values/3` + `ignored_failures/3`; no single aggregate verb | A `Flows.child_counts/3` composing the declared `:dependencies` counter + `:processed`/`:failed` subkeys on the parent slot — NOT a SET-cardinality lift | The fan-in progress a multi-leg/saga parent reads before proceeding | Consistency-first: a flow parent's child-state read is on the strong-consistency (state-of-record) axis |
 
 ### introspect-read
 
@@ -136,9 +136,9 @@ Columns: **Command** · **v1 (purpose)** · **v2 status** · **v3 decision (PROP
 
 | Command | v1 (purpose) | v2 status | v3 decision (PROPOSED) | BCS | EchoMesh |
 |---|---|---|---|---|---|
-| `drain-5` | Empty `wait`+`paused`(+`delayed`)+`prioritized`, skipping job-scheduler-owned delayed jobs; leaves active/completed/failed | **PORTED** — `Admin.drain/3` (`@drain`), emq.2.2 | Keep the shipped `@drain` (one slot, `KEYS[1]`=base root, `KEYS[2]`=pending, optional `KEYS[3]`=schedule); the v1 scheduler-skip re-derives as the repeat REGISTRY surviving (D-4), no per-job backref to read | Clears a venue's pending settlement/notification backlog during an incident without killing in-flight active jobs | A control-plane (consistency-first) act on a queue surface — a single-slot atomic op, no availability claim |
-| `obliterate-2` | Destroy a *paused* queue iteratively: refuse if not paused / has active jobs (unless force), delete every set + job key + ~13 auxiliary keys, bounded by `count` | **PORTED** — `Admin.obliterate/3` (`@obliterate`), emq.2.2 | Keep the bounded `:more`/`:ok` form; `EMQSTATE not paused` / `active jobs present` refusals; every job key derived from `KEYS[2]` base; the v1 set-list collapses to the four braced sets + lane structures + `repeat`/`metrics:*`/`meta` | A control plane tears down ephemeral/test venue queues down to their keyspace footprint, leaving no trace | The consistency-first edge of the dial — a destroy is correct-always, never optimistic; bounded budget keeps each call a sound single-slot transaction |
-| `pause-7` | Pause/resume the queue globally: RENAME `wait`↔`paused`, set/clear `meta.paused`, manage the delay marker, XADD a `paused`/`resumed` event | **PORTED** — `Admin.pause/2` + `resume/2` (`@pause`/`@resume`), emq.2.2 | Keep the shipped FORM b — a `paused` FIELD on `emq:{q}:meta`; the claim paths read it first and answer `:empty`; no `wait`↔`paused` RENAME (one `pending` set), `@claim`/`@gclaim` byte-frozen; the event PUBLISH rides the emq.2.3 watch plane | An operator quiesces a runaway venue lane's claiming during an incident without moving the backlog | A control-plane (consistency-first) gate; pausing claim trades availability (workers get `:empty`) for operational control — segmentation by operation |
+| `drain-5` | Empty `wait`+`paused`(+`delayed`)+`prioritized`, skipping job-scheduler-owned delayed jobs; leaves active/completed/failed | **PORTED** — `Admin.drain/3` (`@drain`), emq.2.2 | Keep the shipped `@drain` (one slot, `KEYS[1]`=base root, `KEYS[2]`=pending, optional `KEYS[3]`=schedule); the v1 scheduler-skip re-derives as the repeat REGISTRY surviving (D-4), no per-job backref to read | Clears a queue's pending backlog during an incident without killing in-flight active jobs | A control-plane (consistency-first) act on a queue surface — a single-slot atomic op, no availability claim |
+| `obliterate-2` | Destroy a *paused* queue iteratively: refuse if not paused / has active jobs (unless force), delete every set + job key + ~13 auxiliary keys, bounded by `count` | **PORTED** — `Admin.obliterate/3` (`@obliterate`), emq.2.2 | Keep the bounded `:more`/`:ok` form; `EMQSTATE not paused` / `active jobs present` refusals; every job key derived from `KEYS[2]` base; the v1 set-list collapses to the four braced sets + lane structures + `repeat`/`metrics:*`/`meta` | A control plane tears down ephemeral/test queues down to their keyspace footprint, leaving no trace | The consistency-first edge of the dial — a destroy is correct-always, never optimistic; bounded budget keeps each call a sound single-slot transaction |
+| `pause-7` | Pause/resume the queue globally: RENAME `wait`↔`paused`, set/clear `meta.paused`, manage the delay marker, XADD a `paused`/`resumed` event | **PORTED** — `Admin.pause/2` + `resume/2` (`@pause`/`@resume`), emq.2.2 | Keep the shipped FORM b — a `paused` FIELD on `emq:{q}:meta`; the claim paths read it first and answer `:empty`; no `wait`↔`paused` RENAME (one `pending` set), `@claim`/`@gclaim` byte-frozen; the event PUBLISH rides the emq.2.3 watch plane | An operator quiesces a runaway lane's claiming during an incident without moving the backlog | A control-plane (consistency-first) gate; pausing claim trades availability (workers get `:empty`) for operational control — segmentation by operation |
 
 ## Side-by-side v1 → v3
 
@@ -156,7 +156,7 @@ The three v1 admission scripts (`addStandardJob-9`, `addDelayedJob-6`, `addPrior
 
 **v3 PROPOSED.** The as-built `@enqueue` already IS the state-of-the-art re-derivation (branded key builder, declared 2-key form, score-0 mint-ordered ZSET replacing the wait/prioritized LIST, idempotent admission, honest-row). v3 re-introduces what BCS + EchoMesh need beyond it: the parent/flow dependents edge returns as a **declared** `KEYS[]` dependents-set with a branded parent-job key (the design §10 flow seam, the v1 `args[5]`/`args[6]` data-rooted operands re-expressed lawfully). PROPOSED, not asserted-shipped.
 
-**BCS / EchoMesh.** BCS: the order theorem (no second index) is the deterministic admission the trading hot path stands on. EchoMesh: availability-first/segmented — idempotent at-least-once admission tolerates a partition, the 14-byte branded id is the same addressable entity across the bus, cache, stream, and store (`docs/echo/mesh/markdown/index.md`).
+**BCS / EchoMesh.** BCS: the order theorem (no second index) is the deterministic admission a consumer's hot path stands on (for codemoji, the per-player guess stream). EchoMesh: availability-first/segmented — idempotent at-least-once admission tolerates a partition, the 14-byte branded id is the same addressable entity across the bus, cache, stream, and store (`docs/echo/mesh/markdown/index.md`).
 
 ```text
 v1 addStandardJob-9                              v3 enqueue (PROPOSED, as-built @enqueue + flow edge)
@@ -181,7 +181,7 @@ XADD waiting                                     ZADD KEYS[2] 0 ARGV[1]         
 The v1 12-bit-slot score-packing tiebreak is gone — order falls out of the branded mint, not a bit-stuffed score. 
 The server clock (`TIME`) replaces the client timestamp wherever the delay is priced (the lease/clock law). PROPOSED for v3: a handler-driven dynamic-delay re-score of an active job onto the same `schedule` set (features §forward, emq.4 candidate).
 
-**BCS / EchoMesh.** BCS: scheduled settlement and retry jobs share one `schedule` set and one timing source across the trading capstone. EchoMesh: the trade-staleness-for-availability dial made physical — a server-clock visibility fence means delay is sound from a laptop to a Fly fleet, never the caller's clock.
+**BCS / EchoMesh.** BCS: scheduled and retry jobs share one `schedule` set and one timing source across a consuming app. EchoMesh: the trade-staleness-for-availability dial made physical — a server-clock visibility fence means delay is sound from a laptop to a Fly fleet, never the caller's clock.
 
 ```text
 v1 addDelayedJob-6                               v3 enqueue_in/_at (PROPOSED, as-built @schedule)
@@ -205,7 +205,7 @@ parentKey/deps = args[5]/args[6]  -- DATA VALUES  HSET KEYS[1] state=scheduled a
 
 **v3 PROPOSED.** v3 keeps fair lanes as the priority model — the rotating ring replaces the global priority number, giving per-identity fairness over one shared machine. **Intra-group priority** is the forward addition (emq.4): per the features forward section it is "*a non-zero lane score on the existing `g:<group>:pending` ZSET — no new key family*" — i.e. priority becomes a lane-local score (and a per-group ceiling / pause-resume), declared-keys-clean, never a new global `prioritized` key or a `pc` counter. The v1 packed-score-plus-secondary-counter scheme does not return. PROPOSED, not asserted-shipped.
 
-**BCS / EchoMesh.** BCS: fair lanes give the trading platform many-tenants-on-one-queue isolation (no noisy-neighbour starvation) that a single global priority integer cannot. EchoMesh: the consistency-first/coordinated end of the dial — bounded, fair, per-identity service is a server-side invariant computed on the bus, not a client-supplied hint that a partition could distort.
+**BCS / EchoMesh.** BCS: fair lanes give a consuming app (codemoji's per-player lanes) many-tenants-on-one-queue isolation (no noisy-neighbour starvation) that a single global priority integer cannot. EchoMesh: the consistency-first/coordinated end of the dial — bounded, fair, per-identity service is a server-side invariant computed on the bus, not a client-supplied hint that a partition could distort.
 
 ```text
 v1 addPrioritizedJob-9                           v3 Lanes.enqueue (PROPOSED — as-built @genqueue;
@@ -231,7 +231,7 @@ parentKey/deps = args[5]/args[6] -- DATA VALUES  ring bookkeeping: add lane if s
 
 **v3 reimplementation (PROPOSED).** The state-of-the-art form **keeps the as-built shape** (it is already braced, branded-gated, declared-keys, honest-row) and **forward-extends one gap** the BCS+EchoMesh manuscripts imply. Every id is gated at `Keyspace.job_key/2` (raises pre-wire, INV4); the parent is held `state = awaiting_children` with `:dependencies` = N; same-queue flows land in one atomic `@enqueue_flow` (one slot — either all or none), cross-queue flows land parent-first and fail-closed (a partial add leaves the parent held, never spuriously executed). The PROPOSED forward delta: a **child-roster subkey** (the deferred Fork **R2.B**, the v1 `get_dependencies/1` "which children remain" answer that v2 dropped in favour of the bare counter) — a declared `<> ":roster"` set composed exactly like `:dependencies`, so the mesh's introspection can answer *which* legs are outstanding (not just how many) without ever rooting a key in data. The cross-queue fan-in stays the eventually-consistent outbox→pump hop — the manuscript's per-subsystem availability choice (`docs/echo/mesh/markdown/index.md` §"Segmenting"). **PROPOSED — not asserted as shipped.**
 
-**BCS relevance.** The flow is the BCS composite work unit: a parent order whose children are validation/inventory/payment legs, fanned in by the 14-byte branded id — the exemplar's "fill matched on the book is the same addressable entity across the cache, the stream, the worker."
+**BCS relevance.** The flow is the BCS composite work unit: a parent job whose children are independent legs, fanned in by the 14-byte branded id — the same addressable entity across the cache, the stream, and the worker (the mesh principle cited at the head of this matrix).
 
 **EchoMesh relevance.** Segmented by construction: a same-queue flow is **consistency-first** (one `{q}` slot, atomic fan-in); a cross-queue flow is **availability-first** (eventually-consistent cross-slot outbox fan-in, INV5/INV7) — the same command sitting on either side of the CAP dial by flow shape, per the heart-of-the-course segmentation thesis.
 
@@ -259,7 +259,7 @@ SADD parentDependenciesKey jobIdKey           then @enqueue_flow_child per slot
 
 **v3 reimplementation (PROPOSED).** Keep the as-built registry and the **fresh-mint-per-occurrence** law (a daily report registers once; each run is a first-class, mint-ordered, browsable job — id reuse would break the order theorem and dedup). Two ids gated at the key builder; the period and template are the record, the name is the registry member. The PROPOSED forward delta: the as-built record is **`every_ms`-only**, dropping the v1 cron-expressiveness (`pattern`, `tz`, `endDate`); v3 carries those back as additional hash fields and computes the next score **host-side** (the next cron tick under `tz`, capped at `endDate`), feeding `@advance`'s `ARGV` a server-clock-derived `next_at` — never a Lua key rooted in a data value (S-6). The single owning node's pump remains the single writer for a queue's `{q}` repeat slot (slot-soundness). **PROPOSED — not asserted as shipped.**
 
-**BCS relevance.** A periodic settlement / reconciliation / market-open sweep registers once and produces a first-class branded `JOB` per occurrence — the same addressable, browsable, mint-ordered unit every other BCS surface references by id.
+**BCS relevance.** A periodic sweep registers once and produces a first-class branded `JOB` per occurrence — the same addressable, browsable, mint-ordered unit every other BCS surface references by id.
 
 **EchoMesh relevance.** **Consistency-first:** one queue owns its `{q}` repeat slot, and the owning node's pump is the single writer that mints and advances it — under a partition, lost slots reduce cadence (a missed tick), never double-fire, exactly the "refuses rather than risk a second writer" placement the architect manuscript names.
 
@@ -410,11 +410,11 @@ The four BullMQ-derived v1 commands that move a job **across the wait/active bou
 
 **v2 status — PORTED.** `EchoMQ.Jobs.claim/4` (`jobs.ex`, the `@claim` inline `Script.new(:claim, …)`): `ZPOPMIN` over the same-score `pending` zset, `HINCRBY attempts` to **mint the fencing token** (no separate `:lock` string — the lease IS the `active`-set score), `ZADD active (TIME + lease)` on the **server clock**, and returns `{id, payload, attempts}`. The queue-wide pause flag is read FIRST (`Jobs.paused?/2` on `emq:{q}:meta`), answering `:empty` with `pending` unmutated (emq.2.2-D2). The grouped/fair arm is `EchoMQ.Lanes.claim/3` (`@gclaim`: `LMOVE ring ring LEFT RIGHT` rotates one identity, then `ZPOPMIN` that lane). Features-catalog parity row 329 (✅, emq.0/emq.1).
 
-**v3 PROPOSED.** Keep the as-built `@claim` as the canonical form — it already satisfies every law (declared `[pending, active]`; the per-job key derived in-script as `ARGV[1] .. id` rooted in the declared queue base, slot-sound per the S-6 2026-06-14 ARGV-rooting clarification; server-clock lease; branded id gated host-side at `Keyspace.job_key/2`). v3 PROPOSES that the **lane-aware claim is the mesh-facing default**: a node claims only instruments whose books it owns (the consistent-hashing ring, EchoMesh manuscript "Topology and locality"), so the rotating `@gclaim` ring becomes the per-owner work draw. The client-side multi-source pop (`LMPOP`/`ZMPOP`) is PROPOSED to stay rejected — every transition is one Lua script, atomic on the engine, and claim-IS-`ZPOPMIN`-inside-the-script (design §12.2). Forward-tense: v3 builds no new claim wire; it scopes the existing one to ownership.
+**v3 PROPOSED.** Keep the as-built `@claim` as the canonical form — it already satisfies every law (declared `[pending, active]`; the per-job key derived in-script as `ARGV[1] .. id` rooted in the declared queue base, slot-sound per the S-6 2026-06-14 ARGV-rooting clarification; server-clock lease; branded id gated host-side at `Keyspace.job_key/2`). v3 PROPOSES that the **lane-aware claim is the mesh-facing default**: a node claims only the lanes it owns (the consistent-hashing ring, EchoMesh manuscript "Topology and locality"), so the rotating `@gclaim` ring becomes the per-owner work draw. The client-side multi-source pop (`LMPOP`/`ZMPOP`) is PROPOSED to stay rejected — every transition is one Lua script, atomic on the engine, and claim-IS-`ZPOPMIN`-inside-the-script (design §12.2). Forward-tense: v3 builds no new claim wire; it scopes the existing one to ownership.
 
-**BCS relevance.** The single-writer claim per instrument — work is drawn atomically and the lease is the only proof of ownership, so the decider that prices an order is the sole holder of it.
+**BCS relevance.** The single-writer claim — work is drawn atomically and the lease is the only proof of ownership, so the worker that holds a claimed job is the sole holder of it.
 
-**EchoMesh relevance.** Sits on the **consistency-first** side of the dial (design §4 row 24): the matching/book surface refuses a second writer rather than risk divergence under partition (`art/echomesh/index.md` "Partition-survival").
+**EchoMesh relevance.** Sits on the **consistency-first** side of the dial (design §4 row 24): the claim surface refuses a second writer rather than risk divergence under partition (`art/echomesh/index.md` "Partition-survival").
 
 ```text
 v1 moveToActive-11                            v3 PROPOSED (claim, lane-aware)
@@ -424,7 +424,7 @@ RPOPLPUSH wait active                          ZPOPMIN pending  (mint order = or
   | else ZPOPMIN prioritized -> LPUSH active   no prioritized set (retired, §6); lane = @gclaim ring
 SET <prefix><id>:lock PX lockDuration          HINCRBY attempts  (token); ZADD active (TIME+lease)
 HGETALL <prefix><id>                           return {id, payload, attempts}
-v3-illegal: key = prefix .. id (data-rooted)   mesh: claim only owned instruments (ring)
+v3-illegal: key = prefix .. id (data-rooted)   mesh: claim only owned lanes (ring)
 ```
 
 ### moveJobFromActiveToWait-9
@@ -482,9 +482,9 @@ v3-illegal: key = KEYS[1] .. member            key = ARGV[base]..'job:'..id  (A-
 
 **v3 PROPOSED.** The as-built `@sweep_stalled` is already the v3 form — v3 PROPOSES only to formalize what shipped: the v1 two-scan mark-then-sweep **collapses to one server-clock lease scan** (the `active`-set deadline IS the staleness fact, so no separate `stalled` candidate SET and no `:lock` probe are needed). The v1 repeatable-job exemption (a `repeat`-flagged job is never dead-lettered) is PROPOSED as a forward additive arm — a per-row policy field gating the dead-letter branch, registered with its own conformance scenario (additive-minor law); the as-built sweep currently always dead-letters past `max_stalled`. Forward-tense: v3 hardens the threshold + lane-recovery sweep and lifts it into the conformance set.
 
-**BCS relevance.** The crash-recovery safety net for the single-writer model — a dead decider's in-flight leases return to its instrument's queue, and a job that repeatedly kills its worker dead-letters instead of looping the fleet.
+**BCS relevance.** The crash-recovery safety net for the single-writer model — a dead worker's in-flight leases return to its queue, and a job that repeatedly kills its worker dead-letters instead of looping the fleet.
 
-**EchoMesh relevance.** **Consistency-first recovery** — the fold-to-state, restart-to-known-state principle (Armstrong, cited in both manuscripts) made operational: when a node holding a book is lost, its leases recover on a survivor, the server-clock lease being the only liveness fact the mesh needs (manuscript "Partition-survival").
+**EchoMesh relevance.** **Consistency-first recovery** — the fold-to-state, restart-to-known-state principle (Armstrong, cited in both manuscripts) made operational: when a node holding a lane is lost, its leases recover on a survivor, the server-clock lease being the only liveness fact the mesh needs (manuscript "Partition-survival").
 
 ```text
 v1 moveStalledJobsToWait-8                     v3 PROPOSED (= as-built @sweep_stalled, hardened)
@@ -608,7 +608,7 @@ v3 (PROPOSED) — EchoMQ.Jobs.promote_now/3  [NEW, beside batch @promote]
 
 **v3 decision — PROPOSED.** Re-derive v1's operator intent as a declared-keys `requeue_active/4` (queue, job_id, token, opts): `KEYS = [active, pending(or the lane), job_key]`, all braced `emq:{q}:` (slot-sound, design §3 lines 97–112). The lease is the `active` *score* (not a `:lock` string) — releasing it is a `ZREM` from `active` + `ZADD` to `pending` at score 0, token-fenced on `attempts` exactly as `@retry` already does (`EMQSTALE`). Branded `JOB` id gated at `Keyspace.job_key/2`; honest-row CONF scenario; server `TIME` only if a lease deadline is touched. No data-value lock token, no `HGET priority` route (priority retired — see changePriority).
 
-**BCS relevance.** PROPOSED: the operator "kick a stuck/abandoned claim back to the front of the queue" control for an Exchange settlement, notification, or reconciliation lane — a manual recovery hook on the work surface.
+**BCS relevance.** PROPOSED: the operator "kick a stuck/abandoned claim back to the front of the queue" control for a consumer's work lane — a manual recovery hook on the work surface.
 
 **EchoMesh relevance.** PROPOSED: a **consistency-first (CP) side** operator action — a deliberate, audited, single-writer-serialized mutation (the M5 "Best Effort Availability" surface: correct always, the rare manual path), never an availability/throughput path.
 
@@ -632,7 +632,7 @@ XADD events waiting; HINCRBY atm 1           honest-row CONF; server TIME only i
 
 **v3 decision — PROPOSED.** Keep the shipped `@reprocess` as the spine and **add the flow fan-in re-link the A-1-clean way**: when a reprocessed job is a flow child, restore the parent's outstanding count via the **declared §6 parent subkeys** `emq:{q}:job:<parent>:{dependencies,processed,failed,unsuccessful}` (the emq.3 dependency-graph home, emq.features.md C.1) — never the v1 data-value `parentKey`. Cross-queue parents ride the eventually-consistent `flow:outbox` + `Pump.sweep` hop (emq.3.3), so reprocess stays single-slot atomic and the parent signal is idempotent. Branded id at the builder; honest-row CONF.
 
-**BCS relevance.** PROPOSED: the post-incident "re-run a dead settlement/reconciliation job after fixing its cause" recovery the Exchange operator runbook drives (the operator counterpart to `exchange.patterns.md` Pattern V).
+**BCS relevance.** PROPOSED: the post-incident "re-run a dead job after fixing its cause" recovery a consumer's operator runbook drives.
 
 **EchoMesh relevance.** PROPOSED: a **CP-side recovery verb** — deterministic, single-slot, audited; the consistency-first ledger/queue's repair lever (M5 segmentation: the regulated surface that is correct-always).
 
@@ -656,7 +656,7 @@ SADD parentKey..':dependencies'   -- DATA       unsuccessful,processed}  (emq.3 
 
 **v3 decision — PROPOSED.** A declared-keys `reschedule/4` (queue, job_id, new_run_at | new_delay): `KEYS = [schedule, job_key]` (both braced `emq:{q}:`, slot-sound); the job key is a **declared KEY**, not ARGV[4]. Re-`ZADD` the `schedule` member under a server-`TIME`-derived run-at (the v2 schedule set is run-at-scored, not the v1 12-bit-packed score, so `getDelayedScore`'s bit-baking dissolves — the order theorem already orders by mint), refuse a job not on `schedule` (`EMQSTATE`), missing → `{:error, :gone}`. Branded id gated at the builder; honest-row CONF; design §3 declared-keys + server-clock laws.
 
-**BCS relevance.** PROPOSED: lets an Exchange operator push out or pull in a scheduled end-of-day report or a repeatable reconciliation without a drop-and-re-add round trip.
+**BCS relevance.** PROPOSED: lets an operator push out or pull in a scheduled report or a repeatable periodic job without a drop-and-re-add round trip.
 
 **EchoMesh relevance.** PROPOSED: a CP-side admin write to a scheduled item; the *delay itself* is exactly the M4 "Trading Consistency for Availability" **staleness-budget dial** — tuning how far a deferred surface may lag, on purpose.
 
@@ -680,9 +680,9 @@ addDelayMarkerIfNeeded                       refuse non-scheduled -> EMQSTATE; h
 
 **v3 decision — PROPOSED (re-aim, not re-implement).** v3 has **no priority re-score verb** — re-scoring a `prioritized` ZSET is structurally absent. The forward equivalent of "this work matters more now" is **`EchoMQ.Lanes` group control**: re-assign the job's lane, or tune weighted/deficit rotation + ceilings (the emq.4 "groups deepened" rung, emq.features.md Movement II). Branded id + braced lane keys remain the law; ordering within `pending` stays mint-order (the order theorem). The honest v3 stance is the retirement, with Lanes as the answer to the *need* changePriority served.
 
-**BCS relevance.** PROPOSED: per-venue fairness (one `EchoMQ.Lanes` group per venue) replaces per-job priority for the Exchange work surface — `exchange.specs.md` §Jobs shapes lanes "one group per venue."
+**BCS relevance.** PROPOSED: per-player fairness (one `EchoMQ.Lanes` group per player) replaces per-job priority for a consumer's work surface — codemoji shapes lanes one group per player.
 
-**EchoMesh relevance.** PROPOSED: lane fairness is the **AP-leaning dial** — "flood one venue, the others keep answering" (the emq.4 deepened groups; `exchange.roadmap.md` TRD.8 re-gates Lanes fairness cluster-wide) — the availability-first segment of the mesh's work plane.
+**EchoMesh relevance.** PROPOSED: lane fairness is the **AP-leaning dial** — "flood one player's lane, the others keep answering" (the emq.4 deepened groups carry codemoji's per-player lanes to cluster scale) — the availability-first segment of the mesh's work plane.
 
 ```text
 v1 changePriority-7                          v3 (PROPOSED) -- RE-AIMED to Lanes (emq.4)
@@ -769,7 +769,7 @@ The v1 read family is six BullMQ-derived scripts that ask the queue how it is do
 
 **v3 — PROPOSED.** Keep the shipped closed-registry `@counts` verbatim; it is already declared-keys-clean and slot-sound (even a metric-only request pins `{q}` via the declared base). PROPOSED additions for BCS+EchoMesh: (1) a single round-trip multi-set **snapshot** so a dashboard reads all states atomically rather than racing per-state reads, and (2) an honest `as_of` field stamped from server `TIME` inside the script, so a mesh consumer reading a possibly-stale replica knows the read's own clock — the "staleness budget per surface" the EchoMesh manuscript makes explicit (mesh index, "Trading Consistency for Availability"). No open concatenation is reintroduced — every state name stays a closed-registry lookup.
 
-**BCS relevance.** Per-state depth is exactly the queue-health row an Exchange operator dashboard reads (features emq.2 reframe; `exchange.patterns.md` Pattern V read side).
+**BCS relevance.** Per-state depth is exactly the queue-health row an operator dashboard reads (features emq.2 reframe).
 
 **EchoMesh relevance.** Availability-first: a counts read is observational and stale-tolerant — it degrades, it does not refuse — so it sits on the availability axis ("always answering, staleness bounded"; served from the nearest replica per the architect view, `art82.md` "reads from the nearest replica").
 
@@ -791,9 +791,9 @@ returns {n, n, …}                               + PROPOSED one-shot snapshot +
 
 **v3 — PROPOSED.** Re-derive the *intent* (depth behind a priority class) as **per-lane depth**: `EchoMQ.Metrics.lane_depths/3` (`metrics.ex:297`) already returns a count per group over `emq:{q}:g:<group>:pending`, each group id gated by `BrandedId.valid?/1` before the wire and the lane key derived in-script from the declared base (`base..'g:'..g..':pending'`). For an intra-lane priority dimension, the roadmap's lane-priority is a non-zero score on that same `g:<group>:pending` ZSET (features §lanes, "intra-group priority… no new key family") — so a per-priority count becomes a `ZCOUNT` over a score *window* on the lane set, declared-keys-clean, never the v1 64-bit-packed `prioritized` band and never a `meta.paused` branch that picks the key.
 
-**BCS relevance.** Per-lane backlog is the fair-lane / per-instrument depth the BCS trading bus reads to balance work across instrument groups.
+**BCS relevance.** Per-lane backlog is the fair-lane / per-player depth the bus reads to balance work across lane groups.
 
-**EchoMesh relevance.** Availability-first: per-segment (per-instrument lane) depth is an observational read; it places on the availability axis like the other counts.
+**EchoMesh relevance.** Availability-first: per-segment (per-player lane) depth is an observational read; it places on the availability axis like the other counts.
 
 ```text
 v1 getCountsPerPriority-4                        v3 (PROPOSED) Metrics.lane_depths/3
@@ -812,9 +812,9 @@ returns counts; key choice from a data read)      on the same lane ZSET — no p
 
 **v3 — PROPOSED.** Keep the honest counter read. PROPOSED to close the gap: write the `metrics:<which>:data` series as a bounded ring on the same terminal transitions (the moduledoc's stated "series is unwritten this rung"), trimmed by count/age the way `trimEvents`/`removeJobsByMaxCount` bound other structures — so the v1 `{metrics, data, numPoints}` slice read is fully re-derivable. The Prometheus/OpenTelemetry **format** wrapper stays emq.8 (the raw read is the floor; the contract is separate). The live `:telemetry` surface for the same lifecycle counts already ships as `EchoMQ.Meter` (`[:emq, :job, :complete|:fail]`, zero-cost when `:telemetry` is absent).
 
-**BCS relevance.** Completed/failed throughput is the capacity/SLO signal an Exchange capacity dashboard reads over the bus.
+**BCS relevance.** Completed/failed throughput is the capacity/SLO signal a consumer's capacity dashboard reads over the bus.
 
-**EchoMesh relevance.** Availability-first: a metered observation surface — it is read off the side, never on the order-of-record write path, so a stale or absent metric degrades the dashboard, it never blocks matching.
+**EchoMesh relevance.** Availability-first: a metered observation surface — it is read off the side, never on the state-of-record write path, so a stale or absent metric degrades the dashboard, it never blocks the write path.
 
 ```text
 v1 getMetrics-2                                  v3 (PROPOSED) Metrics.get_metrics/3 + data ring
@@ -835,7 +835,7 @@ return {metrics, data, numPoints}                count rides @complete/@retry HI
 
 **BCS relevance.** A runbook reads a job's state before any mutate (the read that gates a remove/reprocess); the `awaiting_children` verdict is exactly the flow-parent state a multi-leg BCS saga inspects.
 
-**EchoMesh relevance.** Consistency-first: a single branded id's state is a state-of-record read — it sits on the strong-consistency axis ("matching… refuses rather than risk a second writer", `art82.md`), the opposite dial from counts/metrics.
+**EchoMesh relevance.** Consistency-first: a single branded id's state is a state-of-record read — it sits on the strong-consistency axis (the consistency-first surface "refuses rather than risk a second writer", `art82.md`), the opposite dial from counts/metrics.
 
 ```text
 v1 getState-8                                    v3 (PROPOSED, = shipped get_job_state/3)
@@ -878,7 +878,7 @@ ZSCORE waiting-children ; else 'unknown'         → ONE get_job_state/3 ; getSt
 
 **BCS relevance.** Fan-in progress (how many children remain, how many succeeded/failed) is exactly what a BCS multi-leg order / saga parent reads before it proceeds or compensates.
 
-**EchoMesh relevance.** Consistency-first: a flow parent's child-state read is a correctness read on the matching/ledger axis — the parent must not proceed on a stale count, so it places on the strong-consistency dial, never the available-stale one.
+**EchoMesh relevance.** Consistency-first: a flow parent's child-state read is a correctness read on the state-of-record axis — the parent must not proceed on a stale count, so it places on the strong-consistency dial, never the available-stale one.
 
 ```text
 v1 getDependencyCounts-4                          v3 (PROPOSED) Flows.child_counts/3 (compose existing)
@@ -918,7 +918,7 @@ wait/paused LISTs + v6 markers               (no wait/paused/completed/failed/pr
 
 **v2 status — PORTED.** `EchoMQ.Metrics.get_rate_limit_ttl/3`, inline `@rate_ttl Script.new(:rate_ttl, …)` (metrics.ex:201-229, emq.2.1-D6). Declared KEYS=`[queue_key(q,"limiter"), queue_key(q,"meta")]`; the script reads `max` from meta when `ARGV[1]`=0, compares to `GET limiter`, returns `PTTL` when positive. Features catalog row: `getRateLimitTtl-2.lua → metrics.ex get_rate_limit_ttl/3 ✅`.
 
-**v3 — PROPOSED.** Hold as-shipped — the v2 form already satisfies braced keyspace + declared-keys + honest-row. Forward, extend the same read to the **per-group/per-instrument** limiter window (the `EMQRATE`-class temporal-fairness knob over `EchoMQ.Lanes`, features.md §Scope) so EchoMesh can read the reopen-time of a per-venue rate window, not just the queue-global one.
+**v3 — PROPOSED.** Hold as-shipped — the v2 form already satisfies braced keyspace + declared-keys + honest-row. Forward, extend the same read to the **per-group/per-player** limiter window (the `EMQRATE`-class temporal-fairness knob over `EchoMQ.Lanes`, features.md §Scope) so EchoMesh can read the reopen-time of a per-lane rate window, not just the queue-global one.
 
 ```text
 v1                                            v3 (PROPOSED — already PORTED, hold)
@@ -982,7 +982,7 @@ linear checkItemInList(items, id) → 1/nil     return 0          (O(log n), min
 
 **v2 status — NOT YET.** No `paginate` exists (grep: no `def paginate`). The as-built listing path is `EchoMQ.Jobs.browse/3` (REV BYLEX `LIMIT` over `pending`) + `pending_size/3` (`ZCARD`) — a sorted-set window, **stable by construction** (mint order), not an `SSCAN`/`HSCAN` cursor.
 
-**v3 — PROPOSED.** The bus's primary listing is already the **order-theorem browse** (REV BYLEX, stable because mint-ordered — directly answering v1's instability warning). For genuinely set/hash-shaped reads (e.g. paging the `de:*` dedup space or a `meta` hash), a declared-key `HSCAN`/`SSCAN` cursor scoped under the slot. **The canonical v3 paginated read is the stream tier:** `XRANGE`/`XAUTOCLAIM` cursors where the **stream entry-id IS the cursor** (mint-ordered, emq3.1/3.6) — this is what the named emq3 consumers (Exchange recorded-runs TRD.4–TRD.6, the strategies' backtest replay) actually demand, bounded by `MAXLEN`/`MINID` retention (emq3.4).
+**v3 — PROPOSED.** The bus's primary listing is already the **order-theorem browse** (REV BYLEX, stable because mint-ordered — directly answering v1's instability warning). For genuinely set/hash-shaped reads (e.g. paging the `de:*` dedup space or a `meta` hash), a declared-key `HSCAN`/`SSCAN` cursor scoped under the slot. **The canonical v3 paginated read is the stream tier:** `XRANGE`/`XAUTOCLAIM` cursors where the **stream entry-id IS the cursor** (mint-ordered, emq3.1/3.6) — this is what a stream-replay consumer (recorded-runs, event replay) would demand, bounded by `MAXLEN`/`MINID` retention (emq3.4).
 
 ```text
 v1 (unstable, by its own warning)            v3 (PROPOSED — stable cursor)
@@ -1096,7 +1096,7 @@ The structural fact that governs every v3 row: v1 carries the dependency graph a
 
 **v3 PROPOSED.** The single-job form is shipped and correct under the laws — v3 keeps it. The v1 *recursive* capability (`shouldRemoveChildren`) is the forward work: a declared-keys recursive variant that walks the **`Flows` declared subkeys** (the STRING `:dependencies` counter + the `:processed` HASH on the parent's `{q}` slot, `flows.ex:6-23`) rather than reading a `parent_key` hash field, FLAT first (grandchildren deferred to emq.3.5, the V-1 fork — `emq.features.md` C.1). Branded job ids gated at `Keyspace.job_key/2`; server-clock untouched (remove is not a lease op); honest `{:error, :gone}`/`:locked`/`:ok`.
 
-**BCS / EchoMesh.** BCS: the removal verb an `Exchange.*` operator runbook drives over branded job ids (settlement/reconciliation cleanup). EchoMesh: an operator-plane **consistency-first** destructive act — gated (`EMQLOCK`), single-slot-atomic under braces; on a partition the owning node refuses rather than risk a torn removal.
+**BCS / EchoMesh.** BCS: the removal verb a consumer's operator runbook drives over branded job ids (job cleanup). EchoMesh: an operator-plane **consistency-first** destructive act — gated (`EMQLOCK`), single-slot-atomic under braces; on a partition the owning node refuses rather than risk a torn removal.
 
 ```text
 v1 removeJob-2 (BullMQ-derived)              v3 PROPOSED (under the v2 laws)
@@ -1120,7 +1120,7 @@ removeJobWithChildren(prefix,id,nil,opts):   @remove_job: ZREM x4 sets; DEL row+
 
 **v3 PROPOSED.** A new `EchoMQ.Flows.drop_dependency/3` (queue, parent_id, child_id): on the parent's `{q}` slot, record the child in the parent's declared `:processed` HASH (HSETNX, idempotent), `DECR` the declared `:dependencies` counter, and at-zero release the parent to `pending` (the exact `@flow_deliver` shape, `pump.ex:42-51`) — every key host-built from `Keyspace.job_key(queue, parent_id)`, never a value-read parent_key (S-6/A-1). A cross-queue detach rides the same durable `emq:{C}:flow:outbox` + `Pump.sweep/1` hop the cross-queue fan-in uses (`pump.ex:189-196`), eventually-consistent + idempotent. The v1 `HDEL parentKey parent` on the child has no v2 analogue — the child carries no `parent_key` field by construction.
 
-**BCS / EchoMesh.** BCS: lets a multi-leg `Exchange.*` flow drop one leg (e.g. a cancelled validation child) without failing the parent settlement. EchoMesh: **consistency-first** and single-slot-atomic for a same-queue parent; a cross-queue detach sits **availability-leaning** (the eventually-consistent outbox+sweep), the same dial the cross-queue fan-in chose (`flows.ex` INV5/INV7).
+**BCS / EchoMesh.** BCS: lets a multi-leg flow drop one leg (e.g. a cancelled child) without failing the parent. EchoMesh: **consistency-first** and single-slot-atomic for a same-queue parent; a cross-queue detach sits **availability-leaning** (the eventually-consistent outbox+sweep), the same dial the cross-queue fan-in chose (`flows.ex` INV5/INV7).
 
 ```text
 v1 removeChildDependency-1                   v3 PROPOSED Flows.drop_dependency/3
@@ -1163,7 +1163,7 @@ GET deduplicationKey                          GET dk
 
 **v3 PROPOSED.** A bounded `EchoMQ.Flows.remove_children/3` (queue, parent_id, opts) walking the parent's **declared §6 subkeys** — the `:dependencies` counter + `:processed`/`:failed`/`:unsuccessful` HASHes (`flows.ex:6`, the A-1-clean graph) — to enumerate same-queue children and `@remove_job` each on the parent's `{q}` slot; cross-queue children are reached via the durable `flow:outbox` + `Pump.sweep/1` hop (`pump.ex:189-196`), eventually-consistent + idempotent. **FLAT first** (one parent level): grandchildren / deep recursion is the locked Out → emq.3.5 (the emq-3-4 V-1 scope fork, Arm A, D-2; `emq.features.md` C.1). An `ignore_locked` flag maps to the v2 `EMQLOCK` semantics (skip rather than refuse). Bounded per call (`:more`/`:ok`, the `obliterate` budget pattern, `admin.ex:248`) so one invocation can't block the engine.
 
-**BCS / EchoMesh.** BCS: tears down a cancelled `Exchange.*` fan-out's child legs without touching the parent's own state. EchoMesh: same-queue teardown is **consistency-first** single-slot; cross-queue teardown is **availability-leaning** — eventually-consistent and idempotent over the outbox+sweep, the partition-tolerant edge the manuscripts assign to the bus's cross-node hops.
+**BCS / EchoMesh.** BCS: tears down a cancelled fan-out's child legs without touching the parent's own state. EchoMesh: same-queue teardown is **consistency-first** single-slot; cross-queue teardown is **availability-leaning** — eventually-consistent and idempotent over the outbox+sweep, the partition-tolerant edge the manuscripts assign to the bus's cross-node hops.
 
 ```text
 v1 removeUnprocessedChildren-2               v3 PROPOSED Flows.remove_children/3
@@ -1186,7 +1186,7 @@ removeJobChildren:                           cross-queue: flow:outbox + Pump.swe
 
 **v3 PROPOSED.** An `EchoMQ.Admin.clean/4` over the **four v2 sets** (`pending`/`active`/`schedule`/`dead`) with: a **server-clock `TIME` age grace** (touching the cleanup decision → `TIME` per DQ-2c, design §4 row 26 — read the row's age, not a hash field passed as ARGV), an optional limit (bounded `:more`/`:ok` like `obliterate`), a scheduler-skip (the `Repeat` registry survives — drain already preserves it, `admin.ex:105`), and an **honest count** return. The v1 multi-branch set dispatch collapses: there are no `prioritized`/`completed`/`failed` sets to special-case under completion-deletes; the v2 event record is the `PUBLISH emq:{q}:events` the watch plane consumes (emq.2.3, `events.ex`), replacing v1's `XADD … cleaned`. Every job key derives from the declared queue base root (`Keyspace.queue_key(queue, "")`, the `@drain`/`@obliterate` INV4 pattern), never the ARGV `jobKeyPrefix`.
 
-**BCS / EchoMesh.** BCS: the operator's age-based queue hygiene for `Exchange.*` work lanes during an incident (trim a settlement backlog older than N). EchoMesh: **availability-first** maintenance — a bounded, honest-count sweep that *degrades* a backlog rather than blocking the live claim path (the staleness/edge dial the manuscripts assign to the durable-edge surfaces, `mesh/index.md` "Trading Consistency for Availability"); per-queue single-slot under braces.
+**BCS / EchoMesh.** BCS: the operator's age-based queue hygiene for a consumer's work lanes during an incident (trim a backlog older than N). EchoMesh: **availability-first** maintenance — a bounded, honest-count sweep that *degrades* a backlog rather than blocking the live claim path (the staleness/edge dial the manuscripts assign to the durable-edge surfaces, `mesh/index.md` "Trading Consistency for Availability"); per-queue single-slot under braces.
 
 ```text
 v1 cleanJobsInSet-3                          v3 PROPOSED Admin.clean/4
@@ -1216,7 +1216,7 @@ The three queue-scope lifecycle commands — drain (empty the backlog), oblitera
 
 **v3 decision — PROPOSED.** Keep the shipped form as the state-of-the-art reimplementation: one inline script, `KEYS[1]` = the declared queue base root (the slot all job keys derive from by the §6 grammar — A-1-clean, no `parentKey` hash read), `KEYS[2]` = `pending`, optional `KEYS[3]` = `schedule`. The v1 four-set sweep collapses because the v2 keyspace has no `wait`/`paused`-LIST/`prioritized` sets (priority is `EchoMQ.Lanes`; mint order IS the order theorem). The v1 **scheduler-skip** re-derives honestly: the as-built row stores no job→repeat backref, so the guard protects the *registry* (`emq:{q}:repeat` + `repeat:<name>` survive a drain), not individual already-enqueued occurrences (D-4). Slot-sound under braces; honest-row `{:ok, n}`.
 
-**BCS relevance.** PROPOSED: the operator runbook clears a venue's pending settlement/notification backlog during an incident, leaving in-flight (`active`) jobs alone.
+**BCS relevance.** PROPOSED: the operator runbook clears a queue's pending backlog during an incident, leaving in-flight (`active`) jobs alone.
 
 **EchoMesh relevance.** PROPOSED: a control-plane (consistency-first) act — a single-slot atomic backlog wipe; it sits on the consistency side of the dial, not the availability side.
 
@@ -1243,7 +1243,7 @@ removeZSetJobs(delayed if flag), prioritized  │ every job key grammar-rooted f
 
 **v3 decision — PROPOSED.** Keep the shipped bounded form. The v1 `meta.paused` HEXISTS-gate is re-expressed soundly: `meta` is the declared `KEYS[1]`, so the precondition reads a *declared key* (`HGET meta 'paused'`), not a data-value-derived key — A-1-clean. Every job-row key derives in-script from the declared base root `KEYS[2]` by the §6 grammar (slot-sound under braces), never from an `HMGET parentKey`. The v1 set-list collapses onto the four braced sets; "open" key families (lane sets, repeat names) are read from the live structures that name them (`ring`, `paused`, `repeat`) — the INV4 form. The bounded budget (`:more`/`:ok`) keeps each call a single sound transaction. The honest limit is documented: a `de:<did>` dedup string with no live referrer is not individually discoverable under declared keys (D-4) — released at remove-time/drain-time instead.
 
-**BCS relevance.** PROPOSED: a control plane destroys ephemeral or test venue queues down to their keyspace footprint, leaving no trace of their existence.
+**BCS relevance.** PROPOSED: a control plane destroys ephemeral or test queues down to their keyspace footprint, leaving no trace of their existence.
 
 **EchoMesh relevance.** PROPOSED: the **consistency-first** end of the dial — a destroy is correct-always, never optimistic; the bounded budget makes each invocation a sound single-slot transaction rather than an availability bet.
 
@@ -1272,7 +1272,7 @@ return 0 / 1 / -1 / -2                        │ return 0(:ok) / 1(:more); type
 
 **v3 decision — PROPOSED.** Keep the shipped FORM b as the state-of-the-art reimplementation: pause is a single `paused` FIELD on the declared `KEYS[1] = emq:{q}:meta`, and `Jobs.claim/3` / `Lanes.claim/3` read it first and answer `:empty`. **No `wait`↔`paused` RENAME** — the v2 bus has one `pending` set, so the v1 dual-list move is gone, and crucially the shipped `@claim`/`@gclaim` stay **byte-frozen** (the one-time-fork law: pause is an additive gate, not a wire break). The v1 `marker`/`addDelayMarkerIfNeeded` delay-machinery does not survive (the v2 `schedule` set's run-at score is the visibility fence; no marker key). The `paused`/`resumed` event PUBLISH rides the emq.2.3 watch plane (`EchoMQ.Events` over the connector pub/sub seam), not this script. Idempotent; honest-row `:ok`.
 
-**BCS relevance.** PROPOSED: an operator quiesces a runaway venue lane's claiming during an incident without moving the backlog — `Metrics.get_counts/3` reads the same pending depth before and after.
+**BCS relevance.** PROPOSED: an operator quiesces a runaway lane's claiming during an incident without moving the backlog — `Metrics.get_counts/3` reads the same pending depth before and after.
 
 **EchoMesh relevance.** PROPOSED: a control-plane (consistency-first) gate; pausing claim deliberately trades **availability** (workers receive `:empty`) for operational control — segmentation by operation, the consistency-first side of the CAP dial.
 

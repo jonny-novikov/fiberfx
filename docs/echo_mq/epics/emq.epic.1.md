@@ -56,7 +56,7 @@ slice `emq.epic.1/<feature>.md`; the v1 commands named are the **dev-support ref
 | **claim** | single-writer fetch; server-clock lease; attempts fence | emq.1 | moveToActive · moveJobFromActiveToWait · moveJobsToWait |
 | **retry** | retry/backoff; the dead-letter morgue; reprocess | emq.1 | retryJob · reprocessJob · moveToDelayed |
 | **flows** | parent/child fan-in; child-result reads; failure-policy + bulk | emq.3.1–3.4 | addParentJob · moveToWaitingChildren · removeChildDependency · removeUnprocessedChildren |
-| **groups** | fair lanes (per-venue/per-instrument); the rotating ring (priority's replacement) | emq.2/emq.4 | addPrioritizedJob · changePriority · getCountsPerPriority |
+| **groups** | fair lanes (per-player/per-tenant); the rotating ring (priority's replacement) | emq.2/emq.4 | addPrioritizedJob · changePriority · getCountsPerPriority |
 | **batches** | bulk add (`add_bulk`); bulk move/clean by window | emq.3.4 | add_bulk parity · moveJobsToWait · cleanJobsInSet |
 | **locks** | lease extend (single + batch); release; stalled recovery | emq.2.3 | extendLock(s) · releaseLock · moveStalledJobsToWait |
 | **metrics** | counts · state · throughput · introspection · membership | emq.2.1 | getCounts · getState(V2) · getMetrics · getRanges · isMaxed · isFinished · isJobInList · paginate · getRateLimitTtl · getDependencyCounts |

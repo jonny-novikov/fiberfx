@@ -93,10 +93,10 @@ dedicated stress files — each attribution stated, not silently dropped.
   proven-at-depth bus); the bus's consumers, who gain the assurance that every queue-health, operator, and
   watch read they make is exercised at v1's depth before they build on it; the conformance harness, which
   grows by the genuine new scenarios; Apollo, who re-runs the gate ladder + the determinism loop independently
-  (MANDATORY — the rung is process/mint-touching). The Exchange platform reads positions/exposure/queue-health
-  and drives the work lifecycle through exactly this surface (`exchange.patterns.md` Pattern V; the Jobs
-  surface, `exchange.specs.md` §Jobs); the depth proof is what makes that consumption safe. No single TRD rung
-  *gates* on emq.2.4 by name (it closes the floor, it adds no feature surface a platform names), recorded not
+  (MANDATORY — the rung is process/mint-touching). A worked consumer like codemoji reads its queue-health
+  and drives the work lifecycle through exactly this surface (the metrics plane; the Jobs surface its guesses
+  ride); the depth proof is what makes that consumption safe. No single consumer rung
+  *gates* on emq.2.4 by name (it closes the floor, it adds no feature surface a consumer names), recorded not
   asserted.
 - **When** — Movement I, **fourth and last of the emq.2 cluster** (emq.2.1 → emq.2.2 → emq.2.3 → **emq.2.4**;
   [`./emq.2.design.md`](../emq.2.design.md) ADR-1's dependency order, extended by this closing rung), after the
@@ -147,8 +147,7 @@ dedicated stress files — each attribution stated, not silently dropped.
   — the gate-ladder discipline, design §The master invariant); any **state-machine rebuild** (the transitions
   are emq.1/emq.2.2's, tested at depth, not rewritten); any new **wire-class** or **key type** beyond the §6
   grammar (the residue adds none; the rate-gate Arm 2 reuses the shipped `EMQRATE`; Arm 1 if ruled adds none);
-  any **wire break**; any **edit to the frozen v1 line**; the in-flight `echo/apps/exchange/` +
-  `docs/exchange/*`.
+  any **wire break**; any **edit to the frozen v1 line**.
 
 ## Deliverables
 

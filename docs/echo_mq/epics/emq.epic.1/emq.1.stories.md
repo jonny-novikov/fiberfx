@@ -1,17 +1,16 @@
 # EMQ.1 · user stories
 > Who wants the time-and-retry vocabulary, what they need, and how acceptance is known. Derived from
 > [`./emq.1.md`](../../specs/emq.1.md) (BUILT — acceptance ran in the emq-1 run and PASSED; this body reflects the
-> as-built surface). The consumer ground is the Exchange platform's own stated needs (`docs/exchange/` —
-> cited per story); the capability ground is the drop ROADMAP's 2.1 row and the design's §11.10 deferral.
+> as-built surface). The consumer ground is the worked consumer codemoji (`echo/apps/codemoji`) and the
+> planned consumer echo_bot (`echo/apps/echo_bot`, forward-tense); the capability ground is the drop
+> ROADMAP's 2.1 row and the design's §11.10 deferral.
 
-## EMQ.1-US1 — settlement and notifications on a clock
+## EMQ.1-US1 — delayed and scheduled work on a clock
 
-As the Exchange platform's settlement author (the platform's Jobs surface names "Settlement,
-notifications, end-of-day reporting, reconciliation" — `exchange.specs.md` §Jobs; TRD.3's open feedback
-asks "settlement trigger — per-fill or batched", and a batched trigger is a time-window enqueue —
-`exchange.roadmap.md`), I want run-at and run-in scheduled enqueue whose delay is a visibility fence over
-the schedule set, so that a settlement window or a delayed notification is one enqueue with a due time,
-not a second queue or a sleeping process.
+As a notifications author (echo_bot is a planned consumer: a delayed Telegram send is a time-window
+enqueue, and codemoji's prize settlement runs as a follow-up after scoring), I want run-at and run-in
+scheduled enqueue whose delay is a visibility fence over the schedule set, so that a deferred follow-up
+or a delayed notification is one enqueue with a due time, not a second queue or a sleeping process.
 
 Acceptance criteria
 - Given a queue and a due time, when `enqueue_at/5` enqueues, then the job carries a fresh branded `JOB`
@@ -29,9 +28,8 @@ Priority: must · Size: 5 · Implements deliverables: EMQ.1-D2.
 
 ## EMQ.1-US2 — reporting and reconciliation on a cadence
 
-As the Exchange platform's reporting author (end-of-day reporting is a daily job and the OMS names
-"Reconciliation as a consumer: a periodic sweep" — `exchange.strategies.md` Pattern IV), I want repeatable
-jobs whose every occurrence is a fresh branded mint, so that a daily report or a periodic reconciliation
+As a periodic-jobs author (a consumer that needs a recurring job — a daily report, a periodic sweep), I
+want repeatable jobs whose every occurrence is a fresh branded mint, so that a daily report or a periodic
 sweep registers once and every run is a first-class, browsable, mint-ordered job.
 
 Acceptance criteria
@@ -48,9 +46,9 @@ Priority: must · Size: 5 · Implements deliverables: EMQ.1-D3.
 
 ## EMQ.1-US3 — retriable follow-ups that exhaust honestly
 
-As a consumer author handling retriable follow-ups (the platform's Work shape: "retriable follow-ups:
-settlement, risk jobs, reporting" — `exchange.md`; "at-least-once with idempotent handlers" — TRD.6), I
-want attempts-with-backoff vocabulary and a poison-job drill, so that a transient failure retries on a
+As a consumer author handling retriable follow-ups (codemoji's work shape is exactly this — a guess is
+scored, then a prize is settled, both at-least-once with idempotent handlers), I want
+attempts-with-backoff vocabulary and a poison-job drill, so that a transient failure retries on a
 policy curve and a persistent failure dead-letters at exactly max attempts with its error kept.
 
 Acceptance criteria
@@ -87,7 +85,7 @@ Priority: should · Size: 3 · Implements deliverables: EMQ.1-D5.
 
 ## EMQ.1-US5 — subscribers survive a reconnect
 
-As a market-data table owner (the claims bus rides the connector's subscription surface, and the 2.1 row
+As a near-cache table owner (a coherence feed rides the connector's subscription surface, and the 2.1 row
 names the gap: "Connector auto-resubscribe after reconnect (today the table's restart is the
 resubscription)"), I want the Connector to re-issue its subscription set after `:reconnect`, so that a
 dropped socket does not silently end a table's coherence feed.
