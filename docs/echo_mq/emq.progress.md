@@ -16,7 +16,7 @@
 **Movement I is CLOSED** — the opener `emq.1` (scheduler + retry), the **emq.2 parity cluster** (read → operator
 → watch → close, 4/4), and the **emq.3 flow family** (single-queue → child-result reads → cross-queue →
 failure-policy/bulk → grandchildren/deep recursion, 5/5). The bus is real, measured, and conformance-gated at
-**52/52**. **Movement II (emq.4–emq.8) opens on a complete core**; its opener **emq.4 (groups deepened) is chapter-SPECCED** — the family triad + the 4.1–4.4 carves authored against the shipped `EchoMQ.Lanes`, the sub-rungs build next. The build team is echo_mq-specialized (the
+**52/52** (Movement I close; **54/54** live with emq.4.1). **Movement II (emq.4–emq.8) opens on a complete core**; its opener **emq.4 (groups deepened) is BUILDING** — **emq.4.1 the control plane SHIPPED** (HIGH-risk: lane re-assignment `reassign/4` + the lane-scoped destructive drain `drain/3`); emq.4.2–4.4 build next. The build team is echo_mq-specialized (the
 `echo-mq-{architect,implementor,evaluator}` skills + the tuned [`program/`](./program/) calibrations, driven by
 the `echo-mq-ship` /x-mode binding).
 
@@ -50,7 +50,7 @@ Movement I · scheduler + retry · the parity floor · flows   ✅ CLOSED (confo
   emq.3     ✅ CLOSED      ████████████████████  parent/flow family — single-queue → reads → cross-queue → failure-policy/bulk → grandchildren (3.1–3.5)
 
 Movement II · the extension family
-  emq.4     📐 specced     ███░░░░░░░░░░░░░░░░░  groups deepened — chapter SPECCED (4.1 control plane · 4.2 group recovery · 4.3 metronome HIGH · 4.4 weighted/deficit+drill); basics shipped as EchoMQ.Lanes
+  emq.4     🔨 building    █████░░░░░░░░░░░░░░░  groups deepened — 4.1 control plane ✅ SHIPPED (reassign + lane-drain · HIGH-risk · 54/54) · 4.2 group recovery · 4.3 metronome HIGH · 4.4 weighted/deficit+drill
   emq.5     📋 planned     ░░░░░░░░░░░░░░░░░░░░  batches · bulk consume · shaping · affinity · finish
   emq.6     📋 planned     ░░░░░░░░░░░░░░░░░░░░  lifecycle controls · TTL · distributed cancel · checkpoints
   emq.7     📋 planned     ░░░░░░░░░░░░░░░░░░░░  cache deepened · BCAST · compaction · FULL · invalidation
@@ -61,7 +61,7 @@ EchoMQ 3.x stream tier · emq3.1–emq3.6 (NO dot — a SEPARATE next-major trac
 ── roll-up ──
   established  emq.0 — the foundation
   shipped     Movement I — emq.1 · emq.2 (2.1–2.4) · emq.3 (3.1–3.5) · conformance 52/52
-  specced     emq.4 — groups deepened (the chapter triad + the 4.1–4.4 carves; sub-rungs build next)
+  building    emq.4 — groups deepened · 4.1 control plane ✅ SHIPPED (reassign + lane-drain) · 4.2–4.4 build next
   planned     emq.5 · emq.6 · emq.7 · emq.8
   ───────────────────────────────────────────
   Movement I CLOSED → Movement II (emq.4–emq.8) opens on a complete core
@@ -81,7 +81,7 @@ removed — single source of truth, no compatibility layer.
 |---|---|---|---|
 | **Foundation** | the measured drop in the production umbrella: `echo_wire` (extracted wire), `echo_mq` (the bus modules), `echo_store` (the store; durable replication via the `EchoStore.Graft` engine, the `Shadow` behaviour retired — `store.design.md` §2), the `EchoData.Bcs*` subtree, the `echo/rungs/` gate ladder, the §5 test/coverage pass | `emq.0` | ✅ established |
 | **I · The Core** | the v1 capability surface rewritten state-of-the-art inside `echo_mq`: scheduler + retry (emq.1) · the full-parity read/operator/watch/close floor (emq.2.1–2.4) · the parent/flow family (emq.3.1–3.5) | `emq.1`–`emq.3` | ✅ CLOSED |
-| **II · The Extension** | the family ladder: groups deepened · batches · lifecycle controls · cache deepened · the three-layer proof stack (conformance + engine matrix + telemetry + benchmark gate) | `emq.4`–`emq.8` | 📋 planned · **emq.4 📐 SPECCED** |
+| **II · The Extension** | the family ladder: groups deepened · batches · lifecycle controls · cache deepened · the three-layer proof stack (conformance + engine matrix + telemetry + benchmark gate) | `emq.4`–`emq.8` | 📋 planned · **emq.4 🔨 BUILDING (4.1 ✅)** |
 
 ### EchoMQ 3.x · the stream tier
 
@@ -118,7 +118,7 @@ to a BCS chapter with a committed `PASS n/n` rung record (the figures live in th
 | **B3.1** Fence & Keyspace (`PASS 5/5`) | the `emq:{q}:` grammar + live fence (`echomq:2.0.0`) | `EchoMQ.Keyspace` | `emq.0` ✅ |
 | **B3.2** Jobs Are Entities (`PASS 5/5`) | the `JOB` row · score-0 pending zset · idempotent enqueue | `EchoMQ.Jobs` | `emq.0` ✅ |
 | **B3.3** State Machine in Lua (`PASS 6/6`) | claim / complete / retry / dead-letter · attempts as fencing token | `EchoMQ.Jobs` (Lua) | `emq.0` ✅ · retry-vocab `emq.1` ✅ |
-| **B3.4** Fair Lanes (`PASS 8/8`, G1–G8) | per-group rotation · ceilings · pause/resume · park-don't-poll | `EchoMQ.Lanes` | `emq.0` ✅ (structural) · deepened `emq.4` 📐 (chapter SPECCED · 4.1–4.4) |
+| **B3.4** Fair Lanes (`PASS 8/8`, G1–G8) | per-group rotation · ceilings · pause/resume · park-don't-poll | `EchoMQ.Lanes` | `emq.0` ✅ (structural) · deepened `emq.4` 🔨 (4.1 control plane ✅ reassign + lane-drain · 4.2–4.4 next) |
 | **B3.5** Bus Meets Stores (`PASS 6/6`) | commands out, results back; exactly-once by provenance | `EchoMQ.Consumer` | `emq.0` ✅ |
 | **B3.6** Conformance (`14/14` → … → `52/52`) | the scenario harness · the referee habit | `EchoMQ.Conformance` | `emq.0` ✅ (14) → `emq.1` (18) → `emq.2.1–2.4` ✅ (read/operator/watch/depth → 43) → `emq.3.1–3.5` ✅ (the flow family → **52**) · proof stack `emq.8` 📋 |
 | **B3.7 / App. A / App. H** The Connector | one-pass RESP2/3 · EVALSHA-first · typed fence · auto-resubscribe | `EchoMQ.Connector` over `EchoWire` | `emq.0` ✅ (extraction) · resubscribe `emq.1` ✅ · the event pub/sub seam `emq.2.3` ✅ |

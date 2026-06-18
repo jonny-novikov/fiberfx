@@ -98,6 +98,47 @@ defmodule EchoMQ.Lanes do
           return 1
           """)
 
+  # The source group is the row's authority -- read it in-script, never passed
+  # (arity 4; src cannot mismatch what the row records). The source lane is
+  # derived from the ARGV queue base by the registered lane grammar
+  # (`base..'g:'..src..':pending'`, the @gclaim convention at :40), rooted on the
+  # same {q} slot KEYS[1] pins; the destination lane is a declared KEYS[2] (the
+  # host knows and gates dst). The outcome is a numeric sentinel the host maps to
+  # an atom -- the @genqueue/update_data return-shape idiom, no error_reply, so
+  # the closed wire-class registry stays unextended (INV1):
+  #   -1  no row, or a row with no group        -> {:error, :not_found}
+  #   -2  the member is not pending in src       -> {:error, :not_pending}
+  #    0  dst already equals src                  -> {:ok, :noop}
+  #    1  moved                                   -> {:ok, :reassigned}
+  # A pending member moves at score 0 (FIFO-by-mint kept) and the row's group is
+  # rewritten to dst -- the load-bearing write the later @gclaim/@complete/@retry/
+  # @reap read (HGET <row> 'group') to find the lane and the active counter. A
+  # claimed (in-flight) member is NOT in src's lane, so ZREM returns 0, the row is
+  # left untouched (its gactive sits under src), and -2 is returned. No lease is
+  # touched, so no server clock. emq.4.1-D2.
+  @greassign Script.new(:greassign, """
+             local g = redis.call('HGET', KEYS[1], 'group')
+             if not g then return -1 end
+             if g == ARGV[2] then return 0 end
+             local src_lane = ARGV[3] .. 'g:' .. g .. ':pending'
+             if redis.call('ZREM', src_lane, ARGV[1]) == 0 then return -2 end
+             redis.call('ZADD', KEYS[2], 0, ARGV[1])
+             redis.call('HSET', KEYS[1], 'group', ARGV[2])
+             if redis.call('SISMEMBER', KEYS[4], ARGV[2]) == 0 then
+               local lim = redis.call('HGET', KEYS[5], ARGV[2])
+               local act = tonumber(redis.call('HGET', KEYS[6], ARGV[2]) or '0')
+               if (not lim or act < tonumber(lim)) and not redis.call('LPOS', KEYS[3], ARGV[2]) then
+                 redis.call('RPUSH', KEYS[3], ARGV[2])
+                 redis.call('LPUSH', KEYS[7], '1')
+                 redis.call('LTRIM', KEYS[7], 0, 63)
+               end
+             end
+             if redis.call('ZCARD', src_lane) == 0 then
+               redis.call('LREM', KEYS[3], 0, g)
+             end
+             return 1
+             """)
+
   @doc "Grouped admission: one idempotent script -- kind policy, duplicate refusal, the row with its group, the lane entry, and the ring bookkeeping with a wake."
   def enqueue(conn, queue, group, job_id, payload)
       when is_binary(job_id) and is_binary(payload) do
@@ -185,6 +226,105 @@ defmodule EchoMQ.Lanes do
 
     case Connector.eval(conn, @glimit, keys, [Keyspace.queue_key(queue, ""), group, Integer.to_string(n)]) do
       {:ok, 1} -> :ok
+      other -> other
+    end
+  end
+
+  @doc """
+  Move a pending member from its current lane to `dst_group` in one atomic
+  script. The source group is not passed: it is read from the job row's `group`
+  field inside the script (the row is authoritative -- `@genqueue` wrote it),
+  so the move cannot disagree with what the row records. Both lanes share the
+  one `{q}` slot (the group is outside the braces), so a cross-queue move is not
+  expressible -- the move is atomic by construction. The job id is gated at
+  `Keyspace.job_key/2` and `dst_group` at `lane_key!/2` (each raises on an
+  ill-formed branded id) before any wire.
+
+  The member leaves `g:<src>:pending` and enters `g:<dst>:pending` at score 0
+  (its mint-ordered place is kept), the row's `group` field is rewritten to
+  `dst` (the later `@gclaim`/`@complete`/`@retry`/`@reap` read it to find the
+  lane and the active counter), `dst` is returned to the ring if it is
+  serviceable (not paused, below its ceiling, not already on the ring) with a
+  wake for any parked consumer, and `src` is dropped from the ring if its lane
+  is now empty. No lease is touched, so no clock.
+
+    * `{:ok, :reassigned}` -- the member moved
+    * `{:ok, :noop}`       -- `dst` already equals the member's lane
+    * `{:error, :not_found}`   -- no row, or a row that carries no group
+    * `{:error, :not_pending}` -- the member is not pending in its lane (it is
+      claimed/in-flight or absent); the row is left untouched, since its active
+      count sits under the source group
+
+  Re-aims the RETIRED v1 `changePriority-7`: there is no numeric per-job
+  priority -- "matters more now" is a change of lane, mint order is the order
+  theorem. emq.4.1-D2.
+  """
+  def reassign(conn, queue, job_id, dst_group) when is_binary(job_id) do
+    keys = [
+      Keyspace.job_key(queue, job_id),
+      lane_key!(queue, dst_group),
+      Keyspace.queue_key(queue, "ring"),
+      Keyspace.queue_key(queue, "paused"),
+      Keyspace.queue_key(queue, "glimit"),
+      Keyspace.queue_key(queue, "gactive"),
+      Keyspace.queue_key(queue, "wake")
+    ]
+
+    argv = [job_id, dst_group, Keyspace.queue_key(queue, "")]
+
+    case Connector.eval(conn, @greassign, keys, argv) do
+      {:ok, 1} -> {:ok, :reassigned}
+      {:ok, 0} -> {:ok, :noop}
+      {:ok, -1} -> {:error, :not_found}
+      {:ok, -2} -> {:error, :not_pending}
+      other -> other
+    end
+  end
+
+  # The lane-scoped destructive drain, the Admin.@drain wipe (admin.ex:84) scoped
+  # to ONE lane: ZRANGE the lane's pending set, DEL each member's row + its §6
+  # logs subkey (the job key derives from the declared base root KEYS[1] by the
+  # A-1 convention), DEL the lane set, and LREM the group from the ring (a drained
+  # lane is no longer serviceable -- the contract removes its ring entry). Returns
+  # the count drained. Touches ONLY the target lane's pending rows + logs + set +
+  # the ring entry: NOT active/in-flight (those are not in the lane), NOT gactive
+  # (it counts in-flight, not pending), NOT paused/glimit (the lane's config
+  # survives a drain), NOT any sibling lane, NOT the repeat registry. No lease is
+  # touched, so no clock. emq.4.1-D5.
+  @gdrain Script.new(:gdrain, """
+          local base = KEYS[1]
+          local ids = redis.call('ZRANGE', KEYS[2], 0, -1)
+          for _, id in ipairs(ids) do
+            local jk = base .. 'job:' .. id
+            redis.call('DEL', jk, jk .. ':logs')
+          end
+          redis.call('DEL', KEYS[2])
+          redis.call('LREM', KEYS[3], 0, ARGV[1])
+          return #ids
+          """)
+
+  @doc """
+  Drain one lane: empty its `g:<group>:pending` set and delete each drained
+  member's row and its §6 `logs` subkey, then drop the group from the ring. The
+  lane-scoped counterpart of `EchoMQ.Admin.drain/3` (which empties the flat
+  `pending` set) -- the `Admin.@drain` wipe scoped to one lane. `active`/in-flight
+  members are NOT drained (they are not in the lane -- a claim moved them to
+  `active`), so the lane's `gactive` counter, its `paused`/`glimit` config, every
+  sibling lane, and the repeat registry all survive; only the target lane's
+  pending backlog (rows + logs + set) and its ring entry are removed. The group
+  is gated `EchoData.BrandedId.valid?/1` at `lane_key!/2` (raises on an ill-formed
+  id) before any wire. Each job key is derived from the declared queue-base root
+  (INV5). Answers `{:ok, n}`, the number of members drained. emq.4.1-D5.
+  """
+  def drain(conn, queue, group) do
+    keys = [
+      Keyspace.queue_key(queue, ""),
+      lane_key!(queue, group),
+      Keyspace.queue_key(queue, "ring")
+    ]
+
+    case Connector.eval(conn, @gdrain, keys, [group]) do
+      {:ok, n} when is_integer(n) -> {:ok, n}
       other -> other
     end
   end

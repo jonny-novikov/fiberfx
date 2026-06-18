@@ -1,8 +1,8 @@
 defmodule EchoMQ.ConformanceRunTest do
   @moduledoc """
   The standing gate (EMQ.0-US4, the ratified Q1 stand-in for rung 3_6):
-  the fifty-two-scenario harness drives the public surface against Valkey
-  on 6390 and every scenario passes — `run/2 → {:ok, 52}` (the eighteen
+  the fifty-four-scenario harness drives the public surface against Valkey
+  on 6390 and every scenario passes — `run/2 → {:ok, 54}` (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -14,8 +14,10 @@ defmodule EchoMQ.ConformanceRunTest do
   single-queue scenarios (flow_add, flow_fanin, flow_children_values),
   the emq.3.3 cross-queue flow scenario (flow_cross_queue), the emq.3.4
   failure-half's three scenarios (flow_fail_parent, flow_ignore_dep,
-  flow_add_bulk), and the emq.3.5 closer's two recursion scenarios
-  (flow_grandchild, flow_grandchild_fail)). Scenarios run on per-scenario
+  flow_add_bulk), the emq.3.5 closer's two recursion scenarios
+  (flow_grandchild, flow_grandchild_fail), and the emq.4.1 control plane's
+  two (the lane re-assignment reassign and the lane-scoped destructive drain
+  lane_drain)). Scenarios run on per-scenario
   sub-queues and purge what they mint.
   """
   use ExUnit.Case, async: false
@@ -29,7 +31,7 @@ defmodule EchoMQ.ConformanceRunTest do
     :ok
   end
 
-  test "the fifty-two-scenario harness passes whole against the truth row" do
+  test "the fifty-four-scenario harness passes whole against the truth row" do
     {:ok, conn} = Connector.start_link(port: 6390)
 
     on_exit(fn ->
@@ -42,6 +44,6 @@ defmodule EchoMQ.ConformanceRunTest do
 
     q = "emq0.conf#{System.unique_integer([:positive])}"
 
-    assert Conformance.run(conn, q) == {:ok, 52}
+    assert Conformance.run(conn, q) == {:ok, 54}
   end
 end

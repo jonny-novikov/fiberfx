@@ -1,43 +1,67 @@
 # EMQ.4.1 · The control plane — lane re-assignment + deepened operator verbs (Movement II, the groups family, the first buildable slice)
 
-> **Status: 📐 PROPOSED — the rung's spec body (the seed the full triad grows from at build time).** The FIRST
-> sub-rung of the emq.4 "groups deepened" family — the family OPENS on the operator control plane, the
-> least-risky, most-exercised surface; the family contract + the carve + the forks are [`../emq.4.md`](../emq.4.md)
-> (authoritative — if this carve disagrees with the body, the body wins). emq.4.1 deepens the **operator control
-> plane** over the **shipped** fair-lanes surface (`EchoMQ.Lanes`): a **lane move / re-assignment** (a member from
-> one lane to another) plus **deepened** pause/resume/limit/drain so an operator re-shapes live group traffic, and
-> it re-aims the two RETIRED v1 priority commands. **Risk: NORMAL** — it adds host control verbs + at most one new
-> inline script over the shipped `g:`-segment keyspace; it edits **no** shipped lane script (`@gclaim`/`@genqueue`
-> byte-unchanged) and founds no process/lease surface. The standard per-app gate ladder + a multi-seed sweep (no
-> id-mint/process/lease hazard is introduced). The v2 master invariant binds (braced keys · branded group ids
-> gated at the lane-key builder · declared Lua keys · additive-minor conformance · no wire break). Forward-tense:
-> every emq.4.1 surface is PROPOSED, NOT shipped.
+> **Status: ✅ SHIPPED — the rung's spec body, reconciled to as-built (post-build, pre-ship).** The FIRST
+> sub-rung of the emq.4 "groups deepened" family — the family OPENED on the operator control plane, the
+> most-exercised surface; the family contract + the carve + the forks are [`../emq.4.md`](../emq.4.md)
+> (authoritative — if this carve disagrees with the body, the body wins). emq.4.1 deepened the **operator control
+> plane** over the **shipped** fair-lanes surface (`EchoMQ.Lanes`): a **lane re-assignment** (`reassign/4` — a
+> member from one lane to another) **and** a **lane-scoped destructive drain** (`drain/3`), plus the carried
+> pause/resume/limit, so an operator re-shapes live group traffic; it re-aims the two RETIRED v1 priority commands.
+> **Risk: HIGH** — the lane-scoped drain is a **destructive at-rest delete** (it `DEL`s drained members' rows + logs
+> + the lane set), so the Director's verify was the **blast-radius mutation battery** (over-reach *and* under-clean
+> both caught), NOT the ≥100 determinism loop (the drain mints no branded id, touches no `TIME`, starts no process —
+> the loop would forge load, not catch the real hazard). It adds **two** host control verbs + **two** new inline
+> scripts (`@greassign`, `@gdrain`) over the shipped `g:`-segment keyspace; it edits **no** shipped lane script
+> (`@gclaim`/`@genqueue`/`@gpause`/`@gresume`/`@glimit` byte-unchanged — INV3) and founds no process/lease surface.
+> The standard per-app gate ladder + a blast-radius mutation battery + a multi-seed sweep (no id-mint/process/lease
+> hazard is introduced — the determinism posture stays an honest multi-seed statement, no ≥100 loop). The v2 master
+> invariant binds (braced keys · branded group ids gated at the lane-key builder · declared Lua keys · additive-minor
+> conformance 52 → 54 · no wire break). The two verbs shipped at `echo/apps/echo_mq/lib/echo_mq/lanes.ex`
+> (`@greassign` :119 / `reassign/4` :262; `@gdrain` :294 / `drain/3` :319).
 
 ## 0 · The slice — what emq.4.1 deepens, and why first
 
 The family ([`../emq.4.md`](../emq.4.md)) deepens the shipped fair-lanes mechanism to production multi-tenant depth
-along four axes. emq.4.1 carves the **control plane**: the verbs an operator uses to **re-shape contention live** —
-move a member between lanes, and pause/resume/limit/drain a lane while traffic flows. It is the **first buildable**
-slice because it deepens the most-exercised operator surface with the **least risk** (pure control over shipped
-keys, no shipped-script edit, no new process), founding the chapter's vocabulary before the higher-risk metronome
-(emq.4.3) and weighted fairness (emq.4.4) rungs. It also discharges the two RETIRED v1 priority commands — the
-groups feature record already re-aimed them to this rung
+along four axes. emq.4.1 carved the **control plane**: the verbs an operator uses to **re-shape contention live** —
+move a member between lanes, drain a lane, and pause/resume/limit a lane while traffic flows. It was the **first
+buildable** slice because it deepens the most-exercised operator surface, founding the chapter's vocabulary before
+the higher-risk metronome (emq.4.3) and weighted fairness (emq.4.4) rungs. It edits **no** shipped lane script (the
+two new verbs are **additive** inline scripts), but the lane-scoped drain is a **destructive at-rest delete**, which
+is why the rung graded **HIGH** and the verify was the **blast-radius mutation battery** (the destructive verb's
+over-reach and under-clean are the real hazards — not a same-millisecond mint, so not the ≥100 loop). It also
+discharges the two RETIRED v1 priority commands — the groups feature record already re-aimed them to this rung
 ([`../../emq.commands/features/groups/changePriority-7.md`](../../emq.commands/features/groups/changePriority-7.md),
 [`../../emq.commands/features/groups/getCountsPerPriority-4.md`](../../emq.commands/features/groups/getCountsPerPriority-4.md)).
 
 ## Goal
 
-emq.4.1 builds, inside `echo/apps/echo_mq`, the **fair-lanes operator control plane**: (a) a **lane re-assignment**
-verb that moves a member from one lane to another — `ZREM emq:{q}:g:<src>:pending` then `ZADD
-emq:{q}:g:<dst>:pending` — in **one atomic script** (both lanes share the one `{q}` slot), each group id gated
-`EchoData.BrandedId.valid?/1` at the lane-key builder, with the ring re-shaped so both lanes reflect their new
-serviceability; (b) **deepened** pause/resume/limit/drain control over the shipped lane keys so an operator can
-re-shape a live lane (the shipped `Lanes.{pause,resume,limit}/_` carried forward, plus the operator-grade depth the
-chapter body names); (c) the **re-aim** of the two RETIRED v1 priority commands — `changePriority-7` → **lane
+emq.4.1 built, inside `echo/apps/echo_mq`, the **fair-lanes operator control plane**: (a) a **lane re-assignment**
+verb `EchoMQ.Lanes.reassign(conn, queue, job_id, dst_group)` (arity 4, **src-derived**) over the inline `@greassign`
+(`lanes.ex:119`) that moves a **pending** member from its current lane to `dst` — `HGET <row> 'group'` (src read
+in-script — the row is authoritative, so src cannot mismatch), `ZREM emq:{q}:g:<src>:pending`, `ZADD
+emq:{q}:g:<dst>:pending` at **score 0**, **`HSET <row> 'group' dst`** (the load-bearing rewrite — the later
+`@gclaim`/`@complete`/`@retry`/`@reap` read `HGET <row> 'group'` to find the lane and the active counter:
+`jobs.ex:182/259/320/349`), and the ring re-shaped (`dst` returned if serviceable + a wake; `src` dropped if its
+lane is now empty) — in **one atomic script** (both lanes share the one `{q}` slot, so a **cross-queue move is not
+expressible** at arity 4 — atomic by construction, not by rejection), `job_id` gated `Keyspace.job_key/2` and
+`dst_group` gated `lane_key!/2` before any wire. The verdict is a **numeric sentinel** the host maps to an atom (the
+`@genqueue`/`@update_data` return idiom — no `error_reply`, so the closed wire-class registry stays **unextended**,
+INV1): `1 → {:ok, :reassigned}`, `0 → {:ok, :noop}` (dst already equals src), `-1 → {:error, :not_found}` (no row /
+no group), `-2 → {:error, :not_pending}` (the member is claimed/in-flight — `ZREM` returns 0, the row left
+untouched since its `gactive` sits under src). (b) a **lane-scoped destructive drain**
+`EchoMQ.Lanes.drain(conn, queue, group)` (arity 3) over the inline `@gdrain` (`lanes.ex:294`) — the `Admin.@drain`
+wipe scoped to **one** lane: `ZRANGE` the lane → `DEL` each member's row + its §6 `:logs` subkey (the job key
+derived from the declared base root by the A-1 convention) → `DEL` the lane set → `LREM` the group from the ring;
+answers `{:ok, n}`. **Blast radius:** ONLY the target lane's pending rows + logs + set + the ring entry — NOT
+`active`/in-flight (not in the lane), NOT `gactive` (it counts in-flight, not pending), NOT `paused`/`glimit` (the
+lane's config survives), NOT any sibling lane, NOT the repeat registry. (c) the carried `Lanes.{pause,resume,limit}`
+(byte-unchanged) + the **re-aim** of the two RETIRED v1 priority commands — `changePriority-7` → **lane
 re-assignment** (there is **no numeric per-job priority**; mint order IS the order theorem; per-group lanes replace
-priority) and `getCountsPerPriority-4` → `EchoMQ.Metrics.lane_depths/3` (the per-lane backlog read) — all under the
-A-1 declared-keys law, branded group ids gated at the builder, and additive-minor conformance growth. emq.4.1 edits
-**no** shipped lane script and founds **no** process/lease surface.
+priority) and `getCountsPerPriority-4` → `EchoMQ.Metrics.lane_depths/3` (the **shipped** per-lane backlog read, no
+new read) — all under the A-1 declared-keys law, branded group ids gated at the builder, and additive-minor
+conformance growth (52 → 54). emq.4.1 edits **no** shipped lane script and founds **no** process/lease surface; the
+two new verbs are **additive** inline scripts, and the drain's destructiveness (not a mint hazard) is what graded
+the rung HIGH.
 
 ## Rationale (5W)
 
@@ -46,85 +70,108 @@ A-1 declared-keys law, branded group ids gated at the builder, and additive-mino
   carries the **least** risk, so it founds the chapter's vocabulary and gate posture before the metronome and the
   fairness rungs build on a proven control surface. It also closes the two RETIRED v1 priority commands the canon
   re-aimed here — completing the groups feature record's emq.4 obligation for the priority surface.
-- **What** — emq.4.1 builds (forward-named; the re-assignment surface does not yet exist in `echo_mq` — re-probe at
-  the pre-build reconcile): (1) a **lane re-assignment** host verb on `EchoMQ.Lanes` *(proposed verb name
-  withheld — pinned at the pre-build reconcile; `reassign/4` or `move/4` is the candidate, the Director/Operator's
-  naming call)* over a new inline `Script.new/2` that `ZREM`s the member from the source lane and `ZADD`s it to the
-  destination lane atomically (both `{q}`-co-located, both declared `KEYS[n]`), re-shaping the ring; (2) the
-  **deepened** pause/resume/limit/drain control verbs over the shipped lane keys; (3) the re-aim surfacing —
-  `changePriority-7` → re-assignment, `getCountsPerPriority-4` → `Metrics.lane_depths/3` (the shipped read, carried
-  as the v1 re-aim target — no new read surface unless Fork C lands); (4) the conformance scenario(s) for
-  re-assignment (additive minor, the prior 52 byte-unchanged); (5) the `:valkey` test suites + a multi-seed sweep.
+- **What** — emq.4.1 built (as-built, two verbs): (1) `EchoMQ.Lanes.reassign(conn, queue, job_id, dst_group)`
+  (arity 4, **src-derived** — the Director ruled the name/arity D-2) over the inline `@greassign` (`lanes.ex:119`):
+  `HGET <row> 'group'` reads src in-script, `ZREM src_lane`, `ZADD dst_lane` at score 0, **`HSET <row> 'group' dst`**
+  (the load-bearing rewrite), the ring re-shaped (`dst` returned if serviceable + a wake; `src` dropped if emptied) —
+  one atomic script, both `{q}`-co-located, every key a declared `KEYS[n]` or grammar-rooted; the verdict is a
+  numeric sentinel (`1`/`0`/`-1`/`-2` → `{:ok, :reassigned}`/`{:ok, :noop}`/`{:error, :not_found}`/`{:error,
+  :not_pending}`); (2) `EchoMQ.Lanes.drain(conn, queue, group)` (arity 3 — **R3 ruled BUILD**, the Director/Operator's
+  call, D-5) over the inline `@gdrain` (`lanes.ex:294`): the `Admin.@drain` wipe scoped to one lane (`ZRANGE` → `DEL`
+  rows + logs → `DEL` lane set → `LREM` ring), answering `{:ok, n}`, blast radius bounded to the target lane's
+  pending rows/logs/set + the ring entry; (3) the carried `Lanes.{pause,resume,limit}` (byte-unchanged); (4) the
+  re-aim — `changePriority-7` → re-assignment, `getCountsPerPriority-4` → `Metrics.lane_depths/3` (the shipped read —
+  no new read, Fork C parked); (5) the conformance scenarios `reassign` + `lane_drain` (additive minor, the prior 52
+  byte-unchanged, count re-pinned 52 → 54); (6) the `:valkey` test suites + a multi-seed sweep + the blast-radius
+  mutation battery.
 - **Who** — the program (the rung that founds the groups control plane and discharges the RETIRED v1 priority
-  commands); multi-tenant **operators** of the bus, who gain live re-shaping of group traffic; the conformance
-  harness, which grows by the re-assignment scenario(s) (additive minor). **codemoji** (the worked consumer): a
-  player whose work must move to a different lane (a re-grouped player) is the prospective shape — recorded, not
-  asserted.
-- **When** — Movement II, the groups family's **first** sub-rung, after Movement I closed. SPECCED this design
-  cycle as a seed; the full triad (`.stories.md` / `.llms.md` / `.prompt.md`) + the build follow one increment per
-  run. **Fork C** (the intra-group priority dimension — below) is surfaced for the Operator's optional ruling at
-  the pre-build reconcile; the recommended arm (park) keeps emq.4.1 lanes score-0, so a park ruling needs **no**
-  re-scope.
-- **Where** — `echo/apps/echo_mq` only: `lanes.ex` (EDIT — the re-assignment verb + its inline script + the
-  deepened control verbs), `metrics.ex` (EDIT — only if the re-aim deepens `lane_depths/3`; else untouched —
-  re-probe), `conformance.ex` (EDIT — the re-assignment scenario(s) + the count re-pin), `test/*_test.exs`
-  (NEW/EDIT — the `:valkey` re-assignment proof), the two pinning tests (EDIT — the count). `echo_wire` is
-  **untouched** (the control plane rides the shipped connector `eval`/`command`). `apps/echomq` is **untouched**
-  (the capability reference). The §6 grammar in `keyspace.ex` is **unedited** (no new key family — the lane keys
-  already compose). Exact line anchors pinned at the pre-build reconcile (the lag-1 law).
+  commands); multi-tenant **operators** of the bus, who gain live re-shaping of group traffic (move a tenant's work,
+  drain a decommissioned tenant's lane, raise a starved lane's ceiling); the conformance harness, which grows by the
+  `reassign` + `lane_drain` scenarios (additive minor). **codemoji** (the worked consumer): a player whose work must
+  move to a different lane (a re-grouped player), or a player whose lane is decommissioned (drained), is the
+  prospective shape — recorded, not asserted.
+- **When** — Movement II, the groups family's **first** sub-rung, SHIPPED after Movement I closed; this body is
+  reconciled to as-built (post-build, pre-ship). **Fork C** (the intra-group priority dimension — below) was surfaced
+  and **ruled PARK** (D-1) — emq.4.1 lanes stay score-0, so no re-scope was needed; the `@greassign` `ZADD`s at score
+  0.
+- **Where** — `echo/apps/echo_mq` only (as-built): `lanes.ex` (EDIT — `reassign/4` + `@greassign`, `drain/3` +
+  `@gdrain`; the shipped `@gclaim`/`@genqueue`/`@gpause`/`@gresume`/`@glimit` byte-frozen), `conformance.ex` (EDIT —
+  the `reassign` + `lane_drain` scenarios + the count re-pin 52 → 54), `test/*_test.exs` (NEW/EDIT — the `:valkey`
+  re-assignment + lane-drain proofs), the two pinning tests `conformance_run_test.exs` + `conformance_scenarios_test.exs`
+  (EDIT — the count 52 → 54). `metrics.ex` is **UNTOUCHED** (the `getCountsPerPriority-4` re-aim target
+  `lane_depths/3` was already shipped — Fork C parked, no Fork-A score dimension). `jobs.ex` is **UNTOUCHED** (the
+  move WRITES the `group` field `jobs.ex` READS — no `jobs.ex` edit needed). `echo_wire` is **untouched** (the control
+  plane rides the shipped connector `eval`/`command`). `apps/echomq` is **untouched** (the capability reference). The
+  §6 grammar in `keyspace.ex` is **unedited** (no new key family — the lane keys already compose).
 
 ## Scope
 
-- **In** — the operator control plane: (1) the **lane re-assignment** verb (member `g:<src>:pending` →
-  `g:<dst>:pending`, one atomic script, both branded-gated, the ring re-shaped); (2) **deepened**
-  pause/resume/limit/drain over the shipped lane keys; (3) the **re-aim** of `changePriority-7` (→ re-assignment)
-  and `getCountsPerPriority-4` (→ `Metrics.lane_depths/3`); (4) the re-assignment conformance scenario(s) (additive
-  minor, the prior 52 byte-unchanged); (5) the `:valkey` suites + an honest multi-seed sweep (a determinism-posture
-  statement — no id-mint/process/lease hazard introduced).
+- **In** — the operator control plane: (1) the **lane re-assignment** verb `reassign/4` (a **pending** member
+  `g:<src>:pending` → `g:<dst>:pending`, one atomic script, src-derived from the row, dst branded-gated, the row's
+  `group` rewritten, the ring re-shaped — `@greassign`); (2) the **lane-scoped destructive drain** `drain/3` (one
+  lane's pending rows + logs + set + ring entry wiped — `@gdrain`, the `Admin.@drain` pattern scoped to a lane);
+  (3) the carried `Lanes.{pause,resume,limit}` (byte-unchanged); (4) the **re-aim** of `changePriority-7`
+  (→ re-assignment) and `getCountsPerPriority-4` (→ the shipped `Metrics.lane_depths/3`); (5) the `reassign` +
+  `lane_drain` conformance scenarios (additive minor, the prior 52 byte-unchanged, 52 → 54); (6) the `:valkey` suites
+  + the **blast-radius mutation battery** (the destructive drain's over-reach + under-clean) + an honest multi-seed
+  sweep (a determinism-posture statement — no id-mint/process/lease hazard introduced).
 - **Out** — any **numeric per-job priority** (retired by design — the v1 packed-score scheme does not return; INV1);
-  any **new lane key family** (the re-assignment rides the shipped `g:<group>:pending` keys + the ring; no
-  `prioritized` key, no `pc` counter — INV1); the **intra-group priority dimension** (a non-zero lane score — **Fork
-  C**, recommended **parked**, NOT built here unless the Operator rules otherwise); a **cross-queue** lane move (a
-  member moving to a lane in a *different* queue crosses a slot, so it inherits the emq.3 cross-queue posture —
-  honest, not atomic; emq.4.1 builds the **same-queue** move and **rejects** a cross-queue destination with a
-  typed/host-side error, never silently mis-keying); any **shipped lane-script edit** (`@gclaim`/`@genqueue` are
-  byte-unchanged — INV3); any **process/lease surface** (the metronome is emq.4.3); the **weighted/deficit rotation**
-  (emq.4.4); the **group-scoped recovery sweep** (emq.4.2); any **`echo_wire`/transport** change; any **edit to the
-  frozen v1 line**.
+  any **new lane key family** (both verbs ride the shipped `g:<group>:pending` keys + the ring; no `prioritized` key,
+  no `pc` counter — INV1); the **intra-group priority dimension** (a non-zero lane score — **Fork C**, **ruled
+  parked**, NOT built); a **cross-queue** lane move (**not expressible at arity 4** — src is derived in-script from
+  the row and the dst lane is a `lane_key!` of *this* queue, so both lanes share the one `{q}` slot and the move is
+  atomic **by construction**, never a rejected case; a member moving to a lane in a *different* queue inherits the
+  emq.3 cross-queue posture and is not built here); a **re-assignment of a claimed/in-flight member** (a claimed
+  member is in `active`, not in its lane — `@greassign` answers `{:error, :not_pending}` and leaves the row
+  untouched, since its `gactive` sits under the source group); any **shipped lane-script edit** (`@gclaim`/
+  `@genqueue`/`@gpause`/`@gresume`/`@glimit` are byte-unchanged — INV3); any **process/lease surface** (the metronome
+  is emq.4.3); the **weighted/deficit rotation** (emq.4.4); the **group-scoped recovery sweep** (emq.4.2); any
+  **`echo_wire`/transport** change; any **edit to the frozen v1 line**.
 
 ## Invariants (the subset emq.4.1 carries, from the family EMQ.4-INV1–8)
 
 - **EMQ.4.1-INV1 (← EMQ.4-INV1) — the wire law (no break, no new key family, no numeric priority).** emq.4.1 adds
-  **no new lane key family** (the re-assignment + control verbs ride the shipped `emq:{q}:g:<group>:pending` /
-  `ring` / `paused` / `glimit` / `gactive` / `wake` keys); **no numeric per-job priority** (the v1 packed-score
-  scheme does not return — re-assignment moves the member between lanes); **no new wire class** (the kind law reuses
-  `EMQKIND` where a kind check applies); **no new transport**. *Check:* a grep of any new script for a lane key not
-  in the shipped `g:`-segment family returns empty; a grep for a numeric-priority score / `prioritized` key returns
-  empty; `{emq}:version` reads `echomq:2.0.0` after connect; the §6 grammar is unedited.
-- **EMQ.4.1-INV2 (← EMQ.4-INV4) — branded group identity at both lane boundaries.** A re-assignment names a **valid
-  branded source AND destination group**, each gated `EchoData.BrandedId.valid?/1` at the lane-key builder
-  (`Lanes.lane_key!/2`, which raises on an ill-formed group) **before** any wire. *Check:* an ill-formed source or
-  destination group raises before the wire; the re-assignment scenario uses two distinct branded groups.
+  **no new lane key family** (`@greassign` + `@gdrain` + the carried verbs ride the shipped `emq:{q}:g:<group>:pending`
+  / `ring` / `paused` / `glimit` / `gactive` / `wake` keys + the declared `job:<id>` row); **no numeric per-job
+  priority** (the v1 packed-score scheme does not return — re-assignment moves the member between lanes); **no new
+  wire class** (`@greassign` returns numeric sentinels via the `@genqueue`/`@update_data` idiom, no `error_reply`, so
+  the closed registry stays unextended; the kind law reuses `EMQKIND` where a kind check applies); **no new
+  transport**. *Check:* a grep of `@greassign`/`@gdrain` for a lane key not in the shipped `g:`-segment family returns
+  empty; a grep for a numeric-priority score / `prioritized` key returns empty; `{emq}:version` reads `echomq:2.0.0`
+  after connect; the §6 grammar is unedited.
+- **EMQ.4.1-INV2 (← EMQ.4-INV4) — branded group identity at both lane boundaries.** `reassign/4` derives the source
+  group from the row (`HGET <row> 'group'` — the row is authoritative) and gates the **destination** group +
+  the `job_id` at the builders (`lane_key!/2` + `Keyspace.job_key/2`, each raising on an ill-formed branded id)
+  **before** any wire; `drain/3` gates its group at `lane_key!/2`. *Check:* an ill-formed destination group or
+  `job_id` (reassign) / group (drain) raises before the wire; the `reassign` scenario uses two distinct branded
+  groups.
 - **EMQ.4.1-INV3 (← EMQ.4-INV3) — the shipped lane surface is byte-unchanged.** emq.4.1 edits **no** shipped lane
   script — `@gclaim` (the ring rotation), `@genqueue`, `@gpause`, `@gresume`, `@glimit` are **byte-identical to
-  HEAD** (`grep redis.call` on those scripts in the lib diff = 0); the prior fair-lanes conformance scenarios
-  (`rotate`, `pause`, `limit`, `lane_depth`, `stalled_group`) pass **byte-unchanged** (git-verified). *Check:* the
-  byte-freeze grep on the shipped lane scripts = 0; the prior scenarios git-verified unchanged.
-- **EMQ.4.1-INV4 (← EMQ.4-INV6) — the additive-minor conformance law.** The re-assignment scenario(s) are
-  registered in `scenarios/0` **with their probes in the same change**; the prior **52** scenarios pass
-  **byte-unchanged**; the count re-pins **52 → N** in **both** pinning tests (`conformance_scenarios_test.exs` +
-  `conformance_run_test.exs`). *Check:* the git-diff shows only additions to `scenarios/0`; both count assertions
-  updated; `Conformance.run/2` prints N lines.
-- **EMQ.4.1-INV5 (← EMQ.4-INV1/INV2) — slot soundness (the same-queue move is atomic).** The re-assignment's source
-  and destination lanes share **one** `{q}` slot, so the move script is **atomic** (one slot, one EVAL); every key
-  is a declared `KEYS[n]` or grammar-rooted; a cross-queue destination is **rejected** at the host verb (it would
-  break this invariant — the cross-queue move inherits the emq.3 cross-queue posture). *Check:* the re-assignment
-  script declares keys of exactly one `{q}`; a cross-queue destination answers the typed/host-side rejection; no
+  HEAD** (`grep redis.call` on those scripts in the lib diff = 0 — verified: the only `redis.call` diff lines are `+`
+  additions in `@greassign`/`@gdrain`, zero changes to the frozen five); the prior fair-lanes conformance scenarios
+  (`rotate`, `pause`, `limit`, `lane_depth`, `stalled_group`, `obliterate_grouped`) pass **byte-unchanged**
+  (git-verified). *Check:* the byte-freeze grep on the five shipped lane scripts = 0; the prior scenarios
+  git-verified unchanged.
+- **EMQ.4.1-INV4 (← EMQ.4-INV6) — the additive-minor conformance law.** The `reassign` + `lane_drain` scenarios are
+  registered in `scenarios/0` **with their probes in the same change** (`conformance.ex:118`/`:119`); the prior **52**
+  scenarios pass **byte-unchanged**; the count re-pins **52 → 54** in **both** pinning tests
+  (`conformance_scenarios_test.exs` + `conformance_run_test.exs:47` `{:ok, 54}`). *Check:* the git-diff shows only
+  additions to `scenarios/0`; both count assertions updated; `Conformance.run/2` prints 54 lines.
+- **EMQ.4.1-INV5 (← EMQ.4-INV1/INV2) — slot soundness (the move is atomic by construction; the drain is
+  declared-keys + bounded).** `@greassign`'s source and destination lanes share **one** `{q}` slot — src is derived
+  in-script from the row and dst is a `lane_key!` of *this* queue, so a **cross-queue move is not expressible** at
+  arity 4 (atomic **by construction**, not by a rejected case); every key is a declared `KEYS[n]` or grammar-rooted
+  (the source lane derives from the declared ARGV queue base `base..'g:'..src..':pending'`, the `@gclaim` convention).
+  `@gdrain` declares its keys + derives each member's job key from the declared base root; its destructive blast
+  radius is **bounded** to the target lane's pending rows + logs + set + the ring entry (NOT `active`/`gactive`/
+  `paused`/`glimit`/sibling-lanes/repeat). *Check:* `@greassign`/`@gdrain` declare keys of exactly one `{q}`; no
+  cross-queue destination is constructible (arity 4, dst gated to this queue); the lane-drain blast-radius scenario
+  asserts a sibling lane + the in-flight `gactive` counter + the repeat registry survive; no
   script claims atomicity across slots.
 
-## The rung's fork — Venus surfaces, the Operator (via the Director) rules
+## The rung's fork — Venus surfaced, the Operator (via the Director) RULED
 
-### FORK C — the intra-group priority dimension: land at emq.4.1 vs park (recommended: park)
+### FORK C — the intra-group priority dimension: land at emq.4.1 vs park — **RULED: PARK (Arm B, D-1)**
 
 > **The canon-recorded delta.** The groups feature record names a PROPOSED emq.4 delta: an intra-lane priority
 > dimension as a **non-zero score on the existing `g:<group>:pending` ZSET** (a `ZCOUNT`/`ZRANGEBYSCORE` over a
@@ -139,41 +186,52 @@ A-1 declared-keys law, branded group ids gated at the builder, and additive-mino
 >   one-lane-per-player) need **lane** fairness, not intra-lane priority. *Cost:* the intra-group priority band is
 >   not available in emq.4.
 >
-> **Recommendation: Arm B (park)** — the score-0 lane invariant is load-bearing for the ring's head-selection;
-> intra-group priority is a real but **unrequested** surface, and landing it would pull emq.4.1 toward the
-> byte-freeze-sensitive `@gclaim` it is designed to avoid. This carve keeps lanes score-0 and records the band as
-> parked. An Arm-A ruling threads the score dimension into emq.4.1 (and re-examines the ring's head-selection — a
-> larger, `@gclaim`-touching scope). **None of this is Venus's to decide** — surfaced for the Operator's call at the
-> pre-build reconcile.
+> **RULED: Arm B (park) — D-1.** The score-0 lane invariant is load-bearing for the ring's head-selection; the
+> shipped `@greassign` `ZADD`s the moved member at **score 0** (`lanes.ex:125`), keeping lanes score-0 exactly as the
+> ruling requires — so no Arm-A re-scope was needed. The intra-group priority band is recorded as **parked** (a real
+> but unrequested surface). An Arm-A ruling would have threaded a score dimension into emq.4.1 and re-examined the
+> ring's head-selection (a larger, `@gclaim`-touching scope) — that ruling was not made. (This was never Venus's to
+> decide — surfaced, the Operator ruled.)
 
 ## Definition of Done
 
-- [ ] **Fork C** surfaced to the Director with both arms + costs + the recommendation (park); the Operator's
-      optional ruling recorded; the carve re-derived if Arm A is ruled (the score-dimension + the `@gclaim`
-      head-selection re-examination).
-- [ ] The **lane re-assignment** verb + its inline atomic script built: a member moves `g:<src>:pending` →
-      `g:<dst>:pending` (both branded-gated, one slot), the ring re-shaped; a cross-queue destination rejected.
-- [ ] The **deepened** pause/resume/limit/drain control verbs built over the shipped lane keys.
-- [ ] The **re-aim** discharged: `changePriority-7` → re-assignment (no numeric priority), `getCountsPerPriority-4`
-      → `Metrics.lane_depths/3`, recorded in the rung's record.
-- [ ] The re-assignment conformance scenario(s) registered (additive minor — the prior **52** byte-unchanged; the
-      count re-pinned **52 → N** in both pinning tests).
-- [ ] The proof: the `:valkey` suites green per-app; a multi-seed sweep + an honest determinism-posture statement
-      (no id-mint/process/lease hazard introduced — NORMAL-risk); no shipped lane script edited (INV3); honest-row
-      reporting (Valkey on 6390 the truth row).
-- [ ] INV1–INV5 verified as runnable checks; the spec body ([`../emq.4.md`](../emq.4.md)) remains authoritative;
-      the as-built reconcile syncs this seed post-build.
+- [x] **Fork C** surfaced to the Director with both arms + costs + the recommendation (park); **RULED PARK (D-1)** —
+      lanes stay score-0, the `@greassign` `ZADD`s at score 0; no Arm-A re-scope needed.
+- [x] The **lane re-assignment** verb + its inline atomic script built: `Lanes.reassign/4` + `@greassign`
+      (`lanes.ex:119/262`) — a **pending** member moves `g:<src>:pending` → `g:<dst>:pending` (src derived from the
+      row, dst branded-gated, one slot), the row's `group` rewritten, the ring re-shaped; a **cross-queue move is not
+      expressible at arity 4** (atomic by construction, not a rejected case); the verdict is the numeric-sentinel set
+      (`{:ok, :reassigned}`/`{:ok, :noop}`/`{:error, :not_found}`/`{:error, :not_pending}`).
+- [x] The **lane-scoped destructive drain** built (**R3 ruled BUILD, D-5**): `Lanes.drain/3` + `@gdrain`
+      (`lanes.ex:294/319`) — one lane's pending rows + logs + set + ring entry wiped, `{:ok, n}`, blast radius
+      bounded; the carried `Lanes.{pause,resume,limit}` byte-unchanged.
+- [x] The **re-aim** discharged: `changePriority-7` → re-assignment (no numeric priority), `getCountsPerPriority-4`
+      → the shipped `Metrics.lane_depths/3` (no new read), recorded in the rung's record.
+- [x] The `reassign` + `lane_drain` conformance scenarios registered (additive minor — the prior **52**
+      byte-unchanged; the count re-pinned **52 → 54** in both pinning tests).
+- [x] The proof: the `:valkey` suites green per-app; the **blast-radius mutation battery** (the destructive drain's
+      over-reach + under-clean both caught) + a multi-seed sweep + an honest determinism-posture statement (no
+      id-mint/process/lease hazard introduced — the drain mints no id/`TIME`/process, so **no ≥100 loop**; the rung
+      grades **HIGH** on the destructive at-rest delete, not a mint hazard); no shipped lane script edited (INV3);
+      honest-row reporting (Valkey on 6390 the truth row).
+- [x] INV1–INV5 verified as runnable checks; the spec body ([`../emq.4.md`](../emq.4.md)) remains authoritative;
+      this seed reconciled to as-built (post-build, pre-ship).
 
 Family: [`../emq.4.md`](../emq.4.md) (the contract, the carve, the forks — authoritative) · Chapter stories:
 [`../emq.4.stories.md`](../emq.4.stories.md) (US1 — the control plane) · Chapter brief:
-[`../emq.4.llms.md`](../emq.4.llms.md) (R1, AS1) · As-built floor (the build target — re-probe at the pre-build
-reconcile; line numbers are hints): `echo/apps/echo_mq/lib/echo_mq/lanes.ex` (`enqueue/5` `@genqueue`, `claim/3`
-`@gclaim` — the ring `LMOVE` + `ZPOPMIN` head the move must NOT disturb, `pause/3` `@gpause`, `resume/3` `@gresume`,
-`limit/4` `@glimit`, `depth/3`, `lane_key!/2` the branded-gated builder; the `g:<group>:pending` / `ring` / `paused`
-/ `glimit` / `gactive` / `wake` keyspace) + `metrics.ex` (`lane_depth/3`, `lane_depths/3` = `@lane_counts` — the
-`getCountsPerPriority-4` re-aim target) + `admin.ex` (`drain/3` `@drain` — the deepened-drain precedent, `del_job`
-enumerates lanes) + `conformance.ex` (the **52**-scenario set the additive-minor law grows — re-probe the live
-count) · The v1 capability reference (the re-aim record, READ-ONLY — the form NOT to lift):
+[`../emq.4.llms.md`](../emq.4.llms.md) (R1, AS1) · As-built surface (SHIPPED; line numbers are the Stage-5
+reconcile's): `echo/apps/echo_mq/lib/echo_mq/lanes.ex` — **the two new verbs:** `reassign/4` (`:262`) + `@greassign`
+(`:119`, the atomic move — `HGET <row> 'group'` src-derive, `ZREM`/`ZADD` score-0, `HSET <row> 'group' dst`, the ring
+re-shape) and `drain/3` (`:319`) + `@gdrain` (`:294`, the lane-scoped wipe); **the byte-frozen five:** `enqueue/5`
+`@genqueue`, `claim/3` `@gclaim` (the ring `LMOVE` + `ZPOPMIN` head — score-0, undisturbed), `pause/3` `@gpause`,
+`resume/3` `@gresume`, `limit/4` `@glimit`; plus `depth/3`, `lane_key!/2` the branded-gated builder; the
+`g:<group>:pending` / `ring` / `paused` / `glimit` / `gactive` / `wake` keyspace + the declared `job:<id>` row.
++ `jobs.ex` (the `group`-field readers the move rewrites for — `@complete:182` / `@retry:259` / `@promote:320` /
+`@reap:349`; **UNTOUCHED** — the move writes the field they read) + `metrics.ex` (`lane_depth/3`, `lane_depths/3` =
+`@lane_counts` — the `getCountsPerPriority-4` re-aim target, already shipped, **UNTOUCHED**) + `admin.ex` (`drain/3`
+`@drain` — the queue-wide drain the lane-scoped `@gdrain` mirrors) + `conformance.ex` (the **54**-scenario set —
+`reassign:118` + `lane_drain:119`; `conformance_run_test.exs:47` `{:ok, 54}`) · The v1 capability reference (the
+re-aim record, READ-ONLY — the form NOT to lift):
 [`../../emq.commands/features/groups/changePriority-7.md`](../../emq.commands/features/groups/changePriority-7.md)
 (RETIRED → lane re-assignment) +
 [`../../emq.commands/features/groups/getCountsPerPriority-4.md`](../../emq.commands/features/groups/getCountsPerPriority-4.md)

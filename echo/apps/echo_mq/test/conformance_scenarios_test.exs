@@ -1,7 +1,7 @@
 defmodule EchoMQ.ConformanceScenariosTest do
   @moduledoc """
   The pure half of the Conformance row (echo2-migration.md §5): the
-  scenario registry pinned — fifty-two names in run order (the eighteen
+  scenario registry pinned — fifty-four names in run order (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -13,9 +13,11 @@ defmodule EchoMQ.ConformanceScenariosTest do
   single-queue scenarios (flow_add, flow_fanin, flow_children_values),
   the emq.3.3 cross-queue flow scenario (flow_cross_queue), the emq.3.4
   failure-half's three scenarios (flow_fail_parent, flow_ignore_dep,
-  flow_add_bulk), and the emq.3.5 closer's two recursion scenarios
-  (flow_grandchild, flow_grandchild_fail)). The wire half
-  (`run/2 → {:ok, 52}`) lives in `conformance_run_test.exs` behind the
+  flow_add_bulk), the emq.3.5 closer's two recursion scenarios
+  (flow_grandchild, flow_grandchild_fail), and the emq.4.1 control plane's
+  two (the lane re-assignment reassign and the lane-scoped destructive drain
+  lane_drain)). The wire half
+  (`run/2 → {:ok, 54}`) lives in `conformance_run_test.exs` behind the
   `:valkey` tag.
   """
   use ExUnit.Case, async: true
@@ -66,6 +68,8 @@ defmodule EchoMQ.ConformanceScenariosTest do
     :extend_locks_batch,
     :stalled_group,
     :obliterate_grouped,
+    :reassign,
+    :lane_drain,
     :flow_add,
     :flow_fanin,
     :flow_children_values,
@@ -77,7 +81,7 @@ defmodule EchoMQ.ConformanceScenariosTest do
     :flow_grandchild_fail
   ]
 
-  test "scenarios/0 answers exactly the fifty-two names in run order" do
+  test "scenarios/0 answers exactly the fifty-four names in run order" do
     assert Keyword.keys(Conformance.scenarios()) == @run_order
   end
 

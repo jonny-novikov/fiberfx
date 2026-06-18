@@ -1,6 +1,6 @@
 defmodule EchoMQ.Conformance do
   @moduledoc """
-  The bus contract as fifty-two runnable scenarios. Each scenario drives the
+  The bus contract as fifty-four runnable scenarios. Each scenario drives the
   public surface (and, where the contract is the wire itself, raw commands)
   against a live server and asserts the externally visible verdict: the
   fence, the row shape, idempotent admission, the kind law, the lex law,
@@ -33,14 +33,22 @@ defmodule EchoMQ.Conformance do
   grandchildren / deep recursion) -- the recursive flow's two behaviors (a
   three-level flow completes UP the tree over the byte-frozen @complete for
   free, and a death propagates UP every level by the recursive failure hook,
-  idempotent per hop). A
+  idempotent per hop), and -- since Movement II opened on the groups family
+  (emq.4.1, the control plane) -- the control plane's two behaviors (the lane
+  re-assignment: a grouped pending member moves to a destination lane at score 0,
+  its row group is rewritten, and a claim+complete charges the destination lane's
+  ceiling, not the source's -- the move is sound past the ZSET swap; and the
+  lane-scoped destructive drain: one lane's pending rows + logs + set + its ring
+  entry are deleted while a sibling lane, the in-flight gactive counter, and the
+  repeat registry survive -- the blast radius matches the contract). A
   port of the client conforms when it drives the same server to the same
-  fifty-two verdicts -- the scenarios are wire-level on purpose, so the harness
+  fifty-four verdicts -- the scenarios are wire-level on purpose, so the harness
   ports by translation, not by faith. Scenarios run on per-scenario sub-queues
   and purge what they mint.
   Chapter 3.6, extended 3.7, then the emq.2 cluster (parity, closed at emq.2.4),
   then the emq.3 flow family (opened at emq.3.1, crossed queues at emq.3.3,
-  failure half at emq.3.4, closed at emq.3.5 with grandchildren).
+  failure half at emq.3.4, closed at emq.3.5 with grandchildren), then Movement
+  II's groups family (opened at emq.4.1, the control plane).
   """
 
   alias EchoData.BrandedId
@@ -107,6 +115,8 @@ defmodule EchoMQ.Conformance do
       extend_locks_batch: "the batch lock extension answers exactly the un-extendable ids of a [live, stale, gone] batch",
       stalled_group: "a lapsed GROUPED lease recovers into the lane g:<g>:pending set, not the flat pending",
       obliterate_grouped: "obliterate del_job's a grouped-but-unclaimed job's row before clearing its lane, leaving no leaked row",
+      reassign: "a grouped pending member moves to a destination lane at score 0, its row group is rewritten, and a claim+complete charges the destination lane's ceiling -- not the source's",
+      lane_drain: "draining one lane deletes its pending rows, their logs, the lane set, and its ring entry, returning the count -- a sibling lane, the in-flight gactive counter, and the repeat registry are untouched",
       flow_add: "a single-queue flow lands atomically: N+1 distinct JOB ids, the children claimable, the parent awaiting_children with :dependencies = N and withheld from pending",
       flow_fanin: "the parent claims empty until the last child completes, then claimable; the :processed subkey records each child; a double-complete decrements exactly once",
       flow_children_values: "two children complete with DISTINCT results; children_values reads back the results keyed by child id (not the ids); dependencies counts down to 0; the reads are pure",
@@ -122,7 +132,7 @@ defmodule EchoMQ.Conformance do
   @doc """
   Runs all scenarios against `conn`, on sub-queues of `queue`. Prints one
   CONF line per scenario and a closing tally. Returns `{:ok, n}` when all
-  pass (n == 52 today -- the eighteen state-machine scenarios, the emq.2.1
+  pass (n == 54 today -- the eighteen state-machine scenarios, the emq.2.1
   read plane's six, the emq.2.2 operator plane's eight (queue_pause, drain,
   obliterate, update_data, update_progress, job_logs, remove_job,
   reprocess_job), the emq.2.3 watch plane's five (lock_extend, stalled,
@@ -132,9 +142,11 @@ defmodule EchoMQ.Conformance do
   (obliterate_grouped), the emq.3 flow family's three single-queue scenarios
   (flow_add, flow_fanin, flow_children_values), the emq.3.3 cross-queue
   flow scenario (flow_cross_queue), the emq.3.4 failure-half's three
-  scenarios (flow_fail_parent, flow_ignore_dep, flow_add_bulk), and the
+  scenarios (flow_fail_parent, flow_ignore_dep, flow_add_bulk), the
   emq.3.5 closer's two recursion scenarios (flow_grandchild,
-  flow_grandchild_fail)), `{:error, failed_names}` otherwise.
+  flow_grandchild_fail), and the emq.4.1 control plane's two (the lane
+  re-assignment reassign and the lane-scoped destructive drain lane_drain)),
+  `{:error, failed_names}` otherwise.
   """
   def run(conn, queue) when is_binary(queue) do
     results =
@@ -1031,6 +1043,106 @@ defmodule EchoMQ.Conformance do
          {:ok, 0} <- Connector.command(conn, ["EXISTS", Keyspace.job_key(q, id)]),
          {:ok, 0} <- Connector.command(conn, ["EXISTS", Keyspace.queue_key(q, "g:" <> g <> ":pending")]),
          {:ok, []} <- Connector.command(conn, ["KEYS", "emq:{" <> q <> "}:*"]) do
+      :ok
+    else
+      other -> {:fail, other}
+    end
+  end
+
+  defp apply_scenario(:reassign, conn, q) do
+    # the control plane's headline move (emq.4.1-D2): a grouped pending member
+    # moves from its source lane to a destination lane in one atomic script. The
+    # proof is the FULL cycle, not the ZSET swap alone: the member must leave
+    # g:<src>:pending, enter g:<dst>:pending at score 0, AND its row group must be
+    # rewritten to dst -- because the byte-frozen @gclaim/@complete read HGET
+    # <row> 'group' to find the lane and the gactive counter. A claim+complete of
+    # the moved member must therefore charge gactive[dst], NOT gactive[src]; a
+    # stale row group would silently charge the wrong lane (gate-invisible without
+    # this cycle). src is derived in-script from the row -- arity 4, never passed.
+    src = BrandedId.generate!("PRT")
+    dst = BrandedId.generate!("PRT")
+    id = BrandedId.generate!("JOB")
+    {:ok, :enqueued} = Lanes.enqueue(conn, q, src, id, "move-me")
+
+    gactive = Keyspace.queue_key(q, "gactive")
+    src_lane = Keyspace.queue_key(q, "g:" <> src <> ":pending")
+    dst_lane = Keyspace.queue_key(q, "g:" <> dst <> ":pending")
+
+    with {:ok, :reassigned} <- Lanes.reassign(conn, q, id, dst),
+         # the member left src and entered dst at score 0 (FIFO-by-mint kept).
+         # ZSCORE answers a numeric score whose wire form (the float 0.0 on RESP3,
+         # "0" on RESP2) is connection-dependent, so the score VALUE is checked,
+         # not its representation; absence is a clean nil either way.
+         {:ok, nil} <- Connector.command(conn, ["ZSCORE", src_lane, id]),
+         {:ok, dst_score} when dst_score in [0, "0", +0.0] <-
+           Connector.command(conn, ["ZSCORE", dst_lane, id]),
+         # the load-bearing write: the row now records dst
+         {:ok, ^dst} <- Connector.command(conn, ["HGET", Keyspace.job_key(q, id), "group"]),
+         # a same-group move is an idempotent no-op
+         {:ok, :noop} <- Lanes.reassign(conn, q, id, dst),
+         # the moved member is served as part of dst's rotation, with group = dst
+         {:ok, {^id, "move-me", 1, ^dst}} <- Lanes.claim(conn, q, 60_000),
+         # in flight, the row's group drove the increment to dst's ceiling, not src's
+         {:ok, "1"} <- Connector.command(conn, ["HGET", gactive, dst]),
+         {:ok, nil} <- Connector.command(conn, ["HGET", gactive, src]),
+         # complete charges dst's counter back down (self-cleaning to absent)
+         :ok <- Jobs.complete(conn, q, id, 1),
+         {:ok, nil} <- Connector.command(conn, ["HGET", gactive, dst]),
+         {:ok, nil} <- Connector.command(conn, ["HGET", gactive, src]) do
+      :ok
+    else
+      other -> {:fail, other}
+    end
+  end
+
+  defp apply_scenario(:lane_drain, conn, q) do
+    # the lane-scoped destructive drain (emq.4.1-D5): draining one lane empties
+    # its pending backlog (rows + §6 logs + the lane set) and drops its ring
+    # entry, returning the count -- and NOTHING else. The proof is the blast
+    # radius: an in-flight member of the SAME lane (claimed -> active, counted in
+    # gactive) survives, a SIBLING lane survives, and the repeat registry
+    # survives. A drain that over-reached would corrupt accounting or destroy a
+    # tenant's other work -- gate-invisible without this scope assertion.
+    a = BrandedId.generate!("PRT")
+    b = BrandedId.generate!("PRT")
+    [a1, a2, a3] = for _ <- 1..3, do: BrandedId.generate!("JOB")
+    b1 = BrandedId.generate!("JOB")
+    {:ok, :enqueued} = Lanes.enqueue(conn, q, a, a1, "a1")
+    {:ok, :enqueued} = Lanes.enqueue(conn, q, a, a2, "a2")
+    {:ok, :enqueued} = Lanes.enqueue(conn, q, a, a3, "a3")
+    {:ok, :enqueued} = Lanes.enqueue(conn, q, b, b1, "b1")
+
+    # claim a1 from lane a -> it leaves the lane for active; gactive[a] = 1
+    {:ok, {^a1, _, 1, ^a}} = Lanes.claim(conn, q, 60_000)
+    # a2 carries a log line, to prove the §6 logs subkey is deleted
+    {:ok, 1} = Jobs.add_log(conn, q, a2, "trace")
+    # a repeat registration must survive a lane drain (the registry is not a lane)
+    {:ok, :registered} = Repeat.register(conn, q, "rep", 60_000, "tick", 0)
+
+    gactive = Keyspace.queue_key(q, "gactive")
+    a_lane = Keyspace.queue_key(q, "g:" <> a <> ":pending")
+    b_lane = Keyspace.queue_key(q, "g:" <> b <> ":pending")
+
+    with {:ok, 2} <- Lanes.drain(conn, q, a),
+         # the two pending rows + the lane set are gone
+         {:ok, 0} <- Connector.command(conn, ["EXISTS", Keyspace.job_key(q, a2)]),
+         {:ok, 0} <- Connector.command(conn, ["EXISTS", Keyspace.job_key(q, a3)]),
+         {:ok, 0} <- Connector.command(conn, ["EXISTS", a_lane]),
+         # a2's logs subkey is gone
+         {:ok, 0} <- Connector.command(conn, ["EXISTS", Keyspace.job_key(q, a2) <> ":logs"]),
+         # the ring no longer carries a, but still carries the sibling b
+         {:ok, nil} <- Connector.command(conn, ["LPOS", Keyspace.queue_key(q, "ring"), a]),
+         {:ok, pos} when is_integer(pos) <- Connector.command(conn, ["LPOS", Keyspace.queue_key(q, "ring"), b]),
+         # the in-flight a1 is untouched: still active, gactive[a] still 1
+         {:ok, :active} <- Metrics.get_job_state(conn, q, a1),
+         {:ok, "1"} <- Connector.command(conn, ["HGET", gactive, a]),
+         # the sibling lane b is intact (its row, its set)
+         {:ok, 1} <- Connector.command(conn, ["EXISTS", Keyspace.job_key(q, b1)]),
+         {:ok, 1} <- Connector.command(conn, ["ZCARD", b_lane]),
+         # the repeat registry survives
+         {:ok, 1} <- Connector.command(conn, ["EXISTS", Keyspace.queue_key(q, "repeat")]),
+         # an empty/absent lane drains to 0, changing nothing
+         {:ok, 0} <- Lanes.drain(conn, q, BrandedId.generate!("PRT")) do
       :ok
     else
       other -> {:fail, other}

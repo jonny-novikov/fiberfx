@@ -115,7 +115,7 @@ by `EchoMQ.Consumer`, scored by a single authority, results published on `EchoMQ
 | **emq.1** | I | scheduler + retry vocabulary (delayed / repeatable jobs · attempts-with-backoff · auto-resubscribe) | ✅ CLOSED |
 | **emq.2** | I | the **parity floor** — read → operator → watch → close (emq.2.1 · 2.2 · 2.3 · 2.4) | ✅ CLOSED |
 | **emq.3** | I | the **parent/flow family** — single-queue → reads → cross-queue → failure-policy → grandchildren (emq.3.1–3.5) | ✅ CLOSED |
-| emq.4 | II | groups deepened: the control plane, group-aware recovery, the park-don't-poll metronome, weighted/deficit rotation + the starvation drill | planned abstract — the displaced family's proposed slot (seam 2) |
+| emq.4 | II | groups deepened: the control plane, group-aware recovery, the park-don't-poll metronome, weighted/deficit rotation + the starvation drill | 🔨 BUILDING — emq.4.1 the control plane ✅ SHIPPED (reassign + lane-drain, HIGH-risk); 4.2–4.4 next |
 | emq.5 | II | batches: bulk consumption, `min_size`/`timeout` shaping, affinity, the partitioned finish | planned abstract |
 | emq.6 | II | lifecycle controls: TTL per worker/name, distributed cancel, checkpoints | planned abstract |
 | emq.7 | II | the cache deepened: BCAST tracking, absorbed-fills compaction, `synchronous=FULL` per group, the invalidation-transport evaluation | planned abstract — may be pulled forward (Operator call) |
