@@ -1,4 +1,4 @@
-# reprocessJob-8  →  EchoMQ.Jobs.reprocess_job/3 (@reprocess, jobs.ex:912)
+# reprocessJob-8  →  EchoMQ.Jobs.reprocess_job/3 (@reprocess, jobs.ex)
 
 > Feature: **retry** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   reprocessJob-8
 --@feature   retry
 --@status    SHIPPED (ported)
---@rung      emq.2.2 76fc947c
+--@rung      emq.2.2
 --@v1        registry/reprocessJob-8.lua   (KEYS arity 8)
---@v3        EchoMQ.Jobs.reprocess_job/3 (@reprocess, jobs.ex:912)
+--@v3        EchoMQ.Jobs.reprocess_job/3 (@reprocess, jobs.ex)
 ```
 
 ## v1 source

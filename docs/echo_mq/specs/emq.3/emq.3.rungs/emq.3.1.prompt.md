@@ -7,7 +7,7 @@
 > laws; the **`echo-mq-ship`** skill is the echo_mq binding (Venus loads `echo-mq-architect`, Mars loads
 > `echo-mq-implementor`, Apollo loads `echo-mq-evaluator`); the inputs are the triad
 > ([`./emq.3.1.md`](emq.3.1.md) · [`./emq.3.1.stories.md`](emq.3.1.stories.md) ·
-> [`./emq.3.1.llms.md`](emq.3.1.llms.md)), the family ([`./emq.3.md`](../../emq.3.md) — the A-1 flow design + the
+> [`./emq.3.1.llms.md`](emq.3.1.llms.md)), the family ([`./emq.3.md`](../emq.3.md) — the A-1 flow design + the
 > carve + the THREE forks), and the canon ([`../emq.design.md`](../../../emq.design.md) §11.10/§6/§5/S-6/§11.12).
 
 ## The family in one paragraph
@@ -21,7 +21,7 @@ parent** (`emq:{q}:job:<parent>:dependencies` + `:processed`/`:failed`/`:unsucce
 **reserved** at §6 for exactly this), each rooted at the parent's declared job key, on the parent's `{q}` slot,
 A-1-clean by construction. The family carves into emq.3.1 (single-queue) · 3.2 (child-result reads) · 3.3
 (cross-queue) · 3.4 (failure-policy + bulk). The full design + the three surfaced forks are
-[`./emq.3.md`](../../emq.3.md).
+[`./emq.3.md`](../emq.3.md).
 
 ## The rung in one paragraph
 
@@ -56,7 +56,7 @@ design half).
 
 ## The fork gate — Fork A MUST be ruled before the build (EMQ.3.1-D1)
 
-**emq.3.1 does not build until the Operator rules Fork A.** The family body ([`./emq.3.md`](../../emq.3.md)) surfaces
+**emq.3.1 does not build until the Operator rules Fork A.** The family body ([`./emq.3.md`](../emq.3.md)) surfaces
 three forks; the triad is authored to the recommended arms (A·A, B·counter+guard, C·`awaiting_children`).
 
 > **FORK A (the headline — GATES the build) — the flow SHAPE.** Single-queue-first (Arm A, recommended: the
@@ -257,7 +257,7 @@ BUILD-GRADE** (D6). The spec body stays authoritative; Stage 5 syncs it to the a
 (emq.3.2–3.4) opens on a proven single-queue core.
 
 Inputs: [`./emq.3.1.md`](emq.3.1.md) · [`./emq.3.1.stories.md`](emq.3.1.stories.md) ·
-[`./emq.3.1.llms.md`](emq.3.1.llms.md) · Family: [`./emq.3.md`](../../emq.3.md) (the A-1 flow design + the carve +
+[`./emq.3.1.llms.md`](emq.3.1.llms.md) · Family: [`./emq.3.md`](../emq.3.md) (the A-1 flow design + the carve +
 the forks) · Canon: [`../emq.design.md`](../../../emq.design.md) §11.10/§6/§5/S-6/S-1/§11.12 · Roadmap:
 [`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I · The feature catalog: [`../emq.features.md`](../../../emq.features.md)
 (the emq.3 row) · The shape model: [`../emq.2/emq.2.prompt.md`](../../emq.2/emq.2.prompt.md) (the emq.2.4 cluster-closer runbook)

@@ -1,4 +1,4 @@
-# moveJobsToWait-8  →  single-job EchoMQ.Jobs.reprocess_job/3 (jobs.ex:912) + EchoMQ.Jobs.promote/3 (jobs.ex:644) exist; a bulk requeue_set(state, count) is PROPOSED
+# moveJobsToWait-8  →  single-job EchoMQ.Jobs.reprocess_job/3 (jobs.ex) + EchoMQ.Jobs.promote/3 (jobs.ex) exist; a bulk requeue_set(state, count) is PROPOSED
 
 > Feature: **batches** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -10,7 +10,7 @@
 --@status    PARTIAL
 --@rung      emq.2.2
 --@v1        registry/moveJobsToWait-8.lua   (KEYS arity 8)
---@v3        single-job EchoMQ.Jobs.reprocess_job/3 (jobs.ex:912) + EchoMQ.Jobs.promote/3 (jobs.ex:644) exist; a bulk requeue_set(state, count) is PROPOSED
+--@v3        single-job EchoMQ.Jobs.reprocess_job/3 (jobs.ex) + EchoMQ.Jobs.promote/3 (jobs.ex) exist; a bulk requeue_set(state, count) is PROPOSED
 ```
 
 ## v1 source

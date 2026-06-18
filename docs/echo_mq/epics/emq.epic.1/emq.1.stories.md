@@ -1,6 +1,6 @@
 # EMQ.1 · user stories
 > Who wants the time-and-retry vocabulary, what they need, and how acceptance is known. Derived from
-> [`./emq.1.md`](../../specs/emq.1.md) (BUILT — acceptance ran in the emq-1 run and PASSED; this body reflects the
+> [`./emq.1.md`](../../specs/emq.1/emq.1.md) (BUILT — acceptance ran in the emq-1 run and PASSED; this body reflects the
 > as-built surface). The consumer ground is the worked consumer codemoji (`echo/apps/codemoji`) and the
 > planned consumer echo_bot (`echo/apps/echo_bot`, forward-tense); the capability ground is the drop
 > ROADMAP's 2.1 row and the design's §11.10 deferral.
@@ -139,4 +139,4 @@ Priority: must · Size: 2 · Implements deliverables: EMQ.1-D7.
 
 ---
 Coverage: D1→US6 · D2→US1 · D3→US2 · D4→US3 · D5→US4 · D6→US5 · D7→US7.
-Spec: [`./emq.1.md`](../../specs/emq.1.md) · Agent brief: [`./emq.1.llms.md`](../../specs/emq.1.llms.md).
+Spec: [`./emq.1.md`](../../specs/emq.1/emq.1.md) · Agent brief: [`./emq.1.llms.md`](../../specs/emq.1/emq.1.llms.md).

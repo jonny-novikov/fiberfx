@@ -14,7 +14,7 @@
   bounds N1/N2/N3) · D1–D6 · INV1–INV8 · DoD.
 - **The stories (the acceptance face):** [`./emq.3.2.stories.md`](emq.3.2.stories.md) — US1–US6 + US-GATE +
   the Coverage map.
-- **The family contract + the carve + the forks:** [`./emq.3.md`](../../emq.3.md) — emq.3.2 is the **child-result
+- **The family contract + the carve + the forks:** [`./emq.3.md`](../emq.3.md) — emq.3.2 is the **child-result
   reads** row of the carve (`children_values/3` + `dependencies/3` over `:processed`/`:dependencies`).
 - **The first slice (SHIPPED — the floor emq.3.2 reads + extends):** [`./emq.3.1.md`](emq.3.1.md) +
   [`./emq-3-1.progress.md`](../../progress/emq-3-1.progress.md) — `EchoMQ.Flows.add/3`, the `:processed`/`:dependencies`

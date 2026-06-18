@@ -1,4 +1,4 @@
-# addParentJob-6  →  EchoMQ.Flows.add/3 + add_bulk/3 (@enqueue_flow/@hold_parent/@enqueue_flow_child, flows.ex:39/:73/:98)
+# addParentJob-6  →  EchoMQ.Flows.add/3 + add_bulk/3 (@enqueue_flow/@hold_parent/@enqueue_flow_child, flows.ex)
 
 > Feature: **flows** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   addParentJob-6
 --@feature   flows
 --@status    SHIPPED (ported)
---@rung      emq.3.1–3.4 4c401479
+--@rung      emq.3.1–3.4
 --@v1        registry/addParentJob-6.lua   (KEYS arity 6)
---@v3        EchoMQ.Flows.add/3 + add_bulk/3 (@enqueue_flow/@hold_parent/@enqueue_flow_child, flows.ex:39/:73/:98)
+--@v3        EchoMQ.Flows.add/3 + add_bulk/3 (@enqueue_flow/@hold_parent/@enqueue_flow_child, flows.ex)
 ```
 
 ## v1 source

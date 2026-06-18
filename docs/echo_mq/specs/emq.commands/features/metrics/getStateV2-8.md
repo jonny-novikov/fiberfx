@@ -1,4 +1,4 @@
-# getStateV2-8  →  folded into EchoMQ.Metrics.get_job_state/3 (@state_lookup, metrics.ex:148)
+# getStateV2-8  →  folded into EchoMQ.Metrics.get_job_state/3 (@state_lookup, metrics.ex)
 
 > Feature: **metrics** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   getStateV2-8
 --@feature   metrics
 --@status    SHIPPED (subsumed)
---@rung      emq.2.1 7d98ef86
+--@rung      emq.2.1
 --@v1        registry/getStateV2-8.lua   (KEYS arity 8)
---@v3        folded into EchoMQ.Metrics.get_job_state/3 (@state_lookup, metrics.ex:148)
+--@v3        folded into EchoMQ.Metrics.get_job_state/3 (@state_lookup, metrics.ex)
 ```
 
 ## v1 source

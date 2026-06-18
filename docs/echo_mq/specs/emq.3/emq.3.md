@@ -12,7 +12,7 @@
 > (`apps/echomq`) is a **capability reference** — the list of flow behaviour to port — never a thing migrated
 > from, and its *form* is the thing this rung must NOT lift (its scripts root key operands in data values).
 > The family decomposes into sub-rungs (**emq.3.1**, 3.2, …) the way emq.2 decomposed (emq.2.1–2.4); this body
-> is the family contract + the carve, and [`./emq.3.1.md`](./emq.3/emq.3.1.md) carves the first buildable slice.
+> is the family contract + the carve, and [`./emq.3.1.md`](./emq.3.rungs/emq.3.1.md) carves the first buildable slice.
 > **Risk: HIGH** — it founds a new key-derivation shape (the flow subkeys) and a completion-gate transition on
 > the shipped `@complete`; Apollo is mandatory at the build of any sub-rung that edits a shipped script.
 
@@ -77,7 +77,7 @@ in data values); (b) a parent is **invisible to `claim` until all its children c
 (c) a child's completion **decrements the parent's outstanding-dependency count** and, at zero, **releases the
 parent** to `pending` — all under the A-1 declared-keys law, branded `JOB` ids gated at the key builder, the
 server clock on any lease, and the additive-minor conformance growth. The family carves into sub-rungs;
-**emq.3.1** carries the first buildable slice (the single-queue flow — see [`./emq.3.1.md`](./emq.3/emq.3.1.md)) and
+**emq.3.1** carries the first buildable slice (the single-queue flow — see [`./emq.3.1.md`](./emq.3.rungs/emq.3.1.md)) and
 the later sub-rungs extend it (the cross-queue completion signal, the child-result reads, the failure-policy
 options) per **The carve** below.
 
@@ -375,7 +375,7 @@ and C are cheap pre-build re-scopes of a representation, not blockers).
       arm at the pre-build reconcile.
 - [ ] The carve into sub-rungs recorded (emq.3.1 the single-queue flow · 3.2 child-result reads · 3.3
       cross-queue · 3.4 failure-policy + bulk), dependency-ordered, each a full triad + a runbook.
-- [ ] emq.3.1 specced (this design cycle): [`./emq.3.1.md`](./emq.3/emq.3.1.md) + `.stories.md` + `.llms.md` +
+- [ ] emq.3.1 specced (this design cycle): [`./emq.3.1.md`](./emq.3.rungs/emq.3.1.md) + `.stories.md` + `.llms.md` +
       `.prompt.md` — the first buildable single-queue-flow slice.
 - [ ] INV1–INV8 stated as runnable checks; the family DoD traces every deliverable to a story (the `.stories.md`
       Coverage map).
@@ -385,7 +385,7 @@ and C are cheap pre-build re-scopes of a representation, not blockers).
       MANDATORY for any sub-rung editing a shipped script (the `@complete` fan-in hook — HIGH-RISK).
 
 Stories: [`./emq.3.stories.md`](emq.3.stories.md) · Agent brief: [`./emq.3.llms.md`](emq.3.llms.md) ·
-First sub-rung: [`./emq.3.1.md`](./emq.3/emq.3.1.md) (+ `.stories.md` / `.llms.md` / `.prompt.md`) ·
+First sub-rung: [`./emq.3.1.md`](./emq.3.rungs/emq.3.1.md) (+ `.stories.md` / `.llms.md` / `.prompt.md`) ·
 The v1 capability reference (READ-ONLY, the form NOT to lift): `echo/apps/echomq/lib/echomq/flow_producer.ex`
 (`add/2`, `add_bulk/2`, the `parent_key`/`parent_info` data-value tree) + the dependency-subkey names in
 `echo/apps/echomq/priv/scripts/moveToFinished-15.lua:140-141` ·

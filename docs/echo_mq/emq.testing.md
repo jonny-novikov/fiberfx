@@ -22,11 +22,11 @@ records how the contracts that shipped are proven, and where the proof is thin.
 > **`92a8f042`** (the emq.2.2 obliterate fix — `admin.ex`), **`7c2f2405`** (the Operator docs:
 > features/testing/triad/ledger), **`3298e4bc`** (the closer code — the 5 C1 renames, conformance 37→43, the
 > 5 depth suites). Every figure below is **output actually observed** by the committed harness
-> **[`echo/rungs/bus/emq_2_4_check.sh`](../../echo/rungs/bus/emq_2_4_check.sh)** (LOOP_N=100, owning the
+> **`echo/rungs/bus/emq_2_4_check.sh`** (LOOP_N=100, owning the
 > machine, 2026-06-14 18:04→18:11Z — the committed transcript's run; independently reproduced by the Director
 > at LOOP_N=10 and Apollo-2 at LOOP_N=100, all three runs yielding the identical board) — reproduce any line by
 > re-running the harness; its committed transcript
-> is [`echo/rungs/bus/emq_2_4_check.out`](../../echo/rungs/bus/emq_2_4_check.out). This replaces the prior
+> is `echo/rungs/bus/emq_2_4_check.out`. This replaces the prior
 > cycle's ephemeral `/tmp`-tee'd proof (which evaporated on a mid-Stage-4 crash) with a committed, re-runnable
 > artifact — the Operator's "Harness required". Apollo re-runs the harness independently and confirms this
 > board matches reality. The rung is the FOURTH and last of the emq.2 cluster (read 2.1 → ops 2.2 → watch 2.3

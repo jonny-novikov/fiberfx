@@ -1,4 +1,4 @@
-# removeJob-2  →  EchoMQ.Jobs.remove_job/4 (@remove_job, jobs.ex:819; refuses locked EMQLOCK, -1→:gone)
+# removeJob-2  →  EchoMQ.Jobs.remove_job/4 (@remove_job, jobs.ex; refuses locked EMQLOCK, -1→:gone)
 
 > Feature: **lifecycle** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   removeJob-2
 --@feature   lifecycle
 --@status    SHIPPED (ported)
---@rung      emq.2.2 76fc947c
+--@rung      emq.2.2
 --@v1        registry/removeJob-2.lua   (KEYS arity 2)
---@v3        EchoMQ.Jobs.remove_job/4 (@remove_job, jobs.ex:819; refuses locked EMQLOCK, -1→:gone)
+--@v3        EchoMQ.Jobs.remove_job/4 (@remove_job, jobs.ex; refuses locked EMQLOCK, -1→:gone)
 ```
 
 ## v1 source

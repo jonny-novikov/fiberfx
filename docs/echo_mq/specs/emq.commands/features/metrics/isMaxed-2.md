@@ -1,4 +1,4 @@
-# isMaxed-2  →  EchoMQ.Metrics.is_maxed/2 (@is_maxed, metrics.ex:260)
+# isMaxed-2  →  EchoMQ.Metrics.is_maxed/2 (@is_maxed, metrics.ex)
 
 > Feature: **metrics** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   isMaxed-2
 --@feature   metrics
 --@status    SHIPPED (ported)
---@rung      emq.2.1 7d98ef86
+--@rung      emq.2.1
 --@v1        registry/isMaxed-2.lua   (KEYS arity 2)
---@v3        EchoMQ.Metrics.is_maxed/2 (@is_maxed, metrics.ex:260)
+--@v3        EchoMQ.Metrics.is_maxed/2 (@is_maxed, metrics.ex)
 ```
 
 ## v1 source

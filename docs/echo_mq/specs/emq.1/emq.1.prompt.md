@@ -10,8 +10,8 @@
 > already-recommended arms (§"The design-make" below), the solo Director review scrutinizes it, and the
 > Operator's acceptance of the single post-closure commit is the ratification. The x-mode skill
 > ([`.claude/skills/x-mode/SKILL.md`](../../../../.claude/skills/x-mode/SKILL.md)) binds the laws; its inputs
-> are the spec triad ([`./emq.1.md`](../emq.1.md) · [`./emq.1.stories.md`](../../epics/emq.epic.1/emq.1.stories.md) ·
-> [`./emq.1.llms.md`](../emq.1.llms.md)), the design, and the canon ([`../emq.design.md`](../../emq.design.md)).
+> are the spec triad ([`./emq.1.md`](./emq.1.md) · [`./emq.1.stories.md`](../../epics/emq.epic.1/emq.1.stories.md) ·
+> [`./emq.1.llms.md`](./emq.1.llms.md)), the design, and the canon ([`../emq.design.md`](../../emq.design.md)).
 
 ## The rung in one paragraph
 
@@ -22,7 +22,7 @@ queue), repeatable jobs (each occurrence a fresh branded `JOB` mint), the attemp
 vocabulary above the wire with the poison-job drill, a supervised opt-in promote pump, and connector
 auto-resubscribe after `:reconnect`. The substrate is largely as-built (the schedule set, `retry/7`,
 `promote/3`, the `'scheduled'` state all exist — verified below); emq.1 adds the verbs, the host-side
-policy, the pump, and the resubscribe seam. The contract is [`./emq.1.md`](../emq.1.md) (D1–D7,
+policy, the pump, and the resubscribe seam. The contract is [`./emq.1.md`](./emq.1.md) (D1–D7,
 INV1–INV7); the design it makes real is [`./emq.1.design.md`](emq.1.design.md).
 
 ## Mode
@@ -88,8 +88,8 @@ to `echo/apps/echo_wire`. Mars-1 RE-PROBES each at build time (anchors drift; th
   the loop `:91` (the pump's process-shape precedent).
 - **No `echo/apps/echo_mq/priv/` directory exists** — scripts are inline `Script.new/2` module
   attributes (`echo_wire/lib/echo_mq/script.ex`; `@enqueue` at `jobs.ex:14-24`). **emq.1 follows the
-  inline convention, NOT `priv/`.** The triad's "new Lua under `priv/`" line ([`./emq.1.md`](../emq.1.md)
-  §Where; [`./emq.1.llms.md`](../emq.1.llms.md) topology) is a Stage-4 reconcile flag for Venus.
+  inline convention, NOT `priv/`.** The triad's "new Lua under `priv/`" line ([`./emq.1.md`](./emq.1.md)
+  §Where; [`./emq.1.llms.md`](./emq.1.llms.md) topology) is a Stage-4 reconcile flag for Venus.
 
 ## The pipeline — five stages, Director-in-loop
 
@@ -103,7 +103,7 @@ stage block → audit directive → propagation clause → report).
 Directive (lift into the spawn): **make the design real and build it.** (a) RE-PROBE every as-built
 anchor above (the lag-1 law — the import moved files). (b) Adopt the six arms from "The design-make"
 above; log each as a `tool_x_decision` (D-n) citing the design-doc section it adopts; invent no new
-design. (c) Build EMQ.1-D2 → D6 to [`./emq.1.llms.md`](../emq.1.llms.md)'s agent stories and the adopted
+design. (c) Build EMQ.1-D2 → D6 to [`./emq.1.llms.md`](./emq.1.llms.md)'s agent stories and the adopted
 design — scheduled enqueue run-at/run-in over one new inline script (D2), the repeat registration surface
 + pump-swept fresh mints (D3), `EchoMQ.Backoff` pure module feeding `Jobs.retry/7` unchanged (D4), the
 one supervised opt-in pump over `Jobs.promote/3` + the repeat sweep (D5), the connector resubscribe set

@@ -72,4 +72,4 @@ frameworks — relevant only past the exit, named and parked).
 ## Map
 
 Delivery: the single consolidated [`emq.roadmap.md` §EchoMQ 3.x](../emq.roadmap.md). The line beneath:
-[`emq2.specs.md`](emq2.specs.md) · [`emq.roadmap.md`](../emq.roadmap.md).
+[`emq2.specs.md`](emq.2.specs.md) · [`emq.roadmap.md`](../emq.roadmap.md).

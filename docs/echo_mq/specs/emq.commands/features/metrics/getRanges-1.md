@@ -8,7 +8,7 @@
 --@command   getRanges-1
 --@feature   metrics
 --@status    NOT YET
---@rung      emq.2.1 7d98ef86
+--@rung      emq.2.1
 --@v1        registry/getRanges-1.lua   (KEYS arity 1)
 --@v3        no def get_ranges; closest as-built EchoMQ.Jobs.browse/3 + Metrics.get_counts/3
 ```

@@ -8,7 +8,7 @@
 --@command   changeDelay-4
 --@feature   scheduling
 --@status    NOT YET (proposed)
---@rung      emq.1 e0fa9b03
+--@rung      emq.1
 --@v1        registry/changeDelay-4.lua   (KEYS arity 4)
 --@v3        reschedule/4 (proposed) beside @schedule/@promote
 ```

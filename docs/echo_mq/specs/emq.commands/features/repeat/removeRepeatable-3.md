@@ -1,4 +1,4 @@
-# removeRepeatable-3  →  EchoMQ.Repeat.cancel/3 (@repeat_cancel, repeat.ex:79)
+# removeRepeatable-3  →  EchoMQ.Repeat.cancel/3 (@repeat_cancel, repeat.ex)
 
 > Feature: **repeat** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   removeRepeatable-3
 --@feature   repeat
 --@status    SHIPPED (ported, new form)
---@rung      emq.1 e0fa9b03
+--@rung      emq.1
 --@v1        registry/removeRepeatable-3.lua   (KEYS arity 3)
---@v3        EchoMQ.Repeat.cancel/3 (@repeat_cancel, repeat.ex:79)
+--@v3        EchoMQ.Repeat.cancel/3 (@repeat_cancel, repeat.ex)
 ```
 
 ## v1 source

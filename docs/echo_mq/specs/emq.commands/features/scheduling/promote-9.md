@@ -1,4 +1,4 @@
-# promote-9  →  EchoMQ.Jobs.promote/3 (@promote due-sweep, jobs.ex:540); targeted promote_now/3 (proposed)
+# promote-9  →  EchoMQ.Jobs.promote/3 (@promote due-sweep, jobs.ex); targeted promote_now/3 (proposed)
 
 > Feature: **scheduling** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   promote-9
 --@feature   scheduling
 --@status    PARTIAL
---@rung      emq.1 e0fa9b03
+--@rung      emq.1
 --@v1        registry/promote-9.lua   (KEYS arity 9)
---@v3        EchoMQ.Jobs.promote/3 (@promote due-sweep, jobs.ex:540); targeted promote_now/3 (proposed)
+--@v3        EchoMQ.Jobs.promote/3 (@promote due-sweep, jobs.ex); targeted promote_now/3 (proposed)
 ```
 
 ## v1 source

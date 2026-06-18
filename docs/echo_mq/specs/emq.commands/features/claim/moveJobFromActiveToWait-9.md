@@ -1,4 +1,4 @@
-# moveJobFromActiveToWait-9  →  recovery EchoMQ.Jobs.reap/2 (@reap, jobs.ex:651) + Stalled.check/3; a token-fenced voluntary requeue is PROPOSED
+# moveJobFromActiveToWait-9  →  recovery EchoMQ.Jobs.reap/2 (@reap, jobs.ex) + Stalled.check/3; a token-fenced voluntary requeue is PROPOSED
 
 > Feature: **claim** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   moveJobFromActiveToWait-9
 --@feature   claim
 --@status    PARTIAL (partial)
---@rung      emq.0 a2d599c8
+--@rung      emq.0
 --@v1        registry/moveJobFromActiveToWait-9.lua   (KEYS arity 9)
---@v3        recovery EchoMQ.Jobs.reap/2 (@reap, jobs.ex:651) + Stalled.check/3; a token-fenced voluntary requeue is PROPOSED
+--@v3        recovery EchoMQ.Jobs.reap/2 (@reap, jobs.ex) + Stalled.check/3; a token-fenced voluntary requeue is PROPOSED
 ```
 
 ## v1 source

@@ -1,4 +1,4 @@
-# updateJobScheduler-12  →  EchoMQ.Repeat.advance/4 + EchoMQ.Pump (@repeat_advance, repeat.ex:128)
+# updateJobScheduler-12  →  EchoMQ.Repeat.advance/4 + EchoMQ.Pump (@repeat_advance, repeat.ex)
 
 > Feature: **repeat** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   updateJobScheduler-12
 --@feature   repeat
 --@status    SHIPPED (ported)
---@rung      emq.1 e0fa9b03
+--@rung      emq.1
 --@v1        registry/updateJobScheduler-12.lua   (KEYS arity 12)
---@v3        EchoMQ.Repeat.advance/4 + EchoMQ.Pump (@repeat_advance, repeat.ex:128)
+--@v3        EchoMQ.Repeat.advance/4 + EchoMQ.Pump (@repeat_advance, repeat.ex)
 ```
 
 ## v1 source

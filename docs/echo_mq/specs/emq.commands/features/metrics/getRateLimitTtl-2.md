@@ -1,4 +1,4 @@
-# getRateLimitTtl-2  →  EchoMQ.Metrics.get_rate_limit_ttl/3 (@rate_ttl, metrics.ex:221)
+# getRateLimitTtl-2  →  EchoMQ.Metrics.get_rate_limit_ttl/3 (@rate_ttl, metrics.ex)
 
 > Feature: **metrics** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   getRateLimitTtl-2
 --@feature   metrics
 --@status    SHIPPED (ported)
---@rung      emq.2.1 7d98ef86
+--@rung      emq.2.1
 --@v1        registry/getRateLimitTtl-2.lua   (KEYS arity 2)
---@v3        EchoMQ.Metrics.get_rate_limit_ttl/3 (@rate_ttl, metrics.ex:221)
+--@v3        EchoMQ.Metrics.get_rate_limit_ttl/3 (@rate_ttl, metrics.ex)
 ```
 
 ## v1 source

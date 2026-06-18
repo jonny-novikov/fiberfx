@@ -24,7 +24,7 @@
 The **V-1 scope fork** ([`./emq-3-4.progress.md`](../../progress/emq-3-4.progress.md)) — does emq.3.4 include **grandchildren /
 deep recursion**, or is that a separate later rung? — is **RULED → Arm A** (the Director, recorded as **D-2**).
 Build to **Arm A**:
-- **Arm A (RULED, the family carve [`./emq.3.md`](../../emq.3.md):198):** emq.3.4 = **failure-policy + `add_bulk`**
+- **Arm A (RULED, the family carve [`./emq.3.md`](../emq.3.md):198):** emq.3.4 = **failure-policy + `add_bulk`**
   only. Grandchildren (a cross-queue child that is itself a flow-parent — the recursive tree) is the **locked
   Out → emq.3.5** (a separate later rung, recorded NOT built). **Build to this.**
 - **Arm B (NOT chosen):** grandchildren joins emq.3.4 — it was the steelmanned alternative, a cheap re-scope that
@@ -52,7 +52,7 @@ The **failure-policy mechanism** is decided by the body + the inherited emq.3.3 
   Coverage map.
 - **The scope fork (V-1):** [`./emq-3-4.progress.md`](../../progress/emq-3-4.progress.md) — T-1 (the reconcile delta, the
   re-pinned anchors) + V-1 (the grandchildren scope fork, both arms steelmanned + the recommendation).
-- **The family contract + the carve:** [`./emq.3.md`](../../emq.3.md) — emq.3.4 is the **"failure-policy + bulk"**
+- **The family contract + the carve:** [`./emq.3.md`](../emq.3.md) — emq.3.4 is the **"failure-policy + bulk"**
   row of the carve (`:198`); §0 names the `:failed`/`:unsuccessful` subkeys §6-reserved at the founding
   (`:46-61`); INV3 (byte-unchanged) + INV7 (the cross-queue honesty).
 - **The shipped slices (the floor emq.3.4 extends):** [`./emq.3.1.md`](emq.3.1.md) (the same-queue atomic add,

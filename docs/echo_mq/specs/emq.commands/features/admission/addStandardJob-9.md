@@ -1,4 +1,4 @@
-# addStandardJob-9  →  EchoMQ.Jobs.enqueue/4 (@enqueue, jobs.ex:14)
+# addStandardJob-9  →  EchoMQ.Jobs.enqueue/4 (@enqueue, jobs.ex)
 
 > Feature: **admission** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   addStandardJob-9
 --@feature   admission
 --@status    SHIPPED (ported)
---@rung      emq.0/1 a2d599c8/e0fa9b03
+--@rung      emq.0/1
 --@v1        registry/addStandardJob-9.lua   (KEYS arity 9)
---@v3        EchoMQ.Jobs.enqueue/4 (@enqueue, jobs.ex:14)
+--@v3        EchoMQ.Jobs.enqueue/4 (@enqueue, jobs.ex)
 ```
 
 ## v1 source

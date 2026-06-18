@@ -1,13 +1,13 @@
 # EMQ.3.3 · The cross-queue flow — the third sub-rung (Movement I, the flow family)
 
 > **Status: SPECCED 2026-06-15** (the THIRD sub-rung of the emq.3 parent/flow family — the family contract + the
-> carve + the forks are [`./emq.3.md`](../../emq.3.md); the first slice [`./emq.3.1.md`](emq.3.1.md) SHIPPED
+> carve + the forks are [`./emq.3.md`](../emq.3.md); the first slice [`./emq.3.1.md`](emq.3.1.md) SHIPPED
 > 2026-06-15 at CONFORMANCE 45/45, the second [`./emq.3.2.md`](emq.3.2.md) SHIPPED 2026-06-15 at CONFORMANCE
 > 46/46). emq.3.3 carves the **cross-queue flow** — a parent and its DIRECT children in **different queues** (the
 > v1 shape: a parent in `orders`, children in `validation`/`inventory`/`payments`). Under the v2 braced keyspace
 > each queue is a **different cluster slot**, so a child's completion **cannot atomically reach** the parent's
 > other-slot `:dependencies` counter — **no single Lua script** spans both (S-1/§6). The decrement is delivered
-> by a **completion-signal hop** (the [`./emq.3.md`](../../emq.3.md) Fork A mechanism, RULED single-queue-first
+> by a **completion-signal hop** (the [`./emq.3.md`](../emq.3.md) Fork A mechanism, RULED single-queue-first
 > 2026-06-14): the cross-queue child's completion **emits** to a durable per-queue **outbox** on the child's own
 > slot, and a **per-queue sweep** drains the outbox and delivers the decrement to the parent **on the parent's
 > slot** — giving **eventually-consistent** fan-in across queues (stated honestly — **INV7**: explicitly NOT

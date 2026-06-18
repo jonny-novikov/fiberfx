@@ -3,7 +3,7 @@
 > The build brief for the emq.3 **family** — what Mars reads first, the requirements traced to stories +
 > invariants, the execution topology, and the agent stories (Directive + Acceptance gate). This is the
 > **family** brief; the actual build runs per sub-rung against the sub-rung's own brief (emq.3.1 first —
-> [`./emq.3.1.llms.md`](./emq.3/emq.3.1.llms.md)). The spec **body** [`./emq.3.md`](emq.3.md) is authoritative;
+> [`./emq.3.1.llms.md`](./emq.3.rungs/emq.3.1.llms.md)). The spec **body** [`./emq.3.md`](emq.3.md) is authoritative;
 > this brief and [`./emq.3.stories.md`](emq.3.stories.md) DERIVE from it — when a derived artifact disagrees
 > with the body, the body wins. **No code is built this design cycle**; the family build is gated on the
 > Operator ruling Fork A.

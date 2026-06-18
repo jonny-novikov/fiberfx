@@ -6,7 +6,7 @@
 > forks ruled R1·B + R2·A; NORMAL-risk (no shipped-script edit), Apollo not required. The **`echo-mq-ship`**
 > skill is the echo_mq binding (Venus loads `echo-mq-architect`, Mars loads `echo-mq-implementor`); the inputs
 > are the triad ([`./emq.3.2.md`](emq.3.2.md) · [`./emq.3.2.stories.md`](emq.3.2.stories.md) ·
-> [`./emq.3.2.llms.md`](emq.3.2.llms.md)), the family ([`./emq.3.md`](../../emq.3.md) — the carve + the forks), the
+> [`./emq.3.2.llms.md`](emq.3.2.llms.md)), the family ([`./emq.3.md`](../emq.3.md) — the carve + the forks), the
 > SHIPPED first slice ([`./emq.3.1.md`](emq.3.1.md) — the floor emq.3.2 reads), and the canon
 > ([`../emq.design.md`](../../../emq.design.md) §11.10/§6/§5/S-6).
 
@@ -18,7 +18,7 @@ only when its children complete (fan-in), **under the v2 A-1 declared-keys law**
 `:processed` the completed-children HASH), each rooted at the parent's declared job key, on the parent's `{q}`
 slot, A-1-clean by construction. The family carves into emq.3.1 (single-queue, **SHIPPED** 2026-06-15) · **3.2
 (child-result reads)** · 3.3 (cross-queue) · 3.4 (failure-policy + bulk). The full design + the surfaced forks
-are [`./emq.3.md`](../../emq.3.md).
+are [`./emq.3.md`](../emq.3.md).
 
 ## The rung in one paragraph
 
@@ -264,7 +264,7 @@ attribute** (NORMAL-risk proven). The spec body stays authoritative; Stage 5 syn
 **O1 is closed** and the **N1 lifecycle carry** is named (routed to the emq.3.x lifecycle rung).
 
 Inputs: [`./emq.3.2.md`](emq.3.2.md) · [`./emq.3.2.stories.md`](emq.3.2.stories.md) ·
-[`./emq.3.2.llms.md`](emq.3.2.llms.md) · Family: [`./emq.3.md`](../../emq.3.md) (the carve + the forks) · The
+[`./emq.3.2.llms.md`](emq.3.2.llms.md) · Family: [`./emq.3.md`](../emq.3.md) (the carve + the forks) · The
 first slice (SHIPPED): [`./emq.3.1.md`](emq.3.1.md) + [`./emq.3.1.prompt.md`](emq.3.1.prompt.md) (the
 HIGH-risk runbook this NORMAL-risk one mirrors) · Canon: [`../emq.design.md`](../../../emq.design.md) §11.10/§6/§5/S-6
 · Roadmap: [`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I · The feature catalog:

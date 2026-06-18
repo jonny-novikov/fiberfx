@@ -1,4 +1,4 @@
-# updateRepeatableJobMillis-1  →  EchoMQ.Repeat.advance/4 (@repeat_advance, repeat.ex:128)
+# updateRepeatableJobMillis-1  →  EchoMQ.Repeat.advance/4 (@repeat_advance, repeat.ex)
 
 > Feature: **repeat** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   updateRepeatableJobMillis-1
 --@feature   repeat
 --@status    PARTIAL
---@rung      emq.1 e0fa9b03 — folds into advance/4
+--@rung      emq.1 — folds into advance/4
 --@v1        registry/updateRepeatableJobMillis-1.lua   (KEYS arity 1)
---@v3        EchoMQ.Repeat.advance/4 (@repeat_advance, repeat.ex:128)
+--@v3        EchoMQ.Repeat.advance/4 (@repeat_advance, repeat.ex)
 ```
 
 ## v1 source

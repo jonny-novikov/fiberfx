@@ -1,4 +1,4 @@
-# pause-7  →  EchoMQ.Admin.pause/2 + resume/2 (@pause/@resume, admin.ex:54/:66; a paused FIELD on emq:{q}:meta, no wait↔paused RENAME)
+# pause-7  →  EchoMQ.Admin.pause/2 + resume/2 (@pause/@resume, admin.ex; a paused FIELD on emq:{q}:meta, no wait↔paused RENAME)
 
 > Feature: **lifecycle** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   pause-7
 --@feature   lifecycle
 --@status    SHIPPED (ported)
---@rung      emq.2.2 76fc947c
+--@rung      emq.2.2
 --@v1        registry/pause-7.lua   (KEYS arity 7)
---@v3        EchoMQ.Admin.pause/2 + resume/2 (@pause/@resume, admin.ex:54/:66; a paused FIELD on emq:{q}:meta, no wait↔paused RENAME)
+--@v3        EchoMQ.Admin.pause/2 + resume/2 (@pause/@resume, admin.ex; a paused FIELD on emq:{q}:meta, no wait↔paused RENAME)
 ```
 
 ## v1 source

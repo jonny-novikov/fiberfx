@@ -1,4 +1,4 @@
-# updateProgress-3  →  EchoMQ.Jobs.update_progress/4 (@update_progress, jobs.ex:720; the v2 form is a PUBLISH emq:{q}:events, NOT an XADD — D-5/D-6)
+# updateProgress-3  →  EchoMQ.Jobs.update_progress/4 (@update_progress, jobs.ex; the v2 form is a PUBLISH emq:{q}:events, NOT an XADD — D-5/D-6)
 
 > Feature: **data** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   updateProgress-3
 --@feature   data
 --@status    SHIPPED (ported)
---@rung      emq.2.2 76fc947c
+--@rung      emq.2.2
 --@v1        registry/updateProgress-3.lua   (KEYS arity 3)
---@v3        EchoMQ.Jobs.update_progress/4 (@update_progress, jobs.ex:720; the v2 form is a PUBLISH emq:{q}:events, NOT an XADD — D-5/D-6)
+--@v3        EchoMQ.Jobs.update_progress/4 (@update_progress, jobs.ex; the v2 form is a PUBLISH emq:{q}:events, NOT an XADD — D-5/D-6)
 ```
 
 ## v1 source

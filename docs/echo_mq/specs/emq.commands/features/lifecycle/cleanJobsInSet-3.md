@@ -8,7 +8,7 @@
 --@command   cleanJobsInSet-3
 --@feature   lifecycle
 --@status    PARTIAL
---@rung      emq.2.2 76fc947c
+--@rung      emq.2.2
 --@v1        registry/cleanJobsInSet-3.lua   (KEYS arity 3)
 --@v3        Admin.drain/3 is predicate-free today; Admin.clean/4 (server-clock age grace + limit) PROPOSED. (also batches)
 ```

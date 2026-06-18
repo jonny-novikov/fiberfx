@@ -63,7 +63,7 @@
    gate), §11.11 (the no-release ground).
 7. **The shape precedent** — [`./emq.2.1.md`](emq.2.1.md) + [`./emq.2.1.llms.md`](emq.2.1.llms.md) +
    [`./emq.2.1.prompt.md`](emq.2.1.prompt.md) (the triad + brief + runbook shape; the inline-`Script.new/2`
-   convention; the design-make-as-relocated-gate) and [`./emq.1.md`](../../emq.1.md) (the transition-script
+   convention; the design-make-as-relocated-gate) and [`./emq.1.md`](../../emq.1/emq.1.md) (the transition-script
    precedent — `@schedule`/`@retry` as the model for a real mutation under the v2 laws).
 
 ## Requirements (each traced back to a story, forward to an invariant/check)

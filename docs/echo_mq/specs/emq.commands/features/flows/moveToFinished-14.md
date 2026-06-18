@@ -1,4 +1,4 @@
-# moveToFinished-14  →  EchoMQ.Jobs.complete/5 (@complete, jobs.ex:456)
+# moveToFinished-14  →  EchoMQ.Jobs.complete/5 (@complete, jobs.ex)
 
 > Feature: **flows** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   moveToFinished-14
 --@feature   flows
 --@status    SHIPPED (ported)
---@rung      emq.0/1 a2d599c8/e0fa9b03
+--@rung      emq.0/1
 --@v1        registry/moveToFinished-14.lua   (KEYS arity 14)
---@v3        EchoMQ.Jobs.complete/5 (@complete, jobs.ex:456)
+--@v3        EchoMQ.Jobs.complete/5 (@complete, jobs.ex)
 ```
 
 ## v1 source
@@ -309,7 +309,7 @@ end
 
 ## v1 → v3 change ledger
 
-| v1 (moveToFinished-14, 287-line monster) | v3 (SHIPPED — EchoMQ.Jobs.@complete, jobs.ex:456) |
+| v1 (moveToFinished-14, 287-line monster) | v3 (SHIPPED — EchoMQ.Jobs.@complete, jobs.ex) |
 |---|---|
 | HMGET jobIdKey "parentKey" "parent" -- HASH | if HGET KEYS[2] attempts ~= ARGV[2] -> EMQSTALE -- token fence |
 | cjson.decode(parent) -- DATA VALUE → key | if KEYS[3] and ZREM(active)==1 then -- same-queue fan-in |
@@ -320,7 +320,7 @@ end
 ## Aligned flow (authoritative side-by-side)
 
 ```text
-v1 (moveToFinished-14, 287-line monster)         v3 (SHIPPED — EchoMQ.Jobs.@complete, jobs.ex:456)
+v1 (moveToFinished-14, 287-line monster)         v3 (SHIPPED — EchoMQ.Jobs.@complete, jobs.ex)
 ─────────────────────────────────────────       ─────────────────────────────────────────────────
 HMGET jobIdKey "parentKey" "parent"  -- HASH     if HGET KEYS[2] attempts ~= ARGV[2] -> EMQSTALE  -- token fence
 cjson.decode(parent)  -- DATA VALUE → key        if KEYS[3] and ZREM(active)==1 then  -- same-queue fan-in

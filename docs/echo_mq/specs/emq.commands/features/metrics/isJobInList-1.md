@@ -8,7 +8,7 @@
 --@command   isJobInList-1
 --@feature   metrics
 --@status    NOT YET
---@rung      emq.2.1 7d98ef86
+--@rung      emq.2.1
 --@v1        registry/isJobInList-1.lua   (KEYS arity 1)
 --@v3        no def in_list; re-derives as a declared-key ZSCORE (the @state_lookup mechanism)
 ```

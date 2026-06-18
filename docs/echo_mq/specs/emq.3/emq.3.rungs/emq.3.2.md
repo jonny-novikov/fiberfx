@@ -1,7 +1,7 @@
 # EMQ.3.2 · The child-result reads — the second sub-rung (Movement I, the flow family)
 
 > **Status: SHIPPED 2026-06-15 at CONFORMANCE 46/46** (the SECOND sub-rung of the emq.3 parent/flow family — the
-> family contract + the carve + the forks are [`./emq.3.md`](../../emq.3.md); the first slice
+> family contract + the carve + the forks are [`./emq.3.md`](../emq.3.md); the first slice
 > [`./emq.3.1.md`](emq.3.1.md) SHIPPED 2026-06-15 at CONFORMANCE 45/45). emq.3.2 carved the **child-result
 > reads** — the host API a flow's parent handler reads its children's outcomes through:
 > `EchoMQ.Flows.children_values/3` over the parent's `:processed` subkey and `EchoMQ.Flows.dependencies/3` over
@@ -15,7 +15,7 @@
 > **no shipped Lua script** (R1·B touched only the host signature + two pure reads), so no dedicated Apollo
 > evaluator was required (the Director's solo review + the gate ladder were the gate); the ≥100 determinism
 > loop ran over the mint/process-touching flow read suite (120/120 green). The forks were ruled **R1·B + R2·A**
-> ([`./emq.3.md`](../../emq.3.md) — the recommended arms this triad was authored to).
+> ([`./emq.3.md`](../emq.3.md) — the recommended arms this triad was authored to).
 
 ## 0 · The slice — what emq.3.2 carves, and why second
 
@@ -151,7 +151,7 @@ bounds, each a **correct-for-scope** limit, never a defect:
 emq.3.2 builds (forward-named; the read API does not yet exist in `EchoMQ.Flows` — Stage-0 confirmed the
 CLEAN SLATE: no `children_values`/`dependencies` symbol in `flows.ex`):
 
-- **EMQ.3.2-D1 — the fork gate (FIRST):** Fork **R1** ([`./emq.3.md`](../../emq.3.md) the family + **V-1** in this
+- **EMQ.3.2-D1 — the fork gate (FIRST):** Fork **R1** ([`./emq.3.md`](../emq.3.md) the family + **V-1** in this
   rung's ledger) **settled by the Operator** before any build artifact — Arm B (the real-result-carrying
   completion; the carve this triad is authored to) vs Arm A (a pure presence read, no completion change).
   Recorded BEFORE any build story runs (the cluster precedent — the fork gate is the relocated gate). Fork
@@ -293,7 +293,7 @@ CLEAN SLATE: no `children_values`/`dependencies` symbol in `flows.ex`):
       (Stage 5) synced it to the as-built surface.
 
 Stories: [`./emq.3.2.stories.md`](emq.3.2.stories.md) · Agent brief: [`./emq.3.2.llms.md`](emq.3.2.llms.md)
-· Runbook: [`./emq.3.2.prompt.md`](emq.3.2.prompt.md) · Family: [`./emq.3.md`](../../emq.3.md) (the contract, the
+· Runbook: [`./emq.3.2.prompt.md`](emq.3.2.prompt.md) · Family: [`./emq.3.md`](../emq.3.md) (the contract, the
 carve, the forks — authoritative for the family) · The first slice (SHIPPED, the floor emq.3.2 reads):
 [`./emq.3.1.md`](emq.3.1.md) (`EchoMQ.Flows.add/3`, the `:processed`/`:dependencies` subkeys, the fan-in hook,
 the O1/O2/L-5 honest bounds emq.3.2 closes/carries) · The v1 capability reference (READ-ONLY, the form NOT to

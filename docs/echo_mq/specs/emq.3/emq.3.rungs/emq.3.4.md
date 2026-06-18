@@ -1,7 +1,7 @@
 # EMQ.3.4 · The flow failure-policy + bulk add — the fourth sub-rung (Movement I, the flow family)
 
 > **Status: SHIPPED 2026-06-15** (BUILD-GRADE — the HIGH-risk Apollo MANDATORY pass complete, Y-4; the FOURTH
-> sub-rung of the emq.3 parent/flow family — the family contract + the carve are [`./emq.3.md`](../../emq.3.md);
+> sub-rung of the emq.3 parent/flow family — the family contract + the carve are [`./emq.3.md`](../emq.3.md);
 > the first slice [`./emq.3.1.md`](emq.3.1.md) SHIPPED 2026-06-15 at CONFORMANCE 45/45, the second
 > [`./emq.3.2.md`](emq.3.2.md) SHIPPED at 46/46, the third [`./emq.3.3.md`](emq.3.3.md) SHIPPED (cross-queue
 > flow) at 47/47, and emq.3.4 at **50/50**). emq.3.4 carves the **flow failure-policy + bulk add**: a flow parent
@@ -21,7 +21,7 @@
 > `build_flow_commands`, `flow_producer.ex:51-56/:238`) are the honest **Out**, **routed to emq.3.5** — the
 > **V-1 scope fork is RULED → Arm A** (the Director, recorded as **D-2** in this rung's ledger
 > [`./emq-3-4.progress.md`](../../progress/emq-3-4.progress.md): emq.3.4 = failure-policy + bulk per the family carve
-> [`./emq.3.md`](../../emq.3.md):198; grandchildren is a separate later rung, **emq.3.5**, recorded NOT built). A
+> [`./emq.3.md`](../emq.3.md):198; grandchildren is a separate later rung, **emq.3.5**, recorded NOT built). A
 > later Arm-B re-scope (folding grandchildren into emq.3.4) stays a zero-cost option for the Operator — the
 > failure-policy core is identical — but this triad is authored to the ruled Arm A.
 
@@ -264,7 +264,7 @@ Stage-0 baseline this rung closed: `add/3` took no policy flags, `@retry`'s dead
 - **EMQ.3.4-D1 — the scope gate (RULED → Arm A, FIRST):** the **V-1 scope fork** (grandchildren IN emq.3.4 or a
   separate rung) was surfaced to the Director with both arms steelmanned + a recommendation, and **RULED → Arm A**
   (recorded as **D-2** in this rung's ledger [`./emq-3-4.progress.md`](../../progress/emq-3-4.progress.md)): emq.3.4 =
-  failure-policy + bulk (the family carve [`./emq.3.md`](../../emq.3.md):198 scope); **grandchildren / deep recursion
+  failure-policy + bulk (the family carve [`./emq.3.md`](../emq.3.md):198 scope); **grandchildren / deep recursion
   is the locked Out → emq.3.5** (a separate later rung, recorded NOT built). The triad is authored to Arm A → no
   pre-build re-scope. A later Arm-B re-scope (folding grandchildren into emq.3.4) stays a zero-cost Operator
   option — the failure-policy core is identical — but is not this rung. Recorded BEFORE any build artifact.

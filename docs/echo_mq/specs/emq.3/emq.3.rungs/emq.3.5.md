@@ -3,7 +3,7 @@
 > **Status: ✅ SHIPPED 2026-06-15 (NORMAL-risk, Arm A)** — the FIFTH and FINAL sub-rung of the emq.3 parent/flow
 > family, BUILD-GRADE on this machine (the Director's Stage-3 review + Apollo's post-build reconcile: every D1–D6 +
 > INV1–INV11 MATCH; the gate green — compile clean, 4 doctests / 346 tests / 0 failures, `Conformance.run/2` →
-> `{:ok, 52}`, the ≥100 determinism loop 100/100). The family contract + the carve are [`./emq.3.md`](../../emq.3.md);
+> `{:ok, 52}`, the ≥100 determinism loop 100/100). The family contract + the carve are [`./emq.3.md`](../emq.3.md);
 > the floor it stands on shipped 2026-06-15: [`./emq.3.1.md`](emq.3.1.md) the single-queue flow at CONFORMANCE 45,
 > [`./emq.3.2.md`](emq.3.2.md) the child-result reads at 46, [`./emq.3.3.md`](emq.3.3.md) the cross-queue flow at
 > 47, [`./emq.3.4.md`](emq.3.4.md) the failure-policy + bulk at **50**. emq.3.5 carved the family's **sole
@@ -12,7 +12,7 @@
 > `flow_producer` provided through its recursive `build_flow_commands` (`flow_producer.ex:51-56`/`:238`/`:364-374`).
 > It was the **V-1 Arm-A Out** the Director locked at emq.3.4 (grandchildren ruled OUT of emq.3.4 → **routed here**,
 > recorded NOT built — the `emq-3-4` ledger D-2). **Closing emq.3.5 CLOSES Movement I**
-> ([`../emq.roadmap.md`](../emq.roadmap.md):101-102, :143): with the whole flow family parity-complete, the
+> ([`../emq.roadmap.md`](../../../emq.roadmap.md):101-102, :143): with the whole flow family parity-complete, the
 > `apps/echomq` dissolution thesis closes for the flow surface and Movement II (the family-depth ladder, emq.4–emq.8)
 > opens on a complete core.
 >
@@ -124,11 +124,11 @@ the host re-emit) → **NORMAL-risk**; an S2 · Arm B ruling (in-script recursiv
 
 ## Rationale (5W)
 
-- **Why** — emq.3.5 is **the rung that CLOSES Movement I** ([`../emq.roadmap.md`](../emq.roadmap.md):101-102, :143).
+- **Why** — emq.3.5 is **the rung that CLOSES Movement I** ([`../emq.roadmap.md`](../../../emq.roadmap.md):101-102, :143).
   The flat flow family (emq.3.1–3.4) brought `echo_mq` to parity for a **one-level** flow, but the v1 `flow_producer`
   provides **arbitrary-depth** trees (its recursive `build_flow_commands`, `flow_producer.ex:238`/`:364-374`, and its
   documented `grandchild` example, `:51-56`) — so until grandchildren ship the flow parity is **incomplete** and the
-  `apps/echomq` dissolution thesis cannot close for the flow surface ([`../emq.roadmap.md`](../emq.roadmap.md)
+  `apps/echomq` dissolution thesis cannot close for the flow surface ([`../emq.roadmap.md`](../../../emq.roadmap.md)
   Movement I). It is the family's **sole remaining slice** (the V-1 Arm-A Out, the `emq-3-4` ledger D-2 — recorded
   NOT built), and it is **genuine new design only for FAILURE**: completion recursion falls out of the existing
   mechanism (§0), so the rung's design weight is the recursive failure hook + the recursive enqueue's correctness

@@ -8,7 +8,7 @@
 --@command   paginate-1
 --@feature   metrics
 --@status    NOT YET
---@rung      emq.2.1 7d98ef86
+--@rung      emq.2.1
 --@v1        registry/paginate-1.lua   (KEYS arity 1)
 --@v3        no def paginate; the shipped listing is EchoMQ.Jobs.browse/3 + pending_size/3
 ```

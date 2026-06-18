@@ -1,4 +1,4 @@
-# retryJob-11  →  split across EchoMQ.Jobs.retry/7 (@retry, jobs.ex:593) + reprocess_job/3 (jobs.ex:912); a single active→pending-now lock-released requeue_active/4 is PROPOSED
+# retryJob-11  →  split across EchoMQ.Jobs.retry/7 (@retry, jobs.ex) + reprocess_job/3 (jobs.ex); a single active→pending-now lock-released requeue_active/4 is PROPOSED
 
 > Feature: **retry** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   retryJob-11
 --@feature   retry
 --@status    PARTIAL
---@rung      emq.1/2.2 e0fa9b03/76fc947c
+--@rung      emq.1/2.2
 --@v1        registry/retryJob-11.lua   (KEYS arity 11)
---@v3        split across EchoMQ.Jobs.retry/7 (@retry, jobs.ex:593) + reprocess_job/3 (jobs.ex:912); a single active→pending-now lock-released requeue_active/4 is PROPOSED
+--@v3        split across EchoMQ.Jobs.retry/7 (@retry, jobs.ex) + reprocess_job/3 (jobs.ex); a single active→pending-now lock-released requeue_active/4 is PROPOSED
 ```
 
 ## v1 source

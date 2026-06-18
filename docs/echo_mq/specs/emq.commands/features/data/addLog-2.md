@@ -1,4 +1,4 @@
-# addLog-2  →  EchoMQ.Jobs.add_log/5 + get_job_logs/3 (@add_log, jobs.ex:750)
+# addLog-2  →  EchoMQ.Jobs.add_log/5 + get_job_logs/3 (@add_log, jobs.ex)
 
 > Feature: **data** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   addLog-2
 --@feature   data
 --@status    SHIPPED (ported)
---@rung      emq.2.2 76fc947c
+--@rung      emq.2.2
 --@v1        registry/addLog-2.lua   (KEYS arity 2)
---@v3        EchoMQ.Jobs.add_log/5 + get_job_logs/3 (@add_log, jobs.ex:750)
+--@v3        EchoMQ.Jobs.add_log/5 + get_job_logs/3 (@add_log, jobs.ex)
 ```
 
 ## v1 source

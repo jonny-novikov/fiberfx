@@ -57,7 +57,7 @@
   `:46`; INV1 holds the as-built count byte-unchanged) · the branding primitive `EchoData.BrandedId.encode/2`
   (`echo/apps/echo_data/lib/echo_data/branded_id.ex:66` — `(ns, snow) :: {:ok, t()} | :error`), `encode!/2`
   (`:85`), `valid?/1` (`:95`), `namespace/1` (`:97`).
-- Upstream rung: [`./emq.1.md`](../emq.1.md) — the gate ladder this rung must keep green (its build moves the
+- Upstream rung: [`./emq.1.md`](../emq.1/emq.1.md) — the gate ladder this rung must keep green (its build moves the
   `echo_mq` surface before emq.2 reads it — the lag-1 reconcile is non-optional).
 - The seam ground: [`../emq.roadmap.md`](../../emq.roadmap.md) §Seams (seam 1 OPEN, seam 5 dissolution) ·
   [`../echo_mq.md`](../../echo_mq.md) (emq.2 = hygiene, no consumer gate).

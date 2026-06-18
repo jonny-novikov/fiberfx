@@ -23,7 +23,7 @@
 > **— ruled-out** (explicitly not a feature, with the ruling cited). **The emq.2 cluster is CLOSED** (read →
 > ops → watch → close, 4/4 shipped); **the flow family** has emq.3.1/3.2/3.3 shipped (3.3 cross-queue
 > shipped-this-run) and **emq.3.4** (failure-policy + bulk) **specced** — the new triad
-> [`./specs/emq.3.4.md`](./specs/emq.3/emq.3.4.md).
+> [`./specs/emq.3.4.md`](./specs/emq.3/emq.3.rungs/emq.3.4.md).
 
 ---
 
@@ -200,7 +200,7 @@ cross-queue admit path on `add/3` (host-orchestrated, parent-first, fail-closed)
 `deliver_flow_completions` delivers the decrement on the parent's slot via `@flow_deliver` (the `:processed`
 HSETNX idempotency guard) — **eventually-consistent** (released on the next sweep tick, never "atomic across
 queues"), at-least-once made effectively-once; the `flow_cross_queue` scenario (46 → 47); HIGH-risk, Apollo
-MANDATORY. **emq.3.4 SPECCED (the new triad [`./specs/emq.3.4.md`](./specs/emq.3/emq.3.4.md))** — the **failure-policy
+MANDATORY. **emq.3.4 SPECCED (the new triad [`./specs/emq.3.4.md`](./specs/emq.3/emq.3.rungs/emq.3.4.md))** — the **failure-policy
 + bulk add**: `fail_parent_on_failure` (the default — a dead child fails the parent, recorded in `:failed`) /
 `ignore_dependency_on_failure` (the dead child is satisfied + recorded in `:unsuccessful`, so the parent
 proceeds) over the **already-§6-reserved** `:failed`/`:unsuccessful` subkeys (no grammar edit), the additive
@@ -477,7 +477,7 @@ contract + Prometheus export owe **emq.8**. No v1 capability is orphaned.
   same-queue death atomically; a cross-queue death rides the same `flow:outbox` + sweep via `@flow_fail_deliver`,
   idempotent); `EchoMQ.Flows.add_bulk/3` (N flows, fail-closed per flow); `ignored_failures/3` (the v1
   `get_ignored_children_failures` read). *When*: emq.3.4 builds this (SPECCED — the triad
-  [`./specs/emq.3.4.md`](./specs/emq.3/emq.3.4.md); HIGH-risk — a shipped `@retry` edit → Apollo MANDATORY). *Where*:
+  [`./specs/emq.3.4.md`](./specs/emq.3/emq.3.rungs/emq.3.4.md); HIGH-risk — a shipped `@retry` edit → Apollo MANDATORY). *Where*:
   `flows.ex` (the policy flags + `add_bulk/3` + `ignored_failures/3`), `jobs.ex` (the additive `@retry` branch,
   the dead-letter body byte-frozen), `pump.ex` (the KIND dispatch + `@flow_fail_deliver`). *Why*: a flow that
   terminates either way; the producer surface completed.
@@ -486,7 +486,7 @@ contract + Prometheus export owe **emq.8**. No v1 capability is orphaned.
   auto-cancel of a stuck flow (emq.6), `remove_dependency` (the v1 third option — deferred), the flow-subkey
   cleanup (the lifecycle rung).
 - **Acceptance Criteria** (the forward spec — the rung turns it into code) — the triad
-  [`./specs/emq.3.4.md`](./specs/emq.3/emq.3.4.md) INV1–INV11; the `flow_fail_parent`/`flow_ignore_dep`/`flow_add_bulk`
+  [`./specs/emq.3.4.md`](./specs/emq.3/emq.3.rungs/emq.3.4.md) INV1–INV11; the `flow_fail_parent`/`flow_ignore_dep`/`flow_add_bulk`
   conformance scenarios (47 → 50); the `:valkey` failure suite + the ≥100 determinism loop; the `@retry`
   dead-letter body + `@complete` + `@flow_deliver` byte-unchanged (the HIGH-risk regression bound); Apollo
   MANDATORY BUILD-GRADE. (On ship, the AC re-home to the generated `stories/flows.stories.md`.)

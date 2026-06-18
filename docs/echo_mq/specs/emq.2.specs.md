@@ -6,7 +6,7 @@ Status: **ACTIVE — the BCS-side specification of the line in active developmen
 ratified program live with the production tree (the Operator's `emq.design.md` and program roadmap, 2026-06-12 frame);
 this file is their specification mirror inside the BCS documentation set — it defines the 2.x line's laws and
 surfaces for every document here that stands on them, and it never redesigns what the canon owns. The delivery view
-is the single consolidated [`emq.roadmap.md`](../emq.roadmap.md); the next major is specified in [`emq3.specs.md`](emq3.specs.md).
+is the single consolidated [`emq.roadmap.md`](../emq.roadmap.md); the next major is specified in [`emq3.specs.md`](emq.3.specs.md).
 
 ## What the 2.x line is
 
@@ -68,7 +68,7 @@ its leaderboard and first-mover races held in Valkey and its lifecycle published
 Forward, echo_bot ([`echo/apps/echo_bot`](../../../echo/apps/echo_bot)) is the headline-planned consumer:
 Telegram-bot notifications at scale through the bus (today a direct synchronous `sendMessage` at
 `EchoBot.Platform.Telegram.send_reply/3`, with no bus coupling yet). The 3.x stream tier
-([`emq3.specs.md`](emq3.specs.md)) stands on this line's wire and shadow. The courses teach from the rungs'
+([`emq3.specs.md`](emq.3.specs.md)) stands on this line's wire and the store's durable `Graft` engine. The courses teach from the rungs'
 specifications and re-ground when rungs ship — the course teaches, the rungs ship.
 
 ## Seams (owned by the program, mirrored here)
@@ -83,6 +83,6 @@ disposable), the Go conformance harness and ports, and the MCP surface over bus,
 ## Map
 
 Delivery: the single consolidated [`emq.roadmap.md`](../emq.roadmap.md). The next major:
-[`emq3.specs.md`](emq3.specs.md) · [`emq.roadmap.md` §EchoMQ 3.x](../emq.roadmap.md). The records this line carries: [`bcs.toc.md`](../../echo/bcs/bcs.toc.md) — the lanes, the
+[`emq3.specs.md`](emq.3.specs.md) · [`emq.roadmap.md` §EchoMQ 3.x](../emq.roadmap.md). The records this line carries: [`bcs.toc.md`](../../echo/bcs/bcs.toc.md) — the lanes, the
 cache and its shadow, the wire referee ([`bcsH.md`](../../echo/bcs/content/bcsH.md)) and its forward rungs
 ([`bcsH.specs.md`](../../echo/bcs/content/bcsH.specs.md)). The worked consumer: [`echo/apps/codemoji`](../../../echo/apps/codemoji).

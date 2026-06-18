@@ -131,7 +131,7 @@ Twitter Engineering blog, June 2010.
 
 **Abstract.** Twitter's announcement of Snowflake: the database could no longer mint ids fast enough, so ids became 64-bit values minted *without coordination* — a millisecond timestamp in the high bits, a worker id, and a per-worker sequence — yielding ids that are unique across a fleet and *roughly* time-sortable. The manuscript's identity contract adopts the layout and hardens the "roughly": with a monotonic mint floor per node, order within a node becomes exact, which is the order theorem.
 
-**Cited by:** 1.2 The Identity Contract, Read as Architecture ([`bcs1.2.md`](../echo/bcs/content/bcs1.2.md)) — the layout the contract hardens into exact per-node order. · The identity canon ([`contract.md`](../../contract/contract.md)) — the time/worker/sequence layout and its uncoordinated, roughly-sortable design goals.
+**Cited by:** 1.2 The Identity Contract, Read as Architecture ([`bcs1.2.md`](../echo/bcs/content/bcs1.2.md)) — the layout the contract hardens into exact per-node order. · The identity canon ([`contract.md`](../echo/bcs/content/contract.md)) — the time/worker/sequence layout and its uncoordinated, roughly-sortable design goals.
 
 ### 12. Appleby, A. — *SMHasher and MurmurHash3*
 
@@ -140,7 +140,7 @@ Public-domain repository: the hash function family and its test suite.
 
 **Abstract.** Appleby's repository carries MurmurHash3 and the SMHasher quality suite that validated it. The piece the contract borrows is the `fmix64` finalizer — a short sequence of xor-shifts and multiplies whose stated purpose is to "force all bits of a hash block to avalanche": flip any input bit and every output bit flips with probability one half. Being public domain and exactly specified, it can be re-implemented identically in every runtime of the canon — which is why hash32, the contract's placement function, is the same number in Elixir, Go, Node, Rust, and C.
 
-**Cited by:** 1.2 The Identity Contract, Read as Architecture ([`bcs1.2.md`](../echo/bcs/content/bcs1.2.md)) — the finalizer family the placement hash draws its round and constant from. · The identity canon ([`contract.md`](../../contract/contract.md)) — the public-domain `fmix64` reference.
+**Cited by:** 1.2 The Identity Contract, Read as Architecture ([`bcs1.2.md`](../echo/bcs/content/bcs1.2.md)) — the finalizer family the placement hash draws its round and constant from. · The identity canon ([`contract.md`](../echo/bcs/content/contract.md)) — the public-domain `fmix64` reference.
 
 ### 13. Chassaing, J. — *Functional Event Sourcing Decider*
 
@@ -206,7 +206,7 @@ CIDR 2007, Third Biennial Conference on Innovative Data Systems Research, pp. 13
 
 **Abstract.** The reference for Erlang Term Storage: in-memory tables owned by a process, with table types (`set`, `ordered_set` in Erlang term order), protection levels (`public`, `protected`, `private` — a `private` table readable and writable only by its owner), table lifetime bound to the owning process, ordered traversal (`first`/`next`, `prev`/`last`), and `select/2,3` with match specifications. The manuscript leans on three facts: `private` makes table ownership enforceable, not aspirational; `ordered_set` over branded keys makes chronology a property of the keyspace; the table dies with its owner, which is what makes restart semantics an architectural statement.
 
-**Cited by:** 1.1 The System Substrate ([`bcs1.1.md`](../echo/bcs/content/bcs1.1.md)) — protection levels; `ordered_set` term order; `prev`/`last` traversal. · 2.1 A System Is an OTP Application ([`bcs2.1.md`](../echo/bcs/content/bcs2.1.md)) — `private`; table lifetime bound to the owner. · 2.2 Property Stores on ETS ([`bcs2.2.md`](../echo/bcs/content/bcs2.2.md)) — ordered traversal; `select/2` and match specifications; protection levels. · 2.5 Relations Are Systems ([`bcs2.5.md`](../echo/bcs/content/bcs2.5.md)) — `ordered_set` traversal over tuple keys; `select/2,3`. · 2.6 The Boundary Audited and Priced ([`bcs2.6.md`](../echo/bcs/content/bcs2.6.md)) — protection levels and the `read_concurrency` tuning the chapter prices. · 4.1 Cache-Aside at ETS Speed ([`bcs4.1.md`](../echo/bcs/content/bcs4.1.md)) — public `read_concurrency` tables for caller-side hits; `select_delete` as the sweeper's one-pass reclaim.
+**Cited by:** 1.1 The System Substrate ([`bcs1.1.md`](../echo/bcs/content/bcs1.1.md)) — protection levels; `ordered_set` term order; `prev`/`last` traversal. · 2.1 A System Is an OTP Application ([`bcs2.1.md`](../echo/bcs/content/bcs2.1.md)) — `private`; table lifetime bound to the owner. · 2.2 Property Stores on ETS ([`bcs2.2.md`](../echo/bcs/content/bcs2.2.md)) — ordered traversal; `select/2` and match specifications; protection levels. · 2.5 Relations Are Systems ([`bcs2.5.md`](../echo/bcs/content/bcs2.5.md)) — `ordered_set` traversal over tuple keys; `select/2,3`. · 2.6 The Boundary Audited and Priced (`bcs2.6.md`) — protection levels and the `read_concurrency` tuning the chapter prices. · 4.1 Cache-Aside at ETS Speed ([`bcs4.1.md`](../echo/bcs/content/bcs4.1.md)) — public `read_concurrency` tables for caller-side hits; `select_delete` as the sweeper's one-pass reclaim.
 
 ### 17. Erlang/OTP — `supervisor` behaviour, stdlib
 
@@ -231,7 +231,7 @@ CIDR 2007, Third Biennial Conference on Innovative Data Systems Research, pp. 13
 
 **Abstract.** The reference for native implemented functions: NIFs execute on the scheduler thread that calls them, with the documented expectation that a call returns within a millisecond and the dirty-scheduler classification for work that cannot — the discipline that keeps native code from stalling the BEAM's preemptive scheduling. The manuscript leans on it where the boundary audit prices native crossings and classifies which contract work may ride a NIF.
 
-**Cited by:** 2.6 The Boundary Audited and Priced ([`bcs2.6.md`](../echo/bcs/content/bcs2.6.md)) — the millisecond discipline and the dirty-scheduler classification for native work.
+**Cited by:** 2.6 The Boundary Audited and Priced (`bcs2.6.md`) — the millisecond discipline and the dirty-scheduler classification for native work.
 
 
 ### 35. Oban documentation — `Oban` module
@@ -334,7 +334,7 @@ Valkey project, technical deep dive, 2025-03-28.
 
 **Abstract.** The serialization protocol specification: clients send commands as arrays of bulk strings; every frame is CRLF-terminated and the first byte identifies the type; bulk strings are binary-safe because their length is prefixed, never delimiter-scanned. This is the wire law beneath Part III and both connector appendices — the one-pass RESP codec, the pipelining-as-primitive design, and gate F4's binary-safety exercise all derive from the prefixed-length rule.
 
-**Cited by:** 3.1 The Fence and the Keyspace ([`bcs3.1.md`](../echo/bcs/content/bcs3.1.md)) — length-prefixed bulk strings; the binary safety F4 exercises. · Appendix A. The Connector ([`bcsA.md`](../echo/bcs/content/bcsA.md)) — the command/reply framing the codec implements. · Appendix B. The Production Connector ([`bcsB.md`](../echo/bcs/content/bcsB.md)) — the RESP2 framing under the rewritten codec.
+**Cited by:** 3.1 The Fence and the Keyspace ([`bcs3.1.md`](../echo/bcs/content/bcs3.1.md)) — length-prefixed bulk strings; the binary safety F4 exercises. · Appendix A. The Connector ([`bcsA.md`](../echo/bcs/content/bcsA.md)) — the command/reply framing the codec implements. · Appendix B. The Production Connector ([`bcsB.specs.md`](../echo/bcs/content/bcsB.specs.md)) — the RESP2 framing under the rewritten codec.
 
 ### 24. Valkey documentation — Cluster specification
 
@@ -366,7 +366,7 @@ Valkey project, technical deep dive, 2025-03-28.
 
 **Abstract.** The scripting guide: Lua scripts execute atomically — "all of the script's effects either have yet to happen or had already happened" — no other command interleaves, and scripts must declare their keys. This atomicity is the load-bearing fact of Part III's state machine: each lifecycle transition (claim, complete, retry, dead-letter) is one script, so a job is never observable mid-transition, and the declared-keys rule is what the fork's every-key-declared law makes total.
 
-**Cited by:** 3.3 The State Machine in Lua ([`bcs3.3.md`](../echo/bcs/content/bcs3.3.md)) — atomic script execution as the single-script-transition guarantee. · Appendix B. The Production Connector ([`bcsB.md`](../echo/bcs/content/bcsB.md)) — atomic scripts blocking all clients, the fact that sent blocking verbs to their own lane.
+**Cited by:** 3.3 The State Machine in Lua ([`bcs3.3.md`](../echo/bcs/content/bcs3.3.md)) — atomic script execution as the single-script-transition guarantee. · Appendix B. The Production Connector ([`bcsB.specs.md`](../echo/bcs/content/bcsB.specs.md)) — atomic scripts blocking all clients, the fact that sent blocking verbs to their own lane.
 
 ### 28. Valkey documentation — Replication
 
@@ -439,7 +439,7 @@ Valkey project, technical deep dive, 2025-03-28.
 
 Two kinds of citing surfaces are deliberately *not* in the bibliography above:
 
-- The spec-system overview `bcs.md` (kept beside the manuscript, outside this archive) carries a References block of **internal** documents only: the manuscript files ([`bcs.toc.md`](../echo/bcs/content/bcs.toc.md), [`bcs.preface.md`](../echo/bcs/content/bcs.preface.md), [`bcs.progress.md`](../echo/bcs/content/bcs.progress.md)), the identity canon ([`contract.md`](../../contract/contract.md) + [`vectors.json`](../../contract/vectors.json)), the spec-system lineage, and the sibling courses.
+- The spec-system overview `bcs.md` (kept beside the manuscript, outside this archive) carries a References block of **internal** documents only: the manuscript files ([`bcs.toc.md`](../echo/bcs/content/bcs.toc.md), [`bcs.preface.md`](../echo/bcs/content/bcs.preface.md), [`bcs.progress.md`](../echo/bcs/content/bcs.progress.md)), the identity canon ([`contract.md`](../echo/bcs/content/contract.md) + `vectors.json`), the spec-system lineage, and the sibling courses.
 - The `*.llms.md` agent guides (e.g. [`bcs1.1.llms.md`](../echo/bcs/content/bcs1.1.llms.md), [`bcs1.3.llms.md`](../echo/bcs/content/bcs1.3.llms.md)) open with a "References (read first, in order)" list — internal reading order for an implementing agent (the canon, the specs, the rung checks), not citations.
 
 The part prefaces ([`bcs1.md`](../echo/bcs/content/bcs1.md), [`bcs2.md`](../echo/bcs/content/bcs2.md), [`bcs3.md`](../echo/bcs/content/bcs3.md)) and the production-connector spec ([`bcsB.specs.md`](../echo/bcs/content/bcsB.specs.md)) carry no References blocks of their own.
@@ -462,7 +462,7 @@ The part prefaces ([`bcs1.md`](../echo/bcs/content/bcs1.md), [`bcs2.md`](../echo
 | 2.3 The CHAMP Property Database ([`bcs2.3.md`](../echo/bcs/content/bcs2.3.md)) | 6 Steindorfer & Vinju |
 | 2.4 Archetypes and Composition ([`bcs2.4.md`](../echo/bcs/content/bcs2.4.md)) | 9 West · 14 Venners/Gamma |
 | 2.5 Relations Are Systems ([`bcs2.5.md`](../echo/bcs/content/bcs2.5.md)) | 5 Codd · 16 OTP `ets` |
-| 2.6 The Boundary Audited and Priced ([`bcs2.6.md`](../echo/bcs/content/bcs2.6.md)) | 16 OTP `ets` · 33 OTP `erl_nif` |
+| 2.6 The Boundary Audited and Priced (`bcs2.6.md`) | 16 OTP `ets` · 33 OTP `erl_nif` |
 | 3.1 The Fence and the Keyspace ([`bcs3.1.md`](../echo/bcs/content/bcs3.1.md)) | 23 Protocol spec · 24 Cluster spec |
 | 3.2 Jobs Are Entities ([`bcs3.2.md`](../echo/bcs/content/bcs3.2.md)) | 26 ZRANGE · 25 Sorted sets |
 | 3.3 The State Machine in Lua ([`bcs3.3.md`](../echo/bcs/content/bcs3.3.md)) | 27 Programmability · 15 Kleppmann · 28 Replication |
@@ -474,6 +474,6 @@ The part prefaces ([`bcs1.md`](../echo/bcs/content/bcs1.md), [`bcs2.md`](../echo
 | 4.3 The Single Writer and the Ring ([`bcs4.3.md`](../echo/bcs/content/bcs4.3.md)) | 43 Fowler LMAX · 44 Disruptor paper · 45 OTP `atomics` |
 | 4.4 The Lane That Remembers ([`bcs4.4.md`](../echo/bcs/content/bcs4.4.md)) | 46 Richardson outbox · 47 SQLite WAL · 48 Litestream |
 | Appendix A. The Connector ([`bcsA.md`](../echo/bcs/content/bcsA.md)) | 23 Protocol spec · 20 Valkey 8.1.0 GA |
-| Appendix B. The Production Connector ([`bcsB.md`](../echo/bcs/content/bcsB.md)) | 23 Protocol spec · 27 Programmability |
-| The identity canon ([`contract.md`](../../contract/contract.md)) | 12 Appleby/MurmurHash3 · 11 Snowflake |
+| Appendix B. The Production Connector ([`bcsB.specs.md`](../echo/bcs/content/bcsB.specs.md)) | 23 Protocol spec · 27 Programmability |
+| The identity canon ([`contract.md`](../echo/bcs/content/contract.md)) | 12 Appleby/MurmurHash3 · 11 Snowflake |
 | The ID system record (`bcs.id-system.md`, outside this archive) | 19 New hash table · 20 Valkey 8.1.0 GA · 21 Streams intro · 22 XADD |

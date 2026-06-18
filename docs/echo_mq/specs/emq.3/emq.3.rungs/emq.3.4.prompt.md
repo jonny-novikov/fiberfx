@@ -15,7 +15,7 @@
 
 ## The family in one paragraph
 
-The emq.3 **parent/flow family** ([`./emq.3.md`](../../emq.3.md)) is Movement I's closer — the v1 `flow_producer`
+The emq.3 **parent/flow family** ([`./emq.3.md`](../emq.3.md)) is Movement I's closer — the v1 `flow_producer`
 capability redesigned A-1-clean (the dependency graph in declared §6 parent subkeys, never the v1 data-value
 `parent_key`). The carve: **3.1 (single-queue, atomic)** SHIPPED + **3.2 (child-result reads)** SHIPPED + **3.3
 (cross-queue, eventually-consistent via the outbox+sweep)** SHIPPED · **3.4 (failure-policy + bulk)** ← this
@@ -47,7 +47,7 @@ the build continues it); the boundary is **`echo/apps/echo_mq`** (+ NO `echo_wir
 (HIGH-risk — a shipped-script edit on `@retry` + the cross-slot failure delivery).
 
 > **The V-1 scope fork is RULED → Arm A (D-2) — no open gate.** emq.3.4 = **failure-policy + `add_bulk`**
-> (the family carve [`./emq.3.md`](../../emq.3.md):198 scope); **grandchildren / deep recursion is the locked Out →
+> (the family carve [`./emq.3.md`](../emq.3.md):198 scope); **grandchildren / deep recursion is the locked Out →
 > emq.3.5** (a separate later rung, recorded NOT built). The triad is authored to Arm A → **no pre-build re-scope,
 > no AskUserQuestion** (the Director ruled with delegated authority; the failure mechanism was already decided in
 > the body). Arm B (folding grandchildren into emq.3.4) was the steelmanned alternative — a zero-cost re-scope
@@ -234,7 +234,7 @@ BYTE-UNCHANGED** (verify in the `jobs.ex`/`pump.ex` diffs). **Never `git add -A`
 
 Inputs (the build): [`./emq.3.4.md`](emq.3.4.md) (authoritative) · [`./emq.3.4.stories.md`](emq.3.4.stories.md)
 · [`./emq.3.4.llms.md`](emq.3.4.llms.md) (the build brief) · [`./emq-3-4.progress.md`](../../progress/emq-3-4.progress.md)
-(T-1 the reconcile + V-1 the scope fork) · [`./emq.3.md`](../../emq.3.md) (the family + the carve emq.3.4 row + INV3 +
+(T-1 the reconcile + V-1 the scope fork) · [`./emq.3.md`](../emq.3.md) (the family + the carve emq.3.4 row + INV3 +
 INV7) · the shipped slices [`./emq.3.1.md`](emq.3.1.md) + [`./emq.3.2.md`](emq.3.2.md) +
 [`./emq.3.3.md`](emq.3.3.md) (the cross-queue mechanism the fail-deliver rides) · the build-runbook FORM
 [`./emq.3.3.prompt.md`](emq.3.3.prompt.md) PART II (HIGH-risk, the same tier) · Canon

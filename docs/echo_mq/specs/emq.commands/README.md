@@ -7,8 +7,8 @@ port shipped?" without loading the design canon.
 
 **52 commands** — 50 vendored v1 Lua scripts + 2 with no standalone v1 source
 (`add_bulk`, a flow-parity verb; `grandchildren-recursive-flow-tree`, a v3-native
-recursive build). Status tally: **SHIPPED 29 · PARTIAL 12 · NOT YET 7 · PROPOSED 1
-· RETIRED 2 · BUILDING 1**.
+recursive build). Status tally: **SHIPPED 30 · PARTIAL 12 · NOT YET 7 · PROPOSED 1
+· RETIRED 2** (emq.3.5 shipped — none remain BUILDING; Movement I closed).
 
 ## Layout
 
@@ -40,8 +40,8 @@ ref"** verdict on that basis:
 - the same with no scheduled rung → **hold** (a Movement-II backlog verb, rung TBD).
 - a **RETIRED** capability → a design-note, redundant once its `emq.4` replacement lands.
 
-Headline: **32 of 52 references are safe to retire today**; 9 are pinned to a
-future rung (emq.5/6/8); 8 are held unscheduled; 2 are retired; 1 is building.
+Headline: **33 of 52 references are safe to retire today**; 9 are pinned to a
+future rung (emq.5/6/8); 8 are held unscheduled; 2 are retired.
 
 ## Resolving a command (agents)
 
@@ -58,20 +58,29 @@ proposed/unbuilt rungs carry the repo's own withholding
 verdicts in the catalogue are compressed from each slice's own
 `Covers → v3` line and `--@` header.
 
-## Reconciliation notes (as of the emq.3.5 boundary)
+## Reconciliation notes (as of Movement I close · emq.3.5 shipped)
 
 This tree was recently reorganized (the flat `features/<family>.md` files were
-exploded into per-command `features/<family>/<cmd>.md` slices). Two drift items
-remain for a maintenance pass — surfaced here, not yet fixed:
+exploded into per-command `features/<family>/<cmd>.md` slices). This pass
+reconciled two things:
 
-1. **`llms.txt` links are stale** (two classes). Its 12 entry rows still point at
-   the pre-reorg flat paths (`features/admission.md#…`) rather than
-   `features/admission/addStandardJob-9.md`; and its `../` up-links
-   (`../emq.commands.registry.md`, `../emq.epic.1.md`) dangle — the matrix +
-   taxonomy live under `epics/emq.epic.1/`, not `specs/`, so they no longer
-   resolve from this relocated directory. The status/home/rung data is correct;
-   only the link targets need rebasing.
-2. **Slice `--@rung` headers carry commit short-hashes again** (43 of 52). The
-   reorg re-introduced them after they were stripped from the flat files. The
-   catalogue here is hash-free by design (a rung is durable, a short-hash is not);
-   the slice headers can be re-stripped to match.
+1. **emq.3.5 flipped to SHIPPED.** The `grandchildren-recursive-flow-tree` slice
+   read `BUILDING ([RECONCILE])`, but the canon shows it shipped — `emq.roadmap.md`
+   ("Movement I CLOSED … conformance 52/52") and the per-rung ledger ("emq.3.5 is
+   SHIPPED — BUILD-GRADE, Arm A, NORMAL-risk"), confirmed by the as-built
+   `flows.ex` recursive `add_tree` and the registered `flow_grandchild` /
+   `flow_grandchild_fail` conformance scenarios. Flipped in the slice, the
+   catalogue, and this index.
+2. **Fragile locators purged.** Commit short-hashes (7 distinct) and `file:line`
+   citations were stripped from all 52 slices + `features/README.md`, keeping the
+   durable identities (module/arity · `@token` · rung · filename). A short-hash
+   rots on rebase — the once-cited `cd3c383a` no longer resolves in git — and a
+   line number drifts on every edit. The 14 frozen `specs/progress/*.progress.md`
+   ledgers keep theirs by the records-freeze law.
+
+Still open — **`llms.txt` links are stale** (two classes): its 12 entry rows point
+at the pre-reorg flat paths (`features/admission.md#…`) rather than
+`features/admission/addStandardJob-9.md`, and its `../` up-links
+(`../emq.commands.registry.md`, `../emq.epic.1.md`) dangle (the matrix + taxonomy
+live under `epics/emq.epic.1/`, not `specs/`). The data is correct; only the link
+targets need rebasing.

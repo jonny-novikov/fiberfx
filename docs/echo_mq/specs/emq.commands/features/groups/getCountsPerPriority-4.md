@@ -77,7 +77,7 @@ p!=0 -> ZCOUNT prioritized p*2^32 ..(p+1)*2^32-1  -- per-lane depth; no prioriti
 
 ## Decision & rationale
 
-**Covers → v3.** Counts per priority band over the global `prioritized` ZSET → **no `prioritized` set exists**; re-derived as **per-lane depth** — `Metrics.lane_depths/3` over `g:<group>:pending`, branded-group-gated (the as-built `Metrics.lane_depth/3`, `metrics.ex:277`, delegates to `Lanes.depth/3`, `lanes.ex:193`). The v1 priority-band cardinalities become per-segment (per-instrument lane) depths.
+**Covers → v3.** Counts per priority band over the global `prioritized` ZSET → **no `prioritized` set exists**; re-derived as **per-lane depth** — `Metrics.lane_depths/3` over `g:<group>:pending`, branded-group-gated (the as-built `Metrics.lane_depth/3`, `metrics.ex`, delegates to `Lanes.depth/3`, `lanes.ex`). The v1 priority-band cardinalities become per-segment (per-instrument lane) depths.
 
 **Decision.** Re-derive as per-lane depth over the lane ZSETs, branded-group-gated; read-only. **PROPOSED** delta (emq.4): an intra-lane priority dimension is a `ZCOUNT` over a score *window* on the same `g:<group>:pending` ZSET — **no new key** — never the v1 64-bit-packed `prioritized` band, never a `meta.paused` branch that picks the key.
 

@@ -35,7 +35,7 @@
   `unsubscribe/2` (`:119`) + the recorded subscription set (`:158`) re-issued by `resubscribe/1`
   (`:606`) in the `:reconnect` success arm (`:334`) · the `EchoWire` facade
   (`echo/apps/echo_wire/lib/echo_wire.ex`, the `unsubscribe/2` defdelegate added).
-- Upstream rung: [`./emq.0.md`](./emq.0.md) — the gate ladder this rung must keep green.
+- Upstream rung: [`./emq.0.md`](../emq.0/emq.0.md) — the gate ladder this rung must keep green.
 
 ## Requirements
 

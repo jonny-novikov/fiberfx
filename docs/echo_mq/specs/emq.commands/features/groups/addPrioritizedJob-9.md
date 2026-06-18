@@ -1,4 +1,4 @@
-# addPrioritizedJob-9  →  EchoMQ.Lanes.enqueue/5 (@genqueue, lanes.ex:102), no prioritized set (D-9)
+# addPrioritizedJob-9  →  EchoMQ.Lanes.enqueue/5 (@genqueue, lanes.ex), no prioritized set (D-9)
 
 > Feature: **groups** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   addPrioritizedJob-9
 --@feature   groups
 --@status    SHIPPED (ported, re-aimed)
---@rung      emq.1 e0fa9b03
+--@rung      emq.1
 --@v1        registry/addPrioritizedJob-9.lua   (KEYS arity 9)
---@v3        EchoMQ.Lanes.enqueue/5 (@genqueue, lanes.ex:102), no prioritized set (D-9)
+--@v3        EchoMQ.Lanes.enqueue/5 (@genqueue, lanes.ex), no prioritized set (D-9)
 ```
 
 ## v1 source
@@ -161,7 +161,7 @@ parentKey/deps = args[5]/args[6]  -- DATA roots   -- no prioritized/pc; fairness
 
 ## Decision & rationale
 
-**Covers → v3.** Priority enqueue → re-aimed to **per-group fairness**: `Lanes.enqueue/5` admits onto a score-0 per-group lane ZSET and maintains the rotating ring; `Lanes.claim/3` (`lanes.ex:130`) rotates one step and serves the head. There is **no** numeric-priority script (the only `priorit` hits in `lib/` are admin/metrics comments noting the bus has no `prioritized` set); the v1 packed-score-plus-counter scheme is not ported (`emq.features.md` B.2 row 328; §6 — the v1 lifecycle types retire).
+**Covers → v3.** Priority enqueue → re-aimed to **per-group fairness**: `Lanes.enqueue/5` admits onto a score-0 per-group lane ZSET and maintains the rotating ring; `Lanes.claim/3` (`lanes.ex`) rotates one step and serves the head. There is **no** numeric-priority script (the only `priorit` hits in `lib/` are admin/metrics comments noting the bus has no `prioritized` set); the v1 packed-score-plus-counter scheme is not ported (`emq.features.md` B.2 row 328; §6 — the v1 lifecycle types retire).
 
 **Decision.** Keep fair lanes as the priority model — the rotating ring replaces the global priority number, giving per-identity fairness over one shared machine; all keys declared and `{q}`-co-located. **PROPOSED** delta (emq.4): intra-group priority is a non-zero lane score on the existing `g:<group>:pending` ZSET — **no new key family**, never a global `prioritized` key or a `pc` counter. The v1 packed-score-plus-secondary-counter scheme does not return.
 

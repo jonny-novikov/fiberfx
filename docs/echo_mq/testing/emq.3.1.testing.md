@@ -3,11 +3,11 @@
 > Living test ledger for the **single-queue flow** rung (the FIRST sub-rung of the emq.3 parent/flow family —
 > `EchoMQ.Flows.add/3` + `@enqueue_flow` + the `@complete` fan-in hook + `awaiting_children`; the `emq-3-1`
 > lead-team 2026-06-15, conformance 43 → **45**). Strategy: [`../emq.testing.md`](../emq.testing.md). Spec
-> family + carve: [`../specs/emq.3.md`](../specs/emq.3.md) · Rung triad:
-> [`../specs/emq.3.1.md`](../specs/emq.3/emq.3.1.md) · [`.stories.md`](../specs/emq.3/emq.3.1.stories.md) ·
-> [`.llms.md`](../specs/emq.3/emq.3.1.llms.md). **HIGH-risk rung** — it edited the shipped `@complete` Lua (the fan-in
+> family + carve: [`../specs/emq.3.md`](../specs/emq.3/emq.3.md) · Rung triad:
+> [`../specs/emq.3.1.md`](../specs/emq.3/emq.3.rungs/emq.3.1.md) · [`.stories.md`](../specs/emq.3/emq.3.rungs/emq.3.1.stories.md) ·
+> [`.llms.md`](../specs/emq.3/emq.3.rungs/emq.3.1.llms.md). **HIGH-risk rung** — it edited the shipped `@complete` Lua (the fan-in
 > hook), so Apollo was mandatory (BUILD-GRADE, mutation kill 3/3); the durable harness is
-> [`echo/rungs/bus/emq_3_1_check.sh`](../../../echo/rungs/bus/emq_3_1_check.sh) (PASS 9/9 + the ≥100 loop
+> `echo/rungs/bus/emq_3_1_check.sh` (PASS 9/9 + the ≥100 loop
 > 100/100). Re-probe the tree before trusting a `file:line` here (the lag-1 law).
 
 ## Proof state (as-built)
@@ -77,7 +77,7 @@
 
 ### Harden (close the thin proofs)
 - [ ] Keep `flow_add` + `flow_fanin` under the **≥100 loop owning the machine**; the harness
-      [`emq_3_1_check.sh`](../../../echo/rungs/bus/emq_3_1_check.sh) is the durable artifact (re-run it, do not
+      `emq_3_1_check.sh` is the durable artifact (re-run it, do not
       hand-run) — the mint-collision flake surface.
 - [ ] **Property/generative proof of the order theorem at flow width** — a flow mints N+1 ids; a property over
       many flows in a tight same-millisecond loop is the un-built generative proof (strategy §5.7; proven by

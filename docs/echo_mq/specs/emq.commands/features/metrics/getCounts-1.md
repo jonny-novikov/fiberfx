@@ -1,4 +1,4 @@
-# getCounts-1  →  EchoMQ.Metrics.get_counts/3 (@counts, metrics.ex:54)
+# getCounts-1  →  EchoMQ.Metrics.get_counts/3 (@counts, metrics.ex)
 
 > Feature: **metrics** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   getCounts-1
 --@feature   metrics
 --@status    SHIPPED (ported)
---@rung      emq.2.1 7d98ef86
+--@rung      emq.2.1
 --@v1        registry/getCounts-1.lua   (KEYS arity 1)
---@v3        EchoMQ.Metrics.get_counts/3 (@counts, metrics.ex:54)
+--@v3        EchoMQ.Metrics.get_counts/3 (@counts, metrics.ex)
 ```
 
 ## v1 source

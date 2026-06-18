@@ -1,4 +1,4 @@
-# extendLocks-1  →  EchoMQ.Jobs.extend_locks/4 (@extend_locks, jobs.ex:965)
+# extendLocks-1  →  EchoMQ.Jobs.extend_locks/4 (@extend_locks, jobs.ex)
 
 > Feature: **locks** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   extendLocks-1
 --@feature   locks
 --@status    SHIPPED (ported)
---@rung      emq.2.3 3c6461ff
+--@rung      emq.2.3
 --@v1        registry/extendLocks-1.lua   (KEYS arity 1)
---@v3        EchoMQ.Jobs.extend_locks/4 (@extend_locks, jobs.ex:965)
+--@v3        EchoMQ.Jobs.extend_locks/4 (@extend_locks, jobs.ex)
 ```
 
 ## v1 source

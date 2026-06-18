@@ -6,7 +6,7 @@
 > slot-boundary crossing the emq.3 carve routes here. The deliverable of the cycle this runbook drives is the
 > **quad + the cross-queue ADR**, never code; the build is a later, separate run off the authored
 > `emq.3.3.prompt.md` (the build runbook the authoring cycle produces). Mirror this structure on the
-> as-built floor; ground every claim NO-INVENT in [`./emq.3.md`](../../emq.3.md) (the carve's **emq.3.3 row** +
+> as-built floor; ground every claim NO-INVENT in [`./emq.3.md`](../emq.3.md) (the carve's **emq.3.3 row** +
 > **Fork A's cross-queue arm**) + the as-built emq.3.1/3.2 flow surface + the v1 cross-queue reference
 > (`echo/apps/echomq/lib/echomq/flow_producer.ex`). **The `echo-mq-architect` skill is the binding** (the
 > authoring Venus loads it; the program law is `.claude/skills/echo-mq-program.md`).
@@ -19,7 +19,7 @@ only when its children complete (fan-in), **under the v2 A-1 declared-keys law**
 `:processed` the completed-children HASH), each rooted at the parent's declared job key, on the parent's `{q}`
 slot, A-1-clean by construction. The family carves into emq.3.1 (single-queue, **SHIPPED** 2026-06-15) · 3.2
 (child-result reads, **BUILT + Stage-2 PASS** 2026-06-15, O1 closed) · **3.3 (cross-queue)** · 3.4
-(failure-policy + bulk). The full design + the surfaced forks are [`./emq.3.md`](../../emq.3.md). **Fork A was RULED
+(failure-policy + bulk). The full design + the surfaced forks are [`./emq.3.md`](../emq.3.md). **Fork A was RULED
 single-queue-first** (Operator 2026-06-14) — so the cross-queue *mechanism* is **emq.3.3's design work**: the
 sequencing is settled, the mechanism is not.
 
@@ -36,7 +36,7 @@ precedent — work crosses a boundary by a sweep, **never** a cross-slot transac
 **eventually-consistent** fan-in across queues (stated honestly — INV7: explicitly NOT "atomic across queues").
 Conformance: **`flow_cross_queue`**. The exact mechanism (the signal-key shape, the sweep cadence/trigger, the
 crash-recovery window, the shipped-script touch) is **genuine new design** — the forks the authoring Venus must
-**surface, not decide**. The family contract is [`./emq.3.md`](../../emq.3.md) (INV7 the cross-queue honesty).
+**surface, not decide**. The family contract is [`./emq.3.md`](../emq.3.md) (INV7 the cross-queue honesty).
 
 ## Mode
 
@@ -233,7 +233,7 @@ authoring agents run **no git** (the Director commits by pathspec).
   subkey-lifecycle naming for the signal-key) · `.stories.md` (US-n + the US-GATE + Coverage — the observable
   named as eventually-consistent, never "immediate") · `.llms.md` (the Mars brief for the build) · a subsequent
   `emq.3.3` build runbook (HIGH-risk).
-- **NO-INVENT:** every claim grounded in [`./emq.3.md`](../../emq.3.md) (the carve + Fork A's cross-queue arm), the
+- **NO-INVENT:** every claim grounded in [`./emq.3.md`](../emq.3.md) (the carve + Fork A's cross-queue arm), the
   as-built emq.3.1/3.2 flow surface + the promote-sweep precedent, or the v1 cross-queue reference; the
   cross-queue *mechanism* is the design's own (forward-tense, surfaced-not-decided).
 - The **HIGH-risk** tier (of the build) is encoded into the quad + the build runbook (Apollo MANDATORY + the ≥100
@@ -241,7 +241,7 @@ authoring agents run **no git** (the Director commits by pathspec).
   arms with the forks marked OPEN. The Director ships the records by pathspec; the frontier folds to the emq.3.3
   BUILD.
 
-Inputs: [`./emq.3.md`](../../emq.3.md) (the family contract + the carve + **Fork A's cross-queue arm** — the
+Inputs: [`./emq.3.md`](../emq.3.md) (the family contract + the carve + **Fork A's cross-queue arm** — the
 authoritative ground) · The SHIPPED/BUILT slices (the floor the cross-queue flow extends):
 [`./emq.3.1.md`](emq.3.1.md) (the single-queue flow + the `@complete` fan-in branch) +
 [`./emq.3.2.md`](emq.3.2.md) (the child-result reads + the host-only completion) ·

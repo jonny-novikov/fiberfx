@@ -50,7 +50,7 @@ owned wire (`echo/apps/echo_wire` — `EchoMQ.{RESP, Connector, Script}` under t
 pure + `:valkey` test pass. Movement I builds on it.
 
 > Implementation detail (the import delta, the manifests-as-executed, the as-built notes) lives in the
-> [`emq.0` triad](./specs/emq.0.md) + the frozen
+> [`emq.0` triad](./specs/emq.0/emq.0.md) + the frozen
 > [`specs/progress/emq-0.progress.md`](./specs/progress/emq-0.progress.md) ledger.
 
 ### Movement I · The Core — CLOSED (conformance 52/52)
@@ -82,8 +82,8 @@ by `EchoMQ.Consumer`, scored by a single authority, results published on `EchoMQ
 | flows | `EchoMQ.Flows` · `EchoMQ.Pump` | `Flows`: `add/3` · `add_bulk/3` · `children_values/3` · `ignored_failures/3` · `dependencies/3` — `Pump`: `deliver_flow_completions/3` · `maybe_reemit_parent_death/4` · `on_same_queue_child_death/4` |
 
 > Per-rung build detail — conformance deltas (14→52), fork rulings, gate tallies, risk grades — lives in the
-> frozen [`specs/progress/`](./specs/progress/) ledgers and the [`emq.1`](./specs/emq.1.md) ·
-> [`emq.2`](./specs/emq.2.md) · [`emq.3`](./specs/emq.3.md) triads. The wire/keyspace/lease invariants are in
+> frozen [`specs/progress/`](./specs/progress/) ledgers and the [`emq.1`](./specs/emq.1/emq.1.md) ·
+> [`emq.2`](./specs/emq.2/emq.2.md) · [`emq.3`](./specs/emq.3/emq.3.md) triads. The wire/keyspace/lease invariants are in
 > [`emq.design.md`](./emq.design.md); the v1→v2 parity proof in [`emq.features.md`](./emq.features.md).
 
 ### Movement II · The Extension — the EMQ family ladder

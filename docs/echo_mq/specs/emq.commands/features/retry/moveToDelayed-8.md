@@ -1,4 +1,4 @@
-# moveToDelayed-8  →  EchoMQ.Jobs.retry/7 non-terminal arm (@retry, jobs.ex:593)
+# moveToDelayed-8  →  EchoMQ.Jobs.retry/7 non-terminal arm (@retry, jobs.ex)
 
 > Feature: **retry** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   moveToDelayed-8
 --@feature   retry
 --@status    SHIPPED (ported as retry-reschedule)
---@rung      emq.1 e0fa9b03
+--@rung      emq.1
 --@v1        registry/moveToDelayed-8.lua   (KEYS arity 8)
---@v3        EchoMQ.Jobs.retry/7 non-terminal arm (@retry, jobs.ex:593)
+--@v3        EchoMQ.Jobs.retry/7 non-terminal arm (@retry, jobs.ex)
 ```
 
 ## v1 source

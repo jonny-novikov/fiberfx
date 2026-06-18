@@ -36,7 +36,7 @@ D-1..D-5 locked under the 2026-06-15 delegated-authority directive). Build to **
 - **The ruled forks (the ADR — D-1..D-5):** [`./emq-3-3.progress.md`](../../progress/emq-3-3.progress.md) — V-1..V-4 (the four
   forks, both arms steelmanned) + D-1..D-5 (the locked decisions; read the DECISIVE ARGUMENT of D-4: atomic
   emission requires the emit INSIDE the `@complete` EVAL).
-- **The family contract + the carve + INV7:** [`./emq.3.md`](../../emq.3.md) — emq.3.3 is the **cross-queue** row of
+- **The family contract + the carve + INV7:** [`./emq.3.md`](../emq.3.md) — emq.3.3 is the **cross-queue** row of
   the carve; **Fork A's cross-queue arm** (`emq.3.md:277-291`) + **INV7** (the cross-queue honesty,
   `emq.3.md:243-249`).
 - **The shipped slices (the floor emq.3.3 extends):** [`./emq.3.1.md`](emq.3.1.md) (the same-queue atomic add,

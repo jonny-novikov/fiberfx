@@ -1,4 +1,4 @@
-# isFinished-3  →  no def is_finished; a thin finished?/3 over EchoMQ.Metrics.get_job_state/3 (@state_lookup, metrics.ex:148)
+# isFinished-3  →  no def is_finished; a thin finished?/3 over EchoMQ.Metrics.get_job_state/3 (@state_lookup, metrics.ex)
 
 > Feature: **metrics** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   isFinished-3
 --@feature   metrics
 --@status    PARTIAL
---@rung      emq.2.1 7d98ef86
+--@rung      emq.2.1
 --@v1        registry/isFinished-3.lua   (KEYS arity 3)
---@v3        no def is_finished; a thin finished?/3 over EchoMQ.Metrics.get_job_state/3 (@state_lookup, metrics.ex:148)
+--@v3        no def is_finished; a thin finished?/3 over EchoMQ.Metrics.get_job_state/3 (@state_lookup, metrics.ex)
 ```
 
 ## v1 source

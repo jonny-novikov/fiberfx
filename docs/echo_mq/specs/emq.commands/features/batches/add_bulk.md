@@ -1,4 +1,4 @@
-# add_bulk  →  EchoMQ.Flows.add_bulk/3 (flows.ex:218) + EchoMQ.Jobs.enqueue_many/3
+# add_bulk  →  EchoMQ.Flows.add_bulk/3 (flows.ex) + EchoMQ.Jobs.enqueue_many/3
 
 > Feature: **batches** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   add_bulk
 --@feature   batches
 --@status    SHIPPED (ported)
---@rung      emq.3.4 4c401479
+--@rung      emq.3.4
 --@v1        (no standalone v1 script)   (parity — no v1 script)
---@v3        EchoMQ.Flows.add_bulk/3 (flows.ex:218) + EchoMQ.Jobs.enqueue_many/3
+--@v3        EchoMQ.Flows.add_bulk/3 (flows.ex) + EchoMQ.Jobs.enqueue_many/3
 ```
 
 ## v1 source

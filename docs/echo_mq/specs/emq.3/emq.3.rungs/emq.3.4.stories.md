@@ -21,7 +21,7 @@ recursion, or is that a separate later rung?) ruled before emq.3.4 builds, so th
 **decided, recorded, and the triad authored to it** — not improvised mid-build.
 
 Acceptance criteria
-- Given the family carve ([`./emq.3.md`](../../emq.3.md):198) scopes emq.3.4 to "failure-policy + bulk" while the
+- Given the family carve ([`./emq.3.md`](../emq.3.md):198) scopes emq.3.4 to "failure-policy + bulk" while the
   frozen emq-3-3 ledger (D-5a) lumped grandchildren with it, when emq.3.4 opens, then the **V-1 scope fork** is
   surfaced to the Director with both arms steelmanned + a recommendation (Arm A: failure-policy + bulk;
   grandchildren a separate rung, emq.3.5), and **no build artifact exists** until it is ruled.

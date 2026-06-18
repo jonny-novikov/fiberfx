@@ -55,7 +55,7 @@ byte-frozen failure machinery.
 - **This rung's ledger:** [`../progress/emq-3-5.progress.md`](../../progress/emq-3-5.progress.md) — A-1 (the headline
   design finding: completion composes for free; failure is the new design) + A-2 (the lag-1 reconcile delta — every
   flat-core anchor MATCHED on disk).
-- **The family contract + the carve:** [`./emq.3.md`](../../emq.3.md) — emq.3.5 is the **"grandchildren"** row of the
+- **The family contract + the carve:** [`./emq.3.md`](../emq.3.md) — emq.3.5 is the **"grandchildren"** row of the
   carve (`:198`); the A-1-compatible flow design (§"The A-1-compatible flow design"); INV3 (byte-unchanged) + INV7
   (the cross-queue honesty); the surfaced-forks PATTERN (Arm 1/Arm 2 + costs + RECOMMENDATION) this triad
   replicates.

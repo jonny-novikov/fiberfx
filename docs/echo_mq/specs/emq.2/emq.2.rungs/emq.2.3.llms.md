@@ -71,7 +71,7 @@
    keys are `queue_key` suffixes), S-4 (Valkey the gate).
 6. **The shape precedent** — [`./emq.2.1.md`](emq.2.1.md) + [`./emq.2.1.llms.md`](emq.2.1.llms.md) +
    [`./emq.2.1.prompt.md`](emq.2.1.prompt.md) (the triad + brief + runbook shape; the inline-`Script.new/2`
-   convention; the design-make-as-relocated-gate), and [`./emq.1.md`](../../emq.1.md) (the `EchoMQ.Pump` opt-in
+   convention; the design-make-as-relocated-gate), and [`./emq.1.md`](../../emq.1/emq.1.md) (the `EchoMQ.Pump` opt-in
    process precedent + the ≥100 determinism loop a process rung runs).
 
 ## Requirements (each traced back to a story, forward to an invariant/check)

@@ -1,4 +1,4 @@
-# obliterate-2  →  EchoMQ.Admin.obliterate/3 (@obliterate, admin.ex:248)
+# obliterate-2  →  EchoMQ.Admin.obliterate/3 (@obliterate, admin.ex)
 
 > Feature: **lifecycle** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   obliterate-2
 --@feature   lifecycle
 --@status    SHIPPED (ported)
---@rung      emq.2.2 76fc947c (fix landed emq.2.4 3298e4bc)
+--@rung      emq.2.2 (fix landed emq.2.4)
 --@v1        registry/obliterate-2.lua   (KEYS arity 2)
---@v3        EchoMQ.Admin.obliterate/3 (@obliterate, admin.ex:248)
+--@v3        EchoMQ.Admin.obliterate/3 (@obliterate, admin.ex)
 ```
 
 ## v1 source

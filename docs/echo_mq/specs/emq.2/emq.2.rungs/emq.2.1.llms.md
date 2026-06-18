@@ -47,7 +47,7 @@
 5. **The canon** — [`../emq.design.md`](../../../emq.design.md): §6 (the grammar + the `metrics:`/`de:` suffixes),
    §5 (the closed wire-class registry — the rate gate's `EMQ*` class is an additive minor with a probe),
    §2 (the branded id gated at the key builder), S-4 (Valkey the gate), §11.11 (the no-release ground).
-6. **The shape precedent** — [`./emq.1.md`](../../emq.1.md) + [`./emq.1.llms.md`](../../emq.1.llms.md) +
+6. **The shape precedent** — [`./emq.1.md`](../../emq.1/emq.1.md) + [`./emq.1.llms.md`](../../emq.1/emq.1.llms.md) +
    [`./emq.1.prompt.md`](../../emq.1/emq.1.prompt.md) (the triad + brief + runbook shape; the inline-`Script.new/2`
    convention; the design-make-as-relocated-gate).
 

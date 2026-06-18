@@ -8,7 +8,7 @@
 --@command   moveStalledJobsToWait-8
 --@feature   claim
 --@status    SHIPPED (ported)
---@rung      emq.2.3 3c6461ff
+--@rung      emq.2.3
 --@v1        registry/moveStalledJobsToWait-8.lua   (KEYS arity 8)
 --@v3        EchoMQ.Stalled.check/3 (@sweep_stalled)
 ```

@@ -1,4 +1,4 @@
-# moveToActive-11  →  EchoMQ.Jobs.claim/4 (@claim, jobs.ex:379) + grouped EchoMQ.Lanes.claim/3 (@gclaim, lanes.ex:130)
+# moveToActive-11  →  EchoMQ.Jobs.claim/4 (@claim, jobs.ex) + grouped EchoMQ.Lanes.claim/3 (@gclaim, lanes.ex)
 
 > Feature: **claim** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   moveToActive-11
 --@feature   claim
 --@status    SHIPPED (ported)
---@rung      emq.0/1 a2d599c8/e0fa9b03
+--@rung      emq.0/1
 --@v1        registry/moveToActive-11.lua   (KEYS arity 11)
---@v3        EchoMQ.Jobs.claim/4 (@claim, jobs.ex:379) + grouped EchoMQ.Lanes.claim/3 (@gclaim, lanes.ex:130)
+--@v3        EchoMQ.Jobs.claim/4 (@claim, jobs.ex) + grouped EchoMQ.Lanes.claim/3 (@gclaim, lanes.ex)
 ```
 
 ## v1 source

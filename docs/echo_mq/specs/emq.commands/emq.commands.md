@@ -4,7 +4,7 @@
 > command, a one-line description, its port status, and **the rung after which its
 > v1 reference can be safely dropped**. Reconciled against the as-built
 > `features/<family>/<cmd>.md` slices at the **emq.3.5 boundary** (Movement I
-> closing; Movement II, emq.4–8, open). Companion to [`README.md`](README.md) and
+> closed; Movement II, emq.4–8, open). Companion to [`README.md`](README.md) and
 > the agent index [`llms.txt`](llms.txt).
 
 **NO-INVENT.** Every description compresses the slice's own `Covers → v3` line;
@@ -30,19 +30,17 @@ code plus the conformance suite, not in a Lua fossil.
 | **`emq.N`** | A concrete future rung pins the remaining/proposed work. The reference is the spec for it — **hold until `emq.N` ships**, then drop. |
 | **hold** | Proposed work with **no scheduled rung** (a Movement-II backlog verb). The reference stays load-bearing; rung TBD. |
 | **`emq.4 †`** | **Retired by design.** The reference documents *why* the capability was dropped; it becomes a design-note once the replacement lands at `emq.4`. |
-| **`emq.3.5`** | **Building now.** Folds when its rung closes (this slice closes Movement I). |
 
 ### Roll-up (52 commands)
 
-- **32 references are safe to retire now** — 29 SHIPPED ports + 3 deliberately-folded capabilities (`updateRepeatableJobMillis-1`, `isFinished-3`, `removeDeduplicationKey-1`).
+- **33 references are safe to retire now** — 30 SHIPPED ports + 3 deliberately-folded capabilities (`updateRepeatableJobMillis-1`, `isFinished-3`, `removeDeduplicationKey-1`).
 - **9 are pinned to a future rung** — `emq.5` ×1, `emq.6` ×3, `emq.8` ×5.
 - **8 are held** pending an unscheduled Movement-II verb.
 - **2 are retired** (drop once the `emq.4` Lanes replacement ships).
-- **1 is building** (`emq.3.5`, the recursive-flow slice that closes Movement I).
 
 Status vocabulary: `SHIPPED` (ported) · `PARTIAL` (shipped in part) · `NOT YET`
-(proposed) · `PROPOSED` (forward-only) · `RETIRED` (dropped by design) ·
-`BUILDING` (`[RECONCILE]`, ahead of code).
+(proposed) · `PROPOSED` (forward-only) · `RETIRED` (dropped by design). All 52
+ported or proposed — none remain `BUILDING` (emq.3.5 shipped, closing Movement I).
 
 ---
 
@@ -96,7 +94,7 @@ Status vocabulary: `SHIPPED` (ported) · `PARTIAL` (shipped in part) · `NOT YET
 | [`moveToFinished-14`](features/flows/moveToFinished-14.md) | Complete a locked active job and run the parent fan-in. | SHIPPED | now (emq.0/1) |
 | [`moveToWaitingChildren-7`](features/flows/moveToWaitingChildren-7.md) | Worker parks its active job pending its children. | PARTIAL | hold (core emq.3.1) |
 | [`getDependencyCounts-4`](features/flows/getDependencyCounts-4.md) | Count a flow parent's children per state. *also metrics* | PARTIAL | hold (pieces emq.3.2/3.4) |
-| [`grandchildren-recursive-flow-tree`](features/flows/grandchildren-recursive-flow-tree.md) | Arbitrary-depth flow trees (recursive parent/child nesting). | BUILDING | emq.3.5 |
+| [`grandchildren-recursive-flow-tree`](features/flows/grandchildren-recursive-flow-tree.md) | Arbitrary-depth flow trees (recursive parent/child nesting). | SHIPPED | now (emq.3.5) |
 
 ## groups
 

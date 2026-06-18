@@ -1,4 +1,4 @@
-# addDelayedJob-6  →  EchoMQ.Jobs.enqueue_at/5 + enqueue_in/5 (@schedule, jobs.ex:38)
+# addDelayedJob-6  →  EchoMQ.Jobs.enqueue_at/5 + enqueue_in/5 (@schedule, jobs.ex)
 
 > Feature: **scheduling** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   addDelayedJob-6
 --@feature   scheduling
 --@status    SHIPPED (ported)
---@rung      emq.1 e0fa9b03
+--@rung      emq.1
 --@v1        registry/addDelayedJob-6.lua   (KEYS arity 6)
---@v3        EchoMQ.Jobs.enqueue_at/5 + enqueue_in/5 (@schedule, jobs.ex:38)
+--@v3        EchoMQ.Jobs.enqueue_at/5 + enqueue_in/5 (@schedule, jobs.ex)
 ```
 
 ## v1 source

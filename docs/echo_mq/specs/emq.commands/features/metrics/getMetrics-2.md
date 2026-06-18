@@ -1,4 +1,4 @@
-# getMetrics-2  →  EchoMQ.Metrics.get_metrics/3 (metrics.ex:173)
+# getMetrics-2  →  EchoMQ.Metrics.get_metrics/3 (metrics.ex)
 
 > Feature: **metrics** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   getMetrics-2
 --@feature   metrics
 --@status    PARTIAL
---@rung      emq.2.1 7d98ef86
+--@rung      emq.2.1
 --@v1        registry/getMetrics-2.lua   (KEYS arity 2)
---@v3        EchoMQ.Metrics.get_metrics/3 (metrics.ex:173)
+--@v3        EchoMQ.Metrics.get_metrics/3 (metrics.ex)
 ```
 
 ## v1 source

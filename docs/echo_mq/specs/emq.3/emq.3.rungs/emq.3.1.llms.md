@@ -4,7 +4,7 @@
 > Mars reads first, the requirements traced to stories + invariants, the execution topology, and the agent
 > stories (Directive + Acceptance gate). The spec **body** [`./emq.3.1.md`](emq.3.1.md) is authoritative; this
 > brief and [`./emq.3.1.stories.md`](emq.3.1.stories.md) DERIVE from it — when a derived artifact disagrees
-> with the body, the body wins. **No code is built until the Operator rules Fork A** ([`./emq.3.md`](../../emq.3.md)
+> with the body, the body wins. **No code is built until the Operator rules Fork A** ([`./emq.3.md`](../emq.3.md)
 > — single-queue first is the recommended arm this triad is authored to).
 
 ## References (read first, in order)
@@ -12,7 +12,7 @@
 1. **The sub-rung body** — [`./emq.3.1.md`](emq.3.1.md): the slice (§0), the Goal, the Scope (In/Out — note
    the honest **Out** list: cross-queue, deep recursion, child-result reads, failure policy, bulk), the
    Deliverables (D1–D6), the invariants (INV1–INV9). **Read it before any build story.**
-2. **The family body** — [`./emq.3.md`](../../emq.3.md): the A-1-compatible flow design (the load-bearing section —
+2. **The family body** — [`./emq.3.md`](../emq.3.md): the A-1-compatible flow design (the load-bearing section —
    the declared-subkey dependency tree, the fan-in gate, the claim gate), and the three surfaced forks (A·A,
    B·counter+guard, C·`awaiting_children` — the arms emq.3.1 is authored to).
 3. **The design canon** — [`../emq.design.md`](../../../emq.design.md): **§11.10** (the deferral + "an A-1-compatible

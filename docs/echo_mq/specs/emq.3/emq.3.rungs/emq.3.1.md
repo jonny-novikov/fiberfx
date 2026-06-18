@@ -1,7 +1,7 @@
 # EMQ.3.1 · The single-queue flow — the first buildable slice (Movement I, the flow family)
 
 > **Status: SHIPPED** (built 2026-06-15; the FIRST sub-rung of the emq.3 parent/flow family — the flow family
-> OPENS on a proven single-queue core; the family contract + the carve + the forks are [`./emq.3.md`](../../emq.3.md)).
+> OPENS on a proven single-queue core; the family contract + the carve + the forks are [`./emq.3.md`](../emq.3.md)).
 > As-built green: **CONFORMANCE 45/45** (the prior 43 byte-unchanged + `flow_add` + `flow_fanin`; the shipped
 > `unknown_state` still `{:ok, :unknown}` — INV3 held), the `:valkey` flow suites + the ≥100 determinism loop
 > green, compile clean (warnings-as-errors), Erlang 28.5.0.1 / Elixir 1.18.4 / Valkey 6390. **Apollo
@@ -14,12 +14,12 @@
 > (`apps/echomq/lib/echomq/flow_producer.ex`) is a **capability reference** — the behaviour to port, NEVER the
 > data-value-rooted form to lift. **HIGH-RISK** — it edits the shipped `EchoMQ.Jobs.@complete` (the fan-in
 > hook) and mints multiple ids per call → **Apollo MANDATORY at build** + the **≥100-iteration determinism
-> loop**. emq.3.1 builds **only after the Operator rules Fork A** ([`./emq.3.md`](../../emq.3.md) — single-queue
+> loop**. emq.3.1 builds **only after the Operator rules Fork A** ([`./emq.3.md`](../emq.3.md) — single-queue
 > first is the recommended arm this triad is authored to).
 
 ## 0 · The slice — what emq.3.1 carves, and why first
 
-The family ([`./emq.3.md`](../../emq.3.md)) redesigns flows so the parent→child dependency graph rides **declared
+The family ([`./emq.3.md`](../emq.3.md)) redesigns flows so the parent→child dependency graph rides **declared
 §6 subkeys of the parent** (not v1's data-value `parent_key`), and a parent is invisible to `claim` until its
 children complete (fan-in). emq.3.1 carves the **single-queue** case: parent and children in **one queue**, so
 every flow key shares the one `{q}` slot, so **every flow script is atomic** (one slot, one EVAL). This is the
@@ -139,7 +139,7 @@ marker — **Out**, above):
 
 emq.3.1 builds (forward-named; the flow surface does not yet exist in `echo_mq`):
 
-- **EMQ.3.1-D1 — the fork gate (FIRST):** Fork A ([`./emq.3.md`](../../emq.3.md)) **settled by the Operator** before
+- **EMQ.3.1-D1 — the fork gate (FIRST):** Fork A ([`./emq.3.md`](../emq.3.md)) **settled by the Operator** before
   any build artifact — Arm A (single-queue first; the carve this triad is authored to) vs Arm B (cross-queue
   from emq.3.1, the non-atomic host-orchestrated shape). Recorded BEFORE any build story runs (the cluster
   precedent — the design-make/fork gate is the relocated gate). Forks B (counter vs set) and C
@@ -307,7 +307,7 @@ emq.3.1 builds (forward-named; the flow surface does not yet exist in `echo_mq`)
       syncs it post-build.
 
 Stories: [`./emq.3.1.stories.md`](emq.3.1.stories.md) · Agent brief: [`./emq.3.1.llms.md`](emq.3.1.llms.md)
-· Runbook: [`./emq.3.1.prompt.md`](emq.3.1.prompt.md) · Family: [`./emq.3.md`](../../emq.3.md) (the contract, the
+· Runbook: [`./emq.3.1.prompt.md`](emq.3.1.prompt.md) · Family: [`./emq.3.md`](../emq.3.md) (the contract, the
 carve, the forks — authoritative for the family) · The v1 capability reference (READ-ONLY, the form NOT to
 lift): `echo/apps/echomq/lib/echomq/flow_producer.ex` (`add/2` — the parent + children shape; the data-value
 `parent_key`/`parent_info` tree NOT lifted) + the dependency-subkey names at

@@ -1,4 +1,4 @@
-# getDependencyCounts-4  →  EchoMQ.Flows.dependencies/3 (flows.ex:332) + children_values/3/ignored_failures/3; aggregate child_counts/3 PROPOSED
+# getDependencyCounts-4  →  EchoMQ.Flows.dependencies/3 (flows.ex) + children_values/3/ignored_failures/3; aggregate child_counts/3 PROPOSED
 
 > Feature: **flows** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -10,7 +10,7 @@
 --@status    PARTIAL (split, not aggregated)
 --@rung      emq.3.2/3.4
 --@v1        registry/getDependencyCounts-4.lua   (KEYS arity 4)
---@v3        EchoMQ.Flows.dependencies/3 (flows.ex:332) + children_values/3/ignored_failures/3; aggregate child_counts/3 PROPOSED
+--@v3        EchoMQ.Flows.dependencies/3 (flows.ex) + children_values/3/ignored_failures/3; aggregate child_counts/3 PROPOSED
 ```
 
 ## v1 source
@@ -55,9 +55,9 @@ return results
 
 | v1 (getDependencyCounts-4) | v3 (PARTIAL — split across EchoMQ.Flows; no single verb) |
 |---|---|
-| 'processed' -> HLEN KEYS[1] -- HASH+results | dependencies/3 (flows.ex:332) GET :dependencies -- STRING counter |
-| 'unprocessed' -> SCARD KEYS[2] -- SET of KEYS | children_values/3 (flows.ex:261) HGETALL :processed |
-| 'ignored' -> HLEN KEYS[3] | ignored_failures/3 (flows.ex:295) :unsuccessful -- SHIPPED emq.3.4 |
+| 'processed' -> HLEN KEYS[1] -- HASH+results | dependencies/3 (flows.ex) GET :dependencies -- STRING counter |
+| 'unprocessed' -> SCARD KEYS[2] -- SET of KEYS | children_values/3 (flows.ex) HGETALL :processed |
+| 'ignored' -> HLEN KEYS[3] | ignored_failures/3 (flows.ex) :unsuccessful -- SHIPPED emq.3.4 |
 | 'failed' -> ZCARD KEYS[4] | # PROPOSED child_counts/3: compose counter + HLEN :processed/ |
 | — | # :failed/:unsuccessful; NO unprocessed SET (Fork R2.A counter) |
 
@@ -66,9 +66,9 @@ return results
 ```text
 v1 (getDependencyCounts-4)                       v3 (PARTIAL — split across EchoMQ.Flows; no single verb)
 ─────────────────────────────────────────       ─────────────────────────────────────────────────
-'processed'   -> HLEN  KEYS[1]   -- HASH+results dependencies/3   (flows.ex:332) GET :dependencies -- STRING counter
-'unprocessed' -> SCARD KEYS[2]   -- SET of KEYS  children_values/3 (flows.ex:261) HGETALL :processed
-'ignored'     -> HLEN  KEYS[3]                   ignored_failures/3 (flows.ex:295) :unsuccessful -- SHIPPED emq.3.4
+'processed'   -> HLEN  KEYS[1]   -- HASH+results dependencies/3   (flows.ex) GET :dependencies -- STRING counter
+'unprocessed' -> SCARD KEYS[2]   -- SET of KEYS  children_values/3 (flows.ex) HGETALL :processed
+'ignored'     -> HLEN  KEYS[3]                   ignored_failures/3 (flows.ex) :unsuccessful -- SHIPPED emq.3.4
 'failed'      -> ZCARD KEYS[4]                   # PROPOSED child_counts/3: compose counter + HLEN :processed/
                                                  #   :failed/:unsuccessful; NO unprocessed SET (Fork R2.A counter)
 ```

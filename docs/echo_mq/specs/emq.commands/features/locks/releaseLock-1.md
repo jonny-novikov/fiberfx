@@ -8,7 +8,7 @@
 --@command   releaseLock-1
 --@feature   locks
 --@status    SHIPPED (ported, re-split)
---@rung      emq.2.3 3c6461ff
+--@rung      emq.2.3
 --@v1        registry/releaseLock-1.lua   (KEYS arity 1)
 --@v3        EchoMQ.Locks.untrack_job/2 (the lease releases by natural active-score expiry / complete)
 ```

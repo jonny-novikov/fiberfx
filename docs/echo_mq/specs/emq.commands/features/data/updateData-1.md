@@ -1,4 +1,4 @@
-# updateData-1  →  EchoMQ.Jobs.update_data/4 (@update_data, jobs.ex:686)
+# updateData-1  →  EchoMQ.Jobs.update_data/4 (@update_data, jobs.ex)
 
 > Feature: **data** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   updateData-1
 --@feature   data
 --@status    SHIPPED (ported)
---@rung      emq.2.2 76fc947c
+--@rung      emq.2.2
 --@v1        registry/updateData-1.lua   (KEYS arity 1)
---@v3        EchoMQ.Jobs.update_data/4 (@update_data, jobs.ex:686)
+--@v3        EchoMQ.Jobs.update_data/4 (@update_data, jobs.ex)
 ```
 
 ## v1 source

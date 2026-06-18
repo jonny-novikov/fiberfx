@@ -1,4 +1,4 @@
-# removeDeduplicationKey-1  →  folded into @remove_job's de: branch (jobs.ex:819); standalone release_dedup/3 PROPOSED
+# removeDeduplicationKey-1  →  folded into @remove_job's de: branch (jobs.ex); standalone release_dedup/3 PROPOSED
 
 > Feature: **lifecycle** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   removeDeduplicationKey-1
 --@feature   lifecycle
 --@status    PARTIAL (folded)
---@rung      emq.2.2 76fc947c
+--@rung      emq.2.2
 --@v1        registry/removeDeduplicationKey-1.lua   (KEYS arity 1)
---@v3        folded into @remove_job's de: branch (jobs.ex:819); standalone release_dedup/3 PROPOSED
+--@v3        folded into @remove_job's de: branch (jobs.ex); standalone release_dedup/3 PROPOSED
 ```
 
 ## v1 source
@@ -64,7 +64,7 @@ return 0                                         -- read side: Metrics.get_dedup
 
 ## Decision & rationale
 
-**Covers → v3.** Release a dedup key iff it still points at this job (GET, compare, DEL on match) → the exact GET-compare-DEL is the `de:` branch of `@remove_job`; the read side ships as `Metrics.get_deduplication_job_id/3` (`metrics.ex:191`). No standalone release verb.
+**Covers → v3.** Release a dedup key iff it still points at this job (GET, compare, DEL on match) → the exact GET-compare-DEL is the `de:` branch of `@remove_job`; the read side ships as `Metrics.get_deduplication_job_id/3` (`metrics.ex`). No standalone release verb.
 
 **Decision.** The one v1 op that was almost legal — only the id form changes (a 14-byte branded receipt). Surface `Jobs.release_dedup/3` reusing the `de:` branch verbatim: one declared `KEYS[1] = emq:{q}:de:<did>`, value-compare. Folded, not re-implemented.
 

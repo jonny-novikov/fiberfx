@@ -1,4 +1,4 @@
-# drain-5  →  EchoMQ.Admin.drain/3 (@drain, admin.ex:109)
+# drain-5  →  EchoMQ.Admin.drain/3 (@drain, admin.ex)
 
 > Feature: **lifecycle** · v1→v3 migration record. Authoritative source: the EchoMQ command registry. NO-INVENT: v3 schematics are carried as the repo states them — nothing here is fabricated.
 
@@ -8,9 +8,9 @@
 --@command   drain-5
 --@feature   lifecycle
 --@status    SHIPPED (ported)
---@rung      emq.2.2 76fc947c
+--@rung      emq.2.2
 --@v1        registry/drain-5.lua   (KEYS arity 5)
---@v3        EchoMQ.Admin.drain/3 (@drain, admin.ex:109)
+--@v3        EchoMQ.Admin.drain/3 (@drain, admin.ex)
 ```
 
 ## v1 source

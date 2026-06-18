@@ -175,4 +175,4 @@ Implements: design §7, S-4 (the structural gate).
 | The Valkey structural gate (honest-row; `{emq}:version`; grammar totality; additive-minor conformance) | US-GATE |
 
 Spec body: [`./emq.3.1.md`](emq.3.1.md) (authoritative) · Agent brief: [`./emq.3.1.llms.md`](emq.3.1.llms.md)
-· Family: [`./emq.3.md`](../../emq.3.md) (the contract + the carve + the forks).
+· Family: [`./emq.3.md`](../emq.3.md) (the contract + the carve + the forks).
