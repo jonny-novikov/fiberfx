@@ -227,7 +227,7 @@ edit to the frozen v1 line.
 
 ---
 
-The triad this design opens: [`./emq.1.md`](emq.1.md) · [`./emq.1.stories.md`](../../epics/emq.epic.1/emq.1.stories.md) ·
+The triad this design opens: [`./emq.1.md`](emq.1.md) · [`./emq.1.stories.md`](./emq.1.stories.md) ·
 [`./emq.1.llms.md`](emq.1.llms.md). The canon: [`../emq.design.md`](../../emq.design.md) (§11.10, §4
 rows 28/30, S-6, §5, §6). The program: [`../emq.roadmap.md`](../../emq.roadmap.md) ·
 [`../echo_mq.md`](../../echo_mq.md). The 2.1 row: `../../echo/code/ROADMAP.md`. The consumer:

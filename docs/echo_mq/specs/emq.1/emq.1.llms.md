@@ -2,7 +2,7 @@
 > **Status: BUILT** — the emq-1 run adopted the design gate (the six settled forks), built D2–D6,
 > hardened, and gated PASS; this brief is reconciled to the as-built surface. It was design-gated: the
 > first story was the A-1-compatible scheduler design (adopted as the six forks), and no build story ran
-> before that gate. Pairs with [`./emq.1.md`](emq.1.md) and [`./emq.1.stories.md`](../../epics/emq.epic.1/emq.1.stories.md).
+> before that gate. Pairs with [`./emq.1.md`](emq.1.md) and [`./emq.1.stories.md`](./emq.1.stories.md).
 > Framing clause (propagates into every derived prompt): third person for any agent reference; no gendered
 > pronouns for agents; no perceptual or interior-state verbs for agents or software; components read,
 > compute, refuse, return.
@@ -10,7 +10,7 @@
 ## References
 
 - [`./emq.1.md`](emq.1.md) — the contract (D1–D7, INV1–INV7); the spec body is authoritative.
-- [`./emq.1.stories.md`](../../epics/emq.epic.1/emq.1.stories.md) — acceptance (US1–US7, incl. the standing EMQ.1-US-GATE).
+- [`./emq.1.stories.md`](./emq.1.stories.md) — acceptance (US1–US7, incl. the standing EMQ.1-US-GATE).
 - The worked consumer (no-invent applies to its real surface exactly as to this code):
   `echo/apps/codemojex` — guesses enqueued on per-player `EchoMQ.Lanes`, drained by two `EchoMQ.Consumer`
   instances (score + settle), scored under a single authority, prizes settled on a second queue

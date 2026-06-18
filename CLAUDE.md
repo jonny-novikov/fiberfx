@@ -6,7 +6,7 @@ Guidance for Claude agents working the **echo_mq bus program** and the **Branded
 
 ## Scope
 
-**In scope:** the `echo_mq` program (the Valkey-native bus) + the BCS stack it sits in (`echo_wire` · `echo_data` · `echo_cache`) + the spec-driven workflow that ships it. One Mix umbrella under `echo/`.
+**In scope:** the `echo_mq` program (the Valkey-native bus) + the BCS stack it sits in (`echo_wire` · `echo_data` · `echo_store`) + the spec-driven workflow that ships it. One Mix umbrella under `echo/`.
 
 **Out of scope** (pointers — do not work these from here): the static-HTML courses (`/elixir` `/bcs` `/redis-patterns` `/echomq` `/art` `/mesh` `/fsharp` agile) → their `*-course-writer` skills; `exchange`, `investex` → Operator out-of-band, **never touched by an echo_mq rung**.
 
@@ -20,14 +20,14 @@ Guidance for Claude agents working the **echo_mq bus program** and the **Branded
 
 > **The law** (mesh.8.1, "the whole picture"): *encapsulation boundaries are drawn around **systems**, not objects. The only values that cross a boundary are **identities**, and **messages about identities**.* No object graphs, no shared mutable state, no embedded id lists. Surfaces are **peers joined by the thread** (the branded id), not layers stacked to hold each other up.
 
-`echo_mq` and `echo_cache` are *systems* built to this discipline over the wire; `echo/apps/echo_data/lib/echo_data/bcs/` is its reference implementation; the id contract is the `/bcs` course (`docs/echo/bcs`). The in-code `Rung bcs1.1` / `Chapter 2.x` citations are spec-driven too.
+`echo_mq` and `echo_store` are *systems* built to this discipline over the wire; `echo/apps/echo_data/lib/echo_data/bcs/` is its reference implementation; the id contract is the `/bcs` course (`docs/echo/bcs`). The in-code `Rung bcs1.1` / `Chapter 2.x` citations are spec-driven too.
 
 ### The whole picture (mesh.8.1, embedded)
 
 The stack is *one* system not because its surfaces coordinate but because they share **one branded identity** — minted at the consistent core, carried unchanged to the available periphery. Each surface is a **peer that makes its own CAP trade** (a fine-grained, per-operation choice, never a global one):
 
 - **Consistency-first — the ledger:** one writer per book (a Registry-addressed `GenServer`), all-or-nothing (`Ecto.Multi`); under conflict it blocks or aborts rather than let two histories diverge.
-- **Availability-first — the cache + the log:** the near-cache writes the hot value and lets the store push invalidation (RESP3 `CLIENT TRACKING`, → `echo_cache`); the streams append to an ordered, replayable log (`XADD`, → the bus's retained log). Under partition both serve what they have.
+- **Availability-first — the cache + the log:** the near-cache writes the hot value and lets the store push invalidation (RESP3 `CLIENT TRACKING`, → `echo_store`); the streams append to an ordered, replayable log (`XADD`, → the bus's retained log). Under partition both serve what they have.
 - **Elastic — the worker:** dispatched onto an ephemeral machine via FLAME; the identity travels as the **claim check** the worker redeems for the payload.
 
 The weave is one entity's life: **recorded once** at the ledger (which mints the id), then **carried** outward to cache, log, and worker — no surface sits beneath another. So the whole guarantees **neither global consistency nor global availability, by design** — each surface has the guarantee it needs and the system's guarantee is the sum of the local ones (a single global guarantee is exactly what CAP denies). This is a **PROPOSED composition** over shipped substrate (the BEAM · a Valkey-class store · Postgres via `Ecto.Multi` · Tigris · the FLAME pattern) — EchoMesh is the weave, taught forward-tense, not a shipped product. The code sketches: `docs/echo/mesh/mesh.8.1.md`.
@@ -41,7 +41,7 @@ Engine: **Valkey 9 on `:6390`** (RESP3; gate with `valkey-cli -p 6390 ping` → 
 | `echo_wire` | The **owned wire**: RESP framing, the single-owner socket connector, the script registry behind the version fence. Names `EchoMQ.Connector` / `RESP` / `Script` are **frozen** by committed records; `EchoWire` is the facade. | — (base) |
 | `echo_data` | **Identity + structure + BCS** — pure, no in-umbrella deps. The branded-id contract, the persistent structures (`BrandedChamp` / `BrandedMap` / `BrandedTree`, `Edges`, `Timeline`), the BCS systems (`Bcs.{PropertyStore,EdgeStore,Archetypes,Supervisor}` + the `Bcs.gate`), the NIF codec. | — (pure) |
 | `echo_mq` | **The bus** — the Valkey-native job/queue/stream system; a *system* over the wire keyed by branded `JOB` ids. Keyspace `emq:{q}:`, inline Lua, server-clock leases. | `echo_data` + `echo_wire` |
-| `echo_cache` | **The cache** — L1 ETS over L2 Valkey (cache-aside), a per-group SQLite journal + Litestream shadow. Keyspace `ecc:{table}:{id}`; coherence = *a message about a name* (the BCS law, literally). | `echo_data` + `echo_mq` + `echo_wire` + `exqlite` |
+| `echo_store` | **The store** — L1 ETS over L2 Valkey (cache-aside), a per-group SQLite journal + a native Graft replication engine (CubDB → Tigris S3; in progress). Keyspace `ecc:{table}:{id}`; coherence = *a message about a name* (the BCS law, literally). | `echo_data` + `echo_mq` + `echo_wire` + `exqlite` |
 
 `apps/echomq` is the **FROZEN v1** bus deffered to delete — a *feature reference only, never an edit target*; explicit Operator allowance to search in a folder. It shares the `EchoMQ.*` namespace at **zero module overlap** with the new `echo_mq`. Its full suite hangs on untagged concurrency — stay on per-app pure slices.
 

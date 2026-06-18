@@ -3,7 +3,7 @@
 # Wire — Pipe — counter
 
 > **Feature delivered — acceptance criteria.** Generated from the as-built BDD tests in
-> [`test/stories/wire_pipe_counter_story_test.exs`](../../../echo/apps/echo_mq/test/stories/wire_pipe_counter_story_test.exs). Every scenario below is a passing
+> [`test/stories/wire_pipe_counter_story_test.exs`](../../../../echo/apps/echo_mq/test/stories/wire_pipe_counter_story_test.exs). Every scenario below is a passing
 > ExUnit test driving the real `EchoMQ` surface against Valkey, so the catalogue cannot
 > drift from the code.
 

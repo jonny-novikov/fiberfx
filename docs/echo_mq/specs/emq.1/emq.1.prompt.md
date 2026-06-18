@@ -10,7 +10,7 @@
 > already-recommended arms (§"The design-make" below), the solo Director review scrutinizes it, and the
 > Operator's acceptance of the single post-closure commit is the ratification. The x-mode skill
 > ([`.claude/skills/x-mode/SKILL.md`](../../../../.claude/skills/x-mode/SKILL.md)) binds the laws; its inputs
-> are the spec triad ([`./emq.1.md`](./emq.1.md) · [`./emq.1.stories.md`](../../epics/emq.epic.1/emq.1.stories.md) ·
+> are the spec triad ([`./emq.1.md`](./emq.1.md) · [`./emq.1.stories.md`](./emq.1.stories.md) ·
 > [`./emq.1.llms.md`](./emq.1.llms.md)), the design, and the canon ([`../emq.design.md`](../../emq.design.md)).
 
 ## The rung in one paragraph
@@ -233,7 +233,7 @@ Operator.
 
 ---
 
-The contract: [`./emq.1.md`](emq.1.md). The stories: [`./emq.1.stories.md`](../../epics/emq.epic.1/emq.1.stories.md). The
+The contract: [`./emq.1.md`](emq.1.md). The stories: [`./emq.1.stories.md`](./emq.1.stories.md). The
 brief: [`./emq.1.llms.md`](emq.1.llms.md). The design it makes real: [`./emq.1.design.md`](emq.1.design.md).
 The canon: [`../emq.design.md`](../../emq.design.md). The program: [`../emq.roadmap.md`](../../emq.roadmap.md)
 · [`../echo_mq.md`](../../echo_mq.md). The x-mode skill: [`.claude/skills/x-mode/SKILL.md`](../../../../.claude/skills/x-mode/SKILL.md).

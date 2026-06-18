@@ -2,7 +2,7 @@
 
 > **Dev-support reference, NOT the catalogue.** All **50** v1 BullMQ Lua commands mapped v1→v3, sorted by the **12-feature taxonomy** ([`emq.epic.1.md`](emq.epic.1.md) §The feature index). This is the feature-sorted, ≤300-line-per-file successor to the former 1290-line `emq.1.specs.md` matrix — *why* each v3 form re-derives its v1 analogue, never the forward-only DSL catalogue itself.
 
-**How to read.** This file is the **summary matrix** (one table per feature). A command's **full detail + the v1→v3 side-by-side** lives exactly once in its feature slice under [`emq.commands/features/`](../../specs/emq.commands/features/), anchored `#{command}`; the Command cell links there. A command serving two features is filed under its **primary** feature and cross-referenced (`→ feature`) from the secondary. The raw v1 sources are [`emq.commands/registry/*.lua`](../../specs/emq.commands/registry/); the flat agent index is [`emq.commands/llms.txt`](../specs/emq.commands/llms.txt).
+**How to read.** This file is the **summary matrix** (one table per feature). A command's **full detail + the v1→v3 side-by-side** lives exactly once in its feature slice under [`emq.commands/features/`](../specs/emq.commands/features/), anchored `#{command}`; the Command cell links there. A command serving two features is filed under its **primary** feature and cross-referenced (`→ feature`) from the secondary. The raw v1 sources are [`emq.commands/registry/*.lua`](../specs/emq.commands/registry/); the flat agent index is [`emq.commands/llms.txt`](../specs/emq.commands/llms.txt).
 
 **Columns:** Command · v1 (purpose) · v2 status (grounded — token · rung `sha` · module) · v3 decision (PROPOSED) · BCS · EchoMesh. **Voice:** v2 is as-shipped present tense, traced to the rung that shipped it; every v3 claim is forward / PROPOSED; `[RECONCILE]` marks a claim ahead of as-built code. Status tokens: **PORTED** (shipped) · **PARTIAL** (shipped in part) · **NOT YET** (proposed) · **RETIRED** (dropped by design) · **[RECONCILE]** (building).
 
@@ -153,4 +153,4 @@ Remove · dedup release · drain · obliterate · pause/resume. The lifecycle/de
 
 ---
 
-*Lineage:* `emq.1.specs.md` (1290-line matrix) → this feature-sorted registry → the per-feature slices under [`emq.commands/features/`](../../specs/emq.commands/features/) (≤300 lines each, with the v1→v3 side-by-side). Taxonomy: [`emq.epic.1.md`](emq.epic.1.md). Agent index: [`emq.commands/llms.txt`](../specs/emq.commands/llms.txt).
+*Lineage:* `emq.1.specs.md` (1290-line matrix) → this feature-sorted registry → the per-feature slices under [`emq.commands/features/`](../specs/emq.commands/features/) (≤300 lines each, with the v1→v3 side-by-side). Taxonomy: [`emq.epic.1.md`](emq.epic.1.md). Agent index: [`emq.commands/llms.txt`](../specs/emq.commands/llms.txt).

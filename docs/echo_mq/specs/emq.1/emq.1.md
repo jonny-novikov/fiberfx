@@ -145,7 +145,7 @@ emq.1 builds (each now realized; the as-built surface is named):
       cache 4_1..4_4 + shadow ran at their tails; the Director re-ran them at the Stage-3 gate); the
       spec body remains authoritative and this reconcile syncs it post-build.
 
-Stories: [`./emq.1.stories.md`](../../epics/emq.epic.1/emq.1.stories.md) · Agent brief: [`./emq.1.llms.md`](emq.1.llms.md) ·
+Stories: [`./emq.1.stories.md`](./emq.1.stories.md) · Agent brief: [`./emq.1.llms.md`](emq.1.llms.md) ·
 Roadmap: [`../emq.roadmap.md`](../../emq.roadmap.md) · Design: [`../emq.design.md`](../../emq.design.md) §5,
 §11.10, §4 row 30 · Consumer: `echo/apps/codemojex` (the worked game consumer) · The 2.1 row:
 `docs/echo/code/ROADMAP.md` ·

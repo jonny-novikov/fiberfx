@@ -27,7 +27,7 @@ Two halves, one epic:
 
 ## The DSL form (D0-2 — the near-term grammar)
 
-The catalogue lives in [`./emq.epic.1/`](./emq.epic.1/) as **one md per feature** (`<feature>.md`). Each command
+The catalogue lives in `./emq.epic.1/` as **one md per feature** (`<feature>.md`). Each command
 is an **`#{command}`-anchored section** inside its feature md, cross-referenced by that hash within and across
 feature files. Each command section carries exactly these fields (and only what is relevant):
 
@@ -69,7 +69,7 @@ are first-class features, not buried under a command family.)
 ## Scope
 
 - **In** — the per-feature v3.x command DSL slices under `emq.epic.1/`; the epic's stories
-  ([`./emq.epic.1/emq.1.stories.md`](./emq.epic.1/emq.1.stories.md)); the forward-only voice (v3 is PROPOSED
+  ([`../specs/emq.1/emq.1.stories.md`](../specs/emq.1/emq.1.stories.md)); the forward-only voice (v3 is PROPOSED
   until its rung ships); the `#{command}` cross-reference grammar.
 - **Out** — the v1↔v3 **registry** as a deliverable (it is dev-support, the feature-sorted
   [`../emq.command-registry.md`](emq.commands.registry.md) — successor to the former `emq.1.specs.md` matrix);
@@ -88,6 +88,6 @@ are first-class features, not buried under a command family.)
 
 ---
 
-Index: [emq.epic.0](./emq.epic.0.md) (the layer) · slices: [`./emq.epic.1/`](./emq.epic.1/) · stories:
+Index: [emq.epic.0](./emq.epic.0.md) (the layer) · slices: `./emq.epic.1/` · stories:
 [`../stories/`](../stories/) · dev-support: [`../emq.command-registry.md`](emq.commands.registry.md) · the
 rung layer: [`../specs/`](../specs/).
