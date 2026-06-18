@@ -106,6 +106,7 @@ by `EchoMQ.Consumer`, scored by a single authority, results published on `EchoMQ
   pulled forward — an Operator call, recorded here so it is a decision, not drift (carried from the old
   roadmap's same note).
 - **Where** — `echo/apps/echo_mq`, `echo/apps/echo_store`, and the conformance/test surfaces beside them.
+- **Wire version** — Movement I closed at **`echomq:2.0.0`** (emq.3 its last rung). Movement II (emq.4–emq.8) is the **`echomq:3.0.0`** era: every rung ships as an **additive minor** over the frozen 2.0.0 wire — new conformance scenarios + host verbs, **no fence code, no new wire class** (the count grows, the protocol does not break). The accumulated minors are **ratified as the `echomq:3.0.0` major at the horizon's end (emq.8)** — the bump is the cumulative end-state of emq.3→emq.8, never a single rung's act. (emq.4.1 holds at 2.0.0; emq.4.1-D1.)
 
 ## The rung ladder (CONFIRMED at the Stage-1b checkpoint)
 
