@@ -39,5 +39,11 @@ config :codemojex, CodemojexWeb.Endpoint,
 
 config :phoenix, :json_library, Jason
 
+# EchoStore pluggable durability — the transactional-enqueue outbox backend. Default: the
+# shipped SQLite journal (exqlite), zero infra, a file per group. Postgres and the EchoMQ 4+
+# Graft commit-log-as-outbox are opt-in adapters a host provides in its own app (bring-your-own
+# dependency), so echo_store core carries no SQL client. See `EchoStore.Durability`.
+config :echo_store, EchoStore.Durability, adapter: EchoStore.Durability.SQLite
+
 # Per-environment overrides — load the matching env file last so its values win.
 import_config "#{config_env()}.exs"

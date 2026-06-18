@@ -8,8 +8,8 @@ defmodule Codemojex.Stories.EmojiCodesStoryTest do
     end
 
     then_ "it addresses column 3, row 5, and code/2 is the inverse of xy/1" do
-      assert EmojiSet.xy("0305") == {3, 5}
-      assert EmojiSet.code(3, 5) == "0305"
+      assert EmojiSet.xy(code) == {3, 5}
+      assert EmojiSet.code(3, 5) == code
     end
   end
 
