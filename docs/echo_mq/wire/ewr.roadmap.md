@@ -19,8 +19,9 @@ builds from is [`design/ewr.design.md`](design/ewr.design.md) (RULED: Arm A); th
   untouched.
 - **What.** A new `EchoWire.*` surface in three additive rungs — a threaded `|>` pipeline (`EchoWire.Pipe`),
   then a command vocabulary plus an immutable command value, then a two-tier error split — each an ergonomic
-  façade over the existing `Connector.pipeline/3` family. Server-assisted client-side caching (CLIENT TRACKING)
-  is named as a later movement, not folded into the core.
+  façade over the existing `Connector.pipeline/3` family — then a Movement-I **closer (`ewr.1.4`) that adopts the
+  core into its first real consumer** (`echo_mq`'s own internals). Server-assisted client-side caching (CLIENT
+  TRACKING) is named as a later movement, not folded into the core.
 - **Who.** Every Elixir caller assembling Valkey command batches: `echo_mq`'s own internals, `echo_store`'s
   direct-Valkey paths, and application code. The connector and the pool are the deployment targets; the new
   surface is the ergonomics they reach for.
@@ -61,9 +62,10 @@ The program builds strictly **above** this floor; every name here is frozen and 
 
 ### Movement I · The ergonomic core — open
 
-Three additive rungs that port the valkey-go *construction* ergonomics as new `EchoWire.*` modules. Each lands
-on the `Connector.pipeline/3` family; none touches the frozen connector, RESP, or Script; none grows the
-11-verb facade; the 52-scenario conformance stays byte-stable.
+Three additive rungs that port the valkey-go *construction* ergonomics as new `EchoWire.*` modules, then a
+closer (`ewr.1.4`) that adopts them into the first real consumer. The three core rungs each land on the
+`Connector.pipeline/3` family; none touches the frozen connector, RESP, or Script; none grows the 11-verb
+facade; the conformance stays byte-stable.
 
 - **`ewr.1.1` — `EchoWire.Pipe`, the threaded pipeline.** The `%Pipe{conn, cmds}` accumulator threads through
   `|>`; a curated verb set appends one command-list each; `exec/1` flushes once into `Connector.pipeline/3`
@@ -76,6 +78,18 @@ on the `Connector.pipeline/3` family; none touches the frozen connector, RESP, o
   (`message.go:149`/`:154`): a result classifier separating a transport failure (`{:error, term}`) from a
   server error carried in-band as `{:error_reply, _}` (resp.ex:47), so a caller can branch on which tier broke
   without re-parsing.
+- **`ewr.1.4` — adopt `EchoWire.Pipe` into `echo_mq`'s internals.** Movement I's
+  **closer**: convert `echo_mq`'s hand-written multi-command `Connector.pipeline/3` call-sites (the nested
+  `[[binary]]` literals, positional flags kept correct by eye) to the `EchoWire.Pipe` builder — proving the core
+  on a real consumer before Movement II's caching trade. **Gated on `ewr.1.2` + `ewr.1.3`** (the adoption uses
+  the *complete* construction surface — command value + error split — not the bare pipeline). **The boundary
+  widens here:** unlike `ewr.1.1`–`1.3` (which edit only `echo_wire` + the one story-tooling seam), `ewr.1.4` is
+  the FIRST ewr rung to touch `echo_mq`'s **runtime** call-sites — an explicit, surfaced widening. The frozen
+  wire stays frozen (`Connector`/`RESP`/`Script`/`Pool` untouched, the 11-verb facade unchanged, `grep
+  redis.call` on the diff = 0 — a construction refactor, not a Lua/protocol change); the **proof is
+  behaviour-preservation** — `echo_mq`'s conformance + every suite green and byte-stable across the swap. A
+  single one-shot `Script.new/2` eval is NOT a wiring target. NOT an emq.4–8 capability rung — this is the wire
+  client's adoption, not a bus feature.
 
 ### Movement II · Server-assisted caching — PROPOSED (seam)
 
@@ -93,6 +107,7 @@ behind a seam (decision 3) until a consumer makes the trade real; written forwar
 | **`ewr.1.1`** | I | `EchoWire.Pipe` — the threaded `\|>` pipeline + a curated verb set + the `command/2` escape hatch + `exec` / `exec_txn` / `exec_noreply` | **SPECCED** (founding, this run) |
 | `ewr.1.2` | I | the command vocabulary + the immutable command value (the `cf`-flag model, advisory) | planned |
 | `ewr.1.3` | I | the two-tier error split (transport vs server: `NonValkeyError` vs `Error`) | planned |
+| `ewr.1.4` | I | adopt `EchoWire.Pipe` into `echo_mq`'s internals — the first real consumer (convert the multi-command `Connector.pipeline/3` call-sites) | planned (gated on 1.2 + 1.3; the first ewr rung to touch `echo_mq` runtime) |
 | `ewr.2.x` | II | CLIENT TRACKING / client-side caching | PROPOSED (seam — may be a wire MAJOR) |
 
 ## How the program runs
