@@ -10,6 +10,7 @@ defmodule EchoMQ.Jobs do
   """
 
   alias EchoMQ.{Connector, Keyspace, Script}
+  alias EchoWire.Pipe
 
   @enqueue Script.new(:enqueue, """
            if string.sub(ARGV[1], 1, 3) ~= 'JOB' then
@@ -100,9 +101,15 @@ defmodule EchoMQ.Jobs do
   def enqueue_many(conn, queue, pairs) when is_list(pairs) do
     {:ok, _} = Connector.command(conn, ["SCRIPT", "LOAD", @enqueue.source])
 
-    cmds =
-      for {id, payload} <- pairs do
-        [
+    # ewr.1.4 — the first real consumer of the EchoWire client-core: the batch is
+    # assembled through EchoWire.Pipe (the EVALSHA via the command/2 escape hatch —
+    # EVALSHA is not a curated verb) and flushed once via exec/1, replacing the
+    # hand-written nested-list + Connector.pipeline/2. Behaviour-preserving on the
+    # defined domain; an EMPTY `pairs` now answers {:error, :empty_pipeline} (the
+    # Pipe's empty guard) rather than the old Connector `cmds != []` FunctionClauseError.
+    pipe =
+      Enum.reduce(pairs, Pipe.new(conn), fn {id, payload}, pipe ->
+        Pipe.command(pipe, [
           "EVALSHA",
           @enqueue.sha,
           "2",
@@ -110,10 +117,10 @@ defmodule EchoMQ.Jobs do
           Keyspace.queue_key(queue, "pending"),
           id,
           payload
-        ]
-      end
+        ])
+      end)
 
-    with {:ok, results} <- Connector.pipeline(conn, cmds) do
+    with {:ok, results} <- Pipe.exec(pipe) do
       {:ok,
        Enum.map(results, fn
          1 -> :enqueued
