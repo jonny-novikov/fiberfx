@@ -10,10 +10,19 @@ defmodule Codemoji.Store do
   @rounds :cm_rounds
   @players :cm_players
   @guesses :cm_guesses
+  @emojisets :cm_emojisets
 
   def start_link do
-    Supervisor.start_link([{@rounds, "RND"}, {@players, "USR"}, {@guesses, "GES"}])
+    Supervisor.start_link([
+      {@rounds, "RND"},
+      {@players, "USR"},
+      {@guesses, "GES"},
+      {@emojisets, "EMS"}
+    ])
   end
+
+  def put_set(%Codemoji.EmojiSet{id: id} = set), do: PropertyStore.put(@emojisets, id, set)
+  def set(id), do: unwrap(PropertyStore.get(@emojisets, id))
 
   def put_round(id, m), do: PropertyStore.put(@rounds, id, m)
   def round(id), do: unwrap(PropertyStore.get(@rounds, id))
@@ -54,8 +63,8 @@ end
 defmodule Codemoji.Cache do
   @moduledoc """
   The read-hot seam. A round (with its secret) is read on every guess; in
-  production that read goes through `EchoCache.Table.fetch/3` — an L1 ETS cache
-  over the Valkey L2, with `EchoCache.Coherence.newer?/2` deciding staleness by
+  production that read goes through `EchoStore.Table.fetch/3` — an L1 ETS cache
+  over the Valkey L2, with `EchoStore.Coherence.newer?/2` deciding staleness by
   the version's mint order. Where the cache app is not loaded (no SQLite shadow
   dependency available), the seam degrades to reading the system of record it
   fronts — a permanent miss, which is the correct lower bound, not a substitute.
@@ -63,10 +72,11 @@ defmodule Codemoji.Cache do
   round's life, so the cached value never goes stale under it.
   """
   @cache :cm_rounds
+  @sets :cm_emojisets
 
   def fetch_round(round_id) do
-    if Code.ensure_loaded?(EchoCache.Table) do
-      case apply(EchoCache.Table, :fetch, [@cache, round_id]) do
+    if Code.ensure_loaded?(EchoStore.Table) do
+      case apply(EchoStore.Table, :fetch, [@cache, round_id]) do
         {:ok, bin} when is_binary(bin) -> :erlang.binary_to_term(bin)
         _ -> Codemoji.Store.round(round_id)
       end
@@ -76,8 +86,28 @@ defmodule Codemoji.Cache do
   end
 
   def put_round(round_id, round_map) do
-    if Code.ensure_loaded?(EchoCache.Table) do
-      apply(EchoCache.Table, :put, [@cache, round_id, :erlang.term_to_binary(round_map), round_id])
+    if Code.ensure_loaded?(EchoStore.Table) do
+      apply(EchoStore.Table, :put, [@cache, round_id, :erlang.term_to_binary(round_map), round_id])
+    end
+
+    :ok
+  end
+
+  @doc "Read an emoji set through the same seam; a set is immutable, so it never goes stale."
+  def fetch_set(set_id) do
+    if Code.ensure_loaded?(EchoStore.Table) do
+      case apply(EchoStore.Table, :fetch, [@sets, set_id]) do
+        {:ok, bin} when is_binary(bin) -> :erlang.binary_to_term(bin)
+        _ -> Codemoji.Store.set(set_id)
+      end
+    else
+      Codemoji.Store.set(set_id)
+    end
+  end
+
+  def put_set(%Codemoji.EmojiSet{id: id} = set) do
+    if Code.ensure_loaded?(EchoStore.Table) do
+      apply(EchoStore.Table, :put, [@sets, id, :erlang.term_to_binary(set), id])
     end
 
     :ok

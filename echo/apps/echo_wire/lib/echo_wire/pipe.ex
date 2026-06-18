@@ -485,9 +485,16 @@ defmodule EchoWire.Pipe do
   Append a raw command-list verbatim — the curated set is never a ceiling.
   Any un-modeled verb (a different family, an admin call like
   `["CLIENT", "INFO"]`) is reachable without a curated wrapper.
+
+  Also accepts a built `%EchoWire.Command{}` (EWR.1.2) — its `.parts` are
+  appended exactly as a raw list would be, so a built command composes into a
+  batch. The command's advisory flags/slot are dropped at this seam (they live
+  on the value for a future consumer); only `.parts` reach the wire, so a
+  flagged `%Command{}` flushes byte-identically to the bare verb.
   """
-  @spec command(t(), command()) :: t()
+  @spec command(t(), command() | EchoWire.Command.t()) :: t()
   def command(pipe, parts) when is_list(parts), do: add(pipe, parts)
+  def command(pipe, %EchoWire.Command{parts: parts}), do: add(pipe, parts)
 
   # -- flush ---------------------------------------------------------------
 

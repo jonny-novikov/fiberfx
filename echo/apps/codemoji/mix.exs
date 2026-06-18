@@ -15,9 +15,9 @@ defmodule Codemoji.MixProject do
 
   def application, do: [extra_applications: [:logger]]
 
-  # The game stands on the real component layer and the real bus. EchoCache is an
-  # optional read-through (cited from echo/apps/echo_cache); the Cache seam guards
-  # on whether EchoCache.Table is loaded, so this compiles without it.
+  # The game stands on the real component layer and the real bus. EchoStore is an
+  # optional read-through (cited from echo/apps/echo_store); the Cache seam guards
+  # on whether EchoStore.Table is loaded, so this compiles without it.
   defp deps do
     [
       {:echo_mq, in_umbrella: true},

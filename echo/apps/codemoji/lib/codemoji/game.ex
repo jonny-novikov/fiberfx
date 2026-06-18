@@ -7,7 +7,7 @@ defmodule Codemoji.Guesses do
   masher cannot starve the field. The host never scores; the consumer does.
   """
   alias EchoMQ.Lanes
-  alias Codemoji.{Bus, Store, Cache}
+  alias Codemoji.{Bus, Store, Cache, Locks, EmojiSet, Economy}
 
   @queue "cm"
   def queue, do: @queue
@@ -18,6 +18,7 @@ defmodule Codemoji.Guesses do
 
     round = %{
       category: category,
+      emojiset: Keyword.get(opts, :emojiset),
       secret: secret,
       started_ms: now,
       ends_ms: now + Keyword.get(opts, :duration_ms, 35 * 3_600 * 1000),
@@ -31,29 +32,115 @@ defmodule Codemoji.Guesses do
     {:ok, rid}
   end
 
+  @doc """
+  Open a round over an emoji set: the secret is drawn from the set (six distinct
+  codes), the set is persisted and cached, and the round records the set's id so
+  guesses can be validated against the same keyboard.
+  """
+  def open_round(%EmojiSet{} = set, opts \\ []) do
+    :ok = Store.put_set(set)
+    :ok = Cache.put_set(set)
+    secret = EmojiSet.secret(set)
+    start_round(set.category, secret, Keyword.put(opts, :emojiset, set.id))
+  end
+
   def join(name, keys) do
     uid = EchoData.BrandedId.generate!("USR")
     :ok = Store.put_player(uid, %{name: name, stars: 0, keys: keys})
     {:ok, uid}
   end
 
-  @doc "Spend a key and enqueue the guess on the player's lane, or refuse."
+  @doc """
+  Spend a key and enqueue the guess on the player's lane, or refuse. The round's
+  mutable state (status, prize pool) is read from the system of record, not the
+  cache — the cache is trusted only for the immutable secret on the scoring path.
+  Locked positions are overlaid onto the guess before it is enqueued.
+  """
   def submit(round, player, emojis) when length(emojis) == 6 do
     p = Store.player(player)
-    cost = (Cache.fetch_round(round) || %{keys_cost: 1}).keys_cost
+    r = Store.round(round)
+    now = System.system_time(:millisecond)
 
     cond do
-      p == nil ->
+      r == nil -> {:error, :no_round}
+      Map.get(r, :status, :open) != :open -> {:error, :closed}
+      expired?(r, now) -> {:error, :expired}
+      p == nil -> {:error, :no_player}
+      p.keys < Map.get(r, :keys_cost, 1) -> {:error, :no_keys}
+      not valid_guess?(r, emojis) -> {:error, :bad_guess}
+      true ->
+        guess = Locks.merge(round, player, emojis)
+        :ok = Store.put_player(player, %{p | keys: p.keys - Map.get(r, :keys_cost, 1)})
+        job = EchoData.BrandedId.generate!("JOB")
+        payload = :erlang.term_to_binary({:guess, round, player, guess})
+        Lanes.enqueue(Bus.conn(), @queue, player, job, payload)
+    end
+  end
+
+  defp expired?(r, now) do
+    case Map.get(r, :ends_ms) do
+      e when is_integer(e) -> now >= e
+      _ -> false
+    end
+  end
+
+  # A guess into a set-backed round must use that set's codes; an explicit-secret
+  # round (no set) accepts any six-emoji guess.
+  defp valid_guess?(r, emojis) do
+    case Map.get(r, :emojiset) do
+      nil ->
+        true
+
+      set_id ->
+        case Cache.fetch_set(set_id) do
+          %EmojiSet{} = set -> EmojiSet.valid_guess?(set, emojis)
+          _ -> true
+        end
+    end
+  end
+
+  @doc "Buy keys with stars; deducts the stars actually spent and credits the keys."
+  def buy_keys(player, stars) when stars >= 0 do
+    case Store.player(player) do
+      nil ->
         {:error, :no_player}
 
-      p.keys < cost ->
-        {:error, :no_keys}
+      p ->
+        keys = Economy.keys_for_stars(stars)
+        spent = Economy.stars_for_keys(keys)
+        updated = %{p | stars: max(0, p.stars - spent), keys: p.keys + keys}
+        :ok = Store.put_player(player, updated)
+        {:ok, %{keys: updated.keys, stars: updated.stars, bought: keys}}
+    end
+  end
 
+  @doc "Pay an entry fee in stars; the fee feeds the round's prize pool."
+  def enter(round, player, fee_stars) when fee_stars > 0 do
+    p = Store.player(player)
+    r = Store.round(round)
+
+    cond do
+      p == nil -> {:error, :no_player}
+      r == nil -> {:error, :no_round}
+      p.stars < fee_stars -> {:error, :no_stars}
       true ->
-        :ok = Store.put_player(player, %{p | keys: p.keys - cost})
-        job = EchoData.BrandedId.generate!("JOB")
-        payload = :erlang.term_to_binary({:guess, round, player, emojis})
-        Lanes.enqueue(Bus.conn(), @queue, player, job, payload)
+        :ok = Store.put_player(player, %{p | stars: p.stars - fee_stars})
+        pool = Map.get(r, :prize_pool, 0) + fee_stars
+        :ok = Store.put_round(round, Map.put(r, :prize_pool, pool))
+        {:ok, pool}
+    end
+  end
+
+  @doc "Lock a code at a position (0..5); it persists across the player's guesses."
+  def lock(round, player, pos, code), do: Locks.lock(round, player, pos, code)
+  def unlock(round, player, pos), do: Locks.unlock(round, player, pos)
+  def locked(round, player), do: Locks.locked(round, player)
+
+  @doc "Mark a round closed so it accepts no further guesses; settlement is separate."
+  def mark_closed(round) do
+    case Store.round(round) do
+      nil -> {:error, :no_round}
+      r -> Store.put_round(round, Map.put(r, :status, :closed))
     end
   end
 
@@ -124,10 +211,9 @@ defmodule Codemoji.Settle do
   pattern: the guess queue competes, the settle queue pays.
   """
   alias EchoMQ.{Lanes, Connector}
-  alias Codemoji.{Bus, Board}
+  alias Codemoji.{Bus, Board, Economy}
 
   @queue "cm-settle"
-  @fee 0.30
   def queue, do: @queue
 
   def close(round, prize_pool) do
@@ -138,13 +224,11 @@ defmodule Codemoji.Settle do
 
   def handle(%{payload: payload}) do
     {:settle, round, prize_pool} = :erlang.binary_to_term(payload)
-    net = trunc(prize_pool * (1.0 - @fee))
+    {_cut, net} = Economy.split_pool(prize_pool)
     {:ok, board} = Board.top(round, 3)
-    sum = board |> Enum.map(&elem(&1, 1)) |> Enum.sum()
     conn = Bus.conn()
 
-    Enum.each(board, fn {player, score} ->
-      pay = if sum > 0, do: trunc(net * score / sum), else: 0
+    Enum.each(Economy.payouts(net, board), fn {player, pay} ->
       Connector.command(conn, ["HSET", "cm:" <> round <> ":payout", player, to_string(pay)])
     end)
 
@@ -198,13 +282,24 @@ defmodule Codemoji do
   end
 
   defdelegate start_round(category, secret, opts), to: Guesses
+  defdelegate open_round(set, opts), to: Guesses
   defdelegate join(name, keys), to: Guesses
+  defdelegate buy_keys(player, stars), to: Guesses
+  defdelegate enter(round, player, fee_stars), to: Guesses
   defdelegate submit(round, player, emojis), to: Guesses
+  defdelegate lock(round, player, pos, code), to: Guesses
+  defdelegate unlock(round, player, pos), to: Guesses
+  defdelegate locked(round, player), to: Guesses
   defdelegate pause(player), to: Guesses
   defdelegate resume(player), to: Guesses
   defdelegate depth(player), to: Guesses
   defdelegate top(round, n), to: Board
   defdelegate firsts(round, player), to: Board
-  def close(round, pool), do: Settle.close(round, pool)
+
+  def close(round, pool) do
+    _ = Guesses.mark_closed(round)
+    Settle.close(round, pool)
+  end
+
   defdelegate payouts(round), to: Settle
 end
