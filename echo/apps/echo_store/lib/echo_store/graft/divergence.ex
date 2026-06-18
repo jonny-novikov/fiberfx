@@ -7,7 +7,7 @@ defmodule EchoStore.Graft.Divergence do
   frontier. Divergence is reported, never resolved by guessing — consistent with the BCS
   newer-wins/no-silent-merge stance and EchoMQ's at-least-once-with-idempotency contract.
   """
-  alias EchoStore.Graft.SyncPoint
+  alias EchoData.Graft.SyncPoint
 
   @spec check(SyncPoint.t(), local_head :: non_neg_integer(), remote_head :: non_neg_integer()) ::
           :ok

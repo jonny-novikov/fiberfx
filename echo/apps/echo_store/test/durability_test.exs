@@ -6,7 +6,8 @@ defmodule EchoStore.DurabilityTest do
   """
   use ExUnit.Case, async: true
 
-  alias EchoStore.Graft.{Divergence, Epoch, Segment, SyncPoint}
+  alias EchoStore.Graft.{Divergence, Epoch, Segment}
+  alias EchoData.Graft.SyncPoint
 
   describe "the durability plug — facade selection" do
     test "defaults to the SQLite adapter (no extra dependency)" do
