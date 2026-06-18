@@ -1,4 +1,5 @@
 # EWR.1.2 · EchoWire.Cmd / EchoWire.Command — the fluent builder + the immutable command value (Movement I)
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: BUILT** — shipped green, Director-verified (design Arm B + full-`cf`, the Operator's ruling
 > `2026-06-18`). The second rung of the EchoWire client-core ([`../../ewr.roadmap.md`](../../ewr.roadmap.md),
@@ -48,7 +49,7 @@ stories **8/0**, conformance byte-stable (emq-owned, 54 at ship), byte-equivalen
 
 ---
 
-Stories: [`ewr.1.2.stories.md`](ewr.1.2.stories.md) · Brief: [`ewr.1.2.llms.md`](ewr.1.2.llms.md) · Runbook:
+Stories: [`ewr.1.2.stories.md`](ewr.1.2.stories.md) · Runbook:
 [`ewr.1.2.prompt.md`](ewr.1.2.prompt.md) · Design (the ruling): [`ewr.1.2.design.md`](ewr.1.2.design.md) ·
 Ledger: [`../progress/ewr-1-2.progress.md`](../progress/ewr-1-2.progress.md) · Roadmap:
 [`../../ewr.roadmap.md`](../../ewr.roadmap.md)

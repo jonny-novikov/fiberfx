@@ -194,5 +194,5 @@ Coverage: D1→US-GATE/US5 (the design-make precedes all; dispatch first-class) 
 D4→US4 · D5→US1/US2/US3 · D6→US6 · D7→US7/US-GATE · D8→US9/US10 · INV1/INV2→US7 · INV3→US5 · INV4→US1 ·
 INV5→US2/US3/US5 · INV6→US4/US6/US9 · INV7→US9/US10 · INV8→US10.
 
-Body: [`ewr.1.1.md`](ewr.1.1.md) · Brief: [`ewr.1.1.llms.md`](ewr.1.1.llms.md) · Testing:
+Body: [`ewr.1.1.md`](ewr.1.1.md) · Testing:
 [`../../ewr.testing.md`](../../ewr.testing.md)

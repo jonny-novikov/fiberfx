@@ -1,4 +1,5 @@
 # EWR.1.4 · adopt the wire-core into `echo_mq` + the version-reflection rule (Movement I, the closer)
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: BUILT — shipped green, solo (no team — a small rung).** Movement I's closer
 > ([`../../ewr.roadmap.md`](../../ewr.roadmap.md)): `echo_mq` becomes the **first real consumer** of the

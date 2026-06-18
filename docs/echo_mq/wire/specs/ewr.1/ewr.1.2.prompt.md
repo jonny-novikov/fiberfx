@@ -2,7 +2,7 @@
 
 > **Status: BUILT — the runbook the `ewr.1.2` build run executed (shipped green, Director-verified).** The fork
 > was RULED (Arm 3 + full-cf). Its inputs were this rung's triad ([`ewr.1.2.md`](ewr.1.2.md) authoritative, plus
-> [`ewr.1.2.stories.md`](ewr.1.2.stories.md) and [`ewr.1.2.llms.md`](ewr.1.2.llms.md)) and the ruled design
+> [`ewr.1.2.stories.md`](ewr.1.2.stories.md)) and the ruled design
 > [`ewr.1.2.design.md`](ewr.1.2.design.md) §4. The app is `echo_wire` (+ the `echo_mq` story tests, test-only);
 > the canon is [`../../ewr.roadmap.md`](../../ewr.roadmap.md). **The Operator ruled Arm 3 + full-cf-now
 > (`2026-06-18`)** — not Venus's Arm 1 + minimal recommendation; the triad was authored to the ruling and Mars
@@ -172,6 +172,6 @@ artifact:
 
 ---
 
-Body: [`ewr.1.2.md`](ewr.1.2.md) · Stories: [`ewr.1.2.stories.md`](ewr.1.2.stories.md) · Brief:
-[`ewr.1.2.llms.md`](ewr.1.2.llms.md) · Design (the ruling): [`ewr.1.2.design.md`](ewr.1.2.design.md) · Roadmap:
+Body: [`ewr.1.2.md`](ewr.1.2.md) · Stories: [`ewr.1.2.stories.md`](ewr.1.2.stories.md) · Design (the ruling):
+[`ewr.1.2.design.md`](ewr.1.2.design.md) · Roadmap:
 [`../../ewr.roadmap.md`](../../ewr.roadmap.md)

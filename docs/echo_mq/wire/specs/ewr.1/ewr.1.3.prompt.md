@@ -2,7 +2,7 @@
 
 > **Status: BUILT — the runbook the `ewr.1.3` build run executed (shipped green, Director-verified).** The
 > Flat-L2 lead-team bound the laws; its inputs were this rung's triad ([`ewr.1.3.md`](ewr.1.3.md) authoritative,
-> plus [`ewr.1.3.stories.md`](ewr.1.3.stories.md) and [`ewr.1.3.llms.md`](ewr.1.3.llms.md)) and the ruled fork
+> plus [`ewr.1.3.stories.md`](ewr.1.3.stories.md)) and the ruled fork
 > [`ewr.1.3.design.md`](ewr.1.3.design.md). The app is `echo_wire` (+ the `echo_mq` story tests, test-only — and
 > **no** Mix-task edit this rung); the canon is [`../../ewr.roadmap.md`](../../ewr.roadmap.md). **The design fork
 > was RULED: Arm 1** (the Operator's ruling, 2026-06-18). **Outcome:** `EchoWire.Result` shipped with `classify/1`'s
@@ -160,6 +160,6 @@ artifact:
 
 ---
 
-Body: [`ewr.1.3.md`](ewr.1.3.md) · Stories: [`ewr.1.3.stories.md`](ewr.1.3.stories.md) · Brief:
-[`ewr.1.3.llms.md`](ewr.1.3.llms.md) · Design: [`ewr.1.3.design.md`](ewr.1.3.design.md) · Roadmap:
+Body: [`ewr.1.3.md`](ewr.1.3.md) · Stories: [`ewr.1.3.stories.md`](ewr.1.3.stories.md) · Design:
+[`ewr.1.3.design.md`](ewr.1.3.design.md) · Roadmap:
 [`../../ewr.roadmap.md`](../../ewr.roadmap.md)

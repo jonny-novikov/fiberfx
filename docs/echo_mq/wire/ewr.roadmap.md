@@ -40,7 +40,7 @@ The program builds strictly **above** this floor; every name here is frozen and 
   (:125) suppresses replies via `CLIENT REPLY OFF/ON` and answers `:ok`; `command/3` (:47) is a pipeline of
   one; `eval/5` (:63) is EVALSHA-first. It **already auto-pipelines** concurrent callers — the new surface adds
   *construction*, never pipelining. The version fence (`fence/2` :465 reads `EchoMQ.Keyspace.version_key/0`
-  :466 against `@wire_version "echomq:2.0.0"` :33).
+  :466 against `@wire_version` :33 — the climbing fence, `echomq:2.4.2` live).
 - **`EchoMQ.RESP`** (`resp.ex`) — the 13-term RESP3 decoder; the `reply()` type at :30 covers simple/error/
   int/bulk/verbatim/array/push/set/map/bool/null/double/bignum. Server errors decode to the in-band value
   `{:error_reply, binary()}`, not a transport failure.
@@ -60,7 +60,7 @@ The program builds strictly **above** this floor; every name here is frozen and 
 
 ## The movements
 
-### Movement I · The ergonomic core — open
+### Movement I · The ergonomic core — COMPLETE (ewr.1.1–1.4 BUILT)
 
 Three additive rungs that port the valkey-go *construction* ergonomics as new `EchoWire.*` modules, then a
 closer (`ewr.1.4`) that adopts them into the first real consumer. The three core rungs each land on the
@@ -91,24 +91,30 @@ facade; the conformance stays byte-stable.
   single one-shot `Script.new/2` eval is NOT a wiring target. NOT an emq.4–8 capability rung — this is the wire
   client's adoption, not a bus feature.
 
-### Movement II · Server-assisted caching — PROPOSED (seam)
+### Movement II · Server-assisted caching — RESOLVED (shipped in `echo_store`)
 
 The rueidis client-side-caching half: `DoCache` / `Cacheable` (`pipe.go:1480`), the
 `CLIENT TRACKING ON [OPTIN|BCAST]` handshake (`pipe.go:185`), and the `invalidate` push → eviction coherence
 (`pipe.go:748`) — the "message about a name" the BCS law names, and the natural fit for an L1 cache in front of
-Valkey (the `echo_store` L1). The send side composes from existing verbs, **but** making tracking survive
-reconnect needs a boot-step in the frozen connector (`boot_rest/4` connector.ex:436) — a wire **MAJOR**. Held
-behind a seam (decision 3) until a consumer makes the trade real; written forward-tense, not scheduled.
+Valkey (the `echo_store` L1).
+
+**Resolution (2026-06-18).** Built as the `echo_store` `:tracking` coherence mode, **not a wire rung**: the
+connector already delivers invalidation pushes to a `push_to` consumer, de-interleaves them from in-band
+replies, and emits reconnect telemetry — so no frozen-connector boot-step was needed. The send side and the
+eviction coherence both compose from the existing public surface; reconnect survival is **flush-then-re-arm**,
+which demotes the once-feared wire **MAJOR** to a deferred warmth optimization. The L1 consumer is
+`echo_store`'s `EchoStore.Table` (`coherence: :tracking`). See
+[`../store/store.tracking.md`](../store/store.tracking.md).
 
 ## The rung ladder
 
 | Rung | Movement | Ships (the slice) | Status |
 | --- | --- | --- | --- |
-| **`ewr.1.1`** | I | `EchoWire.Pipe` — the threaded `\|>` pipeline + a curated verb set + the `command/2` escape hatch + `exec` / `exec_txn` / `exec_noreply` | **SPECCED** (founding, this run) |
-| `ewr.1.2` | I | the command vocabulary + the immutable command value (the `cf`-flag model, advisory) | planned |
-| `ewr.1.3` | I | the two-tier error split (transport vs server: `NonValkeyError` vs `Error`) | planned |
-| `ewr.1.4` | I | adopt `EchoWire.Pipe` into `echo_mq`'s internals — the first real consumer (convert the multi-command `Connector.pipeline/3` call-sites) | planned (gated on 1.2 + 1.3; the first ewr rung to touch `echo_mq` runtime) |
-| `ewr.2.x` | II | CLIENT TRACKING / client-side caching | PROPOSED (seam — may be a wire MAJOR) |
+| **`ewr.1.1`** | I | `EchoWire.Pipe` — the threaded `\|>` pipeline + a curated verb set + the `command/2` escape hatch + `exec` / `exec_txn` / `exec_noreply` | ✅ **BUILT** |
+| `ewr.1.2` | I | the command vocabulary + the immutable command value (the `cf`-flag model, advisory) | ✅ **BUILT** |
+| `ewr.1.3` | I | the two-tier error split (transport vs server: `NonValkeyError` vs `Error`) | ✅ **BUILT** |
+| `ewr.1.4` | I | adopt `EchoWire.Pipe` into `echo_mq`'s internals — the first real consumer (convert the multi-command `Connector.pipeline/3` call-sites) | ✅ **BUILT** (the Movement I closer) |
+| `ewr.2.x` | II | CLIENT TRACKING / client-side caching | ✅ **RESOLVED** — shipped as `echo_store` `:tracking` (no wire edit); [`../store/store.tracking.md`](../store/store.tracking.md) |
 
 ## How the program runs
 
@@ -139,10 +145,13 @@ surfaced fork, never folded into an additive rung.
 2. **The sub-fork inside A** — **RULED: a curated verb set + a generic `Pipe.command/2` escape hatch** (not a
    full per-command surface). The curated set is convenience; the escape hatch guarantees any command
    expressible as `[[binary]]` is still reachable, so the curated set is never a ceiling. CLOSED.
-3. **Client-side caching / CLIENT TRACKING** — **OPEN.** Deferred to Movement II. The send side is additive,
-   but robust tracking-across-reconnect needs a frozen-connector boot-step (`connector.ex:436`) — a wire
-   **MAJOR**. To be surfaced as its own fork when `echo_store`'s L1 consumes server-assisted invalidation;
-   until then, not built.
+3. **Client-side caching / CLIENT TRACKING** — **RESOLVED (2026-06-18): shipped as an `echo_store` consumer,
+   no wire MAJOR.** Ground truth showed the frozen connector already suffices — `push_to` delivery of
+   invalidation pushes, push-frame de-interleaving (`fill/5`), and `[:emq, :connector, :reconnect]` telemetry
+   — so the feature landed as the `echo_store` `:tracking` coherence mode (a RESP3 `CLIENT TRACKING ON BCAST`
+   consumer over a table's `ecc:{table}:` prefix), **zero `echo_wire` edits**. Reconnect survival is
+   **flush-then-re-arm** (the L1 drops on reconnect), which makes the connector boot-step a pure warmth
+   optimization — deferred, maybe never. See [`../store/store.tracking.md`](../store/store.tracking.md).
 4. **The `cf`-flag command model** — **OPEN.** `ewr.1.2` ports rueidis's immutable command value (parts +
    bit-packed flags) as Elixir data, but the flags stay **advisory** in the upper layer — the connector does
    not act on them — until a retry or cluster-routing consumer gives them meaning. Promoting a flag to

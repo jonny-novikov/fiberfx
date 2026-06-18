@@ -282,5 +282,5 @@ D2→US1/US3/US4 · D3→US1/US2/US4/US12 · D4→US4/US6 · D5→US1/US3/US9 ·
 INV1→US5/US10 · INV2→US10 · INV3→US2/US3/US4/US5 · INV4→US7/US12 · INV5→US5/US7/US8 · INV6→US6/US12 · INV7→US9 ·
 INV8→US12/US13 · INV9→US13.
 
-Body: [`ewr.1.2.md`](ewr.1.2.md) · Brief: [`ewr.1.2.llms.md`](ewr.1.2.llms.md) · Design (the ruling):
+Body: [`ewr.1.2.md`](ewr.1.2.md) · Design (the ruling):
 [`ewr.1.2.design.md`](ewr.1.2.design.md) · Testing: [`../../ewr.testing.md`](../../ewr.testing.md)

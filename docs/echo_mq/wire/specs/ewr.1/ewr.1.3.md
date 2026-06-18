@@ -1,4 +1,5 @@
 # EWR.1.3 · EchoWire.Result — the two-tier error split (Movement I, the ergonomic core closes)
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: BUILT** — shipped green, Director-verified (design Arm 1, the Operator's ruling `2026-06-18`; the
 > partition mutation independently re-killed). The third and final Movement-I rung
@@ -52,7 +53,7 @@ regen + conformance byte-stable (emq-owned, 54 at ship); the partition misclassi
 
 ---
 
-Stories: [`ewr.1.3.stories.md`](ewr.1.3.stories.md) · Brief: [`ewr.1.3.llms.md`](ewr.1.3.llms.md) · Runbook:
+Stories: [`ewr.1.3.stories.md`](ewr.1.3.stories.md) · Runbook:
 [`ewr.1.3.prompt.md`](ewr.1.3.prompt.md) · Design (the ruling): [`ewr.1.3.design.md`](ewr.1.3.design.md) ·
 Ledger: [`../progress/ewr-1-3.progress.md`](../progress/ewr-1-3.progress.md) · Predecessor:
 [`ewr.1.1.md`](ewr.1.1.md) · Roadmap: [`../../ewr.roadmap.md`](../../ewr.roadmap.md)

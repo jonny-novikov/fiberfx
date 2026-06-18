@@ -203,5 +203,5 @@ Coverage: D1→US-GATE/US1 (the design-make precedes all; the verified shape) ·
 D4→US3/US7 · D5→US4/US7 · D6→US5/US6 · D7→US6/US-GATE/US9 · INV1/INV2→US6 · INV3→US5 · INV4→US1 · INV5→US2/US4/US7 ·
 INV6→US3 · INV7→US7/US9 · INV8→US9.
 
-Body: [`ewr.1.3.md`](ewr.1.3.md) · Brief: [`ewr.1.3.llms.md`](ewr.1.3.llms.md) · Design (the fork — Operator
+Body: [`ewr.1.3.md`](ewr.1.3.md) · Design (the fork — Operator
 rules): [`ewr.1.3.design.md`](ewr.1.3.design.md) · Testing: [`../../ewr.testing.md`](../../ewr.testing.md)

@@ -1,4 +1,5 @@
 # EWR.1.1 · EchoWire.Pipe — the threaded pipeline (Movement I, the founding rung)
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: BUILT** — shipped green, Director-verified. The founding rung of the EchoWire client-core
 > ([`../../ewr.roadmap.md`](../../ewr.roadmap.md), Movement I; design Arm A). It builds, in `echo/apps/echo_wire`,
@@ -43,7 +44,7 @@ features), conformance `{:ok, 52}` byte-stable, the order-theorem mutation **KIL
 
 ---
 
-Stories: [`ewr.1.1.stories.md`](ewr.1.1.stories.md) · Brief: [`ewr.1.1.llms.md`](ewr.1.1.llms.md) · Runbook:
+Stories: [`ewr.1.1.stories.md`](ewr.1.1.stories.md) · Runbook:
 [`ewr.1.1.prompt.md`](ewr.1.1.prompt.md) · Design: [`../../design/ewr.design.md`](../../design/ewr.design.md) ·
 Ledger: [`../progress/ewr-1-1.progress.md`](../progress/ewr-1-1.progress.md) · Roadmap:
 [`../../ewr.roadmap.md`](../../ewr.roadmap.md)
