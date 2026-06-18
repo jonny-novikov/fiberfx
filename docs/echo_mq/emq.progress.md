@@ -1,17 +1,5 @@
 # EchoMQ — Program Progress Dashboard
 
-> **The single consolidated status view of the EchoMQ engineering program** — the 2.x bus
-> (`emq.0–emq.8`) and the 3.x stream tier (`emq3.1–emq3.6`), grounded chapter-by-chapter in the **BCS
-> manuscript**. This file *reports*; the binding artifacts *define* — the design canon
-> [`emq.design.md`](./emq.design.md), the single consolidated roadmap [`emq.roadmap.md`](./emq.roadmap.md)
-> (the program ladder + the 2.x line view + the 3.x stream tier), and the rung triads under
-> [`specs/`](./specs/).
->
-> **Per-rung ship detail** — commit ids, conformance deltas, fork rulings, gate tallies, risk grades — lives in
-> the frozen [`specs/progress/`](./specs/progress/) ledgers + git; this dashboard stays compact and is re-trued
-> at each rung close. Worked consumer: **codemojex** (`echo/apps/codemojex`, live); headline-planned consumer:
-> **echo_bot** (`echo/apps/echo_bot` — Telegram notifications at scale).
-
 **One-line state.** The foundation (EchoMQ protocol v2 + the BCS substrate) is **established** (`emq.0`).
 **Movement I is CLOSED** — the opener `emq.1` (scheduler + retry), the **emq.2 parity cluster** (read → operator
 → watch → close, 4/4), and the **emq.3 flow family** (single-queue → child-result reads → cross-queue →
@@ -104,34 +92,6 @@ Event streams on the certified wire, under the v2 laws, no second protocol. Hard
   the integration seam is `EchoBot.Platform.Telegram.send_reply/3`. As built today echo_bot sends Telegram
   replies synchronously with no bus coupling — forward-tense: a planned `EchoMQ` enqueue/drain in front of the
   notification fan-out.
-
----
-
-## Consolidation with BCS — the grounding map
-
-The BCS manuscript is the **spec source**; the `echo/apps/*` module is the **as-built**; an `emq.N` rung is the
-**ship vehicle**. This is the join that ties the three document sets to one truth — every EchoMQ component traces
-to a BCS chapter with a committed `PASS n/n` rung record (the figures live in the frozen ledgers).
-
-| BCS chapter / appendix | Component | As-built module | Shipped by |
-|---|---|---|---|
-| **B3.1** Fence & Keyspace (`PASS 5/5`) | the `emq:{q}:` grammar + live fence (`echomq:2.0.0`) | `EchoMQ.Keyspace` | `emq.0` ✅ |
-| **B3.2** Jobs Are Entities (`PASS 5/5`) | the `JOB` row · score-0 pending zset · idempotent enqueue | `EchoMQ.Jobs` | `emq.0` ✅ |
-| **B3.3** State Machine in Lua (`PASS 6/6`) | claim / complete / retry / dead-letter · attempts as fencing token | `EchoMQ.Jobs` (Lua) | `emq.0` ✅ · retry-vocab `emq.1` ✅ |
-| **B3.4** Fair Lanes (`PASS 8/8`, G1–G8) | per-group rotation · ceilings · pause/resume · park-don't-poll | `EchoMQ.Lanes` | `emq.0` ✅ (structural) · deepened `emq.4` 🔨 (4.1 control plane ✅ · 4.2 group recovery ✅ `reap_group` · 4.3–4.4 next) |
-| **B3.5** Bus Meets Stores (`PASS 6/6`) | commands out, results back; exactly-once by provenance | `EchoMQ.Consumer` | `emq.0` ✅ |
-| **B3.6** Conformance (`14/14` → … → `52/52`) | the scenario harness · the referee habit | `EchoMQ.Conformance` | `emq.0` ✅ (14) → `emq.1` (18) → `emq.2.1–2.4` ✅ (read/operator/watch/depth → 43) → `emq.3.1–3.5` ✅ (the flow family → **52**) · proof stack `emq.8` 📋 |
-| **B3.7 / App. A / App. H** The Connector | one-pass RESP2/3 · EVALSHA-first · typed fence · auto-resubscribe | `EchoMQ.Connector` over `EchoWire` | `emq.0` ✅ (extraction) · resubscribe `emq.1` ✅ · the event pub/sub seam `emq.2.3` ✅ |
-| **B4.1** Cache-Aside (`PASS 6/6`) | declared directory · single-flight fills | `EchoStore.Table` | `emq.0` ✅ · deepened `emq.7` 📋 |
-| **B4.2** Coherence by Mint Time (`PASS 6/6`) | the 29-byte message · newer-wins | `EchoStore.Coherence` | `emq.0` ✅ · `emq.7` 📋 |
-| **B4.3** Single Writer & the Ring (`PASS 6/6`) | two atomic sequences · counted drops (the Disruptor seat) | `EchoStore.Ring` | `emq.0` ✅ |
-| **B4.4** The Lane That Remembers (`PASS 6/6`) | per-group SQLite journal · replay == live | `EchoStore.Journal` | `emq.0` ✅ · `synchronous=FULL` `emq.7` 📋 |
-| **App. D** The Shadow (retired) | superseded by the native replication engine — durable, replicated state is `EchoStore.Graft` streamed to Tigris (`store.design.md` §2) | `EchoStore.Graft` | `emq.0` imported · retired |
-| **App. F** The Canon | the 14-byte branded snowflake · `hash32` placement | `EchoData.*` | pre-program ✅ |
-| **App. G** The Claim Check | claims-only on the bus (never an object) | coherence payloads | `emq.0` ✅ |
-| **App. I** Partitioned-log examined & **rejected** | → the stream tier built instead | — | `emq3.1–emq3.6` 🔒 |
-| **the v1 capability reference** | introspection · operator lifecycle verbs · events/telemetry/locks/stalled — the parity floor | `EchoMQ.{Metrics, Admin, Events, Meter}` + `Jobs` verbs | **`emq.2.1`–`emq.2.4` ✅** (the full-parity rewrite, cluster CLOSED) |
-| **drop ROADMAP 2.1** (the gap) | scheduled/repeatable jobs · backoff · resubscribe | `EchoMQ.{Repeat, Backoff, Pump}` | **`emq.1` ✅** |
 
 ---
 

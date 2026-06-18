@@ -109,7 +109,7 @@ declared, every key placed — verified against Valkey, the conformance truth. D
 
 ## Up next
 
-E4 (groups ⇄ emq.2), E5 (batches ⇄ emq.3), E6 (lifecycle controls ⇄ emq.4), E7 (EchoCache ⇄ emq.5), and E8 (production
+E4 (groups ⇄ emq.2), E5 (batches ⇄ emq.3), E6 (lifecycle controls ⇄ emq.4), E7 (EchoStore ⇄ emq.5), and E8 (production
 ⇄ emq.6) each build on the 2.0 wire emq.1 ships — declared-keys scripts on the owned, placed keyspace. They are
 specified and on the way; each teaches from its rung's spec until the rung ships.
 

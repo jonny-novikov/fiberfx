@@ -58,7 +58,7 @@ closed set. L1 and L2 are byte-identical across runtimes; only L3 and L4 differ.
 ## Up next
 
 Movement II (E3–E8) tracks the EMQ extension ladder — E3 substrate (⇄ emq.1), E4 groups (⇄ emq.2), E5 batches
-(⇄ emq.3), E6 lifecycle controls (⇄ emq.4), E7 EchoCache (⇄ emq.5), E8 production (⇄ emq.6) — each teaching the
+(⇄ emq.3), E6 lifecycle controls (⇄ emq.4), E7 EchoStore (⇄ emq.5), E8 production (⇄ emq.6) — each teaching the
 redis-patterns pattern, the rung's spec, and the as-built code together.
 
 ## References

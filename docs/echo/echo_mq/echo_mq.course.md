@@ -32,7 +32,7 @@ is *supported in / ported to* other runtimes), stated in one line on the Overvie
 | 1 | **The Protocol** — the substrate the pillars share | [`/echomq/protocol`](/echomq/protocol) | **real** — `EchoMQ.Keyspace` + the inline Lua | ✅ built |
 | 2 | **The Queue** — distribute work | [`/echomq/queue`](/echomq/queue) | **real** — `EchoMQ.{Jobs,Lanes,Consumer,Cancel,Stalled,Flows}` | ✅ built |
 | 3 | **The Bus** — broadcast signals + the event log | [`/echomq/bus`](/echomq/bus) | **mixed** — `EchoMQ.Events` real; the stream tier **canon** → `[RECONCILE]` | planned |
-| 4 | **The Cache** — the branded near-cache | [`/echomq/cache`](/echomq/cache) | **real** — `EchoCache.{Table,Ring,Journal,Coherence}` | planned |
+| 4 | **The Cache** — the branded near-cache | [`/echomq/cache`](/echomq/cache) | **real** — `EchoStore.{Table,Ring,Journal,Coherence}` | planned |
 | 5 | **The Proof** — the system holds | [`/echomq/proof`](/echomq/proof) | **real** — `EchoMQ.{Conformance,Meter,Metrics}` (benchmark partial) | planned |
 
 Three levels per chapter: **Section** landing (`<section>/index.html`) → **Module** hub (`<section>/<module>/index.html`,
@@ -61,8 +61,8 @@ reader seam — **canon**) · `time-travel-and-archive` (retention; the archive 
 reads — **canon**) · `workshop`.
 
 **The Cache** (`/echomq/cache`) — serve reads, all real code:
-`cache-aside-two-layers` (L1 ETS / L2 Valkey — `EchoCache.Table`) · `single-flight-and-ttl` (single-flight fill;
-jittered TTL) · `coherence-on-the-bus` (newer-wins; invalidation rides the Bus — `EchoCache.Coherence`/`Journal`) ·
+`cache-aside-two-layers` (L1 ETS / L2 Valkey — `EchoStore.Table`) · `single-flight-and-ttl` (single-flight fill;
+jittered TTL) · `coherence-on-the-bus` (newer-wins; invalidation rides the Bus — `EchoStore.Coherence`/`Journal`) ·
 `workshop`.
 
 **The Proof** (`/echomq/proof`) — the system holds:
@@ -75,7 +75,7 @@ OTel — `EchoMQ.Meter`/`Metrics`) · `the-benchmark-gate` (the honest benchmark
 
 ## The grounding model — real code or design canon, never past either
 
-- **Real code** — `echo/apps/echo_mq` + `echo/apps/echo_wire` + `echo/apps/echo_cache` — for the Protocol, the Queue,
+- **Real code** — `echo/apps/echo_mq` + `echo/apps/echo_wire` + `echo/apps/echo_store` — for the Protocol, the Queue,
   the Cache, and the Bus's **pub/sub events**: the real Lua/key/field/module fn with its **verified arity** (verified by
   reading the file; **never printed as a `file:line`**), present tense.
 - **Design canon** — `emq.roadmap.md` §"EchoMQ 3.x — the stream tier" + `emq3.specs.md` + `emq.design.md` — for the

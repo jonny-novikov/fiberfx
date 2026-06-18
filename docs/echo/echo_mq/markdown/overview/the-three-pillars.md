@@ -24,7 +24,7 @@ defer the deep mechanism to the pillar chapters.
 
 ## The worked example — the three surfaces, named
 
-Each pillar is a real module surface in `echo/apps/echo_mq` (the Queue and the Bus) or `echo/apps/echo_cache` (the
+Each pillar is a real module surface in `echo/apps/echo_mq` (the Queue and the Bus) or `echo/apps/echo_store` (the
 Cache). The point here is orientation: which function is the door into each pillar, and what shape of delivery it
 gives you.
 
@@ -96,15 +96,15 @@ stream is not. The HTML states the event log as shipped; this marker is the iter
 
 ### The Cache — serve reads (read through)
 
-A hot value is read with `EchoCache.Table.fetch/3`: an L1 hit returns in the caller's own process, and a miss falls
+A hot value is read with `EchoStore.Table.fetch/3`: an L1 hit returns in the caller's own process, and a miss falls
 through to a single fill that writes both layers.
 
 ```elixir
-# echo/apps/echo_cache — EchoCache.Table.fetch/3
+# echo/apps/echo_store — EchoStore.Table.fetch/3
 # Read through the cache: an L1 (ETS) hit never enters the owner process;
 # a miss is a single-flight fill through the owner (L2 Valkey, then the loader).
 def fetch(name, id, timeout \\ 10_000) do
-  case EchoCache.spec(name) do
+  case EchoStore.spec(name) do
     :error -> {:error, :no_such_cache}
     {:ok, spec} ->
       with :ok <- gate(spec.kind, id) do          # wrong-namespace id refused at the door
@@ -130,7 +130,7 @@ redis-patterns chapter that teaches each shape applied.
 |---|---|---|---|
 | Reliable queues (work distribution) | point to point — one job, one worker | The Queue | `EchoMQ.Jobs.enqueue/4` · `claim/3` |
 | Streams & events (broadcast + log) | one to many — one event, many listeners | The Bus | `EchoMQ.Events.subscribe/2` · `publish/5` |
-| Caching (read path) | read through — one value, read often | The Cache | `EchoCache.Table.fetch/3` |
+| Caching (read path) | read through — one value, read often | The Cache | `EchoStore.Table.fetch/3` |
 
 **The bridge.** The Redis pattern catalog teaches each shape on its own; EchoMQ applies all three over one owned
 keyspace and one Lua layer, so the three pillars share a substrate instead of being three separate systems. The
@@ -141,7 +141,7 @@ redis-patterns course is the near side of every door; this course is the far sid
 EchoMQ is one system with three surfaces. The Queue distributes work point to point (`EchoMQ.Jobs.enqueue/4`,
 `claim/3`, `EchoMQ.Consumer`). The Bus broadcasts signals one to many (`EchoMQ.Events.subscribe/2`, `publish/5`) and
 keeps a replayable log [RECONCILE: the replayable log is canon — `emq.roadmap.md` §"EchoMQ 3.x — the stream tier" +
-`emq3.specs.md`; pub/sub is real]. The Cache serves reads through two layers (`EchoCache.Table.fetch/3`). Each is
+`emq3.specs.md`; pub/sub is real]. The Cache serves reads through two layers (`EchoStore.Table.fetch/3`). Each is
 named here and taught in depth in its own pillar chapter; the protocol below the line — the shared keyspace and Lua —
 is the next dive.
 

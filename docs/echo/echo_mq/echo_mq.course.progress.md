@@ -99,7 +99,7 @@ is `the-lifecycle/claim-and-the-lease.html` (dive) + `the-lifecycle/index.html` 
 
 ### The Cache — `/echomq/cache` — 📋 planned — REAL code
 `cache-aside-two-layers · single-flight-and-ttl · coherence-on-the-bus · workshop` (14 pages). Grounds in
-`EchoCache.{Table,Ring,Journal,Coherence}`.
+`EchoStore.{Table,Ring,Journal,Coherence}`.
 
 ### The Proof — `/echomq/proof` — 📋 planned
 `the-conformance-suite · telemetry-and-tracing · the-benchmark-gate · workshop` (14 pages). Grounds in

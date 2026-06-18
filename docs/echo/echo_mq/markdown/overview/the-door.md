@@ -58,10 +58,10 @@ means the three pillars are already there:
   `emq:{queue}:events`, and a retained event log lets a late subscriber replay what it missed. [RECONCILE: the
   replayable event log is CANON (`emq.roadmap.md` §stream tier + `emq3.specs.md`); pub/sub is as-built. Reads as
   shipped in the HTML.]
-- **The Cache is there.** Read-heavy components serve from a near-cache — `EchoCache.Table.fetch/3` /
+- **The Cache is there.** Read-heavy components serve from a near-cache — `EchoStore.Table.fetch/3` /
   `put/3` — with single-flight and coherence by mint time, so a hot read does not become a hot key.
 
-The worked consumer that rides the pillars is **codemoji** (`echo/apps/codemoji`) — a code-breaking game that
+The worked consumer that rides the pillars is **codemojex** (`echo/apps/codemojex`) — a code-breaking game that
 enqueues per-player guesses on `EchoMQ.Lanes`, drains them with `EchoMQ.Consumer`, broadcasts results over
 `EchoMQ.Events`, and settles prizes on a second queue, all over the one wire. It is the proof that a real system
 needs no other infrastructure between its components.

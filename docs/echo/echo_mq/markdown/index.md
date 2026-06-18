@@ -45,8 +45,8 @@ EchoMQ is the **bus and the near-cache of the [Branded Component System](/bcs)**
 architecture — the 14-byte branded snowflake, the grammar-total keyspace law, fair lanes, the coherent cache-aside
 near-cache — and EchoMQ *is* that architecture, shipped: [the bus](/bcs/bus) (jobs, lanes, the consumer) and
 [the cache](/bcs/cache) (the L1/L2 near-cache, kept coherent on the bus) are the modules this course opens up. A system
-on the BCS architecture inherits its queue, cache, and coherence from EchoMQ — the worked example is **codemoji**
-(`echo/apps/codemoji`), a code-breaking game whose guess jobs, scoring, leaderboard, and prize settlement
+on the BCS architecture inherits its queue, cache, and coherence from EchoMQ — the worked example is **codemojex**
+(`echo/apps/codemojex`), a code-breaking game whose guess jobs, scoring, leaderboard, and prize settlement
 all ride EchoMQ.
 
 ## The map
@@ -76,7 +76,7 @@ program roadmap, not here.)
   affinity-and-finish · workshop.
 - **E6 · Lifecycle controls** — `/echomq/lifecycle` — `← redis-patterns R3, R4, R5` — on the roadmap. Modules: ttl ·
   cancel · checkpoints · workshop.
-- **E7 · EchoCache** — `/echomq/cache` — `← redis-patterns R1, R5` — on the roadmap. The near-cache. Modules:
+- **E7 · EchoStore** — `/echomq/cache` — `← redis-patterns R1, R5` — on the roadmap. The near-cache. Modules:
   two-layers · single-flight · coherence · workshop.
 - **E8 · Conformance, telemetry & the benchmark gate** — `/echomq/production` — `← redis-patterns R8` — on the roadmap.
   Modules: conformance · telemetry · benchmark · workshop.

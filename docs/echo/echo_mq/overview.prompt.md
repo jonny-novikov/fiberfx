@@ -5,7 +5,7 @@
 > then the **model page** for the shell. This is a **FRESH BUILD to the target** — the Overview is being rebuilt to the
 > new three-pillar identity. Copy only the **design-system shell** from the model; author all `<main>` content fresh.
 > **Do NOT re-skin** (it is and stays dark-editorial). Engine: `/echo-mq-reconcile overview`. Agent: `echo-mq-expert`.
-> Skill: `echo-mq-writer`. Canon: `docs/echo_mq/` + the as-built `echo/apps/echo_mq` (+ `echo_wire`, `echo_cache`).
+> Skill: `echo-mq-writer`. Canon: `docs/echo_mq/` + the as-built `echo/apps/echo_mq` (+ `echo_wire`, `echo_store`).
 
 ## The thesis in one paragraph
 
@@ -33,7 +33,7 @@ three pillars, the protocol-below-the-line that makes them polyglot and coherent
   - **Bus** → `EchoMQ.Events.subscribe/2` · `publish/5` (`echo/apps/echo_mq`) — **real**; the *retained, replayable
     event log* (append == mint order, read at offset, time-travel) is **CANON** (`emq.roadmap.md` §"EchoMQ 3.x — the
     stream tier" + `emq3.specs.md`) → **mark `[RECONCILE]` in the md** at any event-log claim.
-  - **Cache** → `EchoCache.Table.fetch/3` · `put/3` (`echo/apps/echo_cache`). **real.**
+  - **Cache** → `EchoStore.Table.fetch/3` · `put/3` (`echo/apps/echo_store`). **real.**
   - **Protocol** → `EchoMQ.Keyspace.queue_key/2` → `emq:{q}:<type>` (the `{q}` hashtag); the inline
     `EchoMQ.Script.new/2` Lua run EVALSHA-first by `EchoMQ.Connector.eval/5` (`echo/apps/echo_wire`). **real.**
   - **NEVER** cite the frozen, unrelated tree `echo/apps/echomq` (no underscore — `EchoMQ.Keys`, `LockManager`,
@@ -68,7 +68,7 @@ three pillars, the protocol-below-the-line that makes them polyglot and coherent
   protocol, three pillars. Then a section per pillar: **the Queue** (distribute work: one job, one worker — name
   `EchoMQ.Jobs.enqueue/4`/`claim/3`, `EchoMQ.Consumer`), **the Bus** (broadcast signals: pub/sub events — name
   `EchoMQ.Events.subscribe/2`/`publish/5` — and a retained, replayable event log → **`[RECONCILE]` in md**, canon), and
-  **the Cache** (serve reads: an L1/L2 near-cache — name `EchoCache.Table.fetch/3`). Show the contrast with the classic
+  **the Cache** (serve reads: an L1/L2 near-cache — name `EchoStore.Table.fetch/3`). Show the contrast with the classic
   messaging shapes (queue = one-to-one work distribution; bus = one-to-many broadcast; cache = read path). Keep it
   orientation-level — name the real surfaces, defer the deep mechanism to the pillar chapters. **Interactives:** (hero)
   a "pick a pillar" selector whose readout names the surface + the job it does + the shape (point-to-point / broadcast /
@@ -105,7 +105,7 @@ three pillars, the protocol-below-the-line that makes them polyglot and coherent
 - **Directive:** Teach **where EchoMQ lands**: the bidirectional door with `/redis-patterns` (this course is the far
   side of every `→ EchoMQ` door; name the canonical map `docs/redis-patterns/redis-patterns.echomq-doors.md`), and what
   owning the queue, the bus, and the cache means for the **BCS family** — `/bcs` (the architecture EchoMQ completes;
-  codemoji the worked consumer that rides all three pillars). Explain how to read the course: the foundation
+  codemojex the worked consumer that rides all three pillars). Explain how to read the course: the foundation
   (Overview, Protocol) then the three pillars then the Proof. **Interactives:** (hero) a "follow a door" selector
   mapping a redis-patterns chapter → the echomq pillar it doors into (R1 → the Cache, R3 → the Queue, R5 → the Bus …);
   (main) a "what the BCS family inherits" picker (queue / bus / cache → what a system built on BCS gets for free).
@@ -122,6 +122,6 @@ Each of the three dives: gated STATUS: PASS; as-shipped, no versions, no `file:l
 ## Inputs
 - Skill: `.claude/skills/echo-mq-writer/SKILL.md` + `references/course-map.md`.
 - Canon: `docs/echo_mq/emq.roadmap.md` (incl. §stream tier) · `emq.design.md` · `emq3.specs.md`.
-- As-built: `echo/apps/echo_mq/lib/echo_mq/{keyspace,jobs,events,consumer,lanes}.ex` · `echo/apps/echo_wire/lib/echo_mq/{connector,script}.ex` · `echo/apps/echo_cache/lib/echo_cache/table.ex`.
+- As-built: `echo/apps/echo_mq/lib/echo_mq/{keyspace,jobs,events,consumer,lanes}.ex` · `echo/apps/echo_wire/lib/echo_mq/{connector,script}.ex` · `echo/apps/echo_store/lib/echo_store/table.ex`.
 - Model page (shell): `html/echomq/overview/the-four-layers.html`. Rebuilt landing (footer + identity): `html/echomq/overview/index.html`.
 - Doors: `docs/redis-patterns/redis-patterns.echomq-doors.md`.
