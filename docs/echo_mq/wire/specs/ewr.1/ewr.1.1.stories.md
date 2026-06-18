@@ -1,9 +1,9 @@
 # EWR.1.1 · user stories
 
 > Who wants the threaded pipeline, what they need, and how acceptance is known. Derived from
-> [`ewr.1.1.md`](ewr.1.1.md) (**SPECCED** — the body is authoritative; this file and the brief may lag it, and
-> when they disagree the body wins). The acceptance below is written forward-tense and runs at the build run,
-> against the as-shipped `EchoWire.Pipe` surface.
+> [`ewr.1.1.md`](ewr.1.1.md) (**BUILT** — the body is authoritative; this file and the brief may lag it, and
+> when they disagree the body wins). The acceptance below ran at the build run against the as-shipped
+> `EchoWire.Pipe` surface and is green (`echo_wire` **44/0**, wire `:valkey` story suite **9/0**).
 >
 > **Two story layers, kept distinct (INV8).** THIS file is the **hand-authored USER stories** — the rung
 > acceptance a person signs (Connextra, INVEST, Given/When/Then prose). The **generated**
@@ -154,16 +154,17 @@ verbs it exercises):
   the replies are `[1, 2, 3]` — a server-atomic tally with no read-modify-write race.
 - **leaderboard (sorted sets):** Given a board key, when `zadd(b, 10, "a")` / `zadd(b, 20, "b")` then
   `zrevrange(b, 0, -1)`, then the order is `["b", "a"]` and `zrank`/`zscore` report the standing — rank computed
-  on read, never stored.
+  on read, never stored. *(As-built RESP3: `zscore` returns a double, e.g. `250.0`; the story asserts that
+  reality.)*
 - **set-membership (sets):** Given a set key, when `sadd(s, x)` then `sismember(s, x)` and `sismember(s, y)`,
   then the replies are `1` (present) and `0` (absent) — O(1) membership.
-- **hash object round-trip (hashes):** Given an entity key, when `hset(h, "name", "alice")` /
-  `hincrby(h, "hits", 1)` then `hgetall(h)`, then the map carries `{"name" => "alice", "hits" => "1"}` — a
-  compact object the wire round-trips field-wise.
+- **hash object round-trip (hashes):** Given an entity key, when `hset_all(h, %{...})` (multi-field) or
+  `hset(h, "name", "alice")` / `hincrby(h, "hits", 1)` then `hgetall(h)`, then the map carries
+  `{"name" => "alice", "hits" => "1"}` — a compact object the wire round-trips field-wise.
 
 INVEST — independent (each pattern is its own scenario); testable only by a `:valkey` suite (the proof is the
-live round-trip); encodes EWR.1.1-INV6, EWR.1.1-INV7, and exercises D3 across all six families. Priority: must ·
-Size: 5 · Implements deliverables: EWR.1.1-D3, EWR.1.1-D8.
+live round-trip — **9/0** as-built); encodes EWR.1.1-INV6, EWR.1.1-INV7, and exercises D3 across all six
+families. Priority: must · Size: 5 · Implements deliverables: EWR.1.1-D3, EWR.1.1-D8.
 
 ## EWR.1.1-US10 — the stories are written back from the as-built tests (the proof, not prose)
 
@@ -172,10 +173,13 @@ passing tests rather than hand-written, so that a story is true by construction 
 `:valkey` test compiled and passed.
 
 Acceptance criteria:
-- Given the `echo_mq/test/stories/*_story_test.exs` BDD suite green on `6390`, when I run
-  `mix echo_mq.stories --out docs/echo_mq/wire/stories`, then `<feature>.stories.md` + a README catalogue are
-  written, and the generated scenario set equals the test scenario set one-for-one (every story has a live test
-  behind it).
+- Given the `echo_mq/test/stories/wire_pipe_*_story_test.exs` BDD suite green on `6390` (**9/0**), when I run
+  `mix echo_mq.stories --match wire_pipe --out docs/echo_mq/wire/stories`, then `<feature>.stories.md` + a
+  README catalogue are written, and the generated scenario set equals the test scenario set one-for-one (**9
+  scenarios / 8 features**, every story has a live test behind it).
+- Given the committed `docs/echo_mq/wire/stories/`, when a fresh `--match wire_pipe` generation runs, then the
+  output equals it **byte-for-byte** (idempotent — the `--match` filter touches only the wire features, never
+  the sibling `docs/echo_mq/stories/`).
 - Given a story document, when it is inspected, then no scenario lacks a backing test — a no-op or a
   hand-authored story does not satisfy INV7.
 - Given this (generated) layer and the hand-authored user-story layer (this file), when both are read, then

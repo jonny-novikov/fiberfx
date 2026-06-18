@@ -1,10 +1,13 @@
 # EWR.1.1 · the x-mode orchestration runbook — the threaded pipeline (the client core opens)
 
-> **Status: SPECCED — the runbook for the `ewr.1.1` build run (a later session).** The Flat-L2 lead-team binds
-> the laws; its inputs are this rung's triad ([`ewr.1.1.md`](ewr.1.1.md) authoritative, plus
-> [`ewr.1.1.stories.md`](ewr.1.1.stories.md) and [`ewr.1.1.llms.md`](ewr.1.1.llms.md)) and the ruled fork
-> [`../../design/ewr.design.md`](../../design/ewr.design.md). The app is `echo_wire`; the canon is
-> [`../../ewr.roadmap.md`](../../ewr.roadmap.md).
+> **Status: BUILT — the runbook the `ewr.1.1` build run executed (shipped green, Director-verified).** The
+> Flat-L2 lead-team bound the laws; its inputs were this rung's triad ([`ewr.1.1.md`](ewr.1.1.md) authoritative,
+> plus [`ewr.1.1.stories.md`](ewr.1.1.stories.md) and [`ewr.1.1.llms.md`](ewr.1.1.llms.md)) and the ruled fork
+> [`../../design/ewr.design.md`](../../design/ewr.design.md). The app is `echo_wire` (+ the `echo_mq` story
+> tests, test-only, + the one sanctioned `echo_mq.stories.ex` Mix-task `--match` edit); the canon is
+> [`../../ewr.roadmap.md`](../../ewr.roadmap.md). **Outcome:** `echo_wire` 44/0 (facade still 11), wire
+> `:valkey` story suite 9/0, conformance `{:ok, 52}` byte-stable, order-theorem mutation KILLED; F-1 (the
+> `--match wire_pipe` idempotent regen) remediated.
 
 ## The rung in one paragraph
 
@@ -84,28 +87,33 @@ artifact:
 1. **Stage 1 — Mars-1 (design-make + build).** Re-probe the floor (incl. the story DSL/task + the six
    `gen_*.go` families); log the design-make decisions (first-class dispatch, the six-family membership);
    build `EchoWire.Pipe` to D2–D6 with the comprehensive curated verbs; write the offline construction suite
-   (`echo_wire`); write the **BDD story tests by redis-pattern** (`echo_mq/test/stories/`, each with its own
-   `setup`) per D8 and run `mix echo_mq.stories --out docs/echo_mq/wire/stories`; run the Stage-1 gate (compile
-   + smoke, both apps). Report to the ledger `{ewr-1-1-report}` (a `Y-n`).
+   (`echo_wire`); write the **BDD story tests by redis-pattern** (`echo_mq/test/stories/wire_pipe_*`, each with
+   its own `setup`) per D8 and run `mix echo_mq.stories --match wire_pipe --out docs/echo_mq/wire/stories` (the
+   `--match` filter scopes the regen to the wire features — idempotent); run the Stage-1 gate (compile + smoke,
+   both apps). Report to the ledger `{ewr-1-1-report}` (a `Y-n`).
 2. **Stage 2 — Director solo review.** Independent two-app gate re-run on 6390; an adversarial probe (the
    headline risks: does `exec` smuggle any pipelining/retry of its own? does `exec`'s body inspect the
    reference — is conn-or-pool opacity real both ways? does a pool-targeted `exec_txn` silently round-robin? is
    the facade still 11? does every generated story have a passing `:valkey` test behind it — INV7? is any
    `echo_mq` lib file touched?); a net-zero mutation spot-check. Findings as `F-n`.
-3. **Stage 3 — Mars-2 (remediate + harden).** Fold any `F-n`; run the full two-app gate ladder to completion
-   (compile + construction suite in `echo_wire`; the `:valkey` story suite + `mix echo_mq.stories` regen +
-   conformance `{:ok, 52}` in `echo_mq`; facade-freeze; multi-seed sweep). The determinism posture is the
-   multi-seed sweep + the statement (no id-mint/process/lease).
+3. **Stage 3 — Mars-2 (remediate + harden).** Fold any `F-n` (as-built: **F-1** — the story regen made
+   idempotent via the `--match wire_pipe` filter on `echo_mq.stories.ex`, the one sanctioned `echo_mq` Mix-task
+   edit); run the full two-app gate ladder to completion (compile + construction suite in `echo_wire`; the
+   `:valkey` story suite + `mix echo_mq.stories --match wire_pipe` regen + conformance `{:ok, 52}` in `echo_mq`;
+   facade-freeze; multi-seed sweep). The determinism posture is the multi-seed sweep + the statement (no
+   id-mint/process/lease).
 4. **Stage 4 — Venus (post-build reconcile).** Differ the as-built `EchoWire.Pipe` + the story tests against
    the triad; flip the frame SPECCED → BUILT; sync the design-make rulings (the realized dispatch shape, the
    final curated arities) + any realization-over-literal deviations into the body; re-pin the realized verb set;
    confirm the two story layers (hand-authored user stories vs the generated `.stories.md`) are non-contradicting
    (INV8).
-5. **Stage 5 — Director (closure).** Ratify; one LAW-4 pathspec commit spanning **only** the rung's four
-   create-locations — `echo/apps/echo_wire/lib/echo_wire/pipe.ex` + `echo/apps/echo_wire/test/echo_wire/pipe_test.exs`
-   + `echo/apps/echo_mq/test/stories/wire_pipe_*_story_test.exs` + the generated `docs/echo_mq/wire/stories/`
-   (and the triad doc edits) — re-verify `git diff --cached --name-only` is purely the rung (no `lib/` of either
-   app beyond the new module, `echo/mix.lock` unchanged) before committing.
+5. **Stage 5 — Director (closure).** Ratify; one LAW-4 pathspec commit spanning **only** the rung's five
+   create-locations + the one sanctioned Mix-task edit — `echo/apps/echo_wire/lib/echo_wire/pipe.ex` +
+   `echo/apps/echo_wire/test/echo_wire/pipe_test.exs` + `echo/apps/echo_mq/test/stories/wire_pipe_*_story_test.exs`
+   + the generated `docs/echo_mq/wire/stories/` + `echo/apps/echo_mq/lib/mix/tasks/echo_mq.stories.ex` (the
+   additive `--match` filter — build tooling, default byte-identical) (and the triad doc edits) — re-verify
+   `git diff --cached --name-only` is purely the rung (no frozen-runtime `lib/` of either app, `echo/mix.lock`
+   unchanged) before committing.
 
 ---
 

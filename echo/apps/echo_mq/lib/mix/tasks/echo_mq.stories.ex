@@ -32,8 +32,9 @@ defmodule Mix.Tasks.EchoMq.Stories do
 
   @impl Mix.Task
   def run(argv) do
-    {opts, _rest, _invalid} = OptionParser.parse(argv, strict: [out: :string])
+    {opts, _rest, _invalid} = OptionParser.parse(argv, strict: [out: :string, match: :string])
     out_dir = opts[:out] || @default_out
+    match = opts[:match]
 
     # compile the app so EchoMQ.Flows / EchoMQ.Lanes / ... are loadable
     Mix.Task.run("compile")
@@ -45,10 +46,10 @@ defmodule Mix.Tasks.EchoMq.Stories do
 
     ensure_dsl_loaded()
 
-    stories = load_stories()
+    stories = load_stories(match)
 
     if stories == [] do
-      Mix.shell().info("No story modules found under #{Path.relative_to_cwd(@stories_glob)} — nothing to generate.")
+      Mix.shell().info("No story modules found under #{Path.relative_to_cwd(@stories_glob)}#{match_note(match)} — nothing to generate.")
     else
       File.mkdir_p!(out_dir)
       Enum.each(stories, &write_feature(&1, out_dir))
@@ -74,9 +75,15 @@ defmodule Mix.Tasks.EchoMq.Stories do
   # Require each story file and pair every module that registered scenarios with
   # the file it came from (for the source link). Requiring compiles the module;
   # it does NOT run the tests, so no Valkey connection is opened.
-  defp load_stories do
+  #
+  # `match` (nil = all, the default) narrows the harvested FILE SET to story-test
+  # files whose basename contains the substring — e.g. `--match wire_pipe` scopes
+  # the output to the wire-pipe features, leaving the .stories.md / README format
+  # byte-identical. With `match == nil` the set is unchanged from the bare glob.
+  defp load_stories(match) do
     @stories_glob
     |> Path.wildcard()
+    |> Enum.filter(&matches?(&1, match))
     |> Enum.sort()
     |> Enum.flat_map(fn file ->
       (Code.require_file(file) || [])
@@ -86,6 +93,12 @@ defmodule Mix.Tasks.EchoMq.Stories do
     end)
     |> Enum.sort_by(& &1.feature)
   end
+
+  defp matches?(_file, nil), do: true
+  defp matches?(file, substr), do: String.contains?(Path.basename(file), substr)
+
+  defp match_note(nil), do: ""
+  defp match_note(substr), do: " matching #{inspect(substr)}"
 
   # -- rendering -------------------------------------------------------------
 

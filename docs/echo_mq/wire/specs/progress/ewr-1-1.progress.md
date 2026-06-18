@@ -95,8 +95,40 @@ without being the foundation. Layerable onto A, not the reverse — the same asy
 
 ## {ewr-1-1-learnings} Learnings
 
-*Awaiting the build run — program-convention findings, realization-over-literal deviations, and Director
-Stage-2 findings land here as `L-n`.*
+> Consolidated by the Director for Apollo (the Mentor, out of the per-rung pipeline — PROPOSE-ONLY). Each
+> guardrail is aimed at the peer whose CONTRACT the finding implicates.
+
+### L-1 — [Venus] a spec that reuses a shared generator must name the tool's scoping semantics
+
+F-1: D8/INV7 directed `mix echo_mq.stories --out docs/echo_mq/wire/stories`, but the task's fixed glob
+(`test/stories/*_story_test.exs`) harvests ALL features into one `--out` — so a per-program output dir was not
+reproducible by a single command (the as-built tool had no per-program filter). The contract implicated is the
+SPEC's. GUARDRAIL (propose to Venus): *when a deliverable reuses an existing generator/script, name its scoping
+semantics in the deliverable — if the as-built tool cannot produce the deliverable's claimed artifact from one
+command, the tool enhancement is in-scope for the rung, not a silent post-step.* Resolved by the Operator-ruled
+`--match` filter (Y-2).
+
+### L-2 — [Mars] a committed generated artifact must reproduce from one command; flag, don't hand-prune
+
+Mars-1 hand-pruned the over-produced bus features out of the wire stories dir, leaving a non-idempotent
+artifact (re-gen re-pollutes) — a gate-invisible reproducibility hole the Director caught in Stage-2 (F-1).
+GUARDRAIL (propose to Mars): *a committed generated artifact must equal a single documented command's output
+byte-for-byte; if you are editing generator output by hand, that is a finding to surface, not a step to
+absorb.* Mars-2 then did it right (the `--match` filter → a pure generator output, twice-identical).
+
+### L-3 — [Mars · affirm] the conn-or-pool opacity contract → a carried dispatch module, not a type check
+
+INV3 ("accept conn-or-pool, never inspect it") was realized as `%Pipe{via}` carrying the dispatch module
+(default `EchoMQ.Connector`; `EchoMQ.Pool` via opts), `exec = via.pipeline(...)`, with no `is_struct`/`is_atom`
+guard. This is the correct Elixir idiom for an opacity contract — carry the behaviour, do not detect the type.
+AFFIRM to Mars: propagate this to `ewr.1.2`/`1.3` and any future conn-or-pool surface.
+
+### L-4 — [convention] the "order theorem" mutation proves a positional-reply invariant is not vacuous
+
+INV6's positional-order claim was proven by a net-zero mutation (reverse the accumulator → the cache-aside
+story dies, `[-2, nil, "OK"]` vs `["OK","alice",ttl]`), re-run independently by the Director. CONVENTION: for
+any "replies map 1:1 in order" invariant, the order-theorem mutation (reverse/drop the accumulator, prove a
+test kills it) is the standing proof — carry it forward.
 
 ## {ewr-1-1-report} Report
 
@@ -134,7 +166,35 @@ FLAG for the Director's LAW-4 pathspec commit: `echo/README.md` is staged in the
 
 ## {ewr-1-1-complete} Complete
 
-*Awaiting the build run — the ship record lands here as `Z-n` (WHAT SHIPPED / VERIFICATION / LAW-4).*
+### Z-1 — ewr.1.1 (EchoWire.Pipe) SHIPPED — the EchoWire client-core program's founding rung, build-grade through the recalibrated Flat-L2 pipeline.
+
+WHAT SHIPPED: **`EchoWire.Pipe`** (`echo/apps/echo_wire/lib/echo_wire/pipe.ex`) — the threaded `|>` pipeline over
+the owned wire: a `%Pipe{conn, via, timeout, cmds}` accumulator; a comprehensive curated verb set across the six
+Valkey data families (strings · keys/expiry · hashes · lists · sets · sorted sets, grounded in valkey-go
+`gen_*.go`); a `command/2` escape hatch; `exec`/`exec_txn`/`exec_noreply` over the `Connector.pipeline/3` family.
+Conn-or-pool first-class (dispatch carried opaquely in `via`, never inspected; `exec_txn`/`exec_noreply`
+Connector-only). Plus the program canon (`ewr.{roadmap,progress,features,testing,references}.md`), the founding
+triad (`ewr.1.1.{md,stories,llms,prompt}`, reconciled SPECCED→BUILT), and a BDD story layer — **9 `EchoMQ.Story`
+`:valkey` scenarios** (one per redis-pattern: cache-aside · distributed-lock · reliable-queue · counter ·
+leaderboard · set-membership · hash-object · conn-or-pool dispatch) driving the Pipe end-to-end, generated
+idempotently to `docs/echo_mq/wire/stories/` via the F-1 `--match wire_pipe` filter.
+
+VERIFICATION (Director-independent, valkey 6390): echo_wire `compile --warnings-as-errors` clean + **44 tests 0
+failures** (facade-freeze still **11 verbs**); echo_mq wire `:valkey` story suite **9/0**; conformance
+**`{:ok, 52}`** byte-stable; the order-theorem mutation re-KILLED then reverted net-zero; F-1 idempotence
+re-proven (committed wire dir == a fresh `--match` gen, byte-for-byte; default path still emits all 11 features).
+Frozen-floor: no `lib/echo_mq/` runtime edit, no facade edit, `echo/mix.lock` unchanged, `grep redis.call` = 0.
+
+RULINGS (Operator, via the mandatory `AskUserQuestion` gate): **Arm A** (`EchoWire.Pipe`) [prior session];
+**conn-or-pool FIRST-CLASS** this rung; **complete valkey-go-core + redis-patterns via BDD stories**; **F-1 =
+wire dir + a generator filter**. Recorded `D-1`..`D-5` + the F-1 ruling; alternatives (arms B/C) keep their
+chosen-against case (`V-1`/`V-2`).
+
+LAW-4: one scoped Director pathspec commit — the rung's create-locations (`pipe.ex` + `pipe_test.exs` + the 8
+`wire_pipe_*_story_test.exs` + `docs/echo_mq/wire/` {canon · `specs/ewr.1` triad · `specs/progress` ledger ·
+generated `stories/`}) + the ONE sanctioned `echo_mq` Mix-task edit (`lib/mix/tasks/echo_mq.stories.ex`).
+EXCLUDED as Operator out-of-band pre-stage (NOT this rung): `echo/README.md`, the staged `emq.*` spec edits, and
+`memory/`. Pathspec only, never `git add -A`.
 
 ## {ewr-1-1-progress} Progress
 

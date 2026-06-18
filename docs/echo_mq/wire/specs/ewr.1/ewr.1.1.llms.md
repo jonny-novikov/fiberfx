@@ -1,10 +1,11 @@
 # EWR.1.1 · the agent brief (LLM build brief)
 
-> The build-grade brief `ewr.1.1` is built from and the verifier accepts against. Derived from
+> The build-grade brief `ewr.1.1` was built from and the verifier accepted against. Derived from
 > [`ewr.1.1.md`](ewr.1.1.md) (the spec body — **authoritative**; this brief and the stories may lag it, and when
-> they disagree the body wins). **Status: SPECCED.** The arm is ruled — Arm A of
-> [`../../design/ewr.design.md`](../../design/ewr.design.md), with the curated-verbs + `command/2` escape-hatch
-> sub-fork; this rung **adopts** the ruling and does not re-open it.
+> they disagree the body wins). **Status: BUILT** — shipped green and Director-verified (`echo_wire` **44/0**
+> facade-still-11; wire `:valkey` story suite **9/0**; conformance `{:ok, 52}` byte-stable; order-theorem
+> mutation KILLED). The arm is ruled — Arm A of [`../../design/ewr.design.md`](../../design/ewr.design.md), with
+> the curated-verbs + `command/2` escape-hatch sub-fork; this rung **adopted** the ruling and did not re-open it.
 
 ## References (read first, in order)
 
@@ -73,32 +74,36 @@
 | R6 | conn-or-pool **first-class this rung**: `exec/1` valid both ways (proven against a `Connector` AND an `EchoMQ.Pool`); `exec_txn`/`exec_noreply` require a `Connector` (out of contract for a pool — the pool carries neither) | US5 | INV3, INV5 |
 | R7 | Order is positional; empty pipe → `{:error, :empty_pipeline}`; no other new error (reuse the connector's vocabulary) | US6 | D6, INV6, the closed error set |
 | R8 | The gate: compile warnings-clean; construction (offline) + the `:valkey` story suites; facade still 11 verbs; conformance `{:ok, 52}` byte-stable; multi-seed sweep + posture | US7, US-GATE | D7, INV1, INV2 |
-| R9 | The **BDD story layer**: `EchoMQ.Story` `:valkey` tests under `echo_mq/test/stories/` organized by redis-pattern drive `EchoWire.Pipe` end-to-end (each module writes its own `setup`); `mix echo_mq.stories --out docs/echo_mq/wire/stories` regenerates the `.stories.md`; a generated story exists only because a passing test backs it; the generated layer and the hand-authored user-story layer name the same patterns and neither forks the body | US9, US10 | D8, INV7, INV8 |
+| R9 | The **BDD story layer**: `EchoMQ.Story` `:valkey` tests under `echo_mq/test/stories/wire_pipe_*` organized by redis-pattern drive `EchoWire.Pipe` end-to-end (each module writes its own `setup`); `mix echo_mq.stories --match wire_pipe --out docs/echo_mq/wire/stories` regenerates the `.stories.md` **idempotently** (the `--match` filter — F-1); a generated story exists only because a passing test backs it (9 scenarios / 8 features); the generated layer and the hand-authored user-story layer name the same patterns and neither forks the body | US9, US10 | D8, INV7, INV8 |
 
 ## Execution topology
 
 **Runtime shape.** `EchoWire.Pipe` is a pure data module — no process, no `GenServer`, no supervised child. A
-`%Pipe{}` is an immutable accumulator; the only effect is the single `pipeline/3` call inside `exec` (dispatched
-opaquely through `via`). So the `echo_wire` construction suite is offline and deterministic (assert the
-accumulated `cmds`, the `add/2` token rendering, the empty-pipe guard, the no-inspect dispatch); the **`:valkey`
-band is the BDD story layer in `echo_mq`** — it proves the round-trip against the live connector AND the pool,
-organized by redis-pattern, and doubles as the generated `.stories.md`.
+`%Pipe{}` is an immutable accumulator; the only effect is the single `via.pipeline/3` call inside `exec`
+(dispatched opaquely through `via`, over `Enum.reverse(cmds)`). So the `echo_wire` construction suite is offline
+and deterministic (assert the accumulated `cmds`, the `add/2` token rendering, the empty-pipe guard, the
+no-inspect dispatch); the **`:valkey` band is the BDD story layer in `echo_mq`** — it proves the round-trip
+against the live connector AND the pool, organized by redis-pattern, and doubles as the generated `.stories.md`.
 
-**Files (expected touch-set — four create-locations, no lib edit outside the new module).**
+**Files (as-built touch-set — five create-locations + one Operator-sanctioned Mix-task edit).**
 - NEW `echo/apps/echo_wire/lib/echo_wire/pipe.ex` (the module; `lib/echo_wire/` is new).
 - NEW `echo/apps/echo_wire/test/echo_wire/pipe_test.exs` (the offline construction suite).
-- NEW `echo/apps/echo_mq/test/stories/wire_pipe_*_story_test.exs` (the BDD `:valkey` story tests — one per
-  pattern, or grouped; test-only, no `echo_mq` lib touched).
-- GENERATED `docs/echo_mq/wire/stories/*.stories.md` + its README (by `mix echo_mq.stories`).
+- NEW `echo/apps/echo_mq/test/stories/wire_pipe_*_story_test.exs` (the BDD `:valkey` story tests; test-only,
+  no `echo_mq` runtime touched).
+- GENERATED `docs/echo_mq/wire/stories/*.stories.md` + its README (by `mix echo_mq.stories --match wire_pipe`).
+- EDIT `echo/apps/echo_mq/lib/mix/tasks/echo_mq.stories.ex` — the **one** sanctioned `echo_mq` lib touch: the
+  additive `--match` filter (F-1), **build tooling**, default behaviour byte-identical, NOT the runtime and NOT
+  the conformance surface.
 
-Nothing else — no edit under either app's `lib/`, no edit to `lib/echo_wire.ex` or `lib/echo_mq/`, no
-`apps/echo_store` change, `echo/mix.lock` unchanged.
+Nothing else — no frozen-runtime `lib/` edit (`Connector`/`RESP`/`Script`/`Pool`), no `lib/echo_wire.ex` edit,
+no `apps/echo_store` change, `echo/mix.lock` unchanged.
 
 **The gate ladder (two-app, intrinsic to the dep direction).** From `echo/apps/echo_wire/`: re-probe
 `.tool-versions`; `valkey-cli -p 6390 ping → PONG`; `TMPDIR=/tmp mix compile --warnings-as-errors`;
-`TMPDIR=/tmp mix test` (the offline construction suite). Then from `echo/apps/echo_mq/`:
-`TMPDIR=/tmp mix test --include valkey` (the BDD story suite drives `EchoWire.Pipe` against `6390`);
-`TMPDIR=/tmp mix echo_mq.stories --out docs/echo_mq/wire/stories` (regenerate the `.stories.md` — offline);
+`TMPDIR=/tmp mix test` (the offline construction suite — **44/0**, facade-freeze still 11). Then from
+`echo/apps/echo_mq/`: `TMPDIR=/tmp mix test --include valkey` (the BDD story suite drives `EchoWire.Pipe`
+against `6390` — **9/0**); `TMPDIR=/tmp mix echo_mq.stories --match wire_pipe --out docs/echo_mq/wire/stories`
+(regenerate the wire `.stories.md` **idempotently** — offline, the `--match` scopes it to the wire features);
 the facade-freeze test green (`echo_wire`); `Conformance.run/2 → {:ok, 52}` byte-stable (`echo_mq`); a
 multi-seed sweep (`0 1 42 312540 999999`). **Determinism posture:** no id-mint/process/lease is introduced →
 the ≥100-iteration loop is NOT run; the multi-seed sweep + this statement is the honest floor (see

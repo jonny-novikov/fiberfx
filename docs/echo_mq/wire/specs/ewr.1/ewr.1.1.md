@@ -1,8 +1,8 @@
 # EWR.1.1 · EchoWire.Pipe — the threaded pipeline (Movement I, the founding rung)
 
-> **Status: SPECCED** — authored this run, built a later run. The first rung of the EchoWire client-core
+> **Status: BUILT** — shipped green and Director-verified. The first rung of the EchoWire client-core
 > program ([`../../ewr.roadmap.md`](../../ewr.roadmap.md), Movement I). It builds, inside `echo/apps/echo_wire`,
-> a new module **`EchoWire.Pipe`** (`lib/echo_wire/pipe.ex`, a directory that does not exist yet) giving
+> a new module **`EchoWire.Pipe`** (`lib/echo_wire/pipe.ex`) giving
 > idiomatic `|>` command-batch construction over the owned wire. A `%Pipe{conn, via, timeout, cmds}`
 > accumulator threads through `|>`; a **comprehensive curated verb set across the six Valkey data families**
 > appends one command-list each; `exec/1` flushes once through an **opaque conn-or-pool dispatch** into
@@ -20,6 +20,20 @@
 > Lua enters the wire; the `echo_mq` 52-scenario conformance (`Conformance.run/2 → {:ok, 52}`,
 > `echo/apps/echo_mq/test/conformance_run_test.exs:45`) stays byte-stable — the new layer (Pipe + story tests)
 > lives *above* the conformance boundary.
+>
+> **As-built reconcile (BUILT, Director-verified).** The shipped `EchoWire.Pipe`
+> (`echo/apps/echo_wire/lib/echo_wire/pipe.ex`) realizes `new(conn, opts \\ [])` → `%Pipe{conn, via, timeout,
+> cmds}` with `via` defaulting to `EchoMQ.Connector` and set to `EchoMQ.Pool` via `opts[:via]` (timeout default
+> `5_000`); the comprehensive curated verb set across the six families + `command/2`; and the flush trio
+> `exec/1` (`via.pipeline(conn, Enum.reverse(cmds), timeout)`) / `exec_txn/1` / `exec_noreply/1` (the latter two
+> calling `EchoMQ.Connector` directly — Connector-only). `cmds` is prepend-then-reverse-at-flush; `new` never
+> inspects `conn` (no `is_struct`/`is_atom`/module guard — INV3 held). The gate is green: `echo_wire`
+> **44/0** (the facade-freeze still 11 verbs), the wire `:valkey` story suite **9/0** (9 scenarios / 8
+> features), `Conformance.run/2 → {:ok, 52}` byte-stable, the order-theorem mutation **KILLED**. The touch-set
+> is the five create-locations (`pipe.ex` · `pipe_test.exs` · the `wire_pipe_*_story_test.exs` story tests · the
+> generated `docs/echo_mq/wire/stories/`) **plus one Operator-sanctioned `echo_mq` Mix-task edit**
+> (`lib/mix/tasks/echo_mq.stories.ex` — the additive `--match` filter, build tooling, default behaviour
+> byte-identical; not runtime, not conformance).
 
 ## Goal
 
@@ -111,40 +125,44 @@ a `|>` chain, and the connection-level auto-pipelining it pairs with is the conn
   (`go/valkey-go/internal/cmds/gen_*.go`) and spans the **six core Valkey data families** — name the families
   and their principal verbs (the implementor need not curate every option; the long tail rides `command/2`,
   INV6):
-  - **strings** (`gen_string.go`): `set/3..4` (`ex:`/`px:`/`nx:`/`xx:`/`get:` options → trailing tokens — the
-    rueidis `SetCondition*`/`ExSeconds`/`PxMilliseconds`/`Get` chain), `get/2`, `getset/3`, `getdel/2`,
-    `mset/2`, `mget/2`, `append/3`, `strlen/2`, `incr/2`, `incrby/3`, `decr/2`, `decrby/3`, `incrbyfloat/3`,
-    `setex/4`, `setnx/3`, `getrange/4`, `setrange/4`.
+  - **strings** (`gen_string.go`): `set/3..4` (as-built options `:ex`/`:px`/`:exat`/`:pxat`/`:nx`/`:xx`/
+    `:keepttl`/`:get` → trailing tokens — the rueidis `SetCondition*`/`ExSeconds`/`PxMilliseconds`/`Get` chain),
+    `get/2`, `getset/3`, `getdel/2`, `mset/2`, `mget/2`, `append/3`, `strlen/2`, `incr/2`, `incrby/3`, `decr/2`,
+    `decrby/3`, `incrbyfloat/3`, `setex/4`, `setnx/3`, `getrange/4`, `setrange/4`.
   - **keys / generic + expiry** (`gen_generic.go`): `del/2` (variadic), `unlink/2`, `exists/2` (variadic),
     `expire/3`, `pexpire/3`, `expireat/3` (and `pexpireat/3`), `ttl/2`, `pttl/2`, `persist/2`, `type/2`,
     `rename/3`, `renamenx/3`, `scan/2..3` (cursor — the `KEYS`-avoid path), `touch/2`, `copy/3`.
-  - **hashes** (`gen_hash.go`): `hset/4` (and `hmset/3` — `Hmset` present though deprecated), `hget/3`,
-    `hmget/3`, `hgetall/2`, `hdel/3`, `hexists/3`, `hincrby/4`, `hincrbyfloat/4`, `hkeys/2`, `hvals/2`,
-    `hlen/2`, `hsetnx/4`, `hscan/3`.
+  - **hashes** (`gen_hash.go`): `hset/4` (single field) **and `hset_all/3`** (multi-field from a kv list/map),
+    plus `hmset/3` (the deprecated `Hmset` alias), `hget/3`, `hmget/3`, `hgetall/2`, `hdel/3`, `hexists/3`,
+    `hincrby/4`, `hincrbyfloat/4`, `hkeys/2`, `hvals/2`, `hlen/2`, `hsetnx/4`, `hscan/3`.
   - **lists** (`gen_list.go`): `lpush/3`, `rpush/3`, `lpop/2..3`, `rpop/2..3`, `lrange/4`, `llen/2`,
     `lindex/3`, `lset/4`, `lrem/4`, `linsert/5`, `ltrim/4`, `rpoplpush/3` (and `lmove/5`).
   - **sets** (`gen_set.go`): `sadd/3`, `srem/3`, `smembers/2`, `sismember/3`, `scard/2`, `spop/2..3`,
     `srandmember/2..3`, `sunion/2`, `sinter/2`, `sdiff/2`, `smismember/3`, `sscan/3`.
-  - **sorted sets** (`gen_sorted_set.go`): `zadd/4..` (`nx:`/`xx:`/`gt:`/`lt:`/`ch:` options → trailing tokens
-    — the rueidis `ZaddCondition*`/`ZaddComparison*`/`Ch` chain), `zrem/3`, `zrange/4..`, `zrangebyscore/4..`,
-    `zrevrange/4..`, `zscore/3`, `zcard/2`, `zrank/3`, `zrevrank/3`, `zincrby/4`, `zpopmin/2..3`,
-    `zpopmax/2..3`, `zcount/4`, `zscan/3`.
+  - **sorted sets** (`gen_sorted_set.go`): `zadd/4..` (as-built options `:nx`/`:xx`/`:gt`/`:lt`/`:ch`/`:incr`
+    → trailing tokens — the rueidis `ZaddCondition*`/`ZaddComparison*`/`Ch` chain), `zrem/3`, `zrange/4..`,
+    `zrangebyscore/4..`, `zrevrange/4..`, `zscore/3`, `zcard/2`, `zrank/3`, `zrevrank/3`, `zincrby/4`,
+    `zpopmin/2..3`, `zpopmax/2..3`, `zcount/4`, `zscan/3`.
 
   The arities are the implementor's design-make (the body names the verb + family + reference, not a frozen
   `{fun, arity}` table — `EchoWire.Pipe` is **not** the facade and is **not** arity-frozen; INV1). The curated
   set is **comprehensive across the six families but never a ceiling** — `command/2` (D4) covers every
-  un-curated verb and family (INV6).
+  un-curated verb and family (INV6). *As-built RESP3 note (test-fact, not a deviation):* `ZSCORE` returns a
+  RESP3 double (e.g. `250.0`), and the escape-hatch equivalence compares the curated integer option token
+  (e.g. `EX`'s `"60"`) to the same integer token (wire-identical) — the stories assert this RESP3 reality.
 - **`EWR.1.1-D4` — the `command/2` escape hatch.** `command(pipe, parts)` appends a raw command-list (a flat
   `[binary | integer | atom]`) verbatim, so any un-modeled verb (e.g. `["CLIENT","INFO"]`, a `SCRIPT` admin
   call) is reachable without a curated wrapper. The curated set is convenience; this guarantees completeness.
-- **`EWR.1.1-D5` — the flush verbs.** `exec/1` flushes once into the plain pipeline seam and answers
-  `{:ok, [reply]}` with one reply per appended command, in order; `exec_txn/1` flushes into
-  `transaction_pipeline/3` and answers `{:ok, exec_replies}`; `exec_noreply/1` flushes into
-  `noreply_pipeline/3` and answers `:ok`. `exec/1` is valid against conn-or-pool; `exec_txn/1` / `exec_noreply/1`
-  require a single `Connector` (D-INV5).
-- **`EWR.1.1-D6` — ordering + the empty pipe.** Commands accumulate in `|>` order (whatever internal
-  representation D1 picks, the flushed order equals the call order); `exec` on an empty pipe (`cmds == []`)
-  answers `{:error, :empty_pipeline}` rather than calling the connector (whose guard already rejects `[]`).
+- **`EWR.1.1-D5` — the flush verbs.** `exec/1` flushes once through the opaque dispatch
+  (`via.pipeline(conn, Enum.reverse(cmds), timeout)`) and answers `{:ok, [reply]}` with one reply per appended
+  command, in order; `exec_txn/1` flushes into `EchoMQ.Connector.transaction_pipeline/3` and answers
+  `{:ok, exec_replies}`; `exec_noreply/1` flushes into `EchoMQ.Connector.noreply_pipeline/3` and answers `:ok`.
+  `exec/1` is valid against conn-or-pool (via `via`); `exec_txn/1` / `exec_noreply/1` call `EchoMQ.Connector`
+  **directly** (Connector-only — the pool exposes neither; D-INV5).
+- **`EWR.1.1-D6` — ordering + the empty pipe.** Commands accumulate in `|>` order; as-built the internal
+  representation is **prepend-then-reverse-at-flush** (`exec` does `Enum.reverse(cmds)`), so the flushed order
+  equals the call order. `exec` on an empty pipe (`cmds == []`) answers `{:error, :empty_pipeline}` rather than
+  calling the connector (whose guard already rejects `[]`).
 - **`EWR.1.1-D8` — the BDD story layer (written back to specs).** A set of `EchoMQ.Story` `:valkey` tests under
   `echo/apps/echo_mq/test/stories/` (e.g. `wire_pipe_<pattern>_story_test.exs`, or one file per pattern)
   **organized by redis-pattern**, each driving `EchoWire.Pipe` end-to-end against Valkey on `6390` in the
@@ -169,25 +187,31 @@ a `|>` chain, and the connection-level auto-pipelining it pairs with is the conn
     the pattern they exist for.
 - **`EWR.1.1-D7` — the gate.** The per-app ladder green from inside `echo/apps/echo_wire/`:
   `mix compile --warnings-as-errors`; the construction unit suite (offline); **then from
-  `echo/apps/echo_mq/`** the `@tag :valkey` story suite on `6390` (the BDD round-trip proof) +
-  `mix echo_mq.stories --out docs/echo_mq/wire/stories` regenerating the `.stories.md`; the facade-freeze test
-  still green (11 verbs); `Conformance.run/2 → {:ok, 52}` byte-stable; a multi-seed sweep + the
-  determinism-posture statement (no id-mint/process/lease → no ≥100 loop). The two-app ladder is intrinsic to
-  the dep direction (the module in `echo_wire`, the story tests in `echo_mq` above it).
+  `echo/apps/echo_mq/`** the `@tag :valkey` story suite on `6390` (the BDD round-trip proof — **9/0**) +
+  `mix echo_mq.stories --match wire_pipe --out docs/echo_mq/wire/stories` regenerating the `.stories.md`
+  **idempotently** (the `--match wire_pipe` filter the Operator ruled — F-1 — so a regen rewrites only the wire
+  features, never the sibling `docs/echo_mq/stories/`); the facade-freeze test still green (11 verbs);
+  `Conformance.run/2 → {:ok, 52}` byte-stable; a multi-seed sweep + the determinism-posture statement (no
+  id-mint/process/lease → no ≥100 loop). The two-app ladder is intrinsic to the dep direction (the module in
+  `echo_wire`, the story tests in `echo_mq` above it).
 
 ## Invariants
 
 - **`EWR.1.1-INV1` — the facade stays at 11 verbs.** `EchoWire.Pipe` is a **new module**, never a `defdelegate`
   on `EchoWire`. `echo_wire_facade_test.exs` is unchanged and still asserts exactly the 11 verbs
   (`lib/echo_wire.ex:19-31`). *Check:* the facade test's exported-function list is byte-identical to HEAD.
-- **`EWR.1.1-INV2` — additive; the frozen wire is untouched; `echo_mq` is touched test-only.** No edit to
-  `EchoMQ.Connector` / `RESP` / `Script` / `Pool`; no new Lua (`grep redis.call` on the lib diff is `0`); the
-  `echo_mq` 52-scenario conformance stays byte-stable (`{:ok, 52}`) — the layer is *above* the conformance
-  boundary, so the additive-minor *registration* law is **not engaged** (no scenario registered, no
-  `registry.json`). The story tests are **test-only** additions under `echo_mq/test/stories/` — no `echo_mq`
-  **lib** file changes. *Check:* `git diff` touches only new files under `echo/apps/echo_wire/lib/echo_wire/` +
-  `echo/apps/echo_wire/test/echo_wire/` + `echo/apps/echo_mq/test/stories/` + the generated
-  `docs/echo_mq/wire/stories/`; **no** file under any `lib/` of either app, and `echo/mix.lock` unchanged.
+- **`EWR.1.1-INV2` — additive; the frozen runtime is untouched; `echo_mq` is test-only + one sanctioned
+  Mix-task edit.** No edit to `EchoMQ.Connector` / `RESP` / `Script` / `Pool`; no new Lua (`grep redis.call` on
+  the lib diff is `0`); the `echo_mq` 52-scenario conformance stays byte-stable (`{:ok, 52}`) — the layer is
+  *above* the conformance boundary, so the additive-minor *registration* law is **not engaged** (no scenario
+  registered, no `registry.json`). The `echo_mq` touch is **test-only** under `echo_mq/test/stories/` **plus one
+  Operator-sanctioned `echo_mq` Mix-TASK edit** — `lib/mix/tasks/echo_mq.stories.ex`, the additive `--match`
+  filter (F-1): **build tooling**, default behaviour byte-identical, **not** the runtime and **not** the
+  conformance surface. No frozen-runtime `lib/` file changes. *Check:* `git diff` touches only new files under
+  `echo/apps/echo_wire/lib/echo_wire/` + `echo/apps/echo_wire/test/echo_wire/` + `echo/apps/echo_mq/test/stories/`
+  + the generated `docs/echo_mq/wire/stories/` + the single `echo/apps/echo_mq/lib/mix/tasks/echo_mq.stories.ex`
+  Mix-task edit; **no** frozen-runtime `lib/` file (`Connector`/`RESP`/`Script`/`Pool`), the facade unchanged,
+  and `echo/mix.lock` unchanged.
 - **`EWR.1.1-INV3` — conn-or-pool opacity, first-class this rung.** `new(conn, opts)` stores the server
   reference opaquely and **never inspects** its module or internals; `exec/1`'s flush is valid against **both**
   an `EchoMQ.Connector` and an `EchoMQ.Pool` (both expose a signature-identical `pipeline/3` — connector :56,
@@ -209,16 +233,19 @@ a `|>` chain, and the connection-level auto-pipelining it pairs with is the conn
   reachable via `command/2` (the curated set is never a ceiling); and replies map 1:1 to appended commands, in
   append order. *Check:* a pipe built entirely through `command/2` produces the same replies as the curated
   equivalents; a mixed-order pipe returns replies positionally aligned to its calls.
-- **`EWR.1.1-INV7` — a generated story exists only because a real `:valkey` test passed (the gate specifies
-  its own liveness).** Each scenario in `docs/echo_mq/wire/stories/*.stories.md` is harvested from a real
-  `EchoMQ.Story` `:valkey` ExUnit test under `echo_mq/test/stories/` that drives `EchoWire.Pipe` against
-  Valkey on `6390` and asserts the pattern's observable outcome (the cache returns the seeded value; the lock's
-  second `SET NX` is refused; the queue pops the pushed item; the counter reads the incremented total; the
-  leaderboard ranks by score; the set reports membership; the hash round-trips its fields) — a no-op or a
-  story authored without a passing test does **not** satisfy this letter. *Check:* `mix echo_mq.stories`
-  regenerates the `.stories.md` from `__stories__/0`, and the generated scenario set equals the
-  `test/stories/*_story_test.exs` scenario set one-for-one (every story has a live test behind it); the
-  `:valkey` story suite is green from `echo/apps/echo_mq/`.
+- **`EWR.1.1-INV7` — a generated story exists only because a real `:valkey` test passed, and the wire stories
+  regenerate idempotently (the gate specifies its own liveness).** Each scenario in
+  `docs/echo_mq/wire/stories/*.stories.md` is harvested from a real `EchoMQ.Story` `:valkey` ExUnit test under
+  `echo_mq/test/stories/wire_pipe_*_story_test.exs` that drives `EchoWire.Pipe` against Valkey on `6390` and
+  asserts the pattern's observable outcome (the cache returns the seeded value; the lock's second `SET NX` is
+  refused; the queue pops the pushed item; the counter reads the incremented total; the leaderboard ranks by
+  score; the set reports membership; the hash round-trips its fields) — a no-op or a story authored without a
+  passing test does **not** satisfy this letter. *Check:* `mix echo_mq.stories --match wire_pipe --out
+  docs/echo_mq/wire/stories` regenerates the wire `.stories.md` from `__stories__/0` **idempotently** — the
+  committed `docs/echo_mq/wire/stories/` equals a fresh `--match wire_pipe` generation **byte-for-byte**, and
+  the generated scenario set equals the `test/stories/wire_pipe_*_story_test.exs` set **one-for-one (9
+  scenarios / 8 features)**, reproducibly; the `:valkey` story suite is green (**9/0**) from
+  `echo/apps/echo_mq/`.
 - **`EWR.1.1-INV8` — the two story layers are distinct and non-contradicting.**
   `specs/ewr.1/ewr.1.1.stories.md` is the **hand-authored USER stories** (the rung acceptance — Connextra,
   INVEST, Given/When/Then prose a person signs); `docs/echo_mq/wire/stories/*.stories.md` is the **GENERATED
@@ -237,27 +264,33 @@ typed failure; a successful flush may carry a server error in-band as the value 
 
 ## Definition of Done
 
-- [ ] `EWR.1.1-D1` — the design-make is ruled and ledgered (the **first-class** conn-or-pool dispatch
-      mechanism, the curated membership across the six families, the placement) *before* any `.ex`/test
-      artifact exists.
-- [ ] `EWR.1.1-D2`/`D3`/`D4` — `EchoWire.Pipe` ships the struct + `new/2` (carrying `via`/`timeout`), the
-      **comprehensive curated verb set across the six data families**, and `command/2`, each appending one
-      command-list; the threaded `%Pipe{}` is returned everywhere.
-- [ ] `EWR.1.1-D5`/`D6` — `exec`/`exec_txn`/`exec_noreply` flush to the three seams (`exec` via the opaque
-      dispatch); order is 1:1; the empty pipe answers `{:error, :empty_pipeline}`.
-- [ ] `EWR.1.1-D8` — the BDD story layer ships: `EchoMQ.Story` `:valkey` tests under `echo_mq/test/stories/`
-      organized by redis-pattern drive `EchoWire.Pipe` end-to-end; `mix echo_mq.stories --out
-      docs/echo_mq/wire/stories` regenerates the `.stories.md`.
-- [ ] `EWR.1.1-INV1`/`INV2` — the facade is still 11 verbs; no frozen-module edit; no `echo_mq` **lib** edit
-      (story tests are test-only); no new Lua; conformance `{:ok, 52}` byte-stable; `echo/mix.lock` unchanged.
-- [ ] `EWR.1.1-INV3`/`INV4`/`INV5` — conn-or-pool opacity proven both ways for `exec/1` (**first-class this
-      rung**); `exec` is a thin pass-through; `exec_txn`/`exec_noreply` proven against a `Connector` and
-      documented out-of-contract for a pool.
-- [ ] `EWR.1.1-INV6`/`INV7`/`INV8` — the escape hatch reaches any `[[binary]]`; reply order is positional;
-      every generated story has a passing `:valkey` test behind it; the user-story and generated-story layers
-      name the same patterns and neither forks the body.
-- [ ] `EWR.1.1-D7` — the per-app (two-app) gate ladder is green; the multi-seed sweep passes; the determinism
-      posture is stated.
+- [x] `EWR.1.1-D1` — the design-make is ruled and ledgered (the **first-class** conn-or-pool dispatch
+      mechanism — `new(conn, opts)` + `via` defaulting to `EchoMQ.Connector`, `EchoMQ.Pool` via `opts[:via]`,
+      timeout `5_000` — the curated membership across the six families, the placement) *before* any `.ex`/test
+      artifact existed.
+- [x] `EWR.1.1-D2`/`D3`/`D4` — `EchoWire.Pipe` ships the struct + `new/2` (carrying `via`/`timeout`), the
+      **comprehensive curated verb set across the six data families** (incl. `hset_all/3`; `set` `:exat`/`:pxat`/
+      `:keepttl` opts; `zadd` `:incr` opt), and `command/2`, each appending one command-list; the threaded
+      `%Pipe{}` is returned everywhere.
+- [x] `EWR.1.1-D5`/`D6` — `exec`/`exec_txn`/`exec_noreply` flush to the three seams (`exec` via the opaque
+      `via.pipeline(conn, Enum.reverse(cmds), timeout)`; `exec_txn`/`exec_noreply` via `EchoMQ.Connector`
+      directly); order is 1:1 (prepend-then-reverse-at-flush); the empty pipe answers `{:error, :empty_pipeline}`.
+- [x] `EWR.1.1-D8` — the BDD story layer shipped: `EchoMQ.Story` `:valkey` tests under `echo_mq/test/stories/`
+      organized by redis-pattern drive `EchoWire.Pipe` end-to-end; `mix echo_mq.stories --match wire_pipe --out
+      docs/echo_mq/wire/stories` regenerates the `.stories.md` idempotently.
+- [x] `EWR.1.1-INV1`/`INV2` — the facade is still 11 verbs; no frozen-runtime edit; the `echo_mq` touch is
+      test-only **plus the one sanctioned Mix-task `--match` edit** (`lib/mix/tasks/echo_mq.stories.ex`, build
+      tooling, default byte-identical); no new Lua; conformance `{:ok, 52}` byte-stable; `echo/mix.lock` unchanged.
+- [x] `EWR.1.1-INV3`/`INV4`/`INV5` — conn-or-pool opacity proven both ways for `exec/1` (**first-class this
+      rung**; no `is_struct`/`is_atom`/module guard); `exec` is a thin pass-through; `exec_txn`/`exec_noreply`
+      proven against a `Connector` and documented out-of-contract for a pool.
+- [x] `EWR.1.1-INV6`/`INV7`/`INV8` — the escape hatch reaches any `[[binary]]`; reply order is positional;
+      every generated story has a passing `:valkey` test behind it (the wire stories regenerate idempotently,
+      9 scenarios / 8 features); the user-story and generated-story layers name the same patterns and neither
+      forks the body.
+- [x] `EWR.1.1-D7` — the two-app gate ladder is green (`echo_wire` **44/0** facade-still-11; wire `:valkey`
+      story suite **9/0**; `Conformance.run/2 → {:ok, 52}` byte-stable; order-theorem mutation **KILLED**); the
+      multi-seed sweep passes; the determinism posture is stated.
 
 ---
 
