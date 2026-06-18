@@ -9,6 +9,7 @@
 
 | Feature | Scenarios | Source |
 |---|---|---|
+| [Wire — Cmd — command value](wire-cmd-command-value.stories.md) | 4 | `test/stories/wire_pipe_command_value_story_test.exs` |
 | [Wire — Pipe — cache-aside](wire-pipe-cache-aside.stories.md) | 1 | `test/stories/wire_pipe_cache_aside_story_test.exs` |
 | [Wire — Pipe — conn-or-pool dispatch](wire-pipe-conn-or-pool-dispatch.stories.md) | 2 | `test/stories/wire_pipe_dispatch_story_test.exs` |
 | [Wire — Pipe — counter](wire-pipe-counter.stories.md) | 1 | `test/stories/wire_pipe_counter_story_test.exs` |
@@ -17,5 +18,6 @@
 | [Wire — Pipe — leaderboard](wire-pipe-leaderboard.stories.md) | 1 | `test/stories/wire_pipe_leaderboard_story_test.exs` |
 | [Wire — Pipe — reliable-queue](wire-pipe-reliable-queue.stories.md) | 1 | `test/stories/wire_pipe_reliable_queue_story_test.exs` |
 | [Wire — Pipe — set-membership](wire-pipe-set-membership.stories.md) | 1 | `test/stories/wire_pipe_set_membership_story_test.exs` |
+| [Wire — Result — error split](wire-result-error-split.stories.md) | 4 | `test/stories/wire_pipe_error_split_story_test.exs` |
 
-_9 scenarios across 8 feature(s). Regenerate with `mix echo_mq.stories`._
+_17 scenarios across 10 feature(s). Regenerate with `mix echo_mq.stories`._
