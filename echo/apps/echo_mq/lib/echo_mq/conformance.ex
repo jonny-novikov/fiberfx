@@ -133,7 +133,9 @@ defmodule EchoMQ.Conformance do
       flow_grandchild: "a three-level flow (root -> intermediate node -> grandchild) completes UP the tree over the byte-frozen @complete: the grandchild completes and releases the node to pending (claimable), the node completes and releases the root -- multi-level completion composes for free",
       flow_grandchild_fail: "a three-level fail_parent_on_failure flow propagates a death UP every level (the recursive failure hook): the grandchild dies, the node dies, the root dies (the node in the root's :failed); an ignore_dependency_on_failure top hop lets the root proceed; a re-delivered death fails the root exactly once",
       pool_enqueue: "pool-fronted enqueue is idempotent: a duplicate id through the pool answers duplicate and changes nothing; the row and pending entry match a single-connector enqueue",
-      pool_order: "score-0 mint order holds across pool members: ids enqueued round-robin through the pool browse newest-first by name alone (REV BYLEX), identical to the single-connector order"
+      pool_order: "score-0 mint order holds across pool members: ids enqueued round-robin through the pool browse newest-first by name alone (REV BYLEX), identical to the single-connector order",
+      native_lock_field: "ewr.2.6 native expiry: a lock field folded into the job hash carries an observable hash-field TTL (HPTTL) and self-clears at its deadline with no sweep, the rest of the row surviving",
+      native_lock_refuses: "ewr.2.6: remove_job honors the native lock field -- a job held by the field alone refuses EMQLOCK untouched, and self-heals to removable once the field expires, no sweep"
     ]
   end
 
@@ -1867,6 +1869,54 @@ defmodule EchoMQ.Conformance do
       end
 
     verdict
+  end
+
+  defp apply_scenario(:native_lock_field, conn, q) do
+    # ewr.2.6 NATIVE EXPIRY: the lock marker folded into the job hash as a `lock`
+    # FIELD with its own hash-field TTL (HEXPIRE/HFE, Valkey >= 7.4). The TTL is
+    # observable (HPTTL > 0) and the field SELF-CLEARS at its deadline with NO
+    # sweep -- forced deterministically by HPEXPIREAT in the past (the server
+    # clock), so the proof needs no real-time wait. The rest of the row survives.
+    id = BrandedId.generate!("JOB")
+    {:ok, :enqueued} = Jobs.enqueue(conn, q, id, "w")
+    jk = Keyspace.job_key(q, id)
+
+    with {:ok, _} <- Connector.command(conn, ["HSET", jk, "lock", "worker-1"]),
+         {:ok, _} <- Connector.command(conn, ["HEXPIRE", jk, "30", "FIELDS", "1", "lock"]),
+         {:ok, 1} <- Connector.command(conn, ["HEXISTS", jk, "lock"]),
+         {:ok, [ttl]} when is_integer(ttl) and ttl > 0 <-
+           Connector.command(conn, ["HPTTL", jk, "FIELDS", "1", "lock"]),
+         # force the deadline into the past -> the field self-clears, no sweep
+         {:ok, _} <- Connector.command(conn, ["HPEXPIREAT", jk, "1", "FIELDS", "1", "lock"]),
+         {:ok, 0} <- Connector.command(conn, ["HEXISTS", jk, "lock"]),
+         {:ok, "pending"} <- Connector.command(conn, ["HGET", jk, "state"]) do
+      :ok
+    else
+      other -> {:fail, other}
+    end
+  end
+
+  defp apply_scenario(:native_lock_refuses, conn, q) do
+    # ewr.2.6: remove_job honors the native lock FIELD (HEXISTS jk lock), not only
+    # the :lock string marker -- a job held by the field alone refuses EMQLOCK
+    # untouched. When the field self-expires (forced past on the server clock, no
+    # sweep), the lock self-heals and remove_job succeeds.
+    id = BrandedId.generate!("JOB")
+    {:ok, :enqueued} = Jobs.enqueue(conn, q, id, "w")
+    jk = Keyspace.job_key(q, id)
+
+    with {:ok, _} <- Connector.command(conn, ["HSET", jk, "lock", "worker-1"]),
+         # the field alone (no :lock string) makes remove_job refuse, untouched
+         {:error, :locked} <- Jobs.remove_job(conn, q, id),
+         {:ok, :pending} <- Metrics.get_job_state(conn, q, id),
+         # the field self-expires -> the lock self-heals, remove_job now succeeds
+         {:ok, _} <- Connector.command(conn, ["HPEXPIREAT", jk, "1", "FIELDS", "1", "lock"]),
+         :ok <- Jobs.remove_job(conn, q, id),
+         {:ok, :absent} <- Metrics.get_job_state(conn, q, id) do
+      :ok
+    else
+      other -> {:fail, other}
+    end
   end
 
   # A three-level same-queue flow where the intermediate node's OWN policy

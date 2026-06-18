@@ -890,7 +890,8 @@ defmodule EchoMQ.Jobs do
   @remove_job Script.new(:remove_job, """
               local jk = KEYS[1]
               if redis.call('EXISTS', jk) == 0 then return -1 end
-              if redis.call('EXISTS', jk .. ':lock') == 1 then
+              if redis.call('EXISTS', jk .. ':lock') == 1
+                 or redis.call('HEXISTS', jk, 'lock') == 1 then
                 return redis.error_reply('EMQLOCK job is locked')
               end
               local id = ARGV[1]

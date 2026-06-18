@@ -150,7 +150,8 @@ defmodule EchoMQ.Locks do
     # with a PX TTL (a small multiple of the lease, refreshed on each beat), so
     # a crashed worker's marker SELF-EXPIRES shortly after its lease lapses --
     # the v1 lock-string's self-healing, restored under the v2 split (L-3).
-    marker = Keyspace.job_key(s.queue, job_id) <> ":lock"
+    job = Keyspace.job_key(s.queue, job_id)
+    marker = job <> ":lock"
 
     _ =
       Connector.command(s.conn, [
@@ -161,13 +162,21 @@ defmodule EchoMQ.Locks do
         Integer.to_string(s.marker_ttl_ms)
       ])
 
+    # ewr.2.6 native expiry: also fold the marker into the job hash as a `lock`
+    # FIELD carrying its own hash-field TTL, so the lock self-clears in the row
+    # itself (no separate key) -- written ALONGSIDE the string marker this rung.
+    _ = Connector.command(s.conn, ["HSET", job, "lock", Integer.to_string(token)])
+    _ = refresh_lock_field(s.conn, job, s.marker_ttl_ms)
+
     {:noreply, %{s | tracked: Map.put(s.tracked, job_id, token)}}
   end
 
   def handle_cast({:untrack_job, job_id}, s) do
     if Map.has_key?(s.tracked, job_id) do
-      marker = Keyspace.job_key(s.queue, job_id) <> ":lock"
-      _ = Connector.command(s.conn, ["DEL", marker])
+      job = Keyspace.job_key(s.queue, job_id)
+      _ = Connector.command(s.conn, ["DEL", job <> ":lock"])
+      # ewr.2.6: clear the native lock field too -- a released lock self-clears.
+      _ = Connector.command(s.conn, ["HDEL", job, "lock"])
     end
 
     {:noreply, %{s | tracked: Map.delete(s.tracked, job_id)}}
@@ -217,8 +226,10 @@ defmodule EchoMQ.Locks do
         failed_set = MapSet.new(failed)
 
         for {id, _token} <- held, not MapSet.member?(failed_set, id) do
-          marker = Keyspace.job_key(queue, id) <> ":lock"
-          _ = Connector.command(conn, ["PEXPIRE", marker, Integer.to_string(s.marker_ttl_ms)])
+          job = Keyspace.job_key(queue, id)
+          _ = Connector.command(conn, ["PEXPIRE", job <> ":lock", Integer.to_string(s.marker_ttl_ms)])
+          # ewr.2.6: refresh the native lock field's TTL in lockstep with the lease.
+          _ = refresh_lock_field(conn, job, s.marker_ttl_ms)
         end
 
         {:ok, %{extended: map_size(tracked) - length(failed), dropped: failed}}
@@ -226,6 +237,15 @@ defmodule EchoMQ.Locks do
       _other ->
         {:ok, %{extended: 0, dropped: []}}
     end
+  end
+
+  # ewr.2.6 native expiry: (re)set the `lock` field's hash-field TTL to the
+  # marker window via HPEXPIRE (Valkey >= 7.4). The field rides on the job hash
+  # key (one slot), so a crashed/released worker's lock self-clears in the row --
+  # the :lock string marker is kept alongside this rung (belt-and-braces); the
+  # cutover to field-only is deferred to 2.7 with the fence climb.
+  defp refresh_lock_field(conn, job, ttl_ms) do
+    Connector.command(conn, ["HPEXPIRE", job, Integer.to_string(ttl_ms), "FIELDS", "1", "lock"])
   end
 
   # The beat re-extends what is tracked; failed ids stay tracked (the next
