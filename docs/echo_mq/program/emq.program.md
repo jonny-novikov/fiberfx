@@ -19,9 +19,9 @@ source of truth, no compatibility layer. One program: a **foundation** (EchoMQ p
 established as `emq.0`), **Movement I** (the core — the v1 capability surface pushed to state-of-the-art: emq.1
 scheduler/retry · the emq.2 parity cluster · the emq.3 flow family — **CLOSED at conformance 52/52**), and
 **Movement II** (the extension — groups/batches/lifecycle/cache/proof stack, emq.4–emq.8 — **OPEN; emq.4.1 the
-fair-lanes control plane SHIPPED, live conformance 54/54**, additive minors over the frozen `echomq:2.0.0` wire fence, the per-rung release label
-climbing `2.4.1 → … → 3.0.0` ratified as the `echomq:3.0.0` major at emq.8). The **worked
-consumer** is **codemoji** (`echo/apps/codemoji` — the Mastermind-style game on `EchoMQ.Lanes`/`Consumer`/
+fair-lanes control plane SHIPPED, live conformance 54/54**, additive minors, the protocol version (the wire fence + the mix.exs label together)
+climbing by a minor per rung `echomq:2.4.1 → … → 3.0.0` ratified as the `echomq:3.0.0` major at emq.8). The **worked
+consumer** is **codemojex** (`echo/apps/codemojex` — the Mastermind-style game on `EchoMQ.Lanes`/`Consumer`/
 `Events` + the `EchoData.Bcs` stores); the **headline-planned consumer** is **echo_bot** (`echo/apps/echo_bot` —
 Telegram notifications at scale; the seam is `EchoBot.Platform.Telegram.send_reply/3`).
 
@@ -94,7 +94,7 @@ emq-3-3 Apollo halt — ~1h47m, then idle, no Y-n — is why this is a law).
 `echo/apps/echo_mq` (+ the ONE named `echo/apps/echo_wire` seam a rung touches — the emq.1 resubscribe
 precedent). **No third app** — a rung builds the bus, never its consumers. `echo/mix.lock` ships only if a real
 dep moved (expect EXCLUDED). **Out-of-band — never in an emq commit:** the sibling/consumer apps
-`echo/apps/{codemoji,echo_bot}`, `docs/{echo/art,echo/mesh}`, `docs/fsharp`, `html/`, `.claude/skills/mesh-writer`.
+`echo/apps/{codemojex,echo_bot}`, `docs/{echo/art,echo/mesh}`, `docs/fsharp`, `html/`, `.claude/skills/mesh-writer`.
 The `git commit -- <pathspec>` law (never `git add -A`) protects against sweeping any pre-staged sibling.
 
 ## The EchoWire client seam (forward — adopt the new wire's construction half)
@@ -117,7 +117,7 @@ built host-side) constructs it with `EchoWire.Pipe`, not a hand-rolled `Connecto
 
 - `asdf current erlang` — **re-probe `.tool-versions`, never hardcode**; inside `echo/` it resolves to
   **28.5.0.1** (the old `ASDF_ERLANG_VERSION=28.1` advice is DEAD). `redis-cli -p 6390 ping` → `PONG`
-  (the live engine is **Valkey on 6390**, fence key `{emq}:version` = `echomq:2.0.0`, persists by design).
+  (the live engine is **Valkey on 6390**, fence key `{emq}:version` = the current `@wire_version` — climbs per rung, `DEL` + re-seed on a bump).
 - `TMPDIR=/tmp mix compile --warnings-as-errors` — **per touched app**, clean.
 - `TMPDIR=/tmp mix test --include valkey` — **inside the touched app's dir**; umbrella-wide `mix test` is
   **BANNED** (the full suite hangs).
@@ -203,26 +203,30 @@ built host-side) constructs it with `EchoWire.Pipe`, not a hand-rolled `Connecto
 - **Movement II OPEN — live conformance 54/54.** emq.4 (groups deepened, 4.1–4.4) is BUILDING: **`emq.4.1` the
   fair-lanes control plane SHIPPED** (HIGH-risk) — `Lanes.reassign/4` (the multi-key atomic lane move; re-aims
   the RETIRED v1 `changePriority`) + `Lanes.drain/3` (the lane-scoped destructive drain; blast-radius bounded by
-  construction), conformance 52 → 54 as additive minors over the frozen `echomq:2.0.0` wire. **NEXT on the
+  construction), conformance 52 → 54 (additive minors; the wire fence climbs per rung — `echomq:2.4.x`). **NEXT on the
   ladder:** emq.4.2 group-aware recovery · 4.3 the park-don't-poll metronome (HIGH-risk) · 4.4 weighted/deficit
   rotation + the starvation drill · then emq.5 batches · emq.6 lifecycle controls · emq.7 cache deepened · emq.8
   the proof stack (conformance + engine matrix + telemetry + benchmark). emq.7 is least coupled to the machine and
   may be pulled forward (an Operator call). The 3.x stream tier (`emq3.*`) is PROPOSED, hard-gated on emq.0.
-- **The version arc (Movement II = the `echomq:3.0.0` era) — TWO version planes, never conflate them.** There
-  are two version artifacts and a rung moves only one:
-  - **The wire FENCE — frozen.** `@wire_version "echomq:2.0.0"` lives in the FROZEN connector
-    (`echo_wire/lib/echo_mq/connector.ex:33`), seeded `SET {emq}:version NX` at boot + refused-on-mismatch, and
-    pinned byte-for-byte by the `:fence` conformance scenario + `connector_test`. It is the wire's structural
-    identity (RESP framing + the script-registry contract), which has NOT broken — so it **advances exactly
-    once**: the sanctioned `echomq:2.0.0 → echomq:3.0.0` MAJOR at the horizon's end (emq.8). **No capability rung
-    touches it** (editing the frozen connector + re-freezing the `:fence` scenario every rung is precisely what
-    the additive-minor law forbids).
-  - **The release LABEL — climbs per rung.** `echo/apps/echo_mq/mix.exs` `version:` is the per-rung release label
-    `2.<N>.<M>`: emq.4.1 = `2.4.1` (already in mix.exs), emq.4.2 = `2.4.2`, … climbing to `3.0.0` at emq.8 (where
-    it meets the fence). Each rung bumps it by one; the roadmap's protocol-arc row records the climb. **This is
-    the version "current: echomq:2.4.1" denotes** — the protocol's release label, NOT the fence string.
-  - **What a rung actually ships:** an **additive-minor** capability — new conformance scenarios (the count
-    grows) + host verbs, **no fence code, no new wire class, no wire break** — **plus one mix.exs version bump**.
-    The accumulated minors are ratified as the `echomq:3.0.0` major (the single fence bump) at emq.8. (The
-    per-rung-climb rule supersedes emq.4.1-D1's "holds at 2.0.0" framing — the label was always meant to be
-    visible per rung, the docs had simply frozen it; the roadmap's wire-version row is reconciled to match.)
+- **The version arc (Movement II = the `echomq:3.0.0` era) — ONE protocol version, climbing per rung.** The
+  wire fence IS the protocol version, and it **climbs by a minor each rung**: `echomq:2.4.1` (emq.4.1) →
+  `echomq:2.4.2` (emq.4.2) → … → the `echomq:3.0.0` **MAJOR** at the horizon's end (emq.8). Two artifacts carry
+  the same number and a rung bumps **both** by one — the **wire fence** `@wire_version` (the `{emq}:version`
+  boot key, `echo_wire/lib/echo_mq/connector.ex:33` — the protocol marker) and the **release label**
+  (`echo/apps/echo_mq/mix.exs` + `echo_wire/mix.exs` `version:`). The connector's fence **logic** (`fence/2`,
+  the framing) stays FROZEN — only the `@wire_version` **constant** moves; the **single-owner wire** makes
+  per-rung climbing safe (no external clients — the connector + the server deploy as a unit, so the exact-match
+  fence is a self-consistency check, not a cross-version gate, and a minor bump is a versioned advance, never a
+  structural wire break).
+  - **The `:fence` scenario + `connector_test` are VERSION-AGNOSTIC** — they assert the live key `==
+    EchoMQ.Connector.wire_version()`, so they track the marker and **never need per-rung editing**. The one
+    constant `@wire_version` is the single source of truth (the trap was a *hardcoded* `echomq:2.0.0` across
+    three sites; de-hardcoding kills it). Re-modeling that version-marker scenario is sanctioned and distinct
+    from the additive-minor law, which governs **capability** scenarios.
+  - **A fence bump re-seeds the live key.** `@wire_version` exact-matches `{emq}:version` and seeds it only when
+    nil (`SET NX`), so a bump needs a one-time `DEL {emq}:version` and the next connector boot re-seeds the new
+    value (a prod ops migration; the test env DELs it). The connector logic is untouched.
+  - **What a rung ships:** an **additive-minor** capability (new conformance scenarios — the count grows — +
+    host verbs, no new wire class) **plus the one-line `@wire_version` + `mix.exs` bump**. (SUPERSEDES the
+    earlier 'two-planes / fence frozen at 2.0.0' framing — **emq.4.2-D3**, the Operator's reopened Fork-2; the
+    fence was always meant to climb per the founding rule.)

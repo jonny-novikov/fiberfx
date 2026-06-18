@@ -71,7 +71,7 @@ conformance scenario in the same change (the additive-minor law).
   failed events and plotting throughput from telemetry, a consumer attaching a `:telemetry` handler to the
   job lifecycle, a long-running handler extending its lease so it is not reaped mid-work, an operator's
   recovery sweep reclaiming genuinely stalled jobs, and a cooperative handler checking a cancellation token
-  at a safe point. A worked consumer like codemoji observes its work surface through exactly this kind of
+  at a safe point. A worked consumer like codemojex observes its work surface through exactly this kind of
   event-and-telemetry plane (it publishes a `scored` event per guess through `EchoMQ.Events`; the dashboard's
   live feed). emq.6's **distributed** cancel coordinates the local cooperative token this rung ships; emq.8's
   proof stack asserts the telemetry **contract** over the surface this rung fires (ADR-2's two-layer split).

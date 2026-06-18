@@ -63,7 +63,7 @@ where the ceiling is met), not a new transition over the row.
 - **Who** — the bus's operators and observers: an operator dashboard reading queue depth and throughput, an
   operator runbook reading job state before a mutation (emq.2.2), the conformance harness asserting the
   read verdicts, and the later parity rungs whose acceptance reads through these verbs. A worked consumer
-  like codemoji reads its guess-queue depth and throughput through exactly this kind of surface (the
+  like codemojex reads its guess-queue depth and throughput through exactly this kind of surface (the
   queue-health reads are the operator's dashboard). No single consumer rung *gates* on emq.2.1 by name (it
   is the floor, not a feature), recorded not asserted.
 - **When** — Movement I, after emq.1 closes, **first of the emq.2 cluster** (emq.2.1 → emq.2.2 → emq.2.3;

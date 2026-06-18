@@ -16,7 +16,7 @@ Read [Echo References](./emq.references.md) before EXPANDING this roadmap.
   key builder), born declared (every Lua key in `KEYS[]` or grammar-derived), with committed records and
   derive-before-measure gates. A from-scratch convergence target inherits those proofs; extending v1 in place
   would inherit the debt.
-- **What.** `echo/apps/echo_mq` (the BCS 2.0 Valkey-native bus, `EchoMQ.*`, lib-only, release label `2.4.1`, wire fence frozen at `echomq:2.0.0`) is THE
+- **What.** `echo/apps/echo_mq` (the BCS 2.0 Valkey-native bus, `EchoMQ.*`, lib-only, protocol version climbing per rung — the wire fence + the mix.exs label move together, `echomq:2.4.1`→`2.4.2`→…→`3.0.0`) is THE
   single convergence target, with `echo/apps/echo_wire` (the extracted wire layer — `EchoMQ.{RESP, Connector,
   Script}` frozen-named under the `EchoWire` facade) beside it. The legacy v1 line (frozen at `1.3.0`) has been
   **rewritten fresh into `echo_mq` and removed** — single source of truth; the /echomq and /redis-patterns
@@ -25,7 +25,7 @@ Read [Echo References](./emq.references.md) before EXPANDING this roadmap.
   + strawman spec author) → **Director** (orchestrator; surfaces the design Arms and rules them with the Operator
   via the mandatory `AskUserQuestion`) → **Mars** (implementor) → **Director** (verifies code + invariants) → the
   Director consolidates findings + learnings to **Apollo** (the standing Mentor, who calibrates the agents and
-  drives remediation). Downstream consumers: **codemoji** (`echo/apps/codemoji` — the Mastermind-style game that
+  drives remediation). Downstream consumers: **codemojex** (`echo/apps/codemojex` — the Mastermind-style game that
   drains `EchoMQ.Lanes`/`Consumer` and publishes `EchoMQ.Events` today, the program's worked consumer) and,
   headline-planned, **echo_bot** (`echo/apps/echo_bot` — Telegram-bot notifications at scale; the seam is
   `EchoBot.Platform.Telegram.send_reply/3`); plus the /bcs · /echomq · /redis-patterns courses as teaching
@@ -58,7 +58,7 @@ pure + `:valkey` test pass. Movement I builds on it.
 The v1 capability surface, **rewritten state-of-the-art inside `echo_mq`** under the v2 laws (declared keys ·
 branded `JOB` ids · the closed wire-class registry · the server-clock lease law). Nothing was migrated from the
 legacy v1 line — every capability was rewritten fresh, and the v1 app was then removed. Three planes landed on
-the foundation, with **codemoji the worked consumer** (`echo/apps/codemoji` — `EchoMQ.Jobs`/`Lanes` work drained
+the foundation, with **codemojex the worked consumer** (`echo/apps/codemojex` — `EchoMQ.Jobs`/`Lanes` work drained
 by `EchoMQ.Consumer`, scored by a single authority, results published on `EchoMQ.Events`):
 
 - **Scheduler & retry** (emq.1) — delayed / repeatable jobs, attempts-with-backoff + the poison-job drill,
@@ -106,7 +106,7 @@ by `EchoMQ.Consumer`, scored by a single authority, results published on `EchoMQ
   pulled forward — an Operator call, recorded here so it is a decision, not drift (carried from the old
   roadmap's same note).
 - **Where** — `echo/apps/echo_mq`, `echo/apps/echo_store`, and the conformance/test surfaces beside them.
-- **Wire version — TWO planes, never conflate.** The wire **FENCE** (`@wire_version` in the FROZEN connector, the `{emq}:version` boot key) holds at **`echomq:2.0.0`** and **advances exactly once** — the sanctioned `echomq:3.0.0` MAJOR at the horizon's end (emq.8); **no capability rung touches it** (editing the frozen connector + re-freezing the `:fence` scenario every rung is what the additive-minor law forbids). The **release LABEL** (`echo/apps/echo_mq/mix.exs` `version:`) **climbs per rung** `2.<N>.<M>` — emq.4.1 = `2.4.1`, emq.4.2 = `2.4.2`, … reaching `3.0.0` at emq.8 (where it meets the fence). Each rung ships an **additive minor** (new conformance scenarios + host verbs, **no fence code, no new wire class, no wire break** — the count grows, the protocol does not break) **+ one mix.exs version bump**. ("current: echomq:2.4.1" = the release label; the per-rung-climb rule supersedes emq.4.1-D1's "holds at 2.0.0" framing.)
+- **Wire version — ONE protocol version, climbing per rung.** The wire fence IS the protocol version: the connector `@wire_version` (the `{emq}:version` boot key) and the `mix.exs` `version:` label carry the **same number** and **climb together by a minor each rung** — emq.4.1 = `echomq:2.4.1`, emq.4.2 = `echomq:2.4.2`, … → the `echomq:3.0.0` **MAJOR** at emq.8. The connector's fence **logic** stays frozen (only the `@wire_version` **constant** moves); the **single-owner wire** makes per-rung climbing safe (no external clients — connector + server deploy as a unit, so a minor bump is a versioned advance, never a structural break). The `:fence` conformance scenario + `connector_test` are **version-agnostic** (assert the live key `== Connector.wire_version()`), so they track the marker and never need per-rung editing; a bump `DEL`s `{emq}:version` so the next connector boot re-seeds the new value (a one-time op per bump — `SET NX`). Each rung ships an **additive-minor** capability (the conformance count grows + host verbs, no new wire class) **+ the one-line `@wire_version` + `mix.exs` bump**. (Supersedes the earlier 'two-planes / fence frozen at 2.0.0' framing — emq.4.2-D3, the Operator's reopened Fork-2.)
 
 ## The rung ladder (CONFIRMED at the Stage-1b checkpoint)
 
@@ -116,7 +116,7 @@ by `EchoMQ.Consumer`, scored by a single authority, results published on `EchoMQ
 | **emq.1** | I | scheduler + retry vocabulary (delayed / repeatable jobs · attempts-with-backoff · auto-resubscribe) | ✅ CLOSED |
 | **emq.2** | I | the **parity floor** — read → operator → watch → close (emq.2.1 · 2.2 · 2.3 · 2.4) | ✅ CLOSED |
 | **emq.3** | I | the **parent/flow family** — single-queue → reads → cross-queue → failure-policy → grandchildren (emq.3.1–3.5) | ✅ CLOSED |
-| emq.4 | II | groups deepened: the control plane, group-aware recovery, the park-don't-poll metronome, weighted/deficit rotation + the starvation drill | 🔨 BUILDING — emq.4.1 the control plane ✅ SHIPPED (reassign + lane-drain, HIGH-risk); 4.2–4.4 next |
+| emq.4 | II | groups deepened: the control plane, group-aware recovery, the park-don't-poll metronome, weighted/deficit rotation + the starvation drill | 🔨 BUILDING — emq.4.1 control plane ✅ + emq.4.2 group-aware recovery ✅ SHIPPED (`reap_group`, NORMAL-risk, the climbing fence `echomq:2.4.2`); 4.3 metronome (Apollo-mandatory) · 4.4 weighted/deficit next |
 | emq.5 | II | batches: bulk consumption, `min_size`/`timeout` shaping, affinity, the partitioned finish | planned abstract |
 | emq.6 | II | lifecycle controls: TTL per worker/name, distributed cancel, checkpoints | planned abstract |
 | emq.7 | II | the cache deepened: BCAST tracking, absorbed-fills compaction, `synchronous=FULL` per group, the invalidation-transport evaluation | planned abstract — may be pulled forward (Operator call) |

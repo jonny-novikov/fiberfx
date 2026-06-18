@@ -71,7 +71,7 @@ shipped `@enqueue_flow` is **untouched**; `apps/echomq` is **untouched** (the ca
   `dependencies/3` outstanding **count**).
 - **Who** — the program (the rung that makes single-queue flows result-consumable and closes O1); the bus's
   consumers, who gain `children_values` / `dependencies` (the parent handler reads what its legs produced, the
-  v1 surface); the conformance harness, which grows by `flow_children_values` (additive minor). **codemoji**
+  v1 surface); the conformance harness, which grows by `flow_children_values` (additive minor). **codemojex**
   (prospective): a same-queue parent that aggregates its child legs' results — *it names no flows today*
   ([`../emq.features.md`](../../../emq.features.md) — recorded, not asserted).
 - **When** — Movement I, the flow family's **second** sub-rung, after emq.3.1 shipped (emq.3.2 reads the

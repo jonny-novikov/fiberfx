@@ -6,7 +6,7 @@
 
 WHAT — the fair-lanes operator control plane over the SHIPPED EchoMQ.Lanes: (a) lane re-assignment — a member moves emq:{q}:g:<src>:pending → g:<dst>:pending in ONE atomic inline Script.new/2 (ZREM src + ZADD dst; both {q}-co-located → both declared KEYS[n]; the ring re-shaped so both lanes reflect new serviceability); (b) deepened pause/resume/limit/drain over the shipped lane keys; (c) the two RETIRED v1 re-aims — changePriority-7 → lane re-assignment (NO numeric priority; mint order IS the order theorem), getCountsPerPriority-4 → Metrics.lane_depths/3.
 WHY — the control plane is the most-exercised, least-risky groups surface; it founds the chapter's vocabulary + gate posture before the HIGH-risk metronome (4.3) and weighted fairness (4.4), and discharges the canon's two RETIRED v1 priority commands.
-WHO — the program; multi-tenant operators (live re-shaping of group traffic); the conformance harness (+N additive-minor). codemoji = prospective consumer (a re-grouped player's work moves lane) — recorded, not asserted.
+WHO — the program; multi-tenant operators (live re-shaping of group traffic); the conformance harness (+N additive-minor). codemojex = prospective consumer (a re-grouped player's work moves lane) — recorded, not asserted.
 WHERE — echo/apps/echo_mq ONLY: lanes.ex EDIT (re-assignment verb + its inline script + deepened control verbs); metrics.ex EDIT iff the lane_depths/3 re-aim deepens it (else untouched); conformance.ex EDIT (the re-assignment scenario + re-pin 52→N); test/*_test.exs NEW/EDIT (:valkey proof); the two pinning tests EDIT. echo_wire UNTOUCHED (rides the shipped connector eval/command); apps/echomq UNTOUCHED; keyspace.ex §6 grammar UNEDITED (no new key family).
 
 DO-NOTHING BASELINE — no operator control plane for groups: cannot re-shape live group traffic, the two RETIRED v1 priority commands stay undischarged. Rejected: the family's whole point is operator-grade depth.
@@ -91,7 +91,7 @@ INV1-5 SELF-CHECK:
 - INV4: additive-minor — prior 52 scenario NAMES diff = only '+reassign'; all 52 prior apply_scenario clause BODIES byte-identical to HEAD by md5; count re-pinned both pin tests + moduledocs; Conformance.run → 53.
 - INV5: slot-sound — src_lane derived from ARGV[3] (queue base), KEYS[1] (row) + KEYS[2] (dst lane) both built from the SAME queue → one {q} slot by construction; cross-queue not expressible (stronger than rejected).
 
-BOUNDARY: 5 echo_mq files only (4 EDIT + 1 NEW), all UNSTAGED (no git). echo_wire + apps/echomq + mix.lock + keyspace.ex UNTOUCHED. The codemoji README.md (M) + codemoji.game_rules.md (A, staged) + emq.epic.1/emq.1.stories.md (D) are OPERATOR out-of-band pre-stage — EXCLUDE from the rung pathspec.
+BOUNDARY: 5 echo_mq files only (4 EDIT + 1 NEW), all UNSTAGED (no git). echo_wire + apps/echomq + mix.lock + keyspace.ex UNTOUCHED. The codemojex README.md (M) + codemojex.game_rules.md (A, staged) + emq.epic.1/emq.1.stories.md (D) are OPERATOR out-of-band pre-stage — EXCLUDE from the rung pathspec.
 
 ### T-5
 
@@ -133,7 +133,7 @@ INV SELF-CHECK (HIGH-risk, destructive op):
 - INV4: additive-minor — all 52 HEAD-existing apply_scenario bodies byte-identical; :reassign clause (Mars-1) intact; +lane_drain additive; count re-pinned both pin tests + moduledocs; Conformance.run → 54.
 - INV5/blast-radius: KEYS[1] (base) pins the {q} slot; lane + ring + the derived job rows all share it; @gdrain declares 3 real KEYS, derives job keys from the declared base (A-1).
 
-BOUNDARY: 6 echo_mq files (4 EDIT + 2 NEW: lanes_reassign_test.exs Mars-1 + lanes_drain_test.exs Mars-2), all UNSTAGED. echo_wire + keyspace.ex + jobs.ex + apps/echomq + mix.lock UNTOUCHED. codemoji (Operator out-of-band) not in the rung pathspec.
+BOUNDARY: 6 echo_mq files (4 EDIT + 2 NEW: lanes_reassign_test.exs Mars-1 + lanes_drain_test.exs Mars-2), all UNSTAGED. echo_wire + keyspace.ex + jobs.ex + apps/echomq + mix.lock UNTOUCHED. codemojex (Operator out-of-band) not in the rung pathspec.
 
 emq.4.1 is now HIGH-risk (drain built, all 4 control-plane axes complete). No remediation outstanding. Ready for the Director's DEEPENED verify (the destructive-op mutation battery).
 

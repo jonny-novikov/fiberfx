@@ -15,14 +15,14 @@ gated B3.4 "Fair Lanes" PASS 8/8 (G1–G8). emq.4 *deepens* that surface; it inv
 **5W.** *What* — the four deepenings the canon names (roadmap §95-97/§118): the control plane, group-aware
 recovery, the park-don't-poll metronome, weighted/deficit rotation + the starvation drill. *Why* — a
 multi-tenant bus needs group-level operation, recovery, fairness, and no busy-poll; the basics give
-rotation but not these. *Who* — multi-tenant operators of the bus; codemoji is the worked consumer
+rotation but not these. *Who* — multi-tenant operators of the bus; codemojex is the worked consumer
 (per-player lanes). *Where* — `echo/apps/echo_mq` only (`EchoMQ.Lanes` + `EchoMQ.Metrics`); no third app.
 *When* — Movement I closed (conformance 52/52); Movement II opens on a complete core.
 
 **Slot — RULED.** The displaced groups family's rung slot is **emq.4**, ruled at the design's Stage-1b
 (roadmap §137 "seam 2 closed"; design §10 seam 2 / §4 cluster 2). No open slot fork.
 
-**Do-nothing baseline.** The basics already serve codemoji's per-player lanes. emq.4 is *pattern depth a
+**Do-nothing baseline.** The basics already serve codemojex's per-player lanes. emq.4 is *pattern depth a
 multi-tenant bus needs*, not a correctness gap — so it decomposes into independent, individually-shippable
 rungs, each one deepening of the shipped surface, none a wire change (additive registration = protocol minor).
 

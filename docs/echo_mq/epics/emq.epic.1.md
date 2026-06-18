@@ -18,7 +18,7 @@ Two halves, one epic:
 
 ## What this catalogue is NOT
 
-- **Not a v1↔v3 matrix.** The [`../emq.command-registry.md`](./emq.epic.1/emq.commands.registry.md) (the v1→v3 command
+- **Not a v1↔v3 matrix.** The [`../emq.command-registry.md`](emq.commands.registry.md) (the v1→v3 command
   registry — the feature-sorted successor to the former 1290-line `emq.1.specs.md` matrix) is a
   **development-supporting artifact** — a reference for *why* each v3 form re-derives its v1 analogue — never the
   catalogue. The v1 corpus (`../../../echo/apps/echomq/scripts/commands/`) is likewise read-only reference.
@@ -35,7 +35,7 @@ feature files. Each command section carries exactly these fields (and only what 
 - **decision** — the v3 design choice (the v2-law re-derivation; the seam it keeps or drops).
 - **BCS** — what the Branded Component System needs from it (the property it must carry).
 - **EchoMesh** — its place on the CAP dial (consistency-first ↔ availability-first), proposed voice.
-- **use-cases** — the real consumer scenarios (codemoji scoring / prize settlement, the operator runbook, …).
+- **use-cases** — the real consumer scenarios (codemojex scoring / prize settlement, the operator runbook, …).
 - **Given/When/Then** — acceptance in **Elixir**, referencing the executable story under
   [`../stories/`](../stories/) (`docs/echo_mq/stories/<feature>.stories.md`, generated from a story test —
   never hand-edited).
@@ -72,7 +72,7 @@ are first-class features, not buried under a command family.)
   ([`./emq.epic.1/emq.1.stories.md`](./emq.epic.1/emq.1.stories.md)); the forward-only voice (v3 is PROPOSED
   until its rung ships); the `#{command}` cross-reference grammar.
 - **Out** — the v1↔v3 **registry** as a deliverable (it is dev-support, the feature-sorted
-  [`../emq.command-registry.md`](./emq.epic.1/emq.commands.registry.md) — successor to the former `emq.1.specs.md` matrix);
+  [`../emq.command-registry.md`](emq.commands.registry.md) — successor to the former `emq.1.specs.md` matrix);
   the actual code rewrite (that is the roadmap's rungs — this epic catalogues and accepts it, it does not build
   it); any per-command file that would re-introduce the monolith.
 
@@ -89,5 +89,5 @@ are first-class features, not buried under a command family.)
 ---
 
 Index: [emq.epic.0](./emq.epic.0.md) (the layer) · slices: [`./emq.epic.1/`](./emq.epic.1/) · stories:
-[`../stories/`](../stories/) · dev-support: [`../emq.command-registry.md`](./emq.epic.1/emq.commands.registry.md) · the
+[`../stories/`](../stories/) · dev-support: [`../emq.command-registry.md`](emq.commands.registry.md) · the
 rung layer: [`../specs/`](../specs/).

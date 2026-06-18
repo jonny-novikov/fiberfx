@@ -81,7 +81,7 @@ see it:
 - **`config/`** — `Application.get_env(:echo_cache, …)` and any `config :echo_cache, …` keys become
   `:echo_store`. (None were present in the umbrella config seen here; `runtime.exs` is the likely home in
   production.)
-- **Sibling consumers** — `apps/codemoji` references the namespace; the `sed` above already rewrote it, but
+- **Sibling consumers** — `apps/codemojex` references the namespace; the `sed` above already rewrote it, but
   any app added since must be re-grepped. No sibling declares `{:echo_cache, in_umbrella: true}` in its deps
   today, so there is no dep edge to update beyond the namespace.
 - **Release & ops** — `mix.exs` release definitions, `Dockerfile`/`fly.toml` env names, the `_build` and

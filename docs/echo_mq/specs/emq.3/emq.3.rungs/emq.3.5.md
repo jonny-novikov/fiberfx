@@ -144,7 +144,7 @@ the host re-emit) → **NORMAL-risk**; an S2 · Arm B ruling (in-script recursiv
   **S1** (the gate fork, decided by S2). All three OPEN for the Operator.
 - **Who** — the program (the rung that **closes Movement I** and unblocks the `apps/echomq` dissolution for the
   whole flow surface); the bus's consumers, who gain **arbitrary-depth** fan-out/fan-in pipelines (a multi-stage
-  pipeline whose stages are themselves sub-pipelines — the v1 `grandchild` shape). **codemoji** (prospective): a
+  pipeline whose stages are themselves sub-pipelines — the v1 `grandchild` shape). **codemojex** (prospective): a
   multi-stage job whose legs are themselves sub-pipelines (a tree, not a flat fan) — *it names no flows
   today* ([`../emq.features.md`](../../../emq.features.md) — recorded, not asserted). The conformance
   harness, which grows by two scenarios (additive minor).

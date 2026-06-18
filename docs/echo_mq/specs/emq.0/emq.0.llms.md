@@ -21,7 +21,7 @@
   `Directory` nested at `echo_store.ex:41`), `echo/apps/echo_data/lib/echo_data/bcs.ex` + `bcs/`.
 - [`../emq.design.md`](../../emq.design.md) §6 (the grammar, for Keyspace expectations) · §1 S-4 (honest-row
   reporting). [`../emq.roadmap.md`](../../emq.roadmap.md) — the movement frame; the worked consumer
-  (codemoji, `echo/apps/codemoji`) draws on EchoWire + the pluggable Shadow behind the bus it enqueues on —
+  (codemojex, `echo/apps/codemojex`) draws on EchoWire + the pluggable Shadow behind the bus it enqueues on —
   this import completes that inventory.
 - Existing test floor: `resp_test.exs` (relocates to `apps/echo_wire/test/`), `keyspace_test.exs`
   (stays in `apps/echo_mq/test/`), `coherence_test.exs` (stays in `apps/echo_store/test/`) — all three

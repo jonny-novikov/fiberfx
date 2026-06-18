@@ -23,5 +23,21 @@ config :echo_bot,
   bot_config: "bots/hello_bot.yaml",
   updater: :none
 
+# Codemojex — relational persistence for crucial data (Postgres via Ecto), plus the
+# Phoenix surface for the Mini App. BCS still mints the branded ids, EchoStore still
+# caches the hot reads over the Repo, and EchoMQ still runs the queues; this just
+# names the Repo, the bus port, and the JSON/WS endpoint.
+config :codemojex,
+  ecto_repos: [Codemojex.Repo],
+  valkey_port: 6390
+
+config :codemojex, CodemojexWeb.Endpoint,
+  url: [host: "localhost"],
+  adapter: Bandit.PhoenixAdapter,
+  render_errors: [formats: [json: CodemojexWeb.ErrorJSON], layout: false],
+  pubsub_server: Codemojex.PubSub
+
+config :phoenix, :json_library, Jason
+
 # Per-environment overrides — load the matching env file last so its values win.
 import_config "#{config_env()}.exs"

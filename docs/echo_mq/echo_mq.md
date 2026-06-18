@@ -30,7 +30,7 @@ movement lives in [`./emq.roadmap.md`](./emq.roadmap.md); one line each here:
   deepened, batches, lifecycle controls, the cache deepened, the proof stack (**emq.4–emq.8**).
 
 **The delivery thesis.** The movements exist to carry real consumers. The worked consumer that already
-rides this program as its substrate is **codemoji** (`echo/apps/codemoji`) — a code-breaking game that
+rides this program as its substrate is **codemojex** (`echo/apps/codemojex`) — a code-breaking game that
 mints branded `RND`/`USR`/`JOB`/`GES` ids, enqueues per-player guesses on `EchoMQ.Lanes`, drains them
 with two `EchoMQ.Consumer` instances (a score queue then a settle queue), scores under a single
 authority, publishes `EchoMQ.Events`, holds a Valkey sorted-set leaderboard, and settles prizes on a

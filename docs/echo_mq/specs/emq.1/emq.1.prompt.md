@@ -15,7 +15,7 @@
 
 ## The rung in one paragraph
 
-emq.1 opens Movement I: the bus's **time-and-retry vocabulary** for its worked consumer, codemoji.
+emq.1 opens Movement I: the bus's **time-and-retry vocabulary** for its worked consumer, codemojex.
 It builds — inside `echo/apps/echo_mq` under the v2 laws, additive on the wire — scheduled
 enqueue (run-at / run-in as a visibility fence over the existing `emq:{q}:schedule` set, never a new
 queue), repeatable jobs (each occurrence a fresh branded `JOB` mint), the attempts-with-backoff retry
@@ -64,7 +64,7 @@ Operator's post-closure acceptance ratifies (or amends, as a cheap additive foll
 6. **`unsubscribe/2` companion verb → ADD** beside the recorded subscription set (keeps it truthful;
    small, additive on the `EchoWire` facade).
 
-**Carried, not re-litigated:** the rung contract is Candidate B (Stage-1b); the consumer is codemoji;
+**Carried, not re-litigated:** the rung contract is Candidate B (Stage-1b); the consumer is codemojex;
 the ladder slot is emq.1. If the solo Director review (Stage 2) finds an adopted arm unsound or
 scope-expanding, it is the Director's gate to send Mars back or escalate to the Operator — not to ship it.
 
@@ -180,7 +180,7 @@ locked + a **`tool_x_complete` (Z-n)** written this turn; `git status --short` A
 `git add -A`, never a bare commit) over the Stage-5 pathspec below; the message cites the slug, the Z-n,
 the D-n decisions, and the Y-n reports. **Stage 6 (same turn):** flip the emq.1 ladder rows
 ([`../emq.roadmap.md`](../../emq.roadmap.md) — the single consolidated roadmap) and
-[`../echo_mq.md`](../../echo_mq.md) M1's emq.1 status (this rung un-blocks codemoji's
+[`../echo_mq.md`](../../echo_mq.md) M1's emq.1 status (this rung un-blocks codemojex's
 scheduled/settlement trace); write/extend `emq-1.progress.md`; **surface the adopted six arms to
 the Operator for post-closure acceptance/amend**; under an **explicit Operator grant only**, apply any
 mentoring diffs to the peer agent defs. Surface the next frontier (emq.2 migration, or the emq.7 /
@@ -237,4 +237,4 @@ The contract: [`./emq.1.md`](emq.1.md). The stories: [`./emq.1.stories.md`](../.
 brief: [`./emq.1.llms.md`](emq.1.llms.md). The design it makes real: [`./emq.1.design.md`](emq.1.design.md).
 The canon: [`../emq.design.md`](../../emq.design.md). The program: [`../emq.roadmap.md`](../../emq.roadmap.md)
 · [`../echo_mq.md`](../../echo_mq.md). The x-mode skill: [`.claude/skills/x-mode/SKILL.md`](../../../../.claude/skills/x-mode/SKILL.md).
-The consumer: `echo/apps/codemoji` (the worked game consumer).
+The consumer: `echo/apps/codemojex` (the worked game consumer).

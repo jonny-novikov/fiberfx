@@ -46,7 +46,7 @@ durable replication is the `EchoStore.Graft` engine streamed to Tigris (the `Ech
 
 Movement I pushes the v1 capability surface to state of the art inside `echo_mq`: **the scheduler and retry
 vocabulary** (scheduled/repeatable jobs as a visibility fence on the schedule set; attempts-with-backoff; the
-poison-job drill; connector auto-resubscribe) — ratified first, with codemoji's work surface as the
+poison-job drill; connector auto-resubscribe) — ratified first, with codemojex's work surface as the
 worked consumer; **the v1→v2 migration path** re-proven against `echo_mq` (drain-and-switch, order-preserving
 branding of numeric ids, typed refusal of unmigratable ones, the v1 terminal fence-only patch); and **the
 parent/flow family**, design-first. Movement II adds the pattern depth a multi-tenant bus needs: **groups
@@ -61,7 +61,7 @@ each ships as one rung under the program's loop, designed under the v2 laws.
 
 ## Consumers, recorded
 
-codemoji ([`echo/apps/codemoji`](../../../echo/apps/codemoji)) is the worked consumer of the line — a
+codemojex ([`echo/apps/codemojex`](../../../echo/apps/codemojex)) is the worked consumer of the line — a
 six-emoji code-breaking game whose guesses ride per-player `EchoMQ.Lanes` as branded `JOB` work, drained by
 two `EchoMQ.Consumer` instances (a single scoring authority, then prize settlement on a second queue), with
 its leaderboard and first-mover races held in Valkey and its lifecycle published through `EchoMQ.Events`.
@@ -85,4 +85,4 @@ disposable), the Go conformance harness and ports, and the MCP surface over bus,
 Delivery: the single consolidated [`emq.roadmap.md`](../emq.roadmap.md). The next major:
 [`emq3.specs.md`](emq.3.specs.md) · [`emq.roadmap.md` §EchoMQ 3.x](../emq.roadmap.md). The records this line carries: [`bcs.toc.md`](../../echo/bcs/bcs.toc.md) — the lanes, the
 cache and its shadow, the wire referee ([`bcsH.md`](../../echo/bcs/content/bcsH.md)) and its forward rungs
-([`bcsH.specs.md`](../../echo/bcs/content/bcsH.specs.md)). The worked consumer: [`echo/apps/codemoji`](../../../echo/apps/codemoji).
+([`bcsH.specs.md`](../../echo/bcs/content/bcsH.specs.md)). The worked consumer: [`echo/apps/codemojex`](../../../echo/apps/codemojex).

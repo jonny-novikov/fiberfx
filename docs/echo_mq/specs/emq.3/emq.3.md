@@ -104,7 +104,7 @@ options) per **The carve** below.
 - **Who** — the program (the rung that closes Movement I and unblocks the `apps/echomq` dissolution for the
   flow surface); the bus's consumers, who gain fan-out/fan-in pipelines (a parent job that completes only when
   a set of child jobs do); the conformance harness, which grows by the new flow scenarios (additive minor).
-  **codemoji** (the worked consumer) does not name flows today — a round that gates on a set of per-player
+  **codemojex** (the worked consumer) does not name flows today — a round that gates on a set of per-player
   scoring jobs is the prospective shape ([`../emq.features.md`](../../emq.features.md)
   lines 178-180 — recorded, not asserted).
 - **When** — **Movement I, the closer**, after the emq.2 cluster ships (the flow scripts stand ON the as-built

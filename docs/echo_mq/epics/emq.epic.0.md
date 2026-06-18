@@ -17,7 +17,7 @@ step — see instrument 3).
 ## Rationale — the trigger and the values it serves
 
 The trigger was concrete: the v1↔v3 command matrix (then `emq.1.specs.md`, since reorganized into the
-feature-sorted [`../emq.command-registry.md`](./emq.epic.1/emq.commands.registry.md)) arrived as a **1290-line file** that
+feature-sorted [`../emq.command-registry.md`](emq.commands.registry.md)) arrived as a **1290-line file** that
 *either bloats an agent's context* (it must be loaded whole) *or misses crucial entries* (no structure forces
 completeness). It had nowhere to live because the AAW **two-layer model** has no concept **above the rung**: the
 rung is the atomic vertical slice, the roadmap sequences rungs, and a *cross-cutting corpus* (50 analogues

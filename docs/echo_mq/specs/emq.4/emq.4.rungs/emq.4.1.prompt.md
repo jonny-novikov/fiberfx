@@ -68,7 +68,7 @@ the Director has **ruled** the two that gate emq.4.1, and the triad is authored 
 > **FORK C (this rung's fork) — the intra-group priority dimension. RULED → PARK (Arm B).** Lanes stay **score-0**;
 > emq.4.1 does **not** thread a non-zero score onto the `g:<group>:pending` ZSET. The score-0 invariant is
 > load-bearing for the `@gclaim` `ZPOPMIN` head-selection (mint-order FIFO = the order theorem). The intra-group
-> priority band is recorded as **parked** (a real but unrequested surface; the named consumers — codemoji
+> priority band is recorded as **parked** (a real but unrequested surface; the named consumers — codemojex
 > one-lane-per-player — need lane fairness, not intra-lane priority). An Arm-A ruling would re-derive the carve (the
 > score dimension + the `@gclaim` head-selection re-examination) before the build; that ruling is NOT made.
 >

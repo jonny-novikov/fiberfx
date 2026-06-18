@@ -44,7 +44,7 @@ shipped family carried to where a noisy-neighbour-resistant, operator-controllab
 
 **Why now.** Movement I is CLOSED (the parity floor emq.2, the parent/flow family emq.3 —
 [`../emq.roadmap.md`](../../emq.roadmap.md)); Movement II opens on a complete core. The groups family is the FIRST
-Movement-II rung because it is the most-exercised production surface (the worked consumer **codemoji** already rides
+Movement-II rung because it is the most-exercised production surface (the worked consumer **codemojex** already rides
 per-player `EchoMQ.Lanes` as branded `JOB` work — one lane per player, no noisy-neighbour starvation), and because the
 fair-lanes family's rung slot was **RULED** here at the Stage-1b checkpoint (seam 2 closed). Deepening it first turns
 the shipped mechanism into the operator-grade, fairness-proven surface the rest of Movement II (batches, lifecycle,
@@ -209,7 +209,7 @@ higher-risk metronome (emq.4.3) and fairness (emq.4.4) rungs. The four sub-rungs
 > - **Arm A — land it at emq.4.1.** Full v1 parity for the priority surface within the chapter. *Cost:* a score
 >   dimension on the lane ZSET complicates the score-0 invariant the ring rotation assumes (the rotation reads the
 >   lane head; a non-zero score changes which member is the head).
-> - **Arm B — park it (recommended).** Keep lanes score-0 (the ring IS the fairness); the named consumers (codemoji
+> - **Arm B — park it (recommended).** Keep lanes score-0 (the ring IS the fairness); the named consumers (codemojex
 >   one-lane-per-player) need lane fairness, not intra-lane priority. *Cost:* the intra-group priority band is not
 >   available in emq.4.
 >

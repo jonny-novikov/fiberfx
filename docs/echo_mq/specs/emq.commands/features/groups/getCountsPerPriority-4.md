@@ -81,4 +81,4 @@ p!=0 -> ZCOUNT prioritized p*2^32 ..(p+1)*2^32-1  -- per-lane depth; no prioriti
 
 **Decision.** Re-derive as per-lane depth over the lane ZSETs, branded-group-gated; read-only. **PROPOSED** delta (emq.4): an intra-lane priority dimension is a `ZCOUNT` over a score *window* on the same `g:<group>:pending` ZSET — **no new key** — never the v1 64-bit-packed `prioritized` band, never a `meta.paused` branch that picks the key.
 
-**BCS** per-lane backlog is the fair-lane / per-player depth the consuming app reads. · **EchoMesh** availability-first — per-segment (per-player lane) depth, observational only. · **[when]** the per-lane / per-player backlog codemoji reads to balance work across lanes.
+**BCS** per-lane backlog is the fair-lane / per-player depth the consuming app reads. · **EchoMesh** availability-first — per-segment (per-player lane) depth, observational only. · **[when]** the per-lane / per-player backlog codemojex reads to balance work across lanes.

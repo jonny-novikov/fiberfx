@@ -176,7 +176,7 @@ EMQ.0-D4).
 
 ## EMQ.0-US7 — the wire layer extracted, frozen names intact
 
-As a worked consumer's author (codemoji's client surface is `EchoMQ.Connector` via `EchoWire`), I want the
+As a worked consumer's author (codemojex's client surface is `EchoMQ.Connector` via `EchoWire`), I want the
 wire layer landed as its own dependency-free app with the
 `EchoWire` facade in front and the `EchoMQ.*` module names frozen, so that new consumers hold one front-door
 name while every committed record's citation stays valid.

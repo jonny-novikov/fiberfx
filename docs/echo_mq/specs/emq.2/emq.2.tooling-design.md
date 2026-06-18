@@ -100,7 +100,7 @@ A surface a rung builds must satisfy every one; an invariant that asserts one is
   `emq:{q}:`, the first-byte-disjoint `{emq}:` reserve, the gated branded `job:` position), every Lua key
   declared-or-rooted, the version record (`{emq}:version` = `echomq:2.0.0`) monotone behind the five-code
   fence — and **no later rung re-breaks the wire**.
-- **The consumer.** codemoji (`echo/apps/codemoji`) is the worked consumer — a six-emoji code-breaking
+- **The consumer.** codemojex (`echo/apps/codemojex`) is the worked consumer — a six-emoji code-breaking
   game standing on `EchoMQ.Jobs` drained by `EchoMQ.Consumer`, shaped by `EchoMQ.Lanes`. Forward, echo_bot
   (`echo/apps/echo_bot`) is the headline-planned consumer (Telegram notifications at scale). echo_mq is the
   substrate; the consumer is the ship.

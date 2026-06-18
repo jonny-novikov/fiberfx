@@ -52,7 +52,7 @@ load-bearing:
 1. **Rationale** — the problem the Arm solves and why it is a *credible* answer (never a strawman-to-knock-down;
    a fork is only as honest as its weakest seriously-argued Arm).
 2. **5W** — **Why · What · Who · When · Where**: why the Arm exists, what it delivers, **who consumes it**
-   (ground in the real consumer — **codemoji** today; **echo_bot** Telegram-notifications as the planned consumer
+   (ground in the real consumer — **codemojex** today; **echo_bot** Telegram-notifications as the planned consumer
    — never an invented one), when it is reached on the ladder, where it lives in the tree.
 3. **Steelman** — the strongest case *for* the Arm, argued by an advocate who wants it to win: concrete evidence,
    real call sites, named trade-offs honored. This is the `STEELMAN:` field of the `V-n` entry; its

@@ -30,7 +30,7 @@ pathspec commit.
 - **Why** — Movement 0's first pass landed measured, rung-gated code (gates 3_1..3_5 PASS
   5/5·5/5·6/6·8/8·6/6 and 4_1..4_4 PASS 6/6 each, recorded 2026-06-12), but the drop then moved again: its
   CHANGELOG declares the movement NOT COMPLETED, and the Operator ruled the pending code MUST be imported.
-  The delta is also exactly the inventory the program's worked consumer stands on — codemoji draws its work
+  The delta is also exactly the inventory the program's worked consumer stands on — codemojex draws its work
   surface from "the wire (`EchoMQ.Connector` over `EchoWire`)" and a pluggable shadow (`EchoStore.Shadow`
   with the Litestream and Copy implementations) behind the bus it enqueues on. And only three migrated test files guard the tree
   (the floor, not the suite): untested public surface cannot anchor Movement I, and the additive BCS stores
@@ -45,8 +45,8 @@ pathspec commit.
   added verbs, the shadow subsystem), `:valkey`-tagged integration suites, the ratified Q1 stand-in
   (`EchoMQ.Conformance.run/2 → {:ok, 14}`), per-module coverage with honest partials, and the closure
   surfaces (the §5 status flip; `echo/rungs/` tracked).
-- **Who** — the Director accepts against the gate ladder; the Operator ratifies Movement 0 closed; codemoji
-  (the program's worked consumer — `echo/apps/codemoji`) gains the exact wire + shadow inventory
+- **Who** — the Director accepts against the gate ladder; the Operator ratifies Movement 0 closed; codemojex
+  (the program's worked consumer — `echo/apps/codemojex`) gains the exact wire + shadow inventory
   its work surface stands on; Movement I's authors gain a proven baseline.
 - **When** — the program's first rung: first build pass 2026-06-12; the drop's CHANGELOG delta and this
   scope expansion 2026-06-13 (the Stage-1b checkpoint); emq.1 (Movement I, ratified: the scheduler + retry

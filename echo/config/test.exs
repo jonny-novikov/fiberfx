@@ -10,3 +10,17 @@ import Config
 System.put_env("ECHO_BOT_HELLO_TOKEN", "test-token-never-sent")
 
 config :echo_bot, updater: :fake
+
+# Codemojex under test: a sandboxed Repo and a non-serving endpoint.
+config :codemojex, Codemojex.Repo,
+  username: "postgres",
+  password: "postgres",
+  hostname: "localhost",
+  database: "codemojex_test#{System.get_env("MIX_TEST_PARTITION")}",
+  pool: Ecto.Adapters.SQL.Sandbox,
+  pool_size: 5
+
+config :codemojex, CodemojexWeb.Endpoint,
+  http: [ip: {127, 0, 0, 1}, port: 4002],
+  secret_key_base: String.duplicate("test_secret_key_base", 4),
+  server: false

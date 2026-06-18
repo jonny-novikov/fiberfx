@@ -126,7 +126,7 @@ Out** (V-1, the scope fork — recorded NOT built).
   D-2): failure-policy + bulk; grandchildren the locked Out → emq.3.5.
 - **Who** — the program (the rung that closes the flow family's failure half and the last v1 producer verb); the
   bus's consumers, who gain robust flows (a parent that **fails** when a child dies, or **proceeds** past an
-  ignored failure — never an indefinitely-hung parent) and bulk flow submission. **codemoji** (prospective): a
+  ignored failure — never an indefinitely-hung parent) and bulk flow submission. **codemojex** (prospective): a
   job whose one failed leg must **fail the parent** (`fail_parent_on_failure`) or be
   **recorded-and-skipped** (`ignore_dependency_on_failure`) — *it names no flows today*
   ([`../emq.features.md`](../../../emq.features.md) — recorded, not asserted). The conformance harness, which grows by

@@ -12,7 +12,7 @@
 - [`./emq.1.md`](emq.1.md) — the contract (D1–D7, INV1–INV7); the spec body is authoritative.
 - [`./emq.1.stories.md`](../../epics/emq.epic.1/emq.1.stories.md) — acceptance (US1–US7, incl. the standing EMQ.1-US-GATE).
 - The worked consumer (no-invent applies to its real surface exactly as to this code):
-  `echo/apps/codemoji` — guesses enqueued on per-player `EchoMQ.Lanes`, drained by two `EchoMQ.Consumer`
+  `echo/apps/codemojex` — guesses enqueued on per-player `EchoMQ.Lanes`, drained by two `EchoMQ.Consumer`
   instances (score + settle), scored under a single authority, prizes settled on a second queue
   (move-then-settle), `EchoMQ.Events` published. Forward, echo_bot (`echo/apps/echo_bot`) will reach for
   this vocabulary to fan Telegram notifications at scale (today a direct synchronous `sendMessage`, no bus
@@ -159,7 +159,7 @@ LAWS (carried from emq.0 + the design):
 - The pump is supervised, OPT-IN, pure-cored, with stated restart semantics (INV5).
 - Per-app tests only + TMPDIR=/tmp; toolchain re-probed (asdf current erlang), never hardcoded; Valkey
   6390 PONG before wire steps; apps/echomq untouched; no agent git; the lock-delta law (INV6).
-- The consumer's needs are codemoji's REAL ones (`echo/apps/codemoji` — guesses on per-player lanes, a
+- The consumer's needs are codemojex's REAL ones (`echo/apps/codemojex` — guesses on per-player lanes, a
   single scoring authority, prize settlement on a second queue) — cite the real surface, never invent
   consumer requirements; keep echo_bot's notification reach forward-tense.
 

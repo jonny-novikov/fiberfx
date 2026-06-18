@@ -23,7 +23,7 @@ registered with every addition), opened by an Operator-gated A-1-compatible sche
   found thin": the retry vocabulary ("attempts-with-backoff on the lease/reap base; the max-attempts blind
   spot … closes here, gated by a poison-job drill"), scheduled and repeatable jobs (with the stated design
   constraint: "mint-ordered ids stay the sort key; a delay is a visibility fence, not a new queue"), and
-  connector auto-resubscribe ("today the table's restart is the resubscription"). codemoji —
+  connector auto-resubscribe ("today the table's restart is the resubscription"). codemojex —
   the program's worked consumer — draws on exactly that row: it enqueues guesses on per-player
   `EchoMQ.Lanes`, drains them with an `EchoMQ.Consumer`, and settles prizes on a second queue, so the
   scheduled/repeatable/retry vocabulary is the work surface its scoring and settlement stand on. And the
@@ -44,7 +44,7 @@ registered with every addition), opened by an Operator-gated A-1-compatible sche
   registry each tick; and `EchoMQ.Connector` re-issuing its recorded subscription set after `:reconnect`
   (the re-issue at `connector.ex:606`, called in the `:reconnect` success arm `connector.ex:334`;
   `subscribe/2` at `connector.ex:109`, the companion `unsubscribe/2` at `connector.ex:119`).
-- **Who** — codemoji's work surface: guesses with branded `JOB` ids, drained by `EchoMQ.Consumer`, shaped
+- **Who** — codemojex's work surface: guesses with branded `JOB` ids, drained by `EchoMQ.Consumer`, shaped
   by `EchoMQ.Lanes` with one group per player, scored under a single authority, with prizes settled on a
   second queue (the move-then-settle split). Forward, echo_bot will reach for the same vocabulary to fan
   Telegram notifications at scale through the bus. A periodic sweep consumer; the `EchoMQ.Events`
@@ -147,6 +147,6 @@ emq.1 builds (each now realized; the as-built surface is named):
 
 Stories: [`./emq.1.stories.md`](../../epics/emq.epic.1/emq.1.stories.md) · Agent brief: [`./emq.1.llms.md`](emq.1.llms.md) ·
 Roadmap: [`../emq.roadmap.md`](../../emq.roadmap.md) · Design: [`../emq.design.md`](../../emq.design.md) §5,
-§11.10, §4 row 30 · Consumer: `echo/apps/codemoji` (the worked game consumer) · The 2.1 row:
+§11.10, §4 row 30 · Consumer: `echo/apps/codemojex` (the worked game consumer) · The 2.1 row:
 `docs/echo/code/ROADMAP.md` ·
 Approach: [`../../elixir/specs/specs.approach.md`](../../../elixir/specs/specs.approach.md)

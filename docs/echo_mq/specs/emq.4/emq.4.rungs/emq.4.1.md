@@ -87,7 +87,7 @@ the rung HIGH.
 - **Who** — the program (the rung that founds the groups control plane and discharges the RETIRED v1 priority
   commands); multi-tenant **operators** of the bus, who gain live re-shaping of group traffic (move a tenant's work,
   drain a decommissioned tenant's lane, raise a starved lane's ceiling); the conformance harness, which grows by the
-  `reassign` + `lane_drain` scenarios (additive minor). **codemoji** (the worked consumer): a player whose work must
+  `reassign` + `lane_drain` scenarios (additive minor). **codemojex** (the worked consumer): a player whose work must
   move to a different lane (a re-grouped player), or a player whose lane is decommissioned (drained), is the
   prospective shape — recorded, not asserted.
 - **When** — Movement II, the groups family's **first** sub-rung, SHIPPED after Movement I closed; this body is
@@ -182,7 +182,7 @@ the rung HIGH.
 >   `@gclaim` `ZPOPMIN`s the lane head (`lanes.ex:41`), so a non-zero score changes which member is the head, and
 >   touching the ring's head-selection is exactly the byte-freeze-sensitive surface emq.4.1 is authored to leave
 >   untouched (INV3).
-> - **Arm B — park it (RECOMMENDED).** Keep lanes score-0 (the ring IS the fairness); the named consumers (codemoji
+> - **Arm B — park it (RECOMMENDED).** Keep lanes score-0 (the ring IS the fairness); the named consumers (codemojex
 >   one-lane-per-player) need **lane** fairness, not intra-lane priority. *Cost:* the intra-group priority band is
 >   not available in emq.4.
 >

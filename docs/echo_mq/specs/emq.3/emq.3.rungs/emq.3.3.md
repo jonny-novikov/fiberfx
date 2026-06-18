@@ -101,9 +101,9 @@ is **untouched** (the cross-queue add is host-orchestrated per-slot, NOT one new
   Pump), **D-3** (the `:processed` HSETNX guard), **D-4** (the additive `@complete` branch).
 - **Who** — the program (the rung that closes the flow family's core by crossing the slot boundary); the bus's
   consumers, who gain cross-queue flows (a parent that fans in over children in *other* queues — the v1
-  surface); the conformance harness, which grows by `flow_cross_queue` (additive minor). **codemoji**
+  surface); the conformance harness, which grows by `flow_cross_queue` (additive minor). **codemojex**
   (prospective): a cross-queue pipeline (a parent job on one queue fanning in over legs on other queues — the
-  shape codemoji's score-then-settle hop across queues already sketches) — *it names no flows today*
+  shape codemojex's score-then-settle hop across queues already sketches) — *it names no flows today*
   ([`../emq.features.md`](../../../emq.features.md) —
   recorded, not asserted).
 - **When** — Movement I, the flow family's **third** sub-rung, after emq.3.1 + emq.3.2 shipped (emq.3.3 extends

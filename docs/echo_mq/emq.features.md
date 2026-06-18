@@ -31,7 +31,7 @@
 
 EchoMQ is one program in three movements; all code converges in `echo/apps/echo_mq` above
 `echo/apps/echo_wire` ([`./emq.roadmap.md`](./emq.roadmap.md) §The epic). The exemplar consumer throughout is
-**codemoji** (`echo/apps/codemoji` — a code-breaking game standing on exactly this tree: it mints branded
+**codemojex** (`echo/apps/codemojex` — a code-breaking game standing on exactly this tree: it mints branded
 `RND`/`USR`/`JOB`/`GES` ids, enqueues guesses on `EchoMQ.Lanes`, drains them with two `EchoMQ.Consumer`
 instances, scores under a single authority, publishes `EchoMQ.Events`, and settles prizes on a second queue;
 every claim is grounded in that real surface, never invented). The forward-looking consumer is **echo_bot**
@@ -50,7 +50,7 @@ planned consumer, named in forward tense, never asserted as a shipped integratio
 | **The canon (identity + structures)** | The lock-free `:atomics` Snowflake mint, the 14-byte `BrandedId` (the `JOB`/`ORD` brand domains), and the CHAMP family — Ecto-free, the in-umbrella dep every key and id gates on. | `echo/apps/echo_data` (the additive `bcs/` subtree) | ✅ |
 
 **Use cases.** *Consumers/systems:* any BEAM service needing an audited keyspace and a self-healing connector
-to Valkey; the cache fronts hot reads for a read-heavy consumer. *codemoji:* the wire is `EchoMQ.Connector`
+to Valkey; the cache fronts hot reads for a read-heavy consumer. *codemojex:* the wire is `EchoMQ.Connector`
 over `EchoWire`; branded `RND`/`USR`/`JOB`/`GES` ids mint on `EchoData.BrandedId` and gate every key the game
 touches. *echo_bot (planned):* a notifications consumer would mint and carry the same branded id from enqueue
 to delivery.
@@ -73,7 +73,7 @@ to delivery.
 | **Honest-row conformance** | A self-describing scenario harness — `scenarios/0` + `run/2 → {:ok, n}`, one CONF line per scenario, the count pinned in two tests; **37 scenarios today** (18 state-machine/emq.1 + 6 read + 8 ops + 5 watch), each addition an additive minor with its probe. | `conformance.ex` (`scenarios/0`, `conformance.ex:25`) | ✅ |
 
 **Use cases.** *Consumers/systems:* any producer/worker needing exactly-the-state-it-claims with at-least-once
-delivery, retries with backoff, and scheduled/repeatable work. *codemoji:* the work surface — **guess
+delivery, retries with backoff, and scheduled/repeatable work. *codemojex:* the work surface — **guess
 scoring then prize settlement** — is `EchoMQ.Jobs` with branded job ids, drained by two `EchoMQ.Consumer`
 instances (a score queue then a settle queue, move-then-settle), shaped by `EchoMQ.Lanes` **per player** so
 one player's flood cannot starve another. *echo_bot (planned):* scheduled and repeatable notification sends
@@ -105,7 +105,7 @@ Each rung stands ON the as-built floor and is acceptance-checked through the pri
 
 *Use cases — consumers/systems:* an operator dashboard reading queue depth and throughput; a runbook reading a
 job's state before mutating it; the rate gate a claimer consults before claiming. *Consuming app:* the
-counts/metrics/state introspection an operator dashboard reads queue health through — for codemoji, the
+counts/metrics/state introspection an operator dashboard reads queue health through — for codemojex, the
 depth and throughput of the per-player score and settle queues (`echo_mq.md` reframed emq.2 row).
 
 **emq.2.2 · the operator plane (lifecycle & mutation ops) — ✅ shipped (`76fc947c`).** `EchoMQ.Admin` (the
@@ -129,7 +129,7 @@ four queue-scope verbs) + six job-mutation verbs on `EchoMQ.Jobs`:
 *Use cases — consumers/systems:* an operator pausing/draining a runaway queue during an incident; a control
 plane obliterating ephemeral test queues; an on-call removing a poisoned job or reprocessing a dead one after
 fixing its cause. *Consuming app:* the operator runbook that drives the work queues' lifecycle — the
-mutation side of the per-consumer lanes, e.g. draining or clearing codemoji's score/settle queues
+mutation side of the per-consumer lanes, e.g. draining or clearing codemojex's score/settle queues
 (`echo_mq.md` reframed emq.2 row).
 
 **emq.2.3 · the watch plane (observability & recovery) — 🔨 built on disk (the cluster's third rung).** Five
@@ -159,7 +159,7 @@ emq.2.3 grows the conformance set to **37** (+5: `lock_extend`, `stalled`, `even
 
 *Use cases — consumers/systems:* a dashboard subscribing to completed/failed events; the platform attaching a
 `:telemetry` handler; a long-running handler extending its lease so it is not reaped mid-work; an operator's
-recovery sweep reclaiming genuinely stalled jobs. *codemoji:* the live feed — guess scoring and prize
+recovery sweep reclaiming genuinely stalled jobs. *codemojex:* the live feed — guess scoring and prize
 settlement watched through `EchoMQ.Events` + telemetry as jobs move across the two queues;
 emq.6's distributed cancel coordinates the local token this rung ships.
 
@@ -232,9 +232,9 @@ roadmap plans five families, one rung each ([`./emq.roadmap.md`](./emq.roadmap.m
 
 **Use cases.** *Consumers/systems:* multi-tenant operators needing fair rotation under contention (emq.4),
 high-throughput bulk drains (emq.5), bounded worker lifecycles and cross-node cancel (emq.6), a deepened
-near-cache (emq.7), and engine claims turned into a parse + a benchmark (emq.8). *codemoji:* **per-player
+near-cache (emq.7), and engine claims turned into a parse + a benchmark (emq.8). *codemojex:* **per-player
 fairness at cluster scale** — flood one player's guess lane, the others hold (emq.4's deepened groups carry
-codemoji's per-player `EchoMQ.Lanes` to cluster scale); a settle-worker's bounded lifecycle (emq.6).
+codemojex's per-player `EchoMQ.Lanes` to cluster scale); a settle-worker's bounded lifecycle (emq.6).
 *echo_bot (planned):* the telemetry contract a notifications consumer's observability would gate on (emq.8).
 
 ### EchoMQ 3.x · the stream tier (🔭 proposed — awaiting Operator slot ratification)
@@ -256,7 +256,7 @@ wire + the pluggable shadow, both closed). Consolidated into [`./emq.roadmap.md`
 **Use cases.** *Consumers/systems:* per-key event streams with replay, polyglot readers on ordinary Redis
 clients over claims-only payloads, declared retention, deep history restorable after box loss, and mint-time
 window queries. *Consuming app (prospective):* every domain event an immutable entry on a per-key stream lane
-that projections and polyglot consumers replay — for codemoji, each scored guess or settled prize as a
+that projections and polyglot consumers replay — for codemojex, each scored guess or settled prize as a
 mint-ordered event a downstream reader could replay; a non-BEAM reader could ride emq3.3 as a consumer group
 beside a BEAM one; a replay discipline would gate on emq3.4's windows and emq3.5's archive (proposed — no
 current consumer wires the stream tier today).
@@ -531,8 +531,8 @@ pause/resume) ship; emq.4 adds the fairness knobs a production multi-tenant bus 
 limits) beside the existing concurrency ceiling, and recovery that re-admits a lane the instant a slot frees.
 
 **5W** — *Who*: a multi-tenant operator running one shared queue across many tenants (the per-user transcoding
-case); **codemoji**: per-player throttling so one hot player's guess lane cannot consume the drain budget
-(emq.4 carries codemoji's per-player `EchoMQ.Lanes` fairness to cluster scale). *What*: per-group rate limiting (global +
+case); **codemojex**: per-player throttling so one hot player's guess lane cannot consume the drain budget
+(emq.4 carries codemojex's per-player `EchoMQ.Lanes` fairness to cluster scale). *What*: per-group rate limiting (global +
 per-group override), default + per-group concurrency, max group size (back-pressure with a typed refusal),
 intra-group priority, group-aware recovery. *When*: emq.4 (Movement II; the per-group ceiling + pause/resume
 SHIPPED in Movement 0, the deepening is the rung). *Where*: extends `EchoMQ.Lanes` (`@gclaim` rotation,
@@ -732,6 +732,6 @@ corpus (every ARGV-rooted derived key slot-provable). The conformance generated 
 
 The binding design: [`./emq.design.md`](./emq.design.md). The delivery plan: [`./emq.roadmap.md`](./emq.roadmap.md).
 The emq.2 parity carve: [`./specs/emq.2.design.md`](specs/emq.2/emq.2.design.md). The parity-closing triad:
-[`./specs/emq.2.4.md`](specs/emq.2/emq.2.rungs/emq.2.4.md). The worked consumer: `echo/apps/codemoji`; the planned consumer: `echo/apps/echo_bot`.
+[`./specs/emq.2.4.md`](specs/emq.2/emq.2.rungs/emq.2.4.md). The worked consumer: `echo/apps/codemojex`; the planned consumer: `echo/apps/echo_bot`.
 The as-built floor: `echo/apps/echo_mq/lib/echo_mq/*.ex` + `echo/apps/echo_wire`. The v1 feature reference:
 `echo/apps/echomq/lib/echomq/*.ex` + `echo/apps/echomq/priv/scripts/*.lua`.

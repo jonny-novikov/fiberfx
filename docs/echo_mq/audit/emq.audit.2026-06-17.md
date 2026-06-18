@@ -1,7 +1,7 @@
 # EchoMQ docs audit — reconciliation actionables (2026-06-17)
 
 > **Purpose.** A categorized ledger of staleness found while compacting Movements 0/I, reframing the consumer
-> (Exchange → codemoji/echo_bot), and recalibrating the program. The **APPLIED** section records what this run
+> (Exchange → codemojex/echo_bot), and recalibrating the program. The **APPLIED** section records what this run
 > changed; the **PROPOSED** sections are **propose-only — for Operator approval before any apply** (each carries a
 > BEFORE → AFTER so the change is legible in advance). Nothing in the PROPOSED sections has been touched.
 >
@@ -12,7 +12,7 @@
 | # | Category | Scope | Severity | Status |
 |---|---|---|---|---|
 | — | Compaction (Movements 0/I) | `emq.roadmap.md` · `emq.progress.md` · `program/` | — | ✅ APPLIED |
-| — | Consumer reframe (Exchange → codemoji/echo_bot) | the living canon + the calibrations | — | ✅ APPLIED (calibrations) · ⏳ in fan-out (specs) |
+| — | Consumer reframe (Exchange → codemojex/echo_bot) | the living canon + the calibrations | — | ✅ APPLIED (calibrations) · ⏳ in fan-out (specs) |
 | P1 | **CLAUDE.md is stale** (pipeline · echomq · consumer · engine) | `CLAUDE.md` | **HIGH** | 🔲 PROPOSED |
 | P2 | `:line` anchor drift (methods-only) | `docs/echo_mq/` (671 living) | MEDIUM | 🔲 PROPOSED |
 | P3 | `apps/echomq` removed-path citations | 62 living docs + `echo-mq-surface.md` + `echo-mq-program.md` | MEDIUM | 🔲 PROPOSED |
@@ -29,7 +29,7 @@
   fork rulings / gate tallies); "Movement 0" → "the foundation (emq.0, established)"; old-ladder table compacted.
   `emq.progress.md` — rewritten: commit hashes stripped, the per-sub-rung ASCII block collapsed to a 3-line
   Movement-I view, conformance corrected (`43/43` → **52/52**), `emq.2.4` corrected (`📐 specced` → ✅).
-- **Consumer reframe (calibrations).** The named consumer changed from the Exchange platform to **codemoji**
+- **Consumer reframe (calibrations).** The named consumer changed from the Exchange platform to **codemojex**
   (present-tense, real `EchoMQ` + `EchoData.Bcs` consumer) + **echo_bot** (forward-tense, planned Telegram
   notifications) across `emq.roadmap.md`, `emq.progress.md`, `program/emq.{program,venus}.md`,
   `echo-mq-ship/SKILL.md`.
@@ -55,7 +55,7 @@ drifts:
    D-1 (Apollo = Mentor, out of the loop; the Director verifies).
 2. **apps/echomq** described as the live "FROZEN v1 bus deferred to delete" — it is **removed**.
 3. **The named consumer** is implied to be Exchange (`exchange`, `investex` out-of-scope pointers frame the
-   program around it) — now codemoji/echo_bot.
+   program around it) — now codemojex/echo_bot.
 4. **Engine claim** "Valkey 9 on `:6390`" — verify the major version against the running engine (the program
    docs say "Valkey, current stable line").
 
@@ -145,7 +145,7 @@ git-show recovery pointer where one documents how to recover trimmed content).
 The auto-memory still encodes the pre-pivot world: `echomq-umbrella-app` ("apps/echomq = the v1 bus FROZEN…"
 — removed), `echo-mq-three-movements` (Apollo = "fast finisher"; Exchange the consumer), and the Exchange/redis
 notes naming the Exchange platform the consumer. Out of this run's file scope; flagged so the next memory pass
-re-trues them to: echomq removed · Apollo = Mentor · consumers codemoji (live) + echo_bot (planned).
+re-trues them to: echomq removed · Apollo = Mentor · consumers codemojex (live) + echo_bot (planned).
 
 ---
 

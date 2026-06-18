@@ -1,6 +1,10 @@
 # EMQ.4.2 · Group-aware recovery — the group-scoped stalled-sweep (Movement II, the groups family)
 
-> **Status: 📐 PROPOSED — the rung's spec body (the seed the full triad grows from at build time).** The SECOND
+> **Status: 📐 SPECCED — the full triad authored (`./emq.4.2.stories.md` · `./emq.4.2.llms.md` · `./emq.4.2.prompt.md`),
+> reconciled lag-1 against the as-built tree (the `emq-4-2` design run, 2026-06-18). The build choice is recommended
+> → Arm A (additive-beside); the host verb is pinned → `Lanes.reap_group/3`; the conformance floor is reconciled from
+> the stale 52 to the live 54 (emq.4.1 shipped `reassign` + `lane_drain`, so the as-built count is 54 → 55, not 52 → N).
+> Not built — the build follows via `/echo-mq-ship emq.4.2`.** The SECOND
 > sub-rung of the emq.4 "groups deepened" family; the family contract + the carve + the forks are
 > [`../emq.4.md`](../emq.4.md) (authoritative — if this carve disagrees with the body, the body wins). emq.4.2
 > deepens recovery so a lapsed grouped lease can be swept **per group, on demand** — a **group-scoped
@@ -52,7 +56,7 @@ lane-key builder, and additive-minor conformance growth.
   Director/Operator's call)* over an inline `Script.new/2` that scans the expired-lease members of a named group (or
   iterates the ring/lanes), `ZADD`s each back to its `g:<group>:pending` lane, `HINCRBY gactive -1`, re-rings + wakes
   if serviceable, on the server clock; (2) the conformance scenario(s) for group-scoped recovery (additive minor,
-  the prior 52 byte-unchanged); (3) the `:valkey` + (if a process/lease surface) determinism suites.
+  the prior 54 byte-unchanged); (3) the `:valkey` + (if a process/lease surface) determinism suites.
 - **Who** — the program (the rung that completes the groups recovery axis); multi-tenant **operators**, who gain
   on-demand per-group recovery; the conformance harness, which grows by the group-scoped recovery scenario(s). The
   shipped `EchoMQ.Stalled` / `@reap` are the proven precedent it deepens.
@@ -73,7 +77,7 @@ lane-key builder, and additive-minor conformance growth.
 - **In** — group-aware recovery: (1) the **group-scoped** stalled-sweep (a named group's expired-lease members
   returned to their `g:<group>:pending` lane, ring-respecting, `gactive` decremented, the lane re-rung + a `wake`
   pushed if serviceable); (2) the **server clock** (`TIME` read inside the script — INV2); (3) the group-scoped
-  recovery conformance scenario(s) (additive minor, the prior 52 byte-unchanged); (4) the `:valkey` suites + (if the
+  recovery conformance scenario(s) (additive minor, the prior 54 byte-unchanged); (4) the `:valkey` suites + (if the
   sweep is a new process/lease surface) the **≥100-iteration determinism loop**, else a multi-seed sweep + an honest
   determinism-posture statement.
 - **Out** — any change to the **non-group** recovery path (the shipped per-job `@reap` and the queue-wide
@@ -109,7 +113,7 @@ records the same.
   is reached ONLY for a named group / a grouped member; if emq.4.2 edits a shipped recovery script, the non-group
   branch is **byte-identical to HEAD** (a conditioned group branch, not a rewrite). *Check:* the shipped `stalled` +
   `reap` conformance scenarios pass **byte-unchanged** (git-verified); a `git diff` of the non-group recovery branch
-  is empty; the prior 52 scenarios byte-unchanged.
+  is empty; the prior 54 scenarios byte-unchanged.
 - **EMQ.4.2-INV2 (← EMQ.4-INV5) — server clock where the lease is touched.** The group-scoped sweep reads `TIME`
   **server-side** inside the script to compute lease expiry (the as-built `@reap` `redis.call('TIME')` pattern,
   `jobs.ex`; the `Stalled` `@stalled` pattern, `stalled.ex`); no host clock crosses the lease. *Check:* a grep of
@@ -126,8 +130,8 @@ records the same.
   `@reap` reads `HGET jk 'group'`). *Check:* an ill-formed group raises before the wire; the recovery scenario reads
   the recovered member back on its own lane, not the flat pending.
 - **EMQ.4.2-INV5 (← EMQ.4-INV6) — the additive-minor conformance law.** The group-scoped recovery scenario(s) are
-  registered in `scenarios/0` **with their probes in the same change**; the prior **52** scenarios pass
-  **byte-unchanged**; the count re-pins **52 → N** in **both** pinning tests. *Check:* the git-diff shows only
+  registered in `scenarios/0` **with their probes in the same change**; the prior **54** scenarios pass
+  **byte-unchanged**; the count re-pins **54 → N** (N = 55 for one scenario) in **both** pinning tests. *Check:* the git-diff shows only
   additions to `scenarios/0`; both count assertions updated; `Conformance.run/2` prints N lines.
 
 ## Definition of Done
@@ -140,8 +144,8 @@ records the same.
       `wake` pushed; **server clock** (INV2).
 - [ ] The **non-group** recovery path byte-unchanged (the shipped `@reap` + `Stalled.check/3` for a no-group job —
       INV1).
-- [ ] The group-scoped recovery conformance scenario(s) registered (additive minor — the prior **52** byte-unchanged;
-      the count re-pinned **52 → N** in both pinning tests).
+- [ ] The group-scoped recovery conformance scenario(s) registered (additive minor — the prior **54** byte-unchanged;
+      the count re-pinned **54 → N** (N = 55 for one scenario) in both pinning tests).
 - [ ] The proof: the `:valkey` recovery suites green per-app; the **≥100 determinism loop** if the sweep is a
       process/lease surface, else a multi-seed sweep + an honest determinism-posture statement; honest-row reporting
       (Valkey on 6390 the truth row).
@@ -158,7 +162,7 @@ dead-lease scan: `redis.call('TIME')`, an expired grouped lease `ZADD`ed back to
 stall-threshold sweep: `KEYS[1]`=active / `KEYS[2]`=pending / `KEYS[3]`=dead, `max_stalled` dead-lettering, a grouped
 job recovered into its lane `stalled.ex:76`, mirroring the reaper's group branch) +
 `echo/apps/echo_mq/lib/echo_mq/lanes.ex` (the `g:<group>:pending` / `ring` / `gactive` / `paused` / `glimit` / `wake`
-keyspace) + `conformance.ex` (the **52**-scenario set — the `stalled` + `stalled_group` scenarios are the proven
+keyspace) + `conformance.ex` (the **54**-scenario set — the `stalled` + `stalled_group` scenarios are the proven
 precedent; re-probe the live count) · The v1 capability reference (READ-ONLY — the form NOT to lift; named in the
 surface map): `echo/apps/echomq` `stalled_checker` + `moveStalledJobsToWait` (the v1 9-key LIST shape — NOT lifted;
 the v2 form is declared-keys + lane recovery) · Design: [`../../../emq.design.md`](../../../emq.design.md) §10 seam 2
