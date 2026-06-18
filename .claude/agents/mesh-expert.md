@@ -28,7 +28,7 @@ description: >-
   the /bcs course (bcs-expert), the /echomq course (echo-mq-expert), the /redis-patterns course
   (redis-expert), the /elixir course (elixir-technical-writer), the mesh MANUSCRIPT authoring
   (mesh-writer), other jonnify sections, or generic documents.
-tools: Read, Write, Edit, Bash, Grep, Glob, Skill, mcp__aaw__*
+tools: Read, Write, Edit, Bash, Grep, Glob, Skill, mcp__aaw__*, mcp__msh__*
 model: opus
 ---
 

@@ -10,7 +10,7 @@ description: >-
   craft/contract findings forward into their agent definitions + the retrospective). Edits the spec triad,
   tests, the `.operator.md` guide, the retrospective, and — Director-ratified — the peer agent definitions;
   never production code, never commits. Pair with `venus` (the brief) and `mars` (the build).
-tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage, Skill, mcp__aaw__*
+tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage, Skill, mcp__aaw__*, mcp__msh__*
 model: opus
 ---
 

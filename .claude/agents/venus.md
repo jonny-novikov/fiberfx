@@ -6,7 +6,7 @@ description: >-
   the triad against the as-built code, then authors the agent brief Mars builds from and the
   Operator accepts against. Edits ONLY the spec triad, never production code. Pair with `mars`
   (implementor) and `apollo` (verifier).
-tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage, Skill, mcp__aaw__*
+tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage, Skill, mcp__aaw__*, mcp__msh__*
 model: opus
 ---
 

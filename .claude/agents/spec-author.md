@@ -14,7 +14,7 @@ description: >-
   does that in /spec-write Step 1), to reconcile a triad against as-built code (that is venus /
   reconcile), to author course pages (redis-expert / agile-expert), or to write production code
   (mars).
-tools: Read, Write, Edit, Bash, Grep, Glob, mcp__aaw__*
+tools: Read, Write, Edit, Bash, Grep, Glob, mcp__aaw__*, mcp__msh__*
 model: opus
 ---
 

@@ -25,7 +25,7 @@ description: >-
   (echo-mq-expert), the /redis-patterns course (redis-expert), the /elixir course
   (elixir-technical-writer), the /course/agile-agent-workflow course (agile-expert), other
   jonnify sections, or generic documents.
-tools: Read, Write, Edit, Bash, Grep, Glob, Skill, mcp__aaw__*
+tools: Read, Write, Edit, Bash, Grep, Glob, Skill, mcp__aaw__*, mcp__msh__*
 model: opus
 ---
 

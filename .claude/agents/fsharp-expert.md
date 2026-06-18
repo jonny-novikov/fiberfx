@@ -20,7 +20,7 @@ description: >-
   (elixir-technical-writer), the /redis-patterns course (redis-expert), the /bcs course (bcs-expert),
   the /echomq course (echo-mq-expert), the /course/agile-agent-workflow course (agile-expert), other
   jonnify sections, or generic documents.
-tools: Read, Write, Edit, Bash, Grep, Glob, Skill
+tools: Read, Write, Edit, Bash, Grep, Glob, Skill, mcp__aaw__*, mcp__msh__*
 model: opus
 ---
 
