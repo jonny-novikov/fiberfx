@@ -7,8 +7,8 @@ defmodule Codemojex.Board do
   reaches tier T claims every still-unclaimed tier above the player's previous
   best — at most +1 per tier, up to +30 over a round.
   """
-  alias EchoMQ.Connector
-  alias Codemojex.Bus
+  alias EchoWire.Cmd
+  alias Codemojex.{Bus, Wire}
 
   defp k(round, suffix), do: "cm:" <> round <> ":" <> suffix
 
@@ -18,30 +18,30 @@ defmodule Codemojex.Board do
 
     old = hget_int(conn, k(round, "base"), player)
     new_base = max(old, base)
-    Connector.command(conn, ["HSET", k(round, "base"), player, to_string(new_base)])
+    Cmd.hset(k(round, "base"), player, to_string(new_base)) |> Wire.run(conn)
 
     prev = hget_int(conn, k(round, "ptier"), player, -1)
 
     claimed =
       Enum.count((prev + 1)..tier//1, fn t -> t > 0 and claim_tier(conn, round, t, player) end)
 
-    if tier > prev, do: Connector.command(conn, ["HSET", k(round, "ptier"), player, to_string(tier)])
+    if tier > prev, do: Cmd.hset(k(round, "ptier"), player, to_string(tier)) |> Wire.run(conn)
 
     bonus =
       if claimed > 0 do
-        {:ok, b} = Connector.command(conn, ["HINCRBY", k(round, "bonus"), player, to_string(claimed)])
+        {:ok, b} = Cmd.hincrby(k(round, "bonus"), player, claimed) |> Wire.run(conn)
         to_int(b)
       else
         hget_int(conn, k(round, "bonus"), player)
       end
 
     eff = new_base + bonus
-    Connector.command(conn, ["ZADD", k(round, "board"), to_string(eff), player])
+    Cmd.zadd(k(round, "board")) |> Cmd.score(eff, player) |> Wire.run(conn)
     {eff, claimed, bonus}
   end
 
   defp claim_tier(conn, round, t, player) do
-    case Connector.command(conn, ["HSETNX", k(round, "tierfirst"), to_string(t), player]) do
+    case Cmd.hsetnx(k(round, "tierfirst"), to_string(t), player) |> Wire.run(conn) do
       {:ok, 1} -> true
       {:ok, "1"} -> true
       _ -> false
@@ -50,7 +50,7 @@ defmodule Codemojex.Board do
 
   @doc "Top `n`, highest first: {player_id, effective_score}."
   def top(round, n \\ 10) do
-    case Connector.command(Bus.conn(), ["ZREVRANGE", k(round, "board"), "0", to_string(n - 1), "WITHSCORES"]) do
+    case Cmd.zrevrange(k(round, "board"), 0, n - 1) |> Cmd.withscores() |> Wire.run(Bus.conn()) do
       {:ok, flat} -> {:ok, parse(flat)}
       other -> other
     end
@@ -58,14 +58,14 @@ defmodule Codemojex.Board do
 
   @doc "How many tiers this player was first to reach."
   def firsts(round, player) do
-    case Connector.command(Bus.conn(), ["HVALS", k(round, "tierfirst")]) do
+    case Cmd.hvals(k(round, "tierfirst")) |> Wire.run(Bus.conn()) do
       {:ok, vals} -> Enum.count(vals, &(&1 == player))
       _ -> 0
     end
   end
 
   defp hget_int(conn, key, field, default \\ 0) do
-    case Connector.command(conn, ["HGET", key, field]) do
+    case Cmd.hget(key, field) |> Wire.run(conn) do
       {:ok, nil} -> default
       {:ok, v} -> to_int(v)
       _ -> default

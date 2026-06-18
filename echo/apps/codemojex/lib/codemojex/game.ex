@@ -86,8 +86,9 @@ defmodule Codemojex.ScoreWorker do
   a `scored` event. A perfect crack (600) ends the round. A guess for an unknown
   round answers `:ok` (a drop), never a retry loop.
   """
-  alias EchoMQ.{Connector, Events}
-  alias Codemojex.{Bus, Store, Cache, Scoring, Board, Rooms}
+  alias EchoMQ.Events
+  alias EchoWire.Cmd
+  alias Codemojex.{Bus, Store, Cache, Scoring, Board, Rooms, Wire}
 
   @queue "cm"
   def queue, do: @queue
@@ -111,7 +112,7 @@ defmodule Codemojex.ScoreWorker do
           at_ms: System.system_time(:millisecond)
         })
 
-        Connector.command(conn, ["INCR", "cm:" <> round <> ":attempts"])
+        Cmd.incr("cm:" <> round <> ":attempts") |> Wire.run(conn)
 
         {eff, claimed, _bonus} = Board.record(round, player, s.total, s.tier)
         name = (Store.player(player) || %{name: "?"}).name

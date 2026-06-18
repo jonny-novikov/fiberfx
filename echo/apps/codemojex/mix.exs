@@ -33,6 +33,8 @@ defmodule Codemojex.MixProject do
     [
       {:echo_mq, in_umbrella: true},
       {:echo_data, in_umbrella: true},
+      # the owned wire's fluent client (EchoWire.Cmd) + connector facade
+      {:echo_wire, in_umbrella: true},
       # crucial data is persisted relationally; BCS ids stay the keys
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},

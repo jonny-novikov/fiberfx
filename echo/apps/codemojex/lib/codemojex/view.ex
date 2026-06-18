@@ -6,8 +6,8 @@ defmodule Codemojex.View do
   player sees only their own attempt history (from Postgres); the leaderboard is
   max scores, never guesses.
   """
-  alias EchoMQ.Connector
-  alias Codemojex.{Bus, Store, Cache, EmojiSet, Economy, Board}
+  alias EchoWire.Cmd
+  alias Codemojex.{Bus, Store, Cache, EmojiSet, Economy, Board, Wire}
 
   @doc "The lobby: every room as a card — prize (in USD), emoji count, cells, and the leader's progress."
   def lobby do
@@ -95,7 +95,7 @@ defmodule Codemojex.View do
   end
 
   defp scard(key) do
-    case Connector.command(Bus.conn(), ["SCARD", key]) do
+    case Cmd.scard(key) |> Wire.run(Bus.conn()) do
       {:ok, n} when is_integer(n) -> n
       {:ok, n} when is_binary(n) -> String.to_integer(n)
       _ -> 0
@@ -103,7 +103,7 @@ defmodule Codemojex.View do
   end
 
   defp get_int(key) do
-    case Connector.command(Bus.conn(), ["GET", key]) do
+    case Cmd.get(key) |> Wire.run(Bus.conn()) do
       {:ok, nil} -> 0
       {:ok, v} -> String.to_integer(to_string(v))
       _ -> 0

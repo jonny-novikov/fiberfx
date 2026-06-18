@@ -8,8 +8,8 @@ defmodule Codemojex.Rooms do
   the same round. On close the pool goes winner-take-all to the max-score player
   and the room returns to waiting for the next round.
   """
-  alias EchoMQ.Connector
-  alias Codemojex.{Bus, Store, Cache, EmojiSet, Wallet, Economy, Board}
+  alias EchoWire.Cmd
+  alias Codemojex.{Bus, Store, Cache, EmojiSet, Wallet, Economy, Board, Wire}
 
   @doc "Create a room (`RMM`) over an emoji set, in the waiting state."
   def create_room(name, %EmojiSet{} = set, opts \\ []) do
@@ -80,7 +80,7 @@ defmodule Codemojex.Rooms do
   end
 
   defp add_player(round, player),
-    do: Connector.command(Bus.conn(), ["SADD", "cm:" <> round <> ":players", player])
+    do: Cmd.sadd("cm:" <> round <> ":players", player) |> Wire.run(Bus.conn())
 
   @doc """
   Close a round: pay the pool winner-take-all (diamonds) to the max-score player,
@@ -98,7 +98,7 @@ defmodule Codemojex.Rooms do
       r ->
         # Exactly-once payout: only the closer that wins this atomic SET NX pays.
         # A perfect-crack close and a timer close can race; the loser is a no-op.
-        case Connector.command(Bus.conn(), ["SET", "cm:" <> round <> ":closed", "1", "NX"]) do
+        case Cmd.set("cm:" <> round <> ":closed") |> Cmd.value("1") |> Cmd.nx() |> Wire.run(Bus.conn()) do
           {:ok, "OK"} -> do_close(round, r)
           _ -> {:ok, :already_closed}
         end
@@ -114,7 +114,7 @@ defmodule Codemojex.Rooms do
     end)
 
     total = payouts |> Enum.map(&elem(&1, 1)) |> Enum.sum()
-    if total > 0, do: Connector.command(Bus.conn(), ["INCRBY", "cm:total_won", to_string(total)])
+    if total > 0, do: Cmd.incrby("cm:total_won", total) |> Wire.run(Bus.conn())
     :ok = Store.put_round(round, Map.put(r, :status, :closed))
     reset_room(r)
     {:ok, payouts}

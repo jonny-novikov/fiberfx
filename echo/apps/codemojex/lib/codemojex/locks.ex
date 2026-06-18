@@ -7,22 +7,22 @@ defmodule Codemojex.Locks do
   position is guaranteed regardless of what the keyboard sent — which is the rules'
   "locked positions persist across guesses", made server-side and durable.
   """
-  alias EchoMQ.Connector
-  alias Codemojex.Bus
+  alias EchoWire.Cmd
+  alias Codemojex.{Bus, Wire}
 
   defp k(round, player), do: "cm:" <> round <> ":lock:" <> player
 
   @doc "Lock `code` at `pos` (0..5) for this player in this round."
   def lock(round, player, pos, code) when pos in 0..5,
-    do: Connector.command(Bus.conn(), ["HSET", k(round, player), to_string(pos), to_string(code)])
+    do: Cmd.hset(k(round, player), to_string(pos), to_string(code)) |> Wire.run(Bus.conn())
 
   @doc "Release a locked position."
   def unlock(round, player, pos) when pos in 0..5,
-    do: Connector.command(Bus.conn(), ["HDEL", k(round, player), to_string(pos)])
+    do: Cmd.hdel(k(round, player), to_string(pos)) |> Wire.run(Bus.conn())
 
   @doc "The player's locked positions as `%{pos => code}`."
   def locked(round, player) do
-    case Connector.command(Bus.conn(), ["HGETALL", k(round, player)]) do
+    case Cmd.hgetall(k(round, player)) |> Wire.run(Bus.conn()) do
       {:ok, m} when is_map(m) -> to_pos_map(Enum.to_list(m))
       {:ok, flat} when is_list(flat) -> flat |> Enum.chunk_every(2) |> to_pos_map()
       _ -> %{}

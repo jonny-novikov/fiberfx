@@ -106,7 +106,7 @@ defmodule Codemojex.Bus do
   end
 
   def start_link(opts \\ []) do
-    {:ok, conn} = EchoMQ.Connector.start_link(port: Keyword.get(opts, :port, 6390), protocol: 3)
+    {:ok, conn} = EchoWire.start_link(port: Keyword.get(opts, :port, 6390), protocol: 3)
     :persistent_term.put(@key, conn)
     {:ok, conn}
   end
