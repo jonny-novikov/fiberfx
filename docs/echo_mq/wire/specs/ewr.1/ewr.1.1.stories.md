@@ -4,6 +4,13 @@
 > [`ewr.1.1.md`](ewr.1.1.md) (**SPECCED** — the body is authoritative; this file and the brief may lag it, and
 > when they disagree the body wins). The acceptance below is written forward-tense and runs at the build run,
 > against the as-shipped `EchoWire.Pipe` surface.
+>
+> **Two story layers, kept distinct (INV8).** THIS file is the **hand-authored USER stories** — the rung
+> acceptance a person signs (Connextra, INVEST, Given/When/Then prose). The **generated**
+> `docs/echo_mq/wire/stories/*.stories.md` is the self-documenting proof harvested from the as-built
+> `echo_mq/test/stories/*_story_test.exs` BDD tests ("the tests written back to specs"). Both name the same
+> redis-pattern set; neither forks the body. The pattern coverage below (US9) is the acceptance face of the
+> BDD layer the generated stories prove.
 
 ## EWR.1.1-US1 — assemble and flush a batch with `|>`
 
@@ -64,21 +71,24 @@ Acceptance criteria:
 INVEST — independent; testable offline + `:valkey`; encodes EWR.1.1-INV6. Priority: must · Size: 3 ·
 Implements deliverables: EWR.1.1-D4.
 
-## EWR.1.1-US5 — the same pipe runs against a connector or a pool
+## EWR.1.1-US5 — the same pipe runs against a connector or a pool (first-class this rung)
 
-As a **caller deploying against either a single connector or a pool**, I want `new/1` to accept conn-or-pool
-opaquely, so that the same `%Pipe{}` flushes through whichever the deployment provides without my code
-branching.
+As a **caller deploying against either a single connector or a pool**, I want `new/2` to accept conn-or-pool
+opaquely **in this founding rung** (the Operator ruled pool first-class, not deferred), so that the same
+`%Pipe{}` flushes through whichever the deployment provides without my code branching.
 
 Acceptance criteria:
-- Given a `%Pipe{}` built once, when I `exec/1` it with `conn` = a `Connector` name and then with `conn` =
-  an `EchoMQ.Pool` name, then both round-trip identically (both expose a signature-identical `pipeline/3`).
-- Given `new/1`, when it stores the reference, then it never inspects the reference's module or internals.
+- Given a `%Pipe{}` built once, when I `exec/1` it with the target = a `Connector` and then with the target =
+  an `EchoMQ.Pool`, then both round-trip identically (both expose a signature-identical `pipeline/3` — connector
+  `:56`, pool `:48`), the dispatch carried in `via`.
+- Given `new/2`, when it stores the reference, then it never inspects the reference's module or internals, and
+  `exec`'s body contains no `is_struct`/`is_atom`/module-name guard on it.
 - Given `exec_txn/1` / `exec_noreply/1`, when the target is a pool, then the spec declares them out of contract
-  (a pool pins no connection across a transaction) — they are exercised only against a `Connector`.
+  (a pool pins no connection across a transaction; the pool carries neither `transaction_pipeline` nor
+  `noreply_pipeline`) — they are exercised only against a `Connector`.
 
-INVEST — independent; testable by a `:valkey` suite with both targets; encodes EWR.1.1-INV3, EWR.1.1-INV5.
-Priority: must · Size: 3 · Implements deliverables: EWR.1.1-D2.
+INVEST — independent; testable by a `:valkey` story suite with both targets; encodes EWR.1.1-INV3,
+EWR.1.1-INV5. Priority: must · Size: 3 · Implements deliverables: EWR.1.1-D1, EWR.1.1-D2.
 
 ## EWR.1.1-US6 — order is positional and the empty pipe is guarded
 
@@ -124,10 +134,61 @@ Acceptance criteria:
 
 INVEST — the standing gate; encodes every INV. Priority: must · Size: 3 · Implements deliverables: EWR.1.1-D7.
 
+## EWR.1.1-US9 — every verb proven in the redis-pattern it exists for
+
+As a **caller learning the curated vocabulary**, I want each data family's principal verbs proven end-to-end in
+the real redis-pattern they serve, so that the curated set is demonstrably comprehensive and the example is the
+documentation. The patterns are named faithfully to the [`/redis-patterns`](../../../../redis-patterns/redis-patterns.toc.md)
+taxonomy (cache-aside R1.01, distributed-locking R2.02, reliable-queue R3.01, atomic-updates/counter R2.01,
+leaderboards R4.05, set-membership, hash object).
+
+Acceptance criteria — each a `EchoMQ.Story` `:valkey` scenario driving `EchoWire.Pipe` (the pattern → the Pipe
+verbs it exercises):
+- **cache-aside (strings + expiry):** Given a cold key, when a `set(k, v, ex: 60)` then `get(k)` pipe flushes,
+  then the reply is `["OK", v]` and `ttl(k)` is `> 0` — read-through with a bounded life.
+- **distributed-lock (SET NX + DEL):** Given a lock key, when `set(lock, token, nx: true)` is flushed twice,
+  then the first reply is `"OK"` and the second is `nil` (the lock is held); `del(lock)` releases it.
+- **reliable-queue (lists):** Given a queue key, when `lpush(q, a)` / `lpush(q, b)` then `rpop(q)`, then the
+  pop returns `a` (FIFO across the wait list — the RPOPLPUSH-family pattern's push/pop ends).
+- **counter (atomic-updates):** Given a counter key, when `incr(c)` is flushed three times in one pipe, then
+  the replies are `[1, 2, 3]` — a server-atomic tally with no read-modify-write race.
+- **leaderboard (sorted sets):** Given a board key, when `zadd(b, 10, "a")` / `zadd(b, 20, "b")` then
+  `zrevrange(b, 0, -1)`, then the order is `["b", "a"]` and `zrank`/`zscore` report the standing — rank computed
+  on read, never stored.
+- **set-membership (sets):** Given a set key, when `sadd(s, x)` then `sismember(s, x)` and `sismember(s, y)`,
+  then the replies are `1` (present) and `0` (absent) — O(1) membership.
+- **hash object round-trip (hashes):** Given an entity key, when `hset(h, "name", "alice")` /
+  `hincrby(h, "hits", 1)` then `hgetall(h)`, then the map carries `{"name" => "alice", "hits" => "1"}` — a
+  compact object the wire round-trips field-wise.
+
+INVEST — independent (each pattern is its own scenario); testable only by a `:valkey` suite (the proof is the
+live round-trip); encodes EWR.1.1-INV6, EWR.1.1-INV7, and exercises D3 across all six families. Priority: must ·
+Size: 5 · Implements deliverables: EWR.1.1-D3, EWR.1.1-D8.
+
+## EWR.1.1-US10 — the stories are written back from the as-built tests (the proof, not prose)
+
+As the **Operator/verifier reading the spec docs**, I want the wire's story documents generated from the
+passing tests rather than hand-written, so that a story is true by construction — it exists only because a
+`:valkey` test compiled and passed.
+
+Acceptance criteria:
+- Given the `echo_mq/test/stories/*_story_test.exs` BDD suite green on `6390`, when I run
+  `mix echo_mq.stories --out docs/echo_mq/wire/stories`, then `<feature>.stories.md` + a README catalogue are
+  written, and the generated scenario set equals the test scenario set one-for-one (every story has a live test
+  behind it).
+- Given a story document, when it is inspected, then no scenario lacks a backing test — a no-op or a
+  hand-authored story does not satisfy INV7.
+- Given this (generated) layer and the hand-authored user-story layer (this file), when both are read, then
+  they name the same redis-pattern set and neither contradicts the body (INV8).
+
+INVEST — independent; testable by the generator + a diff of story-vs-test scenario sets; encodes EWR.1.1-INV7,
+EWR.1.1-INV8. Priority: must · Size: 2 · Implements deliverables: EWR.1.1-D8.
+
 ---
 
-Coverage: D1→US-GATE (the design-make precedes all) · D2→US1/US5 · D3→US1 · D4→US4 · D5→US1/US2/US3 ·
-D6→US6 · D7→US7/US-GATE · INV1/INV2→US7 · INV3→US5 · INV4→US1 · INV5→US2/US3/US5 · INV6→US4/US6.
+Coverage: D1→US-GATE/US5 (the design-make precedes all; dispatch first-class) · D2→US1/US5 · D3→US1/US9 ·
+D4→US4 · D5→US1/US2/US3 · D6→US6 · D7→US7/US-GATE · D8→US9/US10 · INV1/INV2→US7 · INV3→US5 · INV4→US1 ·
+INV5→US2/US3/US5 · INV6→US4/US6/US9 · INV7→US9/US10 · INV8→US10.
 
 Body: [`ewr.1.1.md`](ewr.1.1.md) · Brief: [`ewr.1.1.llms.md`](ewr.1.1.llms.md) · Testing:
 [`../../ewr.testing.md`](../../ewr.testing.md)
