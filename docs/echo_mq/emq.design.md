@@ -6,21 +6,7 @@
 
 ## 0 · Genesis — why EchoMQ was born
 
-EchoMQ began as a faithful BullMQ-protocol port for the BEAM: the v1 line (frozen at `1.3.0`) speaks the BullMQ
-wire — the `<prefix>:<queue>:<type>` keyspace at the `bull` default, `meta.version` = `bullmq:5.65.1` — and a Go
-sibling rides the same wire. The port worked; the inheritance did not. Two structural flaws came with the wire
-and could not be fixed under compatibility: **unauditable key access** — v1 scripts construct operand keys from
-an `ARGV` prefix inside the script body, so no static analysis can enumerate what a transition touches, against
-the engine's own prescription ("all names of keys that a script accesses must be explicitly provided as input
-key arguments" — https://valkey.io/topics/eval-intro/); and **an open keyspace** — verbatim name interpolation
-lets a caller-supplied id collide with a structure key, and no probe can classify a key without consulting live
-state. The founding formation surfaced a third: both architects' draft treated the v1 keyspace as
-`emq:`-prefixed while the as-built default is `bull` — every fence and migration design aimed at a namespace
-no real deployment writes. The cross-review caught it (C-1, Director-verified, evaluation-SUSTAINED); the
-lesson — input-not-authority, verify against code — is standing discipline.
-
-The answer is **one deliberate, versioned, breaking fork**: EchoMQ 2.0 owns its wire. The protocol was then
-**re-founded on proven requirements**: the Branded Component System's Part III derives the same keyspace
+EchoMQ began as a protocol with **proven requirements**: the Branded Component System's Part III derives the same keyspace
 discipline from first principles and gates it against Valkey 9.1.0 with a committed reference implementation —
 the braced co-location grammar, the gated branded job position, the deployment-scoped version fence, the
 fenced state machine. BCS D-1 names the framing that settled a mid-flight detour: the v2 protocol's
@@ -71,8 +57,7 @@ machinery survives unchanged; the wire and key form is the fourteen-byte branded
 
 ### S-3 — The break, the freeze, the fence (standing from the founding phase)
 
-BullMQ wire compatibility dropped; the v1 line frozen at `1.3.0` (+ the one terminal `1.3.1` fence-only patch —
-the founding fork answer); `meta.version` `bullmq:5.65.1` → `echomq:2.0.0` behind the two-way typed boot fence;
+`meta.version`  → `echomq:2.0.0` behind the two-way typed boot fence;
 an explicit migration path; **the fork happens exactly once, at emq.1**. After it, additive registration rides
 protocol minors; a wire break or computed-floor raise is a major.
 
@@ -395,29 +380,13 @@ echo_flame wipe** (the three dangling-reference files, same pass).
 | R-3 | Inventory deltas | Acknowledged (68 files; the out-of-band deletions; the new tier-4 file) |
 | + | **emq.2 re-founded** | The Operator's directive: "the BCS state machine" — the triad re-derived in Track A; the build gated on this rung's D5 close. Amendment window: any DQ ruling may be amended until Track B's wire changes commit at D5 |
 
-**The Operator seams gathered at this rung (live status tracked in `./emq.roadmap.md`):**
-
-1. **The emq.2 in-place v2→v2 migration treatment — OPEN.** The lifecycle reform (the three-field row, the
-   four sets) against any keyspace the pre-reform 2.0 tree wrote: drain-precondition (the cheap, honest
-   default — empty queues before the upgrade) vs an in-place converter, plus the wire-semver call for the
-   reform; the likely resolution ground is the no-release precondition (the v2 line has never shipped —
-   §11.11). Recorded in `./emq.roadmap.md`'s seams (formerly the old emq.2 triad's DoD); settled with the
-   Operator BEFORE that build.
-2. **The displaced groups family's rung slot** (§4 cluster 2) — **RULED: the program ladder's emq.4** (the
-   Stage-1b checkpoint; `./emq.roadmap.md` seam 2, CLOSED). The interim reading rule — emq.3–emq.5's
-   "emq.2's lanes" references naming the displaced family — retires with the ruling.
-
 ## 11 · Standing decisions distilled from the founding phase
 
 The founding Design Phase (dual independent architects with opposed lenses → cross-review → independent
 evaluation, BUILD-GRADE with six corrections → Director synthesis → Operator approval) produced these binding
 decisions, restated token-free with their grounds:
 
-1. **S-1 · the v1 prefix is an operator/config input, default `"bull"`** — the cross-review's headline C-1
-   catch: the as-built v1 keyspace default is `bull` (config-overridable; the test env used another), so every
-   v1-detection, migration-mapping, and tombstone surface is parametric on `v1_prefix`. Alternatives rejected:
-   pinning the constant (real deployments override) and shape-scanning (O(keyspace), heuristic). The
-   "zero `emq:*`" criterion re-read as v2 self-consistency, now subsumed by grammar totality (§6).
+1. **S-1** · the v2 prefix is emq;
 2. **Job identity = the B′ arm** — Snowflake, config-assigned node ids, **no store lease** (no node-ids
    registry key exists; the explicit→config→host-derived resolution chain is the as-built primitive's own);
    the per-queue `INCR` counter retired; the boot-time advisory collision check is a named deliverable
@@ -467,7 +436,7 @@ decisions, restated token-free with their grounds:
 
 ## 12 · The engine-feature ADRs — the break's unlocked surface, on Valkey 8+
 
-The fork removed BullMQ's wire floor, putting the modern engine surface in reach. Each candidate was
+Establishing EchoMQ 2.0 put the modern engine surface in reach. Each candidate was
 dispositioned with verified citations; the founding decisions are re-grounded here for the single-engine,
 braced, Valkey-8+ canon (where a founding rejection rested on the superseded second-engine target's
 capabilities, the new ground is stated — a decision that outlives its original reason needs a reason that
@@ -530,4 +499,10 @@ lives).
 7. **Durability posture.** One documented posture: AOF, `everysec` default with the engine's stated bound,
    `always` named; the two-variant SIGKILL restart probe runs on the truth row only; `WAITAOF` is an
    instrument where available, never floor-bearing, never a wire guarantee.
+
+---
+
+> **Forward.** This canon is the **2.x line** (S-1..S-7). The next major — **EchoMQ 3.0, the Stream
+> Tier** — is specified in [`./emq.streams.md`](./emq.streams.md); the shipped per-rung record is
+> [`./emq.changelog.md`](./emq.changelog.md); the delivery plan is [`./emq.roadmap.md`](./emq.roadmap.md).
 

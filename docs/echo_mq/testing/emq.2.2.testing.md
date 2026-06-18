@@ -2,8 +2,7 @@
 
 > Living test ledger for the **operator plane (queue lifecycle + job mutation)** rung (`76fc947c`,
 > conformance 24 → 32). Strategy: [`../emq.testing.md`](../emq.testing.md). Spec triad:
-> [`../specs/emq.2.2.md`](../specs/emq.2/emq.2.rungs/emq.2.2.md) · [`.stories.md`](../specs/emq.2/emq.2.rungs/emq.2.2.stories.md) ·
-> [`.llms.md`](../specs/emq.2/emq.2.rungs/emq.2.2.llms.md). Re-probe the tree before trusting a `file:line` here.
+> [`../specs/emq.2.2.md`](../specs/emq.2/emq.2.rungs/emq.2.2.md) · [`.stories.md`](../specs/emq.2/emq.2.rungs/emq.2.2.stories.md). Re-probe the tree before trusting a `file:line` here.
 
 ## Proof state (as-built)
 

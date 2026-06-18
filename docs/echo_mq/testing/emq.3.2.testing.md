@@ -5,7 +5,7 @@
 > `:dependencies` STRING counter; the `emq-3-2` cycle 2026-06-15, conformance 45 → **46**). Strategy:
 > [`../emq.testing.md`](../emq.testing.md). Spec family + carve: [`../specs/emq.3.md`](../specs/emq.3/emq.3.md) · Rung
 > triad: [`../specs/emq.3.2.md`](../specs/emq.3/emq.3.rungs/emq.3.2.md) · [`.stories.md`](../specs/emq.3/emq.3.rungs/emq.3.2.stories.md) ·
-> [`.llms.md`](../specs/emq.3/emq.3.rungs/emq.3.2.llms.md) · Runbook: [`.prompt.md`](../specs/emq.3/emq.3.rungs/emq.3.2.prompt.md). The floor it
+> Runbook: [`.prompt.md`](../specs/emq.3/emq.3.rungs/emq.3.2.prompt.md). The floor it
 > reads: [`emq.3.1.testing.md`](./emq.3.1.testing.md). **NORMAL-risk rung** — it edited **no** shipped Lua
 > script (the real-result completion rode the EXISTING `ARGV[5]` seam, the `@complete` Lua byte-unchanged), so
 > a dedicated Apollo evaluator was not required (the Director's solo review + the gate ladder were the gate; the

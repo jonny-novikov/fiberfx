@@ -14,16 +14,15 @@
 > SPECCED/BUILDING reads "emq.N builds…", PLANNED reads "the roadmap plans…", PROPOSED reads "proposed:". The v2
 > master invariant ([`./emq.roadmap.md`](./emq.roadmap.md) §The master invariant) frames every feature: braced
 > `emq:{q}:`, the first-byte-disjoint `{emq}:` reserve, the gated branded `job:` position, every Lua key
-> declared-or-rooted, the version record monotone behind the five-code fence, additive registration a protocol
+> declared-or-rooted, the version record climbing per rung behind the five-code fence, additive registration a protocol
 > minor — no later rung re-breaks the wire.
 >
 > Verified against the as-built tree 2026-06-15 (`echo/apps/echo_mq` + `echo/apps/echo_wire`; the v1 reference
 > `echo/apps/echomq`). Status legend: **✅ shipped** · **📐 specced** (the triad authored, no build artifact yet)
 > · **📋 planned** (a confirmed rung, not yet built) · **🔭 proposed** (awaiting Operator slot ratification) ·
-> **— ruled-out** (explicitly not a feature, with the ruling cited). **The emq.2 cluster is CLOSED** (read →
-> ops → watch → close, 4/4 shipped); **the flow family** has emq.3.1/3.2/3.3 shipped (3.3 cross-queue
-> shipped-this-run) and **emq.3.4** (failure-policy + bulk) **specced** — the new triad
-> [`./specs/emq.3.4.md`](./specs/emq.3/emq.3.rungs/emq.3.4.md).
+> **— ruled-out** (explicitly not a feature, with the ruling cited). **Movement I is CLOSED** — the emq.2 parity cluster (4/4) + the emq.3 flow family (5/5),
+> conformance 52/52; **Movement II is building** (emq.4.1 + emq.4.2 shipped, live 55/55, `echomq:2.4.2`).
+> Per-rung shipped detail: the [changelog](./emq.changelog.md).
 
 ---
 
@@ -82,7 +81,7 @@ would land on **this movement's emq.1 row** — the bus's scheduled-jobs surface
 #### The full-parity cluster — emq.2 (building: read ✅ · ops ✅ · watch 🔨 · closer 🔨)
 
 emq.2 is the **full-parity rewrite** of the v1 capability floor `echo_mq` lacks, decomposed read→ops→watch on
-the dependency-and-concern boundary (the carve + the five ADRs: [`./specs/emq.2.design.md`](specs/emq.2/emq.2.design.md)).
+the dependency-and-concern boundary (the carve + the five ADRs: [`./specs/emq.2.design.md`](specs/emq1/emq.2/emq.2.design.md)).
 Each rung stands ON the as-built floor and is acceptance-checked through the prior rung's reads.
 
 **emq.2.1 · the read plane (introspection & metrics) — ✅ shipped (`7d98ef86`).** The module `EchoMQ.Metrics`
@@ -165,7 +164,7 @@ emq.6's distributed cancel coordinates the local token this rung ships.
 
 **emq.2.4 · the parity-closing stage — 🔨 the cluster closer (this design cycle specs it).** emq.2.4 is the
 FINAL parity stage, two-part: (1) it builds the residual parity features + improvement opportunities the
-emq.2 ⇄ emq.2.3 reconcile surfaces (the gap table — see [`./specs/emq.2.4.md`](specs/emq.2/emq.2.rungs/emq.2.4.md)); (2) it
+emq.2 ⇄ emq.2.3 reconcile surfaces (the gap table — see [`./specs/emq.2.4.md`](specs/emq1/emq.2/emq.2.rungs/emq.2.4.md)); (2) it
 ships the **complete test suite** that closes the v1↔v2 coverage gap for the shipped read/ops/watch surface —
 porting v1's scenario DEPTH for the parity surface, while explicitly attributing the rest to its rung (worker
 abstraction → emq.6, the OTel contract → emq.8, the ≥100 determinism loop replacing dedicated stress files).
@@ -200,7 +199,7 @@ cross-queue admit path on `add/3` (host-orchestrated, parent-first, fail-closed)
 `deliver_flow_completions` delivers the decrement on the parent's slot via `@flow_deliver` (the `:processed`
 HSETNX idempotency guard) — **eventually-consistent** (released on the next sweep tick, never "atomic across
 queues"), at-least-once made effectively-once; the `flow_cross_queue` scenario (46 → 47); HIGH-risk, Apollo
-MANDATORY. **emq.3.4 SPECCED (the new triad [`./specs/emq.3.4.md`](./specs/emq.3/emq.3.rungs/emq.3.4.md))** — the **failure-policy
+MANDATORY. **emq.3.4 SPECCED (the new triad [`./specs/emq.3.4.md`](specs/emq1/emq.3/emq.3.rungs/emq.3.4.md))** — the **failure-policy
 + bulk add**: `fail_parent_on_failure` (the default — a dead child fails the parent, recorded in `:failed`) /
 `ignore_dependency_on_failure` (the dead child is satisfied + recorded in `:unsuccessful`, so the parent
 proceeds) over the **already-§6-reserved** `:failed`/`:unsuccessful` subkeys (no grammar edit), the additive
@@ -405,7 +404,7 @@ contract + Prometheus export owe **emq.8**. No v1 capability is orphaned.
 > §6-reserved at the founding — never the v1 data-value `parent_key`). The happy path is SHIPPED end to end
 > (emq.3.1–3.3); emq.3.4 closes the failure half; grandchildren is the one deferred depth (the emq-3-4 V-1
 > fork). The rung rows: [`./emq.roadmap.md`](./emq.roadmap.md) §the rung ladder (emq.3) + the family contract
-> [`./specs/emq.3.md`](specs/emq.3/emq.3.md).
+> [`./specs/emq.3.md`](specs/emq1/emq.3/emq.3.md).
 
 **Parent/child fan-in (single-queue) — ✅ SHIPPED (emq.3.1).**
 - **Goal** — a parent job becomes claimable only when all its same-queue children complete (fan-in), atomically
@@ -477,7 +476,7 @@ contract + Prometheus export owe **emq.8**. No v1 capability is orphaned.
   same-queue death atomically; a cross-queue death rides the same `flow:outbox` + sweep via `@flow_fail_deliver`,
   idempotent); `EchoMQ.Flows.add_bulk/3` (N flows, fail-closed per flow); `ignored_failures/3` (the v1
   `get_ignored_children_failures` read). *When*: emq.3.4 builds this (SPECCED — the triad
-  [`./specs/emq.3.4.md`](./specs/emq.3/emq.3.rungs/emq.3.4.md); HIGH-risk — a shipped `@retry` edit → Apollo MANDATORY). *Where*:
+  [`./specs/emq.3.4.md`](specs/emq1/emq.3/emq.3.rungs/emq.3.4.md); HIGH-risk — a shipped `@retry` edit → Apollo MANDATORY). *Where*:
   `flows.ex` (the policy flags + `add_bulk/3` + `ignored_failures/3`), `jobs.ex` (the additive `@retry` branch,
   the dead-letter body byte-frozen), `pump.ex` (the KIND dispatch + `@flow_fail_deliver`). *Why*: a flow that
   terminates either way; the producer surface completed.
@@ -486,7 +485,7 @@ contract + Prometheus export owe **emq.8**. No v1 capability is orphaned.
   auto-cancel of a stuck flow (emq.6), `remove_dependency` (the v1 third option — deferred), the flow-subkey
   cleanup (the lifecycle rung).
 - **Acceptance Criteria** (the forward spec — the rung turns it into code) — the triad
-  [`./specs/emq.3.4.md`](./specs/emq.3/emq.3.rungs/emq.3.4.md) INV1–INV11; the `flow_fail_parent`/`flow_ignore_dep`/`flow_add_bulk`
+  [`./specs/emq.3.4.md`](specs/emq1/emq.3/emq.3.rungs/emq.3.4.md) INV1–INV11; the `flow_fail_parent`/`flow_ignore_dep`/`flow_add_bulk`
   conformance scenarios (47 → 50); the `:valkey` failure suite + the ≥100 determinism loop; the `@retry`
   dead-letter body + `@complete` + `@flow_deliver` byte-unchanged (the HIGH-risk regression bound); Apollo
   MANDATORY BUILD-GRADE. (On ship, the AC re-home to the generated `stories/flows.stories.md`.)
@@ -731,7 +730,7 @@ corpus (every ARGV-rooted derived key slot-provable). The conformance generated 
 ---
 
 The binding design: [`./emq.design.md`](./emq.design.md). The delivery plan: [`./emq.roadmap.md`](./emq.roadmap.md).
-The emq.2 parity carve: [`./specs/emq.2.design.md`](specs/emq.2/emq.2.design.md). The parity-closing triad:
-[`./specs/emq.2.4.md`](specs/emq.2/emq.2.rungs/emq.2.4.md). The worked consumer: `echo/apps/codemojex`; the planned consumer: `echo/apps/echo_bot`.
+The emq.2 parity carve: [`./specs/emq.2.design.md`](specs/emq1/emq.2/emq.2.design.md). The parity-closing triad:
+[`./specs/emq.2.4.md`](specs/emq1/emq.2/emq.2.rungs/emq.2.4.md). The worked consumer: `echo/apps/codemojex`; the planned consumer: `echo/apps/echo_bot`.
 The as-built floor: `echo/apps/echo_mq/lib/echo_mq/*.ex` + `echo/apps/echo_wire`. The v1 feature reference:
 `echo/apps/echomq/lib/echomq/*.ex` + `echo/apps/echomq/priv/scripts/*.lua`.

@@ -2,8 +2,7 @@
 
 > Living test ledger for the **read plane (introspection & metrics)** rung (`7d98ef86`, conformance
 > 18 → 24). Strategy: [`../emq.testing.md`](../emq.testing.md). Spec triad:
-> [`../specs/emq.2.1.md`](../specs/emq.2/emq.2.rungs/emq.2.1.md) · [`.stories.md`](../specs/emq.2/emq.2.rungs/emq.2.1.stories.md) ·
-> [`.llms.md`](../specs/emq.2/emq.2.rungs/emq.2.1.llms.md). Re-probe the tree before trusting a `file:line` here.
+> [`../specs/emq.2.1.md`](../specs/emq.2/emq.2.rungs/emq.2.1.md) · [`.stories.md`](../specs/emq.2/emq.2.rungs/emq.2.1.stories.md). Re-probe the tree before trusting a `file:line` here.
 
 ## Proof state (as-built)
 
