@@ -16,13 +16,16 @@ defmodule Codemojex.MixProject do
   end
 
   # The game runs under a supervision tree now: the Repo (crucial data), PubSub,
-  # the EchoMQ bus + consumers, and the Phoenix endpoint. EchoStore stays an
-  # optional read-through (the Cache seam guards on whether it is loaded), so the
-  # app still compiles without it.
+  # the EchoMQ bus + consumers (scoring · settlement · notifications · inbound bot
+  # commands), the rate limiter + Telegram bot gateway, an in-memory CHAMP
+  # leaderboard, and the Phoenix endpoint. EchoStore stays an optional read-through
+  # (the Cache seam guards on whether it is loaded), so the app still compiles
+  # without it. `:inets` + `:ssl` back `Codemojex.Telegram`'s dependency-light
+  # `:httpc` transport (the Mini App's outbound send side).
   def application do
     [
       mod: {Codemojex.Application, []},
-      extra_applications: [:logger]
+      extra_applications: [:logger, :inets, :ssl]
     ]
   end
 
