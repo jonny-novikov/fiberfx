@@ -7,7 +7,7 @@
 > skill is the echo_mq binding (Venus loads `echo-mq-architect`, Mars loads `echo-mq-implementor`); the inputs
 > are the triad ([`./emq.3.2.md`](emq.3.2.md) · [`./emq.3.2.stories.md`](emq.3.2.stories.md)), the family ([`./emq.3.md`](../emq.3.md) — the carve + the forks), the
 > SHIPPED first slice ([`./emq.3.1.md`](emq.3.1.md) — the floor emq.3.2 reads), and the canon
-> ([`../emq.design.md`](../../../emq.design.md) §11.10/§6/§5/S-6).
+> ([`../emq.design.md`](../../../../emq.design.md) §11.10/§6/§5/S-6).
 
 ## The family in one paragraph
 
@@ -190,7 +190,7 @@ Stage-2 solo review + Mars-2's independent ladder are the gate (the NORMAL-risk 
 Sync the triad body to the as-built surface (the `EchoMQ.Flows.children_values/3`/`dependencies/3` real arities
 + return shapes; the `complete`'s real result-arg form — `complete/5` or a `result:` opt; the final conformance
 N; the ruled Fork arms); every triad claim MATCH or `[RECONCILE]`-marked; fold the parity proof
-([`../emq.features.md`](../../../emq.features.md) Part B) to advance the `flow_producer → emq.3` row for the
+([`../emq.features.md`](../../../../emq.features.md) Part B) to advance the `flow_producer → emq.3` row for the
 child-result-read parity (the cross-queue/failure/bulk parts stay 📋 to emq.3.3–3.4 — the honest bound). Confirm
 **O1 is CLOSED** in the body (the `:processed` value is the real result under R1·B) and the **N1 lifecycle carry
 is NAMED**, not discovered.
@@ -201,7 +201,7 @@ Preconditions (x-mode §4): the gate green + the reconcile build-grade (+ Apollo
 **≥1 `tool_x_decision` (D-n)** + a **`tool_x_complete` (Z-n)** this turn; `git status --short` AND `git diff
 --cached --name-only` reviewed; `.git/rebase-merge`/`rebase-apply` checked. Then the **pathspec** commit (below;
 NEVER `git add -A`, NEVER a bare commit). **Same turn:** flip the emq.3.2 row in the single roadmap
-([`../emq.roadmap.md`](../../../emq.roadmap.md)) and the dashboard ([`../emq.progress.md`](../../../emq.progress.md)); record
+([`../emq.roadmap.md`](../../../../emq.roadmap.md)) and the dashboard ([`../emq.progress.md`](../../../../emq.progress.md)); record
 **O1 closed** + the **N1 lifecycle carry** still open (routed to the emq.3.x lifecycle rung); surface the **next
 frontier** (emq.3.3 cross-queue once Fork A's cross-queue arm is designed, or emq.3.4 failure-policy + bulk);
 under an **explicit Operator grant only**, fold any mentoring diff into the peer charters / the echo-mq-* skills
@@ -263,8 +263,8 @@ attribute** (NORMAL-risk proven). The spec body stays authoritative; Stage 5 syn
 
 Inputs: [`./emq.3.2.md`](emq.3.2.md) · [`./emq.3.2.stories.md`](emq.3.2.stories.md) · Family: [`./emq.3.md`](../emq.3.md) (the carve + the forks) · The
 first slice (SHIPPED): [`./emq.3.1.md`](emq.3.1.md) + [`./emq.3.1.prompt.md`](emq.3.1.prompt.md) (the
-HIGH-risk runbook this NORMAL-risk one mirrors) · Canon: [`../emq.design.md`](../../../emq.design.md) §11.10/§6/§5/S-6
-· Roadmap: [`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I · The feature catalog:
-[`../emq.features.md`](../../../emq.features.md) (the emq.3 row) · Skills: `.claude/skills/echo-mq-ship.md` (the
+HIGH-risk runbook this NORMAL-risk one mirrors) · Canon: [`../emq.design.md`](../../../../emq.design.md) §11.10/§6/§5/S-6
+· Roadmap: [`../emq.roadmap.md`](../../../../emq.roadmap.md) Movement I · The feature catalog:
+[`../emq.features.md`](../../../../emq.features.md) (the emq.3 row) · Skills: `.claude/skills/echo-mq-ship.md` (the
 binding) + `echo-mq-{architect,implementor,evaluator}.md` (the per-role craft) + `echo-mq-program.md` (the
-program law) · Approach: [`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+program law) · Approach: [`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

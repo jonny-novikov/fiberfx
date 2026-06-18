@@ -1,5 +1,5 @@
 # EMQ.3.4 · The flow failure-policy + bulk add — the fourth sub-rung (Movement I, the flow family)
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: SHIPPED 2026-06-15** (BUILD-GRADE — the HIGH-risk Apollo MANDATORY pass complete, Y-4; the FOURTH
 > sub-rung of the emq.3 parent/flow family — the family contract + the carve are [`./emq.3.md`](../emq.3.md);
@@ -130,7 +130,7 @@ Out** (V-1, the scope fork — recorded NOT built).
   ignored failure — never an indefinitely-hung parent) and bulk flow submission. **codemojex** (prospective): a
   job whose one failed leg must **fail the parent** (`fail_parent_on_failure`) or be
   **recorded-and-skipped** (`ignore_dependency_on_failure`) — *it names no flows today*
-  ([`../emq.features.md`](../../../emq.features.md) — recorded, not asserted). The conformance harness, which grows by
+  ([`../emq.features.md`](../../../../emq.features.md) — recorded, not asserted). The conformance harness, which grows by
   three scenarios (additive minor).
 - **When** — Movement I, the flow family's **fourth** sub-rung, after emq.3.1 + emq.3.2 + emq.3.3 shipped
   (emq.3.4 extends the `add/3` admit path, edits the `@retry` dead-letter arm emq.1 built, rides the
@@ -181,7 +181,7 @@ Out** (V-1, the scope fork — recorded NOT built).
   NOT built); a later Arm-B re-scope (folding it in) stays a zero-cost Operator option but is not this rung; the
   **TTL auto-cancel** of a stuck flow
   (a flow whose child neither completes nor dies — that is **emq.6** lifecycle controls, the distributed/TTL
-  cancel, [`../emq.features.md`](../../../emq.features.md) Movement II — not a flow rung); **`remove_dependency`** (the
+  cancel, [`../emq.features.md`](../../../../emq.features.md) Movement II — not a flow rung); **`remove_dependency`** (the
   v1 third option, `flow_producer.ex` `encode_job_opts` `:480` — a manual dependency-removal verb, deferred with
   grandchildren to the family's residue rung unless the Director folds it); the **flow-subkey CLEANUP/lifecycle**
   (the `obliterate`/`@drain` sweep of `:dependencies`/`:processed`/`:failed`/`:unsuccessful`/`flow:outbox` — a
@@ -542,10 +542,10 @@ precedent) + `echo/apps/echo_mq/lib/echo_mq/pump.ex` (`@flow_deliver` `:42` **BY
 `flow_fail_parent` `:110` / `flow_ignore_dep` `:111` / `flow_add_bulk` `:112` + their `apply_scenario` probes
 SHIPPED; the prior-47 contract registry byte-unchanged) + `echo/apps/echo_mq/lib/echo_mq/admin.ex`
 (`del_job` `:152` / `@drain` `wipe()` `:90` the FIXED enumerations — the N1 carry, **UNTOUCHED, git-verified 0
-diff**) · Design: [`../emq.design.md`](../../../emq.design.md) §6 (the grammar — the
+diff**) · Design: [`../emq.design.md`](../../../../emq.design.md) §6 (the grammar — the
 `job:<id>:{…,failed,unsuccessful}` subkeys ALREADY reserved, `:298-324`; `:failed`/`:unsuccessful` at `:307`),
 §11.10 (the flow deferral + the owed design), §5 (no new wire class), S-6 (the declared-keys A-1 law; `:95-113`),
 S-1/§6 (the braced keyspace — the slot constraint), §11.12 (the escalation protocol) · Roadmap:
-[`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I (the closer) · The feature catalog:
-[`../emq.features.md`](../../../emq.features.md) (the emq.3 row, the `flow_producer → emq.3.4` parity row) · Approach:
-[`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+[`../emq.roadmap.md`](../../../../emq.roadmap.md) Movement I (the closer) · The feature catalog:
+[`../emq.features.md`](../../../../emq.features.md) (the emq.3 row, the `flow_producer → emq.3.4` parity row) · Approach:
+[`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

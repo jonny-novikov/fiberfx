@@ -3,12 +3,11 @@
 > **Status: SPECCED, the runbook ready (authored at the `emq-4-2` design run, Stage 1).** This runbook drives the
 > **emq.4.2** build — the SECOND sub-rung of the groups-deepened family (group-aware recovery) — a **NORMAL-risk** rung
 > that deepens a shipped, already-group-aware recovery surface. The `/echo-mq-ship` skill
-> ([`.claude/skills/echo-mq-ship/SKILL.md`](../../../../../.claude/skills/echo-mq-ship/SKILL.md)) is the binding (it is
+> ([`.claude/skills/echo-mq-ship/SKILL.md`](../../../../../../.claude/skills/echo-mq-ship/SKILL.md)) is the binding (it is
 > `/x-mode` with the echo_mq context pre-loaded: Venus loads `echo-mq-architect`, Mars loads `echo-mq-implementor`, the
 > Director verifies code + invariants, Apollo — the Mentor — loads `echo-mq-evaluator` out of the per-rung pipeline on
-> a NORMAL rung); the inputs are the triad ([`./emq.4.2.md`](emq.4.2.md) · [`./emq.4.2.stories.md`](emq.4.2.stories.md)
-> · [`./emq.4.2.llms.md`](emq.4.2.llms.md)), the family ([`../emq.4.md`](../emq.4.md) — the deepening contract + the
-> carve + the THREE forks), and the canon ([`../../../emq.design.md`](../../../emq.design.md) §10 seam 2 / §4 cluster 2
+> a NORMAL rung); the inputs are the triad ([`./emq.4.2.md`](emq.4.2.md) · [`./emq.4.2.stories.md`](emq.4.2.stories.md)), the family ([`../emq.4.md`](../emq.4.md) — the deepening contract + the
+> carve + the THREE forks), and the canon ([`../../../emq.design.md`](../../../../emq.design.md) §10 seam 2 / §4 cluster 2
 > / §4 / S-1/§6 / S-6 / §5).
 
 ## The family in one paragraph
@@ -136,7 +135,7 @@ concrete report after each pass; the Director's ground-truth verification is the
 
 ### Stage 0/1 — Venus (architect): the triad + the pre-build reconcile + the build-choice recommendation
 
-**(DONE this design run — Stage 1.)** Directive: author the full emq.4.2 triad (`.stories.md` / `.llms.md` /
+**(DONE this design run — Stage 1.)** Directive: author the full emq.4.2 triad (`.stories.md` /
 `.prompt.md`), reconciled lag-1 against the as-built tree. Re-probe every anchor above; pin the conformance count (**54**
 — reconcile the seed's stale 52); confirm the denormalized-`group`-field read-sites (the sweep is a pure reader — no
 write→read corruption); state the A-1 declared-keys posture (`KEYS[2]`=base root); recommend the build choice (**Arm
@@ -205,7 +204,7 @@ by design, the sweep is a non-destructive lane-return, no destructive at-rest op
 
 Sync the triad body to the as-built surface (the `EchoMQ.Lanes.reap_group` real arity; the `@greap_group` real key
 declarations + the filter form; the ruled verb/arity; the final conformance N; the version 2.4.2); every triad claim
-MATCH or `[RECONCILE]`-marked; fold the parity proof ([`../../../emq.features.md`](../../../emq.features.md) Part B /
+MATCH or `[RECONCILE]`-marked; fold the parity proof ([`../../../emq.features.md`](../../../../emq.features.md) Part B /
 the groups feature records) to mark the group-scoped recovery axis discharged. **The backward reconcile is owed** (the
 emq.4.1 lesson F6 — a forward-only reconcile lets the committed spec drift from as-built; sync the forward-tense brief
 to what shipped so emq.4.3 reconciles against truth).
@@ -217,7 +216,7 @@ Director's verify is the gate); **≥1 `tool_x_decision` (D-n)** — at minimum 
 verb-name/arity ruling (`reap_group/3`) — + a **`tool_x_complete` (Z-n)** this turn; `git status --short` AND `git diff
 --cached --name-only` reviewed; `.git/rebase-merge`/`rebase-apply` checked. Then the **pathspec** commit (below; NEVER
 `git add -A`, NEVER a bare commit). **Same turn:** flip the emq.4.2 row in the single roadmap
-([`../../../emq.roadmap.md`](../../../emq.roadmap.md)) and the dashboard ([`../../../emq.progress.md`](../../../emq.progress.md));
+([`../../../emq.roadmap.md`](../../../../emq.roadmap.md)) and the dashboard ([`../../../emq.progress.md`](../../../../emq.progress.md));
 record the group-aware-recovery axis shipped (the groups family deepening; 4.3–4.4 next); surface the **next frontier**
 (emq.4.3 the metronome — HIGH, Apollo mandatory + the ≥100 loop; **Fork A settles before 4.3 builds**; then emq.4.4
 weighted/deficit — HIGH iff `@gclaim` edited, **Fork B before 4.4**); under an **explicit Operator grant only**, fold
@@ -255,7 +254,6 @@ stages truly changed):
 docs/echo_mq/specs/emq.4/emq.4.md                          (the family contract + carve + forks, if Stage-5 synced it — e.g. the 52→54 INV6 count)
 docs/echo_mq/specs/emq.4/emq.4.rungs/emq.4.2.md            (the seed, Stage-5 synced — status → SHIPPED, the count 54→55)
 docs/echo_mq/specs/emq.4/emq.4.rungs/emq.4.2.stories.md
-docs/echo_mq/specs/emq.4/emq.4.rungs/emq.4.2.llms.md
 docs/echo_mq/specs/emq.4/emq.4.rungs/emq.4.2.prompt.md     (this runbook)
 docs/echo_mq/specs/progress/emq-4-2.progress.md
 docs/echo_mq/emq.roadmap.md                                (the emq.4.2 row → shipped)
@@ -289,12 +287,11 @@ the shipped recovery/lane scripts byte-frozen + the version 2.4.2 (D6). The spec
 syncs it to the as-built surface (the backward reconcile owed); the groups family deepening (emq.4.3–4.4) opens on a
 proven recovery surface.
 
-Inputs: [`./emq.4.2.md`](emq.4.2.md) · [`./emq.4.2.stories.md`](emq.4.2.stories.md) ·
-[`./emq.4.2.llms.md`](emq.4.2.llms.md) · Family: [`../emq.4.md`](../emq.4.md) (the deepening contract + the carve +
-the forks) · Canon: [`../../../emq.design.md`](../../../emq.design.md) §10 seam 2 / §4 cluster 2 / §4 / S-1/§6 / S-6 /
-§5 · Roadmap: [`../../../emq.roadmap.md`](../../../emq.roadmap.md) Movement II · The feature catalog:
-[`../../../emq.features.md`](../../../emq.features.md) (the groups records) · The shape model:
+Inputs: [`./emq.4.2.md`](emq.4.2.md) · [`./emq.4.2.stories.md`](emq.4.2.stories.md) · Family: [`../emq.4.md`](../emq.4.md) (the deepening contract + the carve +
+the forks) · Canon: [`../../../emq.design.md`](../../../../emq.design.md) §10 seam 2 / §4 cluster 2 / §4 / S-1/§6 / S-6 /
+§5 · Roadmap: [`../../../emq.roadmap.md`](../../../../emq.roadmap.md) Movement II · The feature catalog:
+[`../../../emq.features.md`](../../../../emq.features.md) (the groups records) · The shape model:
 [`./emq.4.1.prompt.md`](emq.4.1.prompt.md) (the sibling control-plane runbook) · Skills:
 `.claude/skills/echo-mq-ship.md` (the binding) + `echo-mq-{architect,implementor,evaluator}.md` (the per-role craft) +
 `echo-mq-program.md` (the program law) · Approach:
-[`../../../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+[`../../../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

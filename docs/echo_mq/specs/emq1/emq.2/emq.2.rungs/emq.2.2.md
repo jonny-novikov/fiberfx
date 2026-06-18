@@ -1,5 +1,5 @@
 # EMQ.2.2 · The operator plane — Movement I, the parity floor (lifecycle & mutation ops)
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: BUILT** (the second rung of the emq.2 full-parity cluster; the carve + the ADRs are
 > [`./emq.2.design.md`](../emq.2.design.md); reconciled to the as-built tree this run — the design-make
@@ -48,13 +48,13 @@ emq.2.2's pause gates claiming on the whole queue.
   rewrite a stuck job's data, append a diagnostic log, remove one poisoned job, or send a dead job back to
   be retried. The v1 line carries all of these (`EchoMQ.Queue.pause`/`drain`/`obliterate`/`remove_job`/
   `reprocess`, `EchoMQ.Worker.update_progress`/`log`/`update_data`), and the program's parity thesis
-  ([`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I) requires `echo_mq` to carry them before
+  ([`../emq.roadmap.md`](../../../../emq.roadmap.md) Movement I) requires `echo_mq` to carry them before
   `apps/echomq` can dissolve. The parity carve ([`./emq.2.design.md`](../emq.2.design.md) ADR-1) places the
   operator plane **second** because its mutations change exactly the state the read plane already observes,
   so **emq.2.1's reads are emq.2.2's acceptance lens** (a drained queue is asserted by reading its pending
   count to zero; a reprocessed job by reading its state back to `pending`). The front door records the
   consumer story: "the operational floor every consumer reads through … the operator lifecycle verbs a
-  runbook drives" ([`../echo_mq.md`](../../../echo_mq.md), the reframed emq.2 row).
+  runbook drives" ([`../echo_mq.md`](../../../../echo_mq.md), the reframed emq.2 row).
 - **What** — emq.2.2 builds, inside `echo_mq`: a **queue-scope operator module** (`EchoMQ.Admin`, or the
   verbs folded onto an existing module — the placement is the build's reductive call, recorded at the
   design gate) carrying **queue-wide pause/resume** (a claim gate over the whole queue, distinct from
@@ -325,12 +325,12 @@ named the capabilities to port):
 Stories: [`./emq.2.2.stories.md`](emq.2.2.stories.md) ·
 Runbook: [`./emq.2.2.prompt.md`](emq.2.2.prompt.md) · Carve + ADRs: [`./emq.2.design.md`](../emq.2.design.md)
 (ADR-1 the carve, ADR-2 the parity/family boundary, ADR-3 the lock/stalled boundary) · Read plane (the
-acceptance lens): [`./emq.2.1.md`](emq.2.1.md) · Roadmap: [`../emq.roadmap.md`](../../../emq.roadmap.md) (the
-emq.2 ladder row) · Design: [`../emq.design.md`](../../../emq.design.md) §6 (the grammar + the
+acceptance lens): [`./emq.2.1.md`](emq.2.1.md) · Roadmap: [`../emq.roadmap.md`](../../../../emq.roadmap.md) (the
+emq.2 ladder row) · Design: [`../emq.design.md`](../../../../emq.design.md) §6 (the grammar + the
 `metrics:`/`de:`/`job:<id>:logs` suffixes), §5 (the wire-class registry for the precondition refusals), §2
 (the branded id at the key builder), §4/DQ-2c (the server clock on a lease), S-4 (Valkey the gate) ·
 Capability reference: `echo/apps/echomq/lib/echomq/queue.ex` + `worker.ex` (the operator API),
 `echo/apps/echomq/priv/scripts/{pause-7,drain-6,obliterate-2,updateData-1,updateProgress-3,addLog-2,removeJob-12,reprocessJob-8}.lua`
 · As-built floor: `echo/apps/echo_mq/lib/echo_mq/{jobs.ex,lanes.ex,keyspace.ex,conformance.ex}` · Program
-front door: [`../echo_mq.md`](../../../echo_mq.md) (the reframed emq.2 row) · Approach:
-[`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+front door: [`../echo_mq.md`](../../../../echo_mq.md) (the reframed emq.2 row) · Approach:
+[`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

@@ -1,14 +1,14 @@
 # EMQ.0 · Movement 0 complete — the BCS migration imported whole and proven on this machine
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
 > The AAW triad port of `docs/echo/migration/echo2-migration.md` (the Movement-0 contract-turned-record),
 > EXTENDED at the Stage-1b checkpoint: the drop's CHANGELOG declares "Movement 0. NOT COMPLETED" — the
 > pending delta (the echo_wire wire-layer extraction + the cache's pluggable shadow) imports first, then the
 > §5 test/coverage pass closes the movement, under the program
-> "EchoMQ in Three Movements" ([`../emq.roadmap.md`](../../emq.roadmap.md)).
+> "EchoMQ in Three Movements" ([`../emq.roadmap.md`](../../../emq.roadmap.md)).
 >
 > **Superseded — the Shadow subsystem is retired.** This record is the as-imported account of Movement 0,
 > which imported the cache's pluggable `Shadow` behaviour (`shadow.ex`, `shadow/copy.ex`, the shadow rung)
-> intact. That subsystem has since been **retired** ([`../../store/design/store.design.md`](../../store/design/store.design.md) §2):
+> intact. That subsystem has since been **retired** ([`../../store/design/store.design.md`](../../../store/design/store.design.md) §2):
 > the app was renamed `echo_store`, durable replicated state moved to the native `EchoStore.Graft` engine
 > streamed to Tigris, and `shadow.ex`/`shadow/copy.ex` and their tests were deleted. The Shadow details below
 > stand as the import history, not the current shape.
@@ -223,5 +223,5 @@ semantics — monotonic counters, eventually-consistent snapshot — stand as ac
 surface).
 
 Stories: [`./emq.0.stories.md`](emq.0.stories.md) ·
-Roadmap: [`../emq.roadmap.md`](../../emq.roadmap.md) · Design: [`../emq.design.md`](../../emq.design.md) ·
-Approach: [`../../elixir/specs/specs.approach.md`](../../../elixir/specs/specs.approach.md)
+Roadmap: [`../emq.roadmap.md`](../../../emq.roadmap.md) · Design: [`../emq.design.md`](../../../emq.design.md) ·
+Approach: [`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)

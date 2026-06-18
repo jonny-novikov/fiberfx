@@ -1,5 +1,5 @@
 # EMQ.3.1 · The single-queue flow — the first buildable slice (Movement I, the flow family)
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: SHIPPED** (built 2026-06-15; the FIRST sub-rung of the emq.3 parent/flow family — the flow family
 > OPENS on a proven single-queue core; the family contract + the carve + the forks are [`./emq.3.md`](../emq.3.md)).
@@ -318,8 +318,8 @@ the fan-in hook host + the `was_active` guard, `@extend_locks` the `base .. 'job
 derivation, `add_log/5` the `<> ":logs"` subkey-compose precedent) + `keyspace.ex` (`job_key/2` the gated
 builder, `queue_key/2`) + `metrics.ex` (`get_job_state/3` + `@state_lookup` the row-field branch — D4) + `conformance.ex` (the
 scenario set the additive-minor law grows — re-probe the live count) · Design:
-[`../emq.design.md`](../../../emq.design.md) §11.10 (the deferral + the owed design), §6 (the grammar — the flow
+[`../emq.design.md`](../../../../emq.design.md) §11.10 (the deferral + the owed design), §6 (the grammar — the flow
 subkeys + the totality property), §5 (no new wire class), S-6 (the A-1 law), S-1/§6 (the braced keyspace — the
-slot constraint), §11.12 (the escalation protocol) · Roadmap: [`../emq.roadmap.md`](../../../emq.roadmap.md) Movement
-I (the parity thesis) · The feature catalog: [`../emq.features.md`](../../../emq.features.md) (the emq.3 row) ·
-Approach: [`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+slot constraint), §11.12 (the escalation protocol) · Roadmap: [`../emq.roadmap.md`](../../../../emq.roadmap.md) Movement
+I (the parity thesis) · The feature catalog: [`../emq.features.md`](../../../../emq.features.md) (the emq.3 row) ·
+Approach: [`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

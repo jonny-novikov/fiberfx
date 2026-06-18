@@ -1,5 +1,5 @@
 # EMQ.2.3 · The watch plane — Movement I, the parity floor (observability & recovery)
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: BUILT** (the third and final rung of the emq.2 full-parity cluster; the carve + the
 > ADRs are [`./emq.2.design.md`](../emq.2.design.md)). emq.2.3 builds,
@@ -46,14 +46,14 @@ conformance scenario in the same change (the additive-minor law).
   lease (so a slow-but-alive job is reaped today — the as-built `Jobs.reap/2` is a server-side dead-lease
   scan with no worker-side counterpart), there is no explicit stalled-recovery distinct from the single-scan
   reaper, and a worker cannot cooperatively cancel an in-flight job. The v1 line carries all five — and the
-  program's parity thesis ([`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I) requires `echo_mq` to carry
+  program's parity thesis ([`../emq.roadmap.md`](../../../../emq.roadmap.md) Movement I) requires `echo_mq` to carry
   them before `apps/echomq` can dissolve. The parity carve ([`./emq.2.design.md`](../emq.2.design.md) ADR-1)
   places the watch plane **third** because it watches the surface the first two rungs complete: the events
   fire on the transitions emq.2.2 added (pause/drain/obliterate/update/remove) and the lifecycle emq.1
   shipped (enqueue/claim/complete/retry/dead); the telemetry spans the verbs emq.2.1/2.2 expose; the
   stalled-recovery's verdicts read through emq.2.1's state lookups. The front door records the consumer
   story: "the event/telemetry plane the platform observes the work surface through"
-  ([`../echo_mq.md`](../../../echo_mq.md), the reframed emq.2 row).
+  ([`../echo_mq.md`](../../../../echo_mq.md), the reframed emq.2 row).
 - **What** — emq.2.3 builds, inside `echo_mq`: **`EchoMQ.Events`**, the per-queue event subscription surface
   over the as-built connector `subscribe/2`/`unsubscribe/2` pub/sub seam (the emq.1 auto-resubscribe set
   keeps it live across a reconnect), publishing lifecycle events the transitions emit; **`EchoMQ.Meter`**,
@@ -308,7 +308,7 @@ Runbook: [`./emq.2.3.prompt.md`](emq.2.3.prompt.md) · Carve + ADRs: [`./emq.2.d
 (ADR-1 the carve, ADR-2 the parity/family boundary, ADR-3 the stalled plane, ADR-4 the event+telemetry plane) ·
 Depends on: [`./emq.2.1.md`](emq.2.1.md) (the read plane — the lens the watch verdicts read through),
 [`./emq.2.2.md`](emq.2.2.md) (the operator plane — the transitions the events fire on) · Roadmap:
-[`../emq.roadmap.md`](../../../emq.roadmap.md) (the emq.2 ladder row) · Design: [`../emq.design.md`](../../../emq.design.md)
+[`../emq.roadmap.md`](../../../../emq.roadmap.md) (the emq.2 ladder row) · Design: [`../emq.design.md`](../../../../emq.design.md)
 §12.3 (the event-transport deferral — no `SSUBSCRIBE`; the event record as durable receipt), §5 (the closed
 wire-class registry — `EMQSTALE` reused, no new class), §4 + DQ-2c (the server clock on a lease), §6 (the
 grammar — the event/lock/stalled keys), S-4 (Valkey the gate) · Capability reference:
@@ -316,5 +316,5 @@ grammar — the event/lock/stalled keys), S-4 (Valkey the gate) · Capability re
 `echo/apps/echomq/priv/scripts/{extendLock-2,extendLocks-2,releaseLock-1,moveStalledJobsToWait-9}.lua` ·
 As-built floor: `echo/apps/echo_mq/lib/echo_mq/{jobs.ex,consumer.ex,pump.ex,keyspace.ex,conformance.ex}`,
 `echo/apps/echo_wire/lib/echo_mq/connector.ex` (the pub/sub seam + `emit/3`) · Program front door:
-[`../echo_mq.md`](../../../echo_mq.md) (the reframed emq.2 row) · Approach:
-[`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+[`../echo_mq.md`](../../../../echo_mq.md) (the reframed emq.2 row) · Approach:
+[`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

@@ -179,7 +179,7 @@ Coverage map closed (every D-n → ≥1 story).
 Preconditions: the quad authored + the ADR recorded + the forks surfaced; **≥1 `tool_x_decision` (D-n)** + a
 **`tool_x_complete` (Z-n)** this turn; `git status --short` AND `git diff --cached --name-only` reviewed. Then
 the **pathspec** commit (below; NEVER `git add -A`). **Same turn:** flip the emq.3.3 row in the roadmap
-([`../emq.roadmap.md`](../../../emq.roadmap.md)) + the dashboard ([`../emq.progress.md`](../../../emq.progress.md)) from
+([`../emq.roadmap.md`](../../../../emq.roadmap.md)) + the dashboard ([`../emq.progress.md`](../../../../emq.progress.md)) from
 "design-authoring" → **SPECCED**; surface the **next frontier** (the emq.3.3 BUILD — `/echo-mq-ship emq.3.3`,
 HIGH-risk; then emq.3.4 failure-policy + bulk → Movement I CLOSES). The message cites the slug, the Z-n, the D-n,
 and the Y-n report.
@@ -244,13 +244,13 @@ authoritative ground) · The SHIPPED/BUILT slices (the floor the cross-queue flo
 HIGH-risk) · The v1 cross-queue reference (READ-ONLY, the FORM not lifted):
 `echo/apps/echomq/lib/echomq/flow_producer.ex` (`add/2`, `add_bulk/2`, the per-node `queue_name` spanning, the
 data-value `parent_key` tree) · The promote-sweep precedent: `echo/apps/echo_mq/lib/echo_mq/pump.ex`
-(`EchoMQ.Pump.sweep/1`) · Canon: [`../emq.design.md`](../../../emq.design.md) §11.10 (the deferral + the owed flow
+(`EchoMQ.Pump.sweep/1`) · Canon: [`../emq.design.md`](../../../../emq.design.md) §11.10 (the deferral + the owed flow
 design), §6 (the grammar — the slot constraint that forces the cross-queue fork), §5 (no new wire class), S-1/§6
 (the braced keyspace — the slot constraint), S-6 (the declared-keys A-1 law), §11.12 (the escalation protocol) ·
-Roadmap: [`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I (the closer) · The feature catalog:
-[`../emq.features.md`](../../../emq.features.md) (the emq.3 row) · Skills: `.claude/skills/echo-mq-architect.md` (the
+Roadmap: [`../emq.roadmap.md`](../../../../emq.roadmap.md) Movement I (the closer) · The feature catalog:
+[`../emq.features.md`](../../../../emq.features.md) (the emq.3 row) · Skills: `.claude/skills/echo-mq-architect.md` (the
 binding — the authoring Venus's craft) + `echo-mq-program.md` (the program law) + `echo-mq-ship.md` (the binding
-for the LATER build) · Approach: [`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+for the LATER build) · Approach: [`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)
 
 ---
 
@@ -260,7 +260,7 @@ for the LATER build) · Approach: [`../../elixir/specs/specs.approach.md`](../..
 > the design (the quad + the cross-queue ADR — the forks ruled **D-1..D-5** in [`./emq-3-3.progress.md`](../../progress/emq-3-3.progress.md));
 > PART II ships the rung: it fans out the **echo-mq-ship** lead-team (Venus → Mars-1 → Director review → Mars-2 →
 > **Apollo MANDATORY** → Venus reconcile → Director ship) to build emq.3.3 to the authored triad. The triad is the
-> contract ([`./emq.3.3.md`](emq.3.3.md) authoritative · [`./emq.3.3.stories.md`](emq.3.3.stories.md)); the canon is [`../emq.design.md`](../../../emq.design.md); the binding is the
+> contract ([`./emq.3.3.md`](emq.3.3.md) authoritative · [`./emq.3.3.stories.md`](emq.3.3.stories.md)); the canon is [`../emq.design.md`](../../../../emq.design.md); the binding is the
 > **`echo-mq-ship`** skill (Venus loads `echo-mq-architect`, Mars `echo-mq-implementor`, Apollo `echo-mq-evaluator`).
 > **HIGH-risk** — a shipped `@complete` edit + a new cross-slot mechanism → **Apollo MANDATORY** + the **≥100 loop**.
 
@@ -365,8 +365,8 @@ the spec triad — no `.ex`/`.exs`; runs NO git.**
 Preconditions (x-mode §4): the gate green + the reconcile build-grade + **Apollo BUILD-GRADE** (MANDATORY); **≥1
 `tool_x_decision`** + a **`tool_x_complete` (Z-n)** this turn; `git status --short` AND `git diff --cached
 --name-only` reviewed; `.git/rebase-merge`/`rebase-apply` checked. Then the **pathspec** commit (below; NEVER `git
-add -A`). **Same turn:** flip the emq.3.3 row in the roadmap ([`../emq.roadmap.md`](../../../emq.roadmap.md)) + the
-dashboard ([`../emq.progress.md`](../../../emq.progress.md)) to **SHIPPED**; surface the **next frontier** (emq.3.4
+add -A`). **Same turn:** flip the emq.3.3 row in the roadmap ([`../emq.roadmap.md`](../../../../emq.roadmap.md)) + the
+dashboard ([`../emq.progress.md`](../../../../emq.progress.md)) to **SHIPPED**; surface the **next frontier** (emq.3.4
 failure-policy + bulk + grandchildren → **Movement I CLOSES** → Movement II emq.4–emq.8). The message cites the
 slug, the Z-n, the D-n, and the Y-n report.
 
@@ -432,6 +432,6 @@ Inputs (the build): [`./emq.3.3.md`](emq.3.3.md) (authoritative) · [`./emq.3.3.
 (D-1..D-5 ruled) · [`./emq.3.md`](../emq.3.md) (the family + Fork A + INV7) · the shipped slices
 [`./emq.3.1.md`](emq.3.1.md) + [`./emq.3.2.md`](emq.3.2.md) · the build-runbook FORM
 [`./emq.3.2.prompt.md`](emq.3.2.prompt.md) (NORMAL-risk; this one is HIGH-risk) · Canon
-[`../emq.design.md`](../../../emq.design.md) §6/§11.10/§5/S-6/S-1 · Skills: `echo-mq-ship` (the binding) +
+[`../emq.design.md`](../../../../emq.design.md) §6/§11.10/§5/S-6/S-1 · Skills: `echo-mq-ship` (the binding) +
 `echo-mq-implementor` + `echo-mq-evaluator` + `echo-mq-architect` + `echo-mq-program.md` (the program law) ·
-Approach [`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+Approach [`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

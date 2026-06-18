@@ -7,7 +7,7 @@
 **The §11.10 problem.** The design canon defers the scheduler family typed-never-silent because the v1
 family's forms "root key operands in data values, structurally inexpressible under the declared-keys
 invariant"; "an A-1-compatible flow design is real design work for the family rungs"
-([`../emq.design.md`](../../emq.design.md) §11.10). This document is that design work for the scheduler
+([`../emq.design.md`](../../../emq.design.md) §11.10). This document is that design work for the scheduler
 half (the flow half is the program ladder's emq.3, out of scope).
 
 **Design constraint:** mint-ordered ids stay the sort key; a delay is a visibility fence, not a new queue." Also
@@ -112,7 +112,7 @@ the grammar and sits in §8 for approval (key shape = fork 3).
 
 **Alternatives.** (a) *Do nothing* — every caller computes `delay_ms`: the max-attempts blind spot
 stays open (policy has no home; the cap is a bare per-call argument). (b) *Wire-side backoff* — the
-script computes the delay from `attempts`: rejected by the standing HOLD ([`../emq.design.md`](../../emq.design.md)
+script computes the delay from `attempts`: rejected by the standing HOLD ([`../emq.design.md`](../../../emq.design.md)
 §4 row 30 — backoff above the wire; the wire takes literal delays; the as-built `@retry` confirms:
 `ARGV[3]` is a literal). (c) **Chosen-proposed: `EchoMQ.Backoff` — a pure module** (no process, no
 clock): policy values (fixed · exponential with base and cap · jitter as a wrap), one function from
@@ -157,7 +157,7 @@ channel; the cache's versioned claims + staleness fence already tolerate exactly
 
 **The v1 flaw, restated.** v1 scripts build operand keys from an `ARGV` prefix inside the body with no
 closed grammar, so no static analysis can enumerate what a transition touches
-([`../emq.design.md`](../../emq.design.md) §0).
+([`../emq.design.md`](../../../emq.design.md) §0).
 
 **The as-built v2 convention (the ground emq.1 inherits).** Every script declares its structure keys in
 `KEYS[]`. The queue base travels as an ARGV, and the only in-script constructions are the registered
@@ -181,7 +181,7 @@ record key derived from the declared registry root by the registered convention,
 each occurrence entering through the ADR-1 script. No script roots any key in a payload or data value;
 scores are data, and data never becomes a key.
 
-**Conformance additions (the additive-minor law, [`../emq.design.md`](../../emq.design.md) §5).** Each
+**Conformance additions (the additive-minor law, [`../emq.design.md`](../../../emq.design.md) §5).** Each
 addition registers its probe in the same change; the prior 14 scenarios (`conformance.ex` — fence,
 mint, duplicate, kind, order, claim, stale, complete, retry, dead, reap, rotate, pause, limit) pass
 byte-unchanged (EMQ.1-INV1). Proposed scenario names: `schedule` (run-in parks; the promote sweep
@@ -227,7 +227,7 @@ edit to the frozen v1 line.
 
 ---
 
-The triad this design opens: [`./emq.1.md`](emq.1.md) · [`./emq.1.stories.md`](./emq.1.stories.md). The canon: [`../emq.design.md`](../../emq.design.md) (§11.10, §4
-rows 28/30, S-6, §5, §6). The program: [`../emq.roadmap.md`](../../emq.roadmap.md) ·
-[`../echo_mq.md`](../../echo_mq.md). The 2.1 row: `../../echo/code/ROADMAP.md`. The consumer:
+The triad this design opens: [`./emq.1.md`](emq.1.md) · [`./emq.1.stories.md`](emq.1.stories.md). The canon: [`../emq.design.md`](../../../emq.design.md) (§11.10, §4
+rows 28/30, S-6, §5, §6). The program: [`../emq.roadmap.md`](../../../emq.roadmap.md) ·
+[`../echo_mq.md`](../../../echo_mq.md). The 2.1 row: `../../echo/code/ROADMAP.md`. The consumer:
 `echo/apps/codemojex` (the worked game consumer).

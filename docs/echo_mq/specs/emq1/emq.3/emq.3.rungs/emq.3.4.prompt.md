@@ -155,8 +155,8 @@ Preconditions (x-mode §4): the gate green + the reconcile build-grade + **Apoll
 `tool_x_decision`** (the build's locked decisions; the V-1 scope ruling D-2 already landed this design run) + a
 **`tool_x_complete` (Z-n)** this turn; `git status --short` AND `git diff --cached --name-only` reviewed;
 `.git/rebase-merge`/`rebase-apply` checked. Then the **pathspec** commit (below; NEVER `git add -A`). **Same
-turn:** flip the emq.3.4 row in the roadmap ([`../emq.roadmap.md`](../../../emq.roadmap.md)) + the dashboard
-([`../emq.progress.md`](../../../emq.progress.md)) + the catalog ([`../emq.features.md`](../../../emq.features.md)) to
+turn:** flip the emq.3.4 row in the roadmap ([`../emq.roadmap.md`](../../../../emq.roadmap.md)) + the dashboard
+([`../emq.progress.md`](../../../../emq.progress.md)) + the catalog ([`../emq.features.md`](../../../../emq.features.md)) to
 **SHIPPED**; surface the **next frontier** — **emq.3.5 (grandchildren / deep recursion)** is the flow family's
 **last slice** (the V-1 Arm-A Out), and closing it **CLOSES Movement I** → Movement II (emq.4–emq.8). The message
 cites the slug, the Z-n, the D-n, and the Y-n report.
@@ -237,7 +237,7 @@ Inputs (the build): [`./emq.3.4.md`](emq.3.4.md) (authoritative) · [`./emq.3.4.
 INV7) · the shipped slices [`./emq.3.1.md`](emq.3.1.md) + [`./emq.3.2.md`](emq.3.2.md) +
 [`./emq.3.3.md`](emq.3.3.md) (the cross-queue mechanism the fail-deliver rides) · the build-runbook FORM
 [`./emq.3.3.prompt.md`](emq.3.3.prompt.md) PART II (HIGH-risk, the same tier) · Canon
-[`../emq.design.md`](../../../emq.design.md) §6 (`:failed`/`:unsuccessful` reserved at `:307`)/§11.10/§5/S-6/S-1 ·
+[`../emq.design.md`](../../../../emq.design.md) §6 (`:failed`/`:unsuccessful` reserved at `:307`)/§11.10/§5/S-6/S-1 ·
 Skills: `echo-mq-ship` (the binding) + `echo-mq-implementor` + `echo-mq-evaluator` + `echo-mq-architect` +
 `echo-mq-program.md` (the program law) · Approach
-[`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+[`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

@@ -159,6 +159,5 @@ design §7, S-4 (the structural gate).
 | EMQ.4.2-D6 — the proof (the `:valkey` suites; NORMAL-risk; the honest multi-seed-sweep / no-≥100-loop posture; no regression; the boundary clean) | US4 |
 | The Valkey structural gate (honest-row; `{emq}:version`; grammar totality; additive-minor conformance) | US-GATE |
 
-Spec body: [`./emq.4.2.md`](emq.4.2.md) (authoritative) · Agent brief: [`./emq.4.2.llms.md`](emq.4.2.llms.md)
-· Family: [`../emq.4.md`](../emq.4.md) (the contract + the carve + the forks) · Chapter stories:
+Spec body: [`./emq.4.2.md`](emq.4.2.md) (authoritative) · Family: [`../emq.4.md`](../emq.4.md) (the contract + the carve + the forks) · Chapter stories:
 [`../emq.4.stories.md`](../emq.4.stories.md) (US2 — group-aware recovery).

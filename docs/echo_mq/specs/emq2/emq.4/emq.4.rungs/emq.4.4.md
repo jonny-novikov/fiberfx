@@ -176,8 +176,7 @@ lease (the shipped `@gclaim` lease pattern), and additive-minor conformance grow
       as-built reconcile syncs this seed post-build.
 
 Family: [`../emq.4.md`](../emq.4.md) (the contract, the carve, the forks — authoritative) · Chapter stories:
-[`../emq.4.stories.md`](../emq.4.stories.md) (US4 — weighted/deficit + the drill) · Chapter brief:
-[`../emq.4.llms.md`](../emq.4.llms.md) (R4, AS4) · As-built floor (the build target — re-probe at the pre-build
+[`../emq.4.stories.md`](../emq.4.stories.md) (US4 — weighted/deficit + the drill) · As-built floor (the build target — re-probe at the pre-build
 reconcile; line numbers are hints): `echo/apps/echo_mq/lib/echo_mq/lanes.ex` (`@gclaim` — the **shipped ring
 rotation** the weighting deepens: `LMOVE KEYS[1] KEYS[1] 'LEFT' 'RIGHT'` `lanes.ex:38` (the rota step), `ZPOPMIN`
 the lane head `lanes.ex:41`, the **server-clock lease** `redis.call('TIME')` `lanes.ex:50-52`, the `gactive`
@@ -186,9 +185,9 @@ would ride; `claim/3` the host verb; the `g:<group>:pending` / `ring` keyspace) 
 **byte-freeze** (`@genqueue`/`@gpause`/`@gresume`/`@glimit`) + `conformance.ex` (the **52**-scenario set the
 additive-minor law grows — the `rotate` scenario "two lanes claim in strict rotation — the ring is the rota" is the
 equal-share precedent; re-probe the live count) · The v1 capability reference (the re-aim record, READ-ONLY — the
-form NOT to lift): [`../../emq.commands/features/groups/changePriority-7.md`](../../emq.commands/features/groups/changePriority-7.md)
+form NOT to lift): [`../../emq.commands/features/groups/changePriority-7.md`](../../../emq.commands/features/groups/changePriority-7.md)
 (RETIRED → "weighted rotation, emq.4" — the canon names this rung) · Design:
-[`../../../emq.design.md`](../../../emq.design.md) §10 seam 2 / §4 cluster 2 (the displaced groups family RULED →
+[`../../../emq.design.md`](../../../../emq.design.md) §10 seam 2 / §4 cluster 2 (the displaced groups family RULED →
 emq.4), §4 (the server-clock law — the lease in the rotation), S-6 (the declared-keys A-1 law), S-1/§6 (the braced
-keyspace) · Roadmap: [`../../../emq.roadmap.md`](../../../emq.roadmap.md) (the emq.4 row · Movement II) · Approach:
-[`../../../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+keyspace) · Roadmap: [`../../../emq.roadmap.md`](../../../../emq.roadmap.md) (the emq.4 row · Movement II) · Approach:
+[`../../../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

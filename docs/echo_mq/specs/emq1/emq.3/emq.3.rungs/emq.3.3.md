@@ -1,5 +1,5 @@
 # EMQ.3.3 · The cross-queue flow — the third sub-rung (Movement I, the flow family)
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: ✅ SHIPPED 2026-06-15** (the THIRD sub-rung of the emq.3 parent/flow family — the family contract + the
 > carve + the forks are [`./emq.3.md`](../emq.3.md); the first slice [`./emq.3.1.md`](emq.3.1.md) SHIPPED
@@ -105,7 +105,7 @@ is **untouched** (the cross-queue add is host-orchestrated per-slot, NOT one new
   surface); the conformance harness, which grows by `flow_cross_queue` (additive minor). **codemojex**
   (prospective): a cross-queue pipeline (a parent job on one queue fanning in over legs on other queues — the
   shape codemojex's score-then-settle hop across queues already sketches) — *it names no flows today*
-  ([`../emq.features.md`](../../../emq.features.md) —
+  ([`../emq.features.md`](../../../../emq.features.md) —
   recorded, not asserted).
 - **When** — Movement I, the flow family's **third** sub-rung, after emq.3.1 + emq.3.2 shipped (emq.3.3 extends
   the `add/3` admit path emq.3.1 built, emits through the `@complete` seam emq.3.1 built, and the deliver records
@@ -420,9 +420,9 @@ byte-frozen bound, `complete/5` `:365`, `parent_of/3` `:397` the host read exten
 `job_key/2` `:17` the gated builder) + `echo/apps/echo_mq/lib/echo_mq/conformance.ex` (the **46**-scenario set;
 `flow_cross_queue` + its `apply_scenario` probe NEW) + `echo/apps/echo_mq/lib/echo_mq/admin.ex` (`del_job`
 `:152` / `@drain` `wipe()` `:90` the FIXED enumerations — the N1 carry, UNTOUCHED) · Design:
-[`../emq.design.md`](../../../emq.design.md) §6 (the grammar — the slot constraint forcing the cross-queue fork;
+[`../emq.design.md`](../../../../emq.design.md) §6 (the grammar — the slot constraint forcing the cross-queue fork;
 `:298-324`), §11.10 (the deferral + the owed flow design; `:447-451`), §5 (no new wire class), S-6 (the
 declared-keys A-1 law; `:95-112`), S-1/§6 (the braced keyspace — the slot constraint), §11.12 (the escalation
-protocol) · Roadmap: [`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I (the closer) · The feature catalog:
-[`../emq.features.md`](../../../emq.features.md) (the emq.3 row) · Approach:
-[`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+protocol) · Roadmap: [`../emq.roadmap.md`](../../../../emq.roadmap.md) Movement I (the closer) · The feature catalog:
+[`../emq.features.md`](../../../../emq.features.md) (the emq.3 row) · Approach:
+[`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

@@ -1,5 +1,5 @@
 # EMQ.1 · The scheduler + the retry vocabulary — Movement I opens
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
 > **Status: BUILT** (design-gate adopted, built, hardened, and gated PASS in the emq-1 run; this body is
 > the post-build reconcile against the as-built tree, the spec authoritative as the contract). emq.1
 > builds, inside `echo/apps/echo_mq` under the v2 laws, the time-and-retry vocabulary the drop's own
@@ -31,7 +31,7 @@ registered with every addition), opened by an Operator-gated A-1-compatible sche
   design defers the scheduler script family typed-never-silent with the open
   problem named: the v1 family's forms "root key operands in data values, structurally inexpressible under
   the declared-keys invariant"; "an A-1-compatible flow design is real design work for the family rungs"
-  ([`../emq.design.md`](../../emq.design.md) §11.10) — that design work opens this rung.
+  ([`../emq.design.md`](../../../emq.design.md) §11.10) — that design work opens this rung.
 - **What** — emq.1 builds: a scheduled-enqueue verb family `EchoMQ.Jobs.enqueue_at/5` + `enqueue_in/5`
   (`jobs.ex:67`/`:78`) over the existing schedule set, both served by ONE inline `@schedule` script
   (`jobs.ex:38-56`) that branches on an `ARGV` mode flag — `'at'` takes the caller's absolute run-at
@@ -146,8 +146,8 @@ emq.1 builds (each now realized; the as-built surface is named):
       cache 4_1..4_4 + shadow ran at their tails; the Director re-ran them at the Stage-3 gate); the
       spec body remains authoritative and this reconcile syncs it post-build.
 
-Stories: [`./emq.1.stories.md`](./emq.1.stories.md) ·
-Roadmap: [`../emq.roadmap.md`](../../emq.roadmap.md) · Design: [`../emq.design.md`](../../emq.design.md) §5,
+Stories: [`./emq.1.stories.md`](emq.1.stories.md) ·
+Roadmap: [`../emq.roadmap.md`](../../../emq.roadmap.md) · Design: [`../emq.design.md`](../../../emq.design.md) §5,
 §11.10, §4 row 30 · Consumer: `echo/apps/codemojex` (the worked game consumer) · The 2.1 row:
 `docs/echo/code/ROADMAP.md` ·
-Approach: [`../../elixir/specs/specs.approach.md`](../../../elixir/specs/specs.approach.md)
+Approach: [`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)

@@ -1,4 +1,5 @@
 # EMQ.4.1 · The control plane — lane re-assignment + deepened operator verbs (Movement II, the groups family, the first buildable slice)
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: ✅ SHIPPED — the rung's spec body, reconciled to as-built (post-build, pre-ship).** The FIRST
 > sub-rung of the emq.4 "groups deepened" family — the family OPENED on the operator control plane, the
@@ -30,8 +31,8 @@ two new verbs are **additive** inline scripts), but the lane-scoped drain is a *
 is why the rung graded **HIGH** and the verify was the **blast-radius mutation battery** (the destructive verb's
 over-reach and under-clean are the real hazards — not a same-millisecond mint, so not the ≥100 loop). It also
 discharges the two RETIRED v1 priority commands — the groups feature record already re-aimed them to this rung
-([`../../emq.commands/features/groups/changePriority-7.md`](../../emq.commands/features/groups/changePriority-7.md),
-[`../../emq.commands/features/groups/getCountsPerPriority-4.md`](../../emq.commands/features/groups/getCountsPerPriority-4.md)).
+([`../../emq.commands/features/groups/changePriority-7.md`](../../../emq.commands/features/groups/changePriority-7.md),
+[`../../emq.commands/features/groups/getCountsPerPriority-4.md`](../../../emq.commands/features/groups/getCountsPerPriority-4.md)).
 
 ## Goal
 
@@ -218,8 +219,7 @@ the rung HIGH.
       this seed reconciled to as-built (post-build, pre-ship).
 
 Family: [`../emq.4.md`](../emq.4.md) (the contract, the carve, the forks — authoritative) · Chapter stories:
-[`../emq.4.stories.md`](../emq.4.stories.md) (US1 — the control plane) · Chapter brief:
-[`../emq.4.llms.md`](../emq.4.llms.md) (R1, AS1) · As-built surface (SHIPPED; line numbers are the Stage-5
+[`../emq.4.stories.md`](../emq.4.stories.md) (US1 — the control plane) · As-built surface (SHIPPED; line numbers are the Stage-5
 reconcile's): `echo/apps/echo_mq/lib/echo_mq/lanes.ex` — **the two new verbs:** `reassign/4` (`:262`) + `@greassign`
 (`:119`, the atomic move — `HGET <row> 'group'` src-derive, `ZREM`/`ZADD` score-0, `HSET <row> 'group' dst`, the ring
 re-shape) and `drain/3` (`:319`) + `@gdrain` (`:294`, the lane-scoped wipe); **the byte-frozen five:** `enqueue/5`
@@ -232,13 +232,13 @@ re-shape) and `drain/3` (`:319`) + `@gdrain` (`:294`, the lane-scoped wipe); **t
 `@drain` — the queue-wide drain the lane-scoped `@gdrain` mirrors) + `conformance.ex` (the **54**-scenario set —
 `reassign:118` + `lane_drain:119`; `conformance_run_test.exs:47` `{:ok, 54}`) · The v1 capability reference (the
 re-aim record, READ-ONLY — the form NOT to lift):
-[`../../emq.commands/features/groups/changePriority-7.md`](../../emq.commands/features/groups/changePriority-7.md)
+[`../../emq.commands/features/groups/changePriority-7.md`](../../../emq.commands/features/groups/changePriority-7.md)
 (RETIRED → lane re-assignment) +
-[`../../emq.commands/features/groups/getCountsPerPriority-4.md`](../../emq.commands/features/groups/getCountsPerPriority-4.md)
+[`../../emq.commands/features/groups/getCountsPerPriority-4.md`](../../../emq.commands/features/groups/getCountsPerPriority-4.md)
 (RETIRED → `Metrics.lane_depths/3`) +
-[`../../emq.commands/features/groups/addPrioritizedJob-9.md`](../../emq.commands/features/groups/addPrioritizedJob-9.md)
+[`../../emq.commands/features/groups/addPrioritizedJob-9.md`](../../../emq.commands/features/groups/addPrioritizedJob-9.md)
 (SHIPPED, re-aimed — the score-0-lane-no-new-key discipline) · Design:
-[`../../../emq.design.md`](../../../emq.design.md) §10 seam 2 / §4 cluster 2 (the displaced groups family RULED →
+[`../../../emq.design.md`](../../../../emq.design.md) §10 seam 2 / §4 cluster 2 (the displaced groups family RULED →
 emq.4), S-1/§6 (the braced keyspace — the slot constraint), S-6 (the declared-keys A-1 law) · Roadmap:
-[`../../../emq.roadmap.md`](../../../emq.roadmap.md) (the emq.4 row · Movement II) · Approach:
-[`../../../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+[`../../../emq.roadmap.md`](../../../../emq.roadmap.md) (the emq.4 row · Movement II) · Approach:
+[`../../../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

@@ -202,6 +202,5 @@ design §7, S-4 (the structural gate).
 | EMQ.4.1-D6 — the proof (the `:valkey` suites; the blast-radius mutation battery; HIGH-risk on the destructive delete; the honest no-≥100-loop posture; no regression; the boundary clean) | US5 |
 | The Valkey structural gate (honest-row; `{emq}:version`; grammar totality; additive-minor conformance) | US-GATE |
 
-Spec body: [`./emq.4.1.md`](emq.4.1.md) (authoritative) · Agent brief: [`./emq.4.1.llms.md`](emq.4.1.llms.md)
-· Family: [`../emq.4.md`](../emq.4.md) (the contract + the carve + the forks) · Chapter stories:
+Spec body: [`./emq.4.1.md`](emq.4.1.md) (authoritative) · Family: [`../emq.4.md`](../emq.4.md) (the contract + the carve + the forks) · Chapter stories:
 [`../emq.4.stories.md`](../emq.4.stories.md) (US1 — the control plane).

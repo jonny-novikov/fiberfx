@@ -5,7 +5,7 @@
 > line; the file ends with a Coverage line mapping every family Deliverable/Fork to ≥1 story. The standing
 > **`EMQ.3-US-GATE`** carries the Valkey gate (design §7) — a structural gate. emq.3 is the rung that **closes
 > Movement I**; this is the **family** stories file (the family contract + the carve + the forks); the
-> per-sub-rung acceptance lives in each sub-rung's `.stories.md` (emq.3.1 first — [`./emq.3.1.stories.md`](./emq.3.rungs/emq.3.1.stories.md)).
+> per-sub-rung acceptance lives in each sub-rung's `.stories.md` (emq.3.1 first — [`./emq.3.1.stories.md`](emq.3.rungs/emq.3.1.stories.md)).
 
 ## EMQ.3-US1 — the flow shape is settled before the first build
 
@@ -169,5 +169,5 @@ Implements: design §7, S-4 (the structural gate).
 | The carve into sub-rungs (emq.3.1 · 3.2 · 3.3 · 3.4, dependency-ordered) + the family boundary | US6 |
 | The Valkey structural gate (honest-row; `{emq}:version`; grammar totality; additive-minor conformance) | US-GATE |
 
-The per-sub-rung Deliverables (emq.3.1's D1–Dn) trace in [`./emq.3.1.stories.md`](./emq.3.rungs/emq.3.1.stories.md); this
+The per-sub-rung Deliverables (emq.3.1's D1–Dn) trace in [`./emq.3.1.stories.md`](emq.3.rungs/emq.3.1.stories.md); this
 file covers the **family** contract, the carve, and the forks. Spec body: [`./emq.3.md`](emq.3.md) (authoritative).

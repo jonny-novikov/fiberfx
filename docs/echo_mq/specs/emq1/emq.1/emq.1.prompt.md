@@ -9,8 +9,8 @@
 > is **relocated, not skipped**: Mars-1 makes the design by adopting [`./emq.1.design.md`](emq.1.design.md)'s
 > already-recommended arms (§"The design-make" below), the solo Director review scrutinizes it, and the
 > Operator's acceptance of the single post-closure commit is the ratification. The x-mode skill
-> ([`.claude/skills/x-mode/SKILL.md`](../../../../.claude/skills/x-mode/SKILL.md)) binds the laws; its inputs
-> are the spec triad ([`./emq.1.md`](./emq.1.md) · [`./emq.1.stories.md`](./emq.1.stories.md)), the design, and the canon ([`../emq.design.md`](../../emq.design.md)).
+> ([`.claude/skills/x-mode/SKILL.md`](../../../../../.claude/skills/x-mode/SKILL.md)) binds the laws; its inputs
+> are the spec triad ([`./emq.1.md`](emq.1.md) · [`./emq.1.stories.md`](emq.1.stories.md)), the design, and the canon ([`../emq.design.md`](../../../emq.design.md)).
 
 ## The rung in one paragraph
 
@@ -21,7 +21,7 @@ queue), repeatable jobs (each occurrence a fresh branded `JOB` mint), the attemp
 vocabulary above the wire with the poison-job drill, a supervised opt-in promote pump, and connector
 auto-resubscribe after `:reconnect`. The substrate is largely as-built (the schedule set, `retry/7`,
 `promote/3`, the `'scheduled'` state all exist — verified below); emq.1 adds the verbs, the host-side
-policy, the pump, and the resubscribe seam. The contract is [`./emq.1.md`](./emq.1.md) (D1–D7,
+policy, the pump, and the resubscribe seam. The contract is [`./emq.1.md`](emq.1.md) (D1–D7,
 INV1–INV7); the design it makes real is [`./emq.1.design.md`](emq.1.design.md).
 
 ## Mode
@@ -87,7 +87,7 @@ to `echo/apps/echo_wire`. Mars-1 RE-PROBES each at build time (anchors drift; th
   the loop `:91` (the pump's process-shape precedent).
 - **No `echo/apps/echo_mq/priv/` directory exists** — scripts are inline `Script.new/2` module
   attributes (`echo_wire/lib/echo_mq/script.ex`; `@enqueue` at `jobs.ex:14-24`). **emq.1 follows the
-  inline convention, NOT `priv/`.** The triad's "new Lua under `priv/`" line ([`./emq.1.md`](./emq.1.md)
+  inline convention, NOT `priv/`.** The triad's "new Lua under `priv/`" line ([`./emq.1.md`](emq.1.md)
   §Where) is a Stage-4 reconcile flag for Venus.
 
 ## The pipeline — five stages, Director-in-loop
@@ -178,8 +178,8 @@ locked + a **`tool_x_complete` (Z-n)** written this turn; `git status --short` A
 --name-only` reviewed; `.git/rebase-merge`/`rebase-apply` checked. Then the **pathspec commit** (never
 `git add -A`, never a bare commit) over the Stage-5 pathspec below; the message cites the slug, the Z-n,
 the D-n decisions, and the Y-n reports. **Stage 6 (same turn):** flip the emq.1 ladder rows
-([`../emq.roadmap.md`](../../emq.roadmap.md) — the single consolidated roadmap) and
-[`../echo_mq.md`](../../echo_mq.md) M1's emq.1 status (this rung un-blocks codemojex's
+([`../emq.roadmap.md`](../../../emq.roadmap.md) — the single consolidated roadmap) and
+[`../echo_mq.md`](../../../echo_mq.md) M1's emq.1 status (this rung un-blocks codemojex's
 scheduled/settlement trace); write/extend `emq-1.progress.md`; **surface the adopted six arms to
 the Operator for post-closure acceptance/amend**; under an **explicit Operator grant only**, apply any
 mentoring diffs to the peer agent defs. Surface the next frontier (emq.2 migration, or the emq.7 /
@@ -231,7 +231,7 @@ Operator.
 
 ---
 
-The contract: [`./emq.1.md`](emq.1.md). The stories: [`./emq.1.stories.md`](./emq.1.stories.md). The design it makes real: [`./emq.1.design.md`](emq.1.design.md).
-The canon: [`../emq.design.md`](../../emq.design.md). The program: [`../emq.roadmap.md`](../../emq.roadmap.md)
-· [`../echo_mq.md`](../../echo_mq.md). The x-mode skill: [`.claude/skills/x-mode/SKILL.md`](../../../../.claude/skills/x-mode/SKILL.md).
+The contract: [`./emq.1.md`](emq.1.md). The stories: [`./emq.1.stories.md`](emq.1.stories.md). The design it makes real: [`./emq.1.design.md`](emq.1.design.md).
+The canon: [`../emq.design.md`](../../../emq.design.md). The program: [`../emq.roadmap.md`](../../../emq.roadmap.md)
+· [`../echo_mq.md`](../../../echo_mq.md). The x-mode skill: [`.claude/skills/x-mode/SKILL.md`](../../../../../.claude/skills/x-mode/SKILL.md).
 The consumer: `echo/apps/codemojex` (the worked game consumer).

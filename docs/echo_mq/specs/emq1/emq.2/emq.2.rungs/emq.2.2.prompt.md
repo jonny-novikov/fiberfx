@@ -7,9 +7,9 @@
 > ported from the v1 `echomq` operator API onto `echo_mq`'s as-built four-set state machine, never migrated
 > from. The pipeline mirrors the emq.1 / emq.2.1 runbook (the proven five-stage shape). emq.2.2 stands on
 > emq.2.1: emq.2.1's reads are the acceptance lens (a drained queue reads pending zero). The x-mode skill
-> ([`.claude/skills/x-mode/SKILL.md`](../../../../../.claude/skills/x-mode/SKILL.md)) binds the laws; its inputs
+> ([`.claude/skills/x-mode/SKILL.md`](../../../../../../.claude/skills/x-mode/SKILL.md)) binds the laws; its inputs
 > are the spec triad ([`./emq.2.2.md`](emq.2.2.md) · [`./emq.2.2.stories.md`](emq.2.2.stories.md)), the carve ADR, the read plane ([`./emq.2.1.md`](emq.2.1.md)),
-> and the canon ([`../emq.design.md`](../../../emq.design.md)).
+> and the canon ([`../emq.design.md`](../../../../emq.design.md)).
 
 ## The rung in one paragraph
 
@@ -279,7 +279,7 @@ Venus reconcile build-grade; one Director post-closure pathspec commit.
 The contract: [`./emq.2.2.md`](emq.2.2.md). The stories: [`./emq.2.2.stories.md`](emq.2.2.stories.md).
 The carve it continues:
 [`./emq.2.design.md`](../emq.2.design.md). The read plane (the acceptance lens):
-[`./emq.2.1.md`](emq.2.1.md). The canon: [`../emq.design.md`](../../../emq.design.md). The program:
-[`../emq.roadmap.md`](../../../emq.roadmap.md) · [`../echo_mq.md`](../../../echo_mq.md). The x-mode skill:
-[`.claude/skills/x-mode/SKILL.md`](../../../../../.claude/skills/x-mode/SKILL.md). The capability reference:
+[`./emq.2.1.md`](emq.2.1.md). The canon: [`../emq.design.md`](../../../../emq.design.md). The program:
+[`../emq.roadmap.md`](../../../../emq.roadmap.md) · [`../echo_mq.md`](../../../../echo_mq.md). The x-mode skill:
+[`.claude/skills/x-mode/SKILL.md`](../../../../../../.claude/skills/x-mode/SKILL.md). The capability reference:
 `echo/apps/echomq/lib/echomq/queue.ex` + `worker.ex` + the operator scripts.

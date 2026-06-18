@@ -1,5 +1,5 @@
 # EMQ.3.5 · Grandchildren / deep recursion — the fifth sub-rung (Movement I, the flow family's closer)
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: ✅ SHIPPED 2026-06-15 (NORMAL-risk, Arm A)** — the FIFTH and FINAL sub-rung of the emq.3 parent/flow
 > family, BUILD-GRADE on this machine (the Director's Stage-3 review + Apollo's post-build reconcile: every D1–D6 +
@@ -13,7 +13,7 @@
 > `flow_producer` provided through its recursive `build_flow_commands` (`flow_producer.ex:51-56`/`:238`/`:364-374`).
 > It was the **V-1 Arm-A Out** the Director locked at emq.3.4 (grandchildren ruled OUT of emq.3.4 → **routed here**,
 > recorded NOT built — the `emq-3-4` ledger D-2). **Closing emq.3.5 CLOSES Movement I**
-> ([`../emq.roadmap.md`](../../../emq.roadmap.md):101-102, :143): with the whole flow family parity-complete, the
+> ([`../emq.roadmap.md`](../../../../emq.roadmap.md):101-102, :143): with the whole flow family parity-complete, the
 > `apps/echomq` dissolution thesis closes for the flow surface and Movement II (the family-depth ladder, emq.4–emq.8)
 > opens on a complete core.
 >
@@ -125,11 +125,11 @@ the host re-emit) → **NORMAL-risk**; an S2 · Arm B ruling (in-script recursiv
 
 ## Rationale (5W)
 
-- **Why** — emq.3.5 is **the rung that CLOSES Movement I** ([`../emq.roadmap.md`](../../../emq.roadmap.md):101-102, :143).
+- **Why** — emq.3.5 is **the rung that CLOSES Movement I** ([`../emq.roadmap.md`](../../../../emq.roadmap.md):101-102, :143).
   The flat flow family (emq.3.1–3.4) brought `echo_mq` to parity for a **one-level** flow, but the v1 `flow_producer`
   provides **arbitrary-depth** trees (its recursive `build_flow_commands`, `flow_producer.ex:238`/`:364-374`, and its
   documented `grandchild` example, `:51-56`) — so until grandchildren ship the flow parity is **incomplete** and the
-  `apps/echomq` dissolution thesis cannot close for the flow surface ([`../emq.roadmap.md`](../../../emq.roadmap.md)
+  `apps/echomq` dissolution thesis cannot close for the flow surface ([`../emq.roadmap.md`](../../../../emq.roadmap.md)
   Movement I). It is the family's **sole remaining slice** (the V-1 Arm-A Out, the `emq-3-4` ledger D-2 — recorded
   NOT built), and it is **genuine new design only for FAILURE**: completion recursion falls out of the existing
   mechanism (§0), so the rung's design weight is the recursive failure hook + the recursive enqueue's correctness
@@ -147,7 +147,7 @@ the host re-emit) → **NORMAL-risk**; an S2 · Arm B ruling (in-script recursiv
   whole flow surface); the bus's consumers, who gain **arbitrary-depth** fan-out/fan-in pipelines (a multi-stage
   pipeline whose stages are themselves sub-pipelines — the v1 `grandchild` shape). **codemojex** (prospective): a
   multi-stage job whose legs are themselves sub-pipelines (a tree, not a flat fan) — *it names no flows
-  today* ([`../emq.features.md`](../../../emq.features.md) — recorded, not asserted). The conformance
+  today* ([`../emq.features.md`](../../../../emq.features.md) — recorded, not asserted). The conformance
   harness, which grows by two scenarios (additive minor).
 - **When** — Movement I, the flow family's **fifth and final** sub-rung, after emq.3.1 + emq.3.2 + emq.3.3 + emq.3.4
   shipped (emq.3.5 walks the `add/3` admit machinery emq.3.1/3.3 built, composes over the `@complete` fan-in
@@ -201,7 +201,7 @@ the host re-emit) → **NORMAL-risk**; an S2 · Arm B ruling (in-script recursiv
   **`remove_dependency`** verb (the v1 third option, `flow_producer.ex` `encode_job_opts:480` — a manual
   dependency-removal verb; deferred with the family's residue unless the Director folds it); (g) the **TTL
   auto-cancel** of a stuck recursive flow (a node that neither completes nor dies — that is **emq.6** lifecycle
-  controls, the distributed/TTL cancel, [`../emq.features.md`](../../../emq.features.md) Movement II — not a flow rung);
+  controls, the distributed/TTL cancel, [`../emq.features.md`](../../../../emq.features.md) Movement II — not a flow rung);
   (h) the **flow-subkey CLEANUP/lifecycle** at any level (a **NAMED CARRY** to the emq.3.x lifecycle rung, D5 + the
   honest bounds — emq.3.5 **populates** the same subkeys at MORE levels, it does not retire them); (i) any **edit to
   the frozen v1 line**; the Operator's concurrent
@@ -695,11 +695,11 @@ failure deliver the recursive hop re-uses**, `deliver_flow_completions/3` `:205`
 gated builder — composes every node's `:<sub>` subkeys, **UNEDITED**) + `echo/apps/echo_mq/lib/echo_mq/
 conformance.ex` (the **50**-scenario set; the 7 flow scenarios `:106-112`; emq.3.5 grows `50 → 52`, the prior 50
 byte-unchanged) + `echo/apps/echo_mq/lib/echo_mq/admin.ex` (`del_job` `:152` / `@drain` `wipe()` `:90` the FIXED
-enumerations — the lifecycle carry, **UNTOUCHED**) · Design: [`../emq.design.md`](../../../emq.design.md) §6 (the
+enumerations — the lifecycle carry, **UNTOUCHED**) · Design: [`../emq.design.md`](../../../../emq.design.md) §6 (the
 grammar — the `job:<id>:{lock,logs,dependencies,processed,failed,unsuccessful}` subkeys ALL reserved, `:305-308`;
 the recursion adds no key type), §11.10 (the flow deferral + the owed design, `:447-450`), §5 (the closed
 wire-class registry — no new class, `:278`), §11.12 (the escalation protocol, `:457-459`), S-6 (the declared-keys
 A-1 law), S-1/§6 (the braced keyspace — the per-level slot constraint) · Roadmap:
-[`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I (the closer — emq.3.5 closes it, `:101-102`/`:143`) · The
-feature catalog: [`../emq.features.md`](../../../emq.features.md) (the emq.3 row, the recursive `flow_producer →
-emq.3.5` parity row) · Approach: [`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+[`../emq.roadmap.md`](../../../../emq.roadmap.md) Movement I (the closer — emq.3.5 closes it, `:101-102`/`:143`) · The
+feature catalog: [`../emq.features.md`](../../../../emq.features.md) (the emq.3 row, the recursive `flow_producer →
+emq.3.5` parity row) · Approach: [`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

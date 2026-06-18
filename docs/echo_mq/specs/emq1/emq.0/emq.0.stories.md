@@ -2,7 +2,7 @@
 
 > **Superseded — the Shadow subsystem is retired.** The stories below pin Movement 0 as imported, including
 > the cache's pluggable `Shadow` behaviour and `Shadow.Copy`. That subsystem has since been retired
-> ([`../../store/design/store.design.md`](../../store/design/store.design.md) §2) — the app renamed `echo_store`,
+> ([`../../store/design/store.design.md`](../../../store/design/store.design.md) §2) — the app renamed `echo_store`,
 > durable replicated state moved to the native `EchoStore.Graft` engine streamed to Tigris, and the Shadow
 > modules and tests deleted. The shadow stories are import history, not the current acceptance surface.
 
@@ -237,4 +237,4 @@ Priority: must · Size: 5 · Implements deliverables: EMQ.0-D10, EMQ.0-D5 (the s
 ---
 Coverage: D1→US6 · D2→US6 · D3→US2 · D4→US6 · D5→US1, US2, US7, US8 · D6→US3, US4 · D7→US5 · D8→US6 ·
 D9→US7 · D10→US8 · D11→US6.
-Spec: [`./emq.0.md`](./emq.0.md).
+Spec: [`./emq.0.md`](emq.0.md).

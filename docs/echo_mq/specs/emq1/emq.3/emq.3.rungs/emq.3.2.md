@@ -1,5 +1,5 @@
 # EMQ.3.2 · The child-result reads — the second sub-rung (Movement I, the flow family)
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: SHIPPED 2026-06-15 at CONFORMANCE 46/46** (the SECOND sub-rung of the emq.3 parent/flow family — the
 > family contract + the carve + the forks are [`./emq.3.md`](../emq.3.md); the first slice
@@ -74,7 +74,7 @@ shipped `@enqueue_flow` is **untouched**; `apps/echomq` is **untouched** (the ca
   consumers, who gain `children_values` / `dependencies` (the parent handler reads what its legs produced, the
   v1 surface); the conformance harness, which grows by `flow_children_values` (additive minor). **codemojex**
   (prospective): a same-queue parent that aggregates its child legs' results — *it names no flows today*
-  ([`../emq.features.md`](../../../emq.features.md) — recorded, not asserted).
+  ([`../emq.features.md`](../../../../emq.features.md) — recorded, not asserted).
 - **When** — Movement I, the flow family's **second** sub-rung, after emq.3.1 shipped (emq.3.2 reads the
   `:processed`/`:dependencies` subkeys emq.3.1 writes; it extends the `complete`/`ARGV[5]` seam emq.3.1 built).
   SPECCED this design cycle; **built only after the Operator rules Fork R1** (the real-result-carrying
@@ -310,10 +310,10 @@ the `GET` read of the `:dependencies` STRING counter, `{:ok, 0}` none-key sentin
 `:397-405` the O2 read, fold DECLINED; `add_log/5` the `<> ":logs"` subkey-compose precedent) + `keyspace.ex`
 (`job_key/2` the gated builder, `queue_key/2`) + `conformance.ex` (the **46**-scenario set; `flow_children_values`
 + its `apply_scenario` probe at `:1096`) + `admin.ex` (`del_job` the FIXED `:logs`/`:lock` enumeration, the
-L-5/N1 lifecycle carry — UNTOUCHED) · Design: [`../emq.design.md`](../../../emq.design.md) §11.10 (the
+L-5/N1 lifecycle carry — UNTOUCHED) · Design: [`../emq.design.md`](../../../../emq.design.md) §11.10 (the
 deferral + the owed flow design), §6 (the grammar — the `job:<id>:{processed,dependencies}` subkeys), §5 (no
 new wire class), S-6 (the declared-keys A-1 law — the reads are A-1-trivial, pure reads of declared keys),
 S-1/§6 (the braced keyspace — the single slot), §11.12 (the escalation protocol) · Roadmap:
-[`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I (the parity thesis — the flow family closes it) · The
-feature catalog: [`../emq.features.md`](../../../emq.features.md) (the emq.3 row) · Approach:
-[`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+[`../emq.roadmap.md`](../../../../emq.roadmap.md) Movement I (the parity thesis — the flow family closes it) · The
+feature catalog: [`../emq.features.md`](../../../../emq.features.md) (the emq.3 row) · Approach:
+[`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

@@ -1,6 +1,6 @@
 # EMQ.3 · The parent/flow family — the A-1-compatible flow design (Movement I, the closer)
 
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
 > **Status: 🔨 OPEN — building sub-rung by sub-rung** (the family spec + the carve, authored the founding design
 > cycle; **emq.3.1 the single-queue flow SHIPPED 2026-06-15** + **emq.3.2 the child-result reads SHIPPED
 > 2026-06-15** (ratified — the durable harness `emq_3_2_check.sh` 8/8 Director-reproduced; forks R1·B + R2·A
@@ -13,7 +13,7 @@
 > (`apps/echomq`) is a **capability reference** — the list of flow behaviour to port — never a thing migrated
 > from, and its *form* is the thing this rung must NOT lift (its scripts root key operands in data values).
 > The family decomposes into sub-rungs (**emq.3.1**, 3.2, …) the way emq.2 decomposed (emq.2.1–2.4); this body
-> is the family contract + the carve, and [`./emq.3.1.md`](./emq.3.rungs/emq.3.1.md) carves the first buildable slice.
+> is the family contract + the carve, and [`./emq.3.1.md`](emq.3.rungs/emq.3.1.md) carves the first buildable slice.
 > **Risk: HIGH** — it founds a new key-derivation shape (the flow subkeys) and a completion-gate transition on
 > the shipped `@complete`; Apollo is mandatory at the build of any sub-rung that edits a shipped script.
 
@@ -78,7 +78,7 @@ in data values); (b) a parent is **invisible to `claim` until all its children c
 (c) a child's completion **decrements the parent's outstanding-dependency count** and, at zero, **releases the
 parent** to `pending` — all under the A-1 declared-keys law, branded `JOB` ids gated at the key builder, the
 server clock on any lease, and the additive-minor conformance growth. The family carves into sub-rungs;
-**emq.3.1** carries the first buildable slice (the single-queue flow — see [`./emq.3.1.md`](./emq.3.rungs/emq.3.1.md)) and
+**emq.3.1** carries the first buildable slice (the single-queue flow — see [`./emq.3.1.md`](emq.3.rungs/emq.3.1.md)) and
 the later sub-rungs extend it (the cross-queue completion signal, the child-result reads, the failure-policy
 options) per **The carve** below.
 
@@ -88,7 +88,7 @@ options) per **The carve** below.
   · emq.2.3 watch · emq.2.4 the closer) brought `echo_mq` to feature parity for the v1 read/ops/watch floor,
   but the flow family was **explicitly deferred** at the 2.0 founding as owed design work (design §11.10; the
   emq.2.4 gap table G11). Until flows ship, the program thesis — `apps/echomq` dissolves when nothing depends
-  on what it alone provides ([`../emq.roadmap.md`](../../emq.roadmap.md) Movement I) — **cannot close** for
+  on what it alone provides ([`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I) — **cannot close** for
   Movement I: the v1 line alone carries fan-out/fan-in pipelines. emq.3 is the last Movement-I parity surface;
   closing it lets Movement I close and Movement II (the family-depth ladder, emq.4–emq.8) open on a complete
   core. It is **genuine new design** (not a port) precisely because the v1 form is structurally illegal under
@@ -106,7 +106,7 @@ options) per **The carve** below.
   flow surface); the bus's consumers, who gain fan-out/fan-in pipelines (a parent job that completes only when
   a set of child jobs do); the conformance harness, which grows by the new flow scenarios (additive minor).
   **codemojex** (the worked consumer) does not name flows today — a round that gates on a set of per-player
-  scoring jobs is the prospective shape ([`../emq.features.md`](../../emq.features.md)
+  scoring jobs is the prospective shape ([`../emq.features.md`](../../../emq.features.md)
   lines 178-180 — recorded, not asserted).
 - **When** — **Movement I, the closer**, after the emq.2 cluster ships (the flow scripts stand ON the as-built
   state machine `EchoMQ.Jobs` — `@enqueue`/`@claim`/`@complete` — which the cluster proved at depth at
@@ -376,7 +376,7 @@ and C are cheap pre-build re-scopes of a representation, not blockers).
       arm at the pre-build reconcile.
 - [ ] The carve into sub-rungs recorded (emq.3.1 the single-queue flow · 3.2 child-result reads · 3.3
       cross-queue · 3.4 failure-policy + bulk), dependency-ordered, each a full triad + a runbook.
-- [ ] emq.3.1 specced (this design cycle): [`./emq.3.1.md`](./emq.3.rungs/emq.3.1.md) + `.stories.md` +
+- [ ] emq.3.1 specced (this design cycle): [`./emq.3.1.md`](emq.3.rungs/emq.3.1.md) + `.stories.md` +
       `.prompt.md` — the first buildable single-queue-flow slice.
 - [ ] INV1–INV8 stated as runnable checks; the family DoD traces every deliverable to a story (the `.stories.md`
       Coverage map).
@@ -386,7 +386,7 @@ and C are cheap pre-build re-scopes of a representation, not blockers).
       MANDATORY for any sub-rung editing a shipped script (the `@complete` fan-in hook — HIGH-RISK).
 
 Stories: [`./emq.3.stories.md`](emq.3.stories.md) ·
-First sub-rung: [`./emq.3.1.md`](./emq.3.rungs/emq.3.1.md) (+ `.stories.md` / `.prompt.md`) ·
+First sub-rung: [`./emq.3.1.md`](emq.3.rungs/emq.3.1.md) (+ `.stories.md` / `.prompt.md`) ·
 The v1 capability reference (READ-ONLY, the form NOT to lift): `echo/apps/echomq/lib/echomq/flow_producer.ex`
 (`add/2`, `add_bulk/2`, the `parent_key`/`parent_info` data-value tree) + the dependency-subkey names in
 `echo/apps/echomq/priv/scripts/moveToFinished-15.lua:140-141` ·
@@ -394,11 +394,11 @@ As-built floor (the A-1 derivation precedent + the transitions the flow stands o
 `echo/apps/echo_mq/lib/echo_mq/jobs.ex` (`@enqueue`/`@claim`/`@complete`/`@extend_locks` — the
 `base .. 'job:' .. id` declared-root derivation) + `keyspace.ex` (`job_key/2` the gated builder,
 `queue_key/2`) + `conformance.ex` (the 43-scenario set the additive-minor law grows — re-probe the live count) ·
-Design: [`../emq.design.md`](../../emq.design.md) §11.10 (the deferral + the owed design), §6 (the grammar — the
+Design: [`../emq.design.md`](../../../emq.design.md) §11.10 (the deferral + the owed design), §6 (the grammar — the
 `job:<id>:{dependencies,processed,failed,unsuccessful}` subkeys), §5 (the closed wire-class registry — no new
 class), §11.12 (the escalation protocol), S-6 (the declared-keys A-1 law), S-1/§6 (the braced keyspace — the
-slot constraint that forces Fork A) · Roadmap: [`../emq.roadmap.md`](../../emq.roadmap.md) Movement I (the parity
+slot constraint that forces Fork A) · Roadmap: [`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I (the parity
 thesis — emq.3 closes it) · The feature catalog + the parity proof:
-[`../emq.features.md`](../../emq.features.md) (the emq.3 row, lines 172-180; the B.1 `flow_producer → emq.3` row) ·
+[`../emq.features.md`](../../../emq.features.md) (the emq.3 row, lines 172-180; the B.1 `flow_producer → emq.3` row) ·
 The carve precedent: [`./emq.2.design.md`](../emq.2/emq.2.design.md) (ADR-1 the dependency-ordered carve) · Approach:
-[`../../elixir/specs/specs.approach.md`](../../../elixir/specs/specs.approach.md)
+[`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)

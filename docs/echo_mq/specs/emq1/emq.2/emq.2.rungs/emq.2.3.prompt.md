@@ -10,8 +10,8 @@
 > PROCESSES (the lock plane + the stalled sweep run on timers)** — so unlike the read-only emq.2.1, this
 > runbook requires the **≥100-iteration determinism loop** for the process-touching suites and runs at a
 > **higher risk tier** (a dedicated Apollo evaluator is warranted — see Risk tier). The x-mode skill
-> ([`.claude/skills/x-mode/SKILL.md`](../../../../../.claude/skills/x-mode/SKILL.md)) binds the laws; its inputs are
-> the spec triad ([`./emq.2.3.md`](emq.2.3.md) · [`./emq.2.3.stories.md`](emq.2.3.stories.md)), the carve ADR, and the canon ([`../emq.design.md`](../../../emq.design.md)).
+> ([`.claude/skills/x-mode/SKILL.md`](../../../../../../.claude/skills/x-mode/SKILL.md)) binds the laws; its inputs are
+> the spec triad ([`./emq.2.3.md`](emq.2.3.md) · [`./emq.2.3.stories.md`](emq.2.3.stories.md)), the carve ADR, and the canon ([`../emq.design.md`](../../../../emq.design.md)).
 
 ## The rung in one paragraph
 
@@ -311,9 +311,9 @@ one Director post-closure pathspec commit; the **emq.2 cluster marked COMPLETE**
 
 The contract: [`./emq.2.3.md`](emq.2.3.md). The stories: [`./emq.2.3.stories.md`](emq.2.3.stories.md).
 The carve it closes:
-[`./emq.2.design.md`](../emq.2.design.md). The canon: [`../emq.design.md`](../../../emq.design.md). The program:
-[`../emq.roadmap.md`](../../../emq.roadmap.md) · [`../echo_mq.md`](../../../echo_mq.md). The x-mode skill:
-[`.claude/skills/x-mode/SKILL.md`](../../../../../.claude/skills/x-mode/SKILL.md). The capability reference:
+[`./emq.2.design.md`](../emq.2.design.md). The canon: [`../emq.design.md`](../../../../emq.design.md). The program:
+[`../emq.roadmap.md`](../../../../emq.roadmap.md) · [`../echo_mq.md`](../../../../echo_mq.md). The x-mode skill:
+[`.claude/skills/x-mode/SKILL.md`](../../../../../../.claude/skills/x-mode/SKILL.md). The capability reference:
 `echo/apps/echomq/lib/echomq/{queue_events,telemetry,lock_manager,stalled_checker,cancellation_token}.ex` +
 the scripts. The as-built floor: `echo/apps/echo_mq/lib/echo_mq/{jobs,consumer,pump,keyspace,conformance}.ex`
 + `echo/apps/echo_wire/lib/echo_mq/connector.ex` (the pub/sub seam + `emit/3`).

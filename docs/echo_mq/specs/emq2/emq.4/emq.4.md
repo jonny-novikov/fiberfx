@@ -2,9 +2,9 @@
 
 > **Status: 📐 PROPOSED — the family spec + the carve, this design cycle** (no production code this cycle; the
 > family decomposes into four sub-rungs the way emq.2 and emq.3 did, and the sub-rung carves
-> [`./emq.4.rungs/emq.4.1.md`](./emq.4.rungs/emq.4.1.md) … [`./emq.4.4.md`](./emq.4.rungs/emq.4.4.md) are a SEPARATE
+> [`./emq.4.rungs/emq.4.1.md`](emq.4.rungs/emq.4.1.md) … [`./emq.4.4.md`](emq.4.rungs/emq.4.4.md) are a SEPARATE
 > fan-out, not authored here). emq.4 is **the rung that OPENS Movement II**: the displaced fair-lanes (groups)
-> family the roadmap RULED into this slot ([`../emq.roadmap.md`](../../emq.roadmap.md) seam 2, CLOSED; design §10
+> family the roadmap RULED into this slot ([`../emq.roadmap.md`](../../../emq.roadmap.md) seam 2, CLOSED; design §10
 > seam 2 / §4 cluster 2), **deepened** from the shipped `EchoMQ.Lanes` basics to the depth a multi-tenant
 > production bus needs. The basics ALREADY shipped (B3.4 "Fair Lanes", PASS 8/8 G1–G8) — emq.4 does not found the
 > family, it deepens it; every axis is **additive over the shipped `g:`-segment keyspace**, nothing here is a wire
@@ -43,7 +43,7 @@ beat made robust — no lost wakeups, fair across parked consumers), and **weigh
 shipped family carried to where a noisy-neighbour-resistant, operator-controllable, starvation-proof bus needs it.
 
 **Why now.** Movement I is CLOSED (the parity floor emq.2, the parent/flow family emq.3 —
-[`../emq.roadmap.md`](../../emq.roadmap.md)); Movement II opens on a complete core. The groups family is the FIRST
+[`../emq.roadmap.md`](../../../emq.roadmap.md)); Movement II opens on a complete core. The groups family is the FIRST
 Movement-II rung because it is the most-exercised production surface (the worked consumer **codemojex** already rides
 per-player `EchoMQ.Lanes` as branded `JOB` work — one lane per player, no noisy-neighbour starvation), and because the
 fair-lanes family's rung slot was **RULED** here at the Stage-1b checkpoint (seam 2 closed). Deepening it first turns
@@ -67,9 +67,9 @@ dependency-ordered sub-rungs; each ships independently and **nothing here is a w
 **The grounding discipline (NO-INVENT).** Every proposed deepening rides a **shipped key or script** or re-aims a
 **named v1 capability**, never a coined surface. The canon already recorded the emq.4 deltas: intra-group priority is
 a **non-zero score on the existing `g:<group>:pending` ZSET** (a `ZCOUNT` over a score window — **no new key**), never
-a global `prioritized` key or a `pc` counter ([`../emq.commands/features/groups/addPrioritizedJob-9.md`](../emq.commands/features/groups/addPrioritizedJob-9.md));
+a global `prioritized` key or a `pc` counter ([`../emq.commands/features/groups/addPrioritizedJob-9.md`](../../emq.commands/features/groups/addPrioritizedJob-9.md));
 lane re-assignment moves a member **between two existing lane ZSETs**, never a priority re-score
-([`../emq.commands/features/groups/changePriority-7.md`](../emq.commands/features/groups/changePriority-7.md)). Where
+([`../emq.commands/features/groups/changePriority-7.md`](../../emq.commands/features/groups/changePriority-7.md)). Where
 a script body is undetermined this cycle, it is **WITHHELD** and pinned at the sub-rung's pre-build reconcile (the
 lag-1 discipline), not invented.
 
@@ -237,10 +237,10 @@ higher-risk metronome (emq.4.3) and fairness (emq.4.4) rungs. The four sub-rungs
       52 byte-unchanged (INV6); the ≥100 determinism loop green for any process/lease suite (INV7); Apollo MANDATORY
       for emq.4.3 and for emq.4.4 if it edits `@gclaim`.
 
-Stories: [`./emq.4.stories.md`](emq.4.stories.md) · Agent brief: [`./emq.4.llms.md`](emq.4.llms.md) ·
-Sub-rungs (a separate fan-out, NOT authored this cycle): [`./emq.4.rungs/emq.4.1.md`](./emq.4.rungs/emq.4.1.md) ·
-[`./emq.4.rungs/emq.4.2.md`](./emq.4.rungs/emq.4.2.md) · [`./emq.4.rungs/emq.4.3.md`](./emq.4.rungs/emq.4.3.md) ·
-[`./emq.4.rungs/emq.4.4.md`](./emq.4.rungs/emq.4.4.md) ·
+Stories: [`./emq.4.stories.md`](emq.4.stories.md) ·
+Sub-rungs (a separate fan-out, NOT authored this cycle): [`./emq.4.rungs/emq.4.1.md`](emq.4.rungs/emq.4.1.md) ·
+[`./emq.4.rungs/emq.4.2.md`](emq.4.rungs/emq.4.2.md) · [`./emq.4.rungs/emq.4.3.md`](emq.4.rungs/emq.4.3.md) ·
+[`./emq.4.rungs/emq.4.4.md`](emq.4.rungs/emq.4.4.md) ·
 As-built floor (the surface this family deepens — re-probe at each sub-rung's reconcile):
 `echo/apps/echo_mq/lib/echo_mq/lanes.ex` (`@genqueue`/`@gclaim`/`@gpause`/`@gresume`/`@glimit`; `enqueue/5`, `claim/3`,
 `pause/3`, `resume/3`, `limit/4`, `depth/3`; the `g:`-segment keyspace + the ring + the wake) +
@@ -248,9 +248,9 @@ As-built floor (the surface this family deepens — re-probe at each sub-rung's 
 `consumer.ex` (the park-don't-poll loop + `BLPOP wake`) + `conformance.ex` (the 52-scenario set the additive-minor
 law grows — re-probe the live count) · The v1 capability reference (the re-aim record, READ-ONLY — the form NOT to
 lift): [`../emq.commands/features/groups/`](../emq.commands/features/groups/) (`addPrioritizedJob-9` SHIPPED re-aimed ·
-`changePriority-7` + `getCountsPerPriority-4` RETIRED) · Design: [`../emq.design.md`](../../emq.design.md) §10 seam 2
+`changePriority-7` + `getCountsPerPriority-4` RETIRED) · Design: [`../emq.design.md`](../../../emq.design.md) §10 seam 2
 / §4 cluster 2 (the displaced groups family RULED → emq.4), §4 row 4 (the *park, don't poll* law re-aimed to the
 fair-lanes rung), S-1/§6 (the braced keyspace), S-6 (the declared-keys A-1 law) · Roadmap:
-[`../emq.roadmap.md`](../../emq.roadmap.md) (the emq.4 row · Movement II · seam 2 CLOSED) · The carve precedents:
-[`../emq.2/emq.2.design.md`](../emq.2/emq.2.design.md) + [`../emq.3/emq.3.md`](../emq.3/emq.3.md) (the dependency-ordered carve) ·
-Approach: [`../../elixir/specs/specs.approach.md`](../../../elixir/specs/specs.approach.md)
+[`../emq.roadmap.md`](../../../emq.roadmap.md) (the emq.4 row · Movement II · seam 2 CLOSED) · The carve precedents:
+[`../emq.2/emq.2.design.md`](../../emq1/emq.2/emq.2.design.md) + [`../emq.3/emq.3.md`](../../emq1/emq.3/emq.3.md) (the dependency-ordered carve) ·
+Approach: [`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)

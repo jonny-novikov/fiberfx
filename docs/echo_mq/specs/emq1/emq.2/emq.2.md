@@ -6,7 +6,7 @@
 > for history; it carries no live contract.
 
 # EMQ.2 · The v1→v2 migration path, re-proven against echo_mq — Movement I, program hygiene
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
 > **Status: SPECCED, not built** (planned-abstract on the Stage-1b ladder; authored this run alongside the
 > emq.1 build; built a later run). emq.2 builds, inside `echo/apps/echo_mq` under the v2 laws, the supported
 > crossing from a v1 (`1.3.0`) deployment to the BCS 2.0 keyspace: drain-and-switch as the primary runbook,
@@ -41,7 +41,7 @@ an Operator ruling on the in-place treatment seam (design §10 seam 1).
   {:unmigratable_job_ids, ids}}` — drain first); set/list members carrying ids rewrite in the same pass" (§2
   Consequences). The roadmap places it as Movement I program hygiene: "the v1→v2 migration path re-proven
   against `echo_mq` (drain-and-switch; the order-preserving branding lane; the typed unmigratable-ids refusal;
-  the v1-side terminal `1.3.1` fence-only patch)" ([`../emq.roadmap.md`](../../emq.roadmap.md), the emq.2 ladder
+  the v1-side terminal `1.3.1` fence-only patch)" ([`../emq.roadmap.md`](../../../emq.roadmap.md), the emq.2 ladder
   row). The mechanism is not invented here: the frozen v1 tool already implements the copy-verify-DELETE shape
   and the four typed refusals; emq.2 re-targets it at the braced, branded convergence keyspace.
 - **What** — emq.2 builds, inside `echo_mq`: an `EchoMQ.Migration` surface (the offline `migrate/4` over a
@@ -59,7 +59,7 @@ an Operator ruling on the in-place treatment seam (design §10 seam 1).
 - **Who** — operators of a v1 (`1.3.0`) deployment crossing to 2.0; the program itself (the rung un-blocks the
   push source's dissolution — seam 5). **No consumer rung names this surface.** The program front door
   records it as hygiene, not a feature: "program hygiene rather than a consumer feature: it retires the push
-  source's deployments; no consumer rung gates on it (recorded, not asserted)" ([`../echo_mq.md`](../../echo_mq.md),
+  source's deployments; no consumer rung gates on it (recorded, not asserted)" ([`../echo_mq.md`](../../../echo_mq.md),
   the emq.2 ladder row). This rung manufactures no consumer trace; the crossing's beneficiary is the operator
   who runs it and the program that can then dissolve `apps/echomq`.
 - **When** — Movement I, after emq.1 closes (planned-abstract on the confirmed ladder). SPECCED this run,
@@ -181,10 +181,10 @@ frozen `apps/echomq`):
       as-built reconcile syncs it post-build.
 
 Stories: [`./emq.2.stories.md`](emq.2.stories.md) ·
-Runbook: [`./emq.2.prompt.md`](emq.2.prompt.md) · Roadmap: [`../emq.roadmap.md`](../../emq.roadmap.md) (the emq.2
-ladder row; seam 1) · Design: [`../emq.design.md`](../../emq.design.md) §2 (the branding lane), §3 (the fence
+Runbook: [`./emq.2.prompt.md`](emq.2.prompt.md) · Roadmap: [`../emq.roadmap.md`](../../../emq.roadmap.md) (the emq.2
+ladder row; seam 1) · Design: [`../emq.design.md`](../../../emq.design.md) §2 (the branding lane), §3 (the fence
 merge + tombstone discrimination), §6 (the braced grammar), §10 seam 1 (the in-place treatment), §11.4 (replace
 -on-main), §11.5 (the v1 terminal fence-only patch), §1 S-1 / §11.1 (`v1_prefix` is config input, default
 `"bull"`) · Mechanism precedent: `echo/apps/echomq/lib/echomq/migration.ex`,
-`echo/apps/echomq/guides/migration_v1_to_v2.md` · Program front door: [`../echo_mq.md`](../../echo_mq.md) (emq.2 =
-hygiene, no consumer gate) · Approach: [`../../elixir/specs/specs.approach.md`](../../../elixir/specs/specs.approach.md)
+`echo/apps/echomq/guides/migration_v1_to_v2.md` · Program front door: [`../echo_mq.md`](../../../echo_mq.md) (emq.2 =
+hygiene, no consumer gate) · Approach: [`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)

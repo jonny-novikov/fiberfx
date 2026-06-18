@@ -1,10 +1,10 @@
 # EMQ.4.2 · Group-aware recovery — the group-scoped stalled-sweep (Movement II, the groups family)
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../../emq.changelog.md). This body is the historical spec.
 
-> **Status: 📐 SPECCED — the full triad authored (`./emq.4.2.stories.md` · `./emq.4.2.llms.md` · `./emq.4.2.prompt.md`),
+> **Status: ✅ SHIPPED** — the full triad authored (`./emq.4.2.stories.md` · `./emq.4.2.prompt.md`),
 > reconciled lag-1 against the as-built tree (the `emq-4-2` design run, 2026-06-18). The build choice is recommended
 > → Arm A (additive-beside); the host verb is pinned → `Lanes.reap_group/3`; the conformance floor is reconciled from
-> the stale 52 to the live 54 (emq.4.1 shipped `reassign` + `lane_drain`, so the as-built count is 54 → 55, not 52 → N).
-> Not built — the build follows via `/echo-mq-ship emq.4.2`.** The SECOND
+> the stale 52 to the live 54 (emq.4.1 shipped `reassign` + `lane_drain`, so the as-built count is 54 → 55, not 52 → N).** The SECOND
 > sub-rung of the emq.4 "groups deepened" family; the family contract + the carve + the forks are
 > [`../emq.4.md`](../emq.4.md) (authoritative — if this carve disagrees with the body, the body wins). emq.4.2
 > deepens recovery so a lapsed grouped lease can be swept **per group, on demand** — a **group-scoped
@@ -103,8 +103,7 @@ moved the surface), NOT this seed's to pre-decide:
   branches. **Apollo's mandate** attaches only if the edit reaches a lease-critical shipped script — the reconcile
   states which, the Director rules the gate.
 
-This seed **flags both** and withholds the choice for the reconcile; the chapter brief ([`../emq.4.llms.md`](../emq.4.llms.md))
-records the same.
+This seed **flags both** and withholds the choice for the reconcile.
 
 ## Invariants (the subset emq.4.2 carries, from the family EMQ.4-INV1–8)
 
@@ -153,8 +152,7 @@ records the same.
       as-built reconcile syncs this seed post-build.
 
 Family: [`../emq.4.md`](../emq.4.md) (the contract, the carve, the forks — authoritative) · Chapter stories:
-[`../emq.4.stories.md`](../emq.4.stories.md) (US2 — group-aware recovery) · Chapter brief:
-[`../emq.4.llms.md`](../emq.4.llms.md) (R2, AS2) · As-built floor (the build target — re-probe at the pre-build
+[`../emq.4.stories.md`](../emq.4.stories.md) (US2 — group-aware recovery) · As-built floor (the build target — re-probe at the pre-build
 reconcile; line numbers are hints): `echo/apps/echo_mq/lib/echo_mq/jobs.ex` (`@reap` — the **shipped group-aware**
 dead-lease scan: `redis.call('TIME')`, an expired grouped lease `ZADD`ed back to `p .. 'g:' .. g .. ':pending'`,
 `HINCRBY gactive -1`, the re-ring guard `SISMEMBER paused` + `glimit`, the `wake` push) +
@@ -165,8 +163,8 @@ job recovered into its lane `stalled.ex:76`, mirroring the reaper's group branch
 keyspace) + `conformance.ex` (the **54**-scenario set — the `stalled` + `stalled_group` scenarios are the proven
 precedent; re-probe the live count) · The v1 capability reference (READ-ONLY — the form NOT to lift; named in the
 surface map): `echo/apps/echomq` `stalled_checker` + `moveStalledJobsToWait` (the v1 9-key LIST shape — NOT lifted;
-the v2 form is declared-keys + lane recovery) · Design: [`../../../emq.design.md`](../../../emq.design.md) §10 seam 2
+the v2 form is declared-keys + lane recovery) · Design: [`../../../emq.design.md`](../../../../emq.design.md) §10 seam 2
 / §4 cluster 2 (the displaced groups family RULED → emq.4), §4 (the server-clock law — `TIME` in transition scripts),
 S-6 (the declared-keys A-1 law), S-1/§6 (the braced keyspace) · Roadmap:
-[`../../../emq.roadmap.md`](../../../emq.roadmap.md) (the emq.4 row · Movement II) · Approach:
-[`../../../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+[`../../../emq.roadmap.md`](../../../../emq.roadmap.md) (the emq.4 row · Movement II) · Approach:
+[`../../../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

@@ -184,4 +184,4 @@ design §7, S-4 (the structural gate).
 
 The per-sub-rung Deliverables (each emq.4.N's D1–Dn) trace in the sub-rung's `.stories.md` (a separate fan-out —
 `./emq.4.rungs/emq.4.N.stories.md`); this file covers the **family** contract, the carve, and the forks. Spec body:
-[`./emq.4.md`](emq.4.md) (authoritative) · Agent brief: [`./emq.4.llms.md`](emq.4.llms.md).
+[`./emq.4.md`](emq.4.md) (authoritative).

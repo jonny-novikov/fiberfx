@@ -5,12 +5,12 @@
 > file's prior content (the retired v1→v2 *migration* runbook, itself superseded 2026-06-13 when emq.2
 > re-scoped from "the migration path" to the **full-parity rewrite**; that runbook's history is recoverable
 > via git). Authored at the **`emq-2-4` design cycle** (2026-06-14 — the features catalog
-> [`../emq.features.md`](../../emq.features.md), the emq.2 ⇄ emq.2.3 reconcile, and the emq.2.4 triad). The
-> `/x-mode` skill ([`.claude/skills/x-mode/SKILL.md`](../../../../.claude/skills/x-mode/SKILL.md)) binds the laws;
+> [`../emq.features.md`](../../../emq.features.md), the emq.2 ⇄ emq.2.3 reconcile, and the emq.2.4 triad). The
+> `/x-mode` skill ([`.claude/skills/x-mode/SKILL.md`](../../../../../.claude/skills/x-mode/SKILL.md)) binds the laws;
 > the **`echo-mq-ship`** skill is the echo_mq binding; the inputs are the triad ([`./emq.2.4.md`](emq.2.rungs/emq.2.4.md)
 > · [`./emq.2.4.stories.md`](emq.2.rungs/emq.2.4.stories.md)), the canon
-> ([`../emq.design.md`](../../emq.design.md)), the carve ([`./emq.2.design.md`](emq.2.design.md)), the gap table
-> ([`./emq.2.4.md`](emq.2.rungs/emq.2.4.md) §0), and the parity proof ([`../emq.features.md`](../../emq.features.md) Part B).
+> ([`../emq.design.md`](../../../emq.design.md)), the carve ([`./emq.2.design.md`](emq.2.design.md)), the gap table
+> ([`./emq.2.4.md`](emq.2.rungs/emq.2.4.md) §0), and the parity proof ([`../emq.features.md`](../../../emq.features.md) Part B).
 
 ## The cluster in one paragraph
 
@@ -21,7 +21,7 @@ Three rungs are down: **emq.2.1** (the read plane, `EchoMQ.Metrics` — 10 verbs
 watch plane, `EchoMQ.Events`/`Meter`/`Locks`(+`Locks.Core`)/`Stalled`/`Cancel` +
 `Jobs.extend_lock(s)`) **shipped `3c6461ff`** (+ the docs fold `5a3fdd73`; conformance grew **32 → 37**; both
 determinism flakes fixed at root; the ≥100 gate green 100/0; Apollo BUILD-GRADE). The **feature** parity for the carved floor is essentially
-complete — the parity proof is [`../emq.features.md`](../../emq.features.md) Part B (every v1 capability → its v2
+complete — the parity proof is [`../emq.features.md`](../../../emq.features.md) Part B (every v1 capability → its v2
 home → its rung → status; the one ruled-out row is `migration.ex`, ADR-0). The emq.2 ⇄ emq.2.{1,2,3} reconcile
 (this design cycle, [`./emq.2.4.md`](emq.2.rungs/emq.2.4.md) §0) found the residue concentrated in (a) a **small genuine
 feature residue** (G1 the rate-gate fork, G2 the metrics `:data` series, G3 the `de:` orphan) and (b) the
@@ -187,7 +187,7 @@ findings forward as mentoring (Director-ratified).
 ### Stage 5 — Venus (architect): the post-build reconcile
 
 Sync the triad body to the as-built surface (the depth suites' real names; the ruled arm; the final conformance
-N); every triad claim MATCH or `[RECONCILE]`-marked; fold the parity proof ([`../emq.features.md`](../../emq.features.md)
+N); every triad claim MATCH or `[RECONCILE]`-marked; fold the parity proof ([`../emq.features.md`](../../../emq.features.md)
 Part B) to flip the 🔨 watch + closer rows to ✅ where they land.
 
 ### Stage 6 — Director: closure + ONE LAW-4 commit + the cluster-close fold
@@ -196,7 +196,7 @@ Preconditions (x-mode §4): Apollo BUILD-GRADE (or its REMEDIATE items closed) +
 build-grade; **≥1 `tool_x_decision` (D-n)** + a **`tool_x_complete` (Z-n)** this turn; `git status --short` AND
 `git diff --cached --name-only` reviewed; `.git/rebase-merge`/`rebase-apply` checked. Then the **pathspec**
 commit (below; NEVER `git add -A`, NEVER a bare commit). **Same turn:** flip the emq.2.4 + cluster rows in the
-single roadmap ([`../emq.roadmap.md`](../../emq.roadmap.md)) and the dashboard ([`../emq.progress.md`](../../emq.progress.md));
+single roadmap ([`../emq.roadmap.md`](../../../emq.roadmap.md)) and the dashboard ([`../emq.progress.md`](../../../emq.progress.md));
 mark **the emq.2 cluster CLOSED**; surface the **push-source dissolution seam** (the cluster close un-blocks
 `apps/echomq`'s dissolution — timing Operator-owned, roadmap §Seams item 5) and the **next frontier** (emq.3
 parent/flow opens Movement I's close; or an emq.7 / emq3.1 pull-forward); under an **explicit Operator grant
@@ -261,9 +261,9 @@ surfaced.
 ---
 
 The contract: [`./emq.2.4.md`](emq.2.rungs/emq.2.4.md). The stories: [`./emq.2.4.stories.md`](emq.2.rungs/emq.2.4.stories.md). The parity proof + the 3.0 catalog:
-[`../emq.features.md`](../../emq.features.md). The carve + ADRs: [`./emq.2.design.md`](emq.2.design.md). The
-canon: [`../emq.design.md`](../../emq.design.md) §5/§6/§7/§11.12/§The master invariant. The program:
-[`../emq.roadmap.md`](../../emq.roadmap.md) · [`../echo_mq.md`](../../echo_mq.md). The dashboard:
-[`../emq.progress.md`](../../emq.progress.md). The run's audit trail: `emq-2-4.progress.md` + `mcp__aaw__status`.
+[`../emq.features.md`](../../../emq.features.md). The carve + ADRs: [`./emq.2.design.md`](emq.2.design.md). The
+canon: [`../emq.design.md`](../../../emq.design.md) §5/§6/§7/§11.12/§The master invariant. The program:
+[`../emq.roadmap.md`](../../../emq.roadmap.md) · [`../echo_mq.md`](../../../echo_mq.md). The dashboard:
+[`../emq.progress.md`](../../../emq.progress.md). The run's audit trail: `emq-2-4.progress.md` + `mcp__aaw__status`.
 The capability reference (the test DEPTH to port — read, never edit):
 `echo/apps/echomq/test/echomq/{queue_getters,queue_integration,rate_limiter_integration,obliterate,queue_events_integration,worker_cancellation}_test.exs`.

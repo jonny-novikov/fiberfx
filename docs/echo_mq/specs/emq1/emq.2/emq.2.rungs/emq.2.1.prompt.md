@@ -6,8 +6,8 @@
 > onto `echo_mq`'s as-built structures, never migrated from. The pipeline mirrors the emq.1 runbook (the
 > proven five-stage shape), with the one open sequencing fork (design §6 — does the Operator keep the
 > cluster to the floor, Arm A, or pull the feature families in, Arm B) settled BEFORE Stage 1. The x-mode
-> skill ([`.claude/skills/x-mode/SKILL.md`](../../../../../.claude/skills/x-mode/SKILL.md)) binds the laws; its
-> inputs are the spec triad ([`./emq.2.1.md`](emq.2.1.md) · [`./emq.2.1.stories.md`](emq.2.1.stories.md)), the carve ADR, and the canon ([`../emq.design.md`](../../../emq.design.md)).
+> skill ([`.claude/skills/x-mode/SKILL.md`](../../../../../../.claude/skills/x-mode/SKILL.md)) binds the laws; its
+> inputs are the spec triad ([`./emq.2.1.md`](emq.2.1.md) · [`./emq.2.1.stories.md`](emq.2.1.stories.md)), the carve ADR, and the canon ([`../emq.design.md`](../../../../emq.design.md)).
 
 ## The rung in one paragraph
 
@@ -224,7 +224,7 @@ reconcile build-grade; one Director post-closure pathspec commit.
 
 The contract: [`./emq.2.1.md`](emq.2.1.md). The stories: [`./emq.2.1.stories.md`](emq.2.1.stories.md).
 The carve it opens:
-[`./emq.2.design.md`](../emq.2.design.md). The canon: [`../emq.design.md`](../../../emq.design.md). The program:
-[`../emq.roadmap.md`](../../../emq.roadmap.md) · [`../echo_mq.md`](../../../echo_mq.md). The x-mode skill:
-[`.claude/skills/x-mode/SKILL.md`](../../../../../.claude/skills/x-mode/SKILL.md). The capability reference:
+[`./emq.2.design.md`](../emq.2.design.md). The canon: [`../emq.design.md`](../../../../emq.design.md). The program:
+[`../emq.roadmap.md`](../../../../emq.roadmap.md) · [`../echo_mq.md`](../../../../echo_mq.md). The x-mode skill:
+[`.claude/skills/x-mode/SKILL.md`](../../../../../../.claude/skills/x-mode/SKILL.md). The capability reference:
 `echo/apps/echomq/lib/echomq/queue.ex` + the read scripts.

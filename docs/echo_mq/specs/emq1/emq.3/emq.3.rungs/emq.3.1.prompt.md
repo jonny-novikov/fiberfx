@@ -3,11 +3,11 @@
 > **Status: SPECCED, the runbook ready (authored at the `emq-3` design cycle).** This runbook drives the
 > **emq.3.1** build — the FIRST sub-rung of the parent/flow family (the single-queue flow) — the rung that
 > **opens Movement I's close** (the emq.2 parity cluster closed; emq.3 is the last Movement-I parity surface).
-> The `/x-mode` skill ([`.claude/skills/x-mode/SKILL.md`](../../../../../.claude/skills/x-mode/SKILL.md)) binds the
+> The `/x-mode` skill ([`.claude/skills/x-mode/SKILL.md`](../../../../../../.claude/skills/x-mode/SKILL.md)) binds the
 > laws; the **`echo-mq-ship`** skill is the echo_mq binding (Venus loads `echo-mq-architect`, Mars loads
 > `echo-mq-implementor`, Apollo loads `echo-mq-evaluator`); the inputs are the triad
 > ([`./emq.3.1.md`](emq.3.1.md) · [`./emq.3.1.stories.md`](emq.3.1.stories.md)), the family ([`./emq.3.md`](../emq.3.md) — the A-1 flow design + the
-> carve + the THREE forks), and the canon ([`../emq.design.md`](../../../emq.design.md) §11.10/§6/§5/S-6/§11.12).
+> carve + the THREE forks), and the canon ([`../emq.design.md`](../../../../emq.design.md) §11.10/§6/§5/S-6/§11.12).
 
 ## The family in one paragraph
 
@@ -185,7 +185,7 @@ mentoring (Director-ratified).
 
 Sync the triad body to the as-built surface (the `EchoMQ.Flows` real arities; the `@enqueue_flow`/`@complete`-hook
 real key declarations; the ruled Fork arms; the final conformance N); every triad claim MATCH or
-`[RECONCILE]`-marked; fold the parity proof ([`../emq.features.md`](../../../emq.features.md) Part B) to flip the
+`[RECONCILE]`-marked; fold the parity proof ([`../emq.features.md`](../../../../emq.features.md) Part B) to flip the
 `flow_producer → emq.3` row from 📋 toward ✅ for the single-queue slice (the cross-queue/reads/policy parts stay
 📋 to emq.3.2–3.4 — the honest bound).
 
@@ -195,7 +195,7 @@ Preconditions (x-mode §4): Apollo BUILD-GRADE (or its REMEDIATE items closed) +
 build-grade; **≥1 `tool_x_decision` (D-n)** + a **`tool_x_complete` (Z-n)** this turn; `git status --short` AND
 `git diff --cached --name-only` reviewed; `.git/rebase-merge`/`rebase-apply` checked. Then the **pathspec**
 commit (below; NEVER `git add -A`, NEVER a bare commit). **Same turn:** flip the emq.3.1 row in the single
-roadmap ([`../emq.roadmap.md`](../../../emq.roadmap.md)) and the dashboard ([`../emq.progress.md`](../../../emq.progress.md));
+roadmap ([`../emq.roadmap.md`](../../../../emq.roadmap.md)) and the dashboard ([`../emq.progress.md`](../../../../emq.progress.md));
 record **the flow family OPEN** (emq.3.1 the single-queue slice shipped; 3.2–3.4 next); surface the **next
 frontier** (emq.3.2 child-result reads, or emq.3.3 cross-queue once Fork A's cross-queue arm is designed, or the
 Movement-II open if the Operator closes Movement I here); under an **explicit Operator grant only**, fold any
@@ -254,9 +254,9 @@ BUILD-GRADE** (D6). The spec body stays authoritative; Stage 5 syncs it to the a
 (emq.3.2–3.4) opens on a proven single-queue core.
 
 Inputs: [`./emq.3.1.md`](emq.3.1.md) · [`./emq.3.1.stories.md`](emq.3.1.stories.md) · Family: [`./emq.3.md`](../emq.3.md) (the A-1 flow design + the carve +
-the forks) · Canon: [`../emq.design.md`](../../../emq.design.md) §11.10/§6/§5/S-6/S-1/§11.12 · Roadmap:
-[`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I · The feature catalog: [`../emq.features.md`](../../../emq.features.md)
+the forks) · Canon: [`../emq.design.md`](../../../../emq.design.md) §11.10/§6/§5/S-6/S-1/§11.12 · Roadmap:
+[`../emq.roadmap.md`](../../../../emq.roadmap.md) Movement I · The feature catalog: [`../emq.features.md`](../../../../emq.features.md)
 (the emq.3 row) · The shape model: [`../emq.2/emq.2.prompt.md`](../../emq.2/emq.2.prompt.md) (the emq.2.4 cluster-closer runbook)
 · Skills: `.claude/skills/echo-mq-ship.md` (the binding) + `echo-mq-{architect,implementor,evaluator}.md` (the
 per-role craft) + `echo-mq-program.md` (the program law) · Approach:
-[`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+[`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

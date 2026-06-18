@@ -9,7 +9,7 @@
 > module and every Lua script the frozen v1 line provides, rewritten from scratch under the v2 laws, with
 > **no compatibility layer and zero migration framing** (`echo_mq` is the single source of truth;
 > `apps/echomq` is a feature reference only — the capability list to port, never a thing migrated from).
-> The engine line is the program canon ([`../emq.design.md`](../../emq.design.md) S-4 — Valkey, current
+> The engine line is the program canon ([`../emq.design.md`](../../../emq.design.md) S-4 — Valkey, current
 > stable, the gate). This document invents no feature: every deliverable traces to a real v1 module/Lua
 > anchor or a design §.
 
@@ -19,10 +19,10 @@
 a reframe, not a settlement of the old emq.2 migration triad. echo_mq MUST reach **full feature parity**
 with the v1 `echomq` line: the bus has the BCS state machine and the fair-lanes basics but not the whole
 v1 capability surface, and the program's thesis — `apps/echomq` dissolves when nothing depends on what it
-alone provides ([`../emq.roadmap.md`](../../emq.roadmap.md) Movement I) — cannot close while the v1 line
+alone provides ([`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I) — cannot close while the v1 line
 alone carries introspection, the operator lifecycle verbs, and the observability plane. The crossing is
 **from scratch, not a migration**: there is nothing to migrate *from* (the v2 line has never shipped —
-[`../emq.design.md`](../../emq.design.md) §11.11), so the prior emq.2 triad's intent (`migrate/4`
+[`../emq.design.md`](../../../emq.design.md) §11.11), so the prior emq.2 triad's intent (`migrate/4`
 copy-verify-DELETE, the tombstone fence arm, the v1 maintenance-branch patch, drain-and-switch) is
 RETIRED. `apps/echomq` is read only as the capability reference — the list of public surfaces to port.
 
@@ -115,7 +115,7 @@ no v1 binary pointed at it; the operator's runbook ordering, not a tool, governs
 
 **Context.** The parity gap (§0) is large — the v1 read surface, the operator lifecycle verbs, and the
 whole observability plane — but it is **not** one increment. The program law is one-increment-one-run
-([`../emq.roadmap.md`](../../emq.roadmap.md)), and the gap has a natural dependency order: reads observe a
+([`../emq.roadmap.md`](../../../emq.roadmap.md)), and the gap has a natural dependency order: reads observe a
 state the mutations change, and the observability plane watches both. The carve must also **de-conflict**
 with the confirmed ladder — emq.3–emq.8 already own flows, groups-deepened, batches, cancel/checkpoints,
 and the proof stack — so the parity cluster ships only the floor those families build *above*, never the
@@ -179,7 +179,7 @@ subject of ADR-2 (and the one fork §6 surfaces).
 **Context.** The Operator's "FULL feature parity, every module + every Lua script" could be read to
 subsume the later capability families — flows, groups-deepened, batches, lifecycle controls — into the
 parity cluster. But emq.3–emq.8 are **confirmed at the Stage-1b checkpoint**
-([`../emq.roadmap.md`](../../emq.roadmap.md)), and the 3.x stream tier hard-gates on this ladder. The
+([`../emq.roadmap.md`](../../../emq.roadmap.md)), and the 3.x stream tier hard-gates on this ladder. The
 boundary between "the v1 floor echo_mq lacks today" and "the family depth a later rung adds" must be
 named, or the cluster either double-ships a family or re-sequences a confirmed plan.
 
@@ -312,17 +312,17 @@ The parity rewrite reframes the emq.2 row across the spec home; the reframe is *
 "1.3.1"/"old"/"legacy"/"migrate-from"** and frames `apps/echomq` as a feature reference only. The
 concrete edits (applied this run by Venus-1):
 
-- **[`../emq.roadmap.md`](../../emq.roadmap.md)** — the emq.2 ladder row flips from "the v1→v2 migration
+- **[`../emq.roadmap.md`](../../../emq.roadmap.md)** — the emq.2 ladder row flips from "the v1→v2 migration
   path re-proven" to "**the full-parity rewrite: introspection & metrics (emq.2.1) · lifecycle & mutation
   ops (emq.2.2) · observability & recovery (emq.2.3)** — the v1 capability floor `echo_mq` lacks,
   rewritten under the v2 laws"; Movement I's 5W reframes the push-source line ("`apps/echomq` is a
   capability **reference**; the parity rewrite ports its surface, then it dissolves" — no migration); seam
   1 (the in-place v2→v2 treatment) flips from OPEN to **RULED (drain-precondition; no converter — ADR-0)**.
 - The 2.x line mirror and the 3.x stream-tier roadmap (formerly two separate files) were **consolidated and
-  removed** — the single source of truth is now [`../emq.roadmap.md`](../../emq.roadmap.md), which carries the
+  removed** — the single source of truth is now [`../emq.roadmap.md`](../../../emq.roadmap.md), which carries the
   whole ladder (Movements 0–II), the emq.2 cluster row, and the dependencies (emq3.x's hard-gate on emq.0).
   There is no longer a separate per-tier roadmap file to maintain.
-- **[`../echo_mq.md`](../../echo_mq.md)** — the emq.2 ladder row's "Ships" + "Unblocks" reframe: from
+- **[`../echo_mq.md`](../../../echo_mq.md)** — the emq.2 ladder row's "Ships" + "Unblocks" reframe: from
   "program hygiene … no consumer rung gates on it" to "**the operational floor every consumer reads through**:
   the counts/metrics/state introspection an operator dashboard reads (emq.2.1), the operator lifecycle verbs
   a runbook drives (emq.2.2), and the event/telemetry plane a consumer observes the work surface through
@@ -347,9 +347,9 @@ the proof stack (emq.8) — ADR-2. No edit to the frozen v1 `apps/echomq` (it is
 
 The triads this design opens: [`./emq.2.1.md`](emq.2.rungs/emq.2.1.md) · [`./emq.2.2.md`](emq.2.rungs/emq.2.2.md) ·
 [`./emq.2.3.md`](emq.2.rungs/emq.2.3.md) (each with `.stories.md` / `.prompt.md`). The precedent
-shape: [`./emq.1.design.md`](../emq.1/emq.1.design.md). The canon: [`../emq.design.md`](../../emq.design.md) (§6 the
+shape: [`./emq.1.design.md`](../emq.1/emq.1.design.md). The canon: [`../emq.design.md`](../../../emq.design.md) (§6 the
 grammar, §5 the wire-class registry, §10 seam 1, §11.10/§11.11, §12.3 the event-transport deferral, S-4
-the engine gate). The program: [`../emq.roadmap.md`](../../emq.roadmap.md) · [`../echo_mq.md`](../../echo_mq.md).
+the engine gate). The program: [`../emq.roadmap.md`](../../../emq.roadmap.md) · [`../echo_mq.md`](../../../echo_mq.md).
 The v1 feature reference: `echo/apps/echomq/lib/echomq/*.ex` + `echo/apps/echomq/priv/scripts/*.lua`. The
 as-built floor: `echo/apps/echo_mq/lib/echo_mq/*.ex`. The re-scope ledger:
 [`./emq-2.progress.md`](../progress/emq-2.progress.md) (D-1/D-2 the re-scope; D-7/D-9 the carve; V-1 the arms).

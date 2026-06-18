@@ -1,5 +1,5 @@
 # EMQ.2.1 · The introspection & metrics plane — Movement I, the parity floor (read side)
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: BUILT** (the first rung of the emq.2 full-parity cluster; the carve + the ADRs are
 > [`./emq.2.design.md`](../emq.2.design.md)). The read plane shipped inside `echo/apps/echo_mq` as a new
@@ -45,12 +45,12 @@ where the ceiling is met), not a new transition over the row.
   enqueue, claim, complete, and browse the pending set, but cannot ask "how deep is each state", "what is
   job X's state", "what is the completed/failed throughput", or "is the queue rate-limited". The v1 line's
   2144-line `EchoMQ.Queue` is almost entirely this read API, and the program's parity thesis
-  ([`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I) requires `echo_mq` to carry it before `apps/echomq`
+  ([`../emq.roadmap.md`](../../../../emq.roadmap.md) Movement I) requires `echo_mq` to carry it before `apps/echomq`
   can dissolve. The parity carve ([`./emq.2.design.md`](../emq.2.design.md) ADR-1) places the read plane
   **first** because the later parity rungs' acceptance reads through it — emq.2.2's pause/drain/obliterate
   effects are observed by emq.2.1's counts; emq.2.3's stalled-recovery is observed by emq.2.1's state
   lookups. The front door records the consumer story: "the operational floor every consumer reads through
-  … the counts/metrics/state introspection an operator dashboard reads" ([`../echo_mq.md`](../../../echo_mq.md),
+  … the counts/metrics/state introspection an operator dashboard reads" ([`../echo_mq.md`](../../../../echo_mq.md),
   the reframed emq.2 row).
 - **What** — emq.2.1 builds, inside `echo_mq`: the read module **`EchoMQ.Metrics`** (the placement ruled at
   the design gate — D1; the fold-onto-`Jobs`/`Lanes` and per-verb-split alternatives steelmanned and
@@ -246,11 +246,11 @@ frozen `apps/echomq` reference):
 
 Stories: [`./emq.2.1.stories.md`](emq.2.1.stories.md) ·
 Runbook: [`./emq.2.1.prompt.md`](emq.2.1.prompt.md) · Carve + ADRs: [`./emq.2.design.md`](../emq.2.design.md)
-(ADR-1 the carve, ADR-2 the parity/family boundary) · Roadmap: [`../emq.roadmap.md`](../../../emq.roadmap.md) (the
-emq.2 ladder row) · Design: [`../emq.design.md`](../../../emq.design.md) §6 (the grammar + the metrics/dedup
+(ADR-1 the carve, ADR-2 the parity/family boundary) · Roadmap: [`../emq.roadmap.md`](../../../../emq.roadmap.md) (the
+emq.2 ladder row) · Design: [`../emq.design.md`](../../../../emq.design.md) §6 (the grammar + the metrics/dedup
 suffixes), §5 (the wire-class registry for the rate gate), §2 (the branded id at the key builder), S-4
 (Valkey the gate) · Capability reference: `echo/apps/echomq/lib/echomq/queue.ex` (the read API),
 `echo/apps/echomq/priv/scripts/{getCounts-1,getState-8,getMetrics-2,getRateLimitTtl-2,isMaxed-2}.lua` · As-built
 floor: `echo/apps/echo_mq/lib/echo_mq/{jobs.ex,lanes.ex,keyspace.ex,conformance.ex}` · Program front door:
-[`../echo_mq.md`](../../../echo_mq.md) (the reframed emq.2 row) · Approach:
-[`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+[`../echo_mq.md`](../../../../echo_mq.md) (the reframed emq.2 row) · Approach:
+[`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

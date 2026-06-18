@@ -1,5 +1,5 @@
 # EMQ.2.4 · The parity closer — the residue + the complete test suite (Movement I)
-> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../emq.changelog.md). This body is the historical spec.
+> ✅ **Shipped** — the as-built deliverable (verbs · conformance delta · commit) is in the [changelog](../../../../emq.changelog.md). This body is the historical spec.
 
 > **Status: ✅ SHIPPED** (the FOURTH and FINAL rung of the emq.2 full-parity cluster; the carve + the
 > ADRs are [`./emq.2.design.md`](../emq.2.design.md)). emq.2.4
@@ -75,7 +75,7 @@ dedicated stress files — each attribution stated, not silently dropped.
   stress files); but a **genuine residue is under-ported scenario depth for the SHIPPED surface** — the
   multi-job, concurrent, edge-case cases v1 asserts for exactly the read/ops/watch verbs `echo_mq` now carries.
   Closing that residue is what lets the cluster CLOSE and `apps/echomq`'s eventual dissolution stand on a
-  proven-at-depth `echo_mq` ([`../emq.roadmap.md`](../../../emq.roadmap.md) Movement I, the parity thesis). The
+  proven-at-depth `echo_mq` ([`../emq.roadmap.md`](../../../../emq.roadmap.md) Movement I, the parity thesis). The
   reconcile also surfaced one open feature decision (G1, the rate-into-claim wiring emq.2.1 named and emq.2.2
   left open) and one improvement (G2, the metrics rolling series) — emq.2.4 is the rung that settles them.
 - **What** — emq.2.4 builds, inside `echo/apps/echo_mq`: (1) **the feature residue** — the rate-gate
@@ -346,15 +346,15 @@ emq.2.4 builds (forward-named; the feature residue + the depth test surface do n
 Stories: [`./emq.2.4.stories.md`](emq.2.4.stories.md) ·
 Runbook: [`./emq.2.prompt.md`](../emq.2.prompt.md) (the cluster runbook the Director consolidates to drive this
 build + close the cluster) · Carve + ADRs: [`./emq.2.design.md`](../emq.2.design.md) (ADR-1 the carve, ADR-2 the
-parity/family boundary) · The feature catalog + the parity proof: [`../emq.features.md`](../../../emq.features.md) ·
+parity/family boundary) · The feature catalog + the parity proof: [`../emq.features.md`](../../../../emq.features.md) ·
 Depends on: [`./emq.2.1.md`](emq.2.1.md) (read) · [`./emq.2.2.md`](emq.2.2.md) (ops) ·
 [`./emq.2.3.md`](emq.2.3.md) (watch) — the shipped surface emq.2.4 tests at depth · Roadmap:
-[`../emq.roadmap.md`](../../../emq.roadmap.md) (the emq.2 ladder row) · Design: [`../emq.design.md`](../../../emq.design.md)
+[`../emq.roadmap.md`](../../../../emq.roadmap.md) (the emq.2 ladder row) · Design: [`../emq.design.md`](../../../../emq.design.md)
 §5 (the closed wire-class registry — `EMQRATE` reused, no new class), §6 (the grammar — the `metrics:*:data`
 suffix), §11.12 (the escalation protocol — a depth test that fails is a finding), §The master invariant (the
 ≥100 determinism loop replacing dedicated stress files), S-4 (Valkey the gate) · Capability reference (the test
 DEPTH to port): `echo/apps/echomq/test/echomq/{queue_getters,queue_integration,rate_limiter_integration,obliterate,queue_events_integration,worker_cancellation}_test.exs` (the read/ops/watch depth — NOT the worker-abstraction / OTel / flow / scheduler / stress files, which are emq.6/emq.8/emq.3/emq.1/the-loop) · As-built floor:
 `echo/apps/echo_mq/lib/echo_mq/{metrics,admin,jobs,events,telemetry,lock_manager,stalled_checker,cancellation_token,conformance}.ex`
 (**[RECONCILE]** the watch-plane FILES still carry the v1-style basenames `telemetry.ex`/`lock_manager.ex`(+`lock_manager/core.ex`)/`stalled_checker.ex`/`cancellation_token.ex`, but the MODULES inside are already the collision-free names `EchoMQ.Meter`/`EchoMQ.Locks`(+`EchoMQ.Locks.Core`)/`EchoMQ.Stalled`/`EchoMQ.Cancel` — cite the module by the as-built name; the **C1 carry** Mars executes in Stage 1 renames the files to match the module: `telemetry.ex→meter.ex`, `lock_manager.ex→locks.ex`(+`locks/core.ex`), `stalled_checker.ex→stalled.ex`, `cancellation_token.ex→cancel.ex`) ·
-Program front door: [`../echo_mq.md`](../../../echo_mq.md) (the reframed emq.2 row) · Approach:
-[`../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+Program front door: [`../echo_mq.md`](../../../../echo_mq.md) (the reframed emq.2 row) · Approach:
+[`../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)
