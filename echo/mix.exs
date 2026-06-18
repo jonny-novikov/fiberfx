@@ -9,8 +9,9 @@ defmodule Echo.MixProject do
       # No Phoenix.CodeReloader listener here: the Phoenix surface (portal · portal_web ·
       # mercury_cms · mercury_live_admin · live_svelte) moved out to its own repository, so
       # this umbrella has no Phoenix dependency to drive a listener. echo is now the
-      # pure-BCS stack (echo_data · echo_mq · echo_cache · echo_wire) plus echo_bot,
-      # exchange, and investex. The `portal` OTP release moved out with it.
+      # pure-BCS stack (echo_data · echo_mq · echo_cache · echo_wire) plus echo_bot
+      # and codemojex. The `portal` OTP release moved out with it; the trading apps
+      # (exchange · investex) were extracted to the `tradex` umbrella.
       deps: deps()
     ]
   end

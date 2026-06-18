@@ -26,8 +26,11 @@ ruled **Arm 3 standalone-builder + full-cf**, over the recommended minimal; `run
 verb) · `ewr.1.3` **EchoWire.Result** (two-tier classifier: `classify`/`non_valkey_error`/`error`/`server_errors`,
 a pure reader over `exec`'s return; server tier = in-band `{:error_reply,_}`, transport = `{:error,term}`).
 Movement II =
-**CLIENT TRACKING / client-side caching = a SEAM, a potential wire MAJOR** (the tracking handshake needs a
-frozen-connector boot-step `connector.ex:436`) — gated until echo_store's L1 consumes it.
+**CLIENT TRACKING / client-side caching — RESOLVED 2026-06-18: shipped as `echo_store` `:tracking` coherence
+mode, NOT a wire rung, ZERO echo_wire edits** (the connector already delivers invalidation pushes via `push_to`,
+de-interleaves them from in-band replies in `fill/5`, and emits `[:emq,:connector,:reconnect]` telemetry, so the
+feared wire-MAJOR boot-step `connector.ex:436` was unnecessary; reconnect survival = flush-then-re-arm). Lives in
+`EchoStore.Table` (`coherence: :tracking`); spec `docs/echo_mq/store/store.tracking.md`.
 
 **Hard line (master invariant):** the new surface lives ABOVE the conformance boundary — `EchoWire` facade
 stays 11 verbs, conformance byte-stable (the wire registers NO scenario — cite the emq-owned count VALUE-FREE, never pin a number: it drifted 52→53→54 within one session from emq's active out-of-band work), Connector/RESP/Script/Pool frozen, no new Lua.
@@ -44,8 +47,8 @@ Connector/RESP/Script/Pool untouched, conformance byte-stable); BDD `:valkey` st
 `specs/progress/ewr-1-N.progress.md`; program manual + Venus/Mars/Apollo calibrations at
 `docs/echo_mq/wire/program/` (Apollo-authored). **NEXT RUN (Operator-directed): wire the new ValKey client onto
 the Codemoji Game** (`echo/apps/codemojex`) — Codemoji = the FIRST real consumer of EchoWire (Pipe/Cmd/Command/
-Result). Movement II (CLIENT TRACKING client-side caching) remains a seam until a consumer makes the wire-MAJOR
-trade real. Apollo follow-up: value-free conformance sweep of the living floor docs (roadmap/program/testing
+Result). Movement II (CLIENT TRACKING client-side caching) SHIPPED 2026-06-18 as `echo_store` `:tracking` (no wire
+edit — the connector already sufficed; the wire-MAJOR demoted to a deferred warmth optimization). Apollo follow-up: value-free conformance sweep of the living floor docs (roadmap/program/testing
 still cite `{:ok,52}`). GIT lesson: with the Operator staging out-of-band concurrently, commit with
 `git commit -- <pathspec>` (pathspec on the COMMIT), never `git add <p>` + bare `git commit` (sweeps in
 concurrent staging). The AAW method = `docs/aaw/aaw.architect-approach.md`. See [[echo-mq-three-movements]] ·
