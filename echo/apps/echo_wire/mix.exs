@@ -4,7 +4,7 @@ defmodule EchoWire.MixProject do
   def project do
     [
       app: :echo_wire,
-      version: "2.4.1",
+      version: "2.4.2",
       build_path: "../../_build",
       config_path: "../../config/config.exs",
       deps_path: "../../deps",

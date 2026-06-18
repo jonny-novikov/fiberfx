@@ -44,7 +44,9 @@ defmodule EchoMQ.ConnectorTest do
   end
 
   test "wire_version/0 is the fence value" do
-    assert Connector.wire_version() == "echomq:2.0.0"
+    # version-agnostic: the fence CLIMBS per rung (Fork-2, D-3) -- assert the
+    # SHAPE, not a literal, so this never needs a per-rung edit.
+    assert Connector.wire_version() =~ ~r/^echomq:\d+\.\d+\.\d+$/
   end
 
   # The fence tests mutate `{emq}:version` -- a GLOBAL deployment-reserve key
@@ -88,13 +90,13 @@ defmodule EchoMQ.ConnectorTest do
       {:ok, _} = Connector.command(helper, ["DEL", Keyspace.version_key()])
 
       conn = connect(database: @fence_db)
-      assert {:ok, "echomq:2.0.0"} = Connector.command(conn, ["GET", Keyspace.version_key()])
+      assert {:ok, Connector.wire_version()} == Connector.command(conn, ["GET", Keyspace.version_key()])
     end
 
     test "a matching fence is verified and the connection lives", %{helper: helper} do
       # claim the fence on the isolated DB first, then a second boot verifies it
       claimer = connect(database: @fence_db)
-      assert {:ok, "echomq:2.0.0"} = Connector.command(claimer, ["GET", Keyspace.version_key()])
+      assert {:ok, Connector.wire_version()} == Connector.command(claimer, ["GET", Keyspace.version_key()])
 
       conn = connect(database: @fence_db)
       assert Connector.stats(conn).status == :connected

@@ -1,6 +1,6 @@
 defmodule EchoMQ.Conformance do
   @moduledoc """
-  The bus contract as fifty-four runnable scenarios. Each scenario drives the
+  The bus contract as fifty-five runnable scenarios. Each scenario drives the
   public surface (and, where the contract is the wire itself, raw commands)
   against a live server and asserts the externally visible verdict: the
   fence, the row shape, idempotent admission, the kind law, the lex law,
@@ -40,15 +40,20 @@ defmodule EchoMQ.Conformance do
   ceiling, not the source's -- the move is sound past the ZSET swap; and the
   lane-scoped destructive drain: one lane's pending rows + logs + set + its ring
   entry are deleted while a sibling lane, the in-flight gactive counter, and the
-  repeat registry survive -- the blast radius matches the contract). A
-  port of the client conforms when it drives the same server to the same
-  fifty-four verdicts -- the scenarios are wire-level on purpose, so the harness
-  ports by translation, not by faith. Scenarios run on per-scenario sub-queues
-  and purge what they mint.
+  repeat registry survive -- the blast radius matches the contract), and -- since
+  the groups family's recovery axis (emq.4.2, group-aware recovery) -- the
+  group-scoped stalled-sweep (a named group's expired-lease members recovered into
+  its own lane g:<g>:pending while a sibling group's expired members are left in
+  active for the queue-wide reaper -- the scoping filter, on the server clock,
+  gactive honest). A port of the client conforms when it drives the same server to
+  the same fifty-five verdicts -- the scenarios are wire-level on purpose, so the
+  harness ports by translation, not by faith. Scenarios run on per-scenario
+  sub-queues and purge what they mint.
   Chapter 3.6, extended 3.7, then the emq.2 cluster (parity, closed at emq.2.4),
   then the emq.3 flow family (opened at emq.3.1, crossed queues at emq.3.3,
   failure half at emq.3.4, closed at emq.3.5 with grandchildren), then Movement
-  II's groups family (opened at emq.4.1, the control plane).
+  II's groups family (opened at emq.4.1 with the control plane, the recovery axis
+  at emq.4.2).
   """
 
   alias EchoData.BrandedId
@@ -72,7 +77,7 @@ defmodule EchoMQ.Conformance do
   @doc "The scenario names and their one-line contracts, in run order."
   def scenarios do
     [
-      fence: "the version fence is claimed before any work and reads echomq:2.0.0",
+      fence: "the version fence is claimed before any work and reads the current wire version",
       mint: "enqueue admits a JOB name and writes the three-field row: state pending, attempts 0, payload",
       duplicate: "a second enqueue of the same name answers duplicate and changes nothing",
       kind: "an ORD name in the job position is refused by the kind law before any write",
@@ -117,6 +122,7 @@ defmodule EchoMQ.Conformance do
       obliterate_grouped: "obliterate del_job's a grouped-but-unclaimed job's row before clearing its lane, leaving no leaked row",
       reassign: "a grouped pending member moves to a destination lane at score 0, its row group is rewritten, and a claim+complete charges the destination lane's ceiling -- not the source's",
       lane_drain: "draining one lane deletes its pending rows, their logs, the lane set, and its ring entry, returning the count -- a sibling lane, the in-flight gactive counter, and the repeat registry are untouched",
+      reap_group: "a group-scoped sweep recovers ONLY the named group's expired-lease members into its lane g:<g>:pending at score 0 with gactive decremented, leaving a sibling group's expired members in active for the queue-wide reaper -- the server clock, ring-respecting",
       flow_add: "a single-queue flow lands atomically: N+1 distinct JOB ids, the children claimable, the parent awaiting_children with :dependencies = N and withheld from pending",
       flow_fanin: "the parent claims empty until the last child completes, then claimable; the :processed subkey records each child; a double-complete decrements exactly once",
       flow_children_values: "two children complete with DISTINCT results; children_values reads back the results keyed by child id (not the ids); dependencies counts down to 0; the reads are pure",
@@ -173,8 +179,15 @@ defmodule EchoMQ.Conformance do
   # -- scenarios ------------------------------------------------------------
 
   defp apply_scenario(:fence, conn, _q) do
+    # The wire fence CLIMBS per rung (Fork-2, D-3): assert the live key tracks
+    # the connector's current @wire_version rather than a hardcoded literal, so
+    # this scenario never needs a per-rung edit. Connector.wire_version/0 is the
+    # single source -- the fence (connector.ex:fence/2) claims/verifies this exact
+    # value on connect.
+    expected = Connector.wire_version()
+
     case Connector.command(conn, ["GET", Keyspace.version_key()]) do
-      {:ok, "echomq:2.0.0"} -> :ok
+      {:ok, ^expected} -> :ok
       other -> {:fail, other}
     end
   end
@@ -1143,6 +1156,65 @@ defmodule EchoMQ.Conformance do
          {:ok, 1} <- Connector.command(conn, ["EXISTS", Keyspace.queue_key(q, "repeat")]),
          # an empty/absent lane drains to 0, changing nothing
          {:ok, 0} <- Lanes.drain(conn, q, BrandedId.generate!("PRT")) do
+      :ok
+    else
+      other -> {:fail, other}
+    end
+  end
+
+  defp apply_scenario(:reap_group, conn, q) do
+    # the group-scoped stalled-sweep (emq.4.2-D2): recover ONE named group's
+    # lapsed leases on demand, returning each to its OWN lane g:<g>:pending, NOT
+    # the flat pending. The load-bearing proof is the TWO-group scoping: a sibling
+    # group h whose member ALSO has an expired lease in the same `active` set must
+    # be LEFT in active (the `g == ARGV[1]` filter). A one-group probe would pass
+    # even with the filter absent -- the queue-wide @reap recovers every lapse --
+    # so the sibling-left-behind assertion is what makes the filter falsifiable.
+    # The gactive coherence is the second proof: the sweep HINCRBY gactive g -1
+    # (the @reap accounting), so a re-claim+complete of the recovered member
+    # charges an honest gactive[g]. The member returns to its own lane, so `group`
+    # is a pure read (no HSET) -- the re-claim reads back group = g unchanged.
+    g = BrandedId.generate!("PRT")
+    h = BrandedId.generate!("PRT")
+    id_g = BrandedId.generate!("JOB")
+    id_h = BrandedId.generate!("JOB")
+    {:ok, :enqueued} = Lanes.enqueue(conn, q, g, id_g, "g")
+    {:ok, :enqueued} = Lanes.enqueue(conn, q, h, id_h, "h")
+
+    # claim BOTH on a short lease (one claim per ring rotation), then expire
+    {:ok, {first, _, 1, fg}} = Lanes.claim(conn, q, 30)
+    {:ok, {second, _, 1, sg}} = Lanes.claim(conn, q, 30)
+    claimed = MapSet.new([{first, fg}, {second, sg}])
+    Process.sleep(80)
+
+    active = Keyspace.queue_key(q, "active")
+    g_lane = Keyspace.queue_key(q, "g:" <> g <> ":pending")
+    gactive = Keyspace.queue_key(q, "gactive")
+
+    with true <- MapSet.equal?(claimed, MapSet.new([{id_g, g}, {id_h, h}])),
+         # in flight before recovery: gactive[g] = gactive[h] = 1
+         {:ok, "1"} <- Connector.command(conn, ["HGET", gactive, g]),
+         {:ok, "1"} <- Connector.command(conn, ["HGET", gactive, h]),
+         # recover ONLY g
+         {:ok, 1} <- Lanes.reap_group(conn, q, g),
+         # g's member is back in its lane at score 0, absent from active and flat pending
+         {:ok, gs} when not is_nil(gs) <- Connector.command(conn, ["ZSCORE", g_lane, id_g]),
+         {:ok, nil} <- Connector.command(conn, ["ZSCORE", active, id_g]),
+         {:ok, nil} <- Connector.command(conn, ["ZSCORE", Keyspace.queue_key(q, "pending"), id_g]),
+         # THE SCOPING: h's member is STILL in active (not recovered, not touched)
+         {:ok, hs} when not is_nil(hs) <- Connector.command(conn, ["ZSCORE", active, id_h]),
+         {:ok, 0} <- Connector.command(conn, ["EXISTS", Keyspace.queue_key(q, "g:" <> h <> ":pending")]),
+         # gactive[g] decremented to absent (HDEL at zero); gactive[h] untouched at 1
+         {:ok, nil} <- Connector.command(conn, ["HGET", gactive, g]),
+         {:ok, "1"} <- Connector.command(conn, ["HGET", gactive, h]),
+         # the recovered member is served in g's lane, group = g unchanged, attempts 2
+         {:ok, {^id_g, "g", 2, ^g}} <- Lanes.claim(conn, q, 60_000),
+         # in flight again, gactive[g] honest at 1; a completion charges it back down
+         {:ok, "1"} <- Connector.command(conn, ["HGET", gactive, g]),
+         :ok <- Jobs.complete(conn, q, id_g, 2),
+         {:ok, nil} <- Connector.command(conn, ["HGET", gactive, g]),
+         # a well-formed group with no expired members recovers nothing
+         {:ok, 0} <- Lanes.reap_group(conn, q, BrandedId.generate!("PRT")) do
       :ok
     else
       other -> {:fail, other}

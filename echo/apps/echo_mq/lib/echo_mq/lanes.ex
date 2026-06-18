@@ -329,6 +329,102 @@ defmodule EchoMQ.Lanes do
     end
   end
 
+  # The group-scoped stalled-sweep: @reap's group branch (jobs.ex:350-362)
+  # byte-modelled into a NEW script with a `g == ARGV[1]` filter, so an operator
+  # recovers ONE named tenant's lapsed leases on demand without a queue-wide scan
+  # -- @reap and @sweep_stalled stay byte-frozen (emq.4.2-D2). KEYS[1]=active,
+  # KEYS[2]=base ('emq:{q}:') -- the lane/gactive/ring/wake/paused/glimit keys and
+  # the job row all derive from the declared base root KEYS[2] by the registered
+  # grammar (the @gdrain KEYS-rooted A-1 form, never @reap's ARGV-rooted base), so
+  # every key shares the one {q} slot KEYS pins. ARGV[1]=the gated target group,
+  # ARGV[2]=the scan limit. The server clock (TIME) computes lease expiry (INV2 --
+  # no host timestamp crosses the lease).
+  #
+  # THE REORDER (the load-bearing delta over @reap): @reap ZREMs every expired id
+  # it scans (it is the queue-wide reaper -- every lapsed lease is its business);
+  # @greap_group reads the row's group FIRST and ZREMs ONLY when `g == ARGV[1]`. A
+  # non-matching expired id is SKIPPED -- never ZREM'd -- so it stays in `active`
+  # for the queue-wide reaper to recover; evicting a sibling group's expired member
+  # here would silently drop it from recovery. INV1 (a no-group job, g=nil, never
+  # equals the target) falls out for free. The recovered member returns to ITS OWN
+  # lane -- `group` is a PURE READ (no HSET 'group'; only emq.4.1's @greassign
+  # rewrites it), so no read-site of `group` drifts. `gactive[g]` is decremented by
+  # 1 (the same counter @reap keeps; the post-decrement `act` drives the re-ring
+  # ceiling test, byte-identical to @reap). Returns the count RECOVERED (matching),
+  # not the count expired. emq.4.2-D2.
+  @greap_group Script.new(:greap_group, """
+               local base = KEYS[2]
+               local target = ARGV[1]
+               local t = redis.call('TIME')
+               local now = t[1] * 1000 + math.floor(t[2] / 1000)
+               local exp = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', now, 'LIMIT', 0, tonumber(ARGV[2]))
+               local n = 0
+               for _, id in ipairs(exp) do
+                 local jk = base .. 'job:' .. id
+                 local g = redis.call('HGET', jk, 'group')
+                 if g == target then
+                   redis.call('ZREM', KEYS[1], id)
+                   local act = redis.call('HINCRBY', base .. 'gactive', g, -1)
+                   if act <= 0 then redis.call('HDEL', base .. 'gactive', g) end
+                   local lane = base .. 'g:' .. g .. ':pending'
+                   redis.call('ZADD', lane, 0, id)
+                   if redis.call('SISMEMBER', base .. 'paused', g) == 0 then
+                     local lim = redis.call('HGET', base .. 'glimit', g)
+                     if (not lim or act < tonumber(lim)) and not redis.call('LPOS', base .. 'ring', g) then
+                       redis.call('RPUSH', base .. 'ring', g)
+                       redis.call('LPUSH', base .. 'wake', '1')
+                       redis.call('LTRIM', base .. 'wake', 0, 63)
+                     end
+                   end
+                   redis.call('HSET', jk, 'state', 'pending')
+                   n = n + 1
+                 end
+               end
+               return n
+               """)
+
+  @doc """
+  Recover the expired-lease members of ONE named group on demand: a group-scoped
+  stalled-sweep that returns each lapsed-lease member to its OWN lane
+  (`emq:{q}:g:<group>:pending`, score 0 -- the mint-ordered place kept), NOT the
+  flat `pending`. The group-scoped entry the shipped queue-wide `EchoMQ.Jobs.reap/2`
+  and `EchoMQ.Stalled.check/3` lack: a multi-tenant operator recovers ONE crashed
+  tenant's in-flight work without a queue-wide scan, the crashed tenant re-queuing
+  behind its own identity (fairness -- it never jumps the ring).
+
+  Only the expired-lease members whose row `group` field equals `group` are
+  recovered (the `g == ARGV[1]` filter); a sibling group's expired members are
+  LEFT in `active` for the queue-wide reaper. Each recovered member leaves
+  `active`, returns to its lane at score 0, the group's `gactive` is decremented
+  (`HINCRBY <gactive> g -1`, `HDEL` at zero), and the lane is re-rung if
+  serviceable (unpaused, below its `glimit`, not already on the ring) with a wake
+  for any parked consumer -- the byte-frozen `@reap` group-branch guard. Expiry is
+  computed from the server clock (`redis.call('TIME')`); no host timestamp crosses
+  the lease. The member returns to its own lane, so the row's `group` is a PURE
+  READ (no `HSET 'group'` -- the later `@gclaim`/`@complete`/`@retry`/`@reap`
+  readers see the same value).
+
+  The group is gated `EchoData.BrandedId.valid?/1` at `lane_key!/2` (raises on an
+  ill-formed branded id) before any wire (the `drain/3` precedent); `active` and
+  the declared queue base are the only `KEYS[]`, every other key derived from the
+  base root by the registered grammar (INV3 -- no new key family, one `{q}` slot).
+  Answers `{:ok, n}`, the number RECOVERED; a well-formed group with no expired
+  members answers `{:ok, 0}`, changing nothing. Reuses the proven recovery-into-
+  the-lane mechanism (the `stalled_group` scenario), adding only the group-scoping
+  filter -- the shipped `@reap`/`@sweep_stalled` are byte-unchanged (INV1). The
+  optional `limit` (default 100) bounds the scan, matching the shipped reaper's
+  `LIMIT 0 100`. emq.4.2-D2.
+  """
+  def reap_group(conn, queue, group, limit \\ 100) when is_integer(limit) and limit > 0 do
+    keys = [Keyspace.queue_key(queue, "active"), Keyspace.queue_key(queue, "")]
+    _ = lane_key!(queue, group)
+
+    case Connector.eval(conn, @greap_group, keys, [group, Integer.to_string(limit)]) do
+      {:ok, n} when is_integer(n) -> {:ok, n}
+      other -> other
+    end
+  end
+
   @doc "Lane depth: pending work parked behind one identity."
   def depth(conn, queue, group) do
     Connector.command(conn, ["ZCARD", lane_key!(queue, group)])

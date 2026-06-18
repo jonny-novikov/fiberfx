@@ -8,8 +8,10 @@ defmodule EchoMQ.Connector do
   one); a pending FIFO pairing each in-flight pipeline with its caller, so
   replies route in order off an `active: :once` socket; EVALSHA-first script
   execution with one load-on-NOSCRIPT per script per connection; the
-  `echomq:2.0.0` boot fence claimed or verified before the first command and
-  treated as fatal on mismatch; supervised reconnect with capped jittered
+  `@wire_version` boot fence (the current rung's wire version) claimed or
+  verified before the first command and treated as fatal on mismatch; the
+  fence climbs per rung, the connector logic version-agnostic; supervised
+  reconnect with capped jittered
   backoff, re-fencing on every reconnect.
 
   Production properties: an authenticated boot sequence (AUTH, SELECT,
@@ -30,7 +32,7 @@ defmodule EchoMQ.Connector do
 
   alias EchoMQ.{Keyspace, RESP, Script}
 
-  @wire_version "echomq:2.4.1"
+  @wire_version "echomq:2.4.2"
   @backoff_min 100
   @backoff_max 2_000
 

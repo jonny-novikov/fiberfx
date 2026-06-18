@@ -13,7 +13,7 @@ defmodule EchoMQ.Stories.GroupsStoryTest do
   @moduletag :valkey
 
   alias EchoData.BrandedId
-  alias EchoMQ.{Connector, Jobs, Lanes}
+  alias EchoMQ.{Connector, Jobs, Keyspace, Lanes}
 
   setup_all do
     :ok = EchoData.Snowflake.start(4)
@@ -119,6 +119,38 @@ defmodule EchoMQ.Stories.GroupsStoryTest do
     and_ "completing the in-flight job reopens the lane" do
       assert :ok = Jobs.complete(conn, q, j1, 1)
       assert {:ok, {_, _, 1, ^a}} = Lanes.claim(conn, q, 60_000)
+    end
+  end
+
+  scenario "a group-scoped sweep recovers one tenant's lapsed leases into its lane, leaving a sibling's in active", %{conn: conn, q: q} do
+    given_ "two tenants, each with one in-flight job claimed on a short lease" do
+      g = BrandedId.generate!("PRT")
+      h = BrandedId.generate!("PRT")
+      id_g = BrandedId.generate!("JOB")
+      id_h = BrandedId.generate!("JOB")
+      {:ok, :enqueued} = Lanes.enqueue(conn, q, g, id_g, "g")
+      {:ok, :enqueued} = Lanes.enqueue(conn, q, h, id_h, "h")
+      {:ok, {^id_g, "g", 1, ^g}} = Lanes.claim(conn, q, 30)
+      {:ok, {^id_h, "h", 1, ^h}} = Lanes.claim(conn, q, 30)
+    end
+
+    when_ "both leases lapse and only tenant g is reaped" do
+      Process.sleep(80)
+      recovered = Lanes.reap_group(conn, q, g)
+    end
+
+    then_ "g's member returns to its own lane while h's stays in active for the queue-wide reaper" do
+      assert {:ok, 1} = recovered
+      # g recovered into its lane g:<g>:pending
+      assert {:ok, gs} = Connector.command(conn, ["ZSCORE", Keyspace.queue_key(q, "g:" <> g <> ":pending"), id_g])
+      refute is_nil(gs)
+      # h's expired member is LEFT in active -- the scoping filter
+      assert {:ok, hs} = Connector.command(conn, ["ZSCORE", Keyspace.queue_key(q, "active"), id_h])
+      refute is_nil(hs)
+    end
+
+    and_ "the recovered member is re-claimed under its own group with the attempt counter advanced" do
+      assert {:ok, {^id_g, "g", 2, ^g}} = Lanes.claim(conn, q, 60_000)
     end
   end
 

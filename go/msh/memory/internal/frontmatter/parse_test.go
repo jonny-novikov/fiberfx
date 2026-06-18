@@ -86,3 +86,44 @@ no closing delim`)
 		t.Fatal("expected Has=false (no closing delim)")
 	}
 }
+
+func TestParseNestedMetadata(t *testing.T) {
+	body := []byte(`---
+name: nested-sample
+description: nested
+metadata:
+  node_type: memory
+  type: project
+  originSessionId: 99999999-8888-7777-6666-555555555555
+---
+body
+`)
+	r := Parse(body)
+	if !r.Has {
+		t.Fatal("expected Has=true")
+	}
+	if r.ParseError != "" {
+		t.Fatalf("unexpected parse error: %s", r.ParseError)
+	}
+	if r.Frontmatter.Type != "project" {
+		t.Errorf("nested metadata.type not read: Type=%q", r.Frontmatter.Type)
+	}
+	if r.Frontmatter.OriginSessionID != "99999999-8888-7777-6666-555555555555" {
+		t.Errorf("nested metadata.originSessionId not read: %q", r.Frontmatter.OriginSessionID)
+	}
+}
+
+func TestParseTopLevelTypeWinsOverMetadata(t *testing.T) {
+	body := []byte(`---
+name: both
+type: feedback
+metadata:
+  type: project
+---
+body
+`)
+	r := Parse(body)
+	if r.Frontmatter.Type != "feedback" {
+		t.Errorf("top-level type should win over metadata.type: got %q", r.Frontmatter.Type)
+	}
+}

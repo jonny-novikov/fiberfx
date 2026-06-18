@@ -1,6 +1,6 @@
 ---
 name: aaw-mcp-server-ladder
-description: "apps/aaw MCP server build ladder (docs/aaw/mcp): MCP1 single-writer store SHIPPED 7972859f; tiered-formation calibration (settled/standard/full); mcp2 next = standard tier; live server runs pre-rung binary until Operator restart"
+description: "go/aaw MCP server build ladder (docs/aaw/mcp): MCP1 single-writer store SHIPPED 7972859f; tiered-formation calibration (settled/standard/full); mcp2 next = standard tier; live server runs pre-rung binary until Operator restart"
 metadata: 
   node_type: memory
   type: project
@@ -8,8 +8,8 @@ metadata:
 ---
 
 **The aaw MCP server build ladder** lives at `docs/aaw/mcp/` (design corpus in `design/`, rung specs in
-`specs/`, ledger `aaw-mcp.progress.md`, scope `aaw-mcp` on the server). The server itself = `apps/aaw`
-(Go, vendored SDK `apps/mcp-go` — first-party, modifiable only at the transport rung).
+`specs/`, ledger `aaw-mcp.progress.md`, scope `aaw-mcp` on the server). The server itself = `go/aaw`
+(Go, vendored SDK `go/mcp-go` — first-party, modifiable only at the transport rung).
 
 - **MCP1 SHIPPED 2026-06-11, commit `7972859f`** (settled-tier close): per-scope serialization domain
   (`saveRegistry` unexported), persisted `next_ccl` mint + re-spawn identity continuity + legacy seed
