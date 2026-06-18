@@ -3,7 +3,7 @@ defmodule Exchange.GatewayTest do
   Acceptance suite for rung TRD.1.1 (`docs/exchange/trd.1.1.specs.md`):
   G1–G5 + cancel + the StreamData totality property. The Gateway is pure and
   touches no Valkey; the only runtime prerequisite is the branded-id minter
-  (`EchoData.Snowflake.start/1`, INV-3), booted once below.
+  (`Exchange.Id.Snowflake.start/1`, INV-3), booted once below.
   """
   use ExUnit.Case, async: false
   use ExUnitProperties
@@ -11,10 +11,10 @@ defmodule Exchange.GatewayTest do
   alias Exchange.Gateway
 
   # INV-3 minting prerequisite. start/1 is idempotent (:persistent_term-guarded,
-  # echo/apps/echo_data/lib/echo_data/snowflake.ex:40), so a fixed node id is
+  # lib/exchange/id/snowflake.ex), so a fixed node id is
   # safe to call on every suite run.
   setup_all do
-    :ok = EchoData.Snowflake.start(7)
+    :ok = Exchange.Id.Snowflake.start(7)
     :ok
   end
 
@@ -57,8 +57,8 @@ defmodule Exchange.GatewayTest do
 
       # Branded id: ORD namespace, 14 bytes, valid? true.
       assert byte_size(m.id) == 14
-      assert EchoData.BrandedId.valid?(m.id)
-      assert EchoData.BrandedId.namespace(m.id) == "ORD"
+      assert Exchange.Id.BrandedId.valid?(m.id)
+      assert Exchange.Id.BrandedId.namespace(m.id) == "ORD"
 
       # Price is a {units, nano} integer pair — never a float.
       assert {units, nano} = m.price
@@ -158,8 +158,8 @@ defmodule Exchange.GatewayTest do
       assert m.account == "acct-XYZ"
 
       # They are opaque strings, not branded ids — parse/1 rejects them.
-      assert EchoData.BrandedId.parse(m.instrument) == :error
-      assert EchoData.BrandedId.parse(m.account) == :error
+      assert Exchange.Id.BrandedId.parse(m.instrument) == :error
+      assert Exchange.Id.BrandedId.parse(m.account) == :error
     end
   end
 
@@ -167,8 +167,8 @@ defmodule Exchange.GatewayTest do
     test "a well-formed cancel yields a branded id and verbatim order_ref + instrument" do
       assert {:ok, {:cancel, m}} = Gateway.parse_cancel(cancel_order())
       assert byte_size(m.id) == 14
-      assert EchoData.BrandedId.valid?(m.id)
-      assert EchoData.BrandedId.namespace(m.id) == "CMD"
+      assert Exchange.Id.BrandedId.valid?(m.id)
+      assert Exchange.Id.BrandedId.namespace(m.id) == "CMD"
       assert m.instrument == "BBG004730N88"
       assert m.order_ref == "venue-ref-991"
     end

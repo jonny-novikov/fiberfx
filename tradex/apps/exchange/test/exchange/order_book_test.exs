@@ -5,7 +5,7 @@ defmodule Exchange.OrderBookTest do
   price-time ordering property (best price first; within a price, earliest mint
   order first), and a no-float structural scan over a ladder built from generated
   resting orders. `Exchange.OrderBook` is pure and starts nothing; the only
-  runtime prerequisite is the branded-id minter (`EchoData.Snowflake.start/1`),
+  runtime prerequisite is the branded-id minter (`Exchange.Id.Snowflake.start/1`),
   booted once below so generated `ORD` ids byte-sort in mint order.
   """
   use ExUnit.Case, async: false
@@ -14,10 +14,10 @@ defmodule Exchange.OrderBookTest do
   alias Exchange.OrderBook
 
   # The minting prerequisite. start/1 is idempotent (:persistent_term-guarded,
-  # echo/apps/echo_data/lib/echo_data/snowflake.ex:40), so a fixed node id is safe
+  # lib/exchange/id/snowflake.ex), so a fixed node id is safe
   # on every suite run.
   setup_all do
-    :ok = EchoData.Snowflake.start(8)
+    :ok = Exchange.Id.Snowflake.start(8)
     :ok
   end
 
@@ -27,7 +27,7 @@ defmodule Exchange.OrderBookTest do
   # new/0 + best/2 (the matching/insert is the Decider's, §170-173); this helper
   # threads a resting maker onto the ladder the way the fold does.
   defp rest(book, side, price, quantity, account \\ "acct") do
-    order = EchoData.Snowflake.next_branded("ORD")
+    order = Exchange.Id.Snowflake.next_branded("ORD")
 
     Exchange.Decider.evolve(book, {
       :rested,

@@ -96,12 +96,12 @@ defmodule Exchange.Gateway do
          {:ok, quantity} <- parse_quantity(Map.get(raw, :quantity)),
          {:ok, price} <- parse_place_price(type, Map.get(raw, :price)) do
       # INV-3: mint at acceptance, inside the success branch only. CMD for the
-      # command identity, ORD for the order. Snowflake.next_branded/1
-      # (echo/apps/echo_data/lib/echo_data/snowflake.ex:104).
+      # command identity, ORD for the order. Exchange.Id.Snowflake.next_branded/1
+      # (lib/exchange/id/snowflake.ex).
       {:ok,
        {:place,
         %{
-          id: EchoData.Snowflake.next_branded("ORD"),
+          id: Exchange.Id.Snowflake.next_branded("ORD"),
           instrument: instrument,
           account: account,
           direction: direction,
@@ -127,7 +127,7 @@ defmodule Exchange.Gateway do
       {:ok,
        {:cancel,
         %{
-          id: EchoData.Snowflake.next_branded("CMD"),
+          id: Exchange.Id.Snowflake.next_branded("CMD"),
           instrument: instrument,
           order_ref: order_ref
         }}}

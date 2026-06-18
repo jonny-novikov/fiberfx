@@ -17,7 +17,7 @@ defmodule Exchange.OrderBook do
   `evolve/2` mutation of the ladder (insert a resting order, consume a filled
   one) is the Decider's fold; this module supplies the structure and the read.
 
-  The per-account `EchoData.BrandedTree` index a stateful book needs for cancel
+  The per-account branded-tree index a stateful book needs for cancel
   and pagination is TRD.2.2, not this rung; this slice carries only `new/0` and
   `best/2`.
   """

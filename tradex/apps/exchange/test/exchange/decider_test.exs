@@ -10,7 +10,7 @@ defmodule Exchange.DeciderTest do
   stripped, holds none of the forbidden-effect set).
 
   `Exchange.Decider` is pure modulo the FIL mint (INV-3); the only runtime
-  prerequisite is `EchoData.Snowflake.start/1`, booted once below so the `ORD`
+  prerequisite is `Exchange.Id.Snowflake.start/1`, booted once below so the `ORD`
   ids minted in `setup`/helpers and the `FIL` ids minted inside `decide` byte-sort
   in mint order (INV-5). Properties never assert id-equality across two `decide`
   calls (D-5).
@@ -19,7 +19,7 @@ defmodule Exchange.DeciderTest do
   use ExUnitProperties
 
   alias Exchange.{OrderBook, Decider}
-  alias EchoData.{Snowflake, BrandedId}
+  alias Exchange.Id.{Snowflake, BrandedId}
 
   setup_all do
     :ok = Snowflake.start(8)

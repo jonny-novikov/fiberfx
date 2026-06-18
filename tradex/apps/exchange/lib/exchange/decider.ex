@@ -14,7 +14,7 @@ defmodule Exchange.Decider do
 
   Pure modulo a single sanctioned effect (INV-3): the branded `FIL` id minted
   inside `decide` at the instant a `:fill` is constructed, via
-  `EchoData.Snowflake.next_branded/1` (the same id-effect the Gateway is granted
+  `Exchange.Id.Snowflake.next_branded/1` (the same id-effect the Gateway is granted
   at TRD.1.1). `evolve` mints nothing. The forbidden-effect set is empty in this
   module — no server behaviour, no in-memory table, no monotonic or wall clock,
   no process-dictionary state — the `FIL` mint is the sole effect (AS-2; the
@@ -192,7 +192,7 @@ defmodule Exchange.Decider do
       qty = min(maker_qty, order.quantity)
 
       # D-5 / G1: mint the FIL inside the fill construction — the sole effect.
-      # Snowflake.next_branded/1 (echo/apps/echo_data/lib/echo_data/snowflake.ex:104).
+      # Exchange.Id.Snowflake.next_branded/1 (lib/exchange/id/snowflake.ex).
       # D-6: price is the MAKER's resting price.
       fill =
         {:fill,
@@ -202,7 +202,7 @@ defmodule Exchange.Decider do
            instrument: order.instrument,
            price: maker_price,
            quantity: qty,
-           id: EchoData.Snowflake.next_branded("FIL")
+           id: Exchange.Id.Snowflake.next_branded("FIL")
          }}
 
       book = evolve(book, fill)
