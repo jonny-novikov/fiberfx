@@ -80,10 +80,12 @@ defmodule EchoMQ.ConformanceScenariosTest do
     :flow_ignore_dep,
     :flow_add_bulk,
     :flow_grandchild,
-    :flow_grandchild_fail
+    :flow_grandchild_fail,
+    :pool_enqueue,
+    :pool_order
   ]
 
-  test "scenarios/0 answers exactly the fifty-five names in run order" do
+  test "scenarios/0 answers exactly the fifty-seven names in run order" do
     assert Keyword.keys(Conformance.scenarios()) == @run_order
   end
 

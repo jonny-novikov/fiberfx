@@ -131,7 +131,9 @@ defmodule EchoMQ.Conformance do
       flow_ignore_dep: "an ignore_dependency_on_failure child that dies satisfies-and-records: :dependencies decremented, the child in :unsuccessful (not :processed), the parent proceeds; ignored_failures reads it back; children_values excludes it",
       flow_add_bulk: "add_bulk lands N flows in one call, each by the add/3 mechanism, fail-closed per flow: N parents land, each flow's children claimable, a poison flow leaves its own parent held without aborting the batch",
       flow_grandchild: "a three-level flow (root -> intermediate node -> grandchild) completes UP the tree over the byte-frozen @complete: the grandchild completes and releases the node to pending (claimable), the node completes and releases the root -- multi-level completion composes for free",
-      flow_grandchild_fail: "a three-level fail_parent_on_failure flow propagates a death UP every level (the recursive failure hook): the grandchild dies, the node dies, the root dies (the node in the root's :failed); an ignore_dependency_on_failure top hop lets the root proceed; a re-delivered death fails the root exactly once"
+      flow_grandchild_fail: "a three-level fail_parent_on_failure flow propagates a death UP every level (the recursive failure hook): the grandchild dies, the node dies, the root dies (the node in the root's :failed); an ignore_dependency_on_failure top hop lets the root proceed; a re-delivered death fails the root exactly once",
+      pool_enqueue: "pool-fronted enqueue is idempotent: a duplicate id through the pool answers duplicate and changes nothing; the row and pending entry match a single-connector enqueue",
+      pool_order: "score-0 mint order holds across pool members: ids enqueued round-robin through the pool browse newest-first by name alone (REV BYLEX), identical to the single-connector order"
     ]
   end
 
@@ -1778,6 +1780,92 @@ defmodule EchoMQ.Conformance do
 
     purge(conn, nq)
     purge(conn, gq)
+    verdict
+  end
+
+  # -- Movement II groups family · the client floor (ewr.4.1) ---------------
+
+  defp apply_scenario(:pool_enqueue, conn, q) do
+    # POOL-FRONTED IDEMPOTENCY (ewr.4.1-D5, INV4/INV5): a duplicate id enqueued
+    # through the pool answers :duplicate no matter which member runs it, and the
+    # row + pending entry are byte-identical to a single-connector enqueue. The
+    # @enqueue EXISTS refusal is server-side against the SERVER-GLOBAL state, so
+    # the verdict is independent of the member -- this drives the SAME enqueue
+    # through `via: Pool` and asserts via `conn` (the connector that sees the same
+    # state). The pool is started with size >= 2 so round-robin spans distinct
+    # members; the target is the POOL NAME (`via: Pool` is the dispatch module --
+    # the EchoWire.Pipe conn/pool split, pipe.ex:75-82). The pool is stopped in
+    # this scenario; run/2's purge clears the rows on `conn`'s slot.
+    pool = :emq_conf_pool_enqueue
+    {:ok, sup} = EchoMQ.Pool.start_link(name: pool, size: 2, port: 6390)
+
+    verdict =
+      try do
+        id = BrandedId.generate!("JOB")
+
+        with {:ok, :enqueued} <- Jobs.enqueue(pool, q, id, "cargo", via: EchoMQ.Pool),
+             # the duplicate, on the NEXT member by round-robin (size 2), is
+             # refused against the server-global state -- the first payload stands
+             {:ok, :duplicate} <- Jobs.enqueue(pool, q, id, "again", via: EchoMQ.Pool),
+             # the row read through `conn` is the three-field hash a single
+             # connector would have written, the payload unchanged at "cargo"
+             {:ok, row} <- Connector.command(conn, ["HGETALL", Keyspace.job_key(q, id)]),
+             true <-
+               pairs(row) == %{"state" => "pending", "attempts" => "0", "payload" => "cargo"},
+             # exactly one pending entry for the id at score 0 (ZSCORE's wire form
+             # is connection-dependent -- the float +0.0 on RESP3, "0" on RESP2)
+             {:ok, s} when s in [0, "0", +0.0] <-
+               Connector.command(conn, ["ZSCORE", Keyspace.queue_key(q, "pending"), id]),
+             {:ok, 1} <- Connector.command(conn, ["ZCARD", Keyspace.queue_key(q, "pending")]) do
+          :ok
+        else
+          other -> {:fail, other}
+        end
+      after
+        Supervisor.stop(sup)
+      end
+
+    verdict
+  end
+
+  defp apply_scenario(:pool_order, conn, q) do
+    # SCORE-0 MINT ORDER ACROSS POOL MEMBERS (ewr.4.1-D5, INV6): N ids minted in
+    # sequence and enqueued ROUND-ROBIN through the pool browse newest-first by
+    # name alone under ZRANGE REV BYLEX -- identical to a single-connector
+    # enqueue. The order theorem (members are the ids, score is 0, byte order =
+    # mint order) is independent of which member admitted each id. Five ids over
+    # a size-2 pool distribute across both members, so the REV-BYLEX walk is a
+    # real cross-member order proof. The standing ORDER-THEOREM NET-ZERO MUTATION
+    # (ewr.1.1-L4): reversing/shuffling the enqueue order must break the
+    # reverse-mint-order match -- the assertion below is `walked == reverse(ids)`,
+    # so a shuffled enqueue order would NOT match (the mutation is killed). The
+    # browse rides `conn` against the server-global pending set.
+    pool = :emq_conf_pool_order
+    {:ok, sup} = EchoMQ.Pool.start_link(name: pool, size: 2, port: 6390)
+
+    verdict =
+      try do
+        ids = for _ <- 1..5, do: BrandedId.generate!("JOB")
+
+        Enum.each(ids, fn id ->
+          {:ok, :enqueued} = Jobs.enqueue(pool, q, id, "o", via: EchoMQ.Pool)
+        end)
+
+        case Connector.command(conn, [
+               "ZRANGE",
+               Keyspace.queue_key(q, "pending"),
+               "+",
+               "-",
+               "BYLEX",
+               "REV"
+             ]) do
+          {:ok, walked} -> if walked == Enum.reverse(ids), do: :ok, else: {:fail, walked}
+          other -> {:fail, other}
+        end
+      after
+        Supervisor.stop(sup)
+      end
+
     verdict
   end
 

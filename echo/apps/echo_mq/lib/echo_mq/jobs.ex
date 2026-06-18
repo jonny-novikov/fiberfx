@@ -24,11 +24,27 @@ defmodule EchoMQ.Jobs do
            return 1
            """)
 
-  @doc "One idempotent script: admit by kind, refuse duplicates, write the row and the pending entry atomically."
-  def enqueue(conn, queue, job_id, payload) when is_binary(job_id) and is_binary(payload) do
+  @doc """
+  One idempotent script: admit by kind, refuse duplicates, write the row and
+  the pending entry atomically.
+
+  An optional `opts` carries `:via` -- the dispatch module the script eval
+  routes through, defaulting to `EchoMQ.Connector`. Pass `via: EchoMQ.Pool` to
+  front the producer hot path with a round-robin pool: `EchoMQ.Pool.eval/5` is
+  signature-compatible with `EchoMQ.Connector.eval/5`, so the only change is the
+  dispatch target. The `via` reference is **carried, never inspected** (the
+  EchoWire.Pipe `via` idiom, pipe.ex:75-82; the ewr.1.1-INV3 opacity contract).
+  The admission is server-side against the server-global state, so which
+  member runs it is observationally irrelevant -- the same row, the same
+  score-0 pending entry. The existing `enqueue/4` arity is byte-unchanged
+  (`opts = []` -> Connector). ewr.4.1-D2.
+  """
+  def enqueue(conn, queue, job_id, payload, opts \\ [])
+      when is_binary(job_id) and is_binary(payload) do
+    via = Keyword.get(opts, :via, Connector)
     keys = [Keyspace.job_key(queue, job_id), Keyspace.queue_key(queue, "pending")]
 
-    case Connector.eval(conn, @enqueue, keys, [job_id, payload]) do
+    case via.eval(conn, @enqueue, keys, [job_id, payload]) do
       {:ok, 1} -> {:ok, :enqueued}
       {:ok, 0} -> {:ok, :duplicate}
       {:error, {:server, "EMQKIND" <> _}} -> {:error, :kind}
@@ -65,9 +81,9 @@ defmodule EchoMQ.Jobs do
   promoted, by its mint. The caller's clock prices only the schedule score.
   Chapter 3.7.
   """
-  def enqueue_at(conn, queue, job_id, payload, run_at_ms)
+  def enqueue_at(conn, queue, job_id, payload, run_at_ms, opts \\ [])
       when is_binary(job_id) and is_binary(payload) and is_integer(run_at_ms) do
-    schedule(conn, queue, job_id, payload, "at", run_at_ms)
+    schedule(conn, queue, job_id, payload, "at", run_at_ms, opts)
   end
 
   @doc """
@@ -76,15 +92,22 @@ defmodule EchoMQ.Jobs do
   the delay is measured on the same clock that promote and reap read -- never
   the caller's. Chapter 3.7.
   """
-  def enqueue_in(conn, queue, job_id, payload, delay_ms)
+  def enqueue_in(conn, queue, job_id, payload, delay_ms, opts \\ [])
       when is_binary(job_id) and is_binary(payload) and is_integer(delay_ms) and delay_ms >= 0 do
-    schedule(conn, queue, job_id, payload, "in", delay_ms)
+    schedule(conn, queue, job_id, payload, "in", delay_ms, opts)
   end
 
-  defp schedule(conn, queue, job_id, payload, mode, value) do
+  # The optional `opts` threads `:via` (default Connector) so the @schedule
+  # eval dispatches through a pool when one is supplied -- the same carried,
+  # never-inspected dispatch as enqueue/5 (ewr.4.1-D2). The schedule score
+  # math is byte-unchanged (server clock for the run-in mode, the caller's
+  # absolute ms for run-at -- the documented client-clock surface for the
+  # score ONLY).
+  defp schedule(conn, queue, job_id, payload, mode, value, opts) do
+    via = Keyword.get(opts, :via, Connector)
     keys = [Keyspace.job_key(queue, job_id), Keyspace.queue_key(queue, "schedule")]
 
-    case Connector.eval(conn, @schedule, keys, [job_id, payload, mode, Integer.to_string(value)]) do
+    case via.eval(conn, @schedule, keys, [job_id, payload, mode, Integer.to_string(value)]) do
       {:ok, 1} -> {:ok, :scheduled}
       {:ok, 0} -> {:ok, :duplicate}
       {:error, {:server, "EMQKIND" <> _}} -> {:error, :kind}
@@ -98,8 +121,17 @@ defmodule EchoMQ.Jobs do
   `:enqueued`, `:duplicate`, or `{:error, :kind}` -- under the same script,
   the same row shape, and the same idempotency as `enqueue/4`. Chapter 3.6.
   """
-  def enqueue_many(conn, queue, pairs) when is_list(pairs) do
-    {:ok, _} = Connector.command(conn, ["SCRIPT", "LOAD", @enqueue.source])
+  def enqueue_many(conn, queue, pairs, opts \\ []) when is_list(pairs) do
+    # ewr.4.1-D3 — pool-front the batch: BOTH wire steps route through `via`
+    # (default Connector, so enqueue_many/3 is byte-unchanged). The SCRIPT LOAD
+    # caches the script on whichever member it lands on; Valkey's script cache
+    # is SERVER-GLOBAL (one server on :6390), so ONE load on ANY member makes the
+    # sha resolvable on EVERY member -- which is why the subsequent round-robin
+    # EVALSHA never NOSCRIPT-faults across members (INV4). The Pipe `via` flushes
+    # the accumulated EVALSHA batch through Pool.pipeline/3 (round-robin) when a
+    # pool is supplied. The `via` reference is carried, never inspected.
+    via = Keyword.get(opts, :via, Connector)
+    {:ok, _} = via.command(conn, ["SCRIPT", "LOAD", @enqueue.source])
 
     # ewr.1.4 — the first real consumer of the EchoWire client-core: the batch is
     # assembled through EchoWire.Pipe (the EVALSHA via the command/2 escape hatch —
@@ -108,7 +140,7 @@ defmodule EchoMQ.Jobs do
     # defined domain; an EMPTY `pairs` now answers {:error, :empty_pipeline} (the
     # Pipe's empty guard) rather than the old Connector `cmds != []` FunctionClauseError.
     pipe =
-      Enum.reduce(pairs, Pipe.new(conn), fn {id, payload}, pipe ->
+      Enum.reduce(pairs, Pipe.new(conn, via: via), fn {id, payload}, pipe ->
         Pipe.command(pipe, [
           "EVALSHA",
           @enqueue.sha,
