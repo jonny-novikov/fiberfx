@@ -24,7 +24,18 @@ the increment end to end: the build, the proof, and the attempt to falsify it.
 
 1. **Build** the increment to the Venus brief, inside the boundary, **cite-do-not-invent** (skill §1–§4): every
    public `EchoMQ.*` call resolves to a real surface or the brief; realization-over-literal flagged with its
-   `file:line`.
+   `file:line`. Two signature/return choices the brief leaves to the build:
+   - **Prefer the signature that makes the invalid state UNREPRESENTABLE over the one that guards it.** A
+     parameter the row already answers is not just redundant — it invites a mismatch failure mode the row
+     forecloses; an arg dropped can re-narrow the key universe so the bad case cannot be expressed at all.
+     The emq.4.1 `reassign/4` (src derived from the row, not passed) beat the brief's arity-5: it removed the
+     src-mismatch case AND made a cross-queue move not expressible — one queue arg ⟹ one `{q}` slot — strictly
+     stronger than a guarded rejection (F2).
+   - **Host-mapped numeric sentinels for host-distinguishable refusals; `error_reply` only for a genuine wire
+     class.** A script outcome the host can distinguish and map to a typed atom (`-1 → {:error, :not_found}`,
+     the `@genqueue`/`update_data` return-shape idiom) keeps the closed wire-class registry (`EMQKIND`/
+     `EMQSTALE`) unextended (INV1); reserve `redis.error_reply` for a refusal that is genuinely a new wire class
+     a peer across the seam must classify. The emq.4.1 `@greassign` sentinels kept the registry unextended (F3).
 2. **The gate ladder** (skill §5 / [`./emq.program.md`](./emq.program.md) §gate ladder): per-app
    `compile --warnings-as-errors`, per-app `test --include valkey`, `Conformance.run/2 {:ok,n}` with the prior
    set byte-unchanged + the new probe registered + both pins re-pinned, the **≥100 determinism loop** owning the

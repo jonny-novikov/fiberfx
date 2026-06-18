@@ -176,6 +176,56 @@ FILES SYNCED (docs/echo_mq/specs/emq.4/emq.4.rungs/): emq.4.1.md (body — statu
 
 VERIFIED: no stale "52 → N"/"NORMAL-risk" residue (grep exit 1); count=54 in all four; both verbs named in all four; all load-bearing links resolve (incl. the echo-mq-ship/SKILL.md fix carried from the forward pass). The specs now MATCH as-built. Boundary clean: edited ONLY the triad + the ledger; NO production code, NO git.
 
+### T-9
+
+Y-1 (consolidation for Apollo) — emq.4.1 findings + learnings (Director-consolidated, Stage-7 input)
+
+CRAFT/CONTRACT FINDINGS (→ the agent calibrations):
+F1 [Venus WIN → emq.venus.md] — the lag-1 reconcile caught a LOAD-BEARING correctness finding: the lane move is NOT a ZSET swap, because the group is DENORMALIZED onto the job row and read at 4 jobs.ex sites (complete:182/retry:259/promote:320/reap:349) to find the lane + adjust gactive. The move MUST HSET row group=dst atomically or it silently corrupts ceiling accounting (gate-invisible without a move→claim→complete cycle). LEARNING: when a mutation touches a denormalized field, re-probe EVERY read-site of that field before pinning the contract.
+F2 [Mars WIN → emq.mars.md] — arity-4 src-derived BEAT the brief's arity-5: passing src invites a src-mismatch failure the row already answers; AND it makes cross-queue NOT EXPRESSIBLE (one queue arg → one {q} slot), strictly stronger than a guarded rejection. LEARNING: prefer the signature that makes the invalid state unrepresentable over the one that guards it.
+F3 [Mars WIN → emq.mars.md] — numeric sentinels (-1/-2→atom) over error_reply kept the wire-class registry UNEXTENDED (INV1). LEARNING: host-mapped sentinels for host-distinguishable refusals; error_reply only for genuine wire classes (jobs.ex emq.2.2-D7 precedent).
+F4 [META → emq.program.md] — the destructive drain is HIGH-risk for BLAST RADIUS, not determinism. The right gate was the MUTATION BATTERY (over-reach HDEL gactive + under-clean skip-ring-LREM both caught), NOT the ≥100 loop (the drain mints no id/TIME/process — the loop would forge load). LEARNING: match the rigor to the HAZARD — ≥100 loop = id-mint/process/lease determinism; mutation battery = destructive blast radius; blast-radius-by-construction (no SCAN/KEYS*) is auditable by reading the key list.
+F5 [process → emq.program.md] — R3 (the destructive lane-drain) emerged MID-BUILD (Mars flagged it as a build-time judgment); the Operator ruled BUILD, bumping NORMAL→HIGH. LEARNING: a destructive-treatment choice can surface mid-build — surface it to the Operator (don't decide it), and re-grade the risk + verify depth when it lands.
+F6 [Venus WIN → emq.venus.md] — the triad sync ran the lag-1 reconcile BACKWARD post-build, catching 2 deltas (cross-queue framing, risk grade) so the committed spec matches as-built. LEARNING: reconcile both directions — forward before build, backward after.
+
+PROCESS (→ emq.program.md reconcile):
+- The as-built run flow: Director bootstrap+fork-rule (Fork C park, version additive-minor) → Venus author+reconcile (F1) → Director rule verb D-3 → Mars build reassign → Director verify (net-zero mutation) → R3 fork mid-build (F5) → Operator rules BUILD D-5 → Mars-2 build drain → Director DEEPENED verify (mutation battery F4) → Venus triad-sync-backward (F6) → Director ship (LAW-4 rung commit 6bca0d6d + separate 3.0-note commit 7dc828ff) → Apollo Stage 7. Does emq.program.md describe this loop + the Stage-7 (Apollo calibrate+reconcile, D-2/D-4) element?
+- Minor coordination note: a redundant Mars-2 directive crossed with Mars's proactive drain build (built before the directive → re-confirmed, not rebuilt). LEARNING: when a builder proactively extends scope, confirm-don't-rebuild.
+
+Apollo (Stage 7) spawned to fold these into docs/echo_mq/program + reconcile it against the as-built run + eval the @gdrain destructive-op craft. PROPOSE-ONLY, Director-ratified.
+
+### T-10 — Apollo Stage-7 COMPLETE: calibrate + reconcile docs/echo_mq/program + the destructive-op eval (PROPOSE-ONLY, Director-ratified)
+
+OUT of the per-rung pipeline (no build/verify/finish). Three dimensions on the Director's Y-1 consolidation, all docs-only, no production code, no git.
+
+A · CALIBRATE — ONE guardrail per finding, aimed at the implicated contract:
+- emq.venus.md ← F1 (when a mutation touches a DENORMALIZED field, re-probe EVERY read-site before pinning the contract — the lane move HSETs row group=dst because jobs.ex reads it at @complete/@retry/@promote/@reap; sharpened into the reconcile remit). F6 (reconcile in BOTH directions — forward pre-build, backward post-build pre-ship; folded into the lag-1 reconcile bullet).
+- emq.mars.md ← F2 (prefer the signature that makes the invalid state UNREPRESENTABLE over the one that guards it — reassign/4 src-derived made cross-queue not expressible). F3 (host-mapped numeric sentinels for host-distinguishable refusals; error_reply only for a genuine wire class — kept the closed registry unextended, INV1). Both added under the build step.
+- emq.program.md ← F4 (match the gate's rigor to the HAZARD — a destructive at-rest op draws the MUTATION BATTERY + blast-radius-by-construction probe, NOT the ≥100 loop, which forges load; added to the gate ladder). F5 (a rung's risk tier can change MID-BUILD — surface, don't decide, Operator rules, re-grade NORMAL→HIGH + deepen verify; confirm-don't-rebuild a proactive scope extension; footgun #8).
+- emq.apollo.md ← Job 3, the Operator-grantable Stage-7 extensions (process-doc reconcile D-4 + destructive-op eval D-5), recording this run's own role so the next high-risk-rung Apollo reads it.
+
+B · RECONCILE (docs → shipped reality; Venus's lag-1 applied to the process docs):
+- DRIFT: emq.program.md frontier read "Movement I CLOSED — conformance 52/52" + emq.4 as "NEXT" (lines 20, 128) — STALE. The roadmap (the shipped reality, synced at ship 7dc828ff) already records emq.4.1 ✅ SHIPPED + the echomq:3.0.0 era. SYNCED the manual to it: live conformance 54/54; emq.4.1 the fair-lanes control plane SHIPPED (reassign + lane-drain, HIGH-risk); the version arc (additive minors over frozen echomq:2.0.0 → cumulative 3.0.0 major at emq.8); NEXT = 4.2→4.4. "Movement I CLOSED AT 52/52" kept as the correct historical fact.
+- DRIFT: the Apollo roster bullet cast Stage 7 as calibrate-only ("no closure reconcile"). RECONCILED: Stage 7 is Operator-grantable-extensible — (a) process-doc reconcile (D-4), (b) destructive-op eval on a HIGH-risk rung (D-5); both PROPOSE-ONLY, docs-only. The per-rung build-closure reconcile/spec-sync stays the Director's/Venus's (preserved the distinction).
+- CROSS-CHECK: the manual, the roadmap, and the calibrations now agree on the live count (54), emq.4.1's status, and the 3.0.0 version arc.
+
+C · DESTRUCTIVE-OP EVAL (@gdrain, lanes.ex:294) — VERDICT: blast radius CONTAINED (Y).
+- The key list (read at the source): KEYS[1]=base (job-key root only), KEYS[2]=lane set (ZRANGE+DEL), KEYS[3]=ring (LREM ARGV[1]), + derived base..'job:'..id rows + :logs. NO SCAN/KEYS*/wildcard → max damage provable by reading the 11-line body. Forbidden-key grep (gactive|active|paused|glimit|repeat|de:|delay|sched) = EMPTY.
+- The lane_drain conformance scenario (conformance.ex:1098) is a genuine blast-radius proof — it positively asserts the SURVIVORS: in-flight a1 still :active + gactive[a]=="1" (:1137-1138), sibling lane b row+set intact (:1140-1141), repeat registry present (:1143), an absent lane drains to 0 changing nothing (:1145). The corruption direction is gated, not just the deletion.
+- Gate REPRODUCED independently (Valkey 6390 PONG, elixir 1.18.4 / erlang 28.5.0.1): compile --warnings-as-errors CLEAN; CONFORMANCE 54/54 (CONF reassign ok + CONF lane_drain ok printed); conformance_run + conformance_scenarios + lanes_drain + lanes_reassign suites = 20 tests, 0 failures. INV3 byte-freeze re-verified at the source (zero '-redis.call' lines in the lanes.ex diff). Count pinned 54 in BOTH pin tests with :reassign + :lane_drain in run order.
+
+FILES EDITED (docs/echo_mq/program ONLY): emq.venus.md, emq.mars.md, emq.program.md, emq.apollo.md. PROPOSE-ONLY — the Director ratifies + commits as a SEPARATE commit (not the rung). No skill/charter edits this run (all six findings map to the program docs; none recurred enough to need a skill-level guardrail). Boundary clean: docs only, no production code, no git.
+
+### T-11
+
+Ratification — Apollo's Stage-7 program calibration RATIFIED (Director review of the full diff)
+
+Reviewed the complete `git diff -- docs/echo_mq/program/` (4 files, +93/-13). All sound:
+- emq.venus.md (F1 denormalized-field read-sites + F6 both-directions reconcile) · emq.mars.md (F2 unrepresentable>guarded + F3 sentinels-vs-error_reply) · emq.program.md (F4 hazard-matched gate + F5 mid-build risk re-grade/footgun-8 + the Stage-7 grantable extension + the echomq:3.0.0 arc + the 52→54 frontier reconcile) · emq.apollo.md (Job 3 the grantable Stage-7 extensions).
+- GROUNDED: each guardrail cites a real emq.4.1 finding + the as-built surface. ACCURATE: the reconcile facts correct (52/52 = Movement-I-close historical; 54/54 = live; emq.4.1 SHIPPED). NO OVERREACH: the PROPOSE-only fence preserved; no invented surface; no first-person agent voice.
+- The @gdrain destructive-op eval (Apollo, independently reproduced: key-list no-SCAN/KEYS* + the survivor-asserting scenario + 54/54 gate) → blast radius CONTAINED, matching the Director's own mutation battery (V-2).
+RATIFIED → committing as a SEPARATE program-calibration commit (not the rung). No skill/charter edits (first-occurrence findings, kept lean). Stage 7 + the run CLOSED; frontier → emq.4.2 (group-aware recovery).
+
 ## {emq-4-1-decisions} Decisions
 
 ### D-1 — the two pre-build forks ruled (Operator, via the Director's AskUserQuestion)

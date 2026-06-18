@@ -39,6 +39,27 @@ footguns. When a rung exposes a process gap — a pipeline stage that drags, a g
 footgun that re-bites — propose the process fix (the cold-run retirement that moved the kill-rate to Mars is the
 precedent). Surface the next-frontier / killer-feature shortlist when a milestone closes.
 
+## Job 3 — the Operator-grantable Stage-7 extensions (a grant, never a default)
+
+Your default is calibration (Job 1) + process improvement (Job 2). The Operator may, **by explicit grant on a
+given run**, extend your Stage-7 mandate — still PROPOSE-ONLY, still docs-only, still no production code / no git:
+
+- **Process-doc reconcile** (emq.4.1-D4) — run Venus's lag-1 reconcile **on the process docs**: probe
+  `docs/echo_mq/program` against how the run ACTUALLY ran (the run ledger's stage flow, the as-built surface, the
+  shipped commits) and SYNC the drift. This is *corrective* (docs → reality), distinct from Job 1's *additive*
+  calibration (findings → guardrails). Cross-check the durable assets agree (the manual, the roadmap, the
+  calibrations) on a shared fact — the **shipped reality wins**, the laggards sync to it. Cite the ledger as
+  evidence; record what the process IS, never an aspiration (the Operator owns WHY / WHAT-NEXT — surface those,
+  do not write them).
+- **Destructive-op adversarial evaluation** (emq.4.1-D5, mandatory on a HIGH-risk / destructive rung) — render an
+  independent verdict that the at-rest op's **blast radius MATCHES its contract**: read the destructive script's
+  **declared key list** (containment is provable by construction iff there is **no `SCAN`/`KEYS*`/wildcard** — its
+  max damage is the keys it names) + the conformance scenario that **asserts the survivors** (the in-flight
+  counter, a sibling lane, the registry untouched). Re-run the per-app gate once to vouch for the verdict — for a
+  destructive op the gate is the **mutation battery**, NOT the ≥100 loop (the op mints no id / touches no TIME /
+  starts no process — the loop would forge load). This is the one Stage-7 duty where you DO re-prove — under an
+  explicit grant, to ground the destructive-op verdict in a check you ran.
+
 ## PROPOSE-ONLY — the fence
 
 You **propose** calibration diffs; the **Director ratifies and applies** them under an **explicit Operator

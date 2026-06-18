@@ -17,8 +17,10 @@
 legacy v1 line was **rewritten fresh into `echo_mq`** under the v2 laws (never migrated) and **removed** — single
 source of truth, no compatibility layer. One program: a **foundation** (EchoMQ protocol v2 + the BCS substrate —
 established as `emq.0`), **Movement I** (the core — the v1 capability surface pushed to state-of-the-art: emq.1
-scheduler/retry · the emq.2 parity cluster · the emq.3 flow family — **CLOSED, conformance 52/52**), and
-**Movement II** (the extension — groups/batches/lifecycle/cache/proof stack, emq.4–emq.8 — open). The **worked
+scheduler/retry · the emq.2 parity cluster · the emq.3 flow family — **CLOSED at conformance 52/52**), and
+**Movement II** (the extension — groups/batches/lifecycle/cache/proof stack, emq.4–emq.8 — **OPEN; emq.4.1 the
+fair-lanes control plane SHIPPED, live conformance 54/54**, additive minors over the frozen `echomq:2.0.0` wire,
+ratified as the `echomq:3.0.0` major at emq.8). The **worked
 consumer** is **codemoji** (`echo/apps/codemoji` — the Mastermind-style game on `EchoMQ.Lanes`/`Consumer`/
 `Events` + the `EchoData.Bcs` stores); the **headline-planned consumer** is **echo_bot** (`echo/apps/echo_bot` —
 Telegram notifications at scale; the seam is `EchoBot.Platform.Telegram.send_reply/3`).
@@ -47,8 +49,14 @@ pipeline is `/x-mode` bound to echo_mq (the skill `echo-mq-ship`). The roster + 
 - **Apollo — the Mentor (exclusively), out of the pipeline** ([`./emq.apollo.md`](./emq.apollo.md)). Receives
   the Director's consolidated findings + learnings and turns them into **better agents + a better process** — one
   guardrail per finding aimed at the implicated contract, sharpen-don't-stack, **PROPOSE-ONLY** (the Director
-  ratifies under an Operator grant). No build, no verify, no story coverage (→ Mars), no closure reconcile (→ the
-  Director). The cold runs are retired.
+  ratifies under an Operator grant). No build, no verify, no per-rung *build-closure* reconcile / spec-sync (→ the
+  Director's verify + Venus's spec ownership), no story coverage (→ Mars). The cold runs are retired. **Stage 7 is
+  Operator-grantable-extensible** beyond pure calibration: by explicit grant a run may add (a) a **process-doc
+  reconcile** — sync `docs/echo_mq/program` against how the run ACTUALLY ran (Venus's lag-1 reconcile applied to
+  the how-we-ship-it; corrective, distinct from additive calibration; emq.4.1-D4); and (b) on a **HIGH-risk /
+  destructive rung**, a **destructive-op adversarial evaluation** — does the at-rest op's blast radius MATCH its
+  contract, read from the declared key list (no SCAN/KEYS*) + the conformance survivor-asserting scenario
+  (emq.4.1-D5). Both PROPOSE-ONLY, both docs-only, never production code, never git.
 
 **The pipeline:** Venus (strawman + Arms) → **Director (rules the Arms via `AskUserQuestion`)** → **Mars (build +
 self-verify + stories)** → **Director (verify code + invariants + REMEDIATE)** → Mars-2 (remediate + harden) →
@@ -84,6 +92,17 @@ The `git commit -- <pathspec>` law (never `git add -A`) protects against sweepin
   re-pinned in BOTH pinning tests (`conformance_scenarios_test.exs` + `conformance_run_test.exs`).
 - **The ≥100 determinism loop** — only for an id-minting / process / engine suite (the same-ms branded-id mint
   hazard); the loop OWNS the machine (no concurrent server, no sibling heavy I/O). One green run is not proof.
+- **Match the gate's rigor to the rung's HAZARD — the loop is not the universal gate.** The ≥100 loop answers
+  ONE hazard (id-mint / process / lease *determinism* — the same-ms mint collision). A **destructive at-rest op**
+  has a different hazard — **blast radius**, not determinism — and the right gate is the **mutation battery**: a
+  defect injected in BOTH failure directions (over-reach — touch a forbidden key; under-clean — skip a required
+  delete) and each confirmed CAUGHT, plus a blast-radius scope probe. A destructive script that uses **no
+  `SCAN`/`KEYS*`/wildcard** is **blast-radius-bounded by construction** — its maximum damage is provable by
+  reading the declared key list, and a conformance scenario asserting the SURVIVORS (the in-flight counter, a
+  sibling lane, the registry) is the proof. Running the ≥100 loop on such a rung **forges load the rung did not
+  introduce** (no mint/TIME/process); skip it and state the determinism posture honestly. (emq.4.1: the
+  destructive `@gdrain` was gated by the mutation battery — over-reach `HDEL gactive` + under-clean skip-ring-
+  `LREM` both caught — not the loop; F4.)
 - **The durable harness** — a committed re-runnable `echo/rungs/bus/emq_<rung>_check.sh` (+ `.out`); a hand-run
   loop tee'd to `/tmp` evaporates on a crash (ephemeral-proof ≠ a harness).
 - `TMPDIR=/tmp` on **every** mix command. `echo_mq` lib/test is **NOT** under `mix format` (the long-line
@@ -109,6 +128,15 @@ The `git commit -- <pathspec>` law (never `git add -A`) protects against sweepin
    slot/path than the assertion names.
 7. **Records-freeze.** Never rewrite a frozen `{scope}.progress.md` ledger's historical content; the run ledgers
    live archived in `specs/progress/`.
+8. **A rung's risk tier can change MID-BUILD — surface, do not decide, then re-grade.** A destructive-treatment
+   choice (build the at-rest delete now vs park it) can surface only once the build is underway and the surface
+   is concrete. Mars **surfaces** it as a build-time judgment — never decides it — the **Operator rules** (via
+   the Director's `AskUserQuestion`), and a BUILD ruling **re-grades the rung** (NORMAL → HIGH) AND its verify
+   depth (the destructive op draws the mutation battery + the blast-radius probe — footgun-adjacent to the gate
+   ladder's hazard-match rule). The emq.4.1 lane-scoped drain (R3) emerged mid-build, was ruled BUILD (D-5), and
+   bumped the rung NORMAL → HIGH (F5). When a builder proactively EXTENDS scope (builds the surface before the
+   directive lands), the Director **confirms-don't-rebuilds** — the proactive build is re-confirmed against the
+   ruling, not redone.
 
 ## The spec home + the file convention (2026-06-15)
 
@@ -125,13 +153,22 @@ The `git commit -- <pathspec>` law (never `git add -A`) protects against sweepin
 
 ## The live frontier (re-true at each rung close)
 
-- **Movement I CLOSED — conformance 52/52.** Shipped: the foundation `emq.0` · `emq.1` (scheduler/retry) · the
-  `emq.2` parity cluster (2.1 read · 2.2 operator · 2.3 watch · 2.4 closer) · the `emq.3` flow family (3.1
+- **Movement I CLOSED — closed at conformance 52/52.** Shipped: the foundation `emq.0` · `emq.1` (scheduler/retry)
+  · the `emq.2` parity cluster (2.1 read · 2.2 operator · 2.3 watch · 2.4 closer) · the `emq.3` flow family (3.1
   single-queue · 3.2 child-result reads · 3.3 cross-queue · 3.4 failure-policy/bulk · 3.5 grandchildren/deep
   recursion). The flow fan-in is eventually-consistent across queues (the `flow:outbox` on the child slot + the
   `Pump` sweep + the `:processed` HSETNX idempotent deliver); grandchildren are host-orchestrated over byte-frozen
   scripts.
-- **NEXT — Movement II (emq.4–emq.8):** emq.4 groups deepened (4.1–4.4) · emq.5 batches · emq.6 lifecycle
-  controls · emq.7 cache deepened · emq.8 the proof stack (conformance + engine matrix + telemetry + benchmark).
-  emq.7 is least coupled to the machine and may be pulled forward (an Operator call). The 3.x stream tier
-  (`emq3.*`) is PROPOSED, hard-gated on emq.0.
+- **Movement II OPEN — live conformance 54/54.** emq.4 (groups deepened, 4.1–4.4) is BUILDING: **`emq.4.1` the
+  fair-lanes control plane SHIPPED** (HIGH-risk) — `Lanes.reassign/4` (the multi-key atomic lane move; re-aims
+  the RETIRED v1 `changePriority`) + `Lanes.drain/3` (the lane-scoped destructive drain; blast-radius bounded by
+  construction), conformance 52 → 54 as additive minors over the frozen `echomq:2.0.0` wire. **NEXT on the
+  ladder:** emq.4.2 group-aware recovery · 4.3 the park-don't-poll metronome (HIGH-risk) · 4.4 weighted/deficit
+  rotation + the starvation drill · then emq.5 batches · emq.6 lifecycle controls · emq.7 cache deepened · emq.8
+  the proof stack (conformance + engine matrix + telemetry + benchmark). emq.7 is least coupled to the machine and
+  may be pulled forward (an Operator call). The 3.x stream tier (`emq3.*`) is PROPOSED, hard-gated on emq.0.
+- **The version arc (Movement II = the `echomq:3.0.0` era).** Every Movement II rung ships as an **additive
+  minor** over the frozen `echomq:2.0.0` wire — new conformance scenarios + host verbs, **no fence code, no new
+  wire class, no wire break** (the count grows, the protocol does not). The accumulated minors are **ratified as
+  the `echomq:3.0.0` major at the horizon's end (emq.8)** — the bump is the cumulative end-state of emq.4→emq.8,
+  never a single rung's act (emq.4.1 holds at `echomq:2.0.0`; emq.4.1-D1, the roadmap's wire-version row).

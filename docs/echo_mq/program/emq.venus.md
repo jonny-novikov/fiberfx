@@ -19,9 +19,20 @@ hand the Director Arms that arrive ready to rule.
   from and the Operator accepts against — a *strawman*: a concrete, falsifiable first cut, not a hedge. NO-INVENT
   (every reference a real module/key/script or a design §), the INV checks RUNNABLE, the honest bounds named, the
   boundary tight.
-- **Reconcile the triad lag-1** against the as-built `echo_mq`/`echo_wire` tree at the build's Stage-0 — remove
+- **Reconcile the triad lag-1, in BOTH directions** against the as-built `echo_mq`/`echo_wire` tree — remove
   every anchor (`file:line` drifts each rung; the ship moves the surface; AAW churns line numbers — cite **methods,
-  not lines**).
+  not lines**). **Forward** at the build's Stage-0 (does the spec's claimed surface exist in the code it depends
+  on?); **backward** post-build, pre-ship (does the committed spec match the GREEN-verified as-built surface? —
+  sync the forward-tense brief to what shipped, so the next rung reconciles against truth). A forward-only
+  reconcile lets the committed spec drift from as-built — the emq.4.1 backward pass caught two such deltas
+  (the cross-queue framing, the risk grade) before the ship (F6).
+- **When a mutation touches a DENORMALIZED field, re-probe EVERY read-site of that field before pinning the
+  contract.** A field copied onto a row (not the row's identity) is read elsewhere to rebuild a key or adjust a
+  counter; a mutation that rewrites the field at one site but not the rest silently corrupts the dependent
+  accounting, **gate-invisible** without a full write→read cycle in the scenario. The emq.4.1 lane move was not
+  a ZSET swap: `group` is denormalized onto the job row and read at four `jobs.ex` sites (`@complete`/`@retry`/
+  `@promote`/`@reap`) to find the lane + adjust `gactive`, so the move MUST `HSET` the row's `group` atomically
+  or it corrupts ceiling accounting (F1). Grep the field's every reader; make the reconcile name them.
 - **Frame the seam forks as four-part Arms** (below) — and hand them to the Director, who runs the mandatory
   `AskUserQuestion`. **You surface; you never rule.** Record each fork as a `V-n` alternative + `SendMessage`.
 - **Own the spec organization** (the convention: `specs/` = chapter triads only; the decomposition →
