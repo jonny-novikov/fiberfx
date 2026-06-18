@@ -172,7 +172,7 @@ bijection. bcs-expert RESOLVED.
 **THE B8 GROUNDING DISCIPLINE (novel — BCS.8-INV1/INV2, RECALIBRATED 2026-06-13 by the Operator):** TWO LAYERS,
 sharply scoped. (1) **The SUBSTRATE is AS-BUILT SOURCE, shipped + actively hardened — NOT proposed.** Real Elixir
 in the live umbrella: `EchoCache.{Ring,Table,Journal,Coherence,Shadow,Litestream}` at
-`echo/apps/echo_cache/lib/echo_cache/` (Ring surface: `publish/2`→`:ok`/`:dropped` counted, `occupancy/1`,
+`echo/apps/echo_store/lib/echo_store/` (Ring surface: `publish/2`→`:ok`/`:dropped` counted, `occupancy/1`,
 `stats/1`, two-atomics, ETS slots — quote the source + moduledoc), the EchoMQ bus
 `echo/apps/echo_mq/lib/echo_mq/` (jobs/lanes/consumer/conformance/...), `EchoWire`, `EchoData`. Committed records
 (bcs3.4 8/8, bcs4.1–4.4 6/6, bcsG/bcsH, hash audit 4/4) quoted VERBATIM + a LIVE rung-gated hardening program
@@ -183,17 +183,6 @@ TRADING CONSUMER is PROPOSED:** `Exchange.{Gateway,Book,OrderBook,Decider,Projec
 number invented**. The ONLY numbers: as-built-committed (labelled) OR attributed external (LMAX 6M/s, Fowler).
 **Do NOT blur:** the Ring/bus/cache/journal EXIST + are MEASURED; it's the trading ENGINE's match numbers that
 don't exist yet. ("PROPOSED" qualifies Exchange.*/Trading.*, never the substrate.)
-
-**B8.1 + B8.2 BUILT** (9 pages total inc. landing, all A+ PASS, 9↔9 md bijection): **B8.1 `engine`**
-(the-disruptor-seat · the-decider · price-time-by-mint-order — as-built Ring, ring.ex moduledoc quoted verbatim,
-B4.3 figures) ADVANCED 2026-06-13 (over-hedges fixed, frozen-drop paths → live umbrella, hardening pledge added,
-stamps unchanged) + **B8.2 `log-and-ledger`** (the-journal-and-the-shadow · replay-equals-live ·
-the-double-entry-ledger — as-built Journal/Shadow/Litestream from echo/apps/echo_cache + B4.4 record, priced pair
-524µs↔148µs; PROPOSED Trading.Ledger Postgres double-entry + Exchange.Projection). Verified: 0 transcript
-mismatches, 0 invented platform numbers (derive-band 200µs–2ms etc. all in frozen blocks), moduledoc whitespace-
-normalized verbatim vs ring.ex, 8 distinct stamps, scripts clean. Relinked course landing (B8 "2 / 4 modules") +
-chapter landing (B8.1+B8.2 cards). TOC + content-map (bcs.content-map.md B8 table) + spec (bcs.8.specs.md
-grounding discipline) all carry the sharpened two-layer rule.
 
 **B4.5 stays SOON/planned** (Operator chose hold) — benchmark chapter, manuscript-BLOCKED (no bcs4.5.md).
 

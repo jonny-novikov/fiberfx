@@ -1,6 +1,6 @@
 ---
 name: redis-reframe-echomq
-description: "The /redis-patterns course REFRAME: re-prefixed rungs (specs/reframe-echomq/) → BCS contract-sheet identity (redis-red), grounded in the REAL echo/apps code (echo_mq/echo_cache/echo_wire) with the EXCHANGE PLATFORM (echo/apps/exchange) the worked consumer, ZERO BullMQ, Valkey-only, no .out files. B0/R0 fully reconciled (10pp) + the 4 meta-files + the contract reground + a NEW one-shot /redis-reconcile command (B<N>→R<N>); B1/R1 caching (29pp) + B2/R2 coordination (22pp) RECONCILED (all PASS A+); B2 lesson = the v1-vs-v2 trap (echo/apps/echomq FROZEN v1 + a deleted Go port were cited as grounding — real-but-wrong, scrub LockManager|EchoMQ.Keys|Scripts|moveToActive|cluster.go to 0); resume = /redis-reconcile B3 (R3 queues)"
+description: "The /redis-patterns course REFRAME: re-prefixed rungs (specs/reframe-echomq/) → BCS contract-sheet identity (redis-red), grounded in the REAL echo/apps code (echo_mq/echo_store/echo_wire) with the EXCHANGE PLATFORM (echo/apps/exchange) the worked consumer, ZERO BullMQ, Valkey-only, no .out files. B0/R0 fully reconciled (10pp) + the 4 meta-files + the contract reground + a NEW one-shot /redis-reconcile command (B<N>→R<N>); B1/R1 caching (29pp) + B2/R2 coordination (22pp) RECONCILED (all PASS A+); B2 lesson = the v1-vs-v2 trap (echo/apps/echomq FROZEN v1 + a deleted Go port were cited as grounding — real-but-wrong, scrub LockManager|EchoMQ.Keys|Scripts|moveToActive|cluster.go to 0); resume = /redis-reconcile B3 (R3 queues)"
 metadata: 
   node_type: memory
   type: project
@@ -16,7 +16,7 @@ The operator evolved the reframe into a stronger **TARGET DESIGN**:
 - **BullMQ → ZERO mentions** `emq` ships an author library without any compatibility with BullMQ;
 - **Ground in the REAL as-built code, NOT specs, NEVER `.out` files** (operator: "'out' files not included in
   course… EchoMQ is the REAL ADVANCED PATTERNS APPLIED. KEEP FOCUSED"). The spine: `echo/apps/echo_mq` (EchoMQ —
-  Jobs/Lanes/Consumer/Keyspace + Lua), `echo/apps/echo_cache` (EchoCache — Ring/Table/Journal/Coherence),
+  Jobs/Lanes/Consumer/Keyspace + Lua), `echo/apps/echo_store` (EchoStore),
   `echo/apps/echo_wire` (**EchoWire = the ONE owned Valkey client** over `EchoMQ.Connector` — `@wire_version
   "echomq:2.0.0"`, EVALSHA-first `eval/5`, `fence/2` version fence), `echo/apps/exchange` (the consumer). VERIFIED:
   both EchoCache AND EchoMQ reach Valkey through `EchoMQ.Connector` (coherence.ex/table.ex alias it) → the "one
@@ -54,7 +54,7 @@ re0 triad). **11 OTHER-COURSE files still carry the stale path** (echomq-course-
 docs/echo/bcs ×3, docs/aaw ×3, docs/echomq/specs/core ×2) — repo-wide pre-existing, OUT of redis scope, FLAGGED.
 
 **re2 = `/redis-reconcile B1` (R1 `caching`) SHIPPED** — 29pp (landing + 7 modules × hub+3 dives), all STATUS: PASS,
-full dark→light re-skin + Portal→EchoCache re-ground (grounded in the REAL `echo/apps/echo_cache` Table/Journal/
+full dark→light re-skin + Portal→EchoCache re-ground (grounded in the REAL `echo/apps/echo_store` Table/Journal/
 Coherence/Keyspace + `EchoMQ.Script` + `Exchange.Gateway`, bcs4.1/4.2 figures verbatim). Fan-out = 7 redis-expert
 agents (fell back to general-purpose for most — the brief is self-contained; brief written to /tmp once, each agent
 told its section). Orchestrator did the landing + spec/TOC/roadmap/llms.txt sync. **Adversarial verify caught what

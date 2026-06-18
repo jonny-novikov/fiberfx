@@ -20,7 +20,7 @@ metadata:
 > (chiefly the Bus/streams depth, grounded in canon `emq.roadmap.md` §stream-tier + `emq3.specs.md`); it NEVER leaks
 > into the HTML; it is the iteration-2 worklist (the 3.0 streams are upcoming FROM ANOTHER TEAM — write as shipped now,
 > reconcile when they land). (4) **no-invent** — real code where it exists (`echo/apps/echo_mq` + `echo_wire` +
-> `echo_cache`), design canon where it doesn't; the **frozen, unrelated `echo/apps/echomq` (no underscore) is NOT part
+> `echo_store`), design canon where it doesn't; the **frozen, unrelated `echo/apps/echomq` (no underscore) is NOT part
 > of this course** (one-way guard: scrub `EchoMQ.Keys|LockManager|Scripts|Worker|moveToActive` → 0 on every page).
 > **Per chapter: a persistent `docs/echo_mq/course/<chapter>.prompt.md`** fan-out brief the orchestrator authors before
 > spawning one `echo-mq-expert` per module (the "inject persistent [chapter].prompt.md" mechanism).

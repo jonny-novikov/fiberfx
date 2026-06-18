@@ -102,7 +102,7 @@ order is dependency order. (Trap: `Assert.Equal` overload ambiguity on an `int l
 **echo_fs EXPANDED to a 3-package solution 2026-06-15** via `/echo-mq-ship` (an "uncommon invocation" — an
 F# redirect of the Elixir echo_mq ship skill; a **reverse spec-write**): + **EchoConnector** (= `echo_wire`:
 `Resp` RESP3 codec + `Script` SHA1 + `IConnector` abstraction + a hermetic `MemoryConnector` + `Wire`
-facade; **dependency-free**, carries the `WireVersion="echomq:2.0.0"` fence) + **EchoCache** (= `echo_cache`:
+facade; **dependency-free**, carries the `WireVersion="echomq:2.0.0"` fence) + **EchoStore** (= `echo_store`:
 `ecc:{table}:id` keyspace, order-theorem `Coherence`, in-memory L1 `Table` w/ versioned newer-wins, the
 declared-cache directory, Ring/Journal/Shadow skeletons; deps EchoConnector+EchoMQ). **62 tests green**
 (EchoMQ 30 · EchoConnector 18 · EchoCache 14), hermetic (no Valkey needed). **NB (recalibrated 2026-06-15 after
@@ -114,7 +114,7 @@ green" certifies the in-memory model + the pure primitives, NOT a running bus. D
 (efs.0 EchoMQ · efs.connector · efs.cache · efs.valkey). **Next rung efs.3 = the real Valkey socket transport**
 (the ONE non-hermetic seam — same `IConnector`, swaps in with no caller change). Adapted the echo-mq-ship
 skill: NO Elixir lead-team (its echo-mq-* skills don't fit F#), NO LAW-4 commit (operator commits) — senior-solo
-authored + `dotnet test` as the gate. Dep arrows mirror the umbrella (echo_wire dep-free; echo_cache→both).
+authored + `dotnet test` as the gate. Dep arrows mirror the umbrella (echo_wire dep-free; echo_store→both).
 
 **The senior-writer prompt-pack pattern (use for C2/C3/C4 batches):** the orchestrator (senior writer)
 PRE-VERIFIES the batch's signature F# through real `dotnet fsi`, then writes

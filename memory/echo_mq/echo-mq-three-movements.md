@@ -13,7 +13,7 @@ three movements; shipped one rung per run through the aaw lead-team (Director-or
 The consumers: **codemoji** (`echo/apps/codemoji`, the live Mastermind game on Lanes/Consumer/Events + the BCS
 property stores) is the worked present-tense consumer; **echo_bot** (`echo/apps/echo_bot`) is the headline-planned
 consumer (Telegram notifications at scale, forward-tense — no bus coupling yet; seam
-`EchoBot.Platform.Telegram.send_reply/3`). Exchange is no longer a target.
+`EchoBot.Platform.Telegram.send_reply/3`). Exchange is no longer a target. The L2 store beside the bus is **`echo_store`**.
 
 ## The depth lives ON DISK — read these (the 2026-06-15 de-bloat)
 
@@ -70,5 +70,5 @@ Apollo). **Apollo = the Mentor ONLY**, out of the per-rung pipeline — folds th
 into agent calibrations (PROPOSE-ONLY, sharpen-don't-stack); the cold-run marathon is retired. Details:
 `emq.program.md` + `emq.{venus,mars,apollo}.md`.
 
-Related: [[echomq-umbrella-app]], [[bcs-course]],
+Related: [[echo-store-rename]], [[echomq-umbrella-app]], [[bcs-course]],
 [[x-mode-cclin-leadteam]], [[local-valkey-replaces-redis]], [[exchange-platform]].
