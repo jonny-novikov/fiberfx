@@ -11,15 +11,29 @@ defmodule Codemoji.Store do
   @players :cm_players
   @guesses :cm_guesses
   @emojisets :cm_emojisets
+  @rooms :cm_rooms
+  @txns :cm_txns
 
   def start_link do
     Supervisor.start_link([
       {@rounds, "RND"},
       {@players, "USR"},
       {@guesses, "GES"},
-      {@emojisets, "EMS"}
+      {@emojisets, "EMS"},
+      {@rooms, "RMM"},
+      {@txns, "TXN"}
     ])
   end
+
+  def put_room(id, m), do: PropertyStore.put(@rooms, id, m)
+  def room(id), do: unwrap(PropertyStore.get(@rooms, id))
+
+  def put_txn(id, m) do
+    PropertyStore.record_entity(@txns, id)
+    PropertyStore.put(@txns, id, m)
+  end
+
+  def txn(id), do: unwrap(PropertyStore.get(@txns, id))
 
   def put_set(%Codemoji.EmojiSet{id: id} = set), do: PropertyStore.put(@emojisets, id, set)
   def set(id), do: unwrap(PropertyStore.get(@emojisets, id))
