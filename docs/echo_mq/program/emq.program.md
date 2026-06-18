@@ -19,8 +19,8 @@ source of truth, no compatibility layer. One program: a **foundation** (EchoMQ p
 established as `emq.0`), **Movement I** (the core — the v1 capability surface pushed to state-of-the-art: emq.1
 scheduler/retry · the emq.2 parity cluster · the emq.3 flow family — **CLOSED at conformance 52/52**), and
 **Movement II** (the extension — groups/batches/lifecycle/cache/proof stack, emq.4–emq.8 — **OPEN; emq.4.1 the
-fair-lanes control plane SHIPPED, live conformance 54/54**, additive minors over the frozen `echomq:2.0.0` wire,
-ratified as the `echomq:3.0.0` major at emq.8). The **worked
+fair-lanes control plane SHIPPED, live conformance 54/54**, additive minors over the frozen `echomq:2.0.0` wire fence, the per-rung release label
+climbing `2.4.1 → … → 3.0.0` ratified as the `echomq:3.0.0` major at emq.8). The **worked
 consumer** is **codemoji** (`echo/apps/codemoji` — the Mastermind-style game on `EchoMQ.Lanes`/`Consumer`/
 `Events` + the `EchoData.Bcs` stores); the **headline-planned consumer** is **echo_bot** (`echo/apps/echo_bot` —
 Telegram notifications at scale; the seam is `EchoBot.Platform.Telegram.send_reply/3`).
@@ -65,6 +65,24 @@ Mars's adversarial self-verification **+** the Director's independent verify. Th
 is gone (the cold-run fix); Apollo's value moved off the critical path — it makes the *next* rung's agents better
 rather than this rung's build slower.
 
+## Right-sizing the run (pragmatic delivery)
+
+**Rigor is constant; only ceremony scales.** The 7-stage pipeline above is the SHAPE, not a fixed cost — the
+Director triages the formation at bootstrap against the rung's actual surface, and a small rung runs a small
+formation (an Operator cost ruling — a 2-line fix once cost a full-team run):
+
+- **Match the formation to the rung.** A trivial / mechanical rung (a doc reconcile, a one-line fix, a re-pin)
+  runs as ONE builder under the Director — not Venus + Mars-1 + Mars-2 + the full battery. A NORMAL capability
+  rung runs the standard loop. A HIGH-risk rung (a new process/lease surface, a destructive at-rest op, a
+  frozen-line touch) runs the full battery + may fan out a second architect. What scales is the number of peers
+  and passes — the gate ladder that applies is **always run in full**; rigor never scales down.
+- **Confirm-don't-rebuild a proactive scope extension** (footgun 8): when a peer builds a surface before the
+  directive lands, the Director re-confirms it against the ruling — never re-spawns to redo it.
+- **A generated bundle is WRITE-ONLY.** Never `Read` / `grep -n` / `git diff` a generated artifact (a stories
+  catalog, a fan-out bundle) to verify it — that burns context on output you produced. Verify the GENERATOR: the
+  source test, `grep -c` for the expected count, the running-server / re-run check. The artifact reproduces from
+  one documented command (the story-gen discipline below) — trust the command, not a re-read.
+
 **LAW-1 (no role-play):** every peer is a REAL `Agent` spawn that self-registers (`mcp__aaw__agent_register`);
 a registered id without a spawned agent is FAKE-N. **The persistence law:** a verifier records its verdict
 (`tool_x_report` / a `SendMessage`) **before** going idle — an idle notification carries no findings, and a
@@ -78,6 +96,22 @@ precedent). **No third app** — a rung builds the bus, never its consumers. `ec
 dep moved (expect EXCLUDED). **Out-of-band — never in an emq commit:** the sibling/consumer apps
 `echo/apps/{codemoji,echo_bot}`, `docs/{echo/art,echo/mesh}`, `docs/fsharp`, `html/`, `.claude/skills/mesh-writer`.
 The `git commit -- <pathspec>` law (never `git add -A`) protects against sweeping any pre-staged sibling.
+
+## The EchoWire client seam (forward — adopt the new wire's construction half)
+
+`echo/apps/echo_wire` now ships the **construction** half it never owned: `EchoWire.Pipe` (the `ewr.1.1`
+founding rung — a `%Pipe{conn, via, cmds}` accumulator threaded by `|>`, a curated six-family verb set +
+`command/2`, flushing once through `Connector.pipeline/3`) — the fluent builder that replaces hand-written
+nested `[[binary]]` literals (positional flags kept correct by eye). **echo_mq is the downstream consumer that
+adopts it:** going forward, a rung that assembles **multi-command host logic** (a pipeline of two-plus commands
+built host-side) constructs it with `EchoWire.Pipe`, not a hand-rolled `Connector.pipeline` list. The boundaries
+(Operator ruling, this session):
+
+- A **single inline `Script.new/2` eval stays on the frozen Script path** — the Pipe is for multi-command
+  *construction*, not a one-shot Lua eval (emq.4.2's group-scoped reap is one eval, so it does NOT wire the Pipe).
+- The adoption is a **dedicated, separately-scoped wiring rung** that converts existing call-sites + proves the
+  frozen floor — **never folded into a capability rung's diff**.
+- The wire stays frozen below the facade: `EchoWire.Pipe` is a NEW module above `Connector`, never a connector edit.
 
 ## The gate ladder (the operating procedure)
 
@@ -148,7 +182,14 @@ The `git commit -- <pathspec>` law (never `git add -A`) protects against sweepin
 - The **forward-feature 5-section catalog** (Goal/Rationale/5W/Scope/AC, by category) is
   [`../emq.features.md`](../emq.features.md) **Part C**.
 - The **generated story catalog** is `docs/echo_mq/stories/` — produced by `mix echo_mq.stories` from
-  `echo/apps/echo_mq/test/stories/*_story_test.exs`; **generated, NEVER hand-edited** (it cannot drift from code).
+  `echo/apps/echo_mq/test/stories/*_story_test.exs`; **generated, NEVER hand-edited** (it cannot drift from
+  code). **The story-gen discipline (the ewr.1.1 F-1 lesson):** a committed generated artifact **reproduces from
+  ONE documented command, byte-for-byte** (`mix echo_mq.stories` run twice is `diff`-clean). The shared task
+  harvests over a fixed glob and can **over-produce** into a per-feature out dir — that is a **finding to
+  SURFACE** (the `--match <substring>` scoping fix is additive + default-byte-identical, in-scope for the rung),
+  **never a hand-prune** into a non-idempotent artifact. The hand-authored `<rung>.stories.md` USER stories
+  (Venus's, the acceptance face a person signs) are a **DISTINCT layer** from the GENERATED proof — neither
+  edited to fork from the other.
 - The **per-agent calibrations** are `program/emq.{venus,mars,apollo}.md` (this folder).
 
 ## The live frontier (re-true at each rung close)
@@ -167,8 +208,21 @@ The `git commit -- <pathspec>` law (never `git add -A`) protects against sweepin
   rotation + the starvation drill · then emq.5 batches · emq.6 lifecycle controls · emq.7 cache deepened · emq.8
   the proof stack (conformance + engine matrix + telemetry + benchmark). emq.7 is least coupled to the machine and
   may be pulled forward (an Operator call). The 3.x stream tier (`emq3.*`) is PROPOSED, hard-gated on emq.0.
-- **The version arc (Movement II = the `echomq:3.0.0` era).** Every Movement II rung ships as an **additive
-  minor** over the frozen `echomq:2.0.0` wire — new conformance scenarios + host verbs, **no fence code, no new
-  wire class, no wire break** (the count grows, the protocol does not). The accumulated minors are **ratified as
-  the `echomq:3.0.0` major at the horizon's end (emq.8)** — the bump is the cumulative end-state of emq.4→emq.8,
-  never a single rung's act (emq.4.1 holds at `echomq:2.0.0`; emq.4.1-D1, the roadmap's wire-version row).
+- **The version arc (Movement II = the `echomq:3.0.0` era) — TWO version planes, never conflate them.** There
+  are two version artifacts and a rung moves only one:
+  - **The wire FENCE — frozen.** `@wire_version "echomq:2.0.0"` lives in the FROZEN connector
+    (`echo_wire/lib/echo_mq/connector.ex:33`), seeded `SET {emq}:version NX` at boot + refused-on-mismatch, and
+    pinned byte-for-byte by the `:fence` conformance scenario + `connector_test`. It is the wire's structural
+    identity (RESP framing + the script-registry contract), which has NOT broken — so it **advances exactly
+    once**: the sanctioned `echomq:2.0.0 → echomq:3.0.0` MAJOR at the horizon's end (emq.8). **No capability rung
+    touches it** (editing the frozen connector + re-freezing the `:fence` scenario every rung is precisely what
+    the additive-minor law forbids).
+  - **The release LABEL — climbs per rung.** `echo/apps/echo_mq/mix.exs` `version:` is the per-rung release label
+    `2.<N>.<M>`: emq.4.1 = `2.4.1` (already in mix.exs), emq.4.2 = `2.4.2`, … climbing to `3.0.0` at emq.8 (where
+    it meets the fence). Each rung bumps it by one; the roadmap's protocol-arc row records the climb. **This is
+    the version "current: echomq:2.4.1" denotes** — the protocol's release label, NOT the fence string.
+  - **What a rung actually ships:** an **additive-minor** capability — new conformance scenarios (the count
+    grows) + host verbs, **no fence code, no new wire class, no wire break** — **plus one mix.exs version bump**.
+    The accumulated minors are ratified as the `echomq:3.0.0` major (the single fence bump) at emq.8. (The
+    per-rung-climb rule supersedes emq.4.1-D1's "holds at 2.0.0" framing — the label was always meant to be
+    visible per rung, the docs had simply frozen it; the roadmap's wire-version row is reconciled to match.)

@@ -16,7 +16,7 @@ Read [Echo References](./emq.references.md) before EXPANDING this roadmap.
   key builder), born declared (every Lua key in `KEYS[]` or grammar-derived), with committed records and
   derive-before-measure gates. A from-scratch convergence target inherits those proofs; extending v1 in place
   would inherit the debt.
-- **What.** `echo/apps/echo_mq` (the BCS 2.0 Valkey-native bus, `EchoMQ.*`, lib-only, version `2.0.0`) is THE
+- **What.** `echo/apps/echo_mq` (the BCS 2.0 Valkey-native bus, `EchoMQ.*`, lib-only, release label `2.4.1`, wire fence frozen at `echomq:2.0.0`) is THE
   single convergence target, with `echo/apps/echo_wire` (the extracted wire layer — `EchoMQ.{RESP, Connector,
   Script}` frozen-named under the `EchoWire` facade) beside it. The legacy v1 line (frozen at `1.3.0`) has been
   **rewritten fresh into `echo_mq` and removed** — single source of truth; the /echomq and /redis-patterns
@@ -106,7 +106,7 @@ by `EchoMQ.Consumer`, scored by a single authority, results published on `EchoMQ
   pulled forward — an Operator call, recorded here so it is a decision, not drift (carried from the old
   roadmap's same note).
 - **Where** — `echo/apps/echo_mq`, `echo/apps/echo_store`, and the conformance/test surfaces beside them.
-- **Wire version** — Movement I closed at **`echomq:2.0.0`** (emq.3 its last rung). Movement II (emq.4–emq.8) is the **`echomq:3.0.0`** era: every rung ships as an **additive minor** over the frozen 2.0.0 wire — new conformance scenarios + host verbs, **no fence code, no new wire class** (the count grows, the protocol does not break). The accumulated minors are **ratified as the `echomq:3.0.0` major at the horizon's end (emq.8)** — the bump is the cumulative end-state of emq.3→emq.8, never a single rung's act. (emq.4.1 holds at 2.0.0; emq.4.1-D1.)
+- **Wire version — TWO planes, never conflate.** The wire **FENCE** (`@wire_version` in the FROZEN connector, the `{emq}:version` boot key) holds at **`echomq:2.0.0`** and **advances exactly once** — the sanctioned `echomq:3.0.0` MAJOR at the horizon's end (emq.8); **no capability rung touches it** (editing the frozen connector + re-freezing the `:fence` scenario every rung is what the additive-minor law forbids). The **release LABEL** (`echo/apps/echo_mq/mix.exs` `version:`) **climbs per rung** `2.<N>.<M>` — emq.4.1 = `2.4.1`, emq.4.2 = `2.4.2`, … reaching `3.0.0` at emq.8 (where it meets the fence). Each rung ships an **additive minor** (new conformance scenarios + host verbs, **no fence code, no new wire class, no wire break** — the count grows, the protocol does not break) **+ one mix.exs version bump**. ("current: echomq:2.4.1" = the release label; the per-rung-climb rule supersedes emq.4.1-D1's "holds at 2.0.0" framing.)
 
 ## The rung ladder (CONFIRMED at the Stage-1b checkpoint)
 

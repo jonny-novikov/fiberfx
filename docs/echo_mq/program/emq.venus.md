@@ -33,6 +33,11 @@ hand the Director Arms that arrive ready to rule.
   a ZSET swap: `group` is denormalized onto the job row and read at four `jobs.ex` sites (`@complete`/`@retry`/
   `@promote`/`@reap`) to find the lane + adjust `gactive`, so the move MUST `HSET` the row's `group` atomically
   or it corrupts ceiling accounting (F1). Grep the field's every reader; make the reconcile name them.
+- **When the rung reuses a tool with scoping semantics, the spec NAMES them.** A generator / Mix task the rung
+  re-drives (e.g. `mix echo_mq.stories`, which harvests over a fixed glob) has a scoping contract the build must
+  honor for the artifact to **reproduce from one command** — state the exact invocation (the `--match
+  <substring>`, the out dir) so the generated proof is idempotent, never hand-pruned (the ewr.1.1 F-1 lesson;
+  [`./emq.mars.md`](./emq.mars.md) story-gen coverage).
 - **Frame the seam forks as four-part Arms** (below) — and hand them to the Director, who runs the mandatory
   `AskUserQuestion`. **You surface; you never rule.** Record each fork as a `V-n` alternative + `SendMessage`.
 - **Own the spec organization** (the convention: `specs/` = chapter triads only; the decomposition →

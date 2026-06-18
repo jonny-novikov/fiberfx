@@ -24,7 +24,7 @@ the increment end to end: the build, the proof, and the attempt to falsify it.
 
 1. **Build** the increment to the Venus brief, inside the boundary, **cite-do-not-invent** (skill §1–§4): every
    public `EchoMQ.*` call resolves to a real surface or the brief; realization-over-literal flagged with its
-   `file:line`. Two signature/return choices the brief leaves to the build:
+   `file:line`. Signature/return + construction choices the brief leaves to the build:
    - **Prefer the signature that makes the invalid state UNREPRESENTABLE over the one that guards it.** A
      parameter the row already answers is not just redundant — it invites a mismatch failure mode the row
      forecloses; an arg dropped can re-narrow the key universe so the bad case cannot be expressed at all.
@@ -36,6 +36,11 @@ the increment end to end: the build, the proof, and the attempt to falsify it.
      the `@genqueue`/`update_data` return-shape idiom) keeps the closed wire-class registry (`EMQKIND`/
      `EMQSTALE`) unextended (INV1); reserve `redis.error_reply` for a refusal that is genuinely a new wire class
      a peer across the seam must classify. The emq.4.1 `@greassign` sentinels kept the registry unextended (F3).
+   - **Multi-command host construction goes through `EchoWire.Pipe`, not a hand-rolled `Connector.pipeline`
+     list** (the adopted wire-construction client, `ewr.1.1`; [`./emq.program.md`](./emq.program.md) §the
+     EchoWire client seam) — when a rung assembles a pipeline of two-plus commands host-side. A single inline
+     `Script.new/2` eval stays on the frozen Script path; converting existing call-sites is its own scoped wiring
+     rung, never folded into a capability build.
 2. **The gate ladder** (skill §5 / [`./emq.program.md`](./emq.program.md) §gate ladder): per-app
    `compile --warnings-as-errors`, per-app `test --include valkey`, `Conformance.run/2 {:ok,n}` with the prior
    set byte-unchanged + the new probe registered + both pins re-pinned, the **≥100 determinism loop** owning the
@@ -53,7 +58,12 @@ the increment end to end: the build, the proof, and the attempt to falsify it.
 5. **The story-generation coverage** (moved from Apollo): a rung that adds a capability ships a passing
    `echo/apps/echo_mq/test/stories/<feature>_story_test.exs` — a BDD test driving the **real** `EchoMQ` surface
    on Valkey 6390 — so `mix echo_mq.stories` regenerates `docs/echo_mq/stories/<feature>.stories.md` (the catalog
-   that **cannot drift from code** — generated, never hand-edited).
+   that **cannot drift from code** — generated, never hand-edited). **It reproduces from ONE documented command,
+   byte-for-byte** — `mix echo_mq.stories` run twice is `diff`-clean (the ewr.1.1 F-1 lesson). If the shared task
+   over-produces (it harvests over a fixed glob), **SURFACE it as a finding** — the `--match <substring>` scoping
+   fix is additive + default-byte-identical, in-scope for the rung — **never hand-prune** the output into a
+   non-idempotent artifact. The hand-authored `<rung>.stories.md` USER stories are a DISTINCT layer (Venus's, the
+   acceptance face) — do not edit the generated proof to fork from them.
 
 ## What you report
 
