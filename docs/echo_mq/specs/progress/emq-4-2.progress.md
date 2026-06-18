@@ -216,3 +216,56 @@ DEFINITIVE ISOLATION PROOF: with the live Valkey {emq}:version aligned to "echom
 THE FIX (Director/Operator's call): REVERT echo/apps/echo_wire/lib/echo_mq/connector.ex @wire_version → "echomq:2.0.0". The two mix.exs SemVer bumps may stand (the right plane). I did NOT touch any of the three out-of-band files, and I RESTORED the live Valkey {emq}:version to echomq:2.0.0 (its prior value) after every fence-aligned probe — the environment is left exactly as I found it.
 
 GATE STATUS: every emq.4.2 gate item PASSES except the wire :valkey Conformance.run/2 (and any first-connect :valkey suite), which is GATED on the connector revert — NOT a defect in my rung. The pure suite (389 tests + 4 doctests, 0 failures) and the :valkey recovery family (48 tests, fence-aligned, 0 failures) and the multi-seed sweep (8/8) all green.
+
+## {emq-4-2-resolution} Resolution — D-3 SUPERSEDES the E-1/E-2 "revert" recommendation
+
+### D-3 — the wire fence CLIMBS (reopened Fork-2; Operator ruling via AskUserQuestion)
+E-1/E-2 above recommended REVERTING `connector.ex @wire_version → echomq:2.0.0` to restore the frozen
+two-planes fence. The Operator was presented the blocker and **reopened Fork-2**, ruling the OPPOSITE: the wire
+fence **CLIMBS per rung in lockstep with the `mix.exs` label** (`echomq:2.4.1 → 2.4.2 → … → 3.0.0` MAJOR at
+emq.8). E-1/E-2 stay as the honest record of what was found; **this D-3 is the binding resolution** — do not
+read E-1/E-2's "revert" as the as-built. Rationale: the **single-owner wire** (no external clients; connector +
+server deploy as a unit) makes a per-rung minor a versioned advance, never a structural break. The mechanism is
+self-aligning: the connector `fence/2` LOGIC was always written against the `@wire_version` *attribute* (never a
+literal), so bumping the constant IS the complete mechanism; the `:fence` conformance scenario + `connector_test`
+were re-modelled **version-agnostic** (assert the live key `== Connector.wire_version()`), so they track the
+marker and never need a per-rung edit again. A fence-climbing deploy needs a one-time `DEL {emq}:version` so the
+next connector boot re-seeds the new value via `SET NX`.
+
+### V-1 — independent Director verify (under the climbing fence, NOT the reverted fence)
+Re-ran the gate on Valkey 6390 with the connector at `echomq:2.4.2` and the live key re-seeded: **CONFORMANCE
+55/55** (incl. `:reap_group` two-group scoping + the version-agnostic `:fence`); the full `:valkey` suite **389
+tests + 4 doctests, 0 failures**; byte-freeze holds (`@reap`/`@sweep_stalled` 0 diff, 0 `redis.call` removed from
+the lib diff); the reorder mutation (ZREM-before-group-check) catches and reverts net-zero; **no `echomq:2.0.0`
+straggler** in the as-built code/tests. The connector diff is `@wire_version` + moduledoc ONLY (fence/2 logic 0
+lines). BUILD-GRADE.
+
+### L-1 — craft footgun (cross-app lib/test split)
+In the Mars directive I located `connector_test.exs` at `echo/apps/echo_wire/test/`; it actually lives at
+`echo/apps/echo_mq/test/` (the connector LIB is `echo_wire/lib`, but its TEST is `echo_mq/test` — a per-app
+echo_wire run loads only the dep-free wire app, so the fence test that needs `Keyspace` must sit in echo_mq).
+Mars couldn't reach it and left 3 hardcoded `echomq:2.0.0` assertions; the Director caught them at verify by
+**re-grepping rather than trusting the report**, and fixed them version-agnostic. Calibration: cite a cross-app
+path from a `git ls-files` probe, never from memory.
+
+### L-2 — process-weight mismatch (the retrospective; the load-bearing lesson)
+The shipped surface is ~one additive Lua script mirroring `@reap` + a one-character version bump, yet it ran the
+full Flat-L2 lead-team over ~2h. Root cause: **the ceremony did not right-size to the work**, and **a
+horizon-level model decision (the climbing fence) was fused into a delivery rung** (it surfaced mid-build as a
+blocker and thrashed the calibration docs + spec + tests). This repeats the `right-size-formation` calibration
+already on disk (rigor constant, only ceremony scales). Corrective, going forward: (1) **triage formation by the
+actual delta, not the rung number** — an additive verb mirroring a shipped pattern is a 1-builder job (the
+Director builds it directly); reserve the full team for genuinely HIGH-risk (new process/lease, destructive
+at-rest, frozen-line, an open design fork). (2) **Never fuse a model/horizon decision into a delivery rung** —
+settle it standalone, then resume. (3) **Defer spec for additive rungs** — code first, thin note after. (For
+Apollo to fold into `echo-mq-program.md` / the role charters under an Operator grant.)
+
+## {emq-4-2-complete} Z-1 — SHIPPED
+emq.4.2 (group-aware recovery — `reap_group/4` + `@greap_group`) BUILD-GRADE + gate-green under the climbing
+fence `echomq:2.4.2`; conformance 54 → 55 (additive minor); byte-freeze held; boundary clean. Shipped solo (the
+L-2 corrective applied in the ship itself: no team) as **two scoped pathspec commits** — (1) the climbing-fence
+model revision to `emq.program.md` (superseding the two-planes framing of 37c731af), (2) the rung surface
+(`echo_mq` lib+tests + the `echo_wire` connector/mix fence seam + the spec triad + this ledger + the
+roadmap/progress fold). The `emq-4-1.registry.json` team-join side-effect was EXCLUDED (left for the Operator);
+the wire-* story-catalog over-production EXCLUDED (belongs to the ewr rung). Next: emq.4.3 (the park-don't-poll
+metronome, **Apollo-mandatory** — HIGH-risk).

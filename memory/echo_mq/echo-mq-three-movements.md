@@ -1,6 +1,6 @@
 ---
 name: echo-mq-three-movements
-description: "EchoMQ program — echo/apps/echo_mq is THE v3 library. DEPTH lives on-disk at docs/echo_mq/program/emq.program.md (the operating manual + agent calibrations). Shipped emq.0. emq.1 emq.2 emq.3 — **MOVEMENT I CLOSED**. Epics layer + AAW Epic/corpus framework instrument live. Recalibration 2026-06-17 (D-1): Mars=code-quality gate+stories, Director verifies code+invariants, Apollo=Mentor ONLY (out of pipeline). Consumer pivot: codemoji (live) + echo_bot (planned Telegram); Exchange dropped; apps/echomq REMOVED. This memory = slim pointer + frontier."
+description: "EchoMQ program — echo/apps/echo_mq is THE v3 library. DEPTH lives on-disk at docs/echo_mq/program/emq.program.md (the operating manual + agent calibrations). Shipped emq.0. emq.1 emq.2 emq.3 — **MOVEMENT I CLOSED**. Epics layer + AAW Epic/corpus framework instrument live. Recalibration 2026-06-17 (D-1): Mars=code-quality gate+stories, Director verifies code+invariants, Apollo=Mentor ONLY (out of pipeline). Consumer pivot: codemojex (live) + echo_bot (planned Telegram); Exchange dropped; apps/echomq REMOVED. **Movement II OPEN — emq.4.1 (fair-lanes control plane: reassign + DESTRUCTIVE lane-drain) SHIPPED 2026-06-18, HIGH-risk (R3 mid-build → NORMAL→HIGH; gate = blast-radius mutation battery, not the ≥100 loop), conf 54; echomq:3.0.0 era; next emq.4.2. Apollo Stage-7 Operator-grantable (D-4 process-doc reconcile + D-5 destructive-op eval).** This memory = slim pointer + frontier."
 metadata:
   node_type: memory
   type: project
@@ -10,7 +10,7 @@ metadata:
 **The program.** `echo/apps/echo_mq` is THE EchoMQ 2.0 library (Valkey-native, above `echo/apps/echo_wire`);
 the v1 line was rewritten fresh into echo_mq and **`apps/echomq` REMOVED** (single source of truth). One program,
 three movements; shipped one rung per run through the aaw lead-team (Director-orchestrated → one LAW-4 commit).
-The consumers: **codemoji** (`echo/apps/codemoji`, the live Mastermind game on Lanes/Consumer/Events + the BCS
+The consumers: **codemojex** (`echo/apps/codemojex`, the live Mastermind game on Lanes/Consumer/Events + the BCS
 property stores) is the worked present-tense consumer; **echo_bot** (`echo/apps/echo_bot`) is the headline-planned
 consumer (Telegram notifications at scale, forward-tense — no bus coupling yet; seam
 `EchoBot.Platform.Telegram.send_reply/3`). Exchange is no longer a target. The L2 store beside the bus is **`echo_store`**.
@@ -48,6 +48,25 @@ depth-4 RED / depth-3 GREEN). The flow family (3.1–3.5) is parity-complete →
 emq.epic.0 the meta-epic + emq.epic.1 the v3.x command DSL; the AAW framework Epic/corpus instrument + the
 repo-controlled-memory model PENDING Operator grant). Build vs design scope: `emq-3-4` design closed Z-1; the BUILD
 ran as the fresh `emq-3-4-build` scope (ledger_dir immutable after init).
+
+## Movement II — the extension family (OPEN)
+
+emq.4 (groups deepened, 4.1–4.4) chapter SPECCED 2026-06-18 (`d3c252c1`, spec-only). **emq.4.1 (fair-lanes
+operator control plane) SHIPPED 2026-06-18** — `Lanes.reassign/4` + `@greassign` (the multi-key atomic lane
+move: ZREM src + ZADD dst score-0 + **`HSET <row> group=dst`** the load-bearing rewrite — `group` is denormalized
+onto the job row and read at `jobs.ex` complete/retry/promote/reap to find the lane + adjust `gactive`, so the
+move is NOT a ZSET swap; re-aims the RETIRED v1 changePriority/getCountsPerPriority, no numeric priority) +
+`Lanes.drain/3` + `@gdrain` (the lane-scoped DESTRUCTIVE drain = `Admin.@drain` scoped to one lane; blast radius
+bounded BY CONSTRUCTION — no SCAN/KEYS*, max damage provable from the declared key list). conf 52→54
+additive-minor. **HIGH-risk** — R3 (the destructive drain) surfaced **MID-BUILD** → Operator ruled BUILD (D-5) →
+NORMAL→HIGH; the gate was the **blast-radius mutation battery** (over-reach `HDEL gactive` + under-clean
+skip-ring-`LREM` both caught), NOT the ≥100 loop (the drain mints no id / touches no TIME / starts no process — the
+loop would forge load). Fork C (intra-group priority) PARKED — lanes stay score-0 (the ring's `ZPOPMIN` head =
+mint-order FIFO = the order theorem). 3 commits: `6bca0d6d` rung · `7dc828ff` 3.0-note · `6d79e17e`
+program-calibration. **Version arc: Movement II = the `echomq:3.0.0` era** — additive minors over the frozen
+`echomq:2.0.0` wire, ratified as the `echomq:3.0.0` major at emq.8 (no rung bumps the wire). **Apollo Stage-7
+gained Operator-grantable extensions** (D-4 process-doc reconcile of `docs/echo_mq/program` against the as-built
+run + D-5 destructive-op adversarial eval; both PROPOSE-only/docs-only). **NEXT: emq.4.2 (group-aware recovery).**
 
 ## Critical operational quick-ref (DEPTH in emq.program.md)
 

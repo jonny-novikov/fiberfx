@@ -23,7 +23,7 @@ var metricsCmd = &cobra.Command{
 	Long: `Query timeseries metrics from Datadog.
 
 Examples:
-  datadog metrics query -q "avg:system.cpu.user{service:codemoji-game}"
+  datadog metrics query -q "avg:system.cpu.user{service:echo-games}"
   datadog metrics list`,
 }
 
@@ -37,7 +37,7 @@ Query syntax: <aggregator>:<metric>{<tags>}
 
 Examples:
   datadog metrics query -q "avg:system.cpu.user{*}"
-  datadog metrics query -q "avg:trace.fastify.request.duration{service:codemoji-game}"`,
+  datadog metrics query -q "avg:trace.fastify.request.duration{service:echo-games}"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, client, err := newAPIContext()
 		if err != nil {

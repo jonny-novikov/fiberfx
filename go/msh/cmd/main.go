@@ -4,6 +4,7 @@
 // a streamable-HTTP server mcp__msh__memory_* :
 //
 //	msh memory scan|graph|stale|audit|version   # the memory CLI, verbatim
+//	msh specs [AREA]   [--base docs] [--format pretty] [--severity warn]  # stale md-link check
 //	msh mcp serve   [--port 8899] [--root P] [--stdio]   # foreground server
 //	msh mcp start   [--port 8899] [--root P]             # detach + pidfile
 //	msh mcp stop    [--port 8899]
@@ -13,7 +14,8 @@
 //
 //	"msh": { "type": "streamable-http", "url": "http://localhost:8899/" }
 //
-// which surfaces the tools to a client as mcp__msh__memory_audit, etc.
+// which surfaces the tools to a client as mcp__msh__memory_audit,
+// mcp__msh__specs, mcp__msh__mint, etc.
 package main
 
 import (
@@ -72,6 +74,9 @@ func newRootCmd() *cobra.Command {
 
 	// `msh mint ...` — mint branded snowflake ids (brd14).
 	root.AddCommand(newMintCmd())
+
+	// `msh specs [AREA]` — check a docs/specs tree for stale markdown links.
+	root.AddCommand(newSpecsCmd())
 
 	return root
 }
@@ -166,6 +171,7 @@ func buildMCPServer(root string) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: mcpName, Version: mcpVersion}, nil)
 	registerMemoryTools(server, root)
 	registerMintTool(server)
+	registerSpecsTool(server)
 	return server
 }
 

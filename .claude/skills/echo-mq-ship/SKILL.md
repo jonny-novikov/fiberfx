@@ -61,9 +61,7 @@ laws, the per-app gate ladder, and the echo_mq-specialized agents, so the run do
   single-node Valkey) · server clock (`TIME`) where a lease is touched · honest-row conformance · additive
   registration is a protocol minor, a wire break is a major.
 - **The boundary** is `echo/apps/echo_mq` (+ the ONE named `echo/apps/echo_wire` connector seam a rung touches
-  — the emq.1 resubscribe seam is the precedent). **No third app** — a rung builds the bus, never a consumer
-  (`echo/apps/{codemoji,echo_bot}`) or any sibling. `echo/mix.lock` ships ONLY if a real dep moved (expect it
-  EXCLUDED). A change that reaches a third app is a diff no one can review.
+  — the emq.1 resubscribe seam is the precedent).
 - **The gate ladder is the echo_mq one** (`.claude/skills/echo-mq-program.md` §The gate ladder), NOT a generic
   `mix test`. Hold each stage's gate against it:
   - `asdf current erlang` (re-probe `.tool-versions`, never hardcode) + `redis-cli -p 6390 ping` → `PONG` (the
@@ -182,7 +180,7 @@ role charter (one guardrail per finding). The message cites the slug, the Z-n, t
 - [ ] The echo_mq gate ladder is green: per-app compile `--warnings-as-errors` + per-app suites (NEVER
       umbrella-wide) + `Conformance.run/2` with the prior scenarios byte-unchanged + the new ones
       probe-registered + (process/mint rung) the ≥100 determinism loop. The boundary grep is empty
-      (the consumer/sibling apps `echo/apps/{codemoji,echo_bot}` + `mix.lock`).
+      (the consumer/sibling apps `echo/apps/{codemojex,echo_bot}` + `mix.lock`).
 - [ ] LAW-4: Z-n written → exactly one Director pathspec commit per concern; nothing foreign in `--cached`; the
       frozen ledgers untouched.
 - [ ] `mcp__aaw__status(scope)` shows the registered peers (no FAKE-N).

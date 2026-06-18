@@ -73,7 +73,7 @@ var dashboardCreateCmd = &cobra.Command{
 	Long: `Create a dashboard from a JSON template file.
 
 Example:
-  datadog dashboard create -f templates/apm-codemoji.json
+  datadog dashboard create -f templates/apm-echo.json
   cat dashboard.json | datadog dashboard create -f -`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, client, err := newAPIContext()

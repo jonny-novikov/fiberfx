@@ -19,7 +19,7 @@ repo's `go.work` `use` block.
 
 **Out of scope for this file** (they live in the same umbrella but are not the BCS data stack): `exchange`
 (the trading capstone — Operator out-of-band), `investex`, `echo_bot` (the standalone YAML multibot engine),
-and `codemoji`. Do not work those from this guide.
+and `codemojex`. Do not work those from this guide.
 
 > Historical note: the Phoenix surface (`portal` · `portal_web` · `mercury_cms` · `mercury_live_admin` ·
 > `live_svelte`) was moved out of this umbrella to its own repository. The branded-id codec it used was

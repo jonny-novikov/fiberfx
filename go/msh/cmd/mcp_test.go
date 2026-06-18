@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -162,5 +163,69 @@ func TestMintToolOverStreamableHTTP(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(textOf(batch)), "\n")
 	if len(lines) != 3 {
 		t.Fatalf("expected 3 ndjson lines, got %d:\n%s", len(lines), textOf(batch))
+	}
+}
+
+// TestSpecsToolOverStreamableHTTP exercises mcp__msh__specs end-to-end: the tool
+// is advertised, and a docs tree with a known dead link yields a DEAD-TARGET
+// finding over the real transport.
+func TestSpecsToolOverStreamableHTTP(t *testing.T) {
+	// A throwaway docs tree with one dead relative link.
+	area := t.TempDir()
+	if err := os.WriteFile(filepath.Join(area, "a.md"),
+		[]byte("# A\n\n[dead](missing.md)\n[ok external](https://example.com)\n"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	srv := buildMCPServer(testCorpusRoot(t))
+	ts := httptest.NewServer(mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return srv }, nil))
+	defer ts.Close()
+
+	ctx := context.Background()
+	client := mcp.NewClient(&mcp.Implementation{Name: "msh-test", Version: "test"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: ts.URL}, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer session.Close(ctx)
+
+	// The specs tool must be advertised.
+	lt, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	advertised := false
+	for _, tl := range lt.Tools {
+		if tl.Name == "specs" {
+			advertised = true
+		}
+	}
+	if !advertised {
+		t.Fatalf("specs tool not advertised")
+	}
+
+	// Calling it against the fixture surfaces the dead link (and skips the URL).
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "specs",
+		Arguments: map[string]any{"area": area, "format": "ndjson", "severity": "info"},
+	})
+	if err != nil {
+		t.Fatalf("call specs: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("specs reported tool error: %s", textOf(res))
+	}
+	out := textOf(res)
+	if !strings.Contains(out, "DEAD-TARGET") || !strings.Contains(out, "missing.md") {
+		t.Errorf("specs output missing the dead-link finding:\n%s", out)
+	}
+	// Exactly one finding: the external URL is skipped (it appears only in the
+	// dead link's context snippet, never as a flagged target).
+	if n := strings.Count(strings.TrimSpace(out), "\n") + 1; n != 1 {
+		t.Errorf("expected exactly 1 finding (external URL skipped), got %d:\n%s", n, out)
+	}
+	if strings.Contains(out, `"target":"https://example.com"`) {
+		t.Errorf("specs should skip external URLs, but flagged one as a target:\n%s", out)
 	}
 }

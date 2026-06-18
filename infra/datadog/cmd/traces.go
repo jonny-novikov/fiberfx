@@ -26,9 +26,9 @@ var tracesCmd = &cobra.Command{
 	Long: `Query distributed traces and spans from Datadog APM.
 
 Examples:
-  datadog traces list -q "service:codemoji-game"
-  datadog traces list --service codemoji-game --from 1h
-  datadog traces aggregate --service codemoji-game`,
+  datadog traces list -q "service:echo-games"
+  datadog traces list --service echo-games --from 1h
+  datadog traces aggregate --service echo-games`,
 }
 
 var tracesListCmd = &cobra.Command{
@@ -92,8 +92,8 @@ var tracesAggregateCmd = &cobra.Command{
 	Long: `Aggregate spans to compute metrics like count, latency percentiles.
 
 Examples:
-  datadog traces aggregate --service codemoji-game
-  datadog traces aggregate -q "service:codemoji-game AND resource_name:GET*"`,
+  datadog traces aggregate --service echo-games
+  datadog traces aggregate -q "service:echo-games AND resource_name:GET*"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, client, err := newAPIContext()
 		if err != nil {
