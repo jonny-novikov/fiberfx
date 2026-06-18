@@ -7,7 +7,7 @@
 > ExUnit test driving the real `EchoMQ` surface against Valkey, so the catalogue cannot
 > drift from the code.
 
-**4 scenarios.**
+**5 scenarios.**
 
 ## Scenario: a group admits work once, refuses duplicates and the wrong kind, and serves it under its identity
 
@@ -35,3 +35,10 @@
 - **When** the first job is claimed and a second claim is attempted
 - **Then** the first claim serves j1 and the second finds the lane parked at its ceiling
 - **And** completing the in-flight job reopens the lane
+
+## Scenario: a group-scoped sweep recovers one tenant's lapsed leases into its lane, leaving a sibling's in active
+
+- **Given** two tenants, each with one in-flight job claimed on a short lease
+- **When** both leases lapse and only tenant g is reaped
+- **Then** g's member returns to its own lane while h's stays in active for the queue-wide reaper
+- **And** the recovered member is re-claimed under its own group with the attempt counter advanced
