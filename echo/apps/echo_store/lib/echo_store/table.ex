@@ -20,7 +20,10 @@ defmodule EchoStore.Table do
   Every table declares its kind, and the kind law runs before either
   layer is touched: a wrong-namespace id is refused at the door, the
   series' oldest law riding into the cache unchanged. The coherence mode
-  is declared here (`:none` in this chapter) and wired by Chapter 4.2.
+  is declared here — `:none`, `:broadcast` (the versioned app-level lane),
+  or `:tracking` (server-assisted client-side caching: Valkey pushes an
+  invalidation for any write to this table's `ecc:{table}:` prefix, and the
+  owner evicts the L1 row).
   """
 
   use GenServer
@@ -249,11 +252,31 @@ defmodule EchoStore.Table do
         ring_name
       end
 
+    {track_sub, track_prefix} =
+      if coherence == :tracking do
+        label = {:ecc_track, name}
+
+        {:ok, sub} =
+          Connector.start_link(
+            Keyword.get(opts, :connector, [])
+            |> Keyword.merge(protocol: 3, push_to: self(), heartbeat_ms: 0, label: label)
+          )
+
+        prefix = "ecc:{" <> table_str <> "}:"
+        :ok = arm_tracking(sub, prefix)
+        attach_reconnect(name, label)
+        {sub, prefix}
+      else
+        {nil, nil}
+      end
+
     {:ok,
      %{
        name: name,
        table: table_str,
        ring: ring,
+       track_sub: track_sub,
+       track_prefix: track_prefix,
        loader: loader,
        conn: conn,
        spec: spec,
@@ -368,7 +391,34 @@ defmodule EchoStore.Table do
     {:noreply, state}
   end
 
+  def handle_info({:emq_push, ["invalidate", keys]}, state) do
+    evict_tracked(state, keys)
+    {:noreply, state}
+  end
+
   def handle_info({:emq_push, _confirm_or_other}, state), do: {:noreply, state}
+
+  # A reconnect re-armed the wire. CLIENT TRACKING is not in the connector's
+  # re-issued subscription set, so the gap may have dropped invalidations:
+  # flush L1 (correctness by construction), then re-arm tracking on the fresh
+  # socket. Best-effort re-arm — a still-settling socket is retried by the next
+  # reconnect's telemetry.
+  def handle_info(:retrack, %{track_sub: nil} = state), do: {:noreply, state}
+
+  def handle_info(:retrack, state) do
+    :ets.delete_all_objects(state.name)
+
+    Connector.command(state.track_sub, [
+      "CLIENT",
+      "TRACKING",
+      "ON",
+      "BCAST",
+      "PREFIX",
+      state.track_prefix
+    ])
+
+    {:noreply, state}
+  end
 
   def handle_info({:EXIT, _pid, reason}, state), do: {:stop, reason, state}
 
@@ -381,6 +431,8 @@ defmodule EchoStore.Table do
         _, _ -> :ok
       end
     end
+
+    if state.track_sub, do: detach_reconnect(state.name)
 
     EchoStore.Directory.unregister(state.name)
     :ok
@@ -502,4 +554,80 @@ defmodule EchoStore.Table do
   end
 
   defp counter(key), do: Keyword.fetch!(@counters, key)
+
+  # -- server-assisted tracking (the :tracking coherence lane) --------------
+
+  # Arm RESP3 client-side caching over this table's key prefix. BCAST means the
+  # server pushes an invalidation for any write to a matching key, with no
+  # per-key opt-in. Synchronous and fail-fast at startup: a table that cannot
+  # arm its declared coherence is a misconfiguration, not a degraded mode.
+  defp arm_tracking(sub, prefix) do
+    case Connector.command(sub, ["CLIENT", "TRACKING", "ON", "BCAST", "PREFIX", prefix]) do
+      {:ok, "OK"} -> :ok
+      other -> raise "CLIENT TRACKING refused for #{inspect(prefix)}: #{inspect(other)}"
+    end
+  end
+
+  # Watch this table's tracking connection for reconnects. The connector emits
+  # [:emq, :connector, :reconnect] tagged with the connection's label; the
+  # filtered handler tells the owner to flush-and-re-arm. No-op when :telemetry
+  # is not loaded — the initial arm still holds, only auto-recovery degrades.
+  defp attach_reconnect(name, label) do
+    if Code.ensure_loaded?(:telemetry) and function_exported?(:telemetry, :attach, 4) do
+      :telemetry.attach(
+        {:ecc_track_reconnect, name},
+        [:emq, :connector, :reconnect],
+        &__MODULE__.__on_reconnect__/4,
+        %{owner: self(), label: label}
+      )
+    end
+
+    :ok
+  end
+
+  @doc false
+  # The telemetry handler for a tracking table's reconnect — a named function
+  # (not a closure) so it survives code reloads and dodges the dispatch penalty;
+  # the owner and label ride in the config, not a capture.
+  def __on_reconnect__(_event, _measures, meta, %{owner: owner, label: label}) do
+    if meta[:label] == label, do: send(owner, :retrack)
+    :ok
+  end
+
+  defp detach_reconnect(name) do
+    if Code.ensure_loaded?(:telemetry) and function_exported?(:telemetry, :detach, 1) do
+      :telemetry.detach({:ecc_track_reconnect, name})
+    end
+
+    :ok
+  end
+
+  # Apply a server-assisted invalidation. nil is the flush-everything signal
+  # (the server dropped this connection's tracking table); a key list drops each
+  # named row from L1 only — L2 is the writer's truth and the next read refills
+  # from it.
+  defp evict_tracked(state, nil), do: :ets.delete_all_objects(state.name)
+
+  defp evict_tracked(state, keys) when is_list(keys) do
+    Enum.each(keys, fn key ->
+      case strip_prefix(key, state.track_prefix) do
+        {:ok, id} ->
+          :ets.delete(state.name, id)
+          :counters.add(state.spec.counters, counter(:coh_applied), 1)
+
+        :error ->
+          :ok
+      end
+    end)
+  end
+
+  defp strip_prefix(key, prefix) when is_binary(key) and is_binary(prefix) do
+    if String.starts_with?(key, prefix) do
+      {:ok, binary_part(key, byte_size(prefix), byte_size(key) - byte_size(prefix))}
+    else
+      :error
+    end
+  end
+
+  defp strip_prefix(_key, _prefix), do: :error
 end

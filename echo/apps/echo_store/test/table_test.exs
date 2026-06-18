@@ -227,6 +227,70 @@ defmodule EchoStore.TableTest do
     assert :ets.lookup(name_b, id) == []
   end
 
+  test "coherence: :tracking — an external write evicts the L1 row (server-assisted)", ctx do
+    name = start_table(ctx, coherence: :tracking)
+    id = BrandedId.generate!("AST")
+    far = System.monotonic_time(:millisecond) + 600_000
+
+    # a row this cache holds (seeded directly, so no L2 write of ours can
+    # self-invalidate it under BCAST)
+    :ets.insert(name, {id, "row", far, BrandedId.generate!("TXN")})
+    assert match?([{^id, "row", _, _}], :ets.lookup(name, id))
+
+    # an external writer changes the tracked key on its own connection; the
+    # server pushes the invalidation to the table's tracking lane
+    {:ok, "OK"} =
+      Connector.command(ctx.conn, [
+        "SET",
+        Keyspace.key(ctx.table, id),
+        BrandedId.generate!("TXN") <> "row2"
+      ])
+
+    wait_until(fn -> :ets.lookup(name, id) == [] end)
+    assert :ets.lookup(name, id) == []
+  end
+
+  test "coherence: :tracking — a flush push (nil keys) drops every row", ctx do
+    name = start_table(ctx, coherence: :tracking)
+    far = System.monotonic_time(:millisecond) + 600_000
+
+    for _ <- 1..3,
+        do: :ets.insert(name, {BrandedId.generate!("AST"), "v", far, BrandedId.generate!("TXN")})
+
+    assert :ets.info(name, :size) == 3
+    send(Process.whereis(name), {:emq_push, ["invalidate", nil]})
+
+    wait_until(fn -> :ets.info(name, :size) == 0 end)
+    assert :ets.info(name, :size) == 0
+  end
+
+  test "coherence: :tracking — a reconnect flushes L1 and tracking still evicts after", ctx do
+    name = start_table(ctx, coherence: :tracking)
+    far = System.monotonic_time(:millisecond) + 600_000
+
+    :ets.insert(name, {BrandedId.generate!("AST"), "v", far, BrandedId.generate!("TXN")})
+    assert :ets.info(name, :size) == 1
+
+    # the reconnect signal flushes L1 (the gap may have dropped invalidations)
+    send(Process.whereis(name), :retrack)
+    wait_until(fn -> :ets.info(name, :size) == 0 end)
+    assert :ets.info(name, :size) == 0
+
+    # and tracking still evicts an external write afterward
+    id = BrandedId.generate!("AST")
+    :ets.insert(name, {id, "v2", far, BrandedId.generate!("TXN")})
+
+    {:ok, "OK"} =
+      Connector.command(ctx.conn, [
+        "SET",
+        Keyspace.key(ctx.table, id),
+        BrandedId.generate!("TXN") <> "x"
+      ])
+
+    wait_until(fn -> :ets.lookup(name, id) == [] end)
+    assert :ets.lookup(name, id) == []
+  end
+
   test "stats/1 carries the counter names plus the live size", ctx do
     name = start_table(ctx, [])
 
