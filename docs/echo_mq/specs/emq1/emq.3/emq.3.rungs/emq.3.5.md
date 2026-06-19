@@ -671,7 +671,7 @@ cross-queue honesty) · The shipped slices (the flat core emq.3.5 composes over)
 [`./emq.3.4.md`](emq.3.4.md) (the failure-policy + bulk: `parent_policy`, the byte-frozen `@retry` `sq:*`/`xq:*`
 failure arms + `@flow_fail_deliver`, `parent_fail_of/3`, `policy_arm/1`, `ignored_failures/3`, the `:failed`/
 `:unsuccessful` subkeys — the failure machinery the recursive failure hook re-emits over) · This rung's ledger:
-[`../progress/emq-3-5.progress.md`](../../progress/emq-3-5.progress.md) (A-1 the headline design finding; A-2 the
+`../progress/emq-3-5.progress.md` (A-1 the headline design finding; A-2 the
 reconcile delta; the forks S1/S2/S3 the arms this triad is authored to) · The v1 capability reference (READ-ONLY,
 the FORM not to lift): `echo/apps/echomq/lib/echomq/flow_producer.ex` (the recursive `build_flow_commands` `:238`
 the depth-first tree walk + `build_parent_node_commands` `:334` + the recursion `:364-374`; `add/2` `:122`/

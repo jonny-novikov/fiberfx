@@ -2,7 +2,7 @@
 
 > Living test ledger for the **watch plane (events · meter · locks · stalled · cancel)** rung (`3c6461ff`,
 > conformance 32 → 37). Strategy: [`../emq.testing.md`](../emq.testing.md). Spec triad:
-> [`../specs/emq.2.3.md`](../specs/emq.2/emq.2.rungs/emq.2.3.md) · [`.stories.md`](../specs/emq.2/emq.2.rungs/emq.2.3.stories.md). **Holds the cross-rung offline-CI lead task.** Re-probe the tree
+> [`../specs/emq.2.3.md`](../specs/emq1/emq.2/emq.2.rungs/emq.2.3.md) · [`.stories.md`](../specs/emq1/emq.2/emq.2.rungs/emq.2.3.stories.md). **Holds the cross-rung offline-CI lead task.** Re-probe the tree
 > before trusting a `file:line` here.
 
 ## Proof state (as-built)

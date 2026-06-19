@@ -257,7 +257,7 @@ bullet for the family (the master-invariant discipline — one thin vertical sli
 
 ## The surfaced forks — Venus surfaces, the Operator rules
 
-> **→ ALL FOUR RULED to the recommended arms (Operator, 2026-06-14; ledger [`emq-3.progress.md`](../progress/emq-3.progress.md)
+> **→ ALL FOUR RULED to the recommended arms (Operator, 2026-06-14; ledger `emq-3.progress.md`
 > D-2):** Fork A = **single-queue first** · the @extend_locks A-1-wording = **ratify the convention** (the S-6
 > slot-rooted-ARGV clarification, design canon §1 S-6) · Fork B = **counter + the idempotency guard** · Fork C =
 > **`awaiting_children`**. The triad is authored to exactly these arms, so **emq.3.1 is build-ready with NO

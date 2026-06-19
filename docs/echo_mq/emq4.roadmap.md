@@ -100,19 +100,38 @@ aggregate metrics read the volume, not the bus.
 **Covers (Oban):** enqueue in the same transaction as your business data — Oban's single
 strongest property.
 
-**Approach.** The `Journal` is already the outbox that recovers this guarantee: record
-intent → enqueue → mark, with replay covering the crash windows. To reach *literal*
-parity for Postgres apps, add a **Postgres Journal adapter** so the `intents` write runs
-inside the app's own `Repo.transaction/1`. The enqueue intent then commits in the same
-transaction as the row that triggered it; a committer process drains the outbox to the
-bus at-least-once.
+**Approach — push forward `echo_data` and `echo_store` (the ruled direction).** The headline
+is **not literal Oban parity** but a **BCS-native transactional-enqueue** whose boundary
+lives *inside the owned stack*, with **no Postgres or Ecto dependency**. The forward-push
+moves the transactional boundary from *the app's Postgres transaction* to *a single-writer
+commit inside `echo_store`*: the durable substrate that holds the business write also holds
+the enqueue intent, and one atomic write carries both. `echo_data` earns a branded **intent**
+identity (the outbox entry as a BCS entity); `echo_store` earns the atomic
+**data-write-plus-intent** API plus an owner-started **committer** that drains the outbox to
+`EchoMQ.Jobs.enqueue` / `Lanes.enqueue` at-least-once. The bus is unchanged in contract — the
+committer's idempotency is the shipped `EXISTS → 0` dedup, mint-ordered `JOB` ids, the
+score-0 `pending` set, and newer-wins. The guarantee is Oban's outbox guarantee with the
+owned substrate under it instead of Postgres.
 
-| Risk | Mitigation |
-|---|---|
-| Two stores (app DB + bus) cannot be one atomic write | the outbox pattern: the *intent* is transactional with the data; delivery is at-least-once + idempotent, which the bus already assumes |
-| The committer is a new moving part | idempotent drain (bus `EXISTS → 0` dedup); the `applied` table is its memory; restart-safe via `replay/2` |
-| Ordering of drained intents | mint-ordered `JOB` ids + the score-0 `pending` set preserve order through the drain |
-| Default complexity | SQLite journal stays the default; the Postgres adapter is opt-in for apps that want true transactional enqueue |
+The full design — the reframe, one ADR per decision, the four surfaced forks (the substrate;
+the intent brand; the committer's shape; the Postgres adapter's fate), and the per-app build
+carve — is [`specs/emq4/emq4.phase2.design.md`](specs/emq4/emq4.phase2.design.md). Four
+Operator decisions are surfaced there and parked here as named seams (§Seams below).
+
+**The Postgres `Journal` adapter — chosen-against, kept on the record.** The literal-parity
+arm (a Postgres adapter so the `intents` write rides the app's own `Repo.transaction/1`) is
+steelmanned in full and **chosen-against** by the steer: it serves only a Postgres-resident
+consumer and adds the SQL dependency the owned stack exists to avoid. Its best case (every
+Oban shop, data already in Postgres) is preserved as a **deferred seam** for a future
+Postgres-resident consumer — see the design's Fork D.
+
+| Risk | Mitigation                                                                                                                             |
+|---|----------------------------------------------------------------------------------------------------------------------------------------|
+| Two writes (business datum + enqueue intent) cannot be one atomic write | the boundary is **one single-writer `echo_store` commit** carrying both (the Journal owner's SQLite txn, or a Graft volume commit — design Fork A); delivery is then at-least-once + idempotent, which the bus already assumes |
+| The committer is a new moving part | idempotent drain (bus `EXISTS → 0` dedup); the `applied`-style memory; restart-safe via `replay/2` — all shipped in `EchoStore.Journal`; the committer is owner-started + opt-in (design Fork C) |
+| Ordering of drained intents | mint-ordered branded ids (`JOB`, and the intent brand) + the score-0 `pending` set preserve order through the drain                     |
+| Default complexity | the whole tier is opt-in (the library law: no `mod:` auto-start); the chosen-against Postgres adapter stays a deferred seam, not a default |
+| Coupling the consumer to the bus | the owner-started committer decouples the atomic business write from bus availability — a bus outage delays delivery, never blocks the write (design Fork C, the recommended arm) |
 
 ### Phase 3 — Workflows, batches, chains
 
@@ -250,35 +269,52 @@ its own statement, because the same handful of controls recur under every phase:
 
 ## The parity matrix
 
-| Oban Pro feature | EchoMQ mechanism | Builds on | Phase | Status |
-|---|---|---|---|---|
+| Oban Pro feature | EchoMQ mechanism                              | Builds on | Phase | Status |
+|---|-----------------------------------------------|---|---|---|
 | Retained job history | completion records in a Graft volume (opt-in) | Graft | 1 | planned |
-| Recording (output) | same `JOB`-keyed Graft volume | Graft | 1 | planned |
-| Transactional enqueue | Journal outbox + Postgres adapter | Journal | 2 | planned |
-| Workflows (cross-queue DAG) | `WFL` volume + saga over the version fence | Flows · Graft · Journal | 3 | planned |
-| Batches | `BAT` counter + events callback | Flows · events | 3 | planned |
-| Chains | degenerate workflow | Flows | 3 | planned |
-| Global concurrency | cluster-wide atomic counter (rate-gate) | Metrics | 4 | planned |
-| Global rate limiting | Valkey token bucket / sliding window | keyspace · lanes | 4 | planned |
-| Queue partitioning | lanes as partitions | Lanes | 4 | partial (lanes shipped) |
-| Burst mode | headroom-gated overage | Lanes · Metrics | 4 | planned |
-| Auto-insert batching | `Pool` + `enqueue_many/3` | Pool | 4 | partial (primitives shipped) |
-| Relay (insert + await) | correlation id + event await | Events (emq.3.2) | 5 | planned |
-| Hooks | consumer-loop callbacks | Consumer | 5 | planned |
-| Decorator | enqueue-from-function macro | Jobs | 5 | planned |
-| Signals | generalized cooperative token | Cancel | 5 | planned |
-| Deadlines | scheduled cancel | schedule · Cancel | 5 | planned |
-| Structured / encrypted args | pluggable host-side codec | (host) | 5 | planned |
-| Dynamic config | runtime registration in a Graft volume | Repeat/Pump · Graft | 5 | planned |
-| Python support | Python SDK on the wire contract | Conformance | 6 | planned |
-| Web dashboard | — (Phoenix dashboard, alpha) | — | — | **out of scope** |
+| Recording (output) | same `JOB`-keyed Graft volume                 | Graft | 1 | planned |
+| Transactional enqueue | single-writer `echo_store` commit (datum + intent) + committer; Postgres adapter chosen-against (deferred seam) | Journal · Graft · `echo_data` intent id | 2 | planned (design landed) |
+| Workflows (cross-queue DAG) | `WFL` volume + saga over the version fence    | Flows · Graft · Journal | 3 | planned |
+| Batches | `BAT` counter + events callback               | Flows · events | 3 | planned |
+| Chains | degenerate workflow                           | Flows | 3 | planned |
+| Global concurrency | cluster-wide atomic counter (rate-gate)       | Metrics | 4 | planned |
+| Global rate limiting | Valkey token bucket / sliding window          | keyspace · lanes | 4 | planned |
+| Queue partitioning | lanes as partitions                           | Lanes | 4 | partial (lanes shipped) |
+| Burst mode | headroom-gated overage                        | Lanes · Metrics | 4 | planned |
+| Auto-insert batching | `Pool` + `enqueue_many/3`                     | Pool | 4 | partial (primitives shipped) |
+| Relay (insert + await) | correlation id + event await                  | Events (emq.3.2) | 5 | planned |
+| Hooks | consumer-loop callbacks                       | Consumer | 5 | planned |
+| Decorator | enqueue-from-function macro                   | Jobs | 5 | planned |
+| Signals | generalized cooperative token                 | Cancel | 5 | planned |
+| Deadlines | scheduled cancel                              | schedule · Cancel | 5 | planned |
+| Structured / encrypted args | pluggable host-side codec                     | (host) | 5 | planned |
+| Dynamic config | runtime registration in a Graft volume        | Repeat/Pump · Graft | 5 | planned |
+| Python support | Ship Go SDK instead on the wire contract      | Conformance | 6 | planned |
+| Web dashboard | — (Phoenix dashboard, alpha stage)            | — | — | **out of scope** |
 
 ## Non-goals
 
-- **Becoming a SQL queue.** The Postgres Journal adapter (Phase 2) gives transactional
-  enqueue for Postgres apps *without* making the bus itself SQL — the bus stays volatile
-  by D-2.
+- **Becoming a SQL queue.** Phase 2's transactional enqueue is **BCS-native** — a
+  single-writer `echo_store` commit, no Postgres or Ecto dependency (the ruled direction).
+  The Postgres `Journal` adapter that would give *literal* parity for Postgres-resident apps
+  is **chosen-against** and parked as a deferred seam (§Seams · the Phase 2 decisions); the
+  bus stays volatile by D-2 either way.
 - **Shipping a UI.** The dashboard is handled elsewhere (alpha); this roadmap only keeps
   its data sources stable.
 - **Rebuilding Graft's substrate per feature.** History, recording, workflow context,
   and dynamic config all share one durable tier rather than each inventing storage.
+
+## Seams & open decisions
+
+A surfaced fork the Operator defers is recorded here as a named seam (the architect's
+approach — Venus surfaces, the Operator rules). The arms are argued in full in each phase's
+design doc; this is the parked index.
+
+### The Phase 2 decisions ([`specs/emq4/emq4.phase2.design.md`](specs/emq4/emq4.phase2.design.md) §7)
+
+| Seam | The fork | Arms (brief) | Venus recommends |
+|---|---|---|---|
+| **P2-A · substrate** | where the transactional boundary lives | A1 SQLite `Journal` outbox · A2 a `Graft` volume (single-writer OCC) · A3 both | **A1** — its atomic write is already shipped + drilled (`record_many/2` + `applied`/`replay`/`compact`) |
+| **P2-B · intent brand** | what identity the outbox intent earns | B1 a new `OBX` brand (intent ⟂ job) · B2 reuse the `JOB` id (intent ≡ job) | **B1** — keeps Phase 3's one-trigger-many-jobs fan-out unforeclosed, one small pure module |
+| **P2-C · committer** | the committer's shape and ownership | C1 owner-started opt-in `GenServer` (async drain) · C2 inline at `intend` (sync) | **C1** — preserves the outbox's decoupling; a bus outage delays delivery, never blocks the write |
+| **P2-D · Postgres adapter** | the chosen-against parity arm's fate | D1 deferred seam (parked) · D2 removed from the roadmap | **D1** — preserves a large-audience option (every Oban shop) at the cost of one seam line |

@@ -1,19 +1,21 @@
 # EMQ.4 · Groups deepened — the fair-lanes family taken to production depth (Movement II, the opener)
 
-> **Status: 📐 PROPOSED — the family spec + the carve, this design cycle** (no production code this cycle; the
-> family decomposes into four sub-rungs the way emq.2 and emq.3 did, and the sub-rung carves
-> [`./emq.4.rungs/emq.4.1.md`](emq.4.rungs/emq.4.1.md) … [`./emq.4.4.md`](emq.4.rungs/emq.4.4.md) are a SEPARATE
-> fan-out, not authored here). emq.4 is **the rung that OPENS Movement II**: the displaced fair-lanes (groups)
+> **Status: ✅ SHIPPED — the emq.4 groups family is parity-complete (4.1–4.4 built; conformance 61, wire fence
+> `echomq:2.4.2` / rung label `2.4.4`).** This chapter is the family spec + the carve (authored **spec-only** — the
+> four sub-rung triads
+> [`./emq.4.rungs/emq.4.1.md`](emq.4.rungs/emq.4.1.md) … [`./emq.4.rungs/emq.4.4.md`](emq.4.rungs/emq.4.4.md) are the
+> SEPARATE fan-out that built them). emq.4 is **the rung that OPENED Movement II**: the displaced fair-lanes (groups)
 > family the roadmap RULED into this slot ([`../emq.roadmap.md`](../../../emq.roadmap.md) seam 2, CLOSED; design §10
 > seam 2 / §4 cluster 2), **deepened** from the shipped `EchoMQ.Lanes` basics to the depth a multi-tenant
 > production bus needs. The basics ALREADY shipped (B3.4 "Fair Lanes", PASS 8/8 G1–G8) — emq.4 does not found the
 > family, it deepens it; every axis is **additive over the shipped `g:`-segment keyspace**, nothing here is a wire
 > break.
-> **Risk: MIXED** — emq.4.1 (control plane) and emq.4.2 (group-aware recovery) are **NORMAL** (they deepen shipped
-> surfaces); emq.4.3 (the metronome) is **HIGH** (it founds a new process/lease surface over the shipped park loop —
-> Apollo mandatory, the Director's verify deepens to the ≥100 determinism loop when it builds); emq.4.4
-> (weighted/deficit rotation) is **HIGH iff it edits the shipped `@gclaim` ring rotation** (then byte-freeze
-> discipline + Apollo mandatory). Each per-rung grade is stated forward in **Per-rung risk** below.
+> **Risk (as shipped): MIXED** — emq.4.1 (control plane) and emq.4.2 (group-aware recovery) shipped **NORMAL**;
+> emq.4.3 (the metronome) shipped **HIGH** (it founded a new process/lease surface over the shipped park loop —
+> Apollo ran, the Director's verify deepened to the ≥100 determinism loop); emq.4.4 (weighted/deficit rotation)
+> shipped **NORMAL+** — Fork B ruled **Arm 2 (the additive weighted multi-pop)**, so the shipped `@gclaim` ring
+> rotation stayed **byte-frozen** (the `@gclaim`-editing Arm 1 was ruled against). Each per-rung grade is recorded in
+> **Per-rung risk** below.
 
 ## 0 · The basics shipped — what "deepened" means, and why now
 
@@ -146,12 +148,13 @@ higher-risk metronome (emq.4.3) and fairness (emq.4.4) rungs. The four sub-rungs
   lost-wakeup hardening / per-lane wake / multi-consumer fairness). **Apollo MANDATORY** at its build; the Director's
   verify deepens to the **≥100 determinism loop** (the same-millisecond mint + the lost-wakeup race are exactly the
   cross-run hazards one green run does not surface). Stated forward so the build runs at this rigor.
-- **emq.4.4 — HIGH iff it edits `@gclaim`.** Weighted/deficit rotation may re-shape the shipped ring rotation. If it
-  **edits the shipped `@gclaim`**, the **byte-freeze discipline** does NOT apply to that script (it is the rung's
-  target) but applies to every OTHER frozen lane script, and **Apollo is MANDATORY** (a shipped-script edit on the
-  fairness-critical path); if it can land **additively** (a separate weighted-claim path leaving `@gclaim`
-  byte-unchanged), it drops to NORMAL+. Which of the two — the **weighted-rotation mechanism fork** below — is the
-  Operator's call at emq.4.4's pre-build reconcile.
+- **emq.4.4 — shipped NORMAL+.** Weighted/deficit rotation landed **additively**: Fork B ruled **Arm 2 (a separate
+  weighted multi-pop, `@gwclaim`, serving `K = min(weight, ZCARD, glimit headroom)` heads per rotation)**, leaving the
+  shipped `@gclaim` ring rotation **byte-unchanged** — equal round-robin and the weighted path coexist. The
+  `@gclaim`-editing deficit-counter (Arm 1), which would have forced byte-freeze of every OTHER lane script + Apollo,
+  was **ruled against**. The capstone proof is the starvation drill — a **bounded-early-window interleaving witness**,
+  not a terminal depth-0 check (a no-rotation FIFO drain also empties every lane via the re-ring guard, so the
+  terminal check is a weak no-op-defeater — **emq.4.4-L1**). Conformance 59→61; `361fd663`.
 
 ## The surfaced fork — Venus surfaces, the Operator (via the Director) rules
 
@@ -180,24 +183,25 @@ higher-risk metronome (emq.4.3) and fairness (emq.4.4) rungs. The four sub-rungs
 > before its build. **This fork settles before the emq.4.3 build** (it is gate-relevant: HIGH-risk + Apollo either
 > way, but the touch-set differs).
 
-### FORK B — the weighted-rotation mechanism (emq.4.4): a ring deficit counter vs a weighted multi-pop vs a per-lane budget
+### FORK B — the weighted-rotation mechanism (emq.4.4) — RULED: Arm 2 (the additive weighted multi-pop), D-1 at emq.4.4
 
 > **The fairness representation.** Weighted/deficit rotation over the ring can be realized three ways, and the choice
-> decides whether `@gclaim` is edited (HIGH-risk) or a separate path is added (NORMAL+):
+> decides whether `@gclaim` is edited (HIGH-risk) or a separate path is added (NORMAL+). **Ruled Arm 2** at
+> emq.4.4's pre-build reconcile (the Operator's call; the rung graded NORMAL+):
 > - **Arm 1 — a deficit counter on the ring (DRR).** Each lane carries a deficit credited per rotation and consumed
 >   per serve; a lane serves while it has credit. *Steelman:* the textbook deficit-round-robin; bounded, fair,
->   starvation-free by construction. *Cost:* a new per-lane counter (a HASH field — rides an existing key shape) and
->   an edit to the `@gclaim` rotation (HIGH-risk → byte-freeze every OTHER script + Apollo).
-> - **Arm 2 — a weighted multi-pop.** A higher-weight lane serves K heads per rotation. *Steelman:* additive — a
->   separate weighted-claim path can leave `@gclaim` byte-unchanged (NORMAL+). *Cost:* weight granularity is integer
->   multiples; less smooth than DRR.
+>   starvation-free by construction. *Cost (why not):* an edit to the `@gclaim` rotation (HIGH-risk → byte-freeze
+>   every OTHER script + Apollo).
+> - **Arm 2 — a weighted multi-pop. ✅ RULED (D-1, emq.4.4).** A higher-weight lane serves K heads per rotation.
+>   *Steelman:* additive — the new `@gwclaim` script leaves `@gclaim` byte-unchanged (NORMAL+); keeps fairness
+>   server-side in the claim (sound across pool + cluster); reversible. *Cost accepted:* weight granularity is
+>   integer multiples. *As built:* `@gwclaim`/`wclaim/3` + the `emq:{q}:gweight` HASH; all eight `@g*` byte-frozen.
 > - **Arm 3 — a per-lane budget refreshed by the metronome.** The beat refreshes a per-lane serve budget. *Steelman:*
->   couples cleanly to emq.4.3's metronome. *Cost:* the fairness is only as fine as the beat; couples two rungs.
+>   couples cleanly to emq.4.3's metronome. *Cost (why not):* ENTANGLING — the shipped metronome owns no lease +
+>   decides host-side, so the budget regresses fairness host-side or needs a new wire structure + couples two rungs.
 >
-> **Recommendation: surface all three at emq.4.4's pre-build reconcile** with the as-built `@gclaim` re-probed (the
-> emq.4.1–4.3 builds will have moved the surface). The triad records the trade-off (the `@gclaim` edit decides the
-> risk grade); the Operator rules the mechanism. **No new key family any way** (every arm rides an existing key
-> shape — INV1).
+> **No new key family any way** (every arm rides an existing key shape — INV1); Arm 2 added the `emq:{q}:gweight`
+> per-queue HASH on the `glimit`/`gactive` shape.
 
 ### FORK C — the intra-group priority dimension (emq.4.1 vs parked)
 
@@ -228,8 +232,10 @@ higher-risk metronome (emq.4.3) and fairness (emq.4.4) rungs. The four sub-rungs
       Operator-ruled spine, not re-decomposed.
 - [ ] INV1–INV8 stated as runnable checks; the family DoD traces every axis to a story (the `.stories.md` Coverage
       map).
-- [ ] Forks A/B/C surfaced to the Director with arms + costs + a recommendation; **Fork A settled before emq.4.3
-      builds** (the touch-set depends on it); Forks B/C settle at their sub-rung's pre-build reconcile.
+- [x] Forks A/B/C surfaced to the Director with arms + costs + a recommendation; **Fork A settled at emq.4.3**
+      (Arm B → MECH-(ii), the metronome-as-system); **Fork B settled at emq.4.4** (Arm 2, the additive weighted
+      multi-pop, D-1); **Fork C** ruled PARK (lanes stay score-0 — the ring IS the fairness; intra-group priority
+      is a real but unrequested surface, deferred past the chapter).
 - [ ] Per-rung risk stated forward (emq.4.1/4.2 NORMAL · emq.4.3 HIGH, Apollo mandatory + ≥100 loop · emq.4.4 HIGH
       iff `@gclaim` is edited).
 - [ ] (At each sub-rung's build, NOT this design cycle) the surface built inside `echo/apps/echo_mq`; the shipped lane
@@ -247,7 +253,7 @@ As-built floor (the surface this family deepens — re-probe at each sub-rung's 
 `metrics.ex` (`lane_depth/3`, `lane_depths/3` = `@lane_counts`) + `jobs.ex` (`@reap` — already group-aware) +
 `consumer.ex` (the park-don't-poll loop + `BLPOP wake`) + `conformance.ex` (the 52-scenario set the additive-minor
 law grows — re-probe the live count) · The v1 capability reference (the re-aim record, READ-ONLY — the form NOT to
-lift): [`../emq.commands/features/groups/`](../emq.commands/features/groups/) (`addPrioritizedJob-9` SHIPPED re-aimed ·
+lift): [`../emq.commands/features/groups/`](../../emq.commands/features/groups/) (`addPrioritizedJob-9` SHIPPED re-aimed ·
 `changePriority-7` + `getCountsPerPriority-4` RETIRED) · Design: [`../emq.design.md`](../../../emq.design.md) §10 seam 2
 / §4 cluster 2 (the displaced groups family RULED → emq.4), §4 row 4 (the *park, don't poll* law re-aimed to the
 fair-lanes rung), S-1/§6 (the braced keyspace), S-6 (the declared-keys A-1 law) · Roadmap:

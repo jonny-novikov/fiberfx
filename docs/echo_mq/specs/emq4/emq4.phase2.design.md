@@ -54,9 +54,9 @@ Postgres.
 
 ### 0.2 · The as-built floor (verified at source; re-probe at each rung's build)
 
-The forward-push **builds on** this shipped surface and replaces none of it. The lag-1 reconcile
-([`echo-mq-architect`](../../../../.claude/skills/echo-mq-architect.md) §1) re-probes each anchor at the
-rung's build.
+The forward-push **builds on** this shipped surface and replaces none of it. The lag-1 reconcile (the
+`echo-mq-architect` skill's step 1) re-probes each anchor at the rung's build — line numbers drift, so the
+citations are hints; grep/Read the tree to confirm.
 
 - **The outbox already exists, in one app.** [`EchoStore.Journal`](../../../../echo/apps/echo_store/lib/echo_store/journal.ex)
   is the per-group SQLite outbox: `intend_and_enqueue/4` is the outbox-in-one-verb (mint a `JOB` id, record

@@ -33,8 +33,9 @@ The destination is **EchoMQ 3.0 — Streams Support**.
 - **When.** The foundation is **established** (`emq.0`). **Movement I is CLOSED** (emq.1 · the emq.2
   parity cluster · the emq.3 flow family — conformance **52/52**; deliverables in the
   [changelog](./emq.changelog.md)). **Movement II (emq.4–emq.8) is the 2.x extension**, one increment
-  per run — **emq.4 is BUILDING**. **EchoMQ 3.0 — the Stream Tier — is the headline delivery that
-  follows**, landing the `3.0.0` major.
+  per run — **the emq.4 groups family is CLOSED** (4.1–4.4, conformance **61**); **emq.5 (batches) is
+  next**. **EchoMQ 3.0 — the Stream Tier — is the headline delivery that follows**, landing the
+  `3.0.0` major.
 - **Where.** Code: `echo/apps/{echo_wire, echo_mq, echo_store, echo_data}`, `echo/rungs/`. Specs:
   `docs/echo_mq/` (this roadmap · the design canon `emq.design.md` · the stream tier
   `emq.streams.md` · the references · the rung triads under `specs/`).
@@ -47,7 +48,7 @@ The v2 protocol and the BCS substrate are **in place and proven on this machine*
 (`echo_wire`), the bus (`echo_mq`), the store (`echo_store` — durable replication via the
 `EchoStore.Graft` engine streamed to Tigris; the `EchoStore.Shadow` behaviour retired,
 `store.design.md` §2), and the `EchoData` branded-id substrate. Detail: the
-[`emq.0` triad](./specs/emq.0/emq.0.md); the shipped record is the
+[`emq.0` triad](./specs/emq1/emq.0/emq.0.md); the shipped record is the
 [changelog](./emq.changelog.md).
 
 ### Movement I · The Core — CLOSED (conformance 52/52)
@@ -70,7 +71,7 @@ are in the [changelog](./emq.changelog.md); the wire/keyspace/lease invariants i
 | operator | `EchoMQ.Admin` · `EchoMQ.Jobs` | `Admin`: `pause/2`·`resume/2`·`drain/2,3`·`obliterate/2,3` — `Jobs`: `update_data/4`·`update_progress/4`·`add_log/4,5`·`get_job_logs/3`·`remove_job/3,4`·`reprocess_job/3` |
 | watch | `EchoMQ.Events` · `EchoMQ.Meter` · `EchoMQ.Locks` · `EchoMQ.Stalled` · `EchoMQ.Cancel` | `Events`: `subscribe`·`publish`·`close` — `Meter`: `attach`·`emit`·`span` — `Locks`: `track_job/3`·`untrack_job/2`·`is_tracked?/2` — `Stalled.check/2,3` — `Cancel`: `new/0`·`cancel/2,3`·`check/1` — `Jobs`: `extend_lock/5`·`extend_locks/4` |
 | flows | `EchoMQ.Flows` · `EchoMQ.Pump` | `Flows`: `add/3`·`add_bulk/3`·`children_values/3`·`ignored_failures/3`·`dependencies/3` — `Pump`: `deliver_flow_completions/3`·`maybe_reemit_parent_death/4`·`on_same_queue_child_death/4` |
-| groups | `EchoMQ.Lanes` · `EchoMQ.Metrics` | `reassign/4` · `drain/3` (lane-scoped) · `reap_group/4` · `lane_depths/3` *(Movement II, building)* |
+| groups | `EchoMQ.Lanes` · `EchoMQ.Metronome` · `EchoMQ.Metrics` | `reassign/4` · `drain/3` (lane-scoped) · `reap_group/4` · `wclaim/3` · `weight/4` · `lane_depths/3` — `EchoMQ.Metronome` (park-don't-poll dispatch: `start_link`/`register_idle`) *(Movement II · emq.4 CLOSED)* |
 
 ### Movement II · The Extension — the 2.x runway (emq.4–emq.8)
 
@@ -118,8 +119,8 @@ time-travel via mint-instant → `XRANGE`).
 | **emq.1** | I | scheduler + retry (delayed / repeatable jobs · attempts-with-backoff · auto-resubscribe) | ✅ CLOSED |
 | **emq.2** | I | the **parity floor** — read → operator → watch → close (emq.2.1 · 2.2 · 2.3 · 2.4) | ✅ CLOSED |
 | **emq.3** | I | the **parent/flow family** — single-queue → reads → cross-queue → failure-policy → grandchildren (emq.3.1–3.5) | ✅ CLOSED |
-| emq.4 | II | groups deepened: control plane, group-aware recovery, the park-don't-poll metronome, weighted/deficit rotation + the starvation drill | 🔨 BUILDING — 4.1 control plane ✅ + 4.2 group-aware recovery ✅ (`echomq:2.4.2`, 55/55); 4.3 metronome (Apollo-mandatory) · 4.4 weighted/deficit next |
-| emq.5 | II | batches: bulk consumption, `min_size`/`timeout` shaping, affinity, the partitioned finish | 📋 planned abstract |
+| emq.4 | II | groups deepened: control plane, group-aware recovery, the park-don't-poll metronome, weighted/deficit rotation + the starvation drill | ✅ **CLOSED (4.1–4.4)** — control plane `@greassign`/`@gdrain` (`6bca0d6d`, HIGH) + group recovery `@greap_group` (`echomq:2.4.2`) + the **metronome** `EchoMQ.Metronome` (the metronome-as-system: one `BLPOP`-blocker per queue fans readiness to N pooled consumers over BEAM messages, `@gclaim` byte-frozen, no wire/§6 edit; `174e1d7f`, HIGH/Apollo — [decision](./kb/metronome-design/metronome-fork-decision.md)) + **weighted rotation** `@gwclaim`/`weight/4` + the starvation drill (`361fd663`, Fork B → Arm 2 additive, NORMAL+); **conformance 61**, wire fence `echomq:2.4.2`, label `2.4.4` |
+| emq.5 | II | batches: bulk consumption, `min_size`/`timeout` shaping, affinity, the partitioned finish | 📋 **SPECCED — 5.1–5.4 carved** (spine → shaping → affinity → finish; uniform NORMAL, Apollo recommended at 5.3) → [carve](./specs/emq2/emq.5/emq.5.md) |
 | emq.6 | II | lifecycle controls: TTL per worker/name, distributed cancel, checkpoints | 📋 planned abstract |
 | emq.7 | II | the cache deepened: BCAST tracking, absorbed-fills compaction, `synchronous=FULL` per group, the invalidation-transport evaluation | 📋 planned abstract — may be pulled forward (Operator call) |
 | emq.8 | II | conformance + the engine matrix + the telemetry contract + the benchmark gate (the three-layer proof stack); **closes the 2.x line** | 📋 planned abstract |

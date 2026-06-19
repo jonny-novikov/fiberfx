@@ -257,7 +257,7 @@ for the LATER build) · Approach: [`../../elixir/specs/specs.approach.md`](../..
 # PART II · the BUILD orchestration runbook — ship the cross-queue flow (the flow family's third slice, HIGH-risk)
 
 > **Status: the build runbook (authored at the close of the design cycle, per PART I's plan).** PART I commissioned
-> the design (the quad + the cross-queue ADR — the forks ruled **D-1..D-5** in [`./emq-3-3.progress.md`](../../progress/emq-3-3.progress.md));
+> the design (the quad + the cross-queue ADR — the forks ruled **D-1..D-5** in `./emq-3-3.progress.md`);
 > PART II ships the rung: it fans out the **echo-mq-ship** lead-team (Venus → Mars-1 → Director review → Mars-2 →
 > **Apollo MANDATORY** → Venus reconcile → Director ship) to build emq.3.3 to the authored triad. The triad is the
 > contract ([`./emq.3.3.md`](emq.3.3.md) authoritative · [`./emq.3.3.stories.md`](emq.3.3.stories.md)); the canon is [`../emq.design.md`](../../../../emq.design.md); the binding is the
@@ -281,7 +281,7 @@ Conformance grows **46 → 47** (`flow_cross_queue`). The new outbox subkey's cl
 
 **`echo-mq-ship`** (the HIGH-risk variant — the [`./emq.3.2.prompt.md`](emq.3.2.prompt.md) form, but with the
 HIGH-risk dimensions emq.3.2 lacked: **Apollo MANDATORY** + a shipped-script edit to byte-prove). Scope slug
-**`emq-3-3`**; ledger [`./emq-3-3.progress.md`](../../progress/emq-3-3.progress.md) (PART I opened it — the build continues it);
+**`emq-3-3`**; ledger `./emq-3-3.progress.md` (PART I opened it — the build continues it);
 Operator `jonny`; workspace `/Users/jonny/dev/jonnify`. The forks are **already ruled** (D-1..D-5), so the build's
 Stage 0 RE-CONFIRMS them + re-probes the as-built floor (the lag-1 law) — there is **no fork gate** to re-open
 (the 2026-06-15 governing directive dissolved the Operator land-gate; the Director rules + ships with delegated
@@ -428,7 +428,7 @@ pathspec).
   folds to emq.3.4 (→ Movement I CLOSES).
 
 Inputs (the build): [`./emq.3.3.md`](emq.3.3.md) (authoritative) · [`./emq.3.3.stories.md`](emq.3.3.stories.md)
-· [`./emq-3-3.progress.md`](../../progress/emq-3-3.progress.md)
+· `./emq-3-3.progress.md`
 (D-1..D-5 ruled) · [`./emq.3.md`](../emq.3.md) (the family + Fork A + INV7) · the shipped slices
 [`./emq.3.1.md`](emq.3.1.md) + [`./emq.3.2.md`](emq.3.2.md) · the build-runbook FORM
 [`./emq.3.2.prompt.md`](emq.3.2.prompt.md) (NORMAL-risk; this one is HIGH-risk) · Canon

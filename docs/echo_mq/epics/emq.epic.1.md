@@ -69,7 +69,7 @@ are first-class features, not buried under a command family.)
 ## Scope
 
 - **In** — the per-feature v3.x command DSL slices under `emq.epic.1/`; the epic's stories
-  ([`../specs/emq.1/emq.1.stories.md`](../specs/emq.1/emq.1.stories.md)); the forward-only voice (v3 is PROPOSED
+  ([`../specs/emq1/emq.1/emq.1.stories.md`](../specs/emq1/emq.1/emq.1.stories.md)); the forward-only voice (v3 is PROPOSED
   until its rung ships); the `#{command}` cross-reference grammar.
 - **Out** — the v1↔v3 **registry** as a deliverable (it is dev-support, the feature-sorted
   [`../emq.command-registry.md`](emq.commands.registry.md) — successor to the former `emq.1.specs.md` matrix);

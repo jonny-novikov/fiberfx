@@ -7,7 +7,7 @@ ratified ladder live with the production tree (the Operator's [`emq.design.md`](
 [`emq.roadmap.md`](../emq.roadmap.md)); this file is their specification mirror inside the BCS documentation set — it
 fixes what the "groups deepened" chapter is, the laws it carries whole, the as-built fair-lanes surface it deepens,
 and the four-rung decomposition, and it never redesigns what the canon owns. The chapter body
-([`emq.4/emq.4.md`](emq.4/emq.4.md)) is authoritative; the line beneath is [`emq.streams.md`](../emq.streams.md) (the
+([`emq.4/emq.4.md`](emq2/emq.4/emq.4.md)) is authoritative; the line beneath is [`emq.streams.md`](../emq.streams.md) (the
 stream tier) and the parity line [`emq.2.specs.md`](emq.2.specs.md).
 
 ## What the chapter is
@@ -59,7 +59,7 @@ this unchanged and deepens it.
 
 ## The capability decomposition (the four rungs)
 
-emq.4 decomposes into four dependency-ordered rungs (the Operator-ruled spine — [`emq.4/emq.4.md`](emq.4/emq.4.md)
+emq.4 decomposes into four dependency-ordered rungs (the Operator-ruled spine — [`emq.4/emq.4.md`](emq2/emq.4/emq.4.md)
 "The carve"), each a full triad + a runbook, one increment per run:
 
 | Rung | Deepens (PROPOSED) | Stands on (as-built) | Risk |
@@ -87,7 +87,7 @@ inherits the emq.3 cross-queue posture — honest, not atomic).
 ## Map
 
 Delivery: the single consolidated [`emq.roadmap.md`](../emq.roadmap.md) (the emq.4 row · Movement II). The chapter:
-[`emq.4/emq.4.md`](emq.4/emq.4.md) (authoritative) · [`emq.4/emq.4.stories.md`](emq.4/emq.4.stories.md). The lines beneath: [`emq.streams.md`](../emq.streams.md) (the stream
+[`emq.4/emq.4.md`](emq2/emq.4/emq.4.md) (authoritative) · [`emq.4/emq.4.stories.md`](emq2/emq.4/emq.4.stories.md). The lines beneath: [`emq.streams.md`](../emq.streams.md) (the stream
 tier) · [`emq.2.specs.md`](emq.2.specs.md) (the parity floor). The as-built record this chapter deepens:
 `echo/apps/echo_mq/lib/echo_mq/{lanes,metrics,consumer}.ex` + `jobs.ex` (`@reap`). The v1 capability reference (the
 re-aim record, READ-ONLY): [`emq.commands/features/groups/`](emq.commands/features/groups/).

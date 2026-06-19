@@ -8,7 +8,7 @@
 > honest-row law; the roadmap and the working tree drift in both directions).
 
 Canon: [`./emq.design.md`](./emq.design.md) (as-planned) · [`./emq.roadmap.md`](./emq.roadmap.md) (ladder +
-statuses) · [`./emq.progress.md`](./emq.progress.md) (as-built) · the per-rung triads under
+statuses) · [`./emq.progress.md`](./emq.progress.md) (as-built) · [`./emq.streams.md`](./emq.streams.md) (EchoMQ 3.0) · [`./emq.changelog.md`](./emq.changelog.md) (shipped) · the per-rung triads under
 [`./specs/`](./specs/). This document is the **testing view** beside those three; it adds no contract — it
 records how the contracts that shipped are proven, and where the proof is thin.
 

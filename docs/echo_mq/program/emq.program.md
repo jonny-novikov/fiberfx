@@ -18,9 +18,8 @@ legacy v1 line was **rewritten fresh into `echo_mq`** under the v2 laws (never m
 source of truth, no compatibility layer. One program: a **foundation** (EchoMQ protocol v2 + the BCS substrate —
 established as `emq.0`), **Movement I** (the core — the v1 capability surface pushed to state-of-the-art: emq.1
 scheduler/retry · the emq.2 parity cluster · the emq.3 flow family — **CLOSED at conformance 52/52**), and
-**Movement II** (the extension — groups/batches/lifecycle/cache/proof stack, emq.4–emq.8 — **OPEN; emq.4.1 the
-fair-lanes control plane SHIPPED, live conformance 54/54**, additive minors, the protocol version (the wire fence + the mix.exs label together)
-climbing by a minor per rung `echomq:2.4.1 → … → 3.0.0` ratified as the `echomq:3.0.0` major at emq.8). The **worked
+**Movement II** (the extension — groups/batches/lifecycle/cache/proof stack, emq.4–emq.8 — **OPEN; emq.4.1 control plane + emq.4.2 group recovery SHIPPED, live conformance 55/55**, additive minors, the protocol version (the wire fence + the mix.exs label together)
+climbing the **2.x line** per rung `echomq:2.4.1 → 2.4.2 → …`; the `echomq:3.0.0` major is the **Stream Tier (EchoMQ 3.0)**, after Movement II). The **worked
 consumer** is **codemojex** (`echo/apps/codemojex` — the Mastermind-style game on `EchoMQ.Lanes`/`Consumer`/
 `Events` + the `EchoData.Bcs` stores); the **headline-planned consumer** is **echo_bot** (`echo/apps/echo_bot` —
 Telegram notifications at scale; the seam is `EchoBot.Platform.Telegram.send_reply/3`).
@@ -78,6 +77,15 @@ formation (an Operator cost ruling — a 2-line fix once cost a full-team run):
   and passes — the gate ladder that applies is **always run in full**; rigor never scales down.
 - **Confirm-don't-rebuild a proactive scope extension** (footgun 8): when a peer builds a surface before the
   directive lands, the Director re-confirms it against the ruling — never re-spawns to redo it.
+- **[PROPOSED ewr.4.1-L1 — ship the substance; Director to ratify] Commit the working in-boundary slice; do not
+  let a peripheral coordination detail block the ship.** When the substance is green, pure, and in-boundary, a
+  CUTOVER / VERSION / coordination detail that changes no shipped artifact must NOT gate the commit. And **default
+  any decision that does not change the shipped artifact** rather than asking the Operator — reserve
+  `AskUserQuestion` for forks that move the build, not for choosing a version digit. ewr.4.1 burned ~2h / ~370k+
+  subagent tokens and shipped ZERO because a ~200-line LOW-risk client-contract change ran the full team and then
+  spun on (and over-asked the Operator about) a version number the Operator ultimately cancelled. The rung's own
+  prompt marked risk=LOW (Apollo optional); per "rigor is constant, only ceremony scales" above, a LOW-risk
+  ~200-line client-contract change is a ONE-builder pass — match the formation to the stated risk.
 - **A generated bundle is WRITE-ONLY.** Never `Read` / `grep -n` / `git diff` a generated artifact (a stories
   catalog, a fan-out bundle) to verify it — that burns context on output you produced. Verify the GENERATOR: the
   source test, `grep -c` for the expected count, the running-server / re-run check. The artifact reproduces from
@@ -208,9 +216,9 @@ built host-side) constructs it with `EchoWire.Pipe`, not a hand-rolled `Connecto
   rotation + the starvation drill · then emq.5 batches · emq.6 lifecycle controls · emq.7 cache deepened · emq.8
   the proof stack (conformance + engine matrix + telemetry + benchmark). emq.7 is least coupled to the machine and
   may be pulled forward (an Operator call). The 3.x stream tier (`emq3.*`) is PROPOSED, hard-gated on emq.0.
-- **The version arc (Movement II = the `echomq:3.0.0` era) — ONE protocol version, climbing per rung.** The
-  wire fence IS the protocol version, and it **climbs by a minor each rung**: `echomq:2.4.1` (emq.4.1) →
-  `echomq:2.4.2` (emq.4.2) → … → the `echomq:3.0.0` **MAJOR** at the horizon's end (emq.8). Two artifacts carry
+- **The version arc — ONE protocol version, climbing per rung.** The
+  wire fence IS the protocol version, and it **climbs by a minor each rung through the 2.x line**: `echomq:2.4.1` (emq.4.1) →
+  `echomq:2.4.2` (emq.4.2) → … (emq.8 closes the 2.x line); the `echomq:3.0.0` **MAJOR** lands with the **Stream Tier (EchoMQ 3.0)**, after Movement II. Two artifacts carry
   the same number and a rung bumps **both** by one — the **wire fence** `@wire_version` (the `{emq}:version`
   boot key, `echo_wire/lib/echo_mq/connector.ex:33` — the protocol marker) and the **release label**
   (`echo/apps/echo_mq/mix.exs` + `echo_wire/mix.exs` `version:`). The connector's fence **logic** (`fence/2`,
@@ -230,3 +238,16 @@ built host-side) constructs it with `EchoWire.Pipe`, not a hand-rolled `Connecto
     host verbs, no new wire class) **plus the one-line `@wire_version` + `mix.exs` bump**. (SUPERSEDES the
     earlier 'two-planes / fence frozen at 2.0.0' framing — **emq.4.2-D3**, the Operator's reopened Fork-2; the
     fence was always meant to climb per the founding rule.)
+  - **[PROPOSED ewr.4.1-L1 — the client-contract carve-out; Director to ratify] The fence climbs ONLY when
+    the rung adds a server-side capability scenario.** The blanket "every rung bumps `@wire_version`" above is
+    sound for an echo_mq additive-minor (4.1/4.2 grew the conformance count → the bump is a benign in-boundary
+    self-consistency advance). It is the WRONG default for a rung whose substance changes **no wire-protocol and
+    no keyspace** — a CLIENT-CONTRACT-ONLY rung (e.g. ewr.4.1's Pool-fronted enqueue). Such a rung **DEFAULTS to
+    NO fence climb**: the change is invisible to the wire, so the fence has nothing to mark. The cost of getting
+    this wrong is concrete (ewr.4.1): the bump edited the FROZEN base `echo_wire` for a change that needed no
+    fence, then the stale `{emq}:version` refused 320/392 valkey tests and the auto-classifier (correctly) denied
+    the shared-fence reset — a self-inflicted block, then a version-number adjudication the Operator cancelled
+    outright. **Test:** does the rung add a `Conformance` scenario that exercises a NEW server-side behaviour? If
+    no → no `@wire_version` bump, no frozen-base edit. The version number, when it DOES move, is a one-line
+    in-boundary mechanic (the three reflected literals) — **never a frozen-`echo_wire` edit that gates the ship,
+    never an Operator adjudication of the digit.**

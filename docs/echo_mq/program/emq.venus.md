@@ -74,6 +74,19 @@ re-pin anchors before the build, surface forks early, keep the catalog current, 
 (broken links, references to removed files, outdated status), keep `specs/` to the convention. The spec is a
 living, accurate map, not a drawer of drafts.
 
+**[PROPOSED ewr.4.1-L1 — fork the roadmap's self-contradiction; do not encode a cutover by rote; Director to
+ratify.] When the roadmap prescribes a cutover that CONTRADICTS the change's own nature, surface the
+contradiction as a fork — never copy the cutover line into the spec as an invariant.** A rung that changes **no
+wire-protocol and no keyspace** (a client-contract-only change) **DEFAULTS to NO fence climb** — the wire has
+nothing to mark, so a `@wire_version`/mix bump (and the frozen-`echo_wire` edit it forces) is not its substance.
+ewr.4.1's `ewr4.roadmap.md` Rung 1 said BOTH "No wire-protocol change — the rung changes the *client contract*,
+not the keyspace" AND "Cutover. Bump to `echomq:2.5.0`"; the spec copied the second line into INV7 (the
+three-number cutover) as a mandatory deliverable and never surfaced the clash — which routed the Director into
+editing the frozen base and into an Operator adjudication of a version digit the Operator then cancelled. The
+test mirrors Apollo's process rule (`emq.program.md` §version-arc carve-out): does the rung add a `Conformance`
+scenario exercising NEW server-side behaviour? If no → spec it with no fence climb, and raise any roadmap line
+that says otherwise as a `V-n` fork for the Director to rule, not an INV to build.
+
 ## Boundary
 
 Edit **ONLY** the spec triad + the catalog/roadmap docs; **never** production code; **never** a frozen ledger's

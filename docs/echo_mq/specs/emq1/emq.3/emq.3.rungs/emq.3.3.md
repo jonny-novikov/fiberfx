@@ -15,7 +15,7 @@
 > "atomic across queues"). **Risk: HIGH** — emq.3.3 (a) founds a new cross-slot completion signal (the outbox +
 > the sweep-deliver) and (b) **edits a shipped Lua script** (`@complete` gains an additive cross-queue branch),
 > the inverse of emq.3.2's NORMAL-risk host-only reads → **Apollo MANDATORY** + the **≥100 determinism loop**.
-> The four cross-queue forks were ruled **D-1..D-4** (this rung's ledger [`./emq-3-3.progress.md`](../../progress/emq-3-3.progress.md)
+> The four cross-queue forks were ruled **D-1..D-4** (this rung's ledger `./emq-3-3.progress.md`
 > — the recommended arms this triad is authored to): **D-1** the outbox-on-the-child's-slot · **D-2** piggyback
 > `EchoMQ.Pump.sweep/1` · **D-3** the `:processed` HSETNX idempotency guard · **D-4** the additive cross-queue
 > branch in `@complete` (the single-queue fan-in branch BYTE-FROZEN). **D-5** locks the scope bound (FLAT
@@ -214,7 +214,7 @@ cross-queue at `reject_cross_queue/2` `flows.ex:191`, `sweep/1` has only promote
 no `@flow_deliver` symbol, no `flow:outbox` key, no `parent_queue` field):
 
 - **EMQ.3.3-D1 — the fork gate (settled, FIRST):** the four cross-queue forks **ruled D-1..D-4** (this rung's
-  ledger [`./emq-3-3.progress.md`](../../progress/emq-3-3.progress.md) — V-1..V-4 surfaced, D-1..D-4 locked by the Director
+  ledger `./emq-3-3.progress.md` — V-1..V-4 surfaced, D-1..D-4 locked by the Director
   under the 2026-06-15 delegated-authority directive): **D-1** the outbox on the child's slot · **D-2** piggyback
   `EchoMQ.Pump.sweep/1` · **D-3** the `:processed` HSETNX idempotency guard · **D-4** the additive cross-queue
   branch in `@complete` (the single-queue branch byte-frozen) — plus **D-5** (scope + add-side semantics). The
@@ -391,7 +391,7 @@ authoritative family ground) · The shipped slices (the floor emq.3.3 extends): 
 (`EchoMQ.Flows.add/3` the same-queue atomic add, the `:processed`/`:dependencies` subkeys, the `@complete` fan-in
 branch `jobs.ex:181-188`, the O1/O2/L-5 honest bounds) + [`./emq.3.2.md`](emq.3.2.md) (`children_values/3` /
 `dependencies/3`, the real-result `complete/5`, the N1 lifecycle carry emq.3.3 extends) · This rung's ledger (the
-ruled forks): [`./emq-3-3.progress.md`](../../progress/emq-3-3.progress.md) (V-1..V-4 surfaced; **D-1..D-5** locked — the arms
+ruled forks): `./emq-3-3.progress.md` (V-1..V-4 surfaced; **D-1..D-5** locked — the arms
 this triad is authored to) · The v1 capability reference (READ-ONLY, the FORM not to lift):
 `echo/apps/echomq/lib/echomq/flow_producer.ex` (`add/2` `:123`, `add_bulk/2` `:183`, the per-node `queue_name`
 spanning `:28-30`, the data-value `parent_key` tree `:354/327` that v2 does NOT lift) · The promote-sweep

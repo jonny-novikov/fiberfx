@@ -3,8 +3,8 @@
 > Living test ledger for the **single-queue flow** rung (the FIRST sub-rung of the emq.3 parent/flow family —
 > `EchoMQ.Flows.add/3` + `@enqueue_flow` + the `@complete` fan-in hook + `awaiting_children`; the `emq-3-1`
 > lead-team 2026-06-15, conformance 43 → **45**). Strategy: [`../emq.testing.md`](../emq.testing.md). Spec
-> family + carve: [`../specs/emq.3.md`](../specs/emq.3/emq.3.md) · Rung triad:
-> [`../specs/emq.3.1.md`](../specs/emq.3/emq.3.rungs/emq.3.1.md) · [`.stories.md`](../specs/emq.3/emq.3.rungs/emq.3.1.stories.md). **HIGH-risk rung** — it edited the shipped `@complete` Lua (the fan-in
+> family + carve: [`../specs/emq.3.md`](../specs/emq1/emq.3/emq.3.md) · Rung triad:
+> [`../specs/emq.3.1.md`](../specs/emq1/emq.3/emq.3.rungs/emq.3.1.md) · [`.stories.md`](../specs/emq1/emq.3/emq.3.rungs/emq.3.1.stories.md). **HIGH-risk rung** — it edited the shipped `@complete` Lua (the fan-in
 > hook), so Apollo was mandatory (BUILD-GRADE, mutation kill 3/3); the durable harness is
 > `echo/rungs/bus/emq_3_1_check.sh` (PASS 9/9 + the ≥100 loop
 > 100/100). Re-probe the tree before trusting a `file:line` here (the lag-1 law).

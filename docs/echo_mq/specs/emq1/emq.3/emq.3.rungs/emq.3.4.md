@@ -21,7 +21,7 @@
 > **Grandchildren / deep recursion** (a cross-queue child that is itself a flow-parent — the v1 recursive
 > `build_flow_commands`, `flow_producer.ex:51-56/:238`) are the honest **Out**, **routed to emq.3.5** — the
 > **V-1 scope fork is RULED → Arm A** (the Director, recorded as **D-2** in this rung's ledger
-> [`./emq-3-4.progress.md`](../../progress/emq-3-4.progress.md): emq.3.4 = failure-policy + bulk per the family carve
+> `./emq-3-4.progress.md`: emq.3.4 = failure-policy + bulk per the family carve
 > [`./emq.3.md`](../emq.3.md):198; grandchildren is a separate later rung, **emq.3.5**, recorded NOT built). A
 > later Arm-B re-scope (folding grandchildren into emq.3.4) stays a zero-cost option for the Operator — the
 > failure-policy core is identical — but this triad is authored to the ruled Arm A.
@@ -152,7 +152,7 @@ Out** (V-1, the scope fork — recorded NOT built).
   "registration" is the `flow_fail_parent`/`flow_ignore_dep` conformance scenarios, not a code-allowlist edit.
   `echo_wire` is **untouched** (the propagation + deliver ride the shipped connector `eval`). `apps/echomq` is
   **untouched**. Exact line anchors re-pinned at the pre-build reconcile (the lag-1 law — emq.3.1/3.2/3.3 moved
-  the surface; this triad re-pinned it at Stage-0, the [`./emq-3-4.progress.md`](../../progress/emq-3-4.progress.md) T-1
+  the surface; this triad re-pinned it at Stage-0, the `./emq-3-4.progress.md` T-1
   delta).
 
 ## Scope
@@ -264,7 +264,7 @@ Stage-0 baseline this rung closed: `add/3` took no policy flags, `@retry`'s dead
 
 - **EMQ.3.4-D1 — the scope gate (RULED → Arm A, FIRST):** the **V-1 scope fork** (grandchildren IN emq.3.4 or a
   separate rung) was surfaced to the Director with both arms steelmanned + a recommendation, and **RULED → Arm A**
-  (recorded as **D-2** in this rung's ledger [`./emq-3-4.progress.md`](../../progress/emq-3-4.progress.md)): emq.3.4 =
+  (recorded as **D-2** in this rung's ledger `./emq-3-4.progress.md`): emq.3.4 =
   failure-policy + bulk (the family carve [`./emq.3.md`](../emq.3.md):198 scope); **grandchildren / deep recursion
   is the locked Out → emq.3.5** (a separate later rung, recorded NOT built). The triad is authored to Arm A → no
   pre-build re-scope. A later Arm-B re-scope (folding grandchildren into emq.3.4) stays a zero-cost Operator
@@ -511,7 +511,7 @@ the `:dependencies`/`:processed` subkeys, the `@complete` fan-in branch, `awaiti
 lifecycle carry emq.3.4 extends) + [`./emq.3.3.md`](emq.3.3.md) (the `flow:outbox` + `EchoMQ.Pump.sweep/1`'s
 `deliver_flow_completions` + `@flow_deliver` + the `:processed` HSETNX idempotency guard + the `parent_queue`
 field + the B5 lifecycle carry — the cross-queue mechanism the fail-deliver rides) · This rung's ledger (the
-scope fork): [`./emq-3-4.progress.md`](../../progress/emq-3-4.progress.md) (T-1 the reconcile; **V-1** the grandchildren scope
+scope fork): `./emq-3-4.progress.md` (T-1 the reconcile; **V-1** the grandchildren scope
 fork — the arm this triad is authored to) · The v1 capability reference (READ-ONLY, the FORM not to lift):
 `echo/apps/echomq/lib/echomq/flow_producer.ex` (`add/2` `:123`, `add_bulk/2` `:183`, the `fail_parent_on_failure`/
 `ignore_dependency_on_failure`/`remove_dependency` options `:78-82`/`encode_job_opts` `:468-483`, the recursive

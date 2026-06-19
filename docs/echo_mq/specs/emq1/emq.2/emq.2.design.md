@@ -352,4 +352,4 @@ grammar, §5 the wire-class registry, §10 seam 1, §11.10/§11.11, §12.3 the e
 the engine gate). The program: [`../emq.roadmap.md`](../../../emq.roadmap.md) · [`../echo_mq.md`](../../../echo_mq.md).
 The v1 feature reference: `echo/apps/echomq/lib/echomq/*.ex` + `echo/apps/echomq/priv/scripts/*.lua`. The
 as-built floor: `echo/apps/echo_mq/lib/echo_mq/*.ex`. The re-scope ledger:
-[`./emq-2.progress.md`](../progress/emq-2.progress.md) (D-1/D-2 the re-scope; D-7/D-9 the carve; V-1 the arms).
+`./emq-2.progress.md` (D-1/D-2 the re-scope; D-7/D-9 the carve; V-1 the arms).

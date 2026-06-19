@@ -42,7 +42,7 @@ sweep via a new **`@flow_fail_deliver`** on the parent's slot (idempotent by the
 This is **`echo-mq-ship`** — the `/x-mode` lead-team bound to the echo_mq apps + the v2 laws + the per-app gate
 ladder + the echo_mq-specialized build team (Venus loads `echo-mq-architect`, Mars loads `echo-mq-implementor`,
 Apollo loads `echo-mq-evaluator`). Scope slug **`emq-3-4`**; ledger
-[`./emq-3-4.progress.md`](../../progress/emq-3-4.progress.md) (the design reconcile T-1 + the V-1 scope fork are recorded —
+`./emq-3-4.progress.md` (the design reconcile T-1 + the V-1 scope fork are recorded —
 the build continues it); the boundary is **`echo/apps/echo_mq`** (+ NO `echo_wire`). **Apollo is MANDATORY**
 (HIGH-risk — a shipped-script edit on `@retry` + the cross-slot failure delivery).
 
@@ -232,7 +232,7 @@ BYTE-UNCHANGED** (verify in the `jobs.ex`/`pump.ex` diffs). **Never `git add -A`
   SHIPPED; the frontier folds to **emq.3.5 (grandchildren)** → closing it **CLOSES Movement I**.
 
 Inputs (the build): [`./emq.3.4.md`](emq.3.4.md) (authoritative) · [`./emq.3.4.stories.md`](emq.3.4.stories.md)
-· [`./emq-3-4.progress.md`](../../progress/emq-3-4.progress.md)
+· `./emq-3-4.progress.md`
 (T-1 the reconcile + V-1 the scope fork) · [`./emq.3.md`](../emq.3.md) (the family + the carve emq.3.4 row + INV3 +
 INV7) · the shipped slices [`./emq.3.1.md`](emq.3.1.md) + [`./emq.3.2.md`](emq.3.2.md) +
 [`./emq.3.3.md`](emq.3.3.md) (the cross-queue mechanism the fail-deliver rides) · the build-runbook FORM

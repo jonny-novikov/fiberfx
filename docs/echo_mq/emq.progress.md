@@ -3,9 +3,10 @@
 **One-line state.** The foundation (EchoMQ protocol v2 + the BCS substrate) is **established**
 (`emq.0`). **Movement I is CLOSED** — the opener `emq.1`, the **emq.2 parity cluster** (4/4), and the
 **emq.3 flow family** (5/5); the bus is real, measured, conformance-gated at **52/52** at the close.
-**Movement II (emq.4–emq.8) — the 2.x extension — is BUILDING**: `emq.4` (groups deepened) has
-shipped **4.1 the control plane** and **4.2 group-aware recovery** (live conformance **55/55**, on the
-climbing fence `echomq:2.4.2`); 4.3–4.4 build next. The headline forward delivery is **EchoMQ 3.0 —
+**Movement II (emq.4–emq.8) — the 2.x extension — is BUILDING**: the **`emq.4` groups family is CLOSED**
+(4.1 control plane · 4.2 group-aware recovery · 4.3 the park-don't-poll metronome · 4.4 weighted
+rotation + the starvation drill — live conformance **61**, wire fence `echomq:2.4.2`, rung label
+`2.4.4`); **`emq.5` (batches) is next**. The headline forward delivery is **EchoMQ 3.0 —
 the Stream Tier** ([`emq.streams.md`](./emq.streams.md)), which lands the `echomq:3.0.0` major after
 Movement II. Per-rung shipped detail: the [changelog](./emq.changelog.md).
 
@@ -38,8 +39,8 @@ Movement I · the core (scheduler+retry · parity floor · flows)   ✅ CLOSED (
   emq.3     ✅ CLOSED      ████████████████████  parent/flow family — single-queue → reads → cross-queue → failure-policy/bulk → grandchildren (3.1–3.5)
 
 Movement II · the 2.x extension family
-  emq.4     🔨 building    ████████░░░░░░░░░░░░  groups deepened — 4.1 control plane ✅ + 4.2 group recovery ✅ (reap_group · 55/55 · echomq:2.4.2) · 4.3 metronome HIGH (Apollo) · 4.4 weighted/deficit+drill
-  emq.5     📋 planned     ░░░░░░░░░░░░░░░░░░░░  batches · bulk consume · shaping · affinity · finish
+  emq.4     ✅ CLOSED      ████████████████████  groups deepened — 4.1 control plane ✅ · 4.2 recovery ✅ · 4.3 metronome ✅ (HIGH/Apollo · 174e1d7f) · 4.4 weighted rotation + drill ✅ (361fd663) · conformance 61 · fence 2.4.2 / label 2.4.4
+  emq.5     📋 next        ░░░░░░░░░░░░░░░░░░░░  batches · 5.1 batch-claim spine · 5.2 min_size/timeout shaping · 5.3 affinity+concurrency · 5.4 partitioned finish (carved)
   emq.6     📋 planned     ░░░░░░░░░░░░░░░░░░░░  lifecycle controls · TTL · distributed cancel · checkpoints
   emq.7     📋 planned     ░░░░░░░░░░░░░░░░░░░░  cache deepened · BCAST · compaction · FULL · invalidation
   emq.8     📋 planned     ░░░░░░░░░░░░░░░░░░░░  proof stack · conformance · engine matrix · telemetry · benchmark — closes the 2.x line
@@ -49,8 +50,8 @@ EchoMQ 3.0 · the Stream Tier — the headline delivery   🔒 PROPOSED — gate
 
 ── roll-up ──
   established  emq.0 — the foundation
-  shipped     Movement I (emq.1 · emq.2 · emq.3, 52/52) + Movement II emq.4.1 + emq.4.2 (live 55/55) — see emq.changelog.md
-  building    emq.4 — groups deepened · 4.3–4.4 next
+  shipped     Movement I (emq.1 · emq.2 · emq.3, 52/52) + the emq.4 groups family (4.1–4.4, live 61) — see emq.changelog.md
+  next        emq.5 — batches, carved into 5.1–5.4 (ready to ship)
   planned     emq.5 · emq.6 · emq.7 · emq.8 (the 2.x runway)
   next major  EchoMQ 3.0 — the Stream Tier (emq3.1–emq3.6) · echomq:3.0.0
 ```
@@ -65,7 +66,7 @@ EchoMQ 3.0 · the Stream Tier — the headline delivery   🔒 PROPOSED — gate
 |---|---|---|---|
 | **Foundation** | `echo_wire` (extracted wire) · `echo_mq` (the bus) · `echo_store` (durable replication via the `Graft` engine, `Shadow` retired) · the `EchoData.Bcs*` subtree · the `echo/rungs/` gate ladder · the §5 pass | `emq.0` | ✅ established |
 | **I · The Core** | the v1 surface rewritten inside `echo_mq`: scheduler + retry (emq.1) · the read/operator/watch/close floor (emq.2.1–2.4) · the parent/flow family (emq.3.1–3.5) | `emq.1`–`emq.3` | ✅ CLOSED (52/52) |
-| **II · The Extension** | the 2.x family ladder: groups deepened · batches · lifecycle controls · cache deepened · the three-layer proof stack | `emq.4`–`emq.8` | 🔨 **emq.4 BUILDING (4.1 ✅ · 4.2 ✅ · 55/55)** |
+| **II · The Extension** | the 2.x family ladder: groups deepened · batches · lifecycle controls · cache deepened · the three-layer proof stack | `emq.4`–`emq.8` | 🔨 **emq.4 groups CLOSED (4.1–4.4 · 61); emq.5 batches next** |
 
 ### EchoMQ 3.0 · the Stream Tier (the next major)
 

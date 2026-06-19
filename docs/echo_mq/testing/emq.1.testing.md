@@ -1,8 +1,8 @@
 # emq.1 — testing tasks
 
 > Living test ledger for the **scheduler + retry vocabulary** rung (`e0fa9b03`, conformance 14 → 18).
-> Strategy: [`../emq.testing.md`](../emq.testing.md). Spec triad: [`../specs/emq.1.md`](../specs/emq.1/emq.1.md) ·
-> [`.stories.md`](../specs/emq.1/emq.1.stories.md). Re-probe the tree before
+> Strategy: [`../emq.testing.md`](../emq.testing.md). Spec triad: [`../specs/emq.1.md`](../specs/emq1/emq.1/emq.1.md) ·
+> [`.stories.md`](../specs/emq1/emq.1/emq.1.stories.md). Re-probe the tree before
 > trusting a `file:line` here.
 
 ## Proof state (as-built)
