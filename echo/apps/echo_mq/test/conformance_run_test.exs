@@ -32,7 +32,7 @@ defmodule EchoMQ.ConformanceRunTest do
     :ok
   end
 
-  test "the fifty-nine-scenario harness passes whole against the truth row" do
+  test "the sixty-one-scenario harness passes whole against the truth row" do
     {:ok, conn} = Connector.start_link(port: 6390)
 
     on_exit(fn ->
@@ -45,6 +45,6 @@ defmodule EchoMQ.ConformanceRunTest do
 
     q = "emq0.conf#{System.unique_integer([:positive])}"
 
-    assert Conformance.run(conn, q) == {:ok, 59}
+    assert Conformance.run(conn, q) == {:ok, 61}
   end
 end

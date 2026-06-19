@@ -84,10 +84,12 @@ defmodule EchoMQ.ConformanceScenariosTest do
     :pool_enqueue,
     :pool_order,
     :native_lock_field,
-    :native_lock_refuses
+    :native_lock_refuses,
+    :weighted_proportion,
+    :starvation_drill
   ]
 
-  test "scenarios/0 answers exactly the fifty-nine names in run order" do
+  test "scenarios/0 answers exactly the sixty-one names in run order" do
     assert Keyword.keys(Conformance.scenarios()) == @run_order
   end
 

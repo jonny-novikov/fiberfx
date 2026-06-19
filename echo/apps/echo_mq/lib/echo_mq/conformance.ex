@@ -135,7 +135,9 @@ defmodule EchoMQ.Conformance do
       pool_enqueue: "pool-fronted enqueue is idempotent: a duplicate id through the pool answers duplicate and changes nothing; the row and pending entry match a single-connector enqueue",
       pool_order: "score-0 mint order holds across pool members: ids enqueued round-robin through the pool browse newest-first by name alone (REV BYLEX), identical to the single-connector order",
       native_lock_field: "ewr.2.6 native expiry: a lock field folded into the job hash carries an observable hash-field TTL (HPTTL) and self-clears at its deadline with no sweep, the rest of the row surviving",
-      native_lock_refuses: "ewr.2.6: remove_job honors the native lock field -- a job held by the field alone refuses EMQLOCK untouched, and self-heals to removable once the field expires, no sweep"
+      native_lock_refuses: "ewr.2.6: remove_job honors the native lock field -- a job held by the field alone refuses EMQLOCK untouched, and self-heals to removable once the field expires, no sweep",
+      weighted_proportion: "two branded lanes weighted 3:1 and both flooded are served approximately 3:1 over a window with the lighter lane served NON-ZERO -- a higher weight serves proportionally more, never all (emq.4.4)",
+      starvation_drill: "under sustained skew (one heavy lane flooded, light lanes trickling) EVERY lane's pending depth reaches zero over the drill window -- no lane starves, the capstone guarantee (emq.4.4)"
     ]
   end
 
@@ -1916,6 +1918,147 @@ defmodule EchoMQ.Conformance do
       :ok
     else
       other -> {:fail, other}
+    end
+  end
+
+  defp apply_scenario(:weighted_proportion, conn, q) do
+    # the weighted rotation (emq.4.4-D1, Fork B Arm 2): a lane carries a weight
+    # and the rotation serves a higher-weight lane proportionally more per turn,
+    # never all of it. The proof is POSITIVE and no-op-defeating: two lanes
+    # weighted 3:1, both flooded far past the window, are served approximately
+    # 3:1 over a window AND the lighter lane is served NON-ZERO. A weight-ignored
+    # rotation serves them ~1:1 (a WEIGHT-IGNORED failure); a serve-to-exhaustion
+    # rotation serves the heavy lane to zero before the light one (a STARVATION
+    # failure). Both are caught by the band + the non-zero floor. Each served job
+    # carries a server-clock lease (wclaim/3 leases on TIME, asserted via the
+    # active set's score). The groups are branded PRT ids gated pre-wire.
+    a = BrandedId.generate!("PRT")
+    b = BrandedId.generate!("PRT")
+    :ok = Lanes.weight(conn, q, a, 3)
+    :ok = Lanes.weight(conn, q, b, 1)
+    # flood both lanes far past the window (60 each; the window serves 80)
+    for _ <- 1..60 do
+      {:ok, :enqueued} = Lanes.enqueue(conn, q, a, BrandedId.generate!("JOB"), "wa")
+      {:ok, :enqueued} = Lanes.enqueue(conn, q, b, BrandedId.generate!("JOB"), "wb")
+    end
+
+    active = Keyspace.queue_key(q, "active")
+
+    # drive the rotation over a window, tallying serves per lane and proving
+    # every served job got a TIME-derived lease (a non-nil active score)
+    {counts, leased_ok} =
+      Enum.reduce(1..40, {%{a => 0, b => 0}, true}, fn _, {acc, ok} ->
+        case Lanes.wclaim(conn, q, 60_000) do
+          {:ok, served} ->
+            grp = served |> hd() |> elem(3)
+            n = length(served)
+
+            leases =
+              Enum.all?(served, fn {id, _p, _att, _g} ->
+                match?({:ok, s} when not is_nil(s), Connector.command(conn, ["ZSCORE", active, id]))
+              end)
+
+            {Map.update!(acc, grp, &(&1 + n)), ok and leases}
+
+          :empty ->
+            {acc, ok}
+        end
+      end)
+
+    served_a = counts[a]
+    served_b = counts[b]
+
+    cond do
+      not leased_ok -> {:fail, {:no_server_clock_lease, counts}}
+      served_b == 0 -> {:fail, {:lighter_lane_starved, counts}}
+      # the 3:1 band: A served between 2x and 4x B (weighted schemes are exactly
+      # proportional only in the limit -- the band is the honest bound)
+      served_a < served_b * 2 -> {:fail, {:weight_ignored, counts}}
+      served_a > served_b * 4 -> {:fail, {:over_served, counts}}
+      true -> :ok
+    end
+  end
+
+  defp apply_scenario(:starvation_drill, conn, q) do
+    # the starvation drill (emq.4.4, the CAPSTONE guarantee): under sustained
+    # skew -- one HEAVY lane flooded DEEP, several LIGHT lanes trickling -- no
+    # lane starves. The load-bearing no-op-defeater is INTERLEAVING within a
+    # bounded EARLY window: with the heavy lane needing ~40 turns to exhaust at
+    # weight 5, a FIFO / serve-heavy-to-exhaustion-first rotation serves ZERO
+    # from a light lane in the first handful of turns (it is STUCK at its
+    # backlog), while fair round-robin reaches BOTH light lanes within the first
+    # ring cycle -- the drill goes RED under the FIFO mutation. (A terminal
+    # depth-0 check alone is NOT a no-op-defeater: a drain-in-ring-order rotation
+    # also empties every lane eventually, since the re-ring guard advances the
+    # head as each lane empties.) The drill uses POSITIVE weights on every lane
+    # (a zero-weight parked lane is the operator's pause/3, INV1, not a
+    # starvation outcome); each light lane's initial depth > 0 (the liveness
+    # floor); every served job is leased on the server clock (wclaim/3 over TIME).
+    heavy = BrandedId.generate!("PRT")
+    light1 = BrandedId.generate!("PRT")
+    light2 = BrandedId.generate!("PRT")
+    :ok = Lanes.weight(conn, q, heavy, 5)
+    :ok = Lanes.weight(conn, q, light1, 1)
+    :ok = Lanes.weight(conn, q, light2, 1)
+
+    # flood the heavy lane DEEP (200 at weight 5 = 40 turns to exhaust alone);
+    # trickle each light lane a small steady backlog
+    for _ <- 1..200, do: {:ok, :enqueued} = Lanes.enqueue(conn, q, heavy, BrandedId.generate!("JOB"), "h")
+    for _ <- 1..6, do: {:ok, :enqueued} = Lanes.enqueue(conn, q, light1, BrandedId.generate!("JOB"), "l1")
+    for _ <- 1..6, do: {:ok, :enqueued} = Lanes.enqueue(conn, q, light2, BrandedId.generate!("JOB"), "l2")
+
+    # the liveness floor: every light lane started with real backlog
+    {:ok, 6} = Lanes.depth(conn, q, light1)
+    {:ok, 6} = Lanes.depth(conn, q, light2)
+
+    active = Keyspace.queue_key(q, "active")
+
+    # THE INTERLEAVING WITNESS: drive a bounded 9-turn early window (3 ring
+    # cycles), recording which lanes were served and proving every served job
+    # carried a TIME-derived lease
+    {early, leased_ok} =
+      Enum.reduce(1..9, {MapSet.new(), true}, fn _, {seen, ok} ->
+        case Lanes.wclaim(conn, q, 60_000) do
+          {:ok, served} ->
+            leases =
+              Enum.all?(served, fn {id, _p, _att, _g} ->
+                match?({:ok, s} when not is_nil(s), Connector.command(conn, ["ZSCORE", active, id]))
+              end)
+
+            grps = Enum.map(served, fn {_id, _p, _att, g} -> g end)
+            {MapSet.union(seen, MapSet.new(grps)), ok and leases}
+
+          :empty ->
+            {seen, ok}
+        end
+      end)
+
+    # drain the rest (the heavy lane's deep backlog) to prove every lane reaches
+    # zero (the liveness assertion)
+    Enum.reduce_while(1..120, nil, fn _, _ ->
+      case Lanes.wclaim(conn, q, 60_000) do
+        {:ok, _} -> {:cont, nil}
+        :empty -> {:halt, nil}
+      end
+    end)
+
+    cond do
+      not leased_ok ->
+        {:fail, :no_server_clock_lease}
+
+      # the no-op-defeater: both light lanes were served INSIDE the early window
+      not (MapSet.member?(early, light1) and MapSet.member?(early, light2)) ->
+        {:fail, {:light_lane_starved_early, early}}
+
+      true ->
+        # the liveness assertion: every lane drained to zero
+        with {:ok, 0} <- Lanes.depth(conn, q, heavy),
+             {:ok, 0} <- Lanes.depth(conn, q, light1),
+             {:ok, 0} <- Lanes.depth(conn, q, light2) do
+          :ok
+        else
+          other -> {:fail, {:lane_not_drained, other}}
+        end
     end
   end
 

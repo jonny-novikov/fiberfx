@@ -60,6 +60,85 @@ defmodule EchoMQ.Lanes do
           return {id, redis.call('HGET', jk, 'payload'), att, g}
           """)
 
+  # The weighted rotation: @gclaim's ring step deepened to a fair SHARE per turn
+  # (emq.4.4-D1, Fork B Arm 2 -- the additive weighted multi-pop; @gclaim stays
+  # byte-frozen, this is a parallel path). One LMOVE rotates the ring exactly
+  # once (the same rota step as @gclaim:38), then the rotated lane is served K
+  # heads in this one atomic turn instead of one, where K is the lane's fair
+  # share. The weight is read from the gweight HASH (ARGV-rooted on the declared
+  # base, the @gclaim gactive/glimit convention at :53-54), absent or below 1
+  # clamping to 1 -- a weight is a THROUGHPUT share, never a pause (a zero/parked
+  # lane is the operator's @gpause, not a rotation outcome; INV1).
+  #
+  # K = min(weight, the lane's pending depth, the glimit HEADROOM). The headroom
+  # clamp is load-bearing: the weight is a throughput share but glimit is a
+  # CONCURRENCY ceiling, so the multi-pop must NEVER push gactive past glimit --
+  # K is bounded by (lim - cur) when a limit is set (INV1). With no headroom the
+  # lane is at its ceiling: it is de-ringed (the @gclaim:55-56 guard) and skipped,
+  # nothing served. The served jobs all share ONE lease deadline computed once
+  # from the server clock (the @gclaim:50-52 TIME pattern -- no host timestamp
+  # crosses the lease, INV4). gactive is incremented by the ACTUAL count served,
+  # then the post-increment re-ring guard runs once (the @gclaim:53-59 ceiling +
+  # empty-lane test). Returns a NESTED array of the K served tuples
+  # {id, payload, attempts, group} (each isomorphic to @gclaim's flat return);
+  # an empty ring, a lane emptied since the LMOVE, or a lane with no headroom all
+  # return {} (the host maps to :empty). Every key shares the one {q} slot KEYS[1]
+  # pins (the declared base root, A-1). emq.4.4-D1.
+  @gwclaim Script.new(:gwclaim, """
+           local g = redis.call('LMOVE', KEYS[1], KEYS[1], 'LEFT', 'RIGHT')
+           if not g then return {} end
+           local lane = ARGV[1] .. 'g:' .. g .. ':pending'
+           local depth = redis.call('ZCARD', lane)
+           if depth == 0 then
+             redis.call('LREM', KEYS[1], 0, g)
+             return {}
+           end
+           local w = tonumber(redis.call('HGET', ARGV[1] .. 'gweight', g) or '1')
+           if w < 1 then w = 1 end
+           local k = w
+           if depth < k then k = depth end
+           local lim = redis.call('HGET', ARGV[1] .. 'glimit', g)
+           if lim then
+             local cur = tonumber(redis.call('HGET', ARGV[1] .. 'gactive', g) or '0')
+             local headroom = tonumber(lim) - cur
+             if headroom < k then k = headroom end
+           end
+           if k <= 0 then
+             redis.call('LREM', KEYS[1], 0, g)
+             return {}
+           end
+           local t = redis.call('TIME')
+           local now = t[1] * 1000 + math.floor(t[2] / 1000)
+           local served = {}
+           for _ = 1, k do
+             local popped = redis.call('ZPOPMIN', lane)
+             local id = popped[1]
+             local jk = ARGV[1] .. 'job:' .. id
+             local att = redis.call('HINCRBY', jk, 'attempts', 1)
+             redis.call('HSET', jk, 'state', 'active')
+             redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]), id)
+             served[#served + 1] = {id, redis.call('HGET', jk, 'payload'), att, g}
+           end
+           local act = redis.call('HINCRBY', ARGV[1] .. 'gactive', g, k)
+           if lim and act >= tonumber(lim) then
+             redis.call('LREM', KEYS[1], 0, g)
+           elseif redis.call('ZCARD', lane) == 0 then
+             redis.call('LREM', KEYS[1], 0, g)
+           end
+           return served
+           """)
+
+  # The weight-set script: write the lane's fair-share weight into the gweight
+  # HASH (KEYS[1], group -> weight). A weight change never alters a lane's
+  # serviceability (serviceable = nonempty AND unpaused AND below-limit, all
+  # independent of weight), so -- unlike @glimit -- this path needs NO ring
+  # bookkeeping or re-ring. The single declared key roots the whole script (A-1
+  # trivial). emq.4.4-D1.
+  @gweight Script.new(:gweight, """
+           redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+           return 1
+           """)
+
   @gpause Script.new(:gpause, """
           redis.call('SADD', KEYS[1], ARGV[1])
           redis.call('LREM', KEYS[2], 0, ARGV[1])
@@ -180,6 +259,60 @@ defmodule EchoMQ.Lanes do
         {:ok, [id, payload, att, group]} -> {:ok, {id, payload, att, group}}
         other -> other
       end
+    end
+  end
+
+  @doc """
+  The weighted rotation: rotate the ring one step and serve the rotated lane its
+  fair SHARE in one atomic turn (`claim/3` deepened from one head to K, where K =
+  `min(weight, lane depth, glimit headroom)` -- emq.4.4-D1). A higher-weight lane
+  is served proportionally more over a window, never all of it; the equal
+  round-robin `claim/3` is byte-frozen and coexists (the additive weighted path,
+  Fork B Arm 2). The queue-wide pause flag (`EchoMQ.Jobs.paused?/2`) is honored
+  FIRST -- a queue-wide pause stops the weighted claim too, answering `:empty`.
+  Each served job is leased on the server clock (the shipped `@gclaim` lease
+  pattern); the served jobs share the one lease deadline of this turn. Answers
+  `{:ok, [{id, payload, attempts, group}, ...]}` with one tuple per served job,
+  or `:empty` (an empty ring, a lane emptied since the rotation, or a lane with
+  no concurrency headroom -- it is de-ringed and skipped). A weight is set with
+  `weight/4`; an unweighted lane serves one head per turn (weight defaults to 1),
+  identical to `claim/3`.
+  """
+  def wclaim(conn, queue, lease_ms) when is_integer(lease_ms) and lease_ms > 0 do
+    if EchoMQ.Jobs.paused?(conn, queue) do
+      :empty
+    else
+      keys = [Keyspace.queue_key(queue, "ring"), Keyspace.queue_key(queue, "active")]
+      argv = [Keyspace.queue_key(queue, ""), Integer.to_string(lease_ms)]
+
+      case Connector.eval(conn, @gwclaim, keys, argv) do
+        {:ok, []} -> :empty
+        {:ok, served} when is_list(served) -> {:ok, Enum.map(served, &List.to_tuple/1)}
+        other -> other
+      end
+    end
+  end
+
+  @doc """
+  Set the lane's fair-share weight: the rotation serves a higher-weight lane
+  proportionally more per turn (`wclaim/3`). Weight is per-LANE, never per-job --
+  there is no numeric per-job priority (retired by design); "served more" is a
+  property of the identity, not the work. The weight rides the `gweight`
+  per-queue HASH (group -> weight), the same key SHAPE as `glimit`/`gactive`, no
+  new key family. The group is gated `EchoData.BrandedId.valid?/1` at
+  `lane_key!/2` (raises on an ill-formed branded id) before any wire. A weight
+  change never alters a lane's serviceability (serviceable is nonempty AND
+  unpaused AND below-limit, all weight-independent), so -- unlike `limit/4` -- no
+  ring bookkeeping is touched. `w >= 1` (a weight of zero is not a parked lane --
+  that is the operator's `pause/3`). Answers `:ok`. emq.4.4-D1.
+  """
+  def weight(conn, queue, group, w) when is_integer(w) and w >= 1 do
+    _ = lane_key!(queue, group)
+    keys = [Keyspace.queue_key(queue, "gweight")]
+
+    case Connector.eval(conn, @gweight, keys, [group, Integer.to_string(w)]) do
+      {:ok, 1} -> :ok
+      other -> other
     end
   end
 
