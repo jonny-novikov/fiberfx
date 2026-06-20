@@ -1,8 +1,8 @@
 defmodule EchoMQ.ConformanceRunTest do
   @moduledoc """
   The standing gate (EMQ.0-US4, the ratified Q1 stand-in for rung 3_6):
-  the fifty-five-scenario harness drives the public surface against Valkey
-  on 6390 and every scenario passes — `run/2 → {:ok, 55}` (the eighteen
+  the sixty-four-scenario harness drives the public surface against Valkey
+  on 6390 and every scenario passes — `run/2 → {:ok, 64}` (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -17,9 +17,11 @@ defmodule EchoMQ.ConformanceRunTest do
   flow_add_bulk), the emq.3.5 closer's two recursion scenarios
   (flow_grandchild, flow_grandchild_fail), the emq.4.1 control plane's
   two (the lane re-assignment reassign and the lane-scoped destructive drain
-  lane_drain), and the emq.4.2 group-aware recovery's one (the group-scoped
-  stalled-sweep reap_group)). Scenarios run on per-scenario
-  sub-queues and purge what they mint.
+  lane_drain), the emq.4.2 group-aware recovery's one (the group-scoped
+  stalled-sweep reap_group), and the emq.5.1 batch-claim spine's three
+  (the batch claim batch_claim, the under-fill short batch batch_claim_short,
+  and partial-failure isolation batch_partial_failure)). Scenarios run on
+  per-scenario sub-queues and purge what they mint.
   """
   use ExUnit.Case, async: false
 
@@ -32,7 +34,7 @@ defmodule EchoMQ.ConformanceRunTest do
     :ok
   end
 
-  test "the sixty-one-scenario harness passes whole against the truth row" do
+  test "the sixty-four-scenario harness passes whole against the truth row" do
     {:ok, conn} = Connector.start_link(port: 6390)
 
     on_exit(fn ->
@@ -45,6 +47,6 @@ defmodule EchoMQ.ConformanceRunTest do
 
     q = "emq0.conf#{System.unique_integer([:positive])}"
 
-    assert Conformance.run(conn, q) == {:ok, 61}
+    assert Conformance.run(conn, q) == {:ok, 64}
   end
 end

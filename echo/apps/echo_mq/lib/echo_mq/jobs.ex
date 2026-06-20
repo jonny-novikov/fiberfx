@@ -175,6 +175,49 @@ defmodule EchoMQ.Jobs do
          return {id, redis.call('HGET', jk, 'payload'), att}
          """)
 
+  # @bclaim -- the batch-claim spine (emq.5.1, FORK 5.1-A = the LOOP). The
+  # count-variant ZPOPMIN of the design's reserved §6.2 surface (a count-variant
+  # pop INSIDE the script, never a client-side LMPOP/ZMPOP -- a client pop would
+  # bypass this bookkeeping path, design §6.2). It is the @claim single-pop spine
+  # generalized to up to `size` heads, the NON-GROUPED isomorph of the shipped
+  # @gwclaim multi-pop (lanes.ex @gwclaim): ZCARD the pending set, clamp k =
+  # min(size, depth) (the @gwclaim k=min(request,depth) clamp -- never over-pops),
+  # read ONE redis.call('TIME') for the whole batch (so every served member is
+  # leased on the SAME deadline, no host timestamp crosses the lease, INV4), then
+  # the @claim per-member transitions in a loop: ZPOPMIN the head, HINCRBY the
+  # row's attempts (the per-member fencing token, INV6), HSET state active, ZADD
+  # the active set on the shared deadline, collect {id, payload, att}. Stops when
+  # the pop is empty so an under-fill (M<size pending) returns the short list of M
+  # (FORK 5.1-C), and M=0 returns the empty array (the host maps {} -> :empty).
+  # Declared keys KEYS[1]=pending / KEYS[2]=active PIN the {q} slot (A-1/S-6); the
+  # per-row key jk = ARGV[1] .. id roots on the ARGV queue-base (ARGV[1] =
+  # emq:{q}:job:), the EXACT @claim A-1 ARGV-base row-key form (jobs.ex @claim) --
+  # slot-sound because the row shares the {q} hashtag KEYS[1]/KEYS[2] pin, not
+  # because an ARGV base is itself a declared root. Returns the NESTED array of
+  # served {id, payload, attempts} tuples (the @claim flat return, one per member;
+  # no group field -- the flat queue carries no lane). @claim is byte-frozen; the
+  # single-pop and batch paths coexist (INV2). emq.5.1-D1.
+  @bclaim Script.new(:bclaim, """
+          local depth = redis.call('ZCARD', KEYS[1])
+          if depth == 0 then return {} end
+          local k = tonumber(ARGV[3])
+          if depth < k then k = depth end
+          local t = redis.call('TIME')
+          local now = t[1] * 1000 + math.floor(t[2] / 1000)
+          local served = {}
+          for _ = 1, k do
+            local popped = redis.call('ZPOPMIN', KEYS[1])
+            if #popped == 0 then break end
+            local id = popped[1]
+            local jk = ARGV[1] .. id
+            local att = redis.call('HINCRBY', jk, 'attempts', 1)
+            redis.call('HSET', jk, 'state', 'active')
+            redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]), id)
+            served[#served + 1] = {id, redis.call('HGET', jk, 'payload'), att}
+          end
+          return served
+          """)
+
   # KEYS[1]=active set, KEYS[2]=row; ARGV[1]=id, ARGV[2]=token, ARGV[3]=p
   # (the queue base). The fan-in hook (emq.3.1) APPENDS, for a flow child
   # only, three host-built declared keys -- KEYS[3]=the parent's :dependencies
@@ -441,6 +484,57 @@ defmodule EchoMQ.Jobs do
       {:ok, nil} -> false
       {:ok, _} -> true
       _ -> false
+    end
+  end
+
+  @doc """
+  Claim up to `size` oldest pending jobs in ONE atomic batch -- the batch-claim
+  spine (emq.5.1). The faithful batch generalization of `claim/3` (the extra arg
+  is `size`): it amortizes the per-job round-trip + the per-job lease bookkeeping
+  across the whole batch -- one wire round-trip, one server-clock read, one lease
+  deadline for every served member. The queue-wide pause flag (`paused?/2`) is
+  honored host-side FIRST -- a paused queue answers `:empty` with the pending set
+  untouched (the `claim/3` precedent), never running the batch pop. Otherwise it
+  evals `@bclaim`, the count-variant `ZPOPMIN emq:{q}:pending` loop, and answers:
+
+    * `{:ok, [{id, payload, attempts}, ...]}` -- the served members, in pop order
+      (mint order: `ZPOPMIN` pops the lowest score and the pending set is score-0
+      mint-ordered, so the batch is served oldest-first -- the order theorem). Each
+      member carries its OWN freshly-incremented attempts token (per-member
+      fencing); every member is scored in the active set on the ONE shared lease
+      deadline.
+    * `:empty` -- the pending set was empty (a batch of zero), or the queue is
+      paused (the zero case of the same rule -- `claim/3`'s `:empty`, generalized).
+
+  An under-fill is a SHORT batch, not a refusal: a request for `size` N with M<N
+  pending answers `{:ok, [M members]}` (the `@bclaim` `k = min(size, depth)` clamp
+  -- never over-popping); a request for N from an empty set answers `:empty`. The
+  spine is NON-BLOCKING (the manual-pull surface): the blocking `min_size`/`timeout`
+  shaping cadence is `EchoMQ.Consumer`'s job at emq.5.2, never folded into the
+  spine. The worker resolves each returned member individually through the shipped
+  per-member transitions (`complete/5` / `retry/7`) -- the batch is a CLAIM unit,
+  not a RESOLUTION unit, so one poisoned member is isolated to its own retry while
+  the rest settle (partial-failure isolation). `@claim` and every shipped script
+  are byte-frozen; `@bclaim` is a NEW additive script. emq.5.1-D1/D2.
+  """
+  def claim_batch(conn, queue, size, lease_ms)
+      when is_integer(size) and size > 0 and is_integer(lease_ms) and lease_ms > 0 do
+    if paused?(conn, queue) do
+      :empty
+    else
+      keys = [Keyspace.queue_key(queue, "pending"), Keyspace.queue_key(queue, "active")]
+
+      argv = [
+        Keyspace.queue_key(queue, "job:"),
+        Integer.to_string(lease_ms),
+        Integer.to_string(size)
+      ]
+
+      case Connector.eval(conn, @bclaim, keys, argv) do
+        {:ok, []} -> :empty
+        {:ok, members} when is_list(members) -> {:ok, Enum.map(members, &List.to_tuple/1)}
+        other -> other
+      end
     end
   end
 

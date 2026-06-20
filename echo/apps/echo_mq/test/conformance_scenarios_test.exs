@@ -1,7 +1,7 @@
 defmodule EchoMQ.ConformanceScenariosTest do
   @moduledoc """
   The pure half of the Conformance row (echo2-migration.md §5): the
-  scenario registry pinned — fifty-five names in run order (the eighteen
+  scenario registry pinned — sixty-four names in run order (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -16,9 +16,10 @@ defmodule EchoMQ.ConformanceScenariosTest do
   flow_add_bulk), the emq.3.5 closer's two recursion scenarios
   (flow_grandchild, flow_grandchild_fail), the emq.4.1 control plane's
   two (the lane re-assignment reassign and the lane-scoped destructive drain
-  lane_drain), and the emq.4.2 group-aware recovery's one (the group-scoped
-  stalled-sweep reap_group)). The wire half
-  (`run/2 → {:ok, 55}`) lives in `conformance_run_test.exs` behind the
+  lane_drain), the emq.4.2 group-aware recovery's one (the group-scoped
+  stalled-sweep reap_group), and the emq.5.1 batch-claim spine's three
+  (batch_claim, batch_claim_short, batch_partial_failure)). The wire half
+  (`run/2 → {:ok, 64}`) lives in `conformance_run_test.exs` behind the
   `:valkey` tag.
   """
   use ExUnit.Case, async: true
@@ -86,10 +87,13 @@ defmodule EchoMQ.ConformanceScenariosTest do
     :native_lock_field,
     :native_lock_refuses,
     :weighted_proportion,
-    :starvation_drill
+    :starvation_drill,
+    :batch_claim,
+    :batch_claim_short,
+    :batch_partial_failure
   ]
 
-  test "scenarios/0 answers exactly the sixty-one names in run order" do
+  test "scenarios/0 answers exactly the sixty-four names in run order" do
     assert Keyword.keys(Conformance.scenarios()) == @run_order
   end
 

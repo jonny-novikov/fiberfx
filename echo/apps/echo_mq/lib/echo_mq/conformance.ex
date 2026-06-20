@@ -45,15 +45,22 @@ defmodule EchoMQ.Conformance do
   group-scoped stalled-sweep (a named group's expired-lease members recovered into
   its own lane g:<g>:pending while a sibling group's expired members are left in
   active for the queue-wide reaper -- the scoping filter, on the server clock,
-  gactive honest). A port of the client conforms when it drives the same server to
-  the same fifty-five verdicts -- the scenarios are wire-level on purpose, so the
-  harness ports by translation, not by faith. Scenarios run on per-scenario
+  gactive honest), and -- since the batches family opened (emq.5.1, the batch-claim
+  spine) -- the batch claim's three behaviors (a batch of size N served EXACTLY
+  N oldest-mint members in mint order on one shared server-clock lease, the
+  under-fill short batch / oversized-clamp / empty / queue-wide-pause semantics, and
+  partial-failure isolation where one retried member leaves the rest free to
+  complete -- the batch a claim unit resolved over the byte-frozen @complete/@retry,
+  not a resolution unit). A port of the client conforms when it drives the same
+  server to the same sixty-four verdicts -- the scenarios are wire-level on purpose,
+  so the harness ports by translation, not by faith. Scenarios run on per-scenario
   sub-queues and purge what they mint.
   Chapter 3.6, extended 3.7, then the emq.2 cluster (parity, closed at emq.2.4),
   then the emq.3 flow family (opened at emq.3.1, crossed queues at emq.3.3,
   failure half at emq.3.4, closed at emq.3.5 with grandchildren), then Movement
   II's groups family (opened at emq.4.1 with the control plane, the recovery axis
-  at emq.4.2).
+  at emq.4.2), then the batches family (opened at emq.5.1 with the batch-claim
+  spine).
   """
 
   alias EchoData.BrandedId
@@ -137,28 +144,26 @@ defmodule EchoMQ.Conformance do
       native_lock_field: "ewr.2.6 native expiry: a lock field folded into the job hash carries an observable hash-field TTL (HPTTL) and self-clears at its deadline with no sweep, the rest of the row surviving",
       native_lock_refuses: "ewr.2.6: remove_job honors the native lock field -- a job held by the field alone refuses EMQLOCK untouched, and self-heals to removable once the field expires, no sweep",
       weighted_proportion: "two branded lanes weighted 3:1 and both flooded are served approximately 3:1 over a window with the lighter lane served NON-ZERO -- a higher weight serves proportionally more, never all (emq.4.4)",
-      starvation_drill: "under sustained skew (one heavy lane flooded, light lanes trickling) EVERY lane's pending depth reaches zero over the drill window -- no lane starves, the capstone guarantee (emq.4.4)"
+      starvation_drill: "under sustained skew (one heavy lane flooded, light lanes trickling) EVERY lane's pending depth reaches zero over the drill window -- no lane starves, the capstone guarantee (emq.4.4)",
+      batch_claim: "a batch claim of size N from a flooded pending set serves EXACTLY the N oldest-mint members in mint order, each at attempts 1, all leased on ONE shared server-clock deadline -- the count-variant ZPOPMIN loop inside the script, never a client multi-key pop (emq.5.1)",
+      batch_claim_short: "an under-fill is a short batch: a request for N with M<N pending returns exactly M (never over-popping), an oversized request beyond the depth returns the depth, an empty pending set returns :empty, and a queue-wide pause returns :empty pending-untouched (emq.5.1)",
+      batch_partial_failure: "partial-failure isolation: one member of a claimed batch retried (scheduled, last_error kept) leaves the rest free to complete; after promote a fresh batch finds ONLY the poison at attempts 2 -- the batch is a claim unit, resolved over the byte-frozen @complete/@retry, not a resolution unit (emq.5.1)"
     ]
   end
 
   @doc """
   Runs all scenarios against `conn`, on sub-queues of `queue`. Prints one
   CONF line per scenario and a closing tally. Returns `{:ok, n}` when all
-  pass (n == 54 today -- the eighteen state-machine scenarios, the emq.2.1
-  read plane's six, the emq.2.2 operator plane's eight (queue_pause, drain,
-  obliterate, update_data, update_progress, job_logs, remove_job,
-  reprocess_job), the emq.2.3 watch plane's five (lock_extend, stalled,
-  events, telemetry, cancel), the emq.2.4 parity-closer's five depth
-  scenarios (unknown_state, rate_consult, dedup_release, extend_locks_batch,
-  stalled_group), the emq.2.2 obliterate fix's grouped-row scenario
-  (obliterate_grouped), the emq.3 flow family's three single-queue scenarios
-  (flow_add, flow_fanin, flow_children_values), the emq.3.3 cross-queue
-  flow scenario (flow_cross_queue), the emq.3.4 failure-half's three
-  scenarios (flow_fail_parent, flow_ignore_dep, flow_add_bulk), the
-  emq.3.5 closer's two recursion scenarios (flow_grandchild,
-  flow_grandchild_fail), and the emq.4.1 control plane's two (the lane
-  re-assignment reassign and the lane-scoped destructive drain lane_drain)),
-  `{:error, failed_names}` otherwise.
+  pass (n == 64 today -- the live total, grown by additive minor; the count is
+  re-pinned in both pinning tests, `conformance_run_test.exs` `{:ok, n}` and
+  `conformance_scenarios_test.exs` `@run_order`), `{:error, failed_names}`
+  otherwise. The set spans the eighteen state-machine scenarios, the emq.2
+  parity cluster (read / operator / watch planes + the parity closer), the
+  emq.3 flow family (single-queue / cross-queue / failure-half / grandchildren),
+  Movement II's groups family (the emq.4.1 control plane, the emq.4.2 group-aware
+  recovery, the emq.4.4 weighted rotation + starvation drill), and -- since the
+  batches family opened -- the emq.5.1 batch-claim spine's three (batch_claim,
+  batch_claim_short, batch_partial_failure).
   """
   def run(conn, queue) when is_binary(queue) do
     results =
@@ -2062,6 +2067,142 @@ defmodule EchoMQ.Conformance do
     end
   end
 
+  # The batch-claim spine (emq.5.1): a count-variant ZPOPMIN loop INSIDE the
+  # script leases up to `size` heads on ONE server-clock deadline. The
+  # no-op-defeater is a flooded set (K=8) claimed for size=4: EXACTLY 4 served
+  # (a batch that serves fewer than size from a flooded set under-served -- a
+  # LOUD failure), the 4 OLDEST-mint ids in mint order (identical to 4 sequential
+  # claim/3 pops, the order theorem), each at attempts 1 (per-member HINCRBY), all
+  # on the SAME active deadline (one TIME read -- distinct deadlines would mean a
+  # per-member re-read). size>=2 against K>size exercises the BATCH, not the
+  # single-pop path.
+  defp apply_scenario(:batch_claim, conn, q) do
+    size = 4
+    k = 8
+
+    ids =
+      for _ <- 1..k do
+        id = BrandedId.generate!("JOB")
+        {:ok, :enqueued} = Jobs.enqueue(conn, q, id, "b")
+        id
+      end
+
+    case Jobs.claim_batch(conn, q, size, 60_000) do
+      {:ok, members} when length(members) == size ->
+        claimed = Enum.map(members, fn {id, _p, _a} -> id end)
+        atts = Enum.map(members, fn {_id, _p, a} -> a end)
+
+        deadlines =
+          Enum.map(claimed, fn id ->
+            case Connector.command(conn, ["ZSCORE", Keyspace.queue_key(q, "active"), id]) do
+              {:ok, s} -> s
+              _ -> nil
+            end
+          end)
+
+        states =
+          Enum.map(claimed, fn id ->
+            Connector.command(conn, ["HGET", Keyspace.job_key(q, id), "state"])
+          end)
+
+        cond do
+          # the size lowest-score (oldest-mint) ids, in mint order
+          claimed != Enum.take(ids, size) -> {:fail, {:not_mint_order, claimed}}
+          # each member's first-claim token
+          atts != List.duplicate(1, size) -> {:fail, {:attempts, atts}}
+          # ONE shared lease deadline for the whole batch (a single TIME read)
+          length(Enum.uniq(deadlines)) != 1 or hd(deadlines) == nil ->
+            {:fail, {:not_one_shared_lease, deadlines}}
+
+          # every served row moved to active
+          Enum.any?(states, &(&1 != {:ok, "active"})) -> {:fail, {:state, states}}
+          true -> :ok
+        end
+
+      other ->
+        {:fail, {:under_served, other}}
+    end
+  end
+
+  # The under-fill / oversized / empty / paused semantics (emq.5.1, FORK 5.1-C =
+  # the short batch). The no-op-defeater: M=3 pending, a request for N=7 must
+  # return EXACTLY 3 (never over-popping past the depth, never blocking, never
+  # erroring); then the drained set returns :empty; then a fresh flooded-but-paused
+  # queue returns :empty with the pending set UNTOUCHED (the queue-wide pause
+  # honored host-side FIRST -- the claim/3 precedent).
+  defp apply_scenario(:batch_claim_short, conn, q) do
+    m = 3
+
+    ids =
+      for _ <- 1..m do
+        id = BrandedId.generate!("JOB")
+        {:ok, :enqueued} = Jobs.enqueue(conn, q, id, "s")
+        id
+      end
+
+    with {:ok, members} <- Jobs.claim_batch(conn, q, 7, 60_000),
+         true <- length(members) == m or {:fail, {:short_wrong_count, members}},
+         claimed = Enum.map(members, fn {id, _p, _a} -> id end),
+         true <- claimed == ids or {:fail, {:short_not_mint_order, claimed}},
+         # the drained set is the zero case -> :empty
+         :empty <- Jobs.claim_batch(conn, q, 5, 60_000),
+         # a paused queue-wide: :empty, pending untouched
+         pq = q <> ".paused",
+         pid = BrandedId.generate!("JOB"),
+         {:ok, :enqueued} <- Jobs.enqueue(conn, pq, pid, "p"),
+         :ok <- Admin.pause(conn, pq),
+         :empty <- Jobs.claim_batch(conn, pq, 5, 60_000),
+         {:ok, 1} <- Connector.command(conn, ["ZCARD", Keyspace.queue_key(pq, "pending")]) do
+      purge(conn, pq)
+      :ok
+    else
+      {:fail, _} = f ->
+        f
+
+      other ->
+        {:fail, other}
+    end
+  end
+
+  # Partial-failure isolation (emq.5.1, INV7): the batch is a CLAIM unit, not a
+  # RESOLUTION unit -- resolved member-by-member over the byte-frozen
+  # @complete/@retry, NO new resolution Lua. The no-op-defeater: a batch of 3,
+  # member k actually FAILS (a real @retry -> scheduled, max 3 so it does not
+  # dead), the other two complete -- one bad job never sinks the rest; after
+  # promote a fresh batch finds ONLY k, its own token advanced to 2 (per-member
+  # fencing). A stale-token resolution is refused EMQSTALE by the shipped fencing.
+  defp apply_scenario(:batch_partial_failure, conn, q) do
+    ids =
+      for _ <- 1..3 do
+        id = BrandedId.generate!("JOB")
+        {:ok, :enqueued} = Jobs.enqueue(conn, q, id, "f")
+        id
+      end
+
+    with {:ok, [poison | good]} <- Jobs.claim_batch(conn, q, 3, 60_000),
+         {poison_id, _p, 1} <- poison,
+         true <- poison_id == hd(ids) or {:fail, {:poison_not_oldest, poison_id}},
+         # the live token still settles; a stale token is refused
+         {:error, :stale} <- Jobs.complete(conn, q, poison_id, 99),
+         {:ok, :scheduled} <- Jobs.retry(conn, q, poison_id, 1, 5, 3, "poison"),
+         # the other two complete -- each transition independent of the poison
+         :ok <- complete_all(conn, q, good),
+         {:ok, "scheduled"} <-
+           Connector.command(conn, ["HGET", Keyspace.job_key(q, poison_id), "state"]),
+         {:ok, "poison"} <-
+           Connector.command(conn, ["HGET", Keyspace.job_key(q, poison_id), "last_error"]),
+         true <- good_rows_retired?(conn, q, good) or {:fail, :good_not_retired},
+         _ <- Process.sleep(30),
+         {:ok, 1} <- Jobs.promote(conn, q, 10),
+         # after promote, only the poison remains -- at attempts 2 (its own token)
+         {:ok, [{^poison_id, _pp, 2}]} <- Jobs.claim_batch(conn, q, 5, 60_000) do
+      :ok
+    else
+      {:fail, _} = f -> f
+      other -> {:fail, other}
+    end
+  end
+
   # A three-level same-queue flow where the intermediate node's OWN policy
   # toward the root is ignore_dependency_on_failure: a fail_parent grandchild
   # kills the node, but the node's death is IGNORED by the root (recorded in the
@@ -2287,6 +2428,26 @@ defmodule EchoMQ.Conformance do
 
   defp pairs(flat) when is_list(flat) do
     flat |> Enum.chunk_every(2) |> Map.new(fn [k, v] -> {k, v} end)
+  end
+
+  # Complete each member of a batch through the shipped, byte-frozen @complete
+  # with its own live token (emq.5.1 partial-failure isolation -- the worker
+  # resolves each member independently). :ok iff every completion settled.
+  defp complete_all(conn, q, members) do
+    Enum.reduce_while(members, :ok, fn {id, _p, att}, _ ->
+      case Jobs.complete(conn, q, id, att) do
+        :ok -> {:cont, :ok}
+        other -> {:halt, {:fail, {:complete, id, other}}}
+      end
+    end)
+  end
+
+  # Whether every member's row has been retired (deleted by @complete) -- the
+  # other-members-settled half of the partial-failure isolation property.
+  defp good_rows_retired?(conn, q, members) do
+    Enum.all?(members, fn {id, _p, _att} ->
+      Connector.command(conn, ["EXISTS", Keyspace.job_key(q, id)]) == {:ok, 0}
+    end)
   end
 
   defp purge(conn, q) do
