@@ -35,6 +35,7 @@ re-pinned in two tests.
 67  +batch shaping     emq.5.2                  the min_size/timeout cadence (batch_shaping_floor · batch_shaping_timeout · batch_shaping_partial_failure, +3) · label 2.5.0 held
 70  +group batch       emq.5.3                  the group-affinity batch (grouped_batch_affinity · grouped_batch_ceiling · grouped_batch_fairness, +3) · label 2.5.1
 73  +batch finish      emq.5.4                  the partitioned finish + dynamic delay (batch_partition · batch_delay · batch_delay_stale, +3) · label 2.5.2 · ══ emq.5 batches CLOSED
+74  +stream verbs      emq3.1                   the stream-verb floor (XADD/XRANGE/XREADGROUP/XACK/XAUTOCLAIM ride-generic, +stream_verbs) · label 2.6.0 · ══ EchoMQ 3.0 · the Stream Tier OPENS
 ```
 
 The **`ewr.1.x` client-core** registers no conformance scenario — that count was emq-owned and
@@ -88,6 +89,16 @@ The v1 surface rewritten state-of-the-art inside `echo_mq` under the v2 laws; no
 > `echomq:2.4.2` (the deferred cutover) while only the `mix.exs` **rung label** climbs (2.4.3 · 2.4.4) —
 > see the conformance-spine note above. `echomq:3.0.0` is reserved for the Stream Tier
 > ([`emq.streams.md`](./emq.streams.md)).
+
+## EchoMQ 3.0 · the Stream Tier — S1 the writer (in flight)
+
+Event streams on the certified wire, additive-minor; the `echomq:3.0.0` MAJOR is a **deferred cutover
+ratification** (declared when the tier is whole). Re-sequenced ahead of the 2.x-runway remainder (emq.6/7/8
+deferred — Operator-ruled 2026-06-22).
+
+| Rung | Date | Delivered | Δ | Risk | Commit · label |
+|---|---|---|---|---|---|
+| [emq3.1](./specs/emq3/emq3.1.md) | 2026-06-22 | The **stream-verb floor** — the five stream verbs (`XADD`/`XRANGE`/`XREADGROUP`/`XACK`/`XAUTOCLAIM`) reach the wire on the SHIPPED generic command path (`Connector.command/3` + the verb-agnostic `RESP.encode/1`), ZERO `echo_wire` edit, no new `Script.new/2`; the braced `emq:{q}:stream:<name>` §6 key type via the total `queue_key/2`; non-blocking round-trips (blocking + the group lifecycle defer to emq3.3). **Opens EchoMQ 3.0.** | 73→74 | NORMAL | `7b44dc97` · label `echomq:2.6.0` |
 
 ## The wire program · EchoWire client-core (`ewr.1.x`) — built
 
