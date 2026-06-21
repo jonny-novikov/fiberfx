@@ -67,6 +67,15 @@ Director-ratified).
 - **The wire-class registry (S-3 / §5).** Typed refusals lead with their class word (`EMQKIND`, `EMQSTALE`)
   via `redis.error_reply`, never the generic `ERR`. Adding a class is an additive minor, registered with its
   conformance probe in the same change. The five-code fence union stands unextended.
+- **The two version planes — derive the rung label from its POSITION, never as next-free.** The `mix.exs`
+  version is the DOCUMENTARY rung-label plane (read by nobody at runtime); the `@wire_version`
+  (`connector.ex`) is the FROZEN wire plane — keep them distinct. Derive the label from the rung's place in
+  the family ladder, NOT as the next free number: a rung WITHIN a family takes a PATCH bump (emq.4.3 → 2.4.3,
+  emq.4.4 → 2.4.4), OPENING a family takes a MINOR bump with the patch reset to 0 (emq.4.4 `2.4.4` → emq.5.1
+  `2.5.0`), and a no-substance rung HOLDS (emq.5.2 held `2.5.0`). A next-free MINOR mis-signals a family that
+  does not exist (the emq.5.3 D-2 finding: `2.6.0` was derived as next-free, but emq.5.3 is a within-family
+  rung → the patch `2.5.1`; a `2.6.0` would falsely open the emq.6 family). When the ladder is unambiguous
+  this is the Director's discretion, not a fork — derive it, flag the number, do not invent a minor.
 
 ## 4 · The conformance additive-minor mechanics
 
@@ -123,6 +132,15 @@ reporting** — find your defects first, do not wait for a verifier:
   uncommitted work, L-3). **CRITICAL: `EchoMQ.Connector.eval` is EVALSHA-first** — `redis-cli -p 6390 SCRIPT
   FLUSH` before re-testing EACH mutation, or a stale server-cached SHA masks the change and forges a false
   NON-catch (the T-6 trap). Report the kill-rate (caught/total).
+- **On an additive-ISOMORPH rung (the new script is a near-verbatim copy of a shipped one), two craft points.**
+  (a) The byte-freeze proof is "the SHIPPED script's file region is 0-del; the redis.call additions are the
+  NEW script" — a `grep redis.call` COUNT alone is ambiguous because the isomorph's lines look like duplicates
+  of the frozen original; confirm 0-del on the shipped script's region specifically. (b) Identify the new
+  script's SCRIPT-LOCAL lines FIRST (grep the new body vs the precedent) — the mutation spot-check MUST anchor
+  on the new script's SEMANTIC DELTA (its unique lines), because the shared isomorph lines aren't uniquely
+  Edit-targetable and mutating one tests the SHIPPED script, not the new one (the emq.5.3 L-1: `@gbclaim`'s
+  only local anchors were `local depth = redis.call('ZCARD', lane)`, `local k = depth`, and the `att, g}` tail;
+  a mutation on the byte-shared loop body would have hit frozen `@gwclaim` too).
 - **A "byte-freeze / REMEDIATE-cleared" claim is proven by re-running the diff to CLOSURE over the WHOLE
   touched file, never by the lines you re-touched.** After a byte-freeze assertion (a frozen Lua body) OR a
   "revert the format churn" remediation, run `git diff <file>` and confirm ZERO unintended lines remain on the

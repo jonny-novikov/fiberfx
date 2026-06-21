@@ -8,6 +8,12 @@ the binding authority is the design canon, which this file only points at, never
 **Framing.** Third person for any agent reference; no gendered pronouns for agents; no perceptual or
 interior-state verbs for agents or software — components read, compute, refuse, return.
 
+**Markdown-link hygiene for Lua/`KEYS[n]` prose.** `msh specs` parses any `[text](word)` adjacency in markdown
+as a link — so `KEYS[1](ring)` / any `KEYS[n](x)` Lua array-index notation in a ledger or spec is flagged a
+false `DEAD-TARGET "x"` at `error` severity (it bit the architect spec, the implementor ledger, AND the verify
+on emq.5.3). When authoring Lua / `KEYS[n]` / `redis.call` prose in markdown, break the bracket-then-paren
+adjacency: write `KEYS[n]=x`, insert a space, or wrap in backticks — never `KEYS[n](x)`.
+
 ## The canon (read-first, NO-INVENT)
 
 - **The design canon** — `docs/echo_mq/emq.design.md`: Operator-approved, reconcile-only, never redesigned.
