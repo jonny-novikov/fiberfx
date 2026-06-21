@@ -1,0 +1,16 @@
+---
+name: echo-courses-program
+description: go/echo-courses = new Echo v5 server rebuilding the jonnify.fly.dev/courses site from a catalog; Echo vendored at go/echo via replace (GOWORK=off); ec.1 scaffold BUILT
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 9d74f8c0-fad8-4a2e-99a9-a029129a761a
+---
+
+`go/echo-courses` = a new standalone Go program (module `github.com/fiberfx/echo-courses`) that rebuilds the published `jonnify.fly.dev/courses` static site on **Echo v5** — a course catalog + `html/template` Renderer behind Echo, preserving the five published URLs (`/elixir` `/redis-patterns` `/echomq` `/course/agile-agent-workflow` `/bcs`) and the jonnify look. Spec program: `docs/echo_courses/` (roadmap + rungs **ec.1–ec.6**; owner Fireheadz). Distinct from [[jonnify-cms-toolchain]] (the Go CMS for the static `/elixir` course) — echo-courses is the server-rendered successor for the courses index.
+
+**Vendoring contract (load-bearing):** Echo v5 has NO published release, so the framework is vendored in-repo at `go/echo` (the **v5.2.0** snapshot, itself `module github.com/labstack/echo/v5`) and consumed via `replace github.com/labstack/echo/v5 => ../echo`. Build **`GOWORK=off`** — the parent `go/go.work` spans only the agent-OS 4 ([[go-workspace-active-dev]]); echo-courses is NOT a member (the standalone-tool convention). Treat `go/echo` as read-only (vendor from, never edit; its own CLAUDE.md is STALE — says "Echo v4" while the code is v5.2.0).
+
+**v5 API gotchas (confirmed vs the vendored source; the v4→v5 drift):** `Context` is a struct (`*echo.Context`), not an interface; graceful shutdown is `echo.StartConfig{Address,GracefulTimeout}.Start(ctx,e)` driven by `signal.NotifyContext` cancellation — there is **no `e.Shutdown` method**; request logger is `middleware.RequestLogger()`; the `Renderer` interface is `Render(c *echo.Context, w io.Writer, name string, data any) error` (the `*Context` moved to the FRONT vs v4, and `echo.TemplateRenderer` already implements it over `html/template`).
+
+**Status: ec.1 (Echo v5 scaffold) SHIPPED 2026-06-21** — `cmd/server` (`newEcho` wiring + `run`/StartConfig graceful), `internal/handler.Health` (`GET /healthz`), `e.Static("/static",…)`, the layout (`internal/{handler,catalog}`, `web/{templates,static}`, `content/`). `make gate` (GOWORK=off: tidy+build+vet+test+gofmt) green; running-binary smoke confirmed healthz/static 200 + SIGTERM→exit 0 (graceful, not 143). `docs/echo_courses` reconciled to the vendoring reality + the two v5 API drifts + an ec.6 Docker-build-context note (a `replace => ../echo` build needs `go/` as context or `go mod vendor`). **Shipped via `/echo-courses-ship ec.1`** (a new command `.claude/commands/echo-courses-ship.md` = /x-mode + the echo-courses context pre-loaded; right-sized to Director-solo for the already-built rung): the vendor `go/echo` + the scaffold were committed out-of-band by the Operator in `a701bffc`, the docs reconcile + the ec.1 runbook + the ec-1 ship ledger in `65c508b3`. Next: **ec.2** templating engine + base layout (the `echo.Renderer` over `html/template` + header/footer/card/filter partials). Module org `fiberfx` is flippable to `jonny-novikov`. `.claude/commands/echo-courses-ship.md` itself is still untracked (a separate tooling concern).
