@@ -1,15 +1,15 @@
 // Command server runs the echo-courses HTTP server — the Echo v5 scaffold that
 // the echo-courses rungs build on (docs/echo_courses, ec.1 → ec.6).
 //
-// ec.1 (this rung) ships the boot, a /healthz probe, static serving, graceful
-// shutdown, and the project layout. The Renderer (ec.2), the catalog (ec.3),
-// and the course routes (ec.4) land on top of newEcho without reshaping it.
+// ec.1 shipped the boot, a /healthz probe, static serving, graceful shutdown, and
+// the project layout; ec.2 the Renderer; ec.3 the catalog. ec.4 (this rung) wires
+// the catalog-driven routes into newEcho: the /courses + / index, the five
+// published detail paths, and /courses/:slug — the live site.
 package main
 
 import (
 	"context"
 	"errors"
-	"html/template"
 	"net/http"
 	"os"
 	"os/signal"
@@ -58,15 +58,16 @@ func main() {
 // before the server ever binds (ec.2 acceptance 1 / ec.3 acceptances 2-3,
 // fail-fast).
 func run(ctx context.Context, addr, staticDir string, graceful time.Duration) error {
-	// Load the course catalog from the embedded content/ tree. ec.3 does not
-	// route or render it (ec.4 wires the index off Catalog.Courses / .Facets);
-	// loading here proves the seed parses and fails the boot fast on a missing
-	// field, a duplicate slug, or an unreadable file.
-	if _, err := catalog.Load(content.FS); err != nil {
+	// Load the course catalog from the embedded content/ tree and thread it into
+	// newEcho — ec.4 routes the index off Catalog.Courses / .Facets and the detail
+	// pages off Course.Path. Load fails the boot fast on a missing field, a
+	// duplicate slug, or an unreadable file.
+	cat, err := catalog.Load(content.FS)
+	if err != nil {
 		return err
 	}
 
-	e, err := newEcho(staticDir)
+	e, err := newEcho(staticDir, cat)
 	if err != nil {
 		return err
 	}
@@ -77,13 +78,14 @@ func run(ctx context.Context, addr, staticDir string, graceful time.Duration) er
 	return nil
 }
 
-// newEcho wires the scaffold: recover + request-logger middleware, the render
-// layer (the embedded template tree, parsed fail-fast at boot), GET /healthz,
-// static serving of staticDir under /static, and the ec.2 placeholder route
-// GET / proving the render path. A parse error returns a named error so the boot
-// aborts. Handlers take *echo.Context per Echo v5. ec.4 replaces GET / with the
-// real catalog index.
-func newEcho(staticDir string) (*echo.Echo, error) {
+// newEcho wires the server: recover + request-logger middleware, the render layer
+// (the embedded template tree, parsed fail-fast at boot), GET /healthz, static
+// serving of staticDir under /static, and — ec.4 — the catalog-driven routes:
+// GET /courses and GET / (the same index handler, D-2), the five published detail
+// paths plus /courses/:slug (render-identical, D-3), all from the threaded
+// *catalog.Catalog. A parse error returns a named error so the boot aborts.
+// Handlers take *echo.Context per Echo v5.
+func newEcho(staticDir string, cat *catalog.Catalog) (*echo.Echo, error) {
 	r, err := render.New(web.FS)
 	if err != nil {
 		return nil, err
@@ -94,29 +96,23 @@ func newEcho(staticDir string) (*echo.Echo, error) {
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestLogger())
 
-	e.GET("/", placeholder)
 	e.GET("/healthz", handler.Health)
 	e.Static("/static", staticDir)
 
-	return e, nil
-}
-
-// placeholder renders the ec.2 placeholder page — the base layout composed with
-// the card and filter partials over one sample card. ec.4 supersedes it with the
-// catalog-driven index handler.
-func placeholder(c *echo.Context) error {
-	data := map[string]any{
-		"Card": render.Card{
-			Accent:  template.CSS("var(--gold-bright)"),
-			Tags:    "elixir",
-			Href:    "/elixir",
-			Icon:    template.HTML(`<svg viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 35 L24 9 M21 22 L31 35"/><circle cx="22" cy="22" r="18" stroke-width="1.2" stroke-opacity="0.5"/></svg>`),
-			Eyebrow: "Elixir · BEAM · English",
-			Title:   "Functional Programming",
-			Summary: "A deep dive into functional programming with Elixir on the BEAM — from foundational to advanced computer-science problems, with interactive elements.",
-		},
+	courses := handler.NewCourses(cat)
+	// The index at both /courses and / (D-2 — both first-class, no redirect; the
+	// topbar brand href="/" resolves).
+	e.GET("/courses", courses.Index)
+	e.GET("/", courses.Index)
+	// /courses/:slug is the internal canonical; each published path is registered
+	// explicitly from Course.Path (not a /:slug catch-all — /course/agile-agent-workflow
+	// is multi-segment and would collide). Both render identically (D-3).
+	e.GET("/courses/:slug", courses.Detail)
+	for i := range cat.Courses {
+		e.GET(cat.Courses[i].Path, courses.Detail)
 	}
-	return c.Render(http.StatusOK, "placeholder.html", data)
+
+	return e, nil
 }
 
 func envOr(key, fallback string) string {

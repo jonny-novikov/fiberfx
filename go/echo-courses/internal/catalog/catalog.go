@@ -46,16 +46,17 @@ const frontMatterFence = "---"
 //   - Icon and Body are template.HTML so the inline <svg> and the body markup
 //     render unescaped.
 type Course struct {
-	Slug    string        // from the filename (content/<slug>.html)
-	Order   int           // front-matter; sort key for published order
-	Title   string        // front-matter
-	Tracks  []string      // front-matter (the eyebrow labels, e.g. ["Elixir","BEAM"])
-	Facet   string        // front-matter (the filter facet: Elixir|Redis|EchoMQ|Agents|BCS)
-	Summary string        // front-matter
-	Path    string        // front-matter (the published URL)
-	Accent  template.CSS  // front-matter (the --accent value, e.g. var(--gold-bright) or #e0564e)
-	Icon    template.HTML // front-matter (the card svg, verbatim from html/index.html)
-	Body    template.HTML // the HTML after the front-matter block
+	Slug       string        // from the filename (content/<slug>.html)
+	Order      int           // front-matter; sort key for published order (the card grid)
+	FacetOrder int           // front-matter; sort key for the filter-chip row (ec.4 D-1)
+	Title      string        // front-matter
+	Tracks     []string      // front-matter (the eyebrow labels, e.g. ["Elixir","BEAM"])
+	Facet      string        // front-matter (the filter facet: Elixir|Redis|EchoMQ|Agents|BCS)
+	Summary    string        // front-matter
+	Path       string        // front-matter (the published URL)
+	Accent     template.CSS  // front-matter (the --accent value, e.g. var(--gold-bright) or #e0564e)
+	Icon       template.HTML // front-matter (the card svg, verbatim from html/index.html)
+	Body       template.HTML // the HTML after the front-matter block
 }
 
 // Facet is one entry in the catalog's filter index: a display Label, the
@@ -68,9 +69,9 @@ type Facet struct {
 }
 
 // Catalog is the loaded set of courses plus the filter index derived from it.
-// Courses is ordered by Course.Order (published order). Facets begins with the
-// All facet, then one facet per distinct Course.Facet in first-seen
-// (published) order.
+// Courses is ordered by Course.Order (published grid order). Facets begins with
+// the All facet, then one facet per distinct Course.Facet ordered by the course's
+// FacetOrder (the published chip order — ec.4 D-1; distinct from the grid Order).
 type Catalog struct {
 	Courses []Course
 	Facets  []Facet
@@ -81,14 +82,15 @@ type Catalog struct {
 // fields decoded as plain strings (yaml.v3 cannot unmarshal into template.CSS /
 // template.HTML directly) and converted in Load.
 type courseMeta struct {
-	Order   int      `yaml:"order"`
-	Title   string   `yaml:"title"`
-	Tracks  []string `yaml:"tracks"`
-	Facet   string   `yaml:"facet"`
-	Summary string   `yaml:"summary"`
-	Path    string   `yaml:"path"`
-	Accent  string   `yaml:"accent"`
-	Icon    string   `yaml:"icon"`
+	Order      int      `yaml:"order"`
+	FacetOrder int      `yaml:"facet_order"`
+	Title      string   `yaml:"title"`
+	Tracks     []string `yaml:"tracks"`
+	Facet      string   `yaml:"facet"`
+	Summary    string   `yaml:"summary"`
+	Path       string   `yaml:"path"`
+	Accent     string   `yaml:"accent"`
+	Icon       string   `yaml:"icon"`
 }
 
 // Load reads every content/<slug>.html out of fsys, splits each file's YAML
@@ -171,16 +173,17 @@ func loadCourse(fsys fs.FS, file string) (Course, error) {
 	}
 
 	course := Course{
-		Slug:    slug,
-		Order:   meta.Order,
-		Title:   meta.Title,
-		Tracks:  meta.Tracks,
-		Facet:   meta.Facet,
-		Summary: meta.Summary,
-		Path:    meta.Path,
-		Accent:  template.CSS(meta.Accent),
-		Icon:    template.HTML(meta.Icon),
-		Body:    template.HTML(bytes.TrimSpace(body)),
+		Slug:       slug,
+		Order:      meta.Order,
+		FacetOrder: meta.FacetOrder,
+		Title:      meta.Title,
+		Tracks:     meta.Tracks,
+		Facet:      meta.Facet,
+		Summary:    meta.Summary,
+		Path:       meta.Path,
+		Accent:     template.CSS(meta.Accent),
+		Icon:       template.HTML(meta.Icon),
+		Body:       template.HTML(bytes.TrimSpace(body)),
 	}
 	if err := validate(course, file); err != nil {
 		return Course{}, err
@@ -227,6 +230,8 @@ func validate(c Course, file string) error {
 	switch {
 	case c.Order == 0:
 		return missing("order")
+	case c.FacetOrder == 0:
+		return missing("facet_order")
 	case c.Title == "":
 		return missing("title")
 	case len(c.Tracks) == 0:
@@ -246,19 +251,35 @@ func validate(c Course, file string) error {
 }
 
 // buildFacets derives the filter index from the ordered courses: the All facet
-// first (Count = len(courses)), then one facet per distinct Course.Facet in
-// first-seen (published) order, each Count being the number of courses with that
-// facet. Key is strings.ToLower(Facet); the All facet's Key is "all".
+// first (Count = len(courses)), then one facet per distinct Course.Facet ordered
+// by FacetOrder (the published chip order — ec.4 D-1; the first-seen course of a
+// shared facet sets its FacetOrder), each Count being the number of courses with
+// that facet. Key is strings.ToLower(Facet); the All facet's Key is "all".
 func buildFacets(courses []Course) []Facet {
-	facets := []Facet{{Label: "All", Key: "all", Count: len(courses)}}
-	idx := map[string]int{} // facet label -> position in facets
+	type entry struct {
+		facet Facet
+		order int // the FacetOrder of the first course that defined this facet
+	}
+	entries := make([]entry, 0, len(courses))
+	idx := map[string]int{} // facet label -> position in entries
 	for _, c := range courses {
 		if pos, ok := idx[c.Facet]; ok {
-			facets[pos].Count++
+			entries[pos].facet.Count++
 			continue
 		}
-		idx[c.Facet] = len(facets)
-		facets = append(facets, Facet{Label: c.Facet, Key: strings.ToLower(c.Facet), Count: 1})
+		idx[c.Facet] = len(entries)
+		entries = append(entries, entry{
+			facet: Facet{Label: c.Facet, Key: strings.ToLower(c.Facet), Count: 1},
+			order: c.FacetOrder,
+		})
+	}
+	// Order the non-All chips by FacetOrder (the published row), stable on ties.
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].order < entries[j].order })
+
+	facets := make([]Facet, 0, len(entries)+1)
+	facets = append(facets, Facet{Label: "All", Key: "all", Count: len(courses)})
+	for _, e := range entries {
+		facets = append(facets, e.facet)
 	}
 	return facets
 }

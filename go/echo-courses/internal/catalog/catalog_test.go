@@ -91,32 +91,36 @@ func TestLoad_MissingFieldNamedError(t *testing.T) {
 		wantInError string
 	}{
 		"missing title": {
-			front:       "order: 1\ntracks: [A]\nfacet: F\nsummary: s\npath: /p\naccent: \"#fff\"\nicon: <svg/>",
+			front:       "order: 1\nfacet_order: 1\ntracks: [A]\nfacet: F\nsummary: s\npath: /p\naccent: \"#fff\"\nicon: <svg/>",
 			wantInError: "title",
 		},
 		"missing facet": {
-			front:       "order: 1\ntitle: T\ntracks: [A]\nsummary: s\npath: /p\naccent: \"#fff\"\nicon: <svg/>",
+			front:       "order: 1\nfacet_order: 1\ntitle: T\ntracks: [A]\nsummary: s\npath: /p\naccent: \"#fff\"\nicon: <svg/>",
 			wantInError: "facet",
 		},
 		"missing path": {
-			front:       "order: 1\ntitle: T\ntracks: [A]\nfacet: F\nsummary: s\naccent: \"#fff\"\nicon: <svg/>",
+			front:       "order: 1\nfacet_order: 1\ntitle: T\ntracks: [A]\nfacet: F\nsummary: s\naccent: \"#fff\"\nicon: <svg/>",
 			wantInError: "path",
 		},
 		"missing tracks": {
-			front:       "order: 1\ntitle: T\nfacet: F\nsummary: s\npath: /p\naccent: \"#fff\"\nicon: <svg/>",
+			front:       "order: 1\nfacet_order: 1\ntitle: T\nfacet: F\nsummary: s\npath: /p\naccent: \"#fff\"\nicon: <svg/>",
 			wantInError: "tracks",
 		},
 		"missing accent": {
-			front:       "order: 1\ntitle: T\ntracks: [A]\nfacet: F\nsummary: s\npath: /p\nicon: <svg/>",
+			front:       "order: 1\nfacet_order: 1\ntitle: T\ntracks: [A]\nfacet: F\nsummary: s\npath: /p\nicon: <svg/>",
 			wantInError: "accent",
 		},
 		"missing icon": {
-			front:       "order: 1\ntitle: T\ntracks: [A]\nfacet: F\nsummary: s\npath: /p\naccent: \"#fff\"",
+			front:       "order: 1\nfacet_order: 1\ntitle: T\ntracks: [A]\nfacet: F\nsummary: s\npath: /p\naccent: \"#fff\"",
 			wantInError: "icon",
 		},
 		"missing order": {
-			front:       "title: T\ntracks: [A]\nfacet: F\nsummary: s\npath: /p\naccent: \"#fff\"\nicon: <svg/>",
+			front:       "facet_order: 1\ntitle: T\ntracks: [A]\nfacet: F\nsummary: s\npath: /p\naccent: \"#fff\"\nicon: <svg/>",
 			wantInError: "order",
+		},
+		"missing facet_order": {
+			front:       "order: 1\ntitle: T\ntracks: [A]\nfacet: F\nsummary: s\npath: /p\naccent: \"#fff\"\nicon: <svg/>",
+			wantInError: "facet_order",
 		},
 	}
 	for name, tc := range cases {
@@ -217,20 +221,22 @@ func TestLoad_FacetCounts(t *testing.T) {
 	}
 }
 
-// AC4 (ordering): the non-All facets follow the courses' published order — the
-// first facet after All is the first course's facet, and so on.
+// AC4 (ordering): the non-All facets follow the PUBLISHED chip order carried by
+// each course's facet_order (ec.4 D-1) — All · Elixir · Agents · Redis · EchoMQ ·
+// BCS — which is distinct from the grid Course.Order (where Agents is 4th). This
+// is the pin that proves buildFacets sorts by FacetOrder, not first-seen Order.
 func TestLoad_FacetPublishedOrder(t *testing.T) {
 	cat, err := catalog.Load(content.FS)
 	if err != nil {
 		t.Fatalf("Load(content.FS): %v", err)
 	}
-	wantLabels := []string{"All", "Elixir", "Redis", "EchoMQ", "Agents", "BCS"}
+	wantLabels := []string{"All", "Elixir", "Agents", "Redis", "EchoMQ", "BCS"}
 	if len(cat.Facets) != len(wantLabels) {
 		t.Fatalf("facet count = %d, want %d", len(cat.Facets), len(wantLabels))
 	}
 	for i, label := range wantLabels {
 		if cat.Facets[i].Label != label {
-			t.Errorf("facet[%d] = %q, want %q (published order)", i, cat.Facets[i].Label, label)
+			t.Errorf("facet[%d] = %q, want %q (published chip order)", i, cat.Facets[i].Label, label)
 		}
 	}
 }
@@ -260,12 +266,15 @@ func TestLoad_BodyAvailableAsHTML(t *testing.T) {
 
 // --- helpers ---
 
-// courseFile builds a minimal valid content file (all required fields present)
-// for the failure/ordering fixtures.
+// courseFile builds a minimal valid content file (all required fields present,
+// incl. ec.4's facet_order — mirrored to order for the fixtures) for the
+// failure/ordering fixtures.
 func courseFile(order int, title, facet, path string) []byte {
 	var b strings.Builder
 	b.WriteString("---\n")
 	b.WriteString("order: ")
+	b.WriteByte(byte('0' + order))
+	b.WriteString("\nfacet_order: ")
 	b.WriteByte(byte('0' + order))
 	b.WriteString("\ntitle: ")
 	b.WriteString(title)

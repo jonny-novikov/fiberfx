@@ -12,12 +12,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fiberfx/echo-courses/content"
+	"github.com/fiberfx/echo-courses/internal/catalog"
 	"github.com/labstack/echo/v5"
 )
 
+// loadCatalog loads the embedded course corpus for the newEcho fixtures (ec.4
+// threads the catalog into newEcho). A load failure is a fatal test setup error.
+func loadCatalog(t *testing.T) *catalog.Catalog {
+	t.Helper()
+	cat, err := catalog.Load(content.FS)
+	if err != nil {
+		t.Fatalf("catalog.Load(content.FS): %v", err)
+	}
+	return cat
+}
+
 // AC2 (wired): newEcho serves GET /healthz with 200 through the middleware chain.
 func TestNewEcho_Healthz(t *testing.T) {
-	e, err := newEcho(t.TempDir())
+	e, err := newEcho(t.TempDir(), loadCatalog(t))
 	if err != nil {
 		t.Fatalf("newEcho: %v", err)
 	}
@@ -38,7 +51,7 @@ func TestNewEcho_StaticServing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "probe.txt"), []byte(want), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e, err := newEcho(dir)
+	e, err := newEcho(dir, loadCatalog(t))
 	if err != nil {
 		t.Fatalf("newEcho: %v", err)
 	}
@@ -124,33 +137,70 @@ func TestRun_GracefulDrain(t *testing.T) {
 	}
 }
 
-// ec.2 AC2/AC3: GET / returns 200 and the rendered base layout — the
-// jonnify · courses header and the (с) jonnify footer — through c.Render and the
-// real route wiring (e.Renderer set in newEcho). The render-package unit tests
-// exercise the Renderer directly; this proves the HTTP boundary: e.Renderer +
-// c.Render compose the placeholder page end to end.
-func TestNewEcho_PlaceholderRoute(t *testing.T) {
-	e, err := newEcho(t.TempDir())
+// ec.4 D-2 (HTTP boundary): GET / and GET /courses both serve the catalog index
+// through the real route wiring (e.Renderer + the threaded catalog set in
+// newEcho), rendering the base-layout chrome, the golden hero/section copy, the
+// five cards, and the six filter chips. The handler-level filter/404 cases live
+// in internal/handler; this proves the wiring composes end to end at both paths.
+func TestNewEcho_IndexRoute(t *testing.T) {
+	e, err := newEcho(t.TempDir(), loadCatalog(t))
 	if err != nil {
-		t.Fatalf("newEcho (template parse is fail-fast at boot): %v", err)
+		t.Fatalf("newEcho (template parse + catalog are fail-fast at boot): %v", err)
+	}
+
+	for _, path := range []string{"/", "/courses"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		e.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want %d", path, rec.Code, http.StatusOK)
+		}
+		body := rec.Body.String()
+		for _, want := range []string{
+			"jonnify · courses",  // .topbar brand (layout chrome)
+			"(с) jonnify",        // <footer>, Cyrillic с (layout chrome)
+			"Choose a course",    // the golden section copy (not the ec.2 placeholder)
+			"5 deep dives",       // the golden section mark
+			"Open →",             // a rendered card
+			`href="/elixir"`,     // the first card's published path
+			`href="/bcs"`,        // the last card's published path
+			`data-tag="agents"`,  // a filter chip
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("GET %s body missing %q", path, want)
+			}
+		}
+		if got := strings.Count(body, `class="series-card"`); got != 5 {
+			t.Errorf("GET %s rendered %d cards, want 5", path, got)
+		}
+	}
+}
+
+// ec.4 AC2 (HTTP boundary): a published detail path renders its course landing
+// through the wiring — the course title in the hero and the course body.
+func TestNewEcho_DetailRoute(t *testing.T) {
+	e, err := newEcho(t.TempDir(), loadCatalog(t))
+	if err != nil {
+		t.Fatalf("newEcho: %v", err)
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/elixir", nil)
 	e.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET / status = %d, want %d", rec.Code, http.StatusOK)
+		t.Fatalf("GET /elixir status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"jonnify · courses", // .topbar header (AC3)
-		"(с) jonnify",       // <footer>, Cyrillic с (AC3)
-		"Open →",            // the rendered card partial (AC4)
-		`class="filter-btn`, // the rendered filter partial (AC5)
+		"jonnify · courses",                          // layout chrome
+		"Functional Programming",                     // the course title (hero + body <h1>)
+		"<title>Functional Programming · jonnify</title>", // the per-page title override
+		"deep dive into functional programming",      // the course body landing copy
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("GET / body missing %q", want)
+			t.Errorf("GET /elixir body missing %q", want)
 		}
 	}
 }
