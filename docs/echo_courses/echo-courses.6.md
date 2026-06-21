@@ -1,66 +1,65 @@
 ---
-title: "ec.6 — Ship on Fly"
-id: echo-courses-6-ship
+title: "ec.6 — The production cutover"
+id: echo-courses-6-cutover
 rung: ec.6
 size: S
-risk: NORMAL
+risk: HIGH
 status: Draft
 stands-on: "ec.1–ec.5"
 ---
 
-# ec.6 — Ship on Fly { id="echo-courses-6-ship" }
+# ec.6 — The production cutover { id="echo-courses-6-cutover" }
 
-> _Package the Echo server in a small image, deploy it on Fly, and cut the published course routes over to it with a health check and a rollback path._
+> _Point `jonnify.fly.dev`'s course routes at the already-deployed, complete Echo app, verify every published path on production, with a one-step rollback — the last small flip of a site that has been live since ec.4._
 
 ## Summary
 
-A multi-stage Dockerfile and a `fly.toml` that deploy the Echo v5 server on Fly, then a cutover of `jonnify.fly.dev`'s course routes to the new app, gated by a health check and reversible by rollback.
+The Echo app has been live (on its Fly app) since ec.4 and polished in ec.5. ec.6 is the **production cutover**: route `jonnify.fly.dev`'s course paths to the Echo app, verify every published path on production, keep the prior release for a one-step rollback, and run a production smoke. No new build — the Dockerfile/`fly.toml` are ec.4's; this is the flip.
 
 ## Rationale
 
-The site is already live on Fly, so shipping means a controlled cutover, not a fresh launch: the new app must serve every published path before traffic moves, the health check must reflect readiness, and there must be a one-step way back. A small static-Go image keeps the deploy fast and the surface minimal.
+Because the complete site has been live and parity-verified since ec.4, shipping to production is not a launch — it is a controlled routing change with a verified target and a tested way back. The risk is concentrated here (a live domain) and nowhere else, which is exactly why the earlier rungs deployed first.
 
 ## 5W + H { id="ec6-5wh" }
 
 | | |
 |---|---|
-| **Who** | Platform/operator. |
-| **What** | A Dockerfile, a `fly.toml`, a deploy, and a cutover of the course routes with health check + rollback. |
-| **When** | Last; stands on ec.1–ec.5. |
-| **Where** | Fly app serving `jonnify.fly.dev` course routes. |
-| **Why** | Replace the published static site with the Echo app, invisibly to visitors. |
-| **How** | Multi-stage build → small runtime image; `fly.toml` with the internal port, `/healthz` check, and `SIGTERM`; deploy, verify, then move traffic; keep the prior release for rollback. |
+| **Who** | Platform / operator. |
+| **What** | The cutover of `jonnify.fly.dev`'s course routes to the Echo app, a production verification, a rollback, a production smoke. |
+| **When** | Last; stands on ec.1–ec.5 (the app is already live). |
+| **Where** | Fly routing / the `jonnify.fly.dev` app config. |
+| **Why** | Replace the published static course routes with the Echo app, invisibly. |
+| **How** | Verify the deployed app serves every published path; cut the production routes over; keep the prior release; production smoke; rollback = restore the prior route/release in one step. |
 
 ## Scope { id="ec6-scope" }
 
 ### In scope
 
-- A multi-stage `Dockerfile`: build the Go binary, copy it plus `web/` and `content/` into a small runtime image (distroless or alpine). Because Echo v5 is vendored via a local `replace … => ../echo`, the build stage must see `../echo` (build from the `go/` parent context, or pre-`go mod vendor`) and run `GOWORK=off`.
-- A `fly.toml`: app name, `internal_port` matching the server bind, an HTTP health check on `/healthz`, `kill_signal = "SIGTERM"`, a `kill_timeout` covering graceful shutdown.
-- Deploy; verify every published path on the deployed app before cutover.
-- Cutover of `jonnify.fly.dev`'s course routes to the Echo app; a documented rollback (redeploy the prior release / revert the route).
-- A smoke test run against the deployed URL.
+- Pre-cutover: verify the deployed Echo app serves `/courses` + every published path + `/healthz` (the parity battery against the production-bound app).
+- Cut `jonnify.fly.dev`'s course routes over to the Echo app.
+- Retain the prior release/route so rollback is a single documented step.
+- A production smoke against `jonnify.fly.dev` after the flip.
+- **Apollo** (mandatory — HIGH, live-domain): resolve every ambiguity with the Operator before the flip; verify the rollback works.
 
 ### Out of scope
 
-- Further performance work; CDN/edge config beyond Fly defaults.
+- The image / `fly.toml` / deploy build (ec.4); SEO / assets (ec.5).
+- Re-hosting the deep course content (landings; the deep content stays at its existing routes — the cutover must not shadow them).
 
 ## Specification { id="ec6-spec" }
 
-The Dockerfile builds the binary in a Go stage and copies it with `web/static`, `web/templates`, and `content/` into a minimal runtime image (templates and content are embedded or copied; if embedded via `embed.FS`, only the binary ships). `fly.toml` sets the internal port to the server's bind address, an HTTP check on `/healthz`, and `SIGTERM` with a `kill_timeout` longer than the graceful-shutdown window from ec.1. Deploy creates/updates the app; a verification step requests every published path and `/healthz` against the deployed machine before any traffic move. Cutover points `jonnify.fly.dev`'s course routes at the Echo app; the prior release is retained so a rollback is a single redeploy.
+A verification step requests every published path + `/healthz` against the deployed app and asserts 200 + the right course. The cutover points `jonnify.fly.dev`'s course routes at the Echo app; the prior release is retained so a rollback is one redeploy / route-restore. A production smoke requests `jonnify.fly.dev/courses` + the five paths after the flip. Because the detail pages are landings (§7 decision 4), the cutover must **not** shadow the deep course content still served at its existing routes — verify the deep routes still resolve.
 
 ## Acceptance criteria { id="ec6-acceptance" }
 
-1. **Given** the Dockerfile, **when** built and run locally, **then** the container serves `/courses` and all five published paths and answers `/healthz` with 200.
-2. **Given** `fly deploy`, **when** it runs, **then** it succeeds and the Fly health check on `/healthz` passes.
-3. **Given** the deployed app, **when** every published path is requested, **then** each returns 200 and renders the right course (the parity battery, against the deployed URL).
-4. **Given** a deploy under load, **when** the machine receives `SIGTERM`, **then** in-flight requests drain within `kill_timeout` (no dropped connections).
-5. **Given** a failed or regressed release, **when** rollback is invoked, **then** the prior release is restored by a single documented step.
-6. **Given** the cutover, **when** complete, **then** `jonnify.fly.dev/courses` and the five course paths are served by the Echo app.
+1. **Given** the deployed Echo app, **when** every published path is requested pre-cutover, **then** each returns 200 + the right course (the parity battery).
+2. **Given** the cutover, **when** complete, **then** `jonnify.fly.dev/courses` + the five course paths are served by the Echo app.
+3. **Given** a deploy under load, **when** the machine receives `SIGTERM`, **then** in-flight requests drain within `kill_timeout` (no dropped connections).
+4. **Given** a regressed release, **when** rollback is invoked, **then** the prior release is restored by a single documented step.
+5. **Given** the landing detail pages, **when** the deep course routes are requested after cutover, **then** they still resolve (the cutover did not shadow the deep content).
 
 ## Dependencies & risks { id="ec6-risks" }
 
-- **Depends on:** ec.1–ec.5.
-- **Risk — cutover on a live domain:** verify all published paths on the deployed app before moving traffic (criterion 3), and keep the prior release for rollback (criterion 5).
-- **Risk — embedded vs copied assets:** if using `embed.FS`, confirm templates and content are embedded; if copying, confirm the image includes `web/` and `content/`.
-- **Risk — the vendored-replace build context:** the local `replace => ../echo` means a Docker build whose context is only `go/echo-courses/` cannot resolve Echo v5. Set the build context to `go/` (and `COPY echo/ echo-courses/`), or run `go mod vendor` so the image build is self-contained; build `GOWORK=off`.
+- **Depends on:** ec.1–ec.5 (the app is live + polished).
+- **Risk — HIGH, live-domain cutover:** verify all published paths on the deployed app before the flip (criterion 1); keep the prior release for rollback (criterion 4); Apollo mandatory.
+- **Risk — shadowing the deep content:** the landings must not capture the deep course routes (criterion 5).
