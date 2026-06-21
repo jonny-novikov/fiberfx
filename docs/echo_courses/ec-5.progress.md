@@ -44,6 +44,23 @@ Existing tests that ec.5 must touch:
 
 Build order (topology): (1) externalize app.css (concat of the two <style> bodies, sans wrappers) + app.js (reveal then filter, sans wrappers); (2) embed static + content-hash routes + sitemap/robots + CANONICAL_BASE; (3) wire the head (Head struct, D-5 Option A-hybrid). Then the gate + byte-equivalence proof + curl battery.
 
+### T-4 — Build complete + full gate green (ec.5, NORMAL).
+
+Built the three moves in topology order, boundary = go/echo-courses ONLY (go/echo untouched, no second module):
+1. web/static/app.css (NEW) = concat of the two HEAD layout.html <style> bodies, sed-sliced from git show HEAD (byte-equivalent by construction). web/static/app.js (NEW) = reveal body + filter body, same method. NO new widget.
+2. web/embed.go: //go:embed templates -> templates static. internal/asset/asset.go (NEW): Load(web.FS) sha256-8 fingerprints each → /static/app.<hash>.{css,js}, Register wires exact GET routes serving embedded bytes with immutable Cache-Control + exact Content-Type; boot fail-fast on missing asset. internal/handler/seo.go (NEW): Sitemap (well-formed urlset over CANONICAL_BASE + /courses + each Course.Path) + Robots (allow-all + Sitemap:). main.go: read CANONICAL_BASE via envOr (default https://jonnify.fly.dev), thread through run/newEcho, register asset + sitemap/robots, keep disk e.Static for version.txt.
+3. render.Head struct (NEW, beside Card). NewCourses(cat, cssURL, jsURL, canBase) populates Head per page via h.head(...); indexData/detailData embed Head. layout.html: deleted both <style> blocks + the reveal <script>, injected the head meta (description/canonical/og×5/twitter) + the CSS <link> + the deferred <script>. index.html: deleted the inline filter <script>. course.html UNCHANGED (head flows through layout — L-3).
+
+GATE (GOWORK=off, go/echo-courses, local dev server, no Docker, no fly deploy):
+- make gate: OK (tidy+build+vet+test; gofmt -l . empty).
+- SIGNATURE byte-equivalence: CSS diff EMPTY, JS diff EMPTY (vs git show HEAD inline bodies) — re-run after edits, still empty.
+- Tests added: internal/asset (URL shape, hashed-route 200+CT+immutable+wrong-hash-404, served-bytes-verbatim, hash==sha256-prefix); internal/handler/seo_test (sitemap well-formed+6 urls, robots valid, index head published-description-byte-identical+og+canonical+no-og:image, detail head Summary+article+canonical from base); render_test TestLayoutChrome flipped to assert externalized links + inline source GONE; courses_test filter-script assertion flipped (inline absent, deferred app.js linked).
+- Local dev server battery: 7 published paths 200; /courses/:slug render-identical; hashed CSS/JS 200 + text/css|text/javascript; charset=utf-8 + Cache-Control public,max-age=31536000,immutable; wrong hash 404; version.txt 200 (disk e.Static coexists — L-4); sitemap 200 application/xml 6 absolute URLs; robots 200 valid; index head + /elixir head correct; CANONICAL_BASE=https://example.test flip → canonical/og:url/sitemap/robots ALL flipped (D-2 consumed); zero residual <style>/IntersectionObserver/inline-filter on / and /bcs; exactly 1 <script defer src>; published <meta description> byte-identical to html/index.html:7; SIGTERM exit 0.
+- NET-ZERO (HEAD binary in throwaway worktree vs ec.5 binary): full / diff = ONLY the head meta/CSS-link delta + the inline-scripts→deferred-script delta; the <body> content sections (topbar/hero/cards/chips/footer) produce ZERO diff lines (byte-identical).
+- Markup (AC6): tidy zero STRUCTURAL errors on / and /bcs (the <section>/<svg> "not recognized" notes are HTML4-validator-vs-HTML5 false positives — html/index.html master shows the same 6); xmllint sitemap WELL-FORMED; all 7 internal links 200 incl brand href="/".
+- Determinism posture: NOT the ≥100 id-mint/process/lease class (stateless web rung). 20/20 consecutive full runs PASS; go test -shuffle=on green (no order-dependence); content-hash stable across two independent boots.
+Dockerfile/fly.toml inspection-only: binary self-contains assets; /healthz check; kill_timeout=15 > 10s graceful. Dockerfile:41 COPY web/static now non-load-bearing for serving (keeps version.txt for disk path) — noted, not Docker-built.
+
 ## {ec-5-decisions} Decisions
 
 ### D-1 — Asset-serving / fingerprint seam = ARM A1 (embed + content-hash route). Ruled by the Operator via AskUserQuestion, up front (per the ec.3 "surface one fork up front" calibration).
@@ -82,6 +99,10 @@ Either satisfies the ACs. The byte-equivalence test, the URL-parity battery, and
 Rationale: render.go's New(fsys) parses each page set via template.New(name).ParseFS(...) with NO .Funcs() registered. html/template requires funcs to be registered BEFORE parse, so Option B (a FuncMap closing over the boot hashes) would force a render-layer change to thread funcs into every ParseFS call — a wider blast radius than the contract needs. Option A keeps render.go PRISTINE.
 Form: a render.Head struct (exported, beside render.Card) carrying both the global asset URLs (CSSHref, JSHref — the boot-computed /static/app.<hash>.{css,js}) AND the per-page meta (Title, Description, CanonicalURL, OGType). It is embedded in indexData/detailData; the handlers (which hold an *Assets value built once at boot + CANONICAL_BASE) populate it per request. This is the runbook's sanctioned hybrid: "A FuncMap suits the global asset hashes; per-page meta needs page data — a hybrid is fine" — here unified into ONE Head struct the handlers fill, so there is a single injection mechanism, no FuncMap, no render.go edit. layout.html reads .Head.* in <head> and before </body>.
 
+### D-7 — Stage-4 (Mars-2 remediate+harden) COLLAPSED. Rationale: the Director's Stage-3 independent verify found zero blocking findings (gate green, byte-equivalence proven, parity + asset immutable-cache + SEO + CANONICAL_BASE-consumed + mutation-teeth all pass). The lone observation (L-5, HEAD→405 on asset routes) is non-blocking with no production impact. Per the cost-discipline calibration (right-size formation; rigor is constant, ceremony scales), a clean verified-green rung ships without spawning a build agent for a cosmetic one-liner. Proceed to Stage-5 ship.
+
+
+
 ## {ec-5-alternatives} Alternatives
 
 ### V-1 — Asset-serving arms (Director/Operator ruled A1; recorded for the audit trail)
@@ -98,6 +119,22 @@ A1 wins on single-binary symmetry + correct invalidation + preserving byte-equiv
 
 The spec's AC2 ("a course page with interactive elements … its interactive assets load and the interactions run") reads, at face value, like per-course interactive widgets. But ec.4 D-3 made every detail page a LANDING (Course.Body + header) with zero per-course interactivity. The only interactive assets in the whole site are the TWO inline scripts: the index track-filter (pages/index.html:22-34) and the global reveal-on-scroll (layout.html:146-149). ec.5 EXTERNALIZES those two into app.<hash>.js; it does NOT author new widgets (that would be invented scope, violating NO-INVENT + the §9 non-goal "no client-side framework rewrites"). Reconciled AC2 in echo-courses.5.md with a [RECONCILE] note. Same class as the F6.6 mechanism-word lesson: a spec phrase must be reconciled to the as-built primitive, or it mis-directs the build toward inventing surface.
 
+### L-2 — Generate the externalized assets FROM the HEAD bytes, never by hand.
+
+app.css/app.js were produced by slicing the exact byte ranges out of `git show HEAD:...` (sed -n '14,110p;113,134p' for the two CSS bodies; '147,148p' + index '23,33p' for the two scripts), so the signature byte-equivalence diff is EMPTY by construction, not by careful retyping. This is the mars.md "a verbatim port diffs against the CURRENT source" lesson applied at authoring time: the source of the bytes IS the diff baseline, so there is no reflow/stray-byte hazard. The two diffs (CSS, JS) were re-run after every template edit and stayed empty.
+
+### L-3 — D-5 Option A (Head struct) routes ALL head meta through layout.html, so course.html needed NO edit (runbook item 7 collapses).
+
+The head meta (title via the existing {{block "title"}}, description/canonical/og/twitter via .Head.*) renders ONCE in layout.html reading .Head.*. Because indexData and detailData both embed render.Head and the handlers populate it, pages/course.html required no per-page meta block — the realization of runbook item 7's intent without touching that template. Net: layout.html + index.html are the only template edits; course.html is byte-unchanged. This is why Option A beats Option B here — a single injection point in the layout, render.New stays FuncMap-free (no render.go signature change).
+
+### L-4 — Echo v5 radix router: a concrete static route and a wildcard on the same prefix COEXIST (no panic), concrete wins by priority.
+
+The runbook's open caveat ("verify the explicit /static/app.<hash>.* routes coexist with e.Static('/static',…)") resolved BY THE RUNNING BINARY: e.Static registers GET /static/* (echo.go:596 pathPrefix+"*"); the explicit GET /static/app.<hash>.{css,js} are fully-static paths. Live proof on :18755 — the hashed CSS/JS served 200 from embedded bytes WHILE /static/version.txt still served 200 from disk AND a wrong hash /static/app.00000000.css fell through to 404. So the content-hash routes and the disk e.Static fallback compose cleanly; no e.Static removal needed (version.txt keeps serving). Decided by test, not assumption.
+
+### L-5 — Non-blocking observation: the content-hash asset routes (asset.Register → e.GET) answer GET only; a HEAD to /static/app.<hash>.css returns 405, whereas the disk e.Static handler answers HEAD. No production impact (browsers/CDNs GET assets; immutable assets never revalidate; Fly health is on /healthz GET), so NOT a blocker for ec.5. If a future rung wants HEAD parity for static assets, register e.HEAD alongside e.GET in asset.Register (a one-liner) — documented here so it is not lost. Also: a measurement-method trap — curl -I (HEAD) made a correct immutable Cache-Control read as absent; verify headers with curl -D - on a GET for GET-only routes.
+
+
+
 ## {ec-5-report} Report
 
 ### Y-1 — Stage-1 complete: ec.5 runbook authored + spec reconciled (BUILD-GRADE)
@@ -113,3 +150,33 @@ LEDGER: D-4 (runbook bakes D-1/2/3 settled), D-5 (per-page-meta mechanism = Mars
 NO FORK for the Operator — all forks were pre-ruled (D-1/2/3); the one open implementation choice (D-5) is a build-shape detail, not an architecture fork, correctly left to Mars.
 
 Everything left in the working tree for the Director to ratify. No git, no code touched.
+
+### Y-2 — ec.5 BUILD-GRADE (Mars Stage-2). Full gate green; ready for Director verify.
+
+The polish is built additively over the live ec.4 site, boundary go/echo-courses only. All six ACs satisfied: AC1 design system externalized + byte-equivalent (signature diff EMPTY); AC2 interactivity externalized to app.js (the two existing scripts, no new widget); AC3 per-page head (title/description/og×5/canonical/twitter; index description byte-identical to published; detail = Summary; no og:image per D-3); AC4 /sitemap.xml (6 absolute URLs) + /robots.txt valid; AC5 binary serves the complete styled site (every published path 200) — local-dev-server equivalent, fly deploy is the Operator's; AC6 zero structural markup errors. D-5 = Option A (Head struct), unifying the head in layout.html (render.go untouched, FuncMap-free; course.html needs no edit). D-1/D-2/D-3 built to as contracts. 13 files (9 modified + 4 new), all in go/echo-courses; go/echo untouched; no spec edit; no commit (Director's at Stage-5). Net-zero proven against a HEAD-binary diff: only the head/asset wiring changed, the body sections are byte-identical. Determinism: 20/20 + shuffle + cross-boot hash stability (stateless rung, not the ≥100 class). Three learnings folded (L-2 generate-from-HEAD-bytes, L-3 Option-A-collapses-course.html, L-4 radix-router-coexistence). Open for Stage-3 independent verify.
+
+### Y-3 — Director Stage-3 independent verify: BUILD-GRADE, zero blocking findings.
+
+Re-ran on the LOCAL DEV SERVER (no Docker; fly deploy is the Operator's, ec.4 D-4):
+- GATE (GOWORK=off, from go/echo-courses): go build ✓ · go vet ✓ · go test -count=1 (uncached) all PASS · gofmt -l empty ✓.
+- BOUNDARY: only go/echo-courses + docs/echo_courses touched; the other untracked trees (elixir/, go/echomq-go/, go/jonnify-cms/, go/valkey-go/) are pre-existing Operator out-of-band (present in the opening snapshot), untouched by ec.5.
+- SIGNATURE PROOF (byte-equivalence, independent re-extract from HEAD via awk between the <style>/<script> markers, diffed): CSS app.css == the two HEAD <style> bodies (119 lines) ✓; JS app.js == HEAD reveal + filter scripts (13 lines) ✓. The look cannot have drifted.
+- URL PARITY: /courses · / · /elixir · /redis-patterns · /echomq · /course/agile-agent-workflow · /bcs · /courses/elixir all 200; /courses/nope 404 ✓ (ec.4 not regressed).
+- ASSET ROUTES (D-1): GET /static/app.<hash>.css|js → 200, exact Content-Type (text/css|text/javascript; charset=utf-8), Cache-Control: public, max-age=31536000, immutable (verified on GET with curl -D -; the earlier empty was a HEAD-probe artifact — Echo GET-routes 405 on HEAD); wrong hash → 404 ✓.
+- SEO: /sitemap.xml → 200 application/xml, lists /courses + all 5 published paths absolute under CANONICAL_BASE ✓; /robots.txt → 200, allow-all + Sitemap: line ✓.
+- HEAD: index <meta description> BYTE-IDENTICAL to html/index.html:7 (diff empty) ✓; canonical/og:title/type/url/description/site_name + twitter:card=summary present, no og:image (D-3) ✓; /elixir description = Course.Summary, og:type=article, canonical=/elixir ✓; residual inline <style>/IntersectionObserver/filter in rendered / = 0 ✓.
+- D-2 CONSUMED: CANONICAL_BASE=https://example.test flip moved canonical + og:url + sitemap loc to example.test ✓ (not a dead key).
+- GRACEFUL: SIGTERM → exit 0 ✓.
+- MUTATION (net-zero, LAW-1a): dropped the /courses sitemap loc → TestSitemap failed (missing url + count 5≠6); reverted; post-revert green. Tests have teeth; Director authored no production code.
+
+Verdict: ship. Stage-4 (Mars-2 harden) COLLAPSES — zero blocking findings.
+
+## {ec-5-complete} Complete
+
+### Z-1 — ec.5 SHIPPED (polish the live echo-courses site). Flat-L2, right-sized: Director + Venus + Mars; Stage-4 collapsed (D-7, zero blocking findings). Verified on the LOCAL DEV SERVER; fly deploy is the Operator's (ec.4 D-4 standing).
+
+Delivered: the design-system CSS + the two interactive scripts externalized to embedded, content-hash-served web/static/app.<hash>.{css,js} (Cache-Control immutable; byte-equivalent to the former inline blocks — signature proof empty, CSS 119 / JS 13 lines); per-page SEO title/description + Open Graph (no og:image, D-3) + canonical from CANONICAL_BASE (D-2, verified consumed); GET /sitemap.xml + /robots.txt. The site stayed complete + live (all published paths 200).
+
+Decisions: D-1 (Arm A1 embed+content-hash, Operator-ruled) · D-2 (CANONICAL_BASE) · D-3 (og:image omitted) · D-4 (runbook bakes settled) · D-5/D-6 (injection = Option A Head struct) · D-7 (Stage-4 collapse). Report: Y-3 (Director verify BUILD-GRADE). Learnings: L-1..L-5 (incl. L-5 the non-blocking HEAD→405 observation).
+
+Commit: two scoped LAW-4 pathspec commits — go/echo-courses (the build) + docs/echo_courses (spec→Built + roadmap status + ledger). go/echo already tracked → no vendor commit. Operator landed echo-courses.5.prompt.md out-of-band (ecd355a0). Next: ec.6 the production cutover (HIGH; Apollo-mandatory).

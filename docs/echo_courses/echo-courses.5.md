@@ -4,7 +4,7 @@ id: echo-courses-5-polish
 rung: ec.5
 size: M
 risk: NORMAL
-status: Draft
+status: Built
 stands-on: "ec.4"
 ---
 
@@ -62,6 +62,16 @@ The per-page-meta + asset-URL **injection mechanism** (the Go shape) is the impl
 4. **Given** `GET /sitemap.xml`, **then** it lists `/courses` + all five published course paths; **given** `GET /robots.txt`, **then** it returns a valid robots file.
 5. **Given** the redeploy, **when** it completes, **then** the live Fly app serves the polished site and every published path still returns 200 (the site stayed complete + live).
 6. **Given** the rendered HTML, **when** validated, **then** it has no malformed-markup errors.
+
+## As built { id="ec5-as-built" }
+
+Shipped via `/echo-courses-ship ec.5` (Flat-L2, right-sized: Director + one Mars; Stage-4 collapsed — zero blocking findings, D-7). All six ACs + roadmap §8 gates green, verified on the **local dev server** (`fly deploy` is the Operator's — ec.4 D-4 standing).
+
+- **Asset externalization (AC1/AC2; D-1):** the two `layout.html` `<style>` blocks → `web/static/app.css`; the two inline scripts (the index track-filter + the global reveal-on-scroll) → `web/static/app.js`. Both **embedded** (`web/embed.go`: `//go:embed templates static`) and served by a new `internal/asset` package from boot-computed **content-hash routes** (`/static/app.<sha256-8>.css|js`) with `Cache-Control: public, max-age=31536000, immutable` + exact `Content-Type`. The disk `e.Static("/static")` stays for `version.txt`; the concrete hash routes take router priority over the wildcard (a wrong hash 404s — Echo v5 radix, ledger L-4). **No new widgets** (detail pages are landings, ec.4 D-3).
+- **The signature invariant (AC1):** `app.css`/`app.js` are **byte-equivalent** to the ec.4-HEAD inline bodies — proven by re-extracting the `<style>`/`<script>` bodies from `git show HEAD` and diffing → empty (CSS 119 lines, JS 13 lines). The externalization changed only the head/asset wiring; no other rendered byte moved.
+- **SEO surface (AC3/AC4; D-2/D-3):** per-page `<head>` via a `render.Head` struct populated by the handlers (**D-6 Option A** — `course.html` needed no edit, L-3): `title`, `meta description`, `og:title/type/url/description/site_name`, `twitter:card=summary`, `<link rel="canonical">`. **`og:image` omitted** (D-3). The index `meta description` is **byte-identical** to the published master (`html/index.html:7`); detail descriptions = `Course.Summary`. Canonical/`og:url` derive from env `CANONICAL_BASE` (default `https://jonnify.fly.dev`, **D-2** — verified consumed by a flip run). A new `internal/handler/seo.go` serves `GET /sitemap.xml` (catalog URLs, absolute) + `GET /robots.txt` (allow-all + a `Sitemap:` line).
+- **Files:** new — `internal/asset/{asset,asset_test}.go`, `internal/handler/seo{,_test}.go`, `web/static/app.css`, `web/static/app.js`; changed — `cmd/server/main.go` (`CANONICAL_BASE` + asset wiring), `internal/handler/courses.go` (the `Head` payload), `internal/render/render.go` (the `Head` type), `web/embed.go`, `web/templates/layout.html` (the two `<style>`/`<script>` deleted, the head + hashed links added), `web/templates/pages/index.html` (the inline filter `<script>` deleted). The `Dockerfile`/`fly.toml` are unchanged and still valid (the binary now self-contains the assets via the embed; the `COPY web/static` step remains harmless).
+- **Non-blocking observation (L-5):** the content-hash routes answer GET only (a HEAD → 405); no production impact (browsers/CDNs GET assets; immutable assets never revalidate). A future `e.HEAD` alongside `e.GET` in `asset.Register` would add HEAD parity if ever wanted.
 
 ## Dependencies & risks { id="ec5-risks" }
 
