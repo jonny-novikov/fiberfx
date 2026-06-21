@@ -50,7 +50,11 @@ Director-ratified).
 - **Declared keys (S-6).** Every key the script touches is in `KEYS[]`, or derived in-script only from a
   declared `KEYS[n]` root by the registered grammar (e.g. the per-job key `base..'job:'..id`, the lane family
   `base..'g:'..g..':pending'`). A new key derives from `Keyspace.queue_key(q, "<type>")` and is declared.
-  Slot-sound under braces — every derivable key shares the declared root's slot.
+  Slot-sound under braces — every derivable key shares the declared root's slot. **An `ARGV`-passed base is NOT
+  a declared root** (the emq.5.1 L-1 precision): a script that builds a row key from `ARGV[1]..id` is slot-sound
+  ONLY because it ALSO declares real braced `KEYS[n]` (e.g. `KEYS=[pending, active]`) that PIN the `{q}` slot —
+  the `ARGV`-derived key then rides that pinned slot. A script whose ONLY keys come from `ARGV` declares no slot
+  at all; the brief that calls an `ARGV` base "a declared root" is loose prose to flag.
 - **Branded `JOB` ids (S-2).** A job id on the wire is the 14-byte branded form; the key builder gates
   `EchoData.BrandedId.valid?/1`; the enqueue/add script's FIRST act refuses a non-`JOB` namespace with the
   `EMQKIND` first-word wire class (policy before existence before write). The mint is host-side
@@ -78,7 +82,12 @@ output shape AND reuse it (or a shared builder) for any re-injection, never a ha
 to a different slot or path than the assertion names. (The emq.3.3 L-2 defect: a cross-queue crash-survivor
 `flow:outbox` entry was hand-built with the CHILD queue as field 1, but `@complete` emits `parent_queue` first —
 so the re-deliver targeted the WRONG slot, the `:processed` HSETNX guard never fired, and the keystone
-idempotency test passed for the wrong reason.)
+idempotency test passed for the wrong reason.) **And when a scenario must REPLICATE lib LOGIC for wire-level
+determinism** (the emq.5.2 L-3 pattern: a conformance-local `settle_batch/4` mirroring `BatchConsumer.settle/3`'s
+verdict-map mapping rather than spinning a process that injects timing nondeterminism) — pin the duplication with
+a cross-reference comment naming the mirrored fn AND ensure a live-process test independently covers the same
+invariant; never let the deterministic mirror be the SOLE witness of a settle/lifecycle contract, or a future
+bug in the real fn passes the mirror green.
 
 ## 5 · The gate ladder — run BEFORE reporting (the craft emq.1 earned)
 

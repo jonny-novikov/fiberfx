@@ -40,6 +40,14 @@ Before briefing, diff the rung's triad against the as-built tree it depends on �
   module attributes. A triad that says "new Lua under `priv/`" is STALE.
 - **A "no new dependency" claim is a per-app DEP-GRAPH-VISIBILITY fact** — read the consuming app's `mix.exs`
   `deps/0`, never `mix.lock` alone. `echo_data` is already an in-umbrella dep of `echo_mq`.
+- **The triad's cross-links resolve at the REAL tree depth, proven by an actual sweep.** Run `msh specs
+  echo_mq` (severity `error`) over the authored triad BEFORE declaring it clean, and re-base each relative link
+  by COUNTING the real path depth — from `…/emq.N/emq.N.rungs/` the canon is **4-up** (`../../../../emq.design.md`),
+  `docs/` is **5-up** — never by analogy to a sibling triad that sits at a different depth (the emq.5.1 L-2 defect:
+  5 links authored one level too shallow at `../../../`, gate-invisible until `msh specs`, shipped dead). And
+  **scope the all-clear to what the run actually covered**: a "`msh specs` → 0 findings across the tree" claim
+  must be the actual tree-wide run, not "my files resolve" generalized to "the tree is clean" (emq.5.1's
+  tree-wide all-clear was over-claimed while 5 sibling defects remained) — report exactly the paths verified.
 
 The rung is build-grade iff every claim is MATCH or an explicit `[RECONCILE]`-DEFERRED.
 
