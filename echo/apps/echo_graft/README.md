@@ -151,6 +151,35 @@ sync legs (`remote_sync` rollup / pull / framing / race). Run them with
 `If-None-Match` (the fence) and path-style addressing (OpenDAL default) — no code differs from the
 Memory/Fs path, only `RemoteConfig`.
 
+## What was added (`eg.3` — branded identity & the change-feed)
+
+Branded-Snowflake identity at the external edge, and a change-feed off the commit LSN.
+Additive over the carried engine; the durable-commit action is untouched.
+
+- **`crates/echo_graft/src/identity.rs` — `BrandedId`**: a validated `{NS}{base62}`
+  (3 uppercase + 11 Base62 = 14 chars). Branded ids are **caller-supplied** — the
+  platform mints them; the engine validates, stores, and round-trips them (no minter
+  in Rust).
+- **`crates/echo_graft/src/feed.rs` — the change-feed**: the byte-frozen `FeedEvent`
+  (`volume_branded_id` · `log_id` · `lsn` · `ts`), the `ChangeFeed` trait, and the
+  in-process `InMemoryFeed` stub (ordered, idempotent-per-LSN, replayable from a
+  last-seen LSN). `lane_for` yields the `egraft:feed:{volume}` lane string the eg.4
+  transport will use.
+- **`Volume::branded_id`** (`#[bilrost(6)] Option<String>`) — the authoritative branded
+  ↔ native mapping, in the `volumes` partition; plus a new **`brands`** Fjall keyspace
+  (`branded id → VolumeId`) as the forward index. `volume_open_branded` writes both in
+  one batch (atomic with creation).
+- **`Runtime`**: `volume_open_branded` / `resolve_branded` / `feed()`; `volume_push`
+  now publishes one event per remote-LSN advance (the `Ok` branch of the conditional
+  write), so a lost fence publishes nothing — the engine action `remote_commit.rs` is
+  unchanged.
+
+Gate: **98 tests** green (87 eg.1+eg.2 + 11 eg.3), plain clippy exits 0 (eg.3 code adds
+zero warnings), determinism 100/100 on `identity_feed`. **Finding:** the carried
+`verify_snapshot.rs` fault tests share process-global precept state and race under
+cargo's default parallelism — pre-existing (the original `volume_push` also races
+~1/8), so fault suites run `--test-threads=1`.
+
 ## Build & test
 
 ```bash
