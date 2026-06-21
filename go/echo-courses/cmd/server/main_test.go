@@ -158,14 +158,14 @@ func TestNewEcho_IndexRoute(t *testing.T) {
 		}
 		body := rec.Body.String()
 		for _, want := range []string{
-			"jonnify · courses",  // .topbar brand (layout chrome)
-			"(с) jonnify",        // <footer>, Cyrillic с (layout chrome)
-			"Choose a course",    // the golden section copy (not the ec.2 placeholder)
-			"5 deep dives",       // the golden section mark
-			"Open →",             // a rendered card
-			`href="/elixir"`,     // the first card's published path
-			`href="/bcs"`,        // the last card's published path
-			`data-tag="agents"`,  // a filter chip
+			"jonnify · courses", // .topbar brand (layout chrome)
+			"(с) jonnify",       // <footer>, Cyrillic с (layout chrome)
+			"Choose a course",   // the golden section copy (not the ec.2 placeholder)
+			"5 deep dives",      // the golden section mark
+			"Open →",            // a rendered card
+			`href="/elixir"`,    // the first card's published path
+			`href="/bcs"`,       // the last card's published path
+			`data-tag="agents"`, // a filter chip
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("GET %s body missing %q", path, want)
@@ -194,10 +194,10 @@ func TestNewEcho_DetailRoute(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"jonnify · courses",                          // layout chrome
-		"Functional Programming",                     // the course title (hero + body <h1>)
+		"jonnify · courses",                               // layout chrome
+		"Functional Programming",                          // the course title (hero + body <h1>)
 		"<title>Functional Programming · jonnify</title>", // the per-page title override
-		"deep dive into functional programming",      // the course body landing copy
+		"deep dive into functional programming",           // the course body landing copy
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("GET /elixir body missing %q", want)

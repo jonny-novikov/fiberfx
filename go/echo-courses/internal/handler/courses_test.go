@@ -103,9 +103,17 @@ func TestIndex_ChipsAndCards(t *testing.T) {
 	if !strings.Contains(body, `Elixir · BEAM · English`) {
 		t.Error("elixir card eyebrow != 'Elixir · BEAM · English'")
 	}
-	// The verbatim filter script rides inline.
-	if !strings.Contains(body, "Tag filtering for the course grid") {
-		t.Error("the verbatim filter <script> is not inline on the index")
+	// The verbatim filter script rides inline. html/template strips JS comments in
+	// a <script> context, so assert the load-bearing logic (byte-verbatim from the
+	// golden master) rather than the dropped leading comment.
+	for _, frag := range []string{
+		`const fbar=document.querySelector('.filter-bar');`,
+		`const cards=[...document.querySelectorAll('.series-card')];`,
+		`cards.forEach(c=>{const show=tag==='all'||(c.dataset.tags||'').split(' ').includes(tag);c.classList.toggle('filter-hidden',!show)});`,
+	} {
+		if !strings.Contains(body, frag) {
+			t.Errorf("the verbatim filter <script> is missing the fragment %q", frag)
+		}
 	}
 }
 

@@ -1,0 +1,57 @@
+# fly.toml — echo-courses (the Echo v5 courses server, docs/echo_courses ec.4).
+#
+# Deployment: manual only — the operator runs `fly deploy` (flyctl authed); no CI
+# auto-deploy is wired. Because the module's `replace => ../echo` needs ./echo in
+# the build context, the build context is go/ (this file's PARENT dir), so deploy
+# FROM go/ pointing at this config:
+#
+#   cd go && fly deploy -c echo-courses/fly.toml
+#
+# The Dockerfile path below is relative to that go/ context. This rung ships the
+# artifact deploy-ready (inspection-verified); the actual deploy is the operator's
+# step (ec.4 D-4). The production cutover of jonnify.fly.dev is ec.6 — this targets
+# a separate Fly app.
+app = 'echo-courses'
+primary_region = 'fra'
+
+[build]
+  dockerfile = "echo-courses/Dockerfile"
+
+[deploy]
+  strategy = "rolling"
+
+# The server binds to ADDR (not PORT) — keep this in sync with internal_port. A
+# set-but-unread key would be a silent no-op, so only ADDR (which the code reads)
+# is set; STATIC_DIR defaults to web/static (relative to the image's /app workdir).
+[env]
+  ADDR = ":8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  path = "/healthz"
+  timeout = "5s"
+
+# kill_timeout MUST exceed the server's graceful-drain window (gracefulTimeout =
+# 10s in cmd/server/main.go) so Fly does not cut a draining machine mid-shutdown.
+kill_signal = "SIGTERM"
+kill_timeout = 15
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256
