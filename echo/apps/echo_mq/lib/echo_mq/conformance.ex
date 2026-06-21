@@ -65,6 +65,8 @@ defmodule EchoMQ.Conformance do
 
   alias EchoData.BrandedId
 
+  alias EchoMQ.BatchShaper.Core, as: ShaperCore
+
   alias EchoMQ.{
     Admin,
     Cancel,
@@ -147,7 +149,10 @@ defmodule EchoMQ.Conformance do
       starvation_drill: "under sustained skew (one heavy lane flooded, light lanes trickling) EVERY lane's pending depth reaches zero over the drill window -- no lane starves, the capstone guarantee (emq.4.4)",
       batch_claim: "a batch claim of size N from a flooded pending set serves EXACTLY the N oldest-mint members in mint order, each at attempts 1, all leased on ONE shared server-clock deadline -- the count-variant ZPOPMIN loop inside the script, never a client multi-key pop (emq.5.1)",
       batch_claim_short: "an under-fill is a short batch: a request for N with M<N pending returns exactly M (never over-popping), an oversized request beyond the depth returns the depth, an empty pending set returns :empty, and a queue-wide pause returns :empty pending-untouched (emq.5.1)",
-      batch_partial_failure: "partial-failure isolation: one member of a claimed batch retried (scheduled, last_error kept) leaves the rest free to complete; after promote a fresh batch finds ONLY the poison at attempts 2 -- the batch is a claim unit, resolved over the byte-frozen @complete/@retry, not a resolution unit (emq.5.1)"
+      batch_partial_failure: "partial-failure isolation: one member of a claimed batch retried (scheduled, last_error kept) leaves the rest free to complete; after promote a fresh batch finds ONLY the poison at attempts 2 -- the batch is a claim unit, resolved over the byte-frozen @complete/@retry, not a resolution unit (emq.5.1)",
+      batch_shaping_floor: "the size-floor flush: a queue flooded to >= min_size makes the pure shaper decide {:flush, depth}, the cadence drains ONE batch of >= min_size via the byte-frozen claim_batch/4 over flat pending, settling each member -- the floor leg of min_size/timeout shaping (emq.5.2)",
+      batch_shaping_timeout: "the latency-ceiling flush: a trickle of M < min_size held until timeout makes the shaper decide {:flush, M} against an INJECTED clock (the partial, < min_size); below the ceiling it is :wait; an empty window (depth 0) at the ceiling flushes nothing -- the soft floor, bounded by timeout, no real-time flake (emq.5.2)",
+      batch_shaping_partial_failure: "the partial-failure isolation through the cadence: the batch handler's per-member verdict map fails one member (retried, last_error kept) and completes the rest, an ABSENT member fail-safe-retries (missing verdict), each member emitting its own per-member lifecycle event -- emq.5.1's isolation driven by the shaping consumer's verdict mapping (emq.5.2)"
     ]
   end
 
@@ -2201,6 +2206,170 @@ defmodule EchoMQ.Conformance do
       {:fail, _} = f -> f
       other -> {:fail, other}
     end
+  end
+
+  # The SIZE-FLOOR flush (emq.5.2, INV-Floor+Ceiling the floor / INV-ClaimPath /
+  # INV-PureCore): a queue flooded to >= min_size makes the pure shaper decide
+  # {:flush, depth}; the cadence drains ONE batch of >= min_size via the
+  # byte-frozen claim_batch/4 over the flat pending set, settling each member.
+  # The no-op-defeater: BELOW the floor with time remaining the shaper decides
+  # :wait (it does NOT flush early), and the floor flush carries the full
+  # observed depth (>= min_size), in mint order, at attempts 1.
+  defp apply_scenario(:batch_shaping_floor, conn, q) do
+    min_size = 4
+    timeout = 200
+    n = 6
+
+    ids =
+      for _ <- 1..n do
+        id = BrandedId.generate!("JOB")
+        {:ok, :enqueued} = Jobs.enqueue(conn, q, id, "sf")
+        id
+      end
+
+    with {:ok, depth} <- Jobs.pending_size(conn, q),
+         # the pure decision: below the floor (with time left) waits; at the
+         # floor (here the full depth >= min_size) flushes the observed depth
+         :wait <- ShaperCore.decide(min_size - 1, 0, min_size, timeout),
+         {:flush, ^depth} <- ShaperCore.decide(depth, 0, min_size, timeout),
+         # drive the flush exactly as BatchConsumer.flush does -- one claim_batch
+         {:ok, members} <- Jobs.claim_batch(conn, q, depth, 60_000),
+         true <- length(members) >= min_size or {:fail, {:below_floor, members}},
+         claimed = Enum.map(members, fn {id, _p, _a} -> id end),
+         true <- claimed == Enum.take(ids, length(members)) or {:fail, {:not_mint_order, claimed}},
+         atts = Enum.map(members, fn {_id, _p, a} -> a end),
+         true <- atts == List.duplicate(1, length(members)) or {:fail, {:attempts, atts}},
+         # each member settles individually through the byte-frozen @complete
+         :ok <- complete_all(conn, q, members),
+         true <- good_rows_retired?(conn, q, members) or {:fail, :not_retired} do
+      :ok
+    else
+      {:fail, _} = f -> f
+      other -> {:fail, other}
+    end
+  end
+
+  # The LATENCY-CEILING flush (emq.5.2, INV-Floor+Ceiling the ceiling/soft floor/
+  # empty case / INV-PureCore the injected clock): a trickle of M < min_size held
+  # until timeout makes the shaper decide {:flush, M} (the partial, < min_size)
+  # against the INJECTED elapsed -- no real-time sleep, no flake. The
+  # no-op-defeater: BELOW the ceiling the shaper waits; an EMPTY window (depth 0)
+  # at the ceiling flushes NOTHING (re-open, no batch); the partial flush carries
+  # EXACTLY M members (< min_size).
+  defp apply_scenario(:batch_shaping_timeout, conn, q) do
+    min_size = 5
+    timeout = 200
+    m = 2
+
+    ids =
+      for _ <- 1..m do
+        id = BrandedId.generate!("JOB")
+        {:ok, :enqueued} = Jobs.enqueue(conn, q, id, "ct")
+        id
+      end
+
+    with {:ok, ^m} <- Jobs.pending_size(conn, q),
+         # below both floor and ceiling -> wait (the window stays open)
+         :wait <- ShaperCore.decide(m, timeout - 1, min_size, timeout),
+         # the ceiling fires with M < min_size -> flush the partial (exactly M)
+         {:flush, ^m} <- ShaperCore.decide(m, timeout, min_size, timeout),
+         # an empty window at the ceiling -> wait (no batch, re-open) -- the
+         # zero-member "batch" carries no work (D2 empty case)
+         :wait <- ShaperCore.decide(0, timeout, min_size, timeout),
+         # drive the partial flush -- exactly M served, < min_size
+         {:ok, members} <- Jobs.claim_batch(conn, q, m, 60_000),
+         true <- length(members) == m or {:fail, {:partial_wrong_count, members}},
+         true <- m < min_size or {:fail, :not_a_partial},
+         claimed = Enum.map(members, fn {id, _p, _a} -> id end),
+         true <- claimed == ids or {:fail, {:partial_not_mint_order, claimed}},
+         :ok <- complete_all(conn, q, members) do
+      :ok
+    else
+      {:fail, _} = f -> f
+      other -> {:fail, other}
+    end
+  end
+
+  # The partial-failure isolation THROUGH THE CADENCE (emq.5.2, INV-PartialFailure
+  # / INV-Events): the batch handler's per-member verdict map fails one member,
+  # completes a second, and OMITS the third -- proving the fail-safe
+  # (absent -> retry "missing verdict", D2 sub-decision: unprocessed work must
+  # not silently retire). The verdict map is mapped exactly as
+  # BatchConsumer.settle does (the :ok members complete, the {:error} members
+  # retry with their reason, the absent member retries "missing verdict"), each
+  # member emitting its own per-member lifecycle event. The no-op-defeater: the
+  # OMITTED member must NOT complete -- after promote a fresh batch finds BOTH
+  # retried members (the poison + the missing-verdict one) at attempts 2, the
+  # completed member gone.
+  defp apply_scenario(:batch_shaping_partial_failure, conn, q) do
+    ids =
+      for _ <- 1..3 do
+        id = BrandedId.generate!("JOB")
+        {:ok, :enqueued} = Jobs.enqueue(conn, q, id, "spf")
+        id
+      end
+
+    with {:ok, [{poison_id, _pp, 1} = poison, {good_id, _gp, 1} = good, {miss_id, _mp, 1} = miss]} <-
+           Jobs.claim_batch(conn, q, 3, 60_000),
+         true <- poison_id == hd(ids) or {:fail, {:poison_not_oldest, poison_id}},
+         # the per-member verdict map the batch handler returns -- the THIRD
+         # member (miss_id) is DELIBERATELY OMITTED to exercise the fail-safe
+         verdicts = %{poison_id => {:error, "poison"}, good_id => :ok},
+         # map it exactly as BatchConsumer.settle/3 does (per-member, fail-safe
+         # default for an absent member), publishing per-member events
+         :ok <- settle_batch(conn, q, [poison, good, miss], verdicts),
+         # the poison retried with its own reason kept
+         {:ok, "scheduled"} <-
+           Connector.command(conn, ["HGET", Keyspace.job_key(q, poison_id), "state"]),
+         {:ok, "poison"} <-
+           Connector.command(conn, ["HGET", Keyspace.job_key(q, poison_id), "last_error"]),
+         # the good member completed -- its row retired
+         {:ok, 0} <- Connector.command(conn, ["EXISTS", Keyspace.job_key(q, good_id)]),
+         # the OMITTED member fail-safe-retried (NOT silently completed) with the
+         # "missing verdict" reason -- the no-op-defeater
+         {:ok, "scheduled"} <-
+           Connector.command(conn, ["HGET", Keyspace.job_key(q, miss_id), "state"]),
+         {:ok, "missing verdict"} <-
+           Connector.command(conn, ["HGET", Keyspace.job_key(q, miss_id), "last_error"]),
+         _ <- Process.sleep(30),
+         {:ok, 2} <- Jobs.promote(conn, q, 10),
+         # after promote, BOTH retried members remain (poison + missing-verdict),
+         # the completed member gone -- each at attempts 2 (its own token)
+         {:ok, reclaimed} <- Jobs.claim_batch(conn, q, 5, 60_000),
+         reclaimed_ids = Enum.map(reclaimed, fn {id, _p, _a} -> id end),
+         true <- Enum.sort(reclaimed_ids) == Enum.sort([poison_id, miss_id]) or
+                   {:fail, {:wrong_survivors, reclaimed_ids}},
+         true <- Enum.all?(reclaimed, fn {_id, _p, a} -> a == 2 end) or
+                   {:fail, {:not_second_token, reclaimed}} do
+      :ok
+    else
+      {:fail, _} = f -> f
+      other -> {:fail, other}
+    end
+  end
+
+  # Map a per-member verdict map over the served batch exactly as
+  # EchoMQ.BatchConsumer.settle/3 does -- the :ok members retire through the
+  # byte-frozen complete/5, the {:error, reason} members retry through the
+  # byte-frozen retry/7 (the reason -> last_error), and a served member ABSENT
+  # from the map fail-safe-retries ("missing verdict", D2 sub-decision). Each
+  # settled member emits its own lifecycle event through the byte-frozen
+  # Events.publish/5 (D3 -- per-member, the id gated). The cadence's settle
+  # logic, exercised at the wire level.
+  defp settle_batch(conn, q, members, verdicts) do
+    Enum.each(members, fn {id, _payload, att} ->
+      case Map.get(verdicts, id, {:error, "missing verdict"}) do
+        :ok ->
+          Jobs.complete(conn, q, id, att)
+          _ = Events.publish(conn, q, "completed", id)
+
+        {:error, reason} ->
+          Jobs.retry(conn, q, id, att, 1, 5, to_string(reason))
+          _ = Events.publish(conn, q, "failed", id)
+      end
+    end)
+
+    :ok
   end
 
   # A three-level same-queue flow where the intermediate node's OWN policy

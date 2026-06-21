@@ -1,8 +1,8 @@
 defmodule EchoMQ.ConformanceRunTest do
   @moduledoc """
   The standing gate (EMQ.0-US4, the ratified Q1 stand-in for rung 3_6):
-  the sixty-four-scenario harness drives the public surface against Valkey
-  on 6390 and every scenario passes — `run/2 → {:ok, 64}` (the eighteen
+  the sixty-seven-scenario harness drives the public surface against Valkey
+  on 6390 and every scenario passes — `run/2 → {:ok, 67}` (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -18,10 +18,13 @@ defmodule EchoMQ.ConformanceRunTest do
   (flow_grandchild, flow_grandchild_fail), the emq.4.1 control plane's
   two (the lane re-assignment reassign and the lane-scoped destructive drain
   lane_drain), the emq.4.2 group-aware recovery's one (the group-scoped
-  stalled-sweep reap_group), and the emq.5.1 batch-claim spine's three
+  stalled-sweep reap_group), the emq.5.1 batch-claim spine's three
   (the batch claim batch_claim, the under-fill short batch batch_claim_short,
-  and partial-failure isolation batch_partial_failure)). Scenarios run on
-  per-scenario sub-queues and purge what they mint.
+  and partial-failure isolation batch_partial_failure), and the emq.5.2
+  batch-shaping cadence's three (the size-floor flush batch_shaping_floor, the
+  latency-ceiling flush batch_shaping_timeout, and the partial-failure
+  isolation through the cadence batch_shaping_partial_failure)). Scenarios run
+  on per-scenario sub-queues and purge what they mint.
   """
   use ExUnit.Case, async: false
 
@@ -34,7 +37,7 @@ defmodule EchoMQ.ConformanceRunTest do
     :ok
   end
 
-  test "the sixty-four-scenario harness passes whole against the truth row" do
+  test "the sixty-seven-scenario harness passes whole against the truth row" do
     {:ok, conn} = Connector.start_link(port: 6390)
 
     on_exit(fn ->
@@ -47,6 +50,6 @@ defmodule EchoMQ.ConformanceRunTest do
 
     q = "emq0.conf#{System.unique_integer([:positive])}"
 
-    assert Conformance.run(conn, q) == {:ok, 64}
+    assert Conformance.run(conn, q) == {:ok, 67}
   end
 end
