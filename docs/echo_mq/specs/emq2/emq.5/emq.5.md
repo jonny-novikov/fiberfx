@@ -1,6 +1,6 @@
 # EMQ.5 · Batches — the bulk-consume family (Movement II, the 2nd family)
 
-> **Status: 🔨 IN PROGRESS — the family carve (this decomposition); the SPINE (emq.5.1) SHIPPED.** The voice is
+> **Status: 🔨 IN PROGRESS — the family carve (this decomposition); the SPINE (emq.5.1) + the SHAPING (emq.5.2) SHIPPED.** The voice is
 > forward-tense for the unbuilt rungs ("emq.5.N builds…"); emq.5 is the **2nd Movement II family**, opening on a
 > complete emq.4 groups family (4.1–4.4 CLOSED). It decomposes into **four sub-rungs** the way emq.2/emq.3/emq.4
 > did; the per-rung triads under `./emq.5.rungs/` are a SEPARATE fan-out, authored when each rung is reached
@@ -8,7 +8,7 @@
 >
 > **emq.5.1 SHIPPED** (the spine landed; the three forks RULED — FORK 5.1-A → the LOOP, FORK 5.1-B → THREE
 > scenarios / **conformance 61 → 64**, FORK 5.1-C → the short batch; rung label **2.5.0**, wire `@wire_version`
-> frozen at `echomq:2.4.2`; `@bclaim` `jobs.ex:200-219` + `claim_batch/4` `jobs.ex:520-539`). **emq.5.2 / 5.3 /
+> frozen at `echomq:2.4.2`; `@bclaim` `jobs.ex:200-219` + `claim_batch/4` `jobs.ex:520-539`). **emq.5.2 SHIPPED** (the shaping cadence — `EchoMQ.BatchConsumer` + `BatchShaper.Core`; forks RULED D-1 → a new module, D-2 → a per-member verdict map; **conformance 64 → 67**; `60de5dc8`). **emq.5.3 /
 > 5.4 now ride the shipped `@bclaim`** — the per-rung carve table below stays the forward-looking decomposition
 > authority for them.
 >
@@ -55,7 +55,7 @@ partitioned finish* — becomes one sub-rung, in the spine→shaping→compositi
 | Rung | Ships (PROPOSED) | Stands on | Size | Risk | Recommended topology |
 |---|---|---|---|---|---|
 | **emq.5.1 ✅ SHIPPED** | **the batch-claim spine** — `@bclaim` (count-variant `ZPOPMIN emq:{q}:pending` up to `size` under one `TIME`, one batch lease, attempts per member) + `Jobs.claim_batch/4` + the manual-pull host API; partial-failure isolation rides the shipped per-member `@complete`/`@retry` (a *tested* property, not new Lua) | `@claim` · `@gwclaim` (the proven multi-pop loop) · `emq:{q}:pending`/`active` | **M** | **NORMAL** (additive Lua, `@claim` byte-frozen) **+ the ≥100 determinism loop** (a mint/lease surface) | **Flat-L2** — Venus → Director ruled FORK 5.1-A → the LOOP / 5.1-B → THREE (conf 64) / 5.1-C → short batch → Mars build → Director verify PASS → done (zero remediation; Apollo optional, not run) |
-| **emq.5.2** | **`min_size`/`timeout` shaping** — a batch-aware `EchoMQ.Consumer` mode that waits for ≥ `min_size` OR until `timeout`, then drains via `@bclaim`; a **pure shaping core** (accumulate/flush, injected clock); batch lifecycle events on the `EchoMQ.Events` seam | emq.5.1 · `EchoMQ.Consumer`/`Metronome` · `EchoMQ.Events` | **M** | **NORMAL** (new supervised process + pure core; **no new Lua/lease**) | **Flat-L2** (a candidate **right-size collapse** — no wire/Lua, so Director may collapse Mars-2 if Stage-2 verify is clean). Apollo optional |
+| **emq.5.2 ✅ SHIPPED** | **`min_size`/`timeout` shaping** — `EchoMQ.BatchConsumer` (a NEW watch-depth process, a SIBLING of `Consumer` — D-1) flushes ONE batch when the size floor (`min_size`) or the latency ceiling (`timeout`) is reached, draining via the byte-frozen `@bclaim`/`claim_batch/4`; a **pure shaping core** `EchoMQ.BatchShaper.Core` (`decide/4`, injected clock); a per-member verdict map (absent → fail-safe retry — D-2); per-member events on the `EchoMQ.Events` seam | emq.5.1 · `EchoMQ.Consumer` (the lifecycle precedent) · `EchoMQ.Events` | **M** | **NORMAL** (new supervised process + pure core; **no new Lua/lease**) | **Flat-L2** — Venus → Director ruled D-1/D-2/D-3 → Mars build → Director verify PASS (mutation spot-check net-zero) → **Mars-2 collapsed** (right-size, zero findings); conf 67, `60de5dc8` |
 | **emq.5.3** | **group affinity + batch concurrency + dynamic rate** — `@gbclaim` (a homogeneous lane-scoped batch, additive beside `@gwclaim`); one in-flight batch per group (reuse `gactive` semantics); runtime-mutable rate on the emq.4 floor | emq.5.1 · **the CLOSED emq.4 ring** (`@gwclaim`/`gactive`/`gweight`) | **M–L** | **NORMAL+** (composes with the fairness ring; **additive `@gbclaim` keeps it NORMAL+ — an `@gwclaim`/`@gclaim` edit would force HIGH**) | **Flat-L2 + Apollo RECOMMENDED** — carry **emq.4.4-L1** (a fair-share property needs a bounded-early-window interleaving witness, not a terminal drain). Director verify = declared-keys + byte-freeze battery on the new lane script |
 | **emq.5.4** | **the partitioned finish + dynamic delay** — a batch resolves as a **partition** (complete / retry-poison-alone / dead) via the shipped per-member transitions; `Jobs.delay/N` re-scores an active member onto the schedule set from the handler | `@complete`/`@retry` · `@schedule`/`enqueue_at` (all **byte-frozen**) · emq.5.1 | **M** | **NORMAL** (reuses shipped, byte-frozen transitions; **no new lease surface**) | **Flat-L2** — Venus → Director → Mars → Director verify (byte-freeze the reused scripts) → Mars-2. Apollo optional |
 
@@ -66,7 +66,7 @@ partitioned finish* — becomes one sub-rung, in the spine→shaping→compositi
 
 ```
 emq.5.1  batch-claim spine   ──►  everything below builds on @bclaim
-   ├─► emq.5.2  shaping       (rides 5.1; independent of 5.3)
+   ├─► emq.5.2  shaping ✅    (rides 5.1; independent of 5.3)
    ├─► emq.5.3  affinity      (rides 5.1 + the CLOSED emq.4 ring)   ◄── Apollo recommended
    └─► emq.5.4  finish        (rides 5.1 + byte-frozen @complete/@retry/@schedule)
 ```
