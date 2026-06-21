@@ -1,8 +1,8 @@
 defmodule EchoMQ.ConformanceRunTest do
   @moduledoc """
   The standing gate (EMQ.0-US4, the ratified Q1 stand-in for rung 3_6):
-  the seventy-three-scenario harness drives the public surface against Valkey
-  on 6390 and every scenario passes — `run/2 → {:ok, 73}` (the eighteen
+  the seventy-four-scenario harness drives the public surface against Valkey
+  on 6390 and every scenario passes — `run/2 → {:ok, 74}` (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -28,8 +28,11 @@ defmodule EchoMQ.ConformanceRunTest do
   glimit-headroom ceiling grouped_batch_ceiling, and the fairness interleaving
   witness grouped_batch_fairness), and the emq.5.4 resolve half's three (the
   exhaustive/disjoint partition batch_partition, the dynamic-delay re-score
-  batch_delay, and the delay token-fence batch_delay_stale)). Scenarios run on
-  per-scenario sub-queues and purge what they mint.
+  batch_delay, and the delay token-fence batch_delay_stale), and -- since EchoMQ
+  3.0's Stream Tier opened (emq3.1) -- the stream-verb floor's one (the five
+  stream verbs round-trip on the certified connector + a pipelined XADD batch +
+  push-safe under RESP3, stream_verbs)). Scenarios run on per-scenario sub-queues
+  and purge what they mint.
   """
   use ExUnit.Case, async: false
 
@@ -42,7 +45,7 @@ defmodule EchoMQ.ConformanceRunTest do
     :ok
   end
 
-  test "the seventy-three-scenario harness passes whole against the truth row" do
+  test "the seventy-four-scenario harness passes whole against the truth row" do
     {:ok, conn} = Connector.start_link(port: 6390)
 
     on_exit(fn ->
@@ -55,6 +58,6 @@ defmodule EchoMQ.ConformanceRunTest do
 
     q = "emq0.conf#{System.unique_integer([:positive])}"
 
-    assert Conformance.run(conn, q) == {:ok, 73}
+    assert Conformance.run(conn, q) == {:ok, 74}
   end
 end

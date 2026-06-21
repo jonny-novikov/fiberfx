@@ -1,6 +1,6 @@
 defmodule EchoMQ.Conformance do
   @moduledoc """
-  The bus contract as seventy-three runnable scenarios. Each scenario drives the
+  The bus contract as seventy-four runnable scenarios. Each scenario drives the
   public surface (and, where the contract is the wire itself, raw commands)
   against a live server and asserts the externally visible verdict: the
   fence, the row shape, idempotent admission, the kind law, the lex law,
@@ -57,17 +57,23 @@ defmodule EchoMQ.Conformance do
   glimit-headroom ceiling, the fairness interleaving witness), and -- since the
   family CLOSED (emq.5.4) -- the RESOLVE half (the exhaustive/disjoint partition
   over a resolved batch, the dynamic-delay re-score that moves an active member
-  to schedule attempts-preserved, the delay token-fence). A port of the client
-  conforms when it drives the same server to the same seventy-three verdicts --
-  the scenarios are wire-level on purpose, so the harness ports by translation,
-  not by faith. Scenarios run on per-scenario sub-queues and purge what they mint.
-  Chapter 3.6, extended 3.7, then the emq.2 cluster (parity, closed at emq.2.4),
-  then the emq.3 flow family (opened at emq.3.1, crossed queues at emq.3.3,
-  failure half at emq.3.4, closed at emq.3.5 with grandchildren), then Movement
-  II's groups family (opened at emq.4.1 with the control plane, the recovery axis
-  at emq.4.2), then the batches family (opened at emq.5.1 with the batch-claim
-  spine, shaped at emq.5.2, grouped at emq.5.3, closed at emq.5.4 with the
-  partitioned finish + dynamic delay).
+  to schedule attempts-preserved, the delay token-fence), and -- since EchoMQ
+  3.0's Stream Tier opened (emq3.1, S1 the writer part 1) -- the stream-verb floor
+  (stream_verbs: the five stream verbs round-trip on the certified connector over
+  an emq:{q}:stream:<name> braced key, a pipelined XADD batch returns its ids in
+  call order, and the in-band verbs do not disturb the out-of-band push routing
+  under RESP3 -- the verbs ride the SHIPPED generic command path verb-agnostically,
+  no wire edit, no new script). A port of the client conforms when it drives the
+  same server to the same seventy-four verdicts -- the scenarios are wire-level on
+  purpose, so the harness ports by translation, not by faith. Scenarios run on
+  per-scenario sub-queues and purge what they mint. Chapter 3.6, extended 3.7,
+  then the emq.2 cluster (parity, closed at emq.2.4), then the emq.3 flow family
+  (opened at emq.3.1, crossed queues at emq.3.3, failure half at emq.3.4, closed
+  at emq.3.5 with grandchildren), then Movement II's groups family (opened at
+  emq.4.1 with the control plane, the recovery axis at emq.4.2), then the batches
+  family (opened at emq.5.1 with the batch-claim spine, shaped at emq.5.2, grouped
+  at emq.5.3, closed at emq.5.4 with the partitioned finish + dynamic delay), then
+  EchoMQ 3.0's Stream Tier (opened at emq3.1 with the stream-verb floor).
   """
 
   alias EchoData.BrandedId
@@ -166,29 +172,32 @@ defmodule EchoMQ.Conformance do
       grouped_batch_fairness: "under sustained skew one HEAVY lane flooded deep and light lanes trickling, the ring-rotated grouped batch interleaves WITHIN a bounded EARLY window -- every light lane is served inside the first ring cycles while the heavy lane is still deep (the no-op-defeater: a FIFO/serve-heavy-first batch starves the light lanes early), and every lane drains to zero (the liveness floor) -- the emq.4.4-L1 interleaving witness for the grouped batch (emq.5.3)",
       batch_partition: "a claimed batch resolves as an EXHAUSTIVE, DISJOINT partition over its members: a mixed batch (a completed member, a retried member, a member retried PAST the cap that lands dead, a delayed member) classifies into %{completed, retried, dead, delayed} so completed ++ retried ++ dead ++ delayed is a permutation of the claimed ids and the four buckets are pairwise disjoint, dead EMERGES from the @retry {:ok, :dead} outcome (NOT a caller verdict), and an absent verdict fail-safe-retries -- the pure EchoMQ.BatchFinish classifier, never a silent complete (emq.5.4)",
       batch_delay: "the dynamic-delay re-score: a claimed (active) member delayed by ms moves to the schedule set with state scheduled and attempts PRESERVED (NOT reset to 0 -- the delay is not a failure), absent from active and invisible to claim until its server-clock score is due, then promote returns it to pending and a fresh claim mints the NEXT token (the attempt history continued, not restarted) -- the inverse of @claim: it releases the lease and mints nothing, one atomic EVAL so the member is never in neither set (emq.5.4)",
-      batch_delay_stale: "the delay is token-fenced: a claimed member reaped and re-claimed by another worker (a new token) refuses the original holder's delay EMQSTALE -> {:error, :stale}, the new holder's active-set lease untouched, and the new holder's delay with the live token settles; a delay on a missing row answers {:error, :gone} -- the complete/5 / retry/7 fencing, so a stale holder cannot yank a member from its new owner (emq.5.4)"
+      batch_delay_stale: "the delay is token-fenced: a claimed member reaped and re-claimed by another worker (a new token) refuses the original holder's delay EMQSTALE -> {:error, :stale}, the new holder's active-set lease untouched, and the new holder's delay with the live token settles; a delay on a missing row answers {:error, :gone} -- the complete/5 / retry/7 fencing, so a stale holder cannot yank a member from its new owner (emq.5.4)",
+      stream_verbs: "the stream-verb floor (emq3.1): the five stream verbs (XADD/XRANGE/XREADGROUP/XACK/XAUTOCLAIM) round-trip on the certified connector over an emq:{q}:stream:<name> braced key -- XADD answers the entry id and XRANGE reads back the EXACT appended entry, XREADGROUP (NO BLOCK) reads the group's unseen entries, XACK answers the count, XAUTOCLAIM re-claims a pending entry -- plus a pipelined XADD batch returns N ids in call order read back in mint order, and the in-band verbs do not disturb the out-of-band push routing under RESP3 (a concurrent push is still delivered on the {:emq_push, ...} seam); the verbs ride the SHIPPED generic command path verb-agnostically, no echo_wire edit, no new script -- the floor every later Stream rung stands on (emq3.1)"
     ]
   end
 
   @doc """
   Runs all scenarios against `conn`, on sub-queues of `queue`. Prints one
   CONF line per scenario and a closing tally. Returns `{:ok, n}` when all
-  pass (n == 73 today -- the live total, grown by additive minor; the count is
+  pass (n == 74 today -- the live total, grown by additive minor; the count is
   re-pinned in both pinning tests, `conformance_run_test.exs` `{:ok, n}` and
   `conformance_scenarios_test.exs` `@run_order`), `{:error, failed_names}`
   otherwise. The set spans the eighteen state-machine scenarios, the emq.2
   parity cluster (read / operator / watch planes + the parity closer), the
   emq.3 flow family (single-queue / cross-queue / failure-half / grandchildren),
   Movement II's groups family (the emq.4.1 control plane, the emq.4.2 group-aware
-  recovery, the emq.4.4 weighted rotation + starvation drill), and -- since the
-  batches family opened -- the emq.5.1 batch-claim spine's three (batch_claim,
-  batch_claim_short, batch_partial_failure), the emq.5.2 batch-shaping cadence's
-  three (batch_shaping_floor, batch_shaping_timeout, batch_shaping_partial_failure),
+  recovery, the emq.4.4 weighted rotation + starvation drill), the batches family
+  -- the emq.5.1 batch-claim spine's three (batch_claim, batch_claim_short,
+  batch_partial_failure), the emq.5.2 batch-shaping cadence's three
+  (batch_shaping_floor, batch_shaping_timeout, batch_shaping_partial_failure),
   the emq.5.3 grouped batch's three (grouped_batch_affinity,
-  grouped_batch_ceiling, grouped_batch_fairness), and -- since the batches family
-  CLOSED (emq.5.4, the partitioned finish + dynamic delay) -- the resolve half's
+  grouped_batch_ceiling, grouped_batch_fairness), the emq.5.4 resolve half's
   three (the exhaustive/disjoint partition batch_partition, the dynamic-delay
-  re-score batch_delay, the delay token-fence batch_delay_stale).
+  re-score batch_delay, the delay token-fence batch_delay_stale) -- and -- since
+  EchoMQ 3.0's Stream Tier opened (emq3.1) -- the stream-verb floor (stream_verbs:
+  the five stream verbs round-trip on the certified connector, a pipelined XADD
+  batch in call order, push-safe under RESP3).
   """
   def run(conn, queue) when is_binary(queue) do
     results =
@@ -2738,6 +2747,170 @@ defmodule EchoMQ.Conformance do
       :ok
     else
       other -> {:fail, other}
+    end
+  end
+
+  # -- the Stream Tier verb floor (emq3.1) ----------------------------------
+
+  defp apply_scenario(:stream_verbs, conn, q) do
+    # The stream-verb floor (emq3.1, S1 the writer part 1): the five stream verbs
+    # round-trip on the CERTIFIED connector, a pipelined XADD batch returns its
+    # ids in call order, and the in-band verbs do not disturb the out-of-band
+    # push routing under RESP3 -- the floor every later Stream rung stands on.
+    #
+    # The verbs ride the SHIPPED generic command path (FORK 3.1-A): each is a
+    # `parts` list through Connector.command/3 / pipeline/3 -- the connector is
+    # already a generic RESP client (RESP.encode/1 is verb-agnostic), so the
+    # verbs reach the wire with NO connector edit and NO new script. The stream
+    # key is the braced emq:{q}:stream:<name> via the total queue_key/2 (a NEW
+    # Section 6 type on the {q} slot, no grammar edit). The branded record id is
+    # emq3.2's writer law -- this rung appends with the server `*` id, sufficient
+    # to prove the plumbing. NO verb carries a BLOCK argument (FORK 3.1-D defers
+    # the blocking consumer-group read to emq3.3). A vacuous round-trip (a reply
+    # asserted against nothing) is a LOUD failure -- each reply is asserted
+    # against the appended data.
+    key = Keyspace.queue_key(q, "stream:s")
+
+    with :ok <- stream_roundtrip(conn, key),
+         :ok <- stream_group_roundtrip(conn, key),
+         :ok <- stream_pipeline_batch(conn, q),
+         :ok <- stream_push_safe(conn, q) do
+      :ok
+    end
+  end
+
+  # US1 -- XADD then XRANGE reads back the EXACT appended entry. The XADD reply is
+  # the server-minted "<ms>-<seq>" id; XRANGE - + answers the nested array
+  # [[id, [field, value]]] (parsed by RESP.parse/1's array branch).
+  defp stream_roundtrip(conn, key) do
+    with {:ok, id} when is_binary(id) <- Connector.command(conn, ["XADD", key, "*", "field", "value"]),
+         true <- id =~ ~r/^\d+-\d+$/,
+         {:ok, [[^id, ["field", "value"]]]} <- Connector.command(conn, ["XRANGE", key, "-", "+"]) do
+      :ok
+    else
+      other -> {:fail, {:roundtrip, other}}
+    end
+  end
+
+  # US1 -- the consumer-group verbs (NO BLOCK): XGROUP CREATE (non-blocking
+  # setup), XREADGROUP reads the group's unseen entries for c1 (the entry now
+  # pending against c1), XACK answers the genuinely-pending count 1, and
+  # XAUTOCLAIM (min-idle-time 0) re-claims a pending entry to c2 -- the
+  # [cursor, claimed, deleted] triple, the claimed entry positively the one c1 left.
+  defp stream_group_roundtrip(conn, key) do
+    gkey = key <> ":g"
+
+    with {:ok, id} <- Connector.command(conn, ["XADD", gkey, "*", "k", "v"]),
+         {:ok, "OK"} <- Connector.command(conn, ["XGROUP", "CREATE", gkey, "grp", "0"]),
+         {:ok, read} <-
+           Connector.command(conn, ["XREADGROUP", "GROUP", "grp", "c1", "COUNT", "10", "STREAMS", gkey, ">"]),
+         ^id <- stream_entry_id(read, gkey),
+         {:ok, 1} <- Connector.command(conn, ["XACK", gkey, "grp", id]),
+         {:ok, id2} <- Connector.command(conn, ["XADD", gkey, "*", "k2", "v2"]),
+         {:ok, _} <-
+           Connector.command(conn, ["XREADGROUP", "GROUP", "grp", "c1", "COUNT", "10", "STREAMS", gkey, ">"]),
+         {:ok, [_cursor, claimed, _deleted]} <-
+           Connector.command(conn, ["XAUTOCLAIM", gkey, "grp", "c2", "0", "0"]),
+         true <- Enum.any?(claimed, fn [cid | _] -> cid == id2 end) do
+      :ok
+    else
+      other -> {:fail, {:group_roundtrip, other}}
+    end
+  end
+
+  # US2 -- a pipelined XADD batch through the shipped Connector.pipeline/3: N (>= 2)
+  # appends in one pipeline return N ids in call order; XRANGE reads back exactly
+  # N entries in mint order (the server * ids are monotonic), payloads v1..vN.
+  # The connector is the SOLE owner of the wire (no second pipelining mechanism).
+  defp stream_pipeline_batch(conn, q) do
+    key = Keyspace.queue_key(q, "stream:batch")
+    n = 4
+    cmds = for i <- 1..n, do: ["XADD", key, "*", "seq", "v#{i}"]
+
+    with {:ok, ids} when length(ids) == n <- Connector.pipeline(conn, cmds),
+         true <- Enum.all?(ids, &is_binary/1),
+         {:ok, entries} when length(entries) == n <- Connector.command(conn, ["XRANGE", key, "-", "+"]),
+         read_ids = for([eid | _] <- entries, do: eid),
+         true <- read_ids == ids,
+         read_vals = for([_eid, ["seq", v]] <- entries, do: v),
+         true <- read_vals == for(i <- 1..n, do: "v#{i}") do
+      :ok
+    else
+      other -> {:fail, {:pipeline_batch, other}}
+    end
+  end
+
+  # US3 -- push-safety under RESP3: an in-band XADD/XRANGE/XACK sequence on a
+  # SUBSCRIBED RESP3 connection round-trips WHILE a concurrent push is published
+  # (out of band, on the EchoMQ.Events seam). The stream replies stay correct (the
+  # FIFO aligned) AND the push is still delivered as {:emq_push, ...}, never
+  # enqueued on the reply FIFO. NO verb carries a BLOCK argument (FORK 3.1-D). The
+  # subscriber rides its OWN disposable connection (stopped at the end).
+  defp stream_push_safe(conn, q) do
+    key = Keyspace.queue_key(q, "stream:ps")
+    chan = Events.channel(q)
+    {:ok, sub} = Connector.start_link(port: 6390, protocol: 3, push_to: self())
+    :ok = Connector.subscribe(sub, chan)
+    # let the SUBSCRIBE land before the publish (no lost-wakeup race)
+    Process.sleep(50)
+
+    verdict =
+      with {:ok, id} <- Connector.command(sub, ["XADD", key, "*", "f", "v"]),
+           true <- id =~ ~r/^\d+-\d+$/,
+           # the concurrent push on the PASSED conn (the publisher) -- out of band
+           {:ok, 1} <- Connector.command(conn, ["PUBLISH", chan, "ping"]),
+           # in-band XRANGE on the SAME subscribed connection -- the FIFO aligned
+           {:ok, [[^id, ["f", "v"]]]} <- Connector.command(sub, ["XRANGE", key, "-", "+"]),
+           # the third in-band verb (XACK over a group); XGROUP CREATE is
+           # non-blocking setup, XREADGROUP carries NO BLOCK arg
+           {:ok, "OK"} <- Connector.command(sub, ["XGROUP", "CREATE", key, "g", "0"]),
+           {:ok, _} <-
+             Connector.command(sub, ["XREADGROUP", "GROUP", "g", "c", "STREAMS", key, ">"]),
+           {:ok, 1} <- Connector.command(sub, ["XACK", key, "g", id]),
+           # the concurrent push WAS delivered out of band (the load-bearing
+           # assertion -- no concurrent push would prove nothing)
+           :ok <- await_push(chan, "ping") do
+        :ok
+      else
+        other -> {:fail, {:push_safe, other}}
+      end
+
+    try do
+      GenServer.stop(sub)
+    catch
+      :exit, _ -> :ok
+    end
+
+    verdict
+  end
+
+  # Pull the first entry id from an XREADGROUP reply for `key`, tolerant of the
+  # RESP3 map shape (%{key => [[id, fields], ...]}) and the RESP2 nested-array
+  # shape ([[key, [[id, fields], ...]]]) -- the connection-dependent
+  # stream->entries form. nil if the stream is absent/empty.
+  defp stream_entry_id(reply, key) when is_map(reply) do
+    case Map.get(reply, key) do
+      [[id | _] | _] -> id
+      _ -> nil
+    end
+  end
+
+  defp stream_entry_id(reply, key) when is_list(reply) do
+    case List.keyfind(reply, key, 0) do
+      {^key, [[id | _] | _]} -> id
+      _ -> nil
+    end
+  end
+
+  defp stream_entry_id(_reply, _key), do: nil
+
+  # A bounded wait for the out-of-band push on `chan` carrying `body` (the
+  # {:emq_push, ["message", chan, body]} the connector routes off the FIFO).
+  defp await_push(chan, body) do
+    receive do
+      {:emq_push, ["message", ^chan, ^body]} -> :ok
+    after
+      1_000 -> {:fail, :no_push}
     end
   end
 

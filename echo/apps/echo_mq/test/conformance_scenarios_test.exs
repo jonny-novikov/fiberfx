@@ -1,7 +1,7 @@
 defmodule EchoMQ.ConformanceScenariosTest do
   @moduledoc """
   The pure half of the Conformance row (echo2-migration.md §5): the
-  scenario registry pinned — seventy-three names in run order (the eighteen
+  scenario registry pinned — seventy-four names in run order (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -25,9 +25,11 @@ defmodule EchoMQ.ConformanceScenariosTest do
   grouped_batch_ceiling, and the fairness interleaving witness
   grouped_batch_fairness), and the emq.5.4 resolve half's three (the
   exhaustive/disjoint partition batch_partition, the dynamic-delay re-score
-  batch_delay, and the delay token-fence batch_delay_stale)). The wire half
-  (`run/2 → {:ok, 73}`) lives in `conformance_run_test.exs` behind the
-  `:valkey` tag.
+  batch_delay, and the delay token-fence batch_delay_stale), and -- since EchoMQ
+  3.0's Stream Tier opened (emq3.1) -- the stream-verb floor's one (the five
+  stream verbs round-trip on the certified connector + a pipelined XADD batch +
+  push-safe under RESP3, stream_verbs)). The wire half (`run/2 → {:ok, 74}`)
+  lives in `conformance_run_test.exs` behind the `:valkey` tag.
   """
   use ExUnit.Case, async: true
 
@@ -106,10 +108,11 @@ defmodule EchoMQ.ConformanceScenariosTest do
     :grouped_batch_fairness,
     :batch_partition,
     :batch_delay,
-    :batch_delay_stale
+    :batch_delay_stale,
+    :stream_verbs
   ]
 
-  test "scenarios/0 answers exactly the seventy-three names in run order" do
+  test "scenarios/0 answers exactly the seventy-four names in run order" do
     assert Keyword.keys(Conformance.scenarios()) == @run_order
   end
 
