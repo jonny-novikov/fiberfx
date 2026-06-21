@@ -4,7 +4,7 @@ id: echo-courses-4-routes
 rung: ec.4
 size: L
 risk: NORMAL+
-status: Reconciled — build-grade (routes); deploy-forward layered (ec.4 ships live)
+status: Built
 stands-on: "ec.3"
 ---
 
@@ -122,3 +122,13 @@ Each detail page renders the catalog body. The published deep courses (`html/eli
 - **Risk — chip-order vs catalog (F-A):** the published chip order differs from `Catalog.Facets`; resolve via the Director's F-A ruling before the build, and assert the chosen order in the parity battery.
 - **Risk — the vendored-replace Docker build:** the `replace => ../echo` means the build context needs `../echo` (build from `go/` and `COPY echo/ echo-courses/`, or `go mod vendor`); build `GOWORK=off`.
 - **Scope note — L-sized rung:** ec.4 now carries routes + parity **and** the first Fly deploy (deploy-forward). If that is too large for one rung, the deploy can split into a thin ec.4-deploy follow-on without changing the routes contract above.
+
+## As built { id="ec4-as-built" }
+
+Shipped to ec.4 acceptance 1–8 via the **local dev server** (D-4); criterion 9 (`fly deploy`) is the Operator's manual step (flyctl authed).
+
+- **Routes + parity.** `internal/handler` (index + detail) wired into `newEcho` (the loaded `*catalog.Catalog` threaded in — the ec.3 discard seam); `GET /courses` + `GET /` (D-2) + the five published paths + `/courses/:slug` (render-identical), `?track=` (case-insensitive vs `Facet.Key`), 404 via `echo.NewHTTPError`. `pages/index.html` (the golden hero/section copy + the filter `<script>` inline) + `pages/course.html` (the landing — D-3).
+- **Facet order (D-1).** `Course.FacetOrder` + `facet_order` front-matter (elixir1/agents2/redis3/echomq4/bcs5); `buildFacets` orders by it → chips `All · Elixir · Agents · Redis · EchoMQ · BCS` (published), the grid by `Course.Order`.
+- **Deploy-ready (D-4).** `Dockerfile` (multi-stage; build context `go/`; `COPY echo/ echo-courses/`; `GOWORK=off CGO_ENABLED=0`; templates+content embedded; `COPY web/static`; `alpine:3.19` runtime) + `fly.toml` (`app=echo-courses`, `ADDR=:8080`, `internal_port 8080`, `/healthz` check, `SIGTERM`, `kill_timeout 15` > the 10s graceful window). Inspection-verified; the Operator runs `fly deploy`.
+- **Verified (local dev server).** `make gate` green; the URL-parity battery (all seven paths 200 + the right course; `?track` case-insensitive; `/courses/:slug` ≡ the published path; unknown slug 404; SIGTERM exit 0); a mutation spot-check (break a `facet_order` → the facet-order test FAILS, reverted net-zero) confirms teeth.
+- **Finding (load-bearing).** The build landed out-of-band (`6e4a1b0b`) **red on its own gate** — a gofmt-dirty `main_test.go` + a `TestIndex_ChipsAndCards` asserting a JS comment that `html/template` strips from `<script>`. The ship's two test fixes (gofmt; assert the filter *logic* fragments that survive rendering) make it green.
