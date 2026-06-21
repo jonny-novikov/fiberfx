@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,7 +17,10 @@ import (
 
 // AC2 (wired): newEcho serves GET /healthz with 200 through the middleware chain.
 func TestNewEcho_Healthz(t *testing.T) {
-	e := newEcho(t.TempDir())
+	e, err := newEcho(t.TempDir())
+	if err != nil {
+		t.Fatalf("newEcho: %v", err)
+	}
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -34,7 +38,10 @@ func TestNewEcho_StaticServing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "probe.txt"), []byte(want), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e := newEcho(dir)
+	e, err := newEcho(dir)
+	if err != nil {
+		t.Fatalf("newEcho: %v", err)
+	}
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/static/probe.txt", nil)
@@ -114,5 +121,36 @@ func TestRun_GracefulDrain(t *testing.T) {
 
 	if err := <-errCh; err != nil && err != http.ErrServerClosed {
 		t.Fatalf("Start returned error: %v", err)
+	}
+}
+
+// ec.2 AC2/AC3: GET / returns 200 and the rendered base layout — the
+// jonnify · courses header and the (с) jonnify footer — through c.Render and the
+// real route wiring (e.Renderer set in newEcho). The render-package unit tests
+// exercise the Renderer directly; this proves the HTTP boundary: e.Renderer +
+// c.Render compose the placeholder page end to end.
+func TestNewEcho_PlaceholderRoute(t *testing.T) {
+	e, err := newEcho(t.TempDir())
+	if err != nil {
+		t.Fatalf("newEcho (template parse is fail-fast at boot): %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"jonnify · courses", // .topbar header (AC3)
+		"(с) jonnify",       // <footer>, Cyrillic с (AC3)
+		"Open →",            // the rendered card partial (AC4)
+		`class="filter-btn`, // the rendered filter partial (AC5)
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("GET / body missing %q", want)
+		}
 	}
 }

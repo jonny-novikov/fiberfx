@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"errors"
+	"html/template"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +17,8 @@ import (
 	"time"
 
 	"github.com/fiberfx/echo-courses/internal/handler"
+	"github.com/fiberfx/echo-courses/internal/render"
+	"github.com/fiberfx/echo-courses/web"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
@@ -48,9 +51,14 @@ func main() {
 
 // run builds the Echo instance and serves it until ctx is cancelled, then drains
 // in-flight requests within graceful. It returns nil on a clean shutdown
-// (echo.StartConfig.Start already swallows http.ErrServerClosed).
+// (echo.StartConfig.Start already swallows http.ErrServerClosed). A template
+// parse failure from newEcho aborts the boot before the server ever binds
+// (ec.2 acceptance 1, fail-fast).
 func run(ctx context.Context, addr, staticDir string, graceful time.Duration) error {
-	e := newEcho(staticDir)
+	e, err := newEcho(staticDir)
+	if err != nil {
+		return err
+	}
 	cfg := echo.StartConfig{Address: addr, GracefulTimeout: graceful}
 	if err := cfg.Start(ctx, e); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -58,18 +66,46 @@ func run(ctx context.Context, addr, staticDir string, graceful time.Duration) er
 	return nil
 }
 
-// newEcho wires the ec.1 scaffold: recover + request-logger middleware,
-// GET /healthz, and static serving of staticDir under /static. Handlers take
-// *echo.Context per Echo v5.
-func newEcho(staticDir string) *echo.Echo {
+// newEcho wires the scaffold: recover + request-logger middleware, the render
+// layer (the embedded template tree, parsed fail-fast at boot), GET /healthz,
+// static serving of staticDir under /static, and the ec.2 placeholder route
+// GET / proving the render path. A parse error returns a named error so the boot
+// aborts. Handlers take *echo.Context per Echo v5. ec.4 replaces GET / with the
+// real catalog index.
+func newEcho(staticDir string) (*echo.Echo, error) {
+	r, err := render.New(web.FS)
+	if err != nil {
+		return nil, err
+	}
+
 	e := echo.New()
+	e.Renderer = r
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestLogger())
 
+	e.GET("/", placeholder)
 	e.GET("/healthz", handler.Health)
 	e.Static("/static", staticDir)
 
-	return e
+	return e, nil
+}
+
+// placeholder renders the ec.2 placeholder page — the base layout composed with
+// the card and filter partials over one sample card. ec.4 supersedes it with the
+// catalog-driven index handler.
+func placeholder(c *echo.Context) error {
+	data := map[string]any{
+		"Card": render.Card{
+			Accent:  template.CSS("var(--gold-bright)"),
+			Tags:    "elixir",
+			Href:    "/elixir",
+			Icon:    template.HTML(`<svg viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 35 L24 9 M21 22 L31 35"/><circle cx="22" cy="22" r="18" stroke-width="1.2" stroke-opacity="0.5"/></svg>`),
+			Eyebrow: "Elixir · BEAM · English",
+			Title:   "Functional Programming",
+			Summary: "A deep dive into functional programming with Elixir on the BEAM — from foundational to advanced computer-science problems, with interactive elements.",
+		},
+	}
+	return c.Render(http.StatusOK, "placeholder.html", data)
 }
 
 func envOr(key, fallback string) string {
