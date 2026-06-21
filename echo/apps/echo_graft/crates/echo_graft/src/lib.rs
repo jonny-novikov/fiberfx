@@ -11,6 +11,8 @@ pub mod rt {
 
 pub mod core;
 pub mod err;
+pub mod feed;
+pub mod identity;
 pub mod oracle;
 pub mod remote;
 pub mod setup;

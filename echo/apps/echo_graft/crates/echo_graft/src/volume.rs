@@ -67,6 +67,13 @@ pub struct Volume {
     /// abort the commit process.
     #[bilrost(5)]
     pub pending_commit: Option<PendingCommit>,
+
+    /// The external branded id (`{ns}{base62}`) this Volume is addressed by, if
+    /// it was opened branded (eg.3). The volumes partition is the single source
+    /// of truth for the branded ↔ native mapping; the `brands` index resolves the
+    /// forward direction. Absent for volumes opened by native id only.
+    #[bilrost(6)]
+    pub branded_id: Option<String>,
 }
 
 impl Volume {
@@ -77,7 +84,7 @@ impl Volume {
         sync: Option<SyncPoint>,
         pending_commit: Option<PendingCommit>,
     ) -> Self {
-        Self { vid, local, remote, sync, pending_commit }
+        Self { vid, local, remote, sync, pending_commit, branded_id: None }
     }
 
     pub fn new_random() -> Self {
@@ -87,6 +94,7 @@ impl Volume {
             remote: LogId::random(),
             sync: None,
             pending_commit: None,
+            branded_id: None,
         }
     }
 
@@ -104,6 +112,15 @@ impl Volume {
 
     pub fn pending_commit(&self) -> Option<&PendingCommit> {
         self.pending_commit.as_ref()
+    }
+
+    pub fn with_branded_id(self, branded_id: Option<String>) -> Self {
+        Self { branded_id, ..self }
+    }
+
+    /// The external branded id this Volume is addressed by, if any (eg.3).
+    pub fn branded_id(&self) -> Option<&str> {
+        self.branded_id.as_deref()
     }
 
     pub fn local_watermark(&self) -> Option<LSN> {

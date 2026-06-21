@@ -57,6 +57,13 @@ struct Keyspaces {
     /// This keyspace maps tags to volumes
     tags: TypedKeyspace<ByteString, VolumeId>,
 
+    /// This keyspace is the forward index of the branded ↔ native identity
+    /// mapping (eg.3): a branded id string → its `VolumeId`. The authoritative
+    /// copy of the mapping is `Volume::branded_id` in the `volumes` partition;
+    /// this index just accelerates resolution on open. Written atomically with
+    /// the Volume.
+    brands: TypedKeyspace<ByteString, VolumeId>,
+
     /// This keyspace stores state regarding each `Volume`
     /// keyed by its `VolumeId`
     volumes: TypedKeyspace<VolumeId, Volume>,
@@ -79,6 +86,7 @@ impl Keyspaces {
     fn open(db: &fjall::Database) -> Result<Self, FjallStorageErr> {
         Ok(Self {
             tags: TypedKeyspace::open(db, "tags", Default::default)?,
+            brands: TypedKeyspace::open(db, "brands", Default::default)?,
             volumes: TypedKeyspace::open(db, "volumes", Default::default)?,
             checkpoints: TypedKeyspace::open(db, "checkpoints", Default::default)?,
             log: TypedKeyspace::open(db, "log", Default::default)?,
@@ -231,6 +239,11 @@ impl<'a> ReadGuard<'a> {
 
     pub fn get_tag(&self, tag: &str) -> Result<Option<VolumeId>, FjallStorageErr> {
         self.snapshot.get(&self.ks().tags, tag)
+    }
+
+    /// Resolve a branded id to its `VolumeId` via the forward `brands` index (eg.3).
+    pub fn resolve_brand(&self, branded: &str) -> Result<Option<VolumeId>, FjallStorageErr> {
+        self.snapshot.get(&self.ks().brands, branded)
     }
 
     /// Lookup the latest LSN for a Log
@@ -548,6 +561,12 @@ impl<'a> WriteBatch<'a> {
         self.batch.insert_typed(&self.ks.tags, tag.into(), vid);
     }
 
+    /// Write the forward `brands` index entry (branded id → `VolumeId`). Batched
+    /// with the Volume write so the mapping lands atomically with creation (eg.3).
+    pub fn write_brand(&mut self, branded: &str, vid: VolumeId) {
+        self.batch.insert_typed(&self.ks.brands, branded.into(), vid);
+    }
+
     pub fn write_commit(&mut self, commit: Commit) {
         // keep the checkpoint index up to date
         for &checkpoint in commit.checkpoints() {
@@ -666,6 +685,69 @@ impl<'a> ReadWriteGuard<'a> {
             local_log = ?volume.local,
             remote_log = ?volume.remote,
             "open volume"
+        );
+
+        Ok(volume)
+    }
+
+    /// Open a Volume addressed by an external **branded id** (eg.3).
+    ///
+    /// Resolution is single-source-of-truth: if the `brands` index already maps
+    /// the branded id, the existing Volume is returned (so the branded id
+    /// round-trips). Otherwise a fresh native `VolumeId` is minted — the platform
+    /// owns the branded id, the engine owns the native one — and the Volume plus
+    /// its `brands` index entry are written **atomically** in one batch, so id
+    /// resolution can never race creation.
+    pub fn volume_open_branded(
+        self,
+        branded: &str,
+        local: Option<LogId>,
+        remote: Option<LogId>,
+    ) -> Result<Volume, FjallStorageErr> {
+        // resolve an existing branded volume
+        if let Some(vid) = self.read.resolve_brand(branded)? {
+            let volume = self.read.volume(&vid)?;
+            if let Some(remote) = remote
+                && volume.remote != remote
+            {
+                return Err(LogicalErr::VolumeRemoteMismatch {
+                    vid: volume.vid,
+                    expected: remote,
+                    actual: volume.remote,
+                }
+                .into());
+            }
+            return Ok(volume);
+        }
+
+        // mint the native identity; determine the local/remote Logs
+        let vid = VolumeId::random();
+        let local = local.unwrap_or_else(LogId::random);
+        let remote = remote.unwrap_or_else(LogId::random);
+
+        // if the remote already has commits, start the sync point at its head
+        let sync = self
+            .read
+            .latest_lsn(&remote)?
+            .map(|latest_remote| SyncPoint {
+                remote: latest_remote,
+                local_watermark: None,
+            });
+
+        let volume = Volume::new(vid, local, remote, sync, None)
+            .with_branded_id(Some(branded.to_owned()));
+
+        // volume + forward index land atomically
+        let mut batch = self.read.storage.batch();
+        batch.write_volume(volume.clone());
+        batch.write_brand(branded, volume.vid.clone());
+        batch.commit()?;
+
+        tracing::debug!(
+            vid = ?volume.vid,
+            branded,
+            remote_log = ?volume.remote,
+            "open branded volume"
         );
 
         Ok(volume)

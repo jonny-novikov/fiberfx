@@ -10,6 +10,8 @@ use tryiter::TryIteratorExt;
 
 use crate::{
     GraftErr,
+    feed::{ChangeFeed, FeedEvent, InMemoryFeed},
+    identity::BrandedId,
     remote::Remote,
     rt::{
         action::{Action, FetchLog, FetchSegment, HydrateSnapshot, RemoteCommit},
@@ -25,6 +27,14 @@ use crate::local::fjall_storage::FjallStorage;
 
 type Result<T> = std::result::Result<T, GraftErr>;
 
+/// Wall-clock publish time for a feed event, epoch milliseconds.
+fn now_epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 #[derive(Clone, Debug)]
 pub struct Runtime {
     inner: Arc<RuntimeInner>,
@@ -35,6 +45,9 @@ struct RuntimeInner {
     tokio: tokio::runtime::Handle,
     storage: Arc<FjallStorage>,
     remote: Arc<Remote>,
+    /// The in-process change-feed (eg.3). Always present; durable commits publish
+    /// here. eg.4 swaps this for an EchoMQ-backed sink behind `ChangeFeed`.
+    feed: Arc<InMemoryFeed>,
 }
 
 impl Runtime {
@@ -57,8 +70,18 @@ impl Runtime {
             ));
         }
         Runtime {
-            inner: Arc::new(RuntimeInner { tokio: tokio_rt, storage, remote }),
+            inner: Arc::new(RuntimeInner {
+                tokio: tokio_rt,
+                storage,
+                remote,
+                feed: Arc::new(InMemoryFeed::new()),
+            }),
         }
+    }
+
+    /// The change-feed this runtime publishes durable commits to (eg.3).
+    pub fn feed(&self) -> Arc<InMemoryFeed> {
+        self.inner.feed.clone()
     }
 
     pub(crate) fn storage(&self) -> &FjallStorage {
@@ -156,6 +179,26 @@ impl Runtime {
             .volume_open(vid, local, remote)?)
     }
 
+    /// Open a Volume addressed by an external **branded id** (eg.3). Resolves an
+    /// existing branded volume (round-tripping the same branded id) or mints a
+    /// fresh native id and persists the branded ↔ native mapping atomically.
+    pub fn volume_open_branded(
+        &self,
+        branded: &BrandedId,
+        local: Option<LogId>,
+        remote: Option<LogId>,
+    ) -> Result<Volume> {
+        Ok(self
+            .storage()
+            .read_write()
+            .volume_open_branded(branded.as_str(), local, remote)?)
+    }
+
+    /// Resolve a branded id to its native `VolumeId`, if the mapping exists (eg.3).
+    pub fn resolve_branded(&self, branded: &BrandedId) -> Result<Option<VolumeId>> {
+        Ok(self.storage().read().resolve_brand(branded.as_str())?)
+    }
+
     /// creates a new volume by forking an existing logref
     pub fn volume_from_logref(&self, logref: LogRef) -> Result<Option<Volume>> {
         Ok(self.storage().volume_from_logref(logref)?)
@@ -189,8 +232,50 @@ impl Runtime {
             .sync_remote_to_local(volume.vid)?)
     }
 
+    /// Push the Volume's local changes to the remote. On a durable advance of the
+    /// remote Log — the conditional-write commit acking — this publishes the
+    /// change-feed event(s) for the new LSN(s) (eg.3). A failed conditional write
+    /// advances nothing and so publishes nothing.
     pub fn volume_push(&self, vid: VolumeId) -> Result<()> {
-        self.run_action(RemoteCommit { vid })
+        let before = self.storage().read().volume(&vid)?.remote_commit();
+        self.run_action(RemoteCommit { vid: vid.clone() })?;
+        self.publish_feed_advance(&vid, before)
+    }
+
+    /// Publish one change-feed event per remote LSN newly made durable by a push.
+    /// Gated on the remote sync point advancing strictly beyond `before` (the
+    /// pre-push remote LSN), so only the writer's own newly-acked commits publish
+    /// — a lost conditional-write race leaves `after == before` and emits nothing.
+    /// Only a Volume carrying a branded id participates in the feed.
+    fn publish_feed_advance(&self, vid: &VolumeId, before: Option<LSN>) -> Result<()> {
+        let reader = self.storage().read();
+        let volume = reader.volume(vid)?;
+        let (Some(branded), Some(after)) =
+            (volume.branded_id().map(str::to_owned), volume.remote_commit())
+        else {
+            return Ok(());
+        };
+
+        let start = before.map_or(LSN::FIRST, |b| b.next());
+        if after < start {
+            return Ok(());
+        }
+
+        let log_id = volume.remote.to_string();
+        let mut lsn = start;
+        loop {
+            self.inner.feed.publish(FeedEvent {
+                volume_branded_id: branded.clone(),
+                log_id: log_id.clone(),
+                lsn: lsn.to_u64(),
+                ts: now_epoch_ms(),
+            });
+            if lsn >= after {
+                break;
+            }
+            lsn = lsn.next();
+        }
+        Ok(())
     }
 
     pub fn volume_status(&self, vid: &VolumeId) -> Result<VolumeStatus> {
