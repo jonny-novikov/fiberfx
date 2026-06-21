@@ -4,7 +4,7 @@ id: echo-courses-roadmap
 status: Draft
 owner: Fireheadz
 source: "https://jonnify.fly.dev/courses (published HTML)"
-target: "Echo v5 (github.com/labstack/echo/v5)"
+target: "Echo v5.2.0 — vendored at go/echo, consumed via replace"
 ---
 
 # echo-courses — rebuild the courses site on Echo { id="echo-courses-roadmap" }
@@ -38,7 +38,7 @@ Index filter facets: **All (5)**, **Elixir (1)**, **Agents (1)**, **Redis (1)**,
 | **Who** | Platform (Fireheadz); audience is course readers arriving at published URLs. |
 | **What** | An Echo v5 server that renders the courses index and the five course pages from a catalog + content files through a templating engine, preserving the published URLs, look, and interactive elements. |
 | **When** | Sequenced `ec.1` → `ec.6`; each rung independently shippable; parity gates from `ec.4` onward. |
-| **Where** | A Go module served behind Echo v5; deployed on Fly, cutting over `jonnify.fly.dev`'s course routes. |
+| **Where** | The Go module `github.com/fiberfx/echo-courses` at `go/echo-courses/`, served behind the vendored Echo v5 (`go/echo`); deployed on Fly, cutting over `jonnify.fly.dev`'s course routes. |
 | **Why** | Turn hand-edited HTML into catalog-driven pages — one place to add a course, consistent layout, server-rendered — without breaking any published link or changing the look. |
 | **How** | Echo's `Renderer` seam with a Go template engine; a base layout + partials extracted from the published HTML; a course catalog loaded from content files; routes that preserve the published paths. |
 
@@ -58,16 +58,20 @@ flowchart TB
 
 The catalog is the single source for the index; the renderer wraps per-course content in the shared layout; the design system and interactive elements ride as static assets. Echo v5 handlers take `*echo.Context` and call `c.Render(...)`.
 
+**The framework is vendored.** Echo v5 has no published release, so the framework is carried in-repo at `go/echo` (the **v5.2.0** snapshot) and consumed by `echo-courses` through a `replace github.com/labstack/echo/v5 => ../echo` directive in `go.mod`. Because the dependency is a local path and the workspace `go/go.work` spans only the agent-OS modules, `echo-courses` builds hermetically with `GOWORK=off` and is **not** a `go.work` member (the `go/CLAUDE.md` standalone-tool convention). `go/echo` is treated as a read-only vendored snapshot — vendored from, never edited.
+
 ## 5. Rungs { id="rungs" }
 
 | Rung | Ships | Stands on | Size | Risk | Build topology |
 |---|---|---|---|---|---|
-| **ec.1** | Echo v5 server scaffold — module, `echo.New`, `/healthz`, static serving, graceful shutdown, project layout | Echo v5 | **S** | **NORMAL** | Flat-L2 |
+| **ec.1** | Echo v5 server scaffold — module, `echo.New`, `/healthz`, static serving, graceful shutdown, project layout | Echo v5.2.0 (vendored) | **S** | **NORMAL** | Flat-L2 |
 | **ec.2** | templating engine + base layout — register the `Renderer`; extract layout + partials (header/footer/card/filter) from the published HTML | ec.1 | **M** | **NORMAL** | Flat-L2 |
 | **ec.3** | course catalog + content model — `Course` model, `content/*` with front-matter, a loader seeded with the five courses | ec.2 | **M** | **NORMAL** | Flat-L2 |
 | **ec.4** | routes + pages with URL parity — `/courses` index and the five detail routes on their published paths; the track filter | ec.3 | **M** | **NORMAL+** (parity surface) | Flat-L2 + parity battery |
 | **ec.5** | design-system parity, assets, SEO — design-system CSS/JS/fonts + interactive assets; per-page meta, Open Graph, sitemap, robots | ec.4 | **M** | **NORMAL** | Flat-L2 |
 | **ec.6** | ship on Fly — multi-stage Dockerfile, `fly.toml`, deploy, cut `jonnify.fly.dev` course routes over, smoke test | ec.1–ec.5 | **S** | **NORMAL** | Flat-L2 |
+
+**Status.** `ec.1` is **built** — the scaffold lives at `go/echo-courses/` (boot, `GET /healthz`, static serving, graceful shutdown, and the project layout; all acceptance criteria green). `ec.2`–`ec.6` are specced and stand on it.
 
 ## 6. Sequencing { id="sequencing" }
 
@@ -120,4 +124,5 @@ Every rung is done only when, in addition to its own criteria:
 
 - Published source — https://jonnify.fly.dev/courses
 - Echo v5 — https://echo.labstack.com/ · quickstart https://echo.labstack.com/guide/quickstart/ · routing https://echo.labstack.com/guide/routing/
-- Echo API — https://pkg.go.dev/github.com/labstack/echo/v5
+- Echo API (v5, upstream) — https://pkg.go.dev/github.com/labstack/echo/v5
+- Vendored framework — `go/echo` (the Echo **v5.2.0** snapshot; consumed via `replace github.com/labstack/echo/v5 => ../echo`). The implementation module is `go/echo-courses`.

@@ -4,8 +4,8 @@ id: echo-courses-1-scaffold
 rung: ec.1
 size: S
 risk: NORMAL
-status: Draft
-stands-on: "Echo v5"
+status: Built
+stands-on: "Echo v5.2.0 (vendored at go/echo)"
 ---
 
 # ec.1 — Echo v5 server scaffold { id="echo-courses-1-scaffold" }
@@ -27,7 +27,7 @@ Every later rung needs a place to live and a server to attach to. Getting the sc
 | **Who** | Platform; no reader-facing output yet. |
 | **What** | An Echo v5 server with `/healthz`, static serving, graceful shutdown, and the project layout. |
 | **When** | First; blocks everything. |
-| **Where** | A Go module (`github.com/labstack/echo/v5`); `cmd/`, `internal/`, `web/`, `content/`. |
+| **Where** | The module `github.com/fiberfx/echo-courses` at `go/echo-courses/`, depending on the vendored Echo v5 (`replace … => ../echo`); `cmd/`, `internal/`, `web/`, `content/`. |
 | **Why** | A known-good base with the right idioms before any feature lands. |
 | **How** | `echo.New()`, handlers taking `*echo.Context`, `e.Static`, an `http.Server` shutdown on signal. |
 
@@ -35,7 +35,7 @@ Every later rung needs a place to live and a server to attach to. Getting the sc
 
 ### In scope
 
-- `go.mod` on `github.com/labstack/echo/v5`.
+- `go.mod` for `github.com/fiberfx/echo-courses` requiring `github.com/labstack/echo/v5` with `replace … => ../echo` (the vendored v5.2.0 snapshot); built `GOWORK=off`.
 - `cmd/server/main.go`: `echo.New()`, recover + request-logger middleware, `GET /healthz` → 200, static serving of `web/static`, graceful shutdown on `SIGINT`/`SIGTERM`.
 - Project layout: `cmd/server`, `internal/handler`, `internal/catalog`, `web/templates`, `web/static`, `content/`.
 - A `Makefile`/`justfile` target to run and to build.
@@ -46,7 +46,7 @@ Every later rung needs a place to live and a server to attach to. Getting the sc
 
 ## Specification { id="ec1-spec" }
 
-`main.go` constructs the Echo instance, registers `middleware.Recover()` and a request logger, mounts `web/static` under `/static`, and adds `GET /healthz`. Shutdown follows Echo v5's pattern: start in a goroutine, block on a signal channel, then call `e.Shutdown(ctx)` with a bounded timeout so in-flight requests drain. Configuration (bind address, default `:1323`) comes from the environment with sane defaults. Handlers use `func(c *echo.Context) error` per v5.
+`main.go` constructs the Echo instance, registers `middleware.Recover()` and `middleware.RequestLogger()`, mounts `web/static` under `/static`, and adds `GET /healthz`. Shutdown follows Echo **v5**'s actual pattern: `signal.NotifyContext` derives a context cancelled on `SIGINT`/`SIGTERM`, and `echo.StartConfig{Address, GracefulTimeout}.Start(ctx, e)` serves until that context is cancelled, then runs the server's graceful drain within `GracefulTimeout` (v5 has **no** `e.Shutdown` method — `StartConfig` owns the shutdown). Configuration (bind address, default `:1323`) comes from the environment with sane defaults. Handlers use `func(c *echo.Context) error` per v5.
 
 ## Acceptance criteria { id="ec1-acceptance" }
 
@@ -58,5 +58,14 @@ Every later rung needs a place to live and a server to attach to. Getting the sc
 
 ## Dependencies & risks { id="ec1-risks" }
 
-- **Depends on:** Echo v5.
-- **Risk — v4→v5 API drift:** v5 uses `*echo.Context` and the `echo/v5` import path; confirm the `Renderer` and middleware signatures against the v5 docs before ec.2.
+- **Depends on:** the vendored Echo v5.2.0 (`go/echo`).
+- **v4→v5 API (confirmed against the vendored source):** v5 makes `Context` a struct (`*echo.Context`) not an interface; graceful shutdown is `echo.StartConfig{…}.Start(ctx, e)` driven by context cancellation, **not** `e.Start` + `e.Shutdown`; the request logger is `middleware.RequestLogger()`; the `Renderer` interface is `Render(c *echo.Context, w io.Writer, name string, data any) error` (the `*Context` moved to the front vs v4 — carried into ec.2).
+
+## As built { id="ec1-as-built" }
+
+The scaffold lives at `go/echo-courses/` and is green against all five criteria.
+
+- **Module + framework.** `github.com/fiberfx/echo-courses` requires `github.com/labstack/echo/v5` with `replace … => ../echo`; `go mod tidy` resolves one indirect dep (`golang.org/x/time`, echo's rate-limiter). Built and tested `GOWORK=off`.
+- **Server.** `cmd/server/main.go`: `newEcho(staticDir)` wires `middleware.Recover()` + `middleware.RequestLogger()`, `GET /healthz` (`internal/handler.Health`), and `e.Static("/static", staticDir)`; `run(ctx, …)` serves via `echo.StartConfig{…}.Start`; `main` derives the context from `signal.NotifyContext`. `ADDR` (`:1323`) and `STATIC_DIR` (`web/static`) are env-configurable.
+- **Layout.** `cmd/server`, `internal/handler`, `internal/catalog` (reserved for ec.3), `web/templates` (ec.2), `web/static` (with `version.txt`), `content/` (ec.3).
+- **Tests + gate.** `go test ./...` is green: healthz 200, static-file serving, and a graceful-drain integration test (an in-flight request completes after `SIGTERM`). `make gate` runs tidy + build + vet + test + gofmt-clean; a running-binary smoke test confirmed `/healthz` 200, `/static/version.txt` 200, and a clean exit-0 on `SIGTERM`.

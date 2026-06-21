@@ -35,7 +35,7 @@ The site is already live on Fly, so shipping means a controlled cutover, not a f
 
 ### In scope
 
-- A multi-stage `Dockerfile`: build the Go binary, copy it plus `web/` and `content/` into a small runtime image (distroless or alpine).
+- A multi-stage `Dockerfile`: build the Go binary, copy it plus `web/` and `content/` into a small runtime image (distroless or alpine). Because Echo v5 is vendored via a local `replace … => ../echo`, the build stage must see `../echo` (build from the `go/` parent context, or pre-`go mod vendor`) and run `GOWORK=off`.
 - A `fly.toml`: app name, `internal_port` matching the server bind, an HTTP health check on `/healthz`, `kill_signal = "SIGTERM"`, a `kill_timeout` covering graceful shutdown.
 - Deploy; verify every published path on the deployed app before cutover.
 - Cutover of `jonnify.fly.dev`'s course routes to the Echo app; a documented rollback (redeploy the prior release / revert the route).
@@ -63,3 +63,4 @@ The Dockerfile builds the binary in a Go stage and copies it with `web/static`, 
 - **Depends on:** ec.1–ec.5.
 - **Risk — cutover on a live domain:** verify all published paths on the deployed app before moving traffic (criterion 3), and keep the prior release for rollback (criterion 5).
 - **Risk — embedded vs copied assets:** if using `embed.FS`, confirm templates and content are embedded; if copying, confirm the image includes `web/` and `content/`.
+- **Risk — the vendored-replace build context:** the local `replace => ../echo` means a Docker build whose context is only `go/echo-courses/` cannot resolve Echo v5. Set the build context to `go/` (and `COPY echo/ echo-courses/`), or run `go mod vendor` so the image build is self-contained; build `GOWORK=off`.

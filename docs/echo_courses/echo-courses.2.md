@@ -29,7 +29,7 @@ The published pages share one shell — the same head, the `jonnify · courses` 
 | **When** | After ec.1; precedes the catalog and routes. |
 | **Where** | `web/templates` (layout + partials), `internal/render` (the Renderer). |
 | **Why** | One shell, defined once, rendered for every page — and parsed at boot so a template error never reaches a reader. |
-| **How** | Parse the template tree at startup; implement `Render(w, name, data, c)`; set `e.Renderer`. |
+| **How** | Parse the template tree at startup; implement the v5 `Renderer` — `Render(c *echo.Context, w io.Writer, name string, data any) error` — or use the bundled `echo.TemplateRenderer`; set `e.Renderer`. |
 
 ## Scope { id="ec2-scope" }
 
@@ -46,7 +46,7 @@ The published pages share one shell — the same head, the `jonnify · courses` 
 
 ## Specification { id="ec2-spec" }
 
-`internal/render` parses the template tree at boot into a `*template.Template` and implements `Render(w io.Writer, name string, data any, c *echo.Context) error` by executing the named template; `main.go` assigns it to `e.Renderer`. The base layout (`layout.html`) defines blocks for title, head-extras, and body; partials (`partials/card.html`, `partials/filter.html`) are defined templates the page templates invoke. The layout's header and footer are copied verbatim from the published markup so the chrome matches. A parse failure at startup aborts the boot with a clear error.
+`internal/render` parses the template tree at boot into a `*template.Template` and implements the v5 `echo.Renderer` interface — `Render(c *echo.Context, w io.Writer, name string, data any) error` — by executing the named template (or wraps `html/template` in the bundled `echo.TemplateRenderer`); `main.go` assigns it to `e.Renderer`. The base layout (`layout.html`) defines blocks for title, head-extras, and body; partials (`partials/card.html`, `partials/filter.html`) are defined templates the page templates invoke. The layout's header and footer are copied verbatim from the published markup so the chrome matches. A parse failure at startup aborts the boot with a clear error.
 
 ## Acceptance criteria { id="ec2-acceptance" }
 
@@ -59,5 +59,5 @@ The published pages share one shell — the same head, the `jonnify · courses` 
 ## Dependencies & risks { id="ec2-risks" }
 
 - **Depends on:** ec.1.
-- **Risk — `Renderer` signature in v5:** confirm the exact `Render` signature (the `*echo.Context` parameter) against the v5 docs.
+- **`Renderer` signature in v5 (confirmed against `go/echo/renderer.go`):** the interface is `Render(c *echo.Context, w io.Writer, name string, data any) error` — `c` is first and is a `*echo.Context` (v4 had it last and as an interface). The vendored `echo.TemplateRenderer` already implements this over an `html/template`-shaped `ExecuteTemplate`.
 - **Risk — design-system coupling:** the layout links the stylesheet but the asset files arrive in ec.5; until then, style may be unstyled locally — acceptable for this rung.
