@@ -71,7 +71,7 @@ The catalog is the single source for the index; the renderer wraps per-course co
 | **ec.5** | design-system parity, assets, SEO — design-system CSS/JS/fonts + interactive assets; per-page meta, Open Graph, sitemap, robots | ec.4 | **M** | **NORMAL** | Flat-L2 |
 | **ec.6** | ship on Fly — multi-stage Dockerfile, `fly.toml`, deploy, cut `jonnify.fly.dev` course routes over, smoke test | ec.1–ec.5 | **S** | **NORMAL** | Flat-L2 |
 
-**Status.** `ec.1` is **built** — the scaffold lives at `go/echo-courses/` (boot, `GET /healthz`, static serving, graceful shutdown, and the project layout; all acceptance criteria green). `ec.2`–`ec.6` are specced and stand on it.
+**Status.** `ec.1`–`ec.2` are **built** at `go/echo-courses/` — ec.1 the scaffold (boot, `GET /healthz`, static, graceful shutdown, the layout) and ec.2 the templating engine + base layout (the embedded `html/template` `Renderer`, the verbatim chrome, the card/filter partials; all acceptance criteria green). `ec.3`–`ec.6` are specced and stand on them.
 
 ## 6. Sequencing { id="sequencing" }
 
