@@ -1,6 +1,6 @@
 defmodule EchoMQ.Conformance do
   @moduledoc """
-  The bus contract as fifty-five runnable scenarios. Each scenario drives the
+  The bus contract as seventy-three runnable scenarios. Each scenario drives the
   public surface (and, where the contract is the wire itself, raw commands)
   against a live server and asserts the externally visible verdict: the
   fence, the row shape, idempotent admission, the kind law, the lex law,
@@ -51,16 +51,23 @@ defmodule EchoMQ.Conformance do
   under-fill short batch / oversized-clamp / empty / queue-wide-pause semantics, and
   partial-failure isolation where one retried member leaves the rest free to
   complete -- the batch a claim unit resolved over the byte-frozen @complete/@retry,
-  not a resolution unit). A port of the client conforms when it drives the same
-  server to the same sixty-four verdicts -- the scenarios are wire-level on purpose,
-  so the harness ports by translation, not by faith. Scenarios run on per-scenario
-  sub-queues and purge what they mint.
+  not a resolution unit), the shaping cadence (emq.5.2 -- the size-floor and
+  latency-ceiling flush over the pure shaper, partial-failure through the
+  cadence), the grouped batch (emq.5.3 -- the homogeneous affinity batch, the
+  glimit-headroom ceiling, the fairness interleaving witness), and -- since the
+  family CLOSED (emq.5.4) -- the RESOLVE half (the exhaustive/disjoint partition
+  over a resolved batch, the dynamic-delay re-score that moves an active member
+  to schedule attempts-preserved, the delay token-fence). A port of the client
+  conforms when it drives the same server to the same seventy-three verdicts --
+  the scenarios are wire-level on purpose, so the harness ports by translation,
+  not by faith. Scenarios run on per-scenario sub-queues and purge what they mint.
   Chapter 3.6, extended 3.7, then the emq.2 cluster (parity, closed at emq.2.4),
   then the emq.3 flow family (opened at emq.3.1, crossed queues at emq.3.3,
   failure half at emq.3.4, closed at emq.3.5 with grandchildren), then Movement
   II's groups family (opened at emq.4.1 with the control plane, the recovery axis
   at emq.4.2), then the batches family (opened at emq.5.1 with the batch-claim
-  spine).
+  spine, shaped at emq.5.2, grouped at emq.5.3, closed at emq.5.4 with the
+  partitioned finish + dynamic delay).
   """
 
   alias EchoData.BrandedId
@@ -69,6 +76,7 @@ defmodule EchoMQ.Conformance do
 
   alias EchoMQ.{
     Admin,
+    BatchFinish,
     Cancel,
     Connector,
     Events,
@@ -155,14 +163,17 @@ defmodule EchoMQ.Conformance do
       batch_shaping_partial_failure: "the partial-failure isolation through the cadence: the batch handler's per-member verdict map fails one member (retried, last_error kept) and completes the rest, an ABSENT member fail-safe-retries (missing verdict), each member emitting its own per-member lifecycle event -- emq.5.1's isolation driven by the shaping consumer's verdict mapping (emq.5.2)",
       grouped_batch_affinity: "the affinity batch is HOMOGENEOUS: a ring-rotated grouped batch claim over two flooded branded lanes serves EVERY member from the ONE group the rotation landed on (the row group field and the lane both that group, never the sibling), each at attempts 1, all leased on ONE shared server-clock deadline -- the @gwclaim grouped multi-pop re-used, never the flat cross-group @bclaim (emq.5.3)",
       grouped_batch_ceiling: "the glimit headroom clamp: a lane limited to 3 and flooded 8 deep serves EXACTLY 3 in one batch (gactive == glimit == 3, never over-popping past the ceiling), a second claim answers :empty (the lane de-ringed at its ceiling) until a complete frees headroom, then the freed slot serves again -- a grouped batch never pushes a group past its concurrency ceiling (emq.5.3)",
-      grouped_batch_fairness: "under sustained skew one HEAVY lane flooded deep and light lanes trickling, the ring-rotated grouped batch interleaves WITHIN a bounded EARLY window -- every light lane is served inside the first ring cycles while the heavy lane is still deep (the no-op-defeater: a FIFO/serve-heavy-first batch starves the light lanes early), and every lane drains to zero (the liveness floor) -- the emq.4.4-L1 interleaving witness for the grouped batch (emq.5.3)"
+      grouped_batch_fairness: "under sustained skew one HEAVY lane flooded deep and light lanes trickling, the ring-rotated grouped batch interleaves WITHIN a bounded EARLY window -- every light lane is served inside the first ring cycles while the heavy lane is still deep (the no-op-defeater: a FIFO/serve-heavy-first batch starves the light lanes early), and every lane drains to zero (the liveness floor) -- the emq.4.4-L1 interleaving witness for the grouped batch (emq.5.3)",
+      batch_partition: "a claimed batch resolves as an EXHAUSTIVE, DISJOINT partition over its members: a mixed batch (a completed member, a retried member, a member retried PAST the cap that lands dead, a delayed member) classifies into %{completed, retried, dead, delayed} so completed ++ retried ++ dead ++ delayed is a permutation of the claimed ids and the four buckets are pairwise disjoint, dead EMERGES from the @retry {:ok, :dead} outcome (NOT a caller verdict), and an absent verdict fail-safe-retries -- the pure EchoMQ.BatchFinish classifier, never a silent complete (emq.5.4)",
+      batch_delay: "the dynamic-delay re-score: a claimed (active) member delayed by ms moves to the schedule set with state scheduled and attempts PRESERVED (NOT reset to 0 -- the delay is not a failure), absent from active and invisible to claim until its server-clock score is due, then promote returns it to pending and a fresh claim mints the NEXT token (the attempt history continued, not restarted) -- the inverse of @claim: it releases the lease and mints nothing, one atomic EVAL so the member is never in neither set (emq.5.4)",
+      batch_delay_stale: "the delay is token-fenced: a claimed member reaped and re-claimed by another worker (a new token) refuses the original holder's delay EMQSTALE -> {:error, :stale}, the new holder's active-set lease untouched, and the new holder's delay with the live token settles; a delay on a missing row answers {:error, :gone} -- the complete/5 / retry/7 fencing, so a stale holder cannot yank a member from its new owner (emq.5.4)"
     ]
   end
 
   @doc """
   Runs all scenarios against `conn`, on sub-queues of `queue`. Prints one
   CONF line per scenario and a closing tally. Returns `{:ok, n}` when all
-  pass (n == 70 today -- the live total, grown by additive minor; the count is
+  pass (n == 73 today -- the live total, grown by additive minor; the count is
   re-pinned in both pinning tests, `conformance_run_test.exs` `{:ok, n}` and
   `conformance_scenarios_test.exs` `@run_order`), `{:error, failed_names}`
   otherwise. The set spans the eighteen state-machine scenarios, the emq.2
@@ -173,8 +184,11 @@ defmodule EchoMQ.Conformance do
   batches family opened -- the emq.5.1 batch-claim spine's three (batch_claim,
   batch_claim_short, batch_partial_failure), the emq.5.2 batch-shaping cadence's
   three (batch_shaping_floor, batch_shaping_timeout, batch_shaping_partial_failure),
-  and the emq.5.3 grouped batch's three (grouped_batch_affinity,
-  grouped_batch_ceiling, grouped_batch_fairness).
+  the emq.5.3 grouped batch's three (grouped_batch_affinity,
+  grouped_batch_ceiling, grouped_batch_fairness), and -- since the batches family
+  CLOSED (emq.5.4, the partitioned finish + dynamic delay) -- the resolve half's
+  three (the exhaustive/disjoint partition batch_partition, the dynamic-delay
+  re-score batch_delay, the delay token-fence batch_delay_stale).
   """
   def run(conn, queue) when is_binary(queue) do
     results =
@@ -2558,6 +2572,172 @@ defmodule EchoMQ.Conformance do
         else
           other -> {:fail, {:lane_not_drained, other}}
         end
+    end
+  end
+
+  # The PARTITIONED FINISH (emq.5.4, INV-Partition): a claimed batch resolves as
+  # an EXHAUSTIVE, DISJOINT partition over its members. A mixed batch is built --
+  # a member completed (:ok), a member retried below the cap ({:error} ->
+  # scheduled), a member retried AT the cap ({:error} -> the OUTCOME {:ok, :dead}
+  # emerges, NOT a caller verdict), a member delayed ({:delay, ms}), and a member
+  # whose verdict is OMITTED (the fail-safe -> retried) -- each resolved through
+  # the real byte-frozen transition, its {verdict, outcome} collected, and
+  # classified by the pure EchoMQ.BatchFinish.partition/2. The no-op-defeater:
+  # the dead member must NOT report `retried` (it hit the cap), the omitted
+  # member must NOT report `completed` (the fail-safe), and the buckets must be a
+  # permutation of the claimed ids (exhaustive) with no overlap (disjoint).
+  defp apply_scenario(:batch_partition, conn, q) do
+    # five members: [done, sched, dead, delayed, omitted] in mint order. The
+    # `dead` member is pre-aged to ONE attempt below its cap so the partition's
+    # resolving retry (cap 1) lands it dead on its FIRST resolve here.
+    ids =
+      for _ <- 1..5 do
+        id = BrandedId.generate!("JOB")
+        {:ok, :enqueued} = Jobs.enqueue(conn, q, id, "p")
+        id
+      end
+
+    [done, sched, dead, delayed, omitted] = ids
+
+    with {:ok, members} <- Jobs.claim_batch(conn, q, 5, 60_000),
+         claimed = Enum.map(members, fn {id, _p, _a} -> id end),
+         true <- claimed == ids or {:fail, {:not_mint_order, claimed}},
+         tok = Map.new(members, fn {id, _p, att} -> {id, att} end),
+         # the verdict map -- `omitted` is DELIBERATELY absent (the fail-safe)
+         verdicts = %{
+           done => :ok,
+           sched => {:error, "boom"},
+           dead => {:error, "gave up"},
+           delayed => {:delay, 30}
+         },
+         # resolve each member through the real transition, collecting the
+         # {verdict, outcome} pair the partition classifies (the cap for `dead`
+         # is 1 so its attempts-1 retry lands {:ok, :dead}; the others use a high
+         # cap so they schedule)
+         resolved =
+           Map.new(members, fn {id, _p, att} ->
+             v = Map.get(verdicts, id, {:error, "missing verdict"})
+
+             outcome =
+               case v do
+                 :ok ->
+                   Jobs.complete(conn, q, id, att)
+
+                 {:delay, ms} ->
+                   Jobs.delay(conn, q, id, att, ms)
+
+                 {:error, reason} when id == dead ->
+                   Jobs.retry(conn, q, id, att, 5, 1, to_string(reason))
+
+                 {:error, reason} ->
+                   Jobs.retry(conn, q, id, att, 5, 9, to_string(reason))
+               end
+
+             {id, {v, outcome}}
+           end),
+         part = BatchFinish.partition(claimed, resolved),
+         # EXHAUSTIVE: the four buckets are a permutation of the claimed ids
+         all = part.completed ++ part.retried ++ part.dead ++ part.delayed,
+         true <- Enum.sort(all) == Enum.sort(ids) or {:fail, {:not_exhaustive, part}},
+         # DISJOINT: no id appears twice (the concatenation has no duplicate)
+         true <- length(all) == length(Enum.uniq(all)) or {:fail, {:not_disjoint, part}},
+         # the members landed in the RIGHT buckets -- dead EMERGED from the
+         # outcome, the omitted member fail-safe-retried (NOT completed)
+         true <- part.completed == [done] or {:fail, {:completed, part.completed}},
+         true <- part.dead == [dead] or {:fail, {:dead, part.dead}},
+         true <- part.delayed == [delayed] or {:fail, {:delayed, part.delayed}},
+         true <-
+           Enum.sort(part.retried) == Enum.sort([sched, omitted]) or
+             {:fail, {:retried, part.retried}},
+         # the actual at-rest states confirm the outcomes the partition reports
+         {:ok, "dead"} <- Connector.command(conn, ["HGET", Keyspace.job_key(q, dead), "state"]),
+         {:ok, "scheduled"} <-
+           Connector.command(conn, ["HGET", Keyspace.job_key(q, sched), "state"]),
+         {:ok, "scheduled"} <-
+           Connector.command(conn, ["HGET", Keyspace.job_key(q, delayed), "state"]),
+         {:ok, "scheduled"} <-
+           Connector.command(conn, ["HGET", Keyspace.job_key(q, omitted), "state"]),
+         {:ok, 0} <- Connector.command(conn, ["EXISTS", Keyspace.job_key(q, done)]),
+         _ = tok do
+      :ok
+    else
+      {:fail, _} = f -> f
+      other -> {:fail, other}
+    end
+  end
+
+  # The DYNAMIC-DELAY re-score (emq.5.4, INV-Delay-Rescore / INV-Delay-Atomic /
+  # INV-ServerClock): a claimed (active) member at attempts 1 delayed by ms moves
+  # to the SCHEDULE set -- state scheduled, attempts STILL 1 (PRESERVED, not reset
+  # to 0 the way @schedule's first-write would), absent from active, invisible to
+  # claim until its server-clock score is due. Then promote returns it to pending
+  # and a fresh claim mints attempts 2 (the history CONTINUED, not restarted --
+  # the no-op-defeater for the attempts-reset). The member is in EXACTLY one of
+  # {active, schedule, pending} at every observation (the atomic re-score, never
+  # the lost-member window of a host two-step).
+  defp apply_scenario(:batch_delay, conn, q) do
+    id = BrandedId.generate!("JOB")
+    {:ok, :enqueued} = Jobs.enqueue(conn, q, id, "later")
+    {:ok, {^id, _, 1}} = Jobs.claim(conn, q, 60_000)
+
+    active = Keyspace.queue_key(q, "active")
+    schedule = Keyspace.queue_key(q, "schedule")
+
+    with :ok <- Jobs.delay(conn, q, id, 1, 40),
+         # the row re-scored: state scheduled, attempts PRESERVED at 1
+         {:ok, "scheduled"} <- Connector.command(conn, ["HGET", Keyspace.job_key(q, id), "state"]),
+         {:ok, "1"} <- Connector.command(conn, ["HGET", Keyspace.job_key(q, id), "attempts"]),
+         # in schedule, ABSENT from active (the lease released) -- exactly one set
+         {:ok, score} when not is_nil(score) <- Connector.command(conn, ["ZSCORE", schedule, id]),
+         {:ok, nil} <- Connector.command(conn, ["ZSCORE", active, id]),
+         # invisible to claim behind the schedule fence until due
+         :empty <- Jobs.claim(conn, q, 60_000),
+         _ <- Process.sleep(60),
+         # promote releases it back to pending on the server clock
+         {:ok, 1} <- Jobs.promote(conn, q, 10),
+         # a fresh claim mints attempts 2 -- the history CONTINUED, not restarted
+         {:ok, {^id, "later", 2}} <- Jobs.claim(conn, q, 60_000),
+         :ok <- Jobs.complete(conn, q, id, 2) do
+      :ok
+    else
+      other -> {:fail, other}
+    end
+  end
+
+  # The DELAY TOKEN FENCE (emq.5.4, INV-Delay-Token): only the current
+  # attempts-token holder may delay. A member is claimed (token 1), its lease
+  # reaped and re-claimed by another worker (token 2 -- token 1 is now stale); the
+  # stale token's delay is refused EMQSTALE -> {:error, :stale}, the new holder's
+  # active-set lease (token 2) UNTOUCHED, and the new holder's delay with the live
+  # token 2 settles (re-scores to schedule). A delay on a missing row answers
+  # {:error, :gone}. The no-op-defeater: the stale delay must be REFUSED (not a
+  # silent pass) and must not move the member out of the new holder's active lease.
+  defp apply_scenario(:batch_delay_stale, conn, q) do
+    # flush the script cache so the refusal exercises the load-and-retry path --
+    # the cold-cache regression the :stale scenario guards (jobs.ex EVALSHA-first)
+    {:ok, _} = Connector.command(conn, ["SCRIPT", "FLUSH"])
+    id = BrandedId.generate!("JOB")
+    {:ok, :enqueued} = Jobs.enqueue(conn, q, id, "w")
+    {:ok, {^id, _, 1}} = Jobs.claim(conn, q, 30)
+    Process.sleep(60)
+    # the lease lapsed -> reap returns it to pending; a re-claim mints token 2
+    {:ok, 1} = Jobs.reap(conn, q)
+    {:ok, {^id, _, 2}} = Jobs.claim(conn, q, 60_000)
+
+    active = Keyspace.queue_key(q, "active")
+
+    # the STALE token 1's delay is refused, the token-2 lease untouched
+    with {:error, :stale} <- Jobs.delay(conn, q, id, 1, 50),
+         {:ok, score} when not is_nil(score) <- Connector.command(conn, ["ZSCORE", active, id]),
+         # the LIVE token 2's delay settles (re-scores to schedule, off active)
+         :ok <- Jobs.delay(conn, q, id, 2, 50),
+         {:ok, "scheduled"} <- Connector.command(conn, ["HGET", Keyspace.job_key(q, id), "state"]),
+         {:ok, nil} <- Connector.command(conn, ["ZSCORE", active, id]),
+         # a delay on a MISSING row answers :gone
+         {:error, :gone} <- Jobs.delay(conn, q, BrandedId.generate!("JOB"), 1, 50) do
+      :ok
+    else
+      other -> {:fail, other}
     end
   end
 

@@ -51,7 +51,7 @@ defmodule EchoMQ.BatchConsumer do
   exits; a self-started connector lane dies and returns with the loop.
   """
 
-  alias EchoMQ.{Connector, Events, Jobs}
+  alias EchoMQ.{BatchFinish, Connector, Events, Jobs}
   alias EchoMQ.BatchShaper.Core
 
   @doc "A permanent child: the loop restarts whole, and its self-started connector lane dies and returns with it."
@@ -249,23 +249,55 @@ defmodule EchoMQ.BatchConsumer do
   end
 
   # Settle each member individually through the byte-frozen complete/5 / retry/7
-  # (emq.5.1's partial-failure isolation -- the batch is a CLAIM unit, not a
-  # RESOLUTION unit), and emit its own lifecycle event through the byte-frozen
-  # Events.publish/5 (D3 -- per-member, on the member's own gated id). A served
-  # member ABSENT from the verdict map is a retry ("missing verdict"), never a
-  # silent complete (D2 sub-decision -- unprocessed work must not retire).
+  # / the emq.5.4 delay/6 (emq.5.1's partial-failure isolation -- the batch is a
+  # CLAIM unit, not a RESOLUTION unit), and emit its own lifecycle event through
+  # the byte-frozen Events.publish/5 (D3 -- per-member, on the member's own
+  # gated id). A served member ABSENT from the verdict map is a retry ("missing
+  # verdict"), never a silent complete (D2 sub-decision -- unprocessed work must
+  # not retire). The `{:delay, ms}` verdict (emq.5.4-D3, the THIRD branch) routes
+  # the member through the byte-fenced Jobs.delay/6 with the SAME attempts-token
+  # `att` its siblings complete/5 / retry/7 fence on -- the delay re-scores an
+  # active member onto the schedule set (a "run later," not a failure), emitting
+  # a `delayed` event. settle returns the partition over the batch
+  # (`EchoMQ.BatchFinish`, the pure classifier): each member's {verdict, outcome}
+  # is collected as it settles and classified into %{completed, retried, dead,
+  # delayed} -- `dead` EMERGES from a retry whose outcome is {:ok, :dead} (the
+  # attempts cap), never a caller verdict. emq.5.4-D3.
   defp settle(s, members, verdicts) do
-    Enum.each(members, fn {id, _payload, att} ->
-      case Map.get(verdicts, id, {:error, "missing verdict"}) do
-        :ok ->
-          Jobs.complete(s.conn, s.queue, id, att)
-          publish(s, "completed", id)
+    {member_ids, resolved} =
+      Enum.map_reduce(members, %{}, fn {id, _payload, att}, acc ->
+        verdict = Map.get(verdicts, id, {:error, "missing verdict"})
+        outcome = settle_member(s, id, att, verdict)
+        {id, Map.put(acc, id, {verdict, outcome})}
+      end)
 
-        {:error, reason} ->
-          Jobs.retry(s.conn, s.queue, id, att, s.retry_delay_ms, s.max_attempts, to_string(reason))
-          publish(s, "failed", id)
-      end
-    end)
+    BatchFinish.partition(member_ids, resolved)
+  end
+
+  # Resolve ONE member by its verdict, returning the transition's OUTCOME (the
+  # complete/5 / retry/7 / delay/6 return) so settle can classify it into the
+  # partition. The :ok / {:error, reason} branches are the emq.5.2 settle
+  # behavior unchanged (complete the :ok members, retry the {:error} members with
+  # their reason); the {:delay, ms} branch is the emq.5.4 third branch (re-score
+  # through the byte-fenced delay/6, the same `att` token, a `delayed` event).
+  defp settle_member(s, id, att, :ok) do
+    outcome = Jobs.complete(s.conn, s.queue, id, att)
+    publish(s, "completed", id)
+    outcome
+  end
+
+  defp settle_member(s, id, att, {:delay, ms}) do
+    outcome = Jobs.delay(s.conn, s.queue, id, att, ms)
+    publish(s, "delayed", id)
+    outcome
+  end
+
+  defp settle_member(s, id, att, {:error, reason}) do
+    outcome =
+      Jobs.retry(s.conn, s.queue, id, att, s.retry_delay_ms, s.max_attempts, to_string(reason))
+
+    publish(s, "failed", id)
+    outcome
   end
 
   # Best-effort per-member lifecycle event (fire-and-forget, the id gated at the

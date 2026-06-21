@@ -115,6 +115,121 @@ defmodule EchoMQ.Jobs do
     end
   end
 
+  # @delay -- the dynamic-delay re-score (emq.5.4, FORK 5.4-A = Arm B). The
+  # INVERSE of @claim: @claim moves pending -> active and MINTS a lease (HINCRBY
+  # attempts); @delay moves active -> scheduled and RELEASES the lease, minting
+  # nothing -- the one active->scheduled transition the schedule fence had no
+  # entry for. It is NOT @schedule: @schedule (jobs.ex:55) is a FIRST-WRITE (its
+  # EXISTS-guard no-ops a present row, and its HSET 'attempts' '0' RESETS the
+  # attempt history and demands the payload re-supplied), so it cannot re-score
+  # an in-flight member. @delay re-scores one that is ALREADY active, preserving
+  # its attempts, in ONE atomic EVAL so the member is never observable in
+  # neither set (the Arm A' host-two-step defeater: a crash between a host ZREM
+  # active and a schedule write strands the member, INV-Delay-Atomic).
+  #
+  # Order (one EVAL, atomic): (a) the JOB-kind guard (mirror @schedule:56-58,
+  # @enqueue:16-18 -- policy before existence before write); (b) the FENCE,
+  # IDENTICAL in shape to @complete:258-262 / @retry:335-339 -- the "token" is
+  # the row's `attempts` value (the fencing counter @claim HINCRBYs at lease, so
+  # a reaped-and-re-claimed member's attempts has moved on and a stale holder's
+  # token no longer matches): HGET the row attempts, a missing row is 'EMQSTALE
+  # job gone', a token mismatch is 'EMQSTALE delay token mismatch'; (c) ZREM the
+  # member from the ACTIVE set (release the lease); (d) HSET the row state
+  # 'scheduled' -- attempts UNTOUCHED (the defining delta from @schedule:70's
+  # 'attempts' '0'; the payload already in the row survives, not re-supplied);
+  # (e) the score -- relative mode reads server TIME (the @schedule:62-67 /
+  # @retry:387-390 run-in math: now + ARGV[delay]); absolute mode takes the
+  # caller's ms (the @schedule:68 / enqueue_at run-at surface -- the documented
+  # client-clock for the SCORE only, the fence + lease laws untouched);
+  # (f) ZADD the member onto the SCHEDULE set at that score; (g) return 1.
+  #
+  # DECLARED KEYS (S-6, the A-1 law): KEYS[1]=the job row, KEYS[2]=the active
+  # set, KEYS[3]=the schedule set -- ALL THREE braced emq:{q}: keys the host
+  # built (Keyspace.job_key/2 + queue_key/2), pinning the ONE {q} slot. NO key
+  # is derived from an ARGV base or read out of a data value (the strongest A-1
+  # form: not even the ARGV-base row-key of @claim/@bclaim -- the host knows the
+  # id, so the row key is a first-class declared root). The shipped promote pump
+  # (@promote, jobs.ex:394) releases the delayed member back to pending once its
+  # server-clock score is due, on the same clock reap reads. @schedule/@complete/
+  # @retry/@promote are byte-frozen; @delay is the ONLY new script. emq.5.4-D1.
+  @delay Script.new(:delay, """
+         if string.sub(ARGV[1], 1, 3) ~= 'JOB' then
+           return redis.error_reply('EMQKIND job id must be JOB-namespaced')
+         end
+         local att = redis.call('HGET', KEYS[1], 'attempts')
+         if not att then return redis.error_reply('EMQSTALE job gone') end
+         if att ~= ARGV[2] then
+           return redis.error_reply('EMQSTALE delay token mismatch')
+         end
+         redis.call('ZREM', KEYS[2], ARGV[1])
+         redis.call('HSET', KEYS[1], 'state', 'scheduled')
+         local score
+         if ARGV[3] == 'in' then
+           local t = redis.call('TIME')
+           local now = t[1] * 1000 + math.floor(t[2] / 1000)
+           score = now + tonumber(ARGV[4])
+         else
+           score = tonumber(ARGV[4])
+         end
+         redis.call('ZADD', KEYS[3], score, ARGV[1])
+         return 1
+         """)
+
+  @doc """
+  Dynamic delay: re-score an ACTIVE member onto the schedule set to run later,
+  WITHOUT consuming an attempt -- "run this again in `ms`," distinct from a
+  failure-retry. It is the inverse of `claim/3` (a claim moves pending ->
+  active and mints a lease; `delay` moves active -> scheduled and releases the
+  lease, minting nothing), and it PRESERVES the member's `attempts` (its
+  fencing token and attempt history survive, unlike `@schedule`'s `attempts 0`
+  first-write). The shipped promote pump (`@promote`) releases the delayed
+  member back to `pending` once its server-clock score is due, on the same
+  clock the reaper reads -- so `delay` rides the EXISTING schedule fence,
+  adding only the active->scheduled transition it had no other entry for.
+
+  TOKEN-FENCED, the `complete/5`/`retry/7` pattern (`jobs.ex:589`/`jobs.ex:759`):
+  only the current attempts-token holder may delay -- a stale token (a worker
+  whose lease was reaped and re-claimed by another worker) is refused
+  `{:error, :stale}` (`EMQSTALE`, the existing fencing-token wire class -- no
+  new class), changing nothing, so a delay cannot yank a member out from under
+  its new owner. A missing row answers `{:error, :gone}`.
+
+  Two modes, the `enqueue_at/6`/`enqueue_in/6` pair (`jobs.ex:84`/`jobs.ex:95`):
+
+    * `delay(conn, queue, job_id, token, delay_ms)` -- the relative (default)
+      mode: the due score is `now + delay_ms` computed wire-side from the
+      server clock (`TIME`), the same clock promote and reap read, never the
+      caller's.
+    * `delay(conn, queue, job_id, token, run_at_ms, mode: :at)` -- the absolute
+      mode: the score is the caller's run-at millisecond (the documented
+      `enqueue_at` client-clock surface for the SCORE only; the fence + lease
+      laws are untouched).
+
+  The keys are passed positionally in the `@delay` `KEYS` order (the job row,
+  the active set, the schedule set -- all braced `emq:{q}:` keys pinning the
+  `{q}` slot, S-6/the A-1 law). emq.5.4-D1/D2.
+  """
+  def delay(conn, queue, job_id, token, delay_ms, opts \\ [])
+      when is_binary(job_id) and is_integer(token) and is_integer(delay_ms) do
+    mode = if Keyword.get(opts, :mode, :in) == :at, do: "at", else: "in"
+
+    keys = [
+      Keyspace.job_key(queue, job_id),
+      Keyspace.queue_key(queue, "active"),
+      Keyspace.queue_key(queue, "schedule")
+    ]
+
+    argv = [job_id, Integer.to_string(token), mode, Integer.to_string(delay_ms)]
+
+    case Connector.eval(conn, @delay, keys, argv) do
+      {:ok, 1} -> :ok
+      {:error, {:server, "EMQSTALE job gone" <> _}} -> {:error, :gone}
+      {:error, {:server, "EMQSTALE" <> _}} -> {:error, :stale}
+      {:error, {:server, "EMQKIND" <> _}} -> {:error, :kind}
+      other -> other
+    end
+  end
+
   @doc """
   Batch admission: pipelines the enqueue transition for many `{id, payload}`
   pairs in one wire flush. Per-item verdicts return in input order --

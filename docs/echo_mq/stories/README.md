@@ -9,6 +9,8 @@
 
 | Feature | Scenarios | Source |
 |---|---|---|
+| [Batch claim](batch-claim.stories.md) | 3 | `test/stories/batch_claim_story_test.exs` |
+| [Batch finish](batch-finish.stories.md) | 3 | `test/stories/batch_finish_story_test.exs` |
 | [Flow failure handling](flow-failure-handling.stories.md) | 4 | `test/stories/flows_failure_story_test.exs` |
 | [Flows](flows.stories.md) | 4 | `test/stories/flows_story_test.exs` |
 | [Groups](groups.stories.md) | 5 | `test/stories/groups_story_test.exs` |
@@ -23,4 +25,4 @@
 | [Wire — Pipe — set-membership](wire-pipe-set-membership.stories.md) | 1 | `test/stories/wire_pipe_set_membership_story_test.exs` |
 | [Wire — Result — error split](wire-result-error-split.stories.md) | 4 | `test/stories/wire_pipe_error_split_story_test.exs` |
 
-_30 scenarios across 13 feature(s). Regenerate with `mix echo_mq.stories`._
+_36 scenarios across 15 feature(s). Regenerate with `mix echo_mq.stories`._

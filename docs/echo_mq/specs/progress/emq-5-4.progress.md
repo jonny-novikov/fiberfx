@@ -119,3 +119,29 @@ NOT independently re-read this turn (deferred to the Stage-3 verify against Mars
 ### D-3 — the partition surface -> Arm N: a NEW pure module EchoMQ.BatchFinish.partition/N -> %{completed, retried, dead, delayed} (exhaustive + disjoint over the claimed members; dead EMERGES from @retry's {:ok, :dead} outcome at the attempts cap (jobs.ex:807/:834), NOT a caller verdict). Mirrors emq.5.2's DELIBERATE pure-core/process split — BatchShaper.Core.decide/4 (batch_shaper/core.ex:76, doctested) was split OUT of the BatchConsumer process so the central decision stays pure + doctested. CHOSEN-AGAINST: Arm X (fold into the private settle/3 + BatchShaper.Core in place) -> settle is a PRIVATE PROCESS method that does IO (calls Jobs.complete/retry + publishes — batch_consumer.ex:257-269); folding the pure partition RE-BURIES the logic 5.2 paid to split out + grows a shipped 5.2 surface rather than leaving it byte-stable. GROUNDING CORRECTION folded (source-confirmed): the brief/ledger "BatchConsumer.settle/3" is the PRIVATE defp settle(s, members, verdicts), not a public router — which STRENGTHENS Arm N (a private IO method is unmistakably a process method, exactly why the pure partition must not fold into it). The fourth move (NOT a fork — it follows from D-1..D-3): defp settle gains ONLY the {:delay, ms} routing branch (the THIRD beside :ok / {:error, reason}) routing through delay/N + a delayed per-member event over the byte-frozen Events.publish/5 (events.ex:117); settle stays a thin router, the partition stays pure.
 
 
+
+## {emq-5-4-report} Report
+
+### Y-1 — Stage-3 Director verify: BUILD-GRADE, zero defects. An independent pass (not a glance) against the disk on Valkey 6390.
+
+STATIC AXIS (clean):
+- @delay (jobs.ex:155-176) satisfies B·T·N: atomic one-EVAL (kind-guard -> fence -> ZREM active -> HSET state scheduled -> ZADD schedule); attempts-PRESERVED by OMISSION (HSET writes only 'state', no 'attempts' field); token-fence `if att ~= ARGV[2] then EMQSTALE` is a faithful mirror of @complete:372-377 (confirmed T-6); declared keys are the STRONGEST A-1 form (KEYS[1]=row, KEYS[2]=active, KEYS[3]=schedule -- all real KEYS[], none ARGV-derived, the row key a first-class declared root).
+- Jobs.delay/6: token-fenced, :in/:at modes (enqueue_in/at pair), returns :ok | {:error,:stale} | {:error,:gone} | {:error,:kind}.
+- defp settle (batch_consumer.ex:266-301): behavior-preserving refactor (Enum.each -> Enum.map_reduce), the :ok/{:error} paths byte-behavior-identical, the {:delay,ms} THIRD branch routes Jobs.delay with the SAME att token + a 'delayed' event; returns BatchFinish.partition.
+- EchoMQ.BatchFinish (new, pure): partition/2 total + exhaustive + disjoint; `dead` EMERGES from the {:ok,:dead} OUTCOME not the verdict (un-spoofable); doctested + a thorough unit suite (exhaustive/disjoint/order/fail-safe/empty).
+
+BYTE-FREEZE: PROVEN -- jobs.ex is +115/-0 (zero deletions, so no shipped script line could change); the redis.call +/- grep shows 5 added lines (all @delay), 0 removed. @schedule/@complete/@retry/@promote/@claim/@bclaim/@gbclaim/@enqueue byte-identical. @wire_version frozen echomq:2.4.2 (untouched, out of boundary).
+
+CONFORMANCE (additive-minor): the prior 70 byte-unchanged (only the unavoidable continuation comma after grouped_batch_fairness); 3 new scenarios (batch_partition, batch_delay, batch_delay_stale) probe-registered in the same change; BOTH pins re-pinned 70->73 (conformance_run_test.exs:58, conformance_scenarios_test.exs @run_order). The new scenarios carry explicit no-op-defeaters + at-rest cross-checks; batch_delay_stale does a SCRIPT FLUSH to exercise the EVALSHA cold-cache path.
+
+DYNAMIC AXIS (green + deterministic): independent gate re-run = 11 doctests, 462 tests, 0 failures, CONFORMANCE 73/73 (seed 0). Multi-seed sweep seeds 1-5 all 462/0 -> 6 deterministic green runs. NORMAL-rung posture: multi-seed, NOT the >=100 loop (delay releases a lease + mints nothing -> the same-ms branded-id mint hazard is absent by construction). 7th deliverable (story-gen) shipped: batch_finish_story_test.exs (3 BDD scenarios) + docs/echo_mq/stories/batch-finish.stories.md + README.
+
+NET-ZERO MUTATION (LAW-1a, test teeth): injected the @schedule attempts-reset bug into @delay's HSET -> conformance batch_delay FAILED {:fail,{:ok,"0"}} AND the story 'attempts preserved' scenario FAILED (story_test.exs:104), an ISOLATED 72/73 kill (no collateral); reverted by inverse Edit -> jobs.ex back to +115/-0, the formerly-failing suites green (73/73, 0 failures), residual grep clean. Two independent suites have teeth on attempts-preservation.
+
+DEFECTS: ZERO. Mars-2 COLLAPSED (emq.5.1 precedent -- no remediate items).
+
+OBSERVATIONS (non-blocking):
+- O-1 (forward-looking): the partition is computed in settle + returned from flush + directly tested, but NOT surfaced as a NEW external batch-level event -- consistent with Arm N's minimal-surface ruling; US-PARTITION is satisfied by the pure module + its direct test. A future telemetry rung (emq.8) could surface it.
+- O-2 (out-of-boundary, pre-existing): an echo_data compile warning (champ_view.ex:82, EchoData.ChampView referencing EchoStore.Graft.read_at) -- a dependency app, NOT introduced by this rung, does not fail echo_mq's --warnings-as-errors gate. An echo_data concern, separate.
+
+Risk-tripwire (emq.4.1 lesson): no new mint/lease surfaced mid-build -> NORMAL held, no re-grade. Apollo OPTIONAL (no process/lease/destructive/frozen-line touch) -- closure already met (stories shipped). Ready for the LAW-4 ship pending the Operator's go-ahead.
