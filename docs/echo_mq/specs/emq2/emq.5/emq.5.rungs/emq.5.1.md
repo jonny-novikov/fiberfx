@@ -29,7 +29,7 @@ The family ([`../emq.5.md`](../emq.5.md)) is the Movement II **consume** family.
 ships** and is NOT re-built (`EchoMQ.Jobs.enqueue_many/3`, `jobs.ex:124` — bulk enqueue, the `add_bulk` producer
 path). emq.5.1 builds the **batch CONSUME** spine: a single atomic claim that leases up to `size` jobs at once.
 
-The mechanism is **reserved, not invented** — design [`../../../emq.design.md`](../../../emq.design.md) §6.2
+The mechanism is **reserved, not invented** — design [`../../../../emq.design.md`](../../../../emq.design.md) §6.2
 (lines 457–464): *"Multi-key pops (`LMPOP`/`ZMPOP`): not adopted … a client-side pop would BYPASS the script
 layer's event and bookkeeping path … Count-variant pops remain the 6.2-level surface the batch family builds on
 at its rung."* A batch claim is a **count-variant `ZPOPMIN` INSIDE the claim script** — never a client-side
@@ -312,8 +312,8 @@ brief: [`emq.5.1.stories.md`](emq.5.1.stories.md) · [`emq.5.1.llms.md`](emq.5.1
 it generalizes (SHIPPED, **byte-frozen** by this rung): `echo/apps/echo_mq/lib/echo_mq/jobs.ex` — `@claim`
 (`jobs.ex:165`) + `claim/3` (`jobs.ex:418` → `{:ok, {id, payload, att}}` | `:empty`, the queue-wide pause honored
 FIRST) + the byte-frozen `@complete` (`jobs.ex:214`) / `@retry` (`jobs.ex:291`) the partial-failure isolation
-rides · The mechanism reservation: [`../../../emq.design.md`](../../../emq.design.md) §6.2 (lines 457–464 —
+rides · The mechanism reservation: [`../../../../emq.design.md`](../../../../emq.design.md) §6.2 (lines 457–464 —
 count-variant pops are the batch family's 6.2-level surface; client-side `LMPOP`/`ZMPOP` FORBIDDEN) · The v2 laws:
 §6 (the braced keyspace) · S-6 (the declared-keys A-1 law) · §4 (the server-clock law — the lease) · S-3/§5 (the
-additive-minor conformance law) · Roadmap: [`../../../emq.roadmap.md`](../../../emq.roadmap.md) (the emq.5 row ·
-Movement II) · Approach: [`../../../../elixir/specs/specs.approach.md`](../../../../elixir/specs/specs.approach.md)
+additive-minor conformance law) · Roadmap: [`../../../../emq.roadmap.md`](../../../../emq.roadmap.md) (the emq.5 row ·
+Movement II) · Approach: [`../../../../../elixir/specs/specs.approach.md`](../../../../../elixir/specs/specs.approach.md)

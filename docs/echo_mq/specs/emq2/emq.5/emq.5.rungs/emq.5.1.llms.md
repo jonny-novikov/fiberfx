@@ -40,7 +40,7 @@
    pins `test/conformance_run_test.exs` (`{:ok, 61}` at `:48`) + `test/conformance_scenarios_test.exs`
    (`@run_order`, 61 names). The additive-minor law: extend `scenarios/0` with the new scenario(s) + the probe in
    the SAME change, the prior 61 byte-unchanged, re-pin the count in BOTH tests.
-6. **The mechanism reservation** — [`../../../emq.design.md`](../../../emq.design.md) §6.2 (lines 457–464):
+6. **The mechanism reservation** — [`../../../../emq.design.md`](../../../../emq.design.md) §6.2 (lines 457–464):
    client-side `LMPOP`/`ZMPOP` FORBIDDEN (bypass the script layer); the batch claim is a count-variant `ZPOPMIN`
    INSIDE the script.
 7. **The program law** — `.claude/skills/echo-mq-program.md` (the v2 laws, the gate ladder, the additive-minor
