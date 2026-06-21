@@ -6,7 +6,7 @@
 **Movement II (emq.4–emq.8) — the 2.x extension — is BUILDING**: the **`emq.4` groups family is CLOSED**
 (4.1 control plane · 4.2 group-aware recovery · 4.3 the park-don't-poll metronome · 4.4 weighted
 rotation + the starvation drill — live conformance **61**, wire fence `echomq:2.4.2`, rung label
-`2.4.4`); **`emq.5.1` the batch-claim spine + `emq.5.2` min_size/timeout shaping SHIPPED** (conformance **67**, label `2.5.0`); **`emq.5.3` affinity next** (Apollo rec.). The headline forward delivery is **EchoMQ 3.0 —
+`2.4.4`); **`emq.5.1` spine + `emq.5.2` shaping + `emq.5.3` group-affinity SHIPPED** (conformance **70**, label `2.5.1`); **`emq.5.4` the partitioned finish next**. The headline forward delivery is **EchoMQ 3.0 —
 the Stream Tier** ([`emq.streams.md`](./emq.streams.md)), which lands the `echomq:3.0.0` major after
 Movement II. Per-rung shipped detail: the [changelog](./emq.changelog.md).
 
@@ -40,7 +40,7 @@ Movement I · the core (scheduler+retry · parity floor · flows)   ✅ CLOSED (
 
 Movement II · the 2.x extension family
   emq.4     ✅ CLOSED      ████████████████████  groups deepened — 4.1 control plane ✅ · 4.2 recovery ✅ · 4.3 metronome ✅ (HIGH/Apollo · 174e1d7f) · 4.4 weighted rotation + drill ✅ (361fd663) · conformance 61 · fence 2.4.2 / label 2.4.4
-  emq.5     🔨 building     ██████████░░░░░░░░░░  batches · 5.1 batch-claim spine ✅ · 5.2 min_size/timeout shaping ✅ (conf 67 · 2.5.0) · 5.3 affinity+concurrency ← next (Apollo rec.) · 5.4 partitioned finish
+  emq.5     🔨 building     ███████████████░░░░░  batches · 5.1 batch-claim spine ✅ · 5.2 min_size/timeout shaping ✅ · 5.3 group-affinity ✅ (conf 70 · 2.5.1) · 5.4 partitioned finish ← next
   emq.6     📋 planned     ░░░░░░░░░░░░░░░░░░░░  lifecycle controls · TTL · distributed cancel · checkpoints
   emq.7     📋 planned     ░░░░░░░░░░░░░░░░░░░░  cache deepened · BCAST · compaction · FULL · invalidation
   emq.8     📋 planned     ░░░░░░░░░░░░░░░░░░░░  proof stack · conformance · engine matrix · telemetry · benchmark — closes the 2.x line
@@ -50,9 +50,9 @@ EchoMQ 3.0 · the Stream Tier — the headline delivery   🔒 PROPOSED — gate
 
 ── roll-up ──
   established  emq.0 — the foundation
-  shipped     Movement I (emq.1 · emq.2 · emq.3, 52/52) + the emq.4 groups family (4.1–4.4, 61) + emq.5.1 the batch-claim spine + emq.5.2 the shaping cadence (67) — see emq.changelog.md
-  next        emq.5.3 — group affinity + batch concurrency (5.1 spine + 5.2 shaping SHIPPED · conf 67 · label 2.5.0 · Apollo rec.)
-  planned     emq.5 (5.3–5.4) · emq.6 · emq.7 · emq.8 (the 2.x runway)
+  shipped     Movement I (emq.1 · emq.2 · emq.3, 52/52) + the emq.4 groups family (4.1–4.4, 61) + emq.5.1 spine + emq.5.2 shaping + emq.5.3 group-affinity (70) — see emq.changelog.md
+  next        emq.5.4 — the partitioned finish + dynamic delay (5.1–5.3 SHIPPED · conf 70 · label 2.5.1)
+  planned     emq.5 (5.4) · emq.6 · emq.7 · emq.8 (the 2.x runway)
   next major  EchoMQ 3.0 — the Stream Tier (emq3.1–emq3.6) · echomq:3.0.0
 ```
 
@@ -66,7 +66,7 @@ EchoMQ 3.0 · the Stream Tier — the headline delivery   🔒 PROPOSED — gate
 |---|---|---|---|
 | **Foundation** | `echo_wire` (extracted wire) · `echo_mq` (the bus) · `echo_store` (durable replication via the `Graft` engine, `Shadow` retired) · the `EchoData.Bcs*` subtree · the `echo/rungs/` gate ladder · the §5 pass | `emq.0` | ✅ established |
 | **I · The Core** | the v1 surface rewritten inside `echo_mq`: scheduler + retry (emq.1) · the read/operator/watch/close floor (emq.2.1–2.4) · the parent/flow family (emq.3.1–3.5) | `emq.1`–`emq.3` | ✅ CLOSED (52/52) |
-| **II · The Extension** | the 2.x family ladder: groups deepened · batches · lifecycle controls · cache deepened · the three-layer proof stack | `emq.4`–`emq.8` | 🔨 **emq.4 groups CLOSED (4.1–4.4 · 61); emq.5.1 spine + 5.2 shaping SHIPPED (67); 5.3 next** |
+| **II · The Extension** | the 2.x family ladder: groups deepened · batches · lifecycle controls · cache deepened · the three-layer proof stack | `emq.4`–`emq.8` | 🔨 **emq.4 groups CLOSED (4.1–4.4 · 61); emq.5.1–5.3 SHIPPED (70); 5.4 the finish next** |
 
 ### EchoMQ 3.0 · the Stream Tier (the next major)
 
