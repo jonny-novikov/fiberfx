@@ -57,10 +57,13 @@ partitioned finish* — becomes one sub-rung, in the spine→shaping→compositi
 | **emq.5.1 ✅ SHIPPED** | **the batch-claim spine** — `@bclaim` (count-variant `ZPOPMIN emq:{q}:pending` up to `size` under one `TIME`, one batch lease, attempts per member) + `Jobs.claim_batch/4` + the manual-pull host API; partial-failure isolation rides the shipped per-member `@complete`/`@retry` (a *tested* property, not new Lua) | `@claim` · `@gwclaim` (the proven multi-pop loop) · `emq:{q}:pending`/`active` | **M** | **NORMAL** (additive Lua, `@claim` byte-frozen) **+ the ≥100 determinism loop** (a mint/lease surface) | **Flat-L2** — Venus → Director ruled FORK 5.1-A → the LOOP / 5.1-B → THREE (conf 64) / 5.1-C → short batch → Mars build → Director verify PASS → done (zero remediation; Apollo optional, not run) |
 | **emq.5.2 ✅ SHIPPED** | **`min_size`/`timeout` shaping** — `EchoMQ.BatchConsumer` (a NEW watch-depth process, a SIBLING of `Consumer` — D-1) flushes ONE batch when the size floor (`min_size`) or the latency ceiling (`timeout`) is reached, draining via the byte-frozen `@bclaim`/`claim_batch/4`; a **pure shaping core** `EchoMQ.BatchShaper.Core` (`decide/4`, injected clock); a per-member verdict map (absent → fail-safe retry — D-2); per-member events on the `EchoMQ.Events` seam | emq.5.1 · `EchoMQ.Consumer` (the lifecycle precedent) · `EchoMQ.Events` | **M** | **NORMAL** (new supervised process + pure core; **no new Lua/lease**) | **Flat-L2** — Venus → Director ruled D-1/D-2/D-3 → Mars build → Director verify PASS (mutation spot-check net-zero) → **Mars-2 collapsed** (right-size, zero findings); conf 67, `60de5dc8` |
 | **emq.5.3 ✅ SHIPPED** | **group-affinity batch** — `@gbclaim` (a NEW additive lane script — D-1) rotates the ring (`LMOVE`) and serves a HOMOGENEOUS batch from the landed lane up to the `glimit` headroom (ring-rotated, no caller group — D-1 5.3-C; the `@gwclaim` isomorph minus the `gweight` read, K = min(depth, headroom)) + `Lanes.bclaim/3`; reuse `gactive` (D-1 5.3-B) | emq.5.1 · **the CLOSED emq.4 ring** (`@gwclaim`/`gactive`/`gweight`) | **M–L** | **NORMAL+** (additive `@gbclaim`; shipped `@g*`/`@bclaim` byte-frozen) | **Flat-L2 + Apollo** — Venus → Director ruled D-1 (3 forks; 5.3-C NEW, surfaced at reconcile) → Mars build → Director verify PASS (declared-keys + byte-freeze battery + a mutation 6/10 + the ≥100 loop 100/100) → Mars-2 (the label fix); conf 70, `a299aa73` |
-| **emq.5.4** | **the partitioned finish + dynamic delay** — a batch resolves as a **partition** (complete / retry-poison-alone / dead) via the shipped per-member transitions; `Jobs.delay/N` re-scores an active member onto the schedule set from the handler | `@complete`/`@retry` · `@schedule`/`enqueue_at` (all **byte-frozen**) · emq.5.1 | **M** | **NORMAL** (reuses shipped, byte-frozen transitions; **no new lease surface**) | **Flat-L2** — Venus → Director → Mars → Director verify (byte-freeze the reused scripts) → Mars-2. Apollo optional |
+| **emq.5.4 — RULED B · T · N** | **the partitioned finish + dynamic delay** — a batch resolves as a **partition** `%{completed, retried, dead, delayed}` via the shipped per-member transitions (a NEW pure `EchoMQ.BatchFinish.partition/N` — D-3 = Arm N; `dead` EMERGES from `@retry` `{:ok, :dead}`, not a caller verdict); `Jobs.delay/5` re-scores an active member onto the schedule set via a NEW minimal atomic `@delay` (D-1 = Arm B — `ZREM active` / `HSET state=scheduled` attempts-PRESERVED / `ZADD schedule`, the inverse of `@claim`), token-fenced on the attempts-token (D-2 = Arm T). *(The carve's earlier "reuse `@schedule` / zero new Lua" lean was CORRECTED at reconcile — `@schedule` is a first-write that cannot re-score an active member.)* | `@complete`/`@retry`/`@schedule`/`@promote` (all **byte-frozen**, the reuse targets) · `EchoMQ.BatchConsumer` `defp settle` (the `{:delay, ms}` branch) · emq.5.1 | **M** | **NORMAL** (one NEW additive `@delay` script — the inverse of a claim, releases a lease; reuses the byte-frozen transitions; **no new lease surface**) | **Flat-L2** — Venus author+reconcile → Director rules FORK 5.4-A (RULED B · T · N) → Mars build → Director verify (byte-freeze the reused scripts + the declared-keys/attempts-preserved/atomicity/token-fence probes) → Mars-2. Apollo optional |
 
-**Family total ≈ 4 rungs, ~4–5 rung-points** (comparable to emq.4). One new additive Lua script per claim rung
-(`@bclaim`, `@gbclaim`); zero new Lua in 5.2 and 5.4.
+**Family total ≈ 4 rungs, ~4–5 rung-points** (comparable to emq.4). **One new additive Lua script per CLAIM rung**
+(`@bclaim` at 5.1, `@gbclaim` at 5.3) **plus one for the RESOLVE half** (`@delay` at 5.4, RULED D-1 = Arm B — the
+inverse of a claim); **zero new Lua in 5.2** (the shaping cadence is a supervised process + a pure core). *(The earlier
+"zero new Lua in 5.2 and 5.4" read was corrected at the emq.5.4 reconcile: 5.4's `@delay` is the symmetric resolve-half
+script — the atomic active→scheduled re-score `@schedule` cannot express.)*
 
 ## 2 · Build order & dependencies
 
@@ -104,8 +107,15 @@ Framed forward; each is the architect's four-part Arm at the rung, ruled via `As
   every other lane script + Apollo mandatory). *Lean:* additive `@gbclaim`.
 - **FORK 5.3-B — the batch-concurrency home.** Reuse **`gactive`** (a batch counts as its `size` against the group
   ceiling) **vs** a new `gbatch` in-flight counter. *Lean:* reuse `gactive` (no new key, the §6 grammar unedited).
-- **FORK 5.4-A — dynamic delay.** A new `Jobs.delay/N` re-score (active → schedule, reusing `@schedule`) **vs** fold
-  into the shipped promote/schedule surface. *Lean:* a thin `delay/N` over the byte-frozen schedule fence.
+- **FORK 5.4-A — dynamic delay (RULED B · T · N, D-1/D-2/D-3).** The reconcile CORRECTED this fork's original "reuse
+  `@schedule`" lean: `@schedule` (`jobs.ex:55-73`) is a FIRST-WRITE (an `EXISTS` guard that no-ops a present row + an
+  `attempts 0` reset) — it CANNOT re-score an active member. **RULED: D-1 = Arm B** a NEW minimal atomic `@delay`
+  (active → schedule, attempts-PRESERVED, the inverse of `@claim`) — chosen over Arm A′ (a host two-step — NON-ATOMIC,
+  lost-member window) and Arm C (fold into `@promote` — wrong direction, edits a frozen script); **D-2 = Arm T**
+  `delay/5` token-fenced on the attempts-token (over Arm F token-free); **D-3 = Arm N** a NEW pure
+  `EchoMQ.BatchFinish.partition/N` (over Arm X — folding into the private `defp settle`, a process IO method). The
+  per-rung body [`./emq.5.rungs/emq.5.4.md`](./emq.5.rungs/emq.5.4.md) carries the full four-part Arms + the KB record
+  [`../../../kb/emq-5-4-decisions.md`](../../../kb/emq-5-4-decisions.md).
 
 ## 5 · Map
 

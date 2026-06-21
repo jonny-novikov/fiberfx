@@ -1,22 +1,25 @@
 ---
 title: "echo_graft — the Elixir/Rust engine split (design)"
 id: echo-graft-engine-split
-status: Draft — decision pending (Operator)
+status: Resolved — D-1 = A (COEXIST) · D-2 = echo_graft_backend (Operator ruling 2026-06-21)
 owner: Fireheadz
 author: Venus (architect)
 date: 2026-06-21
-supersedes-banner: "Reconciliation input for eg.4. The roadmap (graft.roadmap.md) and graft.4.md assumed ONE durability engine (Rust, sidecar-driven). As-built there are TWO complete native engines plus a separate outbox facade. This design records the as-built ground truth and surfaces the collision for an Operator decision; it does NOT itself retire either engine."
+supersedes-banner: "Reconciliation input for eg.4. The roadmap (graft.roadmap.md) and graft.4.md assumed ONE durability engine (Rust, backend-driven). As-built there are TWO complete native engines plus a separate outbox facade. This design recorded the as-built ground truth and surfaced the collision; the Operator ruled D-1 = Option A (coexist) and D-2 = the name echo_graft_backend. The analysis below is the rationale of record; the resolved ledger is §7."
 ---
 
 # echo_graft — what we build in Elixir vs. in Rust { id="echo-graft-engine-split" }
 
-> _The eg.4 build paused on a collision: the spec names `EchoStore.Graft` as the **thin Elixir client** to a Rust sidecar, but `EchoStore.Graft` already exists as a **complete native-BEAM page-store engine**. This document gathers the requirements from both as-built engines, separates the durability concerns the BEAM owns from the ones a Rust engine owns, lays out the resolution options, and gives a recommendation — but the consequential call (coexist / supersede / reframe) is the Operator's._
+> {style="note"}
+> **OPERATOR RULING (2026-06-21) — D-1 = Option A (COEXIST), D-2 = `echo_graft_backend`.** Both engines are kept; the native `EchoStore.Graft.*` engine stays canonical and **untouched**; the Rust engine is a **coexisting peer**. The Operator's names override the architect's `…Sidecar` suggestion throughout: the Rust EchoMQ-participant crate/binary is **`echo_graft_backend`**, the versioned wire crate is **`echo_graft_proto`**, and the Elixir client is **`EchoStore.GraftBackend`** (a peer beside the native engine; a `EchoStore.Durability.GraftBackend` adapter placement is a noted alternative, but `EchoStore.GraftBackend` is the default). The remaining decisions are resolved in §7. The analysis (§2–§6) is preserved as the rationale of record and reads in the *pre-ruling* voice where it weighs the options.
+
+> _The eg.4 build paused on a collision: the spec named `EchoStore.Graft` as the **thin Elixir client** to a Rust backend, but `EchoStore.Graft` already exists as a **complete native-BEAM page-store engine**. This document gathers the requirements from both as-built engines, separates the durability concerns the BEAM owns from the ones a Rust engine owns, lays out the resolution options, and gives a recommendation. The consequential call (coexist / supersede / reframe) was the Operator's — ruled Option A above._
 
 ---
 
 ## 0. The decision in one paragraph (read first)
 
-There are **two independently-complete durability engines** in the umbrella, both transactional page-stores that replicate Volume state to Tigris: **`EchoStore.Graft.*`** (pure Elixir, on CubDB) and **`apps/echo_graft`** (Rust, on Fjall, eg.1–eg.3 shipped). They are **functional twins**, not layers — each on its own owns the write-lock, the OCC commit, the conditional-write fence, the segment rollup, the Tigris remote, lazy reads, and a change-feed. Separately, **`EchoStore.Durability.*`** is a *third, smaller* concern: a pluggable **outbox** facade for the EchoMQ transactional-enqueue path, which states in its own moduledoc that the intents it carries are **low-volume** and that **the bus stays on Valkey**. The eg.4 spec collided because it tried to introduce the Rust engine's Elixir client under the name (`EchoStore.Graft`) the native engine already holds. **The recommendation is Option A (coexist) with a renamed Rust client** — but Options B and C are real and are laid out in full for the Operator.
+There are **two independently-complete durability engines** in the umbrella, both transactional page-stores that replicate Volume state to Tigris: **`EchoStore.Graft.*`** (pure Elixir, on CubDB) and **`apps/echo_graft`** (Rust, on Fjall, eg.1–eg.3 shipped). They are **functional twins**, not layers — each on its own owns the write-lock, the OCC commit, the conditional-write fence, the segment rollup, the Tigris remote, lazy reads, and a change-feed. Separately, **`EchoStore.Durability.*`** is a *third, smaller* concern: a pluggable **outbox** facade for the EchoMQ transactional-enqueue path, which states in its own moduledoc that the intents it carries are **low-volume** and that **the bus stays on Valkey**. The eg.4 spec collided because it tried to introduce the Rust engine's Elixir client under the name (`EchoStore.Graft`) the native engine already holds. **The Operator ruled Option A (coexist):** the native engine stays canonical and untouched; the Rust engine is a coexisting peer named `echo_graft_backend` / `EchoStore.GraftBackend` (§7). Options B and C — laid out in full below — were the real alternatives the ruling chose against.
 
 ---
 
@@ -141,11 +144,13 @@ Both engines independently provide **all** of: the write-lock, OCC commit, the L
 
 The `EchoStore.Graft` name and the page-engine role are claimed twice. Three coherent resolutions; the call is the Operator's (architecture choice + a name change + a possible retirement = above the architect's line).
 
-### Option A — Coexist (RECOMMENDED), with a renamed Rust client
+### Option A — Coexist (RULED — the Operator chose this), with a renamed Rust client
+
+> Naming RESOLVED by the Operator: the Rust binary/crate is **`echo_graft_backend`**, the wire crate **`echo_graft_proto`**, the Elixir client **`EchoStore.GraftBackend`** (overriding the architect's original `…Sidecar` proposal preserved in the strikethrough below).
 
 - **Native Elixir `EchoStore.Graft.*` stays the canonical page/Volume engine** for the BEAM-resident durability path (the outbox-on-Graft adapter, projection/replica needs served in-process). No foreign engine on the default path → fewer moving parts, one crash domain, no cross-runtime wire for the common case.
-- **The Rust `apps/echo_graft` engine is the engine for raw page/Volume + replica-recovery workloads** that want Rust's page-fault performance or a deployable sidecar beside Go workers — and it is driven over the bus under a **non-colliding name**. Proposed: **`EchoStore.GraftSidecar`** (Elixir client) ↔ **`echo_graft_sidecar`** (the Rust binary) ↔ **`echo_graft_proto`** (the wire). `EchoStore.Graft` (native) and `EchoStore.GraftSidecar` (Rust client) sit side by side, distinct.
-- **Tradeoffs:** (+) nothing is removed; both investments live; the decision is reversible; eg.4 proceeds immediately with a rename. (−) two page-engines to maintain long-term; the Operator must later decide whether they converge or stay specialized (deferred, not forced now). (−) the eg.6 shootout must say *which workload* each wins, not just a single number.
+- **The Rust `apps/echo_graft` engine is the engine for raw page/Volume + replica-recovery workloads** that want Rust's page-fault performance or a deployable backend beside Go workers — and it is driven over the bus under a **non-colliding name**: **`EchoStore.GraftBackend`** (Elixir client) ↔ **`echo_graft_backend`** (the Rust binary) ↔ **`echo_graft_proto`** (the wire). [~~architect's original proposal: `EchoStore.GraftSidecar` ↔ `echo_graft_sidecar`~~] `EchoStore.Graft` (native) and `EchoStore.GraftBackend` (Rust client) sit side by side, distinct.
+- **Tradeoffs:** (+) nothing is removed; both investments live; the decision is reversible; eg.4 proceeds immediately with a rename. (−) two page-engines to maintain long-term; the Operator must later decide whether they converge or stay specialized (deferred to post-eg.6, D-4). (−) the eg.6 shootout must say *which workload* each wins, not just a single number (D-5 = per-workload).
 
 ### Option B — Rust supersedes the native Elixir engine
 
@@ -160,47 +165,45 @@ The `EchoStore.Graft` name and the page-engine role are claimed twice. Three coh
 
 ### Recommendation
 
-**Option A.** Rationale: (1) **needs vs. reality** — the only durability the consumer's hot path touches is the *low-volume outbox*, already served natively with no foreign engine; nothing forces a Rust engine onto the default path, so removing the native engine (B) spends the most blast radius for the least pressing need. (2) **Both investments are real and not actually competing for the same workload** — the native engine wins the in-process/low-dep case; the Rust engine wins raw-page performance + a deployable sidecar. Coexistence names that split instead of forcing a premature winner. (3) **Reversibility** — A keeps the door open to B *or* C after the eg.6 shootout produces evidence; B and C foreclose. (4) **eg.4 unblocks today** with a pure rename (`EchoStore.Graft` native stays; the Rust client becomes `EchoStore.GraftSidecar`). The one thing A defers — long-term convergence of two page-engines — is exactly the kind of horizon decision that should wait for the shootout, not be fused into this rung.
+**Option A.** Rationale: (1) **needs vs. reality** — the only durability the consumer's hot path touches is the *low-volume outbox*, already served natively with no foreign engine; nothing forces a Rust engine onto the default path, so removing the native engine (B) spends the most blast radius for the least pressing need. (2) **Both investments are real and not actually competing for the same workload** — the native engine wins the in-process/low-dep case; the Rust engine wins raw-page performance + a deployable backend. Coexistence names that split instead of forcing a premature winner. (3) **Reversibility** — A keeps the door open to B *or* C after the eg.6 shootout produces evidence; B and C foreclose. (4) **eg.4 unblocks today** with a pure rename (`EchoStore.Graft` native stays; the Rust client becomes `EchoStore.GraftBackend`). The one thing A defers — long-term convergence of two page-engines — is exactly the kind of horizon decision that should wait for the shootout, not be fused into this rung.
 
-> **This recommendation does not retire either engine.** It proposes a name for the Rust client and a coexistence boundary. The choice between A / B / C is the Operator's.
-
----
-
-## 6. Reconciled eg.4 — what `graft.4.md` should build under Option A { id="eg4-reconciled" }
-
-Under the recommendation, eg.4 keeps its **shape** (sidecar + versioned proto + Elixir client + conformance) but loses the **name collision** and narrows its **claim**:
-
-- **The Elixir client is `EchoStore.GraftSidecar`, NOT `EchoStore.Graft`.** `EchoStore.Graft` remains the native engine. Every eg.4 reference to "the Elixir client `EchoStore.Graft`" → `EchoStore.GraftSidecar`.
-- **eg.4 is no longer "THE integration spine" — it is "the sidecar integration for the Rust page-engine."** The native engine needs no sidecar; eg.4 drives the *Rust* engine for the workloads Option A assigns it. The roadmap's "the BEAM never links the engine in-process during the spine" stays true *of the Rust engine*, not of all durability.
-- **The change-feed lane is shared, not duplicated:** the Rust `egraft:feed:{vol}` lane (`feed.rs:42`) is one producer onto the EchoMQ bus the native `Sync` path already uses (`graft:{vol}:commits`). eg.4 must declare whether the sidecar publishes on `egraft:feed:{vol}` (its own lane, recommended — keeps the two engines' feeds distinct) and `EchoStore.GraftSidecar` subscribes there.
-- **Scope unchanged otherwise:** `echo_graft_proto` (byte-frozen, version-negotiated), `echo_graft_sidecar` (the EchoMQ participant), the error taxonomy, backpressure, and the dual-side conformance suite all stand — they are about the *cross-runtime contract*, which is real under A.
-- **If the Operator picks B instead:** eg.4 takes the `EchoStore.Graft` name, AND a new precondition is added — "retire `apps/echo_store/lib/echo_store/graft/*` and re-ground `EchoStore.Durability.Graft` on the sidecar client" — which is a separate, high-blast-radius rung that must be specced before eg.4 builds.
-- **If the Operator picks C:** eg.4 is rewritten to "a benchmark harness driving the Rust engine for the eg.6 shootout" — no production `EchoStore.*` client, no version-negotiated wire beyond what the harness needs.
-
-The concrete spec edits to `graft.4.md` (Reconciliation banner + renamed client throughout + an "Open decisions (Operator)" block) are applied in this rung; see §7 for the exact decision list.
+> **This recommendation does not retire either engine.** It proposes a name for the Rust client and a coexistence boundary. **The Operator ruled Option A** and set the name `echo_graft_backend` / `EchoStore.GraftBackend` (D-1/D-2 RESOLVED, §7).
 
 ---
 
-## 7. Open decisions (Operator) { id="open-decisions" }
+## 6. Reconciled eg.4 — what `graft.4.md` builds under Option A { id="eg4-reconciled" }
 
-Every call below is the Operator's; the architect proposes, does not dispose.
+Under the ruling, eg.4 keeps its **shape** (a backend process + versioned proto + Elixir client + conformance) but loses the **name collision** and narrows its **claim**. The finalized brief lives in `graft.4.md`; the reconciliation in brief:
 
-| # | Decision | Options | Architect's recommendation |
-|---|---|---|---|
-| **D-1** | The collision resolution | **A** coexist (rename Rust client) · **B** Rust supersedes (retire native engine) · **C** native canonical, Rust = research track | **A** |
-| **D-2** | The Rust client's name (if A or C) | `EchoStore.GraftSidecar` · `EchoGraft.Client` · other | `EchoStore.GraftSidecar` (mirrors `echo_graft_sidecar`; keeps the `EchoStore.*` family) |
-| **D-3** | eg.4's claim | "the integration spine for all durability" · "the sidecar integration for the Rust page-engine" | the latter (under A) |
-| **D-4** | Long-term convergence of the two page-engines | converge later · stay specialized (Elixir=in-process/low-dep, Rust=raw-page/sidecar) · decide after the eg.6 shootout | **decide after eg.6** — do not fuse into this rung |
-| **D-5** | The eg.6 shootout's shape | one number (engine vs. Champ vs. Oban) · per-workload (Elixir-engine vs. Rust-engine vs. Champ vs. Oban, named workloads) | per-workload (A makes "best engine" workload-dependent) |
-| **D-6** | If B is chosen | confirm the retirement of `echo_store/lib/echo_store/graft/*` + the `Durability.Graft` re-grounding is a **separate pre-eg.4 rung** | yes — do not bundle a high-blast-radius deletion into eg.4 |
+- **The Elixir client is `EchoStore.GraftBackend`, NOT `EchoStore.Graft`.** `EchoStore.Graft` remains the native engine. Every eg.4 reference to "the Elixir client `EchoStore.Graft`" → `EchoStore.GraftBackend`. (Adapter-placement alternative `EchoStore.Durability.GraftBackend` is noted, but `EchoStore.GraftBackend` is the default.)
+- **eg.4 is no longer "THE integration spine" — it is "the backend integration for the Rust page-engine."** The native engine needs no backend hop; eg.4 drives the *Rust* engine for the workloads Option A assigns it. The roadmap's "the BEAM never links the engine in-process during the spine" stays true *of the Rust engine*, not of all durability.
+- **The change-feed lane is distinct, not shared:** the Rust `egraft:feed:{vol}` lane (`feed.rs:42`) is its own producer onto the EchoMQ bus, **kept separate** from the native `Sync` path's `graft:{vol}:commits` (`sync.ex:41`). `echo_graft_backend` publishes on `egraft:feed:{vol}` and `EchoStore.GraftBackend` subscribes there.
+- **Scope otherwise:** `echo_graft_proto` (byte-frozen, version-negotiated), `echo_graft_backend` (the EchoMQ participant), the error taxonomy, backpressure, and the dual-side conformance suite all stand — they are about the *cross-runtime contract*, which is real under A.
+
+The finalized spec + full build brief (stories, declared keys, fixtures, gate ladder, build order) is `docs/graft/specs/graft.4.md`; the resolved decision ledger is §7.
 
 ---
 
-## 8. What this rung does NOT do { id="non-actions" }
+## 7. Decision ledger (Operator) — RESOLVED { id="open-decisions" }
 
-- **It does not retire either engine.** No code is deleted, renamed, or moved by this rung; the rename in §6 is a *proposal* contingent on D-1/D-2.
+Ruled by the Operator 2026-06-21. The architect proposed; the Operator disposed.
+
+| # | Decision | Ruling |
+|---|---|---|
+| **D-1** | The collision resolution | **RESOLVED — A (COEXIST).** Both engines kept; native `EchoStore.Graft.*` canonical + untouched; the Rust engine a coexisting peer. |
+| **D-2** | The Rust backend / client naming | **RESOLVED — `echo_graft_backend`** (crate/binary), `echo_graft_proto` (wire), **`EchoStore.GraftBackend`** (Elixir client). Operator's names; override the architect's `…Sidecar` proposal. Adapter-placement `EchoStore.Durability.GraftBackend` noted as an alternative; `EchoStore.GraftBackend` is the default. |
+| **D-3** | eg.4's claim | **RESOLVED — "drive the Rust page-engine"** (a peer integration, not the all-durability spine). |
+| **D-4** | Long-term convergence of the two page-engines | **DEFERRED — post-eg.6.** Decide after the per-workload shootout; do not fuse into a rung. |
+| **D-5** | The eg.6 shootout's shape | **RESOLVED — per-workload** (Elixir-engine vs. Rust-engine vs. Champ vs. Oban, named workloads). |
+| **D-6** | If B were chosen (retirement rung) | **N/A under A.** |
+
+---
+
+## 8. What this design rung does NOT do { id="non-actions" }
+
+- **It does not retire either engine.** No code is deleted, renamed, or moved by this rung; the rename is a *spec proposal* the Operator ruled into effect (D-1/D-2), to be realized by the eg.4 *build*, not here.
 - **It does not touch production code** — Rust (`apps/echo_graft`) or Elixir (`apps/echo_store`) — nor the read-only reference checkout `github.local/graft`.
-- **It does not pick D-1.** The recommendation is Option A; the decision is the Operator's, and B/C are specified in full so either can proceed without re-discovery.
+- **The native `EchoStore.Graft.*` engine and the existing `EchoStore.Durability.Graft` adapter remain untouched under the ruling (Option A).**
 
 ## 9. References { id="references" }
 
