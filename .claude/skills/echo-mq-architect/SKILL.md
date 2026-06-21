@@ -68,6 +68,13 @@ The triad shape is the program's: `emq.N.md` (the contract — Goal · 5W · Sco
 - **Mechanism words are claims.** Name the primitive the invariant rides (the set is a `ZSET` scored by X;
   the mint is host-side; the clock is `TIME` server-side). A brief at odds with its own invariant's primitive
   mis-directs the build.
+- **A verdict / classification / shaping surface is specced as a pure module, not a process `defp`.** When a
+  rung resolves a batch, classifies an outcome, or shapes a decision, spec it as a pure, doctested peer —
+  exhaustive + disjoint over its inputs, any emergent class (e.g. `dead`) derived from the real downstream
+  OUTCOME, never a caller-supplied verdict (un-spoofable). The process method stays a thin router over the
+  pure core. The precedent is deliberate and twice-applied: emq.5.2 `BatchShaper.Core.decide/4`, emq.5.4
+  `EchoMQ.BatchFinish.partition/2` (D-3=N) — classification buried in a private `defp` that also does IO is
+  untestable and spoofable.
 - **The conformance additive-minor law** (shared reference): the triad names the new scenario(s), the count
   growth (prior N byte-unchanged → new total), and the probe registration — in the same rung.
 - **A subkey-adding rung NAMES the subkey's cleanup disposition.** When a rung introduces a §6 job subkey — or

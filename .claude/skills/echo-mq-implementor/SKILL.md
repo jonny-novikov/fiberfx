@@ -64,6 +64,14 @@ Director-ratified).
   effects replication). A run-in score computes wire-side from `TIME` (`t[1]*1000 + floor(t[2]/1000) +
   delay`); a run-at score takes the caller's absolute ms (the documented client-clock surface for the score
   ONLY — the fence + lease laws are untouched).
+- **The fence token IS `attempts`.** A bus in-flight transition carries no separate lock token — it fences on
+  the monotonic `attempts` counter, minted at claim (`@claim`/`@bclaim`: `HINCRBY <row> 'attempts' 1`) and
+  checked in-script: `local att = redis.call('HGET', KEYS[n], 'attempts'); if att ~= ARGV[k] then return
+  redis.error_reply('EMQSTALE …')`. A NEW token-fenced verb mirrors `@complete`/`@retry`'s fence EXACTLY — the
+  same HGET-compare-`EMQSTALE` shape, `attempts` as the token — never a new fence style; and the host call
+  threads the SAME `att` its siblings thread (emq.5.4 `defp settle` passes one `att` to
+  `Jobs.complete`/`Jobs.retry`/`Jobs.delay` identically). (emq.5.4 D-2/T-6: `@delay`'s fence is a faithful
+  mirror of `@complete`, not a new fence.)
 - **The wire-class registry (S-3 / §5).** Typed refusals lead with their class word (`EMQKIND`, `EMQSTALE`)
   via `redis.error_reply`, never the generic `ERR`. Adding a class is an additive minor, registered with its
   conformance probe in the same change. The five-code fence union stands unextended.

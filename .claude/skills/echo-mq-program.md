@@ -41,15 +41,29 @@ A surface a rung builds must satisfy every one; an invariant that asserts one is
 
 ## The roadmap awareness (where the rung sits)
 
-- **The ladder (confirmed).** emq.0 (Movement 0 — land + prove the BCS drop; **shipped** 2026-06-13) · emq.1
-  (Movement I — the scheduler + retry vocabulary; **shipped**) · **emq.2** (Movement I — the full
-  echomq→echo_mq feature-parity rewrite, decomposed emq.2.1 / emq.2.2 / emq.2.3) · emq.3 (parent/flow family)
-  · emq.4–emq.8 (Movement II — groups deepened, batches, lifecycle controls, the cache deepened, the proof
-  stack). The exact carve of the emq.2.x parity cluster — and how it re-sequences the later ladder — is fixed
-  in the emq.2 design (`docs/echo_mq/specs/emq.2.design.md`); read it on an emq.2.* rung.
+- **The ladder (confirmed).** Movement I — emq.0 (foundation: protocol v2 + the BCS substrate) · emq.1
+  (scheduler + retry) · emq.2 (the parity floor, decomposed emq.2.1–2.4) · emq.3 (the parent/flow family) —
+  **CLOSED (52/52)**. Movement II (the 2.x runway) — emq.4 (groups deepened) · emq.5 (batches) — **CLOSED**
+  (conformance **73**, label `echomq:2.5.2`); emq.6/emq.7/emq.8 (lifecycle controls · the cache deepened · the
+  proof stack) are **DEFERRED** behind the Stream Tier (a parked 2.x-runway continuation — Operator-ruled
+  2026-06-22, revisable). **The ACTIVE next program is EchoMQ 3.0 — the Stream Tier** (emq3.1–emq3.6; canon
+  `docs/echo_mq/emq.streams.md`): event streams on the certified wire under the v2 laws, no second protocol.
+  It **hard-gates on emq.0 ONLY** (met) and stands on the closed BCS substrate (the store's Tables · the
+  staleness fence · the journal) + the native `EchoStore.Graft` engine — **no Stream rung depends on
+  emq.6/7/8**. Three milestones: **S1 the writer** (`XADD`/`XRANGE`/`XREADGROUP`/`XACK`/`XAUTOCLAIM` →
+  `EchoMQ.Stream`) → **S2 the readers** (a BEAM consumer group beside a non-BEAM reader; retention as declared
+  `MAXLEN`/`MINID`) → **S3 the memory** (segments folded into Graft). On an `emq3.*` rung read
+  `emq.streams.md`; on an `emq.2.*` rung the parity carve is `docs/echo_mq/specs/emq.2.design.md`.
+- **Stream-Tier carry-facts** (for an `emq3.*` author). The branded id IS the stream position — append == mint
+  order, the order theorem extended to the log, no second index. The stream verbs are **additive → a protocol
+  minor**; the label climbs additively (`echomq:2.5.2` → `2.6.x`) and the `echomq:3.0.0` cutover is
+  **DEFERRED** (the defer-the-fence-cutover pattern — declared when the tier is whole). The contract is
+  **at-least-once with idempotent handlers** (exactly-once is NOT claimed); payloads stay **claims-only** so a
+  non-BEAM reader's codec is trivial. The v2 master invariant binds every 3.x rung **unchanged**.
 - **The master invariant.** The fork happened once — the v2 key universe is grammar-total (braced
   `emq:{q}:`, the first-byte-disjoint `{emq}:` reserve, the gated branded `job:` position), every Lua key
-  declared-or-rooted, the version record (`{emq}:version` = `echomq:2.0.0`) monotone behind the five-code
+  declared-or-rooted, the wire `{emq}:version` frozen at `echomq:2.4.2` (the `mix.exs` rung label climbs
+  additively, `echomq:2.5.2` live — the deferred cutover) behind the five-code
   fence — and **no later rung re-breaks the wire**.
 - **The single source of truth.** `echo/apps/echo_mq` (above `echo/apps/echo_wire`) is the bus; it is the
   ONLY EchoMQ of record. `echo/apps/echomq` is a **feature reference** — a capability list to port, never a
@@ -98,7 +112,11 @@ module / Lua / key names to cite) is `.claude/skills/echo-mq-surface.md`; re-pro
 
 - **Agents run NO git.** The Director commits once, at the rung's close, by pathspec (`git commit -F <msg> --
   <paths>`; never `git add -A`, never a bare `git commit`). The Operator commits out-of-band mid-flight —
-  watch for `AM`-status files and exclude them.
+  watch for `AM`-status files and exclude them. When the Operator has already STAGED (or committed) foreign
+  work mid-flight, re-verify `git diff --cached --name-only` is purely the rung before committing (the pathspec
+  form records only the named paths, leaving staged neighbours untouched — the cached-diff check is the proof),
+  and split an entangled tree into one scoped commit per concern — never let a sibling rung's ledger or
+  durability/bench/graft ride the rung commit (emq.5.4 `be97a9bf`/`ca301958` excluded exactly this).
 - **The boundary.** The diff stays inside the architecture's facade — for the bus, `echo/apps/echo_mq` (+ the
   one named `echo/apps/echo_wire` connector seam where a rung touches it). A change that reaches a third app
   is a diff no one can review.
