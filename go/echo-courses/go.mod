@@ -2,7 +2,10 @@ module github.com/fiberfx/echo-courses
 
 go 1.25.0
 
-require github.com/labstack/echo/v5 v5.2.0
+require (
+	github.com/labstack/echo/v5 v5.2.0
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require golang.org/x/time v0.14.0 // indirect
 

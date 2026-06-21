@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fiberfx/echo-courses/content"
+	"github.com/fiberfx/echo-courses/internal/catalog"
 	"github.com/fiberfx/echo-courses/internal/handler"
 	"github.com/fiberfx/echo-courses/internal/render"
 	"github.com/fiberfx/echo-courses/web"
@@ -52,9 +54,18 @@ func main() {
 // run builds the Echo instance and serves it until ctx is cancelled, then drains
 // in-flight requests within graceful. It returns nil on a clean shutdown
 // (echo.StartConfig.Start already swallows http.ErrServerClosed). A template
-// parse failure from newEcho aborts the boot before the server ever binds
-// (ec.2 acceptance 1, fail-fast).
+// parse failure from newEcho — or a malformed course catalog — aborts the boot
+// before the server ever binds (ec.2 acceptance 1 / ec.3 acceptances 2-3,
+// fail-fast).
 func run(ctx context.Context, addr, staticDir string, graceful time.Duration) error {
+	// Load the course catalog from the embedded content/ tree. ec.3 does not
+	// route or render it (ec.4 wires the index off Catalog.Courses / .Facets);
+	// loading here proves the seed parses and fails the boot fast on a missing
+	// field, a duplicate slug, or an unreadable file.
+	if _, err := catalog.Load(content.FS); err != nil {
+		return err
+	}
+
 	e, err := newEcho(staticDir)
 	if err != nil {
 		return err
