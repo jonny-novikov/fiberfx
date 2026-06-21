@@ -47,6 +47,29 @@ type Card struct {
 	Summary string        // the <p> course summary
 }
 
+// Head is the per-page document-head payload the layout renders (ec.5 AC3): the
+// boot-computed fingerprinted asset URLs (shared across every page) plus the
+// page-specific SEO metadata. Each view-model embeds it (D-5 Option A — a Head
+// struct in the view-model, populated by the handlers, so render.New stays
+// FuncMap-free); the layout reads .Head.* in <head> and the asset <script> before
+// </body>.
+//
+// Description is the meta description and the og:description; for the index it is
+// byte-identical to the published master (ec.5 AC3 strict-parity duty), for a
+// detail page it is the course Summary. CanonicalURL is CANONICAL_BASE + the
+// page path (ec.5 D-2) — the <link rel="canonical"> and og:url. OGType is the
+// Open Graph type ("website" for the index, "article" for a course landing).
+// og:image is omitted (ec.5 D-3). All fields are plain strings, contextually
+// escaped by html/template as text/URL/attr.
+type Head struct {
+	CSSURL       string // /static/app.<hash>.css (the boot-fingerprinted stylesheet)
+	JSURL        string // /static/app.<hash>.js (the boot-fingerprinted deferred script)
+	Title        string // the document <title>
+	Description  string // meta description + og:description
+	CanonicalURL string // CANONICAL_BASE + path (canonical link + og:url)
+	OGType       string // og:type ("website" | "article")
+}
+
 // Renderer implements echo.Renderer. It holds one parsed template set per page,
 // keyed by the page's base filename (e.g. "placeholder.html"). Each set carries
 // the layout, every partial, and exactly that one page, so executing

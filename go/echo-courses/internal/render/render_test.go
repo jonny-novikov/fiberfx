@@ -79,9 +79,12 @@ func TestRenderUnknownPage(t *testing.T) {
 	}
 }
 
-// AC2/AC3: the base layout's chrome — the jonnify · courses header and the
-// (с) jonnify footer (note: the с is Cyrillic, as published) — and the
-// design-system <style> tokens are present in the rendered shell.
+// AC2/AC3 (ec.5): the base layout's chrome — the jonnify · courses header and the
+// (с) jonnify footer (note: the с is Cyrillic, as published) — plus the
+// EXTERNALIZED design system and interactivity (ec.5 D-1): the head links the
+// fingerprinted app.css, the footer the deferred app.js, and the inline
+// <style>/reveal-<script> source is GONE (now in web/static). The head also
+// carries the per-page meta (title/description/canonical/og) from render.Head.
 func TestLayoutChrome(t *testing.T) {
 	out := renderPlaceholder(t)
 
@@ -89,12 +92,27 @@ func TestLayoutChrome(t *testing.T) {
 		"jonnify · courses",                // .topbar brand (AC3 header)
 		"(с) jonnify",                      // <footer> (AC3 footer, Cyrillic с)
 		"<title>Courses · jonnify</title>", // the title block's default
-		"--gold:#d4a85a;",                  // design-system :root token (AC3 styles in head)
-		".series-card{",                    // courses-page chrome <style>
-		"IntersectionObserver",             // the reveal <script> carried in the layout
+		`<link rel="stylesheet" href="/static/app.abcd1234.css">`,    // the fingerprinted CSS (from sample Head)
+		`<script defer src="/static/app.beef5678.js"></script>`,      // the fingerprinted, deferred JS
+		`<meta name="description" content="Sample description.">`,    // per-page description (AC3)
+		`<link rel="canonical" href="https://example.test/courses">`, // canonical from the sample Head (D-2)
+		`<meta property="og:title" content="Sample · jonnify">`,      // og:title (AC3)
+		`<meta property="og:type" content="website">`,                // og:type (AC3)
+		`<meta property="og:site_name" content="jonnify">`,           // og:site_name (AC3)
+		`<meta name="twitter:card" content="summary">`,               // twitter:card (AC3)
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered shell missing %q", want)
+		}
+	}
+	// The inline design-system source is externalized — it must NOT ride the page.
+	for _, gone := range []string{
+		"--gold:#d4a85a;",      // a :root token (was inline <style>)
+		".series-card{",        // courses-page chrome (was inline <style>)
+		"IntersectionObserver", // the reveal logic (was inline <script>)
+	} {
+		if strings.Contains(out, gone) {
+			t.Errorf("inline source %q still rides the page (should be externalized to web/static)", gone)
 		}
 	}
 }
@@ -150,6 +168,19 @@ func TestFilterPartial(t *testing.T) {
 
 func samplePageData() map[string]any {
 	return map[string]any{
+		// A sample Head exercises the layout's ec.5 head rendering (the
+		// fingerprinted asset links + the per-page meta). The hashes are arbitrary
+		// fixtures — the render layer renders whatever Head it is given; boot
+		// computes the real hashes (internal/asset) and the handlers populate the
+		// per-page meta.
+		"Head": render.Head{
+			CSSURL:       "/static/app.abcd1234.css",
+			JSURL:        "/static/app.beef5678.js",
+			Title:        "Sample · jonnify",
+			Description:  "Sample description.",
+			CanonicalURL: "https://example.test/courses",
+			OGType:       "website",
+		},
 		"Card": render.Card{
 			Accent:  template.CSS("var(--gold-bright)"),
 			Tags:    "elixir",

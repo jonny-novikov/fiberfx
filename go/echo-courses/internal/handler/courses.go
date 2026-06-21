@@ -21,19 +21,46 @@ import (
 // catalog does not carry it; the index handler appends it).
 const englishSuffix = " · English"
 
+// indexTitle is the index document <title> — the published master's title
+// (html/index.html:6), kept verbatim so the index head matches it.
+const indexTitle = "Courses · jonnify"
+
+// indexDescription is the index meta description, byte-identical to the published
+// master (html/index.html:7) — ec.5 AC3's strict-parity duty. It is centralized
+// here (rather than only in the template) so the head payload the handler builds
+// is the published copy verbatim.
+const indexDescription = "jonnify courses — five in-depth, English-language courses built on the jonnify design system: Functional Programming in Elixir on the BEAM, the Agile Agent Workflow for shipping reliable software with Claude agents, Redis Patterns Applied — the Redis design patterns taught on a real job queue and platform — EchoMQ, that job-queue protocol taught in depth as it is built, and the Branded Component System — identity as a contract, proven across five runtimes."
+
+// Open Graph types: the index is a site landing, a course page an article.
+const (
+	ogTypeWebsite = "website"
+	ogTypeArticle = "article"
+)
+
+// indexPath is the canonical path of the index for its <link rel="canonical">
+// and og:url (ec.5 D-2). The index is reachable at both / and /courses (D-2);
+// /courses is the canonical, stable URL (it is the path the sitemap lists).
+const indexPath = "/courses"
+
 // Courses holds the loaded catalog and a path->course index, and serves the index
 // and detail pages from them. Build it once at boot (NewCourses) and register its
-// methods as handlers.
+// methods as handlers. It also carries the boot-computed asset URLs and the
+// canonical base (ec.5 D-1/D-2) it injects into each page's render.Head.
 type Courses struct {
-	cat    *catalog.Catalog
-	byPath map[string]*catalog.Course // Course.Path -> course (the published routes)
-	bySlug map[string]*catalog.Course // Course.Slug -> course (/courses/:slug)
+	cat     *catalog.Catalog
+	byPath  map[string]*catalog.Course // Course.Path -> course (the published routes)
+	bySlug  map[string]*catalog.Course // Course.Slug -> course (/courses/:slug)
+	cssURL  string                     // /static/app.<hash>.css (ec.5 D-1)
+	jsURL   string                     // /static/app.<hash>.js (ec.5 D-1)
+	canBase string                     // CANONICAL_BASE, trailing slash trimmed (ec.5 D-2)
 }
 
 // NewCourses indexes the catalog for routing: a path->course map (the published
 // detail routes resolve through it) and a slug->course map (/courses/:slug). The
 // maps point at the catalog's own course values, so they share the loaded data.
-func NewCourses(cat *catalog.Catalog) *Courses {
+// cssURL/jsURL are the boot-fingerprinted asset URLs (ec.5 D-1) and canBase is
+// CANONICAL_BASE (ec.5 D-2); both flow into every page's render.Head.
+func NewCourses(cat *catalog.Catalog, cssURL, jsURL, canBase string) *Courses {
 	byPath := make(map[string]*catalog.Course, len(cat.Courses))
 	bySlug := make(map[string]*catalog.Course, len(cat.Courses))
 	for i := range cat.Courses {
@@ -41,7 +68,28 @@ func NewCourses(cat *catalog.Catalog) *Courses {
 		byPath[c.Path] = c
 		bySlug[c.Slug] = c
 	}
-	return &Courses{cat: cat, byPath: byPath, bySlug: bySlug}
+	return &Courses{
+		cat:     cat,
+		byPath:  byPath,
+		bySlug:  bySlug,
+		cssURL:  cssURL,
+		jsURL:   jsURL,
+		canBase: strings.TrimRight(canBase, "/"),
+	}
+}
+
+// head builds the render.Head for a page: the shared boot asset URLs plus the
+// page-specific title/description/canonical/og-type. canonicalPath begins with
+// "/"; the canonical URL is canBase + it (ec.5 D-2).
+func (h *Courses) head(title, description, canonicalPath, ogType string) render.Head {
+	return render.Head{
+		CSSURL:       h.cssURL,
+		JSURL:        h.jsURL,
+		Title:        title,
+		Description:  description,
+		CanonicalURL: h.canBase + canonicalPath,
+		OGType:       ogType,
+	}
 }
 
 // facetView is one filter chip: the catalog facet plus the Active flag the server
@@ -54,19 +102,22 @@ type facetView struct {
 	Active bool
 }
 
-// indexData is what pages/index.html renders: the filter chips (with the active
-// one resolved from ?track=) and the course cards (filtered to the track when one
-// is given).
+// indexData is what pages/index.html renders: the per-page head (ec.5 AC3), the
+// filter chips (with the active one resolved from ?track=) and the course cards
+// (filtered to the track when one is given).
 type indexData struct {
+	Head   render.Head
 	Facets []facetView
 	Cards  []render.Card
 }
 
-// detailData is what pages/course.html renders: the eyebrow/title header and the
-// course body (the landing — D-3; not a re-host of the deep multi-page course).
-// Body is template.HTML so the trusted, in-repo-authored course markup renders
-// unescaped (matching catalog.Course.Body / render.Card.Icon).
+// detailData is what pages/course.html renders: the per-page head (ec.5 AC3), the
+// eyebrow/title header and the course body (the landing — D-3; not a re-host of
+// the deep multi-page course). Body is template.HTML so the trusted,
+// in-repo-authored course markup renders unescaped (matching catalog.Course.Body
+// / render.Card.Icon).
 type detailData struct {
+	Head    render.Head
 	Eyebrow string
 	Title   string
 	Body    template.HTML
@@ -116,7 +167,11 @@ func (h *Courses) Index(c *echo.Context) error {
 		})
 	}
 
-	return c.Render(http.StatusOK, "index.html", indexData{Facets: facets, Cards: cards})
+	return c.Render(http.StatusOK, "index.html", indexData{
+		Head:   h.head(indexTitle, indexDescription, indexPath, ogTypeWebsite),
+		Facets: facets,
+		Cards:  cards,
+	})
 }
 
 // Detail serves a single course's landing. The published detail routes
@@ -136,6 +191,12 @@ func (h *Courses) Detail(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "course not found")
 	}
 	return c.Render(http.StatusOK, "course.html", detailData{
+		Head: h.head(
+			course.Title+" · jonnify", // matches the page <title> (pages/course.html)
+			course.Summary,            // detail description = the course Summary (ec.5 AC3)
+			course.Path,               // canonical = CANONICAL_BASE + the course path (D-2)
+			ogTypeArticle,
+		),
 		Eyebrow: strings.Join(course.Tracks, " · ") + englishSuffix,
 		Title:   course.Title,
 		Body:    course.Body,

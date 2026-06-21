@@ -17,6 +17,11 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
+// testCanonicalBase is the CANONICAL_BASE the newEcho fixtures inject (ec.5 D-2)
+// — a stable non-default value so a head/og:url assertion proves the base is
+// consumed, not the production default.
+const testCanonicalBase = "https://example.test"
+
 // loadCatalog loads the embedded course corpus for the newEcho fixtures (ec.4
 // threads the catalog into newEcho). A load failure is a fatal test setup error.
 func loadCatalog(t *testing.T) *catalog.Catalog {
@@ -30,7 +35,7 @@ func loadCatalog(t *testing.T) *catalog.Catalog {
 
 // AC2 (wired): newEcho serves GET /healthz with 200 through the middleware chain.
 func TestNewEcho_Healthz(t *testing.T) {
-	e, err := newEcho(t.TempDir(), loadCatalog(t))
+	e, err := newEcho(t.TempDir(), testCanonicalBase, loadCatalog(t))
 	if err != nil {
 		t.Fatalf("newEcho: %v", err)
 	}
@@ -51,7 +56,7 @@ func TestNewEcho_StaticServing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "probe.txt"), []byte(want), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e, err := newEcho(dir, loadCatalog(t))
+	e, err := newEcho(dir, testCanonicalBase, loadCatalog(t))
 	if err != nil {
 		t.Fatalf("newEcho: %v", err)
 	}
@@ -143,7 +148,7 @@ func TestRun_GracefulDrain(t *testing.T) {
 // five cards, and the six filter chips. The handler-level filter/404 cases live
 // in internal/handler; this proves the wiring composes end to end at both paths.
 func TestNewEcho_IndexRoute(t *testing.T) {
-	e, err := newEcho(t.TempDir(), loadCatalog(t))
+	e, err := newEcho(t.TempDir(), testCanonicalBase, loadCatalog(t))
 	if err != nil {
 		t.Fatalf("newEcho (template parse + catalog are fail-fast at boot): %v", err)
 	}
@@ -180,7 +185,7 @@ func TestNewEcho_IndexRoute(t *testing.T) {
 // ec.4 AC2 (HTTP boundary): a published detail path renders its course landing
 // through the wiring — the course title in the hero and the course body.
 func TestNewEcho_DetailRoute(t *testing.T) {
-	e, err := newEcho(t.TempDir(), loadCatalog(t))
+	e, err := newEcho(t.TempDir(), testCanonicalBase, loadCatalog(t))
 	if err != nil {
 		t.Fatalf("newEcho: %v", err)
 	}

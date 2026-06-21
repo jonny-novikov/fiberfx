@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/fiberfx/echo-courses/content"
+	"github.com/fiberfx/echo-courses/internal/asset"
 	"github.com/fiberfx/echo-courses/internal/catalog"
 	"github.com/fiberfx/echo-courses/internal/handler"
 	"github.com/fiberfx/echo-courses/internal/render"
@@ -14,9 +15,16 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-// newServer wires a real Echo over the embedded catalog + templates and the ec.4
-// routes — the same wiring as cmd/server but local to the handler tests, so each
-// case exercises the handler through c.Render and the actual template tree.
+// testBase is the canonical base the handler tests inject (ec.5 D-2) — a stable,
+// non-default value so a head test proves CANONICAL_BASE is consumed (the
+// canonical/og:url reflect it), not just the production default.
+const testBase = "https://example.test"
+
+// newServer wires a real Echo over the embedded catalog + templates + assets and
+// the ec.4/ec.5 routes — the same wiring as cmd/server but local to the handler
+// tests, so each case exercises the handler through c.Render and the actual
+// template tree (with the per-page head populated from the fingerprinted asset
+// URLs + testBase).
 func newServer(t *testing.T) *echo.Echo {
 	t.Helper()
 	cat, err := catalog.Load(content.FS)
@@ -27,15 +35,23 @@ func newServer(t *testing.T) *echo.Echo {
 	if err != nil {
 		t.Fatalf("render.New: %v", err)
 	}
+	assets, err := asset.Load(web.FS)
+	if err != nil {
+		t.Fatalf("asset.Load: %v", err)
+	}
 	e := echo.New()
 	e.Renderer = r
-	h := handler.NewCourses(cat)
+	assets.Register(e)
+	h := handler.NewCourses(cat, assets.CSSURL(), assets.JSURL(), testBase)
 	e.GET("/courses", h.Index)
 	e.GET("/", h.Index)
 	e.GET("/courses/:slug", h.Detail)
 	for i := range cat.Courses {
 		e.GET(cat.Courses[i].Path, h.Detail)
 	}
+	seo := handler.NewSEO(cat, testBase)
+	e.GET("/sitemap.xml", seo.Sitemap)
+	e.GET("/robots.txt", seo.Robots)
 	return e
 }
 
@@ -103,16 +119,18 @@ func TestIndex_ChipsAndCards(t *testing.T) {
 	if !strings.Contains(body, `Elixir · BEAM · English`) {
 		t.Error("elixir card eyebrow != 'Elixir · BEAM · English'")
 	}
-	// The verbatim filter script rides inline. html/template strips JS comments in
-	// a <script> context, so assert the load-bearing logic (byte-verbatim from the
-	// golden master) rather than the dropped leading comment.
-	for _, frag := range []string{
+	// ec.5: the filter logic is now EXTERNALIZED to app.js (no inline <script>).
+	// The page links the fingerprinted, deferred asset; the inline filter source
+	// is absent (the externalization is complete, not duplicated).
+	if !strings.Contains(body, `<script defer src="/static/app.`) {
+		t.Error("index does not link the externalized deferred app.js")
+	}
+	for _, gone := range []string{
 		`const fbar=document.querySelector('.filter-bar');`,
-		`const cards=[...document.querySelectorAll('.series-card')];`,
-		`cards.forEach(c=>{const show=tag==='all'||(c.dataset.tags||'').split(' ').includes(tag);c.classList.toggle('filter-hidden',!show)});`,
+		`cards.forEach(c=>{const show=tag==='all'`,
 	} {
-		if !strings.Contains(body, frag) {
-			t.Errorf("the verbatim filter <script> is missing the fragment %q", frag)
+		if strings.Contains(body, gone) {
+			t.Errorf("inline filter source still rides the page (should be in app.js): %q", gone)
 		}
 	}
 }
