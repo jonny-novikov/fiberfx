@@ -31,6 +31,7 @@ re-pinned in two tests.
 59  +native expiry     ewr.2.6                  native lock field on the job hash (HFE) · wire unchanged
 59  =metronome (+0)    emq.4.3                  a BEAM process/lease property, not a wire trace — count byte-unchanged · label 2.4.3
 61  +weighted rotation emq.4.4                  the groups capstone (weighted_proportion + starvation_drill) · label 2.4.4 · ══ emq.4 PARITY-COMPLETE
+64  +batch claim       emq.5.1                  the batches spine (batch_claim · batch_claim_short · batch_partial_failure, +3) · label 2.5.0 · ══ emq.5 batches OPEN
 ```
 
 The **`ewr.1.x` client-core** registers no conformance scenario — that count was emq-owned and
@@ -39,7 +40,7 @@ byte-stable across those rungs (`ewr.1.4` reflected `{:ok, 55}` and froze no num
 expiry, `[echo_mq]` commits) and DID register four scenarios (55→59), recorded in the spine above and
 on its own ladder ([`ewr4.roadmap.md`](./wire/ewr4.roadmap.md)). The **two version planes** hold from
 emq.4.2 on: the wire `@wire_version` is FROZEN at `echomq:2.4.2` (the connector constant, read on
-connect), while the `mix.exs` **rung label** climbs (2.4.3 at emq.4.3, 2.4.4 at emq.4.4) — an additive
+connect), while the `mix.exs` **rung label** climbs (2.4.3 at emq.4.3, 2.4.4 at emq.4.4, 2.5.0 at emq.5.1 — the batches family opens) — an additive
 rung defers the shared-`:6390` fence cutover by design.
 
 ## Foundation
@@ -65,7 +66,7 @@ The v1 surface rewritten state-of-the-art inside `echo_mq` under the v2 laws; no
 | [emq.3.4](./specs/emq1/emq.3/emq.3.rungs/emq.3.4.md) | 2026-06-15 | Flow failure-policy + bulk — `add_bulk/3` + `ignored_failures/3` + `policy_token/1`; the additive `@retry` dead-letter branch + `@flow_fail_deliver`; fail-parent / ignore-dependency policies. | 47→50 | HIGH | BUILD-GRADE |
 | [emq.3.5](./specs/emq1/emq.3/emq.3.rungs/emq.3.5.md) | 2026-06-15 | Grandchildren / deep recursion — `add_tree/3` (`validate_tree/4` acyclic + depth-8 cap), recursive failure hook; **all 19 `Script.new/2` bodies byte-identical** (no new Lua). **Closes Movement I.** | 50→52 | NORMAL | BUILD-GRADE |
 
-## Movement II · The Extension (the 2.x runway) — emq.4 groups family CLOSED (4.1–4.4) · emq.5+ ahead
+## Movement II · The Extension (the 2.x runway) — emq.4 groups family CLOSED (4.1–4.4) · emq.5 batches OPEN (5.1 the spine shipped)
 
 | Rung | Date | Delivered | Δ | Risk | Commit · fence |
 |---|---|---|---|---|---|
@@ -73,6 +74,7 @@ The v1 surface rewritten state-of-the-art inside `echo_mq` under the v2 laws; no
 | [emq.4.2](./specs/emq2/emq.4/emq.4.rungs/emq.4.2.md) | 2026-06-18 | Group-aware **recovery** — `reap_group/4` + `@greap_group` (the group-scoped stalled-sweep); the first rung under the **climbing fence**. | 54→55 | NORMAL | [ledger](./specs/progress/emq-4-2.progress.md) · `echomq:2.4.2` |
 | [emq.4.3](./specs/emq2/emq.4/emq.4.rungs/emq.4.3.md) | 2026-06-19 | The park-don't-poll **metronome** — `EchoMQ.Metronome` (a supervised process per queue owning the single `BLPOP emq:{q}:wake` block + an idle-consumer registry; fans readiness over BEAM messages, one byte-frozen `@gclaim` per idle consumer per wake; a pure `Metronome.Core`, owns no Valkey lease) + `EchoMQ.Consumer` rewired (register-idle → claim-once). **No conformance scenario** (a BEAM process/lease property, not a wire trace) — proven by the ≥100 determinism loop + a multi-consumer fairness harness. `@gclaim` / §6 grammar / `echo_wire` logic all unedited. | 59→59 | HIGH (Apollo) | `174e1d7f` · label `echomq:2.4.3` |
 | [emq.4.4](./specs/emq2/emq.4/emq.4.rungs/emq.4.4.md) | 2026-06-19 | Weighted/deficit **rotation + the starvation drill** (Fork B → Arm 2, additive multi-pop) — `@gwclaim` serves a serviceable lane `K = min(weight, ZCARD, glimit headroom)` heads per ring rotation on one server-clock lease; weight rides `emq:{q}:gweight` (a new `g`-segment HASH, an existing shape, no grammar edit) via `weight/4`, served by `wclaim/3`; `@gclaim`/`claim/3` byte-frozen so equal round-robin coexists. **Closes the emq.4 groups family.** | 59→61 | NORMAL+ | `361fd663` · label `echomq:2.4.4` |
+| [emq.5.1](./specs/emq2/emq.5/emq.5.rungs/emq.5.1.md) | 2026-06-20 | The **batch-claim spine** — `@bclaim` (a count-variant `ZPOPMIN emq:{q}:pending` loop ×N *inside* the script, the non-grouped generalization of `@gwclaim`: one `TIME`, one batch lease, per-member attempts; design §6.2, never a client `LMPOP`/`ZMPOP`) + `Jobs.claim_batch/4` (the manual-pull host API; an under-fill is a short batch, non-blocking; partial-failure isolation a tested property over the byte-frozen `@complete`/`@retry`). `@claim` + every shipped script byte-frozen. **Opens the emq.5 batches family.** | 61→64 | NORMAL | `bca36d0c` · label `echomq:2.5.0` |
 
 > *Fence note:* the per-rung climbing-fence numbering (`2.4.1`/`2.4.2`) was ratified at **emq.4.2-D3**
 > (superseding the earlier "fence frozen at `echomq:2.0.0`" framing); emq.4.1's own ledger predates the
