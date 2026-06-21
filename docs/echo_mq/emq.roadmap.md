@@ -18,11 +18,14 @@ The destination is **EchoMQ 3.0 — Streams Support**.
   target inherits those proofs; extending v1 in place would inherit the debt.
 - **What.** `echo/apps/echo_mq` (the BCS 2.0 Valkey-native bus, `EchoMQ.*`, lib-only) is THE single
   convergence target, with `echo/apps/echo_wire` (`EchoMQ.{RESP, Connector, Script}` frozen-named
-  under the `EchoWire` facade) beside it. The **protocol version climbs per rung** — the wire fence
-  and the `mix.exs` label move together — staying in the **2.x line** through Movement II
-  (`echomq:2.4.1`→`2.4.2`→…); the **`echomq:3.0.0` MAJOR is EchoMQ 3.0 — the Stream Tier**, ratified
-  when streams land. The legacy v1 line (frozen `1.3.0`) was **rewritten fresh into `echo_mq` and
-  removed** — single source of truth.
+  under the `EchoWire` facade) beside it. Every rung — through the families and **through the Stream
+  Tier** — is an **additive minor**: the new verbs register WITH their conformance probe, the
+  `mix.exs` **rung label** climbs (`echomq:2.5.2` live → `2.6.x` → …), and the connector's wire fence
+  **logic** stays frozen. The **`echomq:3.0.0` MAJOR is a DEFERRED cutover ratification** — declared
+  when the Stream Tier is whole, not forced at emq3.1 (the established defer-the-fence-cutover
+  pattern: the shared `:6390` fence-climb bricks co-tenants and the version number is contested, so an
+  additive rung defaults to NO climb). The legacy v1 line (frozen `1.3.0`) was **rewritten fresh into
+  `echo_mq` and removed** — single source of truth.
 - **Who.** The Operator owns the goal and every fork; the aaw lead team ships the rungs — **Venus**
   (spec-steward + strawman author) → **Director** (orchestrator; surfaces the design Arms and rules
   them with the Operator via the mandatory `AskUserQuestion`) → **Mars** (implementor) → **Director**
@@ -32,10 +35,16 @@ The destination is **EchoMQ 3.0 — Streams Support**.
   Telegram notifications at scale; the seam is `EchoBot.Platform.Telegram.send_reply/3`).
 - **When.** The foundation is **established** (`emq.0`). **Movement I is CLOSED** (emq.1 · the emq.2
   parity cluster · the emq.3 flow family — conformance **52/52**; deliverables in the
-  [changelog](./emq.changelog.md)). **Movement II (emq.4–emq.8) is the 2.x extension**, one increment
-  per run — **the emq.4 groups family is CLOSED** (4.1–4.4, conformance **61**); **emq.5 (batches) is CLOSED** — **5.1 spine + 5.2 shaping + 5.3 group-affinity + 5.4 the partitioned finish SHIPPED** (`@bclaim` +
-  `claim_batch/4` + `BatchConsumer` + `@gbclaim`/`bclaim/3` + `@delay`/`Jobs.delay/6` + `EchoMQ.BatchFinish`, conformance **73**, label `2.5.2`); **emq.6 (lifecycle controls) next**. **EchoMQ 3.0 — the Stream Tier — is the headline delivery that follows**, landing the
-  `3.0.0` major.
+  [changelog](./emq.changelog.md)). In Movement II (the 2.x extension) the two depth families landed:
+  **the emq.4 groups family is CLOSED** (4.1–4.4, conformance **61**) and **emq.5 (batches) is CLOSED**
+  — **5.1 spine + 5.2 shaping + 5.3 group-affinity + 5.4 the partitioned finish SHIPPED** (`@bclaim` +
+  `claim_batch/4` + `BatchConsumer` + `@gbclaim`/`bclaim/3` + `@delay`/`Jobs.delay/6` +
+  `EchoMQ.BatchFinish`, conformance **73**, label `2.5.2`, `be97a9bf`). **Re-sequenced
+  (Operator-ruled 2026-06-22): EchoMQ 3.0 — the Stream Tier (emq3.1–emq3.6) — is the ACTIVE
+  near-term delivery, ahead of the remaining 2.x rungs.** The Stream Tier hard-gates on `emq.0` ONLY
+  (met), so it opens unblocked; the remaining three families — **emq.6 (lifecycle controls) · emq.7
+  (the cache deepened) · emq.8 (the proof stack)** — are **DEFERRED behind it as a parked "2.x-runway
+  continuation"** (Operator-revisable, not deleted). **emq3.1 (the Stream Tier writer) is next.**
 - **Where.** Code: `echo/apps/{echo_wire, echo_mq, echo_store, echo_data}`, `echo/rungs/`. Specs:
   `docs/echo_mq/` (this roadmap · the design canon `emq.design.md` · the stream tier
   `emq.streams.md` · the references · the rung triads under `specs/`).
@@ -79,32 +88,54 @@ are in the [changelog](./emq.changelog.md); the wire/keyspace/lease invariants i
   proved at scale (groups, batches, lifecycle controls), the near-cache deepening, and the proof
   stack that turns engine claims into a parse.
 - **What** — five families, one rung each: **groups** (fair-lanes: control plane · group-aware
-  recovery · the park-don't-poll metronome · weighted/deficit rotation); **batches** (bulk
-  consumption, `min_size`/`timeout` shaping, affinity, the partitioned finish); **lifecycle
-  controls** (TTL per worker/name, distributed cancel, checkpoints); **the cache deepened** (BCAST
-  tracking, absorbed-fills compaction, `synchronous=FULL` per group, the invalidation-transport
-  evaluation — design §12.3's named reopening); **conformance + telemetry + the benchmark gate** (the
-  three-layer proof stack; the engine matrix; the published table with the rival's numbers recorded
-  beside EchoMQ's).
-- **Version** — each rung is an **additive minor** in the **2.x line** (the conformance count grows +
-  host verbs, no new wire class) **+ the one-line `@wire_version` + `mix.exs` bump**. The connector's
-  fence **logic** stays frozen (only the `@wire_version` **constant** moves); the **single-owner
-  wire** makes per-rung climbing safe (no external clients — connector + server deploy as a unit).
-  The `:fence` conformance scenario + `connector_test` are **version-agnostic** (assert the live key
-  `== Connector.wire_version()`). emq.8 closes the 2.x line; the `3.0.0` major is reserved for the
-  Stream Tier. *(Supersedes the earlier "two-planes / fence frozen at 2.0.0" framing — emq.4.2-D3.)*
-- **When** — after Movement I. The cache-deepening rung is least coupled to the machine and may be
-  pulled forward — an Operator call, recorded so it is a decision, not drift.
+  recovery · the park-don't-poll metronome · weighted/deficit rotation) — **CLOSED**; **batches**
+  (bulk consumption, `min_size`/`timeout` shaping, affinity, the partitioned finish) — **CLOSED**;
+  **lifecycle controls** (TTL per worker/name, distributed cancel, checkpoints) — **DEFERRED**;
+  **the cache deepened** (BCAST tracking, absorbed-fills compaction, `synchronous=FULL` per group, the
+  invalidation-transport evaluation — design §12.3's named reopening) — **DEFERRED**; **conformance +
+  telemetry + the benchmark gate** (the three-layer proof stack; the engine matrix; the published
+  table with the rival's numbers recorded beside EchoMQ's) — **DEFERRED**.
+- **Re-sequencing (Operator-ruled 2026-06-22).** The two depth families landed (groups · batches);
+  **the remaining three (lifecycle · cache · proof = emq.6/emq.7/emq.8) are DEFERRED behind the Stream
+  Tier as a parked "2.x-runway continuation"** — Operator-revisable, NOT deleted. The per-rung
+  conformance gates keep holding through the Stream Tier; deferring emq.8 parks the FORMAL 2.x
+  proof-stack *consolidation* (the engine matrix + the benchmark gate), a deferral of consolidation,
+  not a correctness gap.
+- **Version** — each rung is an **additive minor** (the conformance count grows + host verbs, no new
+  wire class) **+ the one-line `mix.exs` label bump**; the connector's fence **logic** stays frozen.
+  The **single-owner wire** makes per-rung climbing safe (no external clients — connector + server
+  deploy as a unit); the `:fence` conformance scenario + `connector_test` are **version-agnostic**
+  (assert the live key `== Connector.wire_version()`). The Stream Tier ships additive-minor on this
+  same plane; the **`echomq:3.0.0` major is a deferred cutover ratification**, declared when the
+  Stream Tier is whole — NOT auto-claimed by emq.8. *(Supersedes the earlier "two-planes / fence
+  frozen at 2.0.0" framing — emq.4.2-D3.)*
+- **When** — the two depth families shipped after Movement I; the remaining three rungs are now
+  **DEFERRED behind the Stream Tier** (Operator-ruled 2026-06-22). The cache-deepening rung (emq.7) is
+  least coupled to the machine and remains the most pull-forward-able of the parked three — an Operator
+  call, recorded so it is a decision, not drift.
 
-### EchoMQ 3.0 · The Stream Tier — the headline delivery
+### EchoMQ 3.0 · The Stream Tier — the active near-term delivery
 
 **EchoMQ 3.0 = Streams Support** — event streams on the certified wire, under the v2 laws, no second
-protocol. The `echomq:3.0.0` MAJOR is ratified when this tier lands. It **hard-gates on `emq.0`**
-(its verbs land on the extracted `echo_wire`; its archive lives in the `EchoStore.Graft` engine →
-Tigris — both closed at emq.0) and is **sequenced after Movement II** (the 2.x runway). Six rungs in
-three milestones — **S1 the writer** (`XADD`/`XRANGE`/`XREADGROUP`/`XACK`/`XAUTOCLAIM`, then
-`EchoMQ.Stream`: hash-tagged keys, branded record ids, append == mint order) → **S2 the readers** (a
-BEAM consumer group beside a non-BEAM reader, crash re-delivery, retention as declared `MAXLEN`/
+protocol. **Re-sequenced ahead of the 2.x-runway remainder (Operator-ruled 2026-06-22): this is the
+ACTIVE near-term delivery, not a post-Movement-II epilogue.**
+
+- **Independence — it hard-gates on `emq.0` ONLY** (met). Its verbs land on the extracted
+  `echo_wire`; its archive (emq3.5) lives in the native `EchoStore.Graft` engine → Tigris — both
+  closed at emq.0. Every Stream rung's "stands-on" surface (the [`emq.streams.md`](./emq.streams.md)
+  ladder) is closed: emq.0, the BCS substrate chapters (the Tables · the staleness fence · the
+  journal), and prior Stream rungs. **No Stream rung references emq.6/emq.7/emq.8 as a predecessor** —
+  "after Movement II" was a sequencing preference (the pull-forward power this roadmap already grants
+  — see *Dependencies, recorded*), never a hard dependency.
+- **Version plane — additive-minor; the cutover is deferred.** The stream verbs
+  (`XADD`/`XRANGE`/`XREADGROUP`/`XACK`/`XAUTOCLAIM`) are **additive registrations → a protocol minor**
+  by the additive-registration law (no wire break). The label trajectory continues additively
+  (`echomq:2.5.2` live → `2.6.x` → …); the **`echomq:3.0.0` MAJOR is a deferred cutover ratification**,
+  declared when the tier is whole — the defer-the-fence-cutover pattern, never forced at emq3.1.
+
+Six rungs in three milestones — **S1 the writer** (`XADD`/`XRANGE`/`XREADGROUP`/`XACK`/`XAUTOCLAIM`,
+then `EchoMQ.Stream`: hash-tagged keys, branded record ids, append == mint order) → **S2 the readers**
+(a BEAM consumer group beside a non-BEAM reader, crash re-delivery, retention as declared `MAXLEN`/
 `MINID` policy) → **S3 the memory** (segments folded into the Graft engine, box-loss restore,
 time-travel via mint-instant → `XRANGE`).
 
@@ -121,10 +152,10 @@ time-travel via mint-instant → `XRANGE`).
 | **emq.3** | I | the **parent/flow family** — single-queue → reads → cross-queue → failure-policy → grandchildren (emq.3.1–3.5) | ✅ CLOSED |
 | emq.4 | II | groups deepened: control plane, group-aware recovery, the park-don't-poll metronome, weighted/deficit rotation + the starvation drill | ✅ **CLOSED (4.1–4.4)** — control plane `@greassign`/`@gdrain` (`6bca0d6d`, HIGH) + group recovery `@greap_group` (`echomq:2.4.2`) + the **metronome** `EchoMQ.Metronome` (the metronome-as-system: one `BLPOP`-blocker per queue fans readiness to N pooled consumers over BEAM messages, `@gclaim` byte-frozen, no wire/§6 edit; `174e1d7f`, HIGH/Apollo — [decision](./kb/metronome-design/metronome-fork-decision.md)) + **weighted rotation** `@gwclaim`/`weight/4` + the starvation drill (`361fd663`, Fork B → Arm 2 additive, NORMAL+); **conformance 61**, wire fence `echomq:2.4.2`, label `2.4.4` |
 | emq.5 | II | batches: bulk consumption, `min_size`/`timeout` shaping, affinity, the partitioned finish | ✅ **CLOSED (5.1–5.4)** — 5.1 spine + 5.2 shaping + 5.3 affinity + 5.4 the partitioned finish + dynamic delay SHIPPED (`@bclaim` + `claim_batch/4` + `BatchConsumer` + `@gbclaim`/`bclaim/3` + `@delay`/`Jobs.delay/6` + `EchoMQ.BatchFinish`, **conformance 73**, label `2.5.2`, `be97a9bf`) → [carve](./specs/emq2/emq.5/emq.5.md) · [5.1](./specs/emq2/emq.5/emq.5.rungs/emq.5.1.md) · [5.2](./specs/emq2/emq.5/emq.5.rungs/emq.5.2.md) · [5.3](./specs/emq2/emq.5/emq.5.rungs/emq.5.3.md) · [5.4](./specs/emq2/emq.5/emq.5.rungs/emq.5.4.md) |
-| emq.6 | II | lifecycle controls: TTL per worker/name, distributed cancel, checkpoints | 📨 **NEXT** (planned abstract) — the batches family closed, emq.6 opens lifecycle controls |
-| emq.7 | II | the cache deepened: BCAST tracking, absorbed-fills compaction, `synchronous=FULL` per group, the invalidation-transport evaluation | 📋 planned abstract — may be pulled forward (Operator call) |
-| emq.8 | II | conformance + the engine matrix + the telemetry contract + the benchmark gate (the three-layer proof stack); **closes the 2.x line** | 📋 planned abstract |
-| **emq3.1–emq3.6** | **3.0** | **EchoMQ 3.0 — the Stream Tier** (S1 writer → S2 readers → S3 memory); lands the `echomq:3.0.0` major | 🔒 PROPOSED — gated on emq.0 (met), after Movement II ([`emq.streams.md`](./emq.streams.md)) |
+| **emq3.1–emq3.6** | **3.0** | **EchoMQ 3.0 — the Stream Tier** (S1 writer → S2 readers → S3 memory); ships additive-minor, the `echomq:3.0.0` major a deferred cutover ratification | 📨 **ACTIVE / NEXT** — re-sequenced ahead of the 2.x remainder (Operator-ruled 2026-06-22); gated on emq.0 (met); **emq3.1 next** ([`emq.streams.md`](./emq.streams.md)) |
+| emq.6 | II | lifecycle controls: TTL per worker/name, distributed cancel, checkpoints | 🅿️ **DEFERRED** — parked behind the Stream Tier (2.x-runway continuation, Operator-revisable) |
+| emq.7 | II | the cache deepened: BCAST tracking, absorbed-fills compaction, `synchronous=FULL` per group, the invalidation-transport evaluation | 🅿️ **DEFERRED** — parked behind the Stream Tier; the most pull-forward-able of the three (Operator call) |
+| emq.8 | II | conformance + the engine matrix + the telemetry contract + the benchmark gate (the three-layer proof stack); **closes the 2.x line** | 🅿️ **DEFERRED** — parked behind the Stream Tier; defers the FORMAL 2.x proof-stack consolidation (per-rung gates still hold) |
 
 Rungs are one-increment-one-run; every rung's pre-build reconcile re-trues its abstract against the
 as-built tree before its triad is authored. **The old ladder → this ladder** (the design's §4/§10
@@ -147,13 +178,15 @@ reported with the reason).
 
 The fork happened exactly once — the v2 key universe is grammar-total (braced `emq:{q}:`, the
 first-byte-disjoint `{emq}:` reserve, the gated branded `job:` position), every Lua key
-declared-or-rooted, and the version record (`{emq}:version`) **climbs per rung behind the five-code
-fence** — born `echomq:2.0.0` at the emq.1 fork, advancing one minor each Movement II rung
-(`echomq:2.4.2` live), reaching the **`echomq:3.0.0` major with the Stream Tier**. **No later rung
-re-breaks the wire**: additive registration is a protocol minor; a wire break or computed-floor raise
-is a major (design §1 S-3, §6). Claims are phrased against **Valkey, current stable line**, enforced
-as a gate, with honest-row reporting (§1 S-4). Process laws bind every rung: per-app testing only
-(umbrella-wide `mix test` BANNED — D7), agents run no git (D8), the Director commits by pathspec.
+declared-or-rooted, and every rung is an **additive minor**: the `mix.exs` **rung label** climbs (born
+`echomq:2.0.0` at the emq.1 fork, `echomq:2.5.2` live) while the connector's wire fence **logic** stays
+frozen behind the five-code fence. The Stream Tier ships on this same additive plane; the
+**`echomq:3.0.0` major is a DEFERRED cutover ratification**, declared when the Stream Tier is whole —
+not auto-claimed by any single rung. **No later rung re-breaks the wire**: additive registration is a
+protocol minor; a wire break or computed-floor raise is a major (design §1 S-3, §6). Claims are phrased
+against **Valkey, current stable line**, enforced as a gate, with honest-row reporting (§1 S-4). Process
+laws bind every rung: per-app testing only (umbrella-wide `mix test` BANNED — D7), agents run no git
+(D8), the Director commits by pathspec.
 
 ## Seams & open decisions
 
@@ -167,15 +200,35 @@ as a gate, with honest-row reporting (§1 S-4). Process laws bind every rung: pe
    surface over bus + cache + journal. Held at the program's seam, slotted only by a checkpoint ruling.
 3. **Toolchain** — build briefs RE-PROBE `asdf current erlang` rather than hardcoding; a toolchain
    switch implies a full rebuild before gates.
+4. **The deferred 2.x runway** (Operator-ruled 2026-06-22) — emq.6 (lifecycle controls) · emq.7 (the
+   cache deepened) · emq.8 (the proof stack) are **parked behind the Stream Tier**, Operator-revisable,
+   not deleted. Deferring emq.8 parks the FORMAL 2.x proof-stack consolidation (the engine matrix + the
+   benchmark gate); the per-rung conformance gates keep holding through the Stream Tier, so this is a
+   deferral of consolidation, not a correctness gap. The Operator may un-park any of the three by call,
+   recorded so it is a decision, not drift.
 
 ## Dependencies, recorded
 
 - **emq.0 is the spine.** The extracted wire (`echo_wire`) and the store's durable engine
   (`EchoStore.Graft` → Tigris) are the universal predecessors — Movement I, Movement II, and the
   entire Stream Tier stand on them.
-- **The Stream Tier (EchoMQ 3.0) hard-gates on emq.0** (verbs on the extracted wire; archive in the
-  `Graft` engine) and is sequenced after Movement II. The ladder + the derived needs are in
-  [`emq.streams.md`](./emq.streams.md).
+- **The Stream Tier (EchoMQ 3.0) hard-gates on emq.0 ONLY** (verbs on the extracted wire; archive in
+  the `Graft` engine). The ladder + the derived needs are in [`emq.streams.md`](./emq.streams.md).
+- **The independence verdict (recorded 2026-06-22).** Every Stream rung's "stands-on" surface is
+  closed at the point of re-sequencing: emq.0, the BCS substrate chapters (the Tables · the staleness
+  fence · the journal — `echo_store`/`echo_data` as-built), and prior Stream rungs. **No Stream rung
+  names emq.6/emq.7/emq.8 as a predecessor.** The earlier "after Movement II" line was a SEQUENCING
+  preference, not a hard dependency — and this roadmap already grants the Operator the power to pull a
+  rung forward (the Movement II *When* bullet: "may be pulled forward — an Operator call, recorded so
+  it is a decision, not drift"). The re-sequencing exercises that recorded permission.
+- **The re-sequencing decision (Operator-ruled 2026-06-22).** The Stream Tier is moved AHEAD of the
+  remaining 2.x rungs (emq.6/emq.7/emq.8), which are deferred behind it as a parked
+  "2.x-runway continuation" (Operator-revisable, not deleted). **emq3.1 is next.**
+- **Two honest caveats (deferrals, not blockers).** (a) emq3.5's archive stands on the native
+  `EchoStore.Graft` engine — re-true that exact readiness at emq3.5's pre-build reconcile; emq3.1–3.4
+  do NOT touch the archive, so the tier opens unblocked. (b) Deferring emq.8 parks the FORMAL 2.x
+  proof-stack consolidation (the engine matrix, the benchmark gate) — the per-rung conformance gates
+  keep holding through the Stream Tier; a deferral of consolidation, not a correctness gap.
 
 ---
 

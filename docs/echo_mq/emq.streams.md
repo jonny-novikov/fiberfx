@@ -1,8 +1,19 @@
 # EchoMQ 3.0 — The Stream Tier
 
-**Status: 🔒 PROPOSED** — the headline next-major delivery. Gated on `emq.0` (met), sequenced after
-Movement II; lands the **`echomq:3.0.0`** major. This is the high-level spec; each rung is
-spec-triad-first under the program loop, and no number is claimed here before its rung commits it.
+**Status: 📨 ACTIVE / NEXT** — the active next-major delivery, **re-sequenced ahead of the 2.x-runway
+remainder (Operator-ruled 2026-06-22)**. Gated on `emq.0` ONLY (met); `emq3.1` is next. This is the
+high-level spec; each rung is still spec-triad-first under the program loop, and no number is claimed
+here before its rung commits it.
+
+## Version plane
+
+The tier ships **additive-minor**: the stream verbs (`XADD` / `XRANGE` / `XREADGROUP` / `XACK` /
+`XAUTOCLAIM`) are additive registrations → a protocol **MINOR** by the additive-registration law (no
+wire break), each landing WITH its conformance probe. The `mix.exs` rung label continues additively
+(`echomq:2.5.2` live → `2.6.x` → …). The **`echomq:3.0.0` MAJOR is a DEFERRED cutover ratification** —
+declared when the tier is whole, not forced at `emq3.1` — per the established defer-the-fence-cutover
+pattern (the shared `:6390` fence-climb bricks co-tenants and the version number is contested, so an
+additive rung defaults to NO climb).
 
 ## The needs, derived
 

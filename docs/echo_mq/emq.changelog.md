@@ -34,6 +34,7 @@ re-pinned in two tests.
 64  +batch claim       emq.5.1                  the batches spine (batch_claim · batch_claim_short · batch_partial_failure, +3) · label 2.5.0 · ══ emq.5 batches OPEN
 67  +batch shaping     emq.5.2                  the min_size/timeout cadence (batch_shaping_floor · batch_shaping_timeout · batch_shaping_partial_failure, +3) · label 2.5.0 held
 70  +group batch       emq.5.3                  the group-affinity batch (grouped_batch_affinity · grouped_batch_ceiling · grouped_batch_fairness, +3) · label 2.5.1
+73  +batch finish      emq.5.4                  the partitioned finish + dynamic delay (batch_partition · batch_delay · batch_delay_stale, +3) · label 2.5.2 · ══ emq.5 batches CLOSED
 ```
 
 The **`ewr.1.x` client-core** registers no conformance scenario — that count was emq-owned and
@@ -42,7 +43,7 @@ byte-stable across those rungs (`ewr.1.4` reflected `{:ok, 55}` and froze no num
 expiry, `[echo_mq]` commits) and DID register four scenarios (55→59), recorded in the spine above and
 on its own ladder ([`ewr4.roadmap.md`](./wire/ewr4.roadmap.md)). The **two version planes** hold from
 emq.4.2 on: the wire `@wire_version` is FROZEN at `echomq:2.4.2` (the connector constant, read on
-connect), while the `mix.exs` **rung label** climbs (2.4.3 at emq.4.3, 2.4.4 at emq.4.4, 2.5.0 at emq.5.1 — the batches family opens; held at 2.5.0 through emq.5.2, a host-process rung; 2.5.1 at emq.5.3, the next within-family patch) — an additive
+connect), while the `mix.exs` **rung label** climbs (2.4.3 at emq.4.3, 2.4.4 at emq.4.4, 2.5.0 at emq.5.1 — the batches family opens; held at 2.5.0 through emq.5.2, a host-process rung; 2.5.1 at emq.5.3, the next within-family patch; 2.5.2 at emq.5.4, the batches-family closer) — an additive
 rung defers the shared-`:6390` fence cutover by design.
 
 ## Foundation
@@ -68,7 +69,7 @@ The v1 surface rewritten state-of-the-art inside `echo_mq` under the v2 laws; no
 | [emq.3.4](./specs/emq1/emq.3/emq.3.rungs/emq.3.4.md) | 2026-06-15 | Flow failure-policy + bulk — `add_bulk/3` + `ignored_failures/3` + `policy_token/1`; the additive `@retry` dead-letter branch + `@flow_fail_deliver`; fail-parent / ignore-dependency policies. | 47→50 | HIGH | BUILD-GRADE |
 | [emq.3.5](./specs/emq1/emq.3/emq.3.rungs/emq.3.5.md) | 2026-06-15 | Grandchildren / deep recursion — `add_tree/3` (`validate_tree/4` acyclic + depth-8 cap), recursive failure hook; **all 19 `Script.new/2` bodies byte-identical** (no new Lua). **Closes Movement I.** | 50→52 | NORMAL | BUILD-GRADE |
 
-## Movement II · The Extension (the 2.x runway) — emq.4 groups family CLOSED (4.1–4.4) · emq.5 batches OPEN (5.1 spine + 5.2 shaping + 5.3 group-affinity shipped)
+## Movement II · The Extension (the 2.x runway) — emq.4 groups family CLOSED (4.1–4.4) · emq.5 batches family CLOSED (5.1–5.4)
 
 | Rung | Date | Delivered | Δ | Risk | Commit · fence |
 |---|---|---|---|---|---|
@@ -79,6 +80,7 @@ The v1 surface rewritten state-of-the-art inside `echo_mq` under the v2 laws; no
 | [emq.5.1](./specs/emq2/emq.5/emq.5.rungs/emq.5.1.md) | 2026-06-20 | The **batch-claim spine** — `@bclaim` (a count-variant `ZPOPMIN emq:{q}:pending` loop ×N *inside* the script, the non-grouped generalization of `@gwclaim`: one `TIME`, one batch lease, per-member attempts; design §6.2, never a client `LMPOP`/`ZMPOP`) + `Jobs.claim_batch/4` (the manual-pull host API; an under-fill is a short batch, non-blocking; partial-failure isolation a tested property over the byte-frozen `@complete`/`@retry`). `@claim` + every shipped script byte-frozen. **Opens the emq.5 batches family.** | 61→64 | NORMAL | `bca36d0c` · label `echomq:2.5.0` |
 | [emq.5.2](./specs/emq2/emq.5/emq.5.rungs/emq.5.2.md) | 2026-06-21 | **`min_size`/`timeout` batch shaping** — `EchoMQ.BatchConsumer` (a NEW watch-depth process, a SIBLING of `Consumer`) flushes ONE batch when a size floor (`min_size`) or a latency ceiling (`timeout`) is reached, draining via the byte-frozen `claim_batch/4`; the flush decision is a pure `EchoMQ.BatchShaper.Core` (`decide/4`, an injected clock); a per-member verdict map `%{id => :ok \| {:error, reason}}` with an absent member fail-safe-retrying. **No new Lua/lease/key/wire edit.** | 64→67 | NORMAL | `60de5dc8` · label `echomq:2.5.0` |
 | [emq.5.3](./specs/emq2/emq.5/emq.5.rungs/emq.5.3.md) | 2026-06-21 | **Group-affinity batch** — `@gbclaim` (a NEW additive lane script beside `@gwclaim`) rotates the fair-lanes ring (`LMOVE`) and serves a HOMOGENEOUS batch from the landed lane up to the `glimit` headroom (`K = min(depth, headroom)`, one `TIME`, one shared lease, `gactive += served`, the re-ring guard) + `Lanes.bclaim/3`; the `@gwclaim` isomorph minus the `gweight` read (ring-rotated, no caller group — extensible to caller-named affinity later). Reuses `gactive`; every shipped `@g*`/`@bclaim` byte-frozen. **No new key/wire edit; the ≥100 determinism loop 100/100.** | 67→70 | NORMAL+ | `a299aa73` · label `echomq:2.5.1` |
+| [emq.5.4](./specs/emq2/emq.5/emq.5.rungs/emq.5.4.md) | 2026-06-21 | **The partitioned finish + dynamic delay** — a NEW minimal atomic `@delay` (the inverse of `@claim`: `active`→`scheduled`, releases the lease, mints nothing, attempts PRESERVED by omission) + token-fenced `Jobs.delay/6` (`:in`/`:at` modes; the `attempts` counter IS the fence) + a NEW pure `EchoMQ.BatchFinish.partition/2` → `%{completed, retried, dead, delayed}` (`dead` EMERGES from the `@retry` `{:ok,:dead}` outcome — un-spoofable) + the `{:delay, ms}` branch in `BatchConsumer`'s settle. Every shipped script byte-frozen (`jobs.ex` +115/-0); `@wire_version` frozen `echomq:2.4.2`. **Closes the emq.5 batches family.** | 70→73 | NORMAL | `be97a9bf` · label `echomq:2.5.2` |
 
 > *Fence note:* the per-rung climbing-fence numbering (`2.4.1`/`2.4.2`) was ratified at **emq.4.2-D3**
 > (superseding the earlier "fence frozen at `echomq:2.0.0`" framing); emq.4.1's own ledger predates the
