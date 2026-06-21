@@ -1,7 +1,7 @@
 defmodule EchoMQ.ConformanceScenariosTest do
   @moduledoc """
   The pure half of the Conformance row (echo2-migration.md §5): the
-  scenario registry pinned — sixty-seven names in run order (the eighteen
+  scenario registry pinned — seventy names in run order (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -20,7 +20,10 @@ defmodule EchoMQ.ConformanceScenariosTest do
   stalled-sweep reap_group), the emq.5.1 batch-claim spine's three
   (batch_claim, batch_claim_short, batch_partial_failure), and the emq.5.2
   batch-shaping cadence's three (batch_shaping_floor, batch_shaping_timeout,
-  batch_shaping_partial_failure)). The wire half (`run/2 → {:ok, 67}`) lives in
+  batch_shaping_partial_failure), and the emq.5.3 grouped batch's three (the
+  affinity batch grouped_batch_affinity, the glimit-headroom ceiling
+  grouped_batch_ceiling, and the fairness interleaving witness
+  grouped_batch_fairness)). The wire half (`run/2 → {:ok, 70}`) lives in
   `conformance_run_test.exs` behind the `:valkey` tag.
   """
   use ExUnit.Case, async: true
@@ -94,10 +97,13 @@ defmodule EchoMQ.ConformanceScenariosTest do
     :batch_partial_failure,
     :batch_shaping_floor,
     :batch_shaping_timeout,
-    :batch_shaping_partial_failure
+    :batch_shaping_partial_failure,
+    :grouped_batch_affinity,
+    :grouped_batch_ceiling,
+    :grouped_batch_fairness
   ]
 
-  test "scenarios/0 answers exactly the sixty-seven names in run order" do
+  test "scenarios/0 answers exactly the seventy names in run order" do
     assert Keyword.keys(Conformance.scenarios()) == @run_order
   end
 

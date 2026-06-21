@@ -128,6 +128,77 @@ defmodule EchoMQ.Lanes do
            return served
            """)
 
+  # The grouped (affinity-respecting) batch claim: @gwclaim's grouped multi-pop
+  # re-used as a NEW parallel script (emq.5.3-D1, FORK 5.3-A Arm 1 -- additive;
+  # @gwclaim/@gclaim stay byte-frozen). One LMOVE rotates the ring exactly once
+  # (the same rota step as @gclaim:38 / @gwclaim:88), then the rotated lane is
+  # served a homogeneous batch in this one atomic turn -- every member of the
+  # batch comes from THAT one lane (INV-Affinity). The ONLY semantic delta over
+  # @gwclaim is the meaning of K: @gwclaim's K is the lane's WEIGHT (a fairness
+  # throughput share, read from gweight); @gbclaim's K is the lane's full
+  # concurrency HEADROOM -- ring-rotated, no caller size, the operator does not
+  # pick the group (FORK 5.3-C Arm 1, bclaim/3). So @gbclaim drops the gweight
+  # read entirely; K = min(the lane's pending depth, the glimit HEADROOM).
+  #
+  # The glimit headroom clamp is the same load-bearing ceiling as @gwclaim's: the
+  # batch must NEVER push gactive past glimit (INV-Ceiling), so K is bounded by
+  # (lim - cur) when a limit is set. A lane with NO glimit set is bounded by its
+  # depth alone (its whole backlog is serviceable -- the @gwclaim no-limit case).
+  # With no headroom the lane is at its ceiling: it is de-ringed (the @gwclaim:106
+  # / @gclaim:55 guard) and skipped, nothing served. The served jobs all share ONE
+  # lease deadline computed once from the server clock (the @gclaim:50-52 TIME
+  # pattern -- no host timestamp crosses the lease, INV-ServerClock). gactive is
+  # incremented by the ACTUAL count served (HINCRBY by k -- the @gwclaim:122
+  # form), then the post-increment re-ring guard runs once (the @gwclaim:123-127
+  # ceiling + empty-lane test). Returns a NESTED array of the K served tuples
+  # {id, payload, attempts, group} (each isomorphic to @gclaim's flat return); an
+  # empty ring, a lane emptied since the LMOVE, or a lane with no headroom all
+  # return {} (the host maps to :empty). KEYS[1]=ring and KEYS[2]=active are the
+  # only braced keys -- they PIN the {q} slot; the lane (ARGV[1]..'g:'..g..
+  # ':pending'), gactive, and glimit all derive from the declared base root ARGV[1]
+  # by the registered grammar (the @gwclaim:90,100,122 convention -- an ARGV base
+  # is slot-sound ONLY because KEYS pin the slot, A-1/L-1). emq.5.3-D1.
+  @gbclaim Script.new(:gbclaim, """
+           local g = redis.call('LMOVE', KEYS[1], KEYS[1], 'LEFT', 'RIGHT')
+           if not g then return {} end
+           local lane = ARGV[1] .. 'g:' .. g .. ':pending'
+           local depth = redis.call('ZCARD', lane)
+           if depth == 0 then
+             redis.call('LREM', KEYS[1], 0, g)
+             return {}
+           end
+           local k = depth
+           local lim = redis.call('HGET', ARGV[1] .. 'glimit', g)
+           if lim then
+             local cur = tonumber(redis.call('HGET', ARGV[1] .. 'gactive', g) or '0')
+             local headroom = tonumber(lim) - cur
+             if headroom < k then k = headroom end
+           end
+           if k <= 0 then
+             redis.call('LREM', KEYS[1], 0, g)
+             return {}
+           end
+           local t = redis.call('TIME')
+           local now = t[1] * 1000 + math.floor(t[2] / 1000)
+           local served = {}
+           for _ = 1, k do
+             local popped = redis.call('ZPOPMIN', lane)
+             local id = popped[1]
+             local jk = ARGV[1] .. 'job:' .. id
+             local att = redis.call('HINCRBY', jk, 'attempts', 1)
+             redis.call('HSET', jk, 'state', 'active')
+             redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]), id)
+             served[#served + 1] = {id, redis.call('HGET', jk, 'payload'), att, g}
+           end
+           local act = redis.call('HINCRBY', ARGV[1] .. 'gactive', g, k)
+           if lim and act >= tonumber(lim) then
+             redis.call('LREM', KEYS[1], 0, g)
+           elseif redis.call('ZCARD', lane) == 0 then
+             redis.call('LREM', KEYS[1], 0, g)
+           end
+           return served
+           """)
+
   # The weight-set script: write the lane's fair-share weight into the gweight
   # HASH (KEYS[1], group -> weight). A weight change never alters a lane's
   # serviceability (serviceable = nonempty AND unpaused AND below-limit, all
@@ -286,6 +357,57 @@ defmodule EchoMQ.Lanes do
       argv = [Keyspace.queue_key(queue, ""), Integer.to_string(lease_ms)]
 
       case Connector.eval(conn, @gwclaim, keys, argv) do
+        {:ok, []} -> :empty
+        {:ok, served} when is_list(served) -> {:ok, Enum.map(served, &List.to_tuple/1)}
+        other -> other
+      end
+    end
+  end
+
+  @doc """
+  The grouped (affinity-respecting) batch claim: rotate the ring one step and
+  serve the rotated lane a HOMOGENEOUS batch in one atomic turn -- every member
+  of the batch belongs to the ONE group the rotation landed on (the bulk-consume
+  axis of the fair-lanes ring -- emq.5.3-D1). The grouped counterpart of the flat
+  `EchoMQ.Jobs.claim_batch/4` (which serves a cross-group batch from the flat
+  `pending` set): `claim_batch/4` bypasses the ring's per-group `gactive`
+  accounting, whereas `bclaim/3` draws from a SINGLE lane and counts the batch
+  against that group's ceiling, so bulk consume coexists with fairness.
+
+  Ring-rotated, NOT caller-named (FORK 5.3-C Arm 1): the operator does NOT pass a
+  group -- the rotation picks it (fairness-by-construction, the `claim/3`/
+  `wclaim/3` round-robin), and the served count is the lane's full `glimit`
+  HEADROOM, the direct `wclaim/3` shape with the lane's depth in place of its
+  weight. K = `min(lane depth, glimit headroom)`. A lane with no `glimit` set is
+  served its whole depth; a lane at its ceiling (no headroom) is de-ringed and
+  serves nothing.
+
+  The near-isomorph of `wclaim/3` -- the only delta is K's source: `wclaim/3`
+  reads the lane's `gweight` (a throughput share), `bclaim/3` uses the `glimit`
+  headroom (the concurrency room). Each served job is leased on the server clock
+  (the shipped `@gclaim`/`@gwclaim` `TIME` lease); the served jobs share the one
+  lease deadline of this turn. `gactive` is incremented by the ACTUAL count served
+  and the `glimit` headroom clamp guarantees a batch NEVER pushes `gactive` past
+  `glimit` (INV-Ceiling). The queue-wide pause flag (`EchoMQ.Jobs.paused?/2`,
+  set by `EchoMQ.Admin.pause/2`) is honored FIRST -- a queue-wide pause stops the
+  grouped batch too, answering `:empty` with the lanes untouched (the `claim/3`/
+  `wclaim/3`/`claim_batch/4` precedent). Answers `{:ok, [{id, payload, attempts,
+  group}, ...]}` with one tuple per served member (the `wclaim/3` 4-tuple shape),
+  or `:empty` (an empty ring, a lane emptied since the rotation, or a lane with no
+  concurrency headroom -- it is de-ringed and skipped). The batch is a CLAIM unit,
+  not a resolution unit: each member is settled independently over the byte-frozen
+  `EchoMQ.Jobs.complete/5`/`retry/7` (the emq.5.1 partial-failure model). A grouped
+  batch CONSUMER riding this is a carried follow-up (emq.5.2's `BatchConsumer`
+  shapes the flat set), not built here. emq.5.3-D1.
+  """
+  def bclaim(conn, queue, lease_ms) when is_integer(lease_ms) and lease_ms > 0 do
+    if EchoMQ.Jobs.paused?(conn, queue) do
+      :empty
+    else
+      keys = [Keyspace.queue_key(queue, "ring"), Keyspace.queue_key(queue, "active")]
+      argv = [Keyspace.queue_key(queue, ""), Integer.to_string(lease_ms)]
+
+      case Connector.eval(conn, @gbclaim, keys, argv) do
         {:ok, []} -> :empty
         {:ok, served} when is_list(served) -> {:ok, Enum.map(served, &List.to_tuple/1)}
         other -> other

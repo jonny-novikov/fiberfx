@@ -152,14 +152,17 @@ defmodule EchoMQ.Conformance do
       batch_partial_failure: "partial-failure isolation: one member of a claimed batch retried (scheduled, last_error kept) leaves the rest free to complete; after promote a fresh batch finds ONLY the poison at attempts 2 -- the batch is a claim unit, resolved over the byte-frozen @complete/@retry, not a resolution unit (emq.5.1)",
       batch_shaping_floor: "the size-floor flush: a queue flooded to >= min_size makes the pure shaper decide {:flush, depth}, the cadence drains ONE batch of >= min_size via the byte-frozen claim_batch/4 over flat pending, settling each member -- the floor leg of min_size/timeout shaping (emq.5.2)",
       batch_shaping_timeout: "the latency-ceiling flush: a trickle of M < min_size held until timeout makes the shaper decide {:flush, M} against an INJECTED clock (the partial, < min_size); below the ceiling it is :wait; an empty window (depth 0) at the ceiling flushes nothing -- the soft floor, bounded by timeout, no real-time flake (emq.5.2)",
-      batch_shaping_partial_failure: "the partial-failure isolation through the cadence: the batch handler's per-member verdict map fails one member (retried, last_error kept) and completes the rest, an ABSENT member fail-safe-retries (missing verdict), each member emitting its own per-member lifecycle event -- emq.5.1's isolation driven by the shaping consumer's verdict mapping (emq.5.2)"
+      batch_shaping_partial_failure: "the partial-failure isolation through the cadence: the batch handler's per-member verdict map fails one member (retried, last_error kept) and completes the rest, an ABSENT member fail-safe-retries (missing verdict), each member emitting its own per-member lifecycle event -- emq.5.1's isolation driven by the shaping consumer's verdict mapping (emq.5.2)",
+      grouped_batch_affinity: "the affinity batch is HOMOGENEOUS: a ring-rotated grouped batch claim over two flooded branded lanes serves EVERY member from the ONE group the rotation landed on (the row group field and the lane both that group, never the sibling), each at attempts 1, all leased on ONE shared server-clock deadline -- the @gwclaim grouped multi-pop re-used, never the flat cross-group @bclaim (emq.5.3)",
+      grouped_batch_ceiling: "the glimit headroom clamp: a lane limited to 3 and flooded 8 deep serves EXACTLY 3 in one batch (gactive == glimit == 3, never over-popping past the ceiling), a second claim answers :empty (the lane de-ringed at its ceiling) until a complete frees headroom, then the freed slot serves again -- a grouped batch never pushes a group past its concurrency ceiling (emq.5.3)",
+      grouped_batch_fairness: "under sustained skew one HEAVY lane flooded deep and light lanes trickling, the ring-rotated grouped batch interleaves WITHIN a bounded EARLY window -- every light lane is served inside the first ring cycles while the heavy lane is still deep (the no-op-defeater: a FIFO/serve-heavy-first batch starves the light lanes early), and every lane drains to zero (the liveness floor) -- the emq.4.4-L1 interleaving witness for the grouped batch (emq.5.3)"
     ]
   end
 
   @doc """
   Runs all scenarios against `conn`, on sub-queues of `queue`. Prints one
   CONF line per scenario and a closing tally. Returns `{:ok, n}` when all
-  pass (n == 64 today -- the live total, grown by additive minor; the count is
+  pass (n == 70 today -- the live total, grown by additive minor; the count is
   re-pinned in both pinning tests, `conformance_run_test.exs` `{:ok, n}` and
   `conformance_scenarios_test.exs` `@run_order`), `{:error, failed_names}`
   otherwise. The set spans the eighteen state-machine scenarios, the emq.2
@@ -168,7 +171,10 @@ defmodule EchoMQ.Conformance do
   Movement II's groups family (the emq.4.1 control plane, the emq.4.2 group-aware
   recovery, the emq.4.4 weighted rotation + starvation drill), and -- since the
   batches family opened -- the emq.5.1 batch-claim spine's three (batch_claim,
-  batch_claim_short, batch_partial_failure).
+  batch_claim_short, batch_partial_failure), the emq.5.2 batch-shaping cadence's
+  three (batch_shaping_floor, batch_shaping_timeout, batch_shaping_partial_failure),
+  and the emq.5.3 grouped batch's three (grouped_batch_affinity,
+  grouped_batch_ceiling, grouped_batch_fairness).
   """
   def run(conn, queue) when is_binary(queue) do
     results =
@@ -2348,6 +2354,213 @@ defmodule EchoMQ.Conformance do
     end
   end
 
+  # The grouped (affinity-respecting) batch claim is HOMOGENEOUS (emq.5.3-D1,
+  # INV-Affinity): a ring-rotated grouped batch serves EVERY member from the ONE
+  # group the rotation landed on -- never a cross-group mix (a cross-group batch
+  # is the flat @bclaim, a different rung). The no-op-defeater: TWO branded lanes
+  # are flooded, one bclaim/3 is taken, and EVERY returned member's row `group`
+  # field must equal the served group (and the members must all come from that
+  # one lane's g:<g>:pending set, NONE from the sibling). The second proof is the
+  # ONE shared server-clock lease (the @gbclaim single TIME read -- INV-ServerClock):
+  # every served member carries the SAME active-set deadline (distinct deadlines
+  # would mean a per-member re-read). The groups are branded PRT ids gated pre-wire.
+  defp apply_scenario(:grouped_batch_affinity, conn, q) do
+    a = BrandedId.generate!("PRT")
+    b = BrandedId.generate!("PRT")
+    # flood two lanes; the batch must draw from exactly ONE of them
+    a_ids = for _ <- 1..5, do: enqueue_lane(conn, q, a, "ga")
+    b_ids = for _ <- 1..5, do: enqueue_lane(conn, q, b, "gb")
+
+    active = Keyspace.queue_key(q, "active")
+
+    case Lanes.bclaim(conn, q, 60_000) do
+      {:ok, served} when served != [] ->
+        served_groups = served |> Enum.map(fn {_id, _p, _att, g} -> g end) |> Enum.uniq()
+        served_ids = Enum.map(served, fn {id, _p, _att, _g} -> id end)
+
+        # every member's ROW group field, read back independently of the tuple
+        row_groups =
+          served_ids
+          |> Enum.map(fn id ->
+            case Connector.command(conn, ["HGET", Keyspace.job_key(q, id), "group"]) do
+              {:ok, g} -> g
+              _ -> nil
+            end
+          end)
+          |> Enum.uniq()
+
+        deadlines =
+          served_ids
+          |> Enum.map(fn id ->
+            case Connector.command(conn, ["ZSCORE", active, id]) do
+              {:ok, s} -> s
+              _ -> nil
+            end
+          end)
+
+        # the served group is whichever lane the rotation landed on
+        g = hd(served_groups)
+        sibling_ids = if g == a, do: b_ids, else: a_ids
+        own_ids = if g == a, do: a_ids, else: b_ids
+
+        cond do
+          # the tuple group is homogeneous -- one group across the whole batch
+          length(served_groups) != 1 -> {:fail, {:heterogeneous_tuple, served_groups}}
+          # the ROW group agrees, homogeneous, and equals the served group
+          row_groups != [g] -> {:fail, {:heterogeneous_row, row_groups}}
+          # every served id came from the served lane's flood, none from the sibling
+          not Enum.all?(served_ids, &(&1 in own_ids)) -> {:fail, {:not_from_lane, served_ids}}
+          Enum.any?(served_ids, &(&1 in sibling_ids)) -> {:fail, {:from_sibling, served_ids}}
+          # ONE shared lease deadline for the whole batch (a single TIME read)
+          length(Enum.uniq(deadlines)) != 1 or hd(deadlines) == nil ->
+            {:fail, {:not_one_shared_lease, deadlines}}
+
+          true ->
+            :ok
+        end
+
+      other ->
+        {:fail, {:empty_batch, other}}
+    end
+  end
+
+  # The glimit headroom clamp on the grouped batch (emq.5.3-D1, INV-Ceiling): the
+  # served count increments the group's gactive by the ACTUAL number served, and
+  # K is clamped by the glimit headroom so a batch NEVER pushes gactive past
+  # glimit. The no-op-defeater: a lane limited to 3 and flooded 8 deep serves
+  # EXACTLY 3 in one batch (an over-pop past the ceiling is a LOUD failure),
+  # gactive[g] == glimit == 3, and a SECOND claim answers :empty (the lane
+  # de-ringed at its ceiling, the @gbclaim k<=0 guard) -- until a complete/5 frees
+  # one slot, when the freed headroom serves again. The group is a branded PRT id.
+  defp apply_scenario(:grouped_batch_ceiling, conn, q) do
+    g = BrandedId.generate!("PRT")
+    :ok = Lanes.limit(conn, q, g, 3)
+    ids = for _ <- 1..8, do: enqueue_lane(conn, q, g, "gc")
+
+    gactive = Keyspace.queue_key(q, "gactive")
+
+    with {:ok, served} <- Lanes.bclaim(conn, q, 60_000),
+         # EXACTLY the headroom served -- never the full depth, never over the ceiling
+         true <- length(served) == 3 or {:fail, {:over_or_under_popped, length(served)}},
+         # the oldest-mint three, homogeneous in g (the lane is the unit)
+         claimed = Enum.map(served, fn {id, _p, _att, _grp} -> id end),
+         true <- claimed == Enum.take(ids, 3) or {:fail, {:not_mint_order, claimed}},
+         true <- Enum.all?(served, fn {_id, _p, _att, grp} -> grp == g end) or
+                   {:fail, {:not_homogeneous, served}},
+         # gactive charged to the ceiling exactly (== glimit)
+         {:ok, "3"} <- Connector.command(conn, ["HGET", gactive, g]),
+         # the lane is de-ringed at its ceiling: a second claim serves nothing
+         :empty <- Lanes.bclaim(conn, q, 60_000),
+         # free one slot -> the freed headroom serves again (the ring reopened)
+         {first_id, _fp, first_att, ^g} = hd(served),
+         :ok <- Jobs.complete(conn, q, first_id, first_att),
+         {:ok, [{next_id, _np, 1, ^g}]} <- Lanes.bclaim(conn, q, 60_000),
+         # the freed slot served the NEXT oldest-mint member, not a re-serve
+         true <- next_id == Enum.at(ids, 3) or {:fail, {:wrong_next, next_id}} do
+      :ok
+    else
+      {:fail, _} = f -> f
+      other -> {:fail, other}
+    end
+  end
+
+  # The grouped batch preserves fairness BY CONSTRUCTION (emq.5.3-D1, INV-Fairness,
+  # the emq.4.4-L1 carry): the ring-rotated grouped batch must NOT let a heavy lane
+  # monopolize the ring. The load-bearing no-op-defeater is INTERLEAVING within a
+  # bounded EARLY window (the starvation_drill shape, conformance.ex:1992-2073):
+  # with the heavy lane flooded DEEP, a FIFO / serve-heavy-to-exhaustion rotation
+  # serves ZERO from a light lane in the first handful of turns (STUCK at the heavy
+  # backlog), while the fair rotation reaches BOTH light lanes within the first ring
+  # cycles -- the drill goes RED under a no-rotation mutation. (A terminal depth-0
+  # check ALONE is a weak no-op-defeater: a drain-in-ring-order rotation also
+  # empties every lane eventually as the re-ring guard advances the head.) Each
+  # light lane starts with real backlog (the liveness floor); every served member
+  # is leased on the server clock (@gbclaim over TIME). Groups are branded PRT ids.
+  #
+  # NOTE: bclaim/3 is HEADROOM-bounded (no glimit set here), so a single batch on
+  # the heavy lane would drain its whole depth in one turn -- defeating the
+  # interleaving probe. A glimit on EVERY lane caps each batch to that lane's
+  # ceiling per turn, so the ring must rotate to make progress across lanes; the
+  # early window then witnesses the round-robin (the operator's real multi-tenant
+  # config -- every tenant has a concurrency ceiling).
+  defp apply_scenario(:grouped_batch_fairness, conn, q) do
+    heavy = BrandedId.generate!("PRT")
+    light1 = BrandedId.generate!("PRT")
+    light2 = BrandedId.generate!("PRT")
+    # a per-lane ceiling caps each batch per turn -> the ring must rotate to serve
+    # across lanes (without it a headroom-bounded batch drains the heavy lane whole)
+    :ok = Lanes.limit(conn, q, heavy, 2)
+    :ok = Lanes.limit(conn, q, light1, 2)
+    :ok = Lanes.limit(conn, q, light2, 2)
+
+    # flood the heavy lane DEEP; trickle each light lane a small steady backlog
+    for _ <- 1..40, do: enqueue_lane(conn, q, heavy, "h")
+    for _ <- 1..4, do: enqueue_lane(conn, q, light1, "l1")
+    for _ <- 1..4, do: enqueue_lane(conn, q, light2, "l2")
+
+    # the liveness floor: every light lane started with real backlog
+    {:ok, 4} = Lanes.depth(conn, q, light1)
+    {:ok, 4} = Lanes.depth(conn, q, light2)
+
+    active = Keyspace.queue_key(q, "active")
+
+    # THE INTERLEAVING WITNESS: drive a bounded early window, recording which lanes
+    # were served and proving every served member carried a TIME-derived lease.
+    # A ceiling of 2 means each lane yields 2 per turn then de-rings until a
+    # complete frees it -- so the batches must complete-and-reclaim to keep the
+    # ring live across the window (the worker drains then settles, the real loop).
+    {early, leased_ok} =
+      Enum.reduce(1..9, {MapSet.new(), true}, fn _, {seen, ok} ->
+        case Lanes.bclaim(conn, q, 60_000) do
+          {:ok, served} ->
+            leases =
+              Enum.all?(served, fn {id, _p, _att, _g} ->
+                match?({:ok, s} when not is_nil(s), Connector.command(conn, ["ZSCORE", active, id]))
+              end)
+
+            grps = Enum.map(served, fn {_id, _p, _att, g} -> g end)
+            # settle each served member so the lane's headroom reopens for the ring
+            Enum.each(served, fn {id, _p, att, _g} -> Jobs.complete(conn, q, id, att) end)
+            {MapSet.union(seen, MapSet.new(grps)), ok and leases}
+
+          :empty ->
+            {seen, ok}
+        end
+      end)
+
+    # drain the rest (the heavy lane's deep backlog) to prove every lane reaches
+    # zero (the liveness assertion), settling each batch to keep the ring live
+    Enum.reduce_while(1..200, nil, fn _, _ ->
+      case Lanes.bclaim(conn, q, 60_000) do
+        {:ok, served} ->
+          Enum.each(served, fn {id, _p, att, _g} -> Jobs.complete(conn, q, id, att) end)
+          {:cont, nil}
+
+        :empty ->
+          {:halt, nil}
+      end
+    end)
+
+    cond do
+      not leased_ok ->
+        {:fail, :no_server_clock_lease}
+
+      # the no-op-defeater: both light lanes were served INSIDE the early window
+      not (MapSet.member?(early, light1) and MapSet.member?(early, light2)) ->
+        {:fail, {:light_lane_starved_early, early}}
+
+      true ->
+        # the liveness assertion: every lane drained to zero
+        with {:ok, 0} <- Lanes.depth(conn, q, heavy),
+             {:ok, 0} <- Lanes.depth(conn, q, light1),
+             {:ok, 0} <- Lanes.depth(conn, q, light2) do
+          :ok
+        else
+          other -> {:fail, {:lane_not_drained, other}}
+        end
+    end
+  end
+
   # Map a per-member verdict map over the served batch exactly as
   # EchoMQ.BatchConsumer.settle/3 does -- the :ok members retire through the
   # byte-frozen complete/5, the {:error, reason} members retry through the
@@ -2597,6 +2810,17 @@ defmodule EchoMQ.Conformance do
 
   defp pairs(flat) when is_list(flat) do
     flat |> Enum.chunk_every(2) |> Map.new(fn [k, v] -> {k, v} end)
+  end
+
+  # Mint a fresh branded JOB id, enqueue it onto `group`'s lane through the
+  # shipped Lanes.enqueue/5, and return the id -- the grouped-lane flood idiom of
+  # the emq.4/emq.5.3 scenarios (the reassign/lane_drain/weighted_proportion
+  # precedent). The order theorem holds: successive ids are minted distinct and
+  # lexically ordered, so `for _ <- 1..n` yields the lane's mint-order backlog.
+  defp enqueue_lane(conn, q, group, payload) do
+    id = BrandedId.generate!("JOB")
+    {:ok, :enqueued} = Lanes.enqueue(conn, q, group, id, payload)
+    id
   end
 
   # Complete each member of a batch through the shipped, byte-frozen @complete
