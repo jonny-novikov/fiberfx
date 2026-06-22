@@ -32,7 +32,7 @@ Read the four-way result as positions, not numbers. Memory has no flush, so it s
 | Oban | Postgres sync commit | strict per-commit | 718 | 13,235 |
 | **Champ + Graft** | accept tier + commit → Tigris | **strict, replicated** | **pending eg.6 · per-workload** | **pending eg.6** |
 
-**Reading the table.** Figures are indicative single-core measurements against MinIO — positions on the dial above, not a portable benchmark. "Bulk" is durable-*enqueue* via a bulk write API (`insert_all`/`addBulk`), amortizing the fsync on the write side; `n/a` means the row needs no such API (Memory has no fsync; Champ already amortizes via K). EchoMQ's shipped batches (emq.5 `claim_batch`/`BatchConsumer`) are *claim/consume* batches — a delivery axis, durability-neutral — not this column. Champ + Graft is the two-tier design; its number is measured per-workload at `eg.6`, not asserted here.
+**Reading the table.** Figures are indicative single-core measurements against MinIO — positions on the dial above, not a portable benchmark. "Bulk" is durable-*enqueue* via a bulk write API (`insert_all`/`addBulk`), amortizing the fsync on the write side; `n/a` means the row needs no such API (Memory has no fsync; Champ already amortizes via K). EchoMQ's shipped batches (emq.5 `claim_batch`/`BatchConsumer`) are *claim/consume* batches — a delivery axis, durability-neutral — not this column. Champ + Graft is the two-tier design; its number is measured per-workload at `eg.6` — a rung deferred behind a fly.io deploy floor — so it stays pending, not asserted here.
 
 ## §3 References & sources { id="refs" }
 

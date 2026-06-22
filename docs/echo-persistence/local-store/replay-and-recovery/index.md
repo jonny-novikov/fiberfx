@@ -17,7 +17,7 @@ renders-to: "local-store/replay-and-recovery/index.html"
 
 ## §1 Recovery is not a special case { id="one" }
 
-Chapter II established that the log is append-only and immutable, so the state at any LSN is the log folded to that point, and old roots stay valid. The payoff this module collects is that recovery stops being special. Rebuilding a crashed process, bringing a lagging replica current, and streaming changes to a consumer are not three subsystems — they are one fold, `apply(commit)` repeated from a starting LSN to the head, parameterized only by where you begin and whether the bytes are local or pulled from object storage.
+Chapter II established that the log is append-only and immutable, so the state at any LSN is the log folded to that point, and old roots stay valid. The payoff this module collects is that recovery stops being special. Rebuilding a crashed process, bringing a lagging replica current, and streaming changes to a consumer are not three subsystems — they are one fold, `apply(commit)` repeated from a starting LSN to the head, parameterized only by where you begin and whether the bytes are local or pulled from object storage. The Stream Tier's archive fold (emq3.5) joins the same family rather than adding a fourth subsystem: its recovery is `replay(from_lsn, apply_fn)` from the archive watermark, one more cursor on the one log.
 
 ## §2 The three dives { id="dives" }
 

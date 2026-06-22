@@ -17,7 +17,7 @@ renders-to: "local-store/cubdb/index.html"
 
 ## §1 Two words do the work { id="write" }
 
-**Append-only** means a write never modifies an existing byte; it adds to the tail. That alone gives crash-safety — a torn final write is ignored, the last complete header wins — and makes a commit a single atomic act: write the header. **Immutable** means the B-tree is copy-on-write, so an update rewrites the path to the changed leaf as new nodes and leaves every old node, and old root, in place. Together they make old versions free to keep, the whole basis of Module 5. The cost is that the file only grows, so dead data must occasionally be swept — compaction.
+**Append-only** means a write never modifies an existing byte; it adds to the tail. That alone gives crash-safety — a torn final write is ignored, the last complete header wins — and makes a commit a single atomic act: write the header. **Immutable** means the B-tree is copy-on-write, so an update rewrites the path to the changed leaf as new nodes and leaves every old node, and old root, in place. Together they make old versions free to keep, the whole basis of Module 5. The cost is that the file only grows, so dead data must occasionally be swept — compaction. One more thing the single file quietly carries: its page axis is multiplexed — business pages, the outbox's reserved `@obx_base` range, and (forward-tense, at emq3.5) the Stream Tier's archive range all live in the same append-only file, and compaction's reachability sweep is indifferent to which range a page sits in.
 
 ## §2 The three dives { id="dives" }
 

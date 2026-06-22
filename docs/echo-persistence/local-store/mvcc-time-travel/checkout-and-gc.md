@@ -23,6 +23,8 @@ Scrub to open a version — you read the root current at that LSN, lock-free. Pi
 
 Checkout is free for the reason Dive 5.1 gave: the root and its nodes are still in the pool. Retention is the counterweight — without it the diffs pile up forever — so GC reclaims nodes no retained or pinned version can reach, the on-disk job compaction (Dive 4.3) performs. The safety rule is the point: a reader pinned at an old LSN keeps that root *and everything it reaches* alive, so GC computes liveness from active pins plus the retention window, never from age alone. Reclaim a pinned version and a reader would fault on a missing page; respect the pins and time travel stays sound. This is the machinery the change feed and replica catch-up sit on — and where Chapter III picks up, with the engines that turn these roots into replicated pages.
 
+One scoping note for later chapters: this is one of *two* retention watermarks the platform carries. This one is the engine's version-history GC — which old roots are reclaimable. The other is the Stream Tier's trim window (Module 11.2 / emq3.4) — how far the live stream has been cut. They are different axes over different data, coupled only by fold-then-trim (a slice is folded durably before the stream may trim past it); whether they should also share a value is an open design question, not asserted here.
+
 ## §3 References & sources { id="refs" }
 
 External:

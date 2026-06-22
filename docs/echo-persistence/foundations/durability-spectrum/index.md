@@ -19,7 +19,7 @@ renders-to: "foundations/durability-spectrum/index.html"
 
 A single number teaches little because it is one machine's answer to one question. What transfers is the **shape** and the **knob** behind it: throughput tracks how many durable records ride each fsync, so the whole spectrum is one tradeoff moved by one lever. Memory rides infinitely many records per fsync and loses everything; Oban rides one and loses nothing; Champ rides K, and sliding K walks the Champ point along the frontier.
 
-The far corner the figure marks — strict durability **and** high throughput — is unreachable for a single engine, which is why Echo Persistence splits the job into two tiers. The goal marker is where the course is headed, measured per-workload when the engines are benchmarked together (eg.6).
+The far corner the figure marks — strict durability **and** high throughput — is unreachable for a single engine, which is why Echo Persistence splits the job into two tiers. The goal marker is where the course is headed, measured per-workload when the engines are benchmarked together (eg.6 — deferred behind a fly.io deploy floor; the live frontier is the bus's Stream Tier).
 
 **On the numbers.** Where a figure appears in this course, it is an indicative single-core sandbox measurement against MinIO, shown to make a *relationship* concrete — never as a portable benchmark. Read the slope, not the digit.
 
