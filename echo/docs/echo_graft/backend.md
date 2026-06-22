@@ -102,9 +102,19 @@ conflicting commits split ack/`conflict`, a refused handshake touches no Volume.
 **live leg** swaps `InMemorySink` for the bus-backed sink and runs against a real
 Valkey :6390 — env-gated (`ECHO_GRAFT_BACKEND_TEST`), so the default suite needs no
 running bus, and an excluded leg is reported skipped, never trivially passed. A
-spawned test stands the backend up inside itself (a `live::serve` task) and tears it
-down at test end — a spawned process cannot leave a server running, so the proof is
-self-contained.
+spawned **Rust** test stands the backend up inside itself (a `live::serve` task on the
+test's own tokio runtime) and tears it down at test end via the `shutdown` channel —
+an in-process task cannot outlive its runtime, so that proof is self-contained.
+
+> The **Elixir** live leg is different: it spawns the compiled `backend_main` binary as
+> an Erlang `Port` (`{:spawn_executable, …}`) and closes the Port in `on_exit`. Closing a
+> Port shuts the pipe but does **not** signal the OS child, and `backend_main` shuts down
+> only on SIGINT or a closed serve loop (not stdin-EOF, see "The binary" below) — so the
+> spawned binary can **orphan** (reparent to `ppid 1`, holding its Valkey connections)
+> after the test exits. The gate's substance (a real round-trip) is unaffected; the
+> orphaned process is pre-existing reap hygiene, tracked for eg.6 ship-hardening (a
+> stdin-EOF watchdog in `backend_main` is the standard BEAM-port fix). Reap a stray with
+> `pkill -f target/debug/echo_graft_backend`.
 
 ## The binary — `backend_main`
 

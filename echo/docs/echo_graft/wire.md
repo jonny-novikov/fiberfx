@@ -65,7 +65,8 @@ The per-call durability mode rides the **`COMMIT` message itself**, not a separa
 
 - `Commit` gains a fixed-position `mode` field (`async` | `sync`) between `base` and
   the page count — `[COMMIT, corr, vid, base, mode, npages, (idx, page)*]`. The
-  strict-arity decoder reads the mode at index 3, then the page tail from index 5.
+  strict-arity decoder, indexing the fields **after the tag**, reads the mode at index
+  3 (`rest[3]`), then the page tail from index 5 (`rest[5..]`).
 - The mode is **always** on the wire; there is no mode-less `COMMIT`. The `:sync`
   default lives in the **client API** (`EchoStore.GraftBackend.commit/5` substitutes
   `:sync` when the caller omits `:mode`, then always encodes it) — never a
