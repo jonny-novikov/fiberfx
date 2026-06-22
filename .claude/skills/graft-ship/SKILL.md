@@ -120,13 +120,49 @@ $ARGUMENTS
   Stage 4 and 5), and the verify deepens (the dual-side conformance, the determinism loop on the commit/version
   surface, the full fence mutation battery). `eg.5` is NORMAL+; `eg.6` (cross-compile + CI + the shootout) is
   NORMAL.
-- **Right-size the formation.** If the rung's increment is already built and green (eg.1/eg.2/eg.3 were built
-  directly, solo), Stages 1–2 are **already done**: the run collapses to the Director's **independent verify +
-  the reconcile + (on request) the scoped commit**. Do not re-spawn a build team for built-and-green code —
-  rigor is constant; only ceremony scales.
+- **Right-size the formation via the topology router** (§Topology router below — **program v3.0**). Three named
+  formations — **L2 Duo / Trio / Squad** — keyed by *risk tier × build-state*: risk sets the floor (HIGH → Squad,
+  Apollo mandatory), build-state collapses the ceremony (a built-and-green rung re-spawns **no builder** and runs
+  only its remaining legs), and Mars BDD-phases red → green → **blue** (entering directly at the blue
+  refactor/harden/document pass on an already-green rung). **Rigor is constant; only ceremony scales.**
 - **The git posture is UNTRACKED-by-default.** The whole `echo/apps/echo_graft` + `docs/graft` tree is currently
   **untracked** on the jonnify `echo_mq` branch (eg.1–eg.3 shipped to the working tree, **not committed**). The
   default ship is **to the working tree — no commit unless the Operator asks** (§2).
+
+## Topology router — right-size the formation (program v3.0)
+
+The formation is **routed, not habitual**. Two inputs decide it: the rung's **risk tier** (NORMAL / NORMAL+ /
+HIGH — the §"risk tier decides the verify depth" bullet above) sets the **floor**; the **build-state** (unbuilt
+vs already-built-and-green) **collapses the ceremony**. Three named Flat-L2 formations — **rigor is constant
+across all three; only the ceremony scales**:
+
+| Formation | Active roles | Use when |
+|---|---|---|
+| **L2 Duo** | Director + **one** peer | A single-concern increment — a docs-only reconcile (Director + Venus), an already-green rung needing only the independent verify (Director + the one peer carrying the lone remaining concern), or a pure spec author (Director + Venus). One peer, one concern. |
+| **L2 Trio** | Director + Venus + Mars *(two-pass)* | The standard **NORMAL / NORMAL+** build: Venus reconcile/author + Arms → Director rules → Mars build + self-verify → Director verify → Mars harden. No dedicated evaluator; the Director's solo verify is the gate. |
+| **L2 Squad** | Director + Venus + Mars(-1/-2) + **Apollo** | The **HIGH-risk** formation (a new process/lease/wire surface, a destructive at-rest op, a cross-runtime contract — eg.4, eg.5). Adds the dedicated Apollo evaluator (post-build reconcile + adversarial verify + BUILD-GRADE) and the deepened verify (dual-side conformance, the determinism loop on the commit/version surface, the full fence/cap mutation battery). |
+
+**The router (apply at Bootstrap, §0 — before any spawn):**
+
+1. **Floor by risk.** HIGH → **Squad** (Apollo mandatory). NORMAL+ → **Trio**, Apollo RECOMMENDED — escalate to
+   Squad if a live/destructive surface lands mid-build (the eg.5 precedent: NORMAL+ → HIGH when the live socket
+   was ruled in, D-1). NORMAL → **Trio**, or **Duo** when the rung is a genuine single concern.
+2. **Collapse by build-state.** If the increment is already built + green, the build legs (Venus *author*,
+   Mars-1 *build*) are **spent** — the chosen formation runs only its **remaining** legs (verify · reconcile ·
+   blue-phase harden · evaluate · ship). **Re-spawn no builder for built-and-green code.** A HIGH rung that is
+   already green is still a Squad — Apollo's verdict is non-negotiable on HIGH — but a *collapsed* Squad (no
+   Mars-1; the Director's independent verify already stands).
+3. **BDD-phase Mars.** Mars runs the BDD cycle: **red** (a failing test pins the increment) → **green** (the
+   smallest change that passes) → **blue** (Mars-2: refactor + harden + document, **under green**, net-zero
+   behaviour/wire). On an already-green rung Mars enters **directly at the blue phase** — the
+   refactor/harden/document pass over the green baseline.
+
+**Worked example — eg.5:** HIGH → **Squad floor**; built + green (committed `34bf7dbd`) → **collapsed Squad** =
+Venus (docs/graft reconcile) ∥ Mars-2 (BDD blue phase: finish the docs + a net-zero quality sweep + re-derive
+the gate) → Apollo (reconcile + adversarial verify + BUILD-GRADE) → Director (working-tree ship + Stage-6 fold).
+No Mars-1 rebuild; the verify is the Director's independent re-run already on record. The pragmatic delivery
+shape the Operator named: *Venus reconciles in parallel, Mars-2 drives the blue phase, Apollo gates, the Director
+ships.*
 
 ## The echo_graft facts (the pre-loaded context for the peers)
 

@@ -61,7 +61,19 @@ spec, not the code).
 - A check counts only if it RUNS. A doctest in a moduledoc is INERT until a test file invokes
   `doctest <Module>` — wire the invocation when you add the doctest, or an acceptance like "a
   doctest shows the filter" ships unexecuted (F6.6: `search_courses/1`'s moduledoc doctest sat
-  inert until `doctest Portal.Catalog` was added).
+  inert until `doctest Portal.Catalog` was added). And a green run is only trustworthy if it NAMES
+  what it EXCLUDED: a `--features`-gated fault suite the default `cargo test` does not compile, an
+  env-gated live leg that runtime-skips when unset, an `ExUnit exclude:` tag — each is
+  invisible-not-failing, so the report states the excluded set + how each was separately exercised
+  (eg-5 L-2: `cargo test --workspace` green hid ~49 precept fault tests + the
+  `ECHO_GRAFT_BACKEND_TEST` live leg + the `:valkey` legs).
+- **A tool "fails" as a gate only if it is the gate of RECORD and your change REGRESSED it.** On a
+  BDD-blue/refactor pass (entering directly at the blue phase on an already-green rung), a tool that
+  flags pre-existing deviation across files you never touched (e.g. `cargo fmt --check` reporting
+  widths the crate was authored to, when fmt is not in the gate ladder) is NAMED in the report and
+  LEFT alone — running it would reflow code you did not author into an unreviewable diff (do-no-harm
+  / don't-churn-what-you-didn't-create, eg-5 L-4). Confirm by stashing your diff + re-running at
+  HEAD: same finding ⇒ pre-existing, not yours.
 - The suite is not the server. For any web-touching rung, run the **liveness check** before
   reporting done: `mix test` runs the endpoint with `server: false` (`config/test.exs`), so a green
   suite proves the plug pipeline, NOT that the dev node boots + binds. Boot (`mix phx.server`) and

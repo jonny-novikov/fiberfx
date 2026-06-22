@@ -109,6 +109,18 @@ looks").
   free of the pre-existing full-suite flakes. A loop that times out your turn ships nothing; a scoped loop
   that finishes is the gate (F6.8.1: a verify turn carrying a third full loop + liveness + spec-sync +
   retrospective timed out twice, and the Director completed the authorship from the transcript).
+- **Run-the-gate hygiene — redirect, reap, and trust the on-disk ledger over the task queue.** (a) NEVER pipe a
+  long gate through `| tail` — a child process that inherits the runner's stdout (e.g. an OS-spawned backend)
+  holds the pipe open past the runner's own exit, so `tail` never sees EOF and the command hangs though the
+  suite passed; redirect (`> log 2>&1`), then `cat` the log (eg-5 L-3: a `mix test … | tail` hung ~15 min on an
+  orphaned `Port`-spawned backend). (b) After any leg that OS-spawns a process the harness does not own, REAP it
+  before moving on — a BEAM `Port.close` shuts the pipe but does not signal the child, so it reparents to
+  `ppid 1` and leaks connections; `pkill -f <bin>` and confirm 0 (eg-5: 3 backends, incl. 6h-old ones, survived
+  a green `mix` exit). (c) When the aaw task queue re-delivers an already-completed task or annotates a ruled
+  fork "open," the Director-owned `<scope>.progress.md` is the authoritative decision record — a re-delivered
+  "open" does not reopen a ruling (eg-5 L-1). (d) Judge agent liveness by `wc -c` / the Read tool's reported
+  size + file mtime, NEVER `stat -f %z` on a transcript file (it reports a bogus size and forges a
+  stalled/oversized verdict).
 
 ## Sync the spec to what shipped — record, do not redesign
 Pre-build the spec body is authoritative and Venus corrects the code-facing claims to it; **post-build the
