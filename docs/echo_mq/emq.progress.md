@@ -13,7 +13,7 @@ label `2.4.4`) and **the `emq.5` batches family is CLOSED** — `emq.5.1` spine 
 only, met; ships additive-minor; the `echomq:3.0.0` major a deferred cutover ratification). The
 remaining 2.x rungs — **`emq.6` lifecycle controls · `emq.7` the cache deepened · `emq.8` the proof
 stack** — are **DEFERRED behind the Stream Tier** (a parked 2.x-runway continuation, Operator-revisable).
-**`emq3.1` (the stream-verb floor · conf 74) SHIPPED; `emq3.2` (the writer law) is next.** Per-rung shipped detail: the
+**`emq3.1`–`emq3.2` (S1 the writer) SHIPPED — the stream-verb floor + the writer law (conf 75); `emq3.3` (S2 the readers) is next.** Per-rung shipped detail: the
 [changelog](./emq.changelog.md).
 
 ---
@@ -48,10 +48,11 @@ Movement II · the 2.x extension family — the two depth families CLOSED
   emq.4     ✅ CLOSED      ████████████████████  groups deepened — 4.1 control plane ✅ · 4.2 recovery ✅ · 4.3 metronome ✅ (HIGH/Apollo · 174e1d7f) · 4.4 weighted rotation + drill ✅ (361fd663) · conformance 61 · fence 2.4.2 / label 2.4.4
   emq.5     ✅ CLOSED      ████████████████████  batches · 5.1 batch-claim spine ✅ · 5.2 min_size/timeout shaping ✅ · 5.3 group-affinity ✅ · 5.4 partitioned finish + dynamic delay ✅ (conf 73 · 2.5.2)
 
-EchoMQ 3.0 · the Stream Tier — the ACTIVE near-term delivery   🔨 IN FLIGHT — emq3.1 shipped, emq3.2 next (Operator-ruled 2026-06-22); gated on emq.0 (met)
+EchoMQ 3.0 · the Stream Tier — the ACTIVE near-term delivery   🔨 IN FLIGHT — S1 the writer COMPLETE (emq3.1–3.2 shipped), emq3.3 next (Operator-ruled 2026-06-22); gated on emq.0 (met)
   emq3.1    ✅ SHIPPED     ████████████████████  S1 writer · the stream-verb floor (XADD/XRANGE/XREADGROUP/XACK/XAUTOCLAIM ride-generic on the certified connector) — conf 74 · label 2.6.0 · 7b44dc97
-  emq3.2    📋 NEXT        ░░░░░░░░░░░░░░░░░░░░  S1 the writer LAW — EchoMQ.Stream (hash-tagged keys · branded record ids · append == mint) · 2-Venus design consensus
-  emq3.3–6  📋 planned     ░░░░░░░░░░░░░░░░░░░░  S2 readers → S3 memory · additive-minor · echomq:3.0.0 a deferred cutover (emq.streams.md)
+  emq3.2    ✅ SHIPPED     ████████████████████  S1 the writer LAW — EchoMQ.Stream (branded record ids · append == mint, the order theorem by construction) — conf 75 · label 2.6.1 · b6ff483b
+  emq3.3    📋 NEXT        ░░░░░░░░░░░░░░░░░░░░  S2 the readers — a BEAM consumer group + a non-BEAM reader · crash re-delivery (XAUTOCLAIM)
+  emq3.4–6  📋 planned     ░░░░░░░░░░░░░░░░░░░░  S2 retention → S3 memory · additive-minor · echomq:3.0.0 a deferred cutover (emq.streams.md)
 
 2.x runway — DEFERRED behind the Stream Tier (parked, Operator-revisable)
   emq.6     🅿️ deferred    ░░░░░░░░░░░░░░░░░░░░  lifecycle controls · TTL · distributed cancel · checkpoints
@@ -60,8 +61,8 @@ EchoMQ 3.0 · the Stream Tier — the ACTIVE near-term delivery   🔨 IN FLIGHT
 
 ── roll-up ──
   established  emq.0 — the foundation
-  shipped     Movement I (emq.1 · emq.2 · emq.3, 52/52) + the emq.4 groups family (4.1–4.4, 61) + the emq.5 batches family (5.1–5.4, 73) + emq3.1 the stream-verb floor (74) — see emq.changelog.md
-  next        emq3.2 — the Stream Tier writer LAW (EchoMQ.Stream); emq3.1 (the stream-verb floor · conf 74 · 7b44dc97) SHIPPED — EchoMQ 3.0 re-sequenced ahead of the 2.x remainder (Operator-ruled 2026-06-22)
+  shipped     Movement I (emq.1 · emq.2 · emq.3, 52/52) + the emq.4 groups family (4.1–4.4, 61) + the emq.5 batches family (5.1–5.4, 73) + EchoMQ 3.0 S1 the writer (emq3.1 floor + emq3.2 the writer law, 75) — see emq.changelog.md
+  next        emq3.3 — the Stream Tier S2 readers (a BEAM consumer group + a non-BEAM reader · crash re-delivery); S1 the writer (emq3.1–3.2) SHIPPED — EchoMQ 3.0 re-sequenced ahead of the 2.x remainder (Operator-ruled 2026-06-22)
   deferred    emq.6 · emq.7 · emq.8 (the 2.x runway, parked behind the Stream Tier · Operator-revisable)
   next major  EchoMQ 3.0 — the Stream Tier (emq3.1–emq3.6) · echomq:3.0.0 a deferred cutover ratification
 ```
@@ -88,8 +89,8 @@ is a **deferred cutover ratification** (declared when the tier is whole). Full l
 
 | Milestone | Required components | Rungs | State |
 |---|---|---|---|
-| **S1 · the writer** | stream verbs (`XADD`/`XRANGE`/`XREADGROUP`/`XACK`/`XAUTOCLAIM`); `EchoMQ.Stream` — hash-tagged, branded record ids, append == mint order | `emq3.1`–`emq3.2` | 🔨 **`emq3.1` SHIPPED** (the verb floor · conf 74 · `7b44dc97`); **`emq3.2` next** (the writer law) |
-| **S2 · the readers** | a BEAM consumer group + one non-BEAM reader, crash re-delivery; retention as declared policy (`MAXLEN` approx, mint-time `MINID`) | `emq3.3`–`emq3.4` | 📋 planned |
+| **S1 · the writer** | stream verbs (`XADD`/`XRANGE`/`XREADGROUP`/`XACK`/`XAUTOCLAIM`); `EchoMQ.Stream` — hash-tagged, branded record ids, append == mint order | `emq3.1`–`emq3.2` | ✅ **COMPLETE** — `emq3.1` the verb floor (`7b44dc97`) + `emq3.2` the writer law (conf 75 · `b6ff483b`) |
+| **S2 · the readers** | a BEAM consumer group + one non-BEAM reader, crash re-delivery; retention as declared policy (`MAXLEN` approx, mint-time `MINID`) | `emq3.3`–`emq3.4` | 📋 **NEXT** — `emq3.3` opens S2 |
 | **S3 · the memory** | the archive — segments folded into the `Graft` engine (CubDB → Tigris), box-loss restore, merge reads; time-travel (mint-instant → `XRANGE`) + Table hydration | `emq3.5`–`emq3.6` | 📋 planned — emq3.5's archive re-trues the `Graft` readiness at its pre-build reconcile |
 
 ### The consumers

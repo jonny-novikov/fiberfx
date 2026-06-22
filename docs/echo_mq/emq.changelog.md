@@ -36,6 +36,7 @@ re-pinned in two tests.
 70  +group batch       emq.5.3                  the group-affinity batch (grouped_batch_affinity · grouped_batch_ceiling · grouped_batch_fairness, +3) · label 2.5.1
 73  +batch finish      emq.5.4                  the partitioned finish + dynamic delay (batch_partition · batch_delay · batch_delay_stale, +3) · label 2.5.2 · ══ emq.5 batches CLOSED
 74  +stream verbs      emq3.1                   the stream-verb floor (XADD/XRANGE/XREADGROUP/XACK/XAUTOCLAIM ride-generic, +stream_verbs) · label 2.6.0 · ══ EchoMQ 3.0 · the Stream Tier OPENS
+75  +stream append     emq3.2                   the writer law (EchoMQ.Stream · branded record ids · append == mint, the order theorem by construction; +stream_append) · label 2.6.1 · ══ S1 the writer COMPLETE
 ```
 
 The **`ewr.1.x` client-core** registers no conformance scenario — that count was emq-owned and
@@ -99,6 +100,7 @@ deferred — Operator-ruled 2026-06-22).
 | Rung | Date | Delivered | Δ | Risk | Commit · label |
 |---|---|---|---|---|---|
 | [emq3.1](./specs/emq3/emq3.1.md) | 2026-06-22 | The **stream-verb floor** — the five stream verbs (`XADD`/`XRANGE`/`XREADGROUP`/`XACK`/`XAUTOCLAIM`) reach the wire on the SHIPPED generic command path (`Connector.command/3` + the verb-agnostic `RESP.encode/1`), ZERO `echo_wire` edit, no new `Script.new/2`; the braced `emq:{q}:stream:<name>` §6 key type via the total `queue_key/2`; non-blocking round-trips (blocking + the group lifecycle defer to emq3.3). **Opens EchoMQ 3.0.** | 73→74 | NORMAL | `7b44dc97` · label `echomq:2.6.0` |
+| [emq3.2](./specs/emq3/emq3.2.md) | 2026-06-22 | The **writer law** — `EchoMQ.Stream` (`append` mints an `EVT`-branded record id, derives the A1 XADD id `"<unix_ms>-<tail22>"`, appends in mint order; wrong-kind RAISES; `id≤top` → `{:error, :nonmonotonic}`) over the pure `EchoMQ.Stream.Id` core (the order theorem `stream order == id sort == mint order`, by construction). `emq:{q}:stream:<name>` via `queue_key/2` — no grammar edit, no new Lua. Dual-architect design (convergent on A1); the ≥100 loop 100/100. `+stream_append`. **S1 the writer COMPLETE.** | 74→75 | NORMAL+ | `b6ff483b` · label `echomq:2.6.1` |
 
 ## The wire program · EchoWire client-core (`ewr.1.x`) — built
 
