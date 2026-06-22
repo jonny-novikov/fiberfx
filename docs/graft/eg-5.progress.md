@@ -115,3 +115,15 @@ A naive read — `cargo test --workspace` green (67) + `mix test` green (70) —
 - **(B) Exceptional documentation at `echo/docs/`** — the program has **no** `echo/docs/echo_graft.md` and an **empty** `echo/docs/echo_graft/` dir, while every sibling app carries a top-level `<app>.md` + a deeper subtree. Author both, calibrated to the house register (Director read `echo_store.md`/`echo_mq.md`/`echo_store/durability/README.md`): a stack-placement opening, per-module `## Module — `Mod.Name`` sections with terse `| Function | Purpose |` tables, a determinism/byte-freeze posture section, the real consumer. **Load-bearing nuance — the COEXIST framing:** `echo_store.md:60-78` already documents the *native* `EchoStore.Graft.*` (CubDB) twin, so the new doc must place the Rust `echo_graft_backend` as the *coexisting peer* (`EchoStore.GraftBackend` client), never a replacement (Operator D-1=A). Ground every figure in the real as-built Rust + Elixir surface — no invented API.
 
 **Boundary.** Doc files are additive under `echo/docs/`; the code review+refactor stays inside eg.5's boundary (the Rust crates + the 6 `echo_store` GraftBackend files); native `EchoStore.Graft.*`/`Durability.*` + `github.local/graft` untouched.
+
+## {eg-5-progress} Progress
+
+### P-1
+
+P — Mars-2 (Opus) authoritative review+refactor+docs pass COMPLETE (supersedes the sonnet draft, D-6).
+
+MANDATE A (review+refactor): 3 behavioral doc-comments traced to source — live.rs hello3 VERIFIED-TRUE (RespReader reads HELLO % map first → Push::Other live.rs:282; publish read-half never read), buffer.rs decode_pending VERIFIED-TRUE (recover groups by key-derived vid :255; flush reads pending_for(vid) :217), proto Mode::Sync CORRECTED (the parenthetical "and the Rust host call default the mode to sync" asserted a Rust-side omittable-mode default that does NOT ship — no Rust pub fn takes Option<Mode>; reworded to cite the real client-API default EchoStore.GraftBackend.commit/5; D-5 "never a wire default" truth preserved; doc-only, 0 wire bytes). Gate re-derived green: workspace 67/67, precept 73+1doctest, clippy exit-0 0-warn, cargo doc 0-warn ([Msg::Commit] link resolves), Elixir mix test 70/0/26-excluded (9 cross-runtime conformance/decode/feed_blob RAN), fixtures mirror byte-identical (4ins/3del v2 only), grep COMMIT2=0.
+
+MANDATE B (docs): authored echo/docs/echo_graft.md (overview, COEXIST-framed against EchoStore.Graft.* native twin, crate+engine module maps, eg.1-5 ladder, trust posture) + echo_graft/{wire,low-latency-tier,backend}.md. Every symbol/lane/tag/number grep-confirmed against source; msh specs link-check = no findings.
+
+Git: Operator committed the eg.5 tree mid-session as 34bf7dbd [echo_graft] eg.5 (captured the prior pass + my correction); working tree clean vs HEAD; my docs untracked under echo/docs/. I ran no git add/commit.
