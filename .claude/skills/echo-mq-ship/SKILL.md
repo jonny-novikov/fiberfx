@@ -92,7 +92,11 @@ laws, the per-app gate ladder, and the echo_mq-specialized agents, so the run do
 
 Read the named rung's `<rung>.prompt.md` (the authoritative scope) + its triad + `docs/echo_mq/emq.roadmap.md`,
 **and `.claude/skills/echo-mq-program.md` + `echo-mq-surface.md`**, **and the `/x-mode` skill**. Declare the
-mode (**Flat-L2**). Deep-reason the rung (the §0 of `/x-mode`: the 5W, the solution space incl. a do-nothing
+mode (**Flat-L2**) and **triage the L2 Topology Router** — Solo / Duo / Trio / Squad
+(`docs/echo_mq/program/emq.program.md` §Right-sizing) from the rung's **risk tier × design-space width** —
+recording the chosen tier as the **formation `tool_x_decision`**; `mcp__aaw__status(scope)` must then show
+EXACTLY that tier's registered peers (no more — over-ceremony is the ewr.4.1 footgun; no fewer — under-staffing
+a HIGH-risk rung skips the mandatory Apollo). Deep-reason the rung (the §0 of `/x-mode`: the 5W, the solution space incl. a do-nothing
 baseline, the invariants as runnable checks, the smallest change that preserves correctness) and record it as a
 `tool_x_trace` (T-n). **Confirm the Stage-1 gate is reachable** — the triad exists (or Venus authors it) and
 the `.prompt.md`'s settled forks carry **no open Operator decision**; if a fork is open (a seam, a
@@ -103,10 +107,13 @@ the toolchain: `asdf current erlang` (re-probe), **Valkey on 6390** (`redis-cli 
 
 `scope` = the rung slug, **lowercase-alphanumeric-and-dashes, NO dots** (`emq-2-2`, `emq-2-3`, `emq-3`, never
 `emq.2.2` — `tool_x_*` and `TeamCreate` require `^[a-z0-9][a-z0-9-]*$`, and a dot split-brains the registry).
-`operator` = `jonny`. `workspace` = `/Users/jonny/dev/jonnify`. `ledger_dir` = `docs/echo_mq/specs`. The
+`operator` = `jonny`. `workspace` = `/Users/jonny/dev/jonnify`. `ledger_dir` = `docs/echo_mq/specs/progress` (the run-ledgers live in `specs/progress/`, NOT `specs/` — the
+2026-06-15 relocation). The
 sequence is `/x-mode` §1 verbatim: `mcp__aaw__init` → `aaw_spawn`+`agent_register` the `director` →
-`TeamCreate(scope)` → `tool_x_trace(T-1)` opening the ledger `docs/echo_mq/specs/<scope>.progress.md`, lands the
-§0 derivation. Create one Task per stage. **zsh does not word-split unquoted vars** — iterate file lists with
+`TeamCreate(scope)` → `tool_x_trace(T-1)` opening the ledger `docs/echo_mq/specs/progress/<scope>.progress.md`,
+lands the §0 derivation. **The scope slug matches the on-disk ledger filename** — `emq3-3` for the stream tier
+(one unit), `emq-5-4` for a Movement-II rung; a wrong slug mints a NEW empty ledger and strands the
+hand-written one (`emq3.3-L1`). Create one Task per stage. **zsh does not word-split unquoted vars** — iterate file lists with
 `find … -print0 | while IFS= read -r -d '' f`, never `for f in $files`.
 
 ## 2. The pipeline (per `/x-mode` §2, echo_mq-bound)
