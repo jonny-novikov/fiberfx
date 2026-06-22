@@ -37,6 +37,7 @@ re-pinned in two tests.
 73  +batch finish      emq.5.4                  the partitioned finish + dynamic delay (batch_partition · batch_delay · batch_delay_stale, +3) · label 2.5.2 · ══ emq.5 batches CLOSED
 74  +stream verbs      emq3.1                   the stream-verb floor (XADD/XRANGE/XREADGROUP/XACK/XAUTOCLAIM ride-generic, +stream_verbs) · label 2.6.0 · ══ EchoMQ 3.0 · the Stream Tier OPENS
 75  +stream append     emq3.2                   the writer law (EchoMQ.Stream · branded record ids · append == mint, the order theorem by construction; +stream_append) · label 2.6.1 · ══ S1 the writer COMPLETE
+76  +stream group      emq3.3                   the reader law (EchoMQ.StreamConsumer · a BEAM consumer group + the polyglot seam · crash re-delivery via XAUTOCLAIM, at-least-once; +stream_group) · label 2.6.2 · ══ S2 the readers part 1
 ```
 
 The **`ewr.1.x` client-core** registers no conformance scenario — that count was emq-owned and
@@ -91,7 +92,7 @@ The v1 surface rewritten state-of-the-art inside `echo_mq` under the v2 laws; no
 > see the conformance-spine note above. `echomq:3.0.0` is reserved for the Stream Tier
 > ([`emq.streams.md`](./emq.streams.md)).
 
-## EchoMQ 3.0 · the Stream Tier — S1 the writer (in flight)
+## EchoMQ 3.0 · the Stream Tier — S1 the writer COMPLETE · S2 the readers (in flight)
 
 Event streams on the certified wire, additive-minor; the `echomq:3.0.0` MAJOR is a **deferred cutover
 ratification** (declared when the tier is whole). Re-sequenced ahead of the 2.x-runway remainder (emq.6/7/8
@@ -101,6 +102,7 @@ deferred — Operator-ruled 2026-06-22).
 |---|---|---|---|---|---|
 | [emq3.1](./specs/emq3/emq3.1.md) | 2026-06-22 | The **stream-verb floor** — the five stream verbs (`XADD`/`XRANGE`/`XREADGROUP`/`XACK`/`XAUTOCLAIM`) reach the wire on the SHIPPED generic command path (`Connector.command/3` + the verb-agnostic `RESP.encode/1`), ZERO `echo_wire` edit, no new `Script.new/2`; the braced `emq:{q}:stream:<name>` §6 key type via the total `queue_key/2`; non-blocking round-trips (blocking + the group lifecycle defer to emq3.3). **Opens EchoMQ 3.0.** | 73→74 | NORMAL | `7b44dc97` · label `echomq:2.6.0` |
 | [emq3.2](./specs/emq3/emq3.2.md) | 2026-06-22 | The **writer law** — `EchoMQ.Stream` (`append` mints an `EVT`-branded record id, derives the A1 XADD id `"<unix_ms>-<tail22>"`, appends in mint order; wrong-kind RAISES; `id≤top` → `{:error, :nonmonotonic}`) over the pure `EchoMQ.Stream.Id` core (the order theorem `stream order == id sort == mint order`, by construction). `emq:{q}:stream:<name>` via `queue_key/2` — no grammar edit, no new Lua. Dual-architect design (convergent on A1); the ≥100 loop 100/100. `+stream_append`. **S1 the writer COMPLETE.** | 74→75 | NORMAL+ | `b6ff483b` · label `echomq:2.6.1` |
+| [emq3.3](./specs/emq3/emq3.3.md) | 2026-06-22 | The **reader law** — `EchoMQ.StreamConsumer` (a supervised `spawn_link` consumer group on a PRIVATE lane: `XREADGROUP > BLOCK`; the lazy-ensure group door `XGROUP CREATE … MKSTREAM` swallowing ONLY `BUSYGROUP`, `WRONGTYPE` LOUD; drain-PEL-first recovers SELF + the `XAUTOCLAIM` beat recovers dead PEERS; the exact-mirror handler `%{id, payload, attempts, group}`, `attempts = XPENDING` delivery-count; the order-theorem PEL exception NAMED + EXERCISED). The **polyglot seam** — the stored `id` field is the canonical receipt a raw connector recovers. `+stream_group` (a POSITIVE re-delivery proof). HIGH risk — the ≥100 loop 100/100, Apollo mandatory. **S2 the readers part 1.** | 75→76 | HIGH | `71ce78cc` · label `echomq:2.6.2` |
 
 ## The wire program · EchoWire client-core (`ewr.1.x`) — built
 
