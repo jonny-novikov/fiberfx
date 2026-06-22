@@ -19,7 +19,7 @@ use echo_graft::{
     volume_reader::VolumeRead,
     volume_writer::VolumeWrite,
 };
-use echo_graft_proto::{ErrKind, Msg};
+use echo_graft_proto::{ErrKind, Mode, Msg};
 use std::str::FromStr;
 
 /// Dispatch one decoded request message onto `rt`, returning the response message to send
@@ -35,7 +35,7 @@ pub fn dispatch(rt: &Runtime, msg: &Msg) -> Msg {
             open_volume(rt, *corr, branded, local.as_deref(), remote.as_deref())
         }
         Msg::ResolveBranded { corr, branded } => resolve_branded(rt, *corr, branded),
-        Msg::Commit { corr, vid, base, pages } => commit(rt, *corr, vid, *base, pages),
+        Msg::Commit { corr, vid, base, mode, pages } => commit(rt, *corr, vid, *base, *mode, pages),
         Msg::Push { corr, vid } => push(rt, *corr, vid),
         Msg::Pull { corr, vid } => pull(rt, *corr, vid),
         Msg::Read { corr, vid, pageidx } => read(rt, *corr, vid, *pageidx),
@@ -98,20 +98,29 @@ fn resolve_branded(rt: &Runtime, corr: u64, branded: &str) -> Msg {
 /// `Commit` → `volume_writer(vid)` then `write_page`×N then `commit` (`runtime.rs:298`,
 /// `volume_writer.rs:68-92`). Acks the resulting head LSN.
 ///
+/// The per-call durability [`Mode`] is a *host* signal — it chooses WHEN the host acks relative
+/// to the remote rollup (`:sync` waits for `volume_push`; `:async` acks on the local fsync); it
+/// does NOT change what this 1:1 dispatch does to the engine. The dispatch always performs the
+/// LOCAL commit and acks the local head LSN (the remote push is the separate `Push` verb / the
+/// buffer's rollup). `mode` is accepted here so the v2 request is well-formed and faithful; the
+/// mode's guarantee is enforced where the push happens (the buffer, S-2). It is threaded into the
+/// diagnostics only.
+///
 /// REALIZATION (cited deviation from the naive "wire bytes → Page"): the proto carries
 /// arbitrary-length page `bytes`, but `Page` is fixed `PAGESIZE` (4 KiB, `page.rs:11`;
 /// `Page::from_buf` rejects any other length, `page.rs:44`). A short page is right-padded
 /// with zeros to `PAGESIZE` (the engine's own empty-page fill); an over-`PAGESIZE` page is a
 /// malformed request refused with `unavailable` — never a panic.
-fn commit(rt: &Runtime, corr: u64, vid: &str, base: u64, pages: &[(u32, Vec<u8>)]) -> Msg {
+fn commit(rt: &Runtime, corr: u64, vid: &str, base: u64, mode: Mode, pages: &[(u32, Vec<u8>)]) -> Msg {
     let vid = match parse_vid(vid) {
         Ok(v) => v,
         Err(d) => return err(corr, ErrKind::NotFound, d),
     };
-    // The wire `base` is advisory in this thin dispatch: the writer is built from the
-    // Volume's current snapshot (the engine's own base), and a stale base surfaces as the
-    // OCC conflict at `commit`. It is threaded only into the detail for diagnostics.
-    let _ = base;
+    // Both `base` and `mode` are advisory in this thin dispatch: the writer is built from the
+    // Volume's current snapshot (the engine's own base), a stale base surfaces as the OCC
+    // conflict at `commit`, and the mode is a host ack-timing signal (the push is separate). They
+    // are threaded only into the detail for diagnostics.
+    let _ = (base, mode);
     let mut writer = match rt.volume_writer(vid) {
         Ok(w) => w,
         Err(e) => return map_err(corr, e),

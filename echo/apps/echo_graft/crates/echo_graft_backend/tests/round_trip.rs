@@ -23,7 +23,7 @@ use echo_graft::{
     volume_writer::VolumeWrite,
 };
 use echo_graft_backend::{Handshake, InMemorySink, Session, dispatch};
-use echo_graft_proto::{ErrKind, Msg};
+use echo_graft_proto::{ErrKind, Mode, Msg};
 use std::str::FromStr;
 
 const BRANDED: &str = "VOL0O5fmcxbds8";
@@ -58,12 +58,12 @@ fn open_session(rt: &Runtime) -> (Session<InMemorySink>, InMemorySink, String) {
     let sink = InMemorySink::new();
     let mut session = Session::new(rt.clone(), sink.clone());
     let (hs, welcome) = session.hello(&Msg::Hello {
-        proto_min: 1,
-        proto_max: 1,
+        proto_min: 2,
+        proto_max: 2,
         client: "test".into(),
     });
-    assert_eq!(hs, Handshake::Established(1));
-    assert!(matches!(welcome, Msg::Welcome { proto: 1 }));
+    assert_eq!(hs, Handshake::Established(2));
+    assert!(matches!(welcome, Msg::Welcome { proto: 2 }));
 
     let resp = session.handle(&Msg::OpenVolume {
         corr: 1,
@@ -89,6 +89,7 @@ fn commit_push_acks_lsn_and_publishes_feed() {
         corr: 2,
         vid: vid.clone(),
         base: 0,
+        mode: Mode::Sync,
         pages: vec![(1, vec![0xAB; 4096])],
     });
     assert!(matches!(commit, Msg::Ack { corr: 2, lsn } if lsn >= 1), "commit: {commit:?}");
@@ -217,6 +218,7 @@ fn short_page_commits_and_reads_back_zero_filled() {
         corr: 2,
         vid: vid.clone(),
         base: 0,
+        mode: Mode::Sync,
         pages: vec![(1, vec![0x01, 0x02, 0x03])],
     });
     assert!(matches!(commit, Msg::Ack { corr: 2, .. }), "short-page commit acks: {commit:?}");
@@ -240,7 +242,7 @@ fn oversize_page_commit_is_unavailable_not_a_panic() {
     let (mut session, _sink, vid) = open_session(&rt);
 
     let oversize = vec![0xFF_u8; echo_graft::core::page::PAGESIZE.as_usize() + 1];
-    let resp = session.handle(&Msg::Commit { corr: 2, vid, base: 0, pages: vec![(1, oversize)] });
+    let resp = session.handle(&Msg::Commit { corr: 2, vid, base: 0, mode: Mode::Sync, pages: vec![(1, oversize)] });
     assert!(
         matches!(resp, Msg::Err { corr: 2, kind: ErrKind::Unavailable, .. }),
         "an over-PAGESIZE page maps to Unavailable, not a panic: {resp:?}"

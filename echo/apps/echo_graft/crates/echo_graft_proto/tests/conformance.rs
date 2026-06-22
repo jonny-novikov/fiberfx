@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 
-use echo_graft_proto::{ErrKind, Msg, PROTO_MAX, PROTO_MIN};
+use echo_graft_proto::{ErrKind, Mode, Msg, PROTO_MAX, PROTO_MIN};
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/wire.fixtures");
 
@@ -37,12 +37,15 @@ const FEED_BLOB: &[u8] = &[
 
 fn canonical() -> Vec<(&'static str, Msg)> {
     vec![
+        // v2 (D-5): the proto speaks ONLY v2 — hello/welcome carry version 2 (regenerated), the
+        // COMMIT carries a fixed-position mode (regenerated). Both mode tokens are pinned.
         ("hello", Msg::Hello { proto_min: PROTO_MIN, proto_max: PROTO_MAX, client: "echo_store".into() }),
-        ("welcome", Msg::Welcome { proto: 1 }),
+        ("welcome", Msg::Welcome { proto: 2 }),
         ("incompatible", Msg::Incompatible { proto_min: 2, proto_max: 3, reason: "no overlapping protocol version".into() }),
         ("open_volume", Msg::OpenVolume { corr: 7, branded: BRANDED.into(), local: None, remote: Some(LOG.into()) }),
         ("resolve_branded", Msg::ResolveBranded { corr: 8, branded: BRANDED.into() }),
-        ("commit", Msg::Commit { corr: 9, vid: VID.into(), base: 3, pages: vec![(1, PAGE.to_vec())] }),
+        ("commit", Msg::Commit { corr: 9, vid: VID.into(), base: 3, mode: Mode::Sync, pages: vec![(1, PAGE.to_vec())] }),
+        ("commit_async", Msg::Commit { corr: 9, vid: VID.into(), base: 3, mode: Mode::Async, pages: vec![(1, PAGE.to_vec())] }),
         ("push", Msg::Push { corr: 10, vid: VID.into() }),
         ("pull", Msg::Pull { corr: 11, vid: VID.into() }),
         ("read", Msg::Read { corr: 12, vid: VID.into(), pageidx: 1 }),

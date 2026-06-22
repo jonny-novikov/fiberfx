@@ -28,10 +28,14 @@
 
 use std::fmt;
 
-/// The lowest protocol version this build speaks.
-pub const PROTO_MIN: u32 = 1;
-/// The highest protocol version this build speaks.
-pub const PROTO_MAX: u32 = 1;
+/// The lowest protocol version this build speaks. Bumped 1 → 2 by eg.5 (D-5: v1 is dropped — it
+/// had zero deployed consumers, so the build speaks ONLY v2; a v1 peer fails the handshake by
+/// design).
+pub const PROTO_MIN: u32 = 2;
+/// The highest protocol version this build speaks. v2 carries the per-call durability mode on the
+/// `COMMIT` message (modified in place — there is no v1 decoder to preserve). A wire change is a
+/// `PROTO_MAX` bump with regenerated fixtures, never a silent re-encode against a live peer.
+pub const PROTO_MAX: u32 = 2;
 
 // ===========================================================================
 // RESP3 array-of-bulk-strings codec — the `EchoMQ.RESP` intersection
@@ -176,6 +180,46 @@ impl ErrKind {
 }
 
 // ===========================================================================
+// The per-call durability mode (eg.5, protocol v2)
+// ===========================================================================
+
+/// The per-call durability mode carried by the v2 [`Msg::Commit`] message. It is a *signal*
+/// choosing WHEN a commit acks relative to the existing local-commit-vs-remote-push split — not a
+/// new mechanism. The mode is ALWAYS on the wire (every v2 `COMMIT` carries it); the [`Mode::Sync`]
+/// default (the safe durable+replicated-before-ack choice) is a client-API default, not a wire
+/// default (D-5: v1 is dropped, so there is no mode-less `COMMIT` to default).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// Ack on the local fsync of the open batch; the remote push rolls the batch up
+    /// asynchronously. The loss window is the open (not-yet-pushed) batch.
+    Async,
+    /// Ack only after the remote conditional-write commit acks — durable and replicated before
+    /// the ack returns. The v1 `COMMIT` default.
+    Sync,
+}
+
+impl Mode {
+    /// The wire token for this mode.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Mode::Async => "async",
+            Mode::Sync => "sync",
+        }
+    }
+
+    /// Parse a wire token into a mode, or `None` if unknown (a closed set).
+    #[must_use]
+    pub fn from_token(token: &[u8]) -> Option<Self> {
+        match token {
+            b"async" => Some(Mode::Async),
+            b"sync" => Some(Mode::Sync),
+            _ => None,
+        }
+    }
+}
+
+// ===========================================================================
 // The message set (the declared-keys table)
 // ===========================================================================
 
@@ -260,7 +304,11 @@ pub enum Msg {
         /// The 14-char branded id.
         branded: String,
     },
-    /// Stage pages from `base` and commit them locally.
+    /// Stage pages from `base` and commit them with an explicit per-call durability [`Mode`]
+    /// (protocol v2, eg.5). The `mode` is a fixed-position field between `base` and the page
+    /// count; it is ALWAYS on the wire (the `:sync` default is a client-API default, not a wire
+    /// default). v1 is dropped (D-5), so this evolved the message in place — there is no v1
+    /// `COMMIT` shape to preserve.
     Commit {
         /// Correlation id.
         corr: u64,
@@ -268,6 +316,8 @@ pub enum Msg {
         vid: String,
         /// The base LSN the write extends.
         base: u64,
+        /// The per-call durability mode (`async` | `sync`).
+        mode: Mode,
         /// The staged pages as `(page_index, page_bytes)`.
         pages: Vec<(u32, Vec<u8>)>,
     },
@@ -371,8 +421,17 @@ impl Msg {
             Msg::ResolveBranded { corr, branded } => {
                 vec![tag("RESOLVE"), u64p(*corr), strp(branded)]
             }
-            Msg::Commit { corr, vid, base, pages } => {
-                let mut v = vec![tag("COMMIT"), u64p(*corr), strp(vid), u64p(*base), u32p(pages.len() as u32)];
+            Msg::Commit { corr, vid, base, mode, pages } => {
+                // v2 shape: [COMMIT, corr, vid, base, mode, npages, (idx, page)*]. The mode token
+                // sits between base and the page count; it is always present on the wire.
+                let mut v = vec![
+                    tag("COMMIT"),
+                    u64p(*corr),
+                    strp(vid),
+                    u64p(*base),
+                    tag(mode.as_str()),
+                    u32p(pages.len() as u32),
+                ];
                 for (idx, page) in pages {
                     v.push(u32p(*idx));
                     v.push(page.clone());
@@ -442,14 +501,17 @@ impl Msg {
                 })
             }
             b"COMMIT" => {
-                if rest.len() < 4 {
+                // v2: [corr, vid, base, mode, npages, (idx, page)*]. The mode token sits between
+                // base and npages; the pages tail begins at index 5. (v1 is dropped — D-5.)
+                if rest.len() < 5 {
                     return Err(ProtoErr::BadField("commit_arity"));
                 }
                 let corr = f_u64(&rest[0], "corr")?;
                 let vid = f_str(&rest[1], "vid")?;
                 let base = f_u64(&rest[2], "base")?;
-                let npages = f_u32(&rest[3], "npages")? as usize;
-                let tail = &rest[4..];
+                let mode = Mode::from_token(&rest[3]).ok_or(ProtoErr::BadField("commit_mode"))?;
+                let npages = f_u32(&rest[4], "npages")? as usize;
+                let tail = &rest[5..];
                 if tail.len() != npages * 2 {
                     return Err(ProtoErr::BadField("pages_count"));
                 }
@@ -457,7 +519,7 @@ impl Msg {
                 for pair in tail.chunks_exact(2) {
                     pages.push((f_u32(&pair[0], "page_idx")?, pair[1].clone()));
                 }
-                Ok(Msg::Commit { corr, vid, base, pages })
+                Ok(Msg::Commit { corr, vid, base, mode, pages })
             }
             b"PUSH" => {
                 arity(rest, 2)?;
@@ -589,11 +651,13 @@ mod tests {
     #[test]
     fn round_trips_each_shape() {
         let samples = [
-            Msg::Hello { proto_min: 1, proto_max: 1, client: "c".into() },
-            Msg::Welcome { proto: 1 },
+            Msg::Hello { proto_min: 2, proto_max: 2, client: "c".into() },
+            Msg::Welcome { proto: 2 },
             Msg::Incompatible { proto_min: 2, proto_max: 3, reason: "x".into() },
             Msg::OpenVolume { corr: 1, branded: "VOL0O5fmcxbds8".into(), local: None, remote: Some("L".into()) },
-            Msg::Commit { corr: 2, vid: "v".into(), base: 0, pages: vec![(1, vec![0xDE, 0xAD]), (9, vec![0x00])] },
+            // both durability modes must round-trip on the v2 COMMIT
+            Msg::Commit { corr: 2, vid: "v".into(), base: 0, mode: Mode::Sync, pages: vec![(1, vec![0xDE, 0xAD]), (9, vec![0x00])] },
+            Msg::Commit { corr: 4, vid: "v".into(), base: 1, mode: Mode::Async, pages: vec![(2, vec![0x01])] },
             Msg::Read { corr: 3, vid: "v".into(), pageidx: 7 },
             Msg::Ack { corr: 2, lsn: 5 },
             Msg::Err { corr: 2, kind: ErrKind::Conflict, detail: "boom".into() },
@@ -603,6 +667,21 @@ mod tests {
             let bytes = m.encode();
             assert_eq!(Msg::decode(&bytes).expect("decode"), m, "round-trip drift");
         }
+    }
+
+    #[test]
+    fn mode_tokens_are_closed() {
+        for mode in [Mode::Async, Mode::Sync] {
+            assert_eq!(Mode::from_token(mode.as_str().as_bytes()), Some(mode));
+        }
+        assert_eq!(Mode::from_token(b"eventually"), None, "the mode token set is closed");
+    }
+
+    #[test]
+    fn commit_requires_a_known_mode_token() {
+        // a COMMIT with an out-of-set mode token is a BadField, not a silent default
+        let bad = b"*6\r\n$6\r\nCOMMIT\r\n$1\r\n9\r\n$1\r\nv\r\n$1\r\n0\r\n$5\r\nmaybe\r\n$1\r\n0\r\n";
+        assert!(matches!(Msg::decode(bad), Err(ProtoErr::BadField("commit_mode"))));
     }
 
     #[test]
