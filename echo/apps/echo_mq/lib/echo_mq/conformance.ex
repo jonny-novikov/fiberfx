@@ -1,6 +1,6 @@
 defmodule EchoMQ.Conformance do
   @moduledoc """
-  The bus contract as seventy-five runnable scenarios. Each scenario drives the
+  The bus contract as seventy-six runnable scenarios. Each scenario drives the
   public surface (and, where the contract is the wire itself, raw commands)
   against a live server and asserts the externally visible verdict: the
   fence, the row shape, idempotent admission, the kind law, the lex law,
@@ -70,8 +70,15 @@ defmodule EchoMQ.Conformance do
   == id-sort order, a wrong-kind record id raises before any wire with no key
   written, and a contrived out-of-order append surfaces :nonmonotonic on the
   id<=top rejection -- the append is XADD issued direct, no new script, no new
-  wire class). A port of the client conforms when it drives the
-  same server to the same seventy-five verdicts -- the scenarios are wire-level on
+  wire class), and -- the reader law (emq3.3, S2 the readers part 1) -- the
+  consumer group's at-least-once grouped delivery with crash re-delivery
+  (stream_group: two EchoMQ.Stream.append branded records are group-read with
+  XREADGROUP >, one XACKed and one LEFT un-acked, then a forced XAUTOCLAIM
+  RE-DELIVERS the SAME un-acked branded receipt while the acked one is not
+  re-claimed -- a POSITIVE re-delivery proof, the at-least-once mechanism
+  EchoMQ.StreamConsumer's beat folds in, the group verbs issued direct, no new
+  script, no new wire class). A port of the client conforms when it drives the
+  same server to the same seventy-six verdicts -- the scenarios are wire-level on
   purpose, so the harness ports by translation, not by faith. Scenarios run on
   per-scenario sub-queues and purge what they mint. Chapter 3.6, extended 3.7,
   then the emq.2 cluster (parity, closed at emq.2.4), then the emq.3 flow family
@@ -81,7 +88,8 @@ defmodule EchoMQ.Conformance do
   family (opened at emq.5.1 with the batch-claim spine, shaped at emq.5.2, grouped
   at emq.5.3, closed at emq.5.4 with the partitioned finish + dynamic delay), then
   EchoMQ 3.0's Stream Tier (opened at emq3.1 with the stream-verb floor, the
-  writer law at emq3.2 with the append-order theorem).
+  writer law at emq3.2 with the append-order theorem, the reader law at emq3.3
+  with the consumer group's at-least-once grouped delivery + crash re-delivery).
   """
 
   alias EchoData.BrandedId
@@ -183,14 +191,15 @@ defmodule EchoMQ.Conformance do
       batch_delay: "the dynamic-delay re-score: a claimed (active) member delayed by ms moves to the schedule set with state scheduled and attempts PRESERVED (NOT reset to 0 -- the delay is not a failure), absent from active and invisible to claim until its server-clock score is due, then promote returns it to pending and a fresh claim mints the NEXT token (the attempt history continued, not restarted) -- the inverse of @claim: it releases the lease and mints nothing, one atomic EVAL so the member is never in neither set (emq.5.4)",
       batch_delay_stale: "the delay is token-fenced: a claimed member reaped and re-claimed by another worker (a new token) refuses the original holder's delay EMQSTALE -> {:error, :stale}, the new holder's active-set lease untouched, and the new holder's delay with the live token settles; a delay on a missing row answers {:error, :gone} -- the complete/5 / retry/7 fencing, so a stale holder cannot yank a member from its new owner (emq.5.4)",
       stream_verbs: "the stream-verb floor (emq3.1): the five stream verbs (XADD/XRANGE/XREADGROUP/XACK/XAUTOCLAIM) round-trip on the certified connector over an emq:{q}:stream:<name> braced key -- XADD answers the entry id and XRANGE reads back the EXACT appended entry, XREADGROUP (NO BLOCK) reads the group's unseen entries, XACK answers the count, XAUTOCLAIM re-claims a pending entry -- plus a pipelined XADD batch returns N ids in call order read back in mint order, and the in-band verbs do not disturb the out-of-band push routing under RESP3 (a concurrent push is still delivered on the {:emq_push, ...} seam); the verbs ride the SHIPPED generic command path verb-agnostically, no echo_wire edit, no new script -- the floor every later Stream rung stands on (emq3.1)",
-      stream_append: "the writer law (emq3.2): EchoMQ.Stream.append mints an EVT-branded record id host-side and appends it under its EXPLICIT A1 xadd id (the real Unix-ms and the 22-bit node|seq tail) with the branded string as the id field -- N>=2 records read back in MINT ORDER == id-sort order (the order theorem, stream order == id sort == mint order, no second index), a wrong-kind record id RAISES before any wire with NO key written (the host-side kind door, one brand per stream), and a contrived out-of-order append surfaces {:error, :nonmonotonic} on the id<=top rejection (the liveness check, never swallowed); the append is XADD issued direct, no new script, no new wire class (emq3.2)"
+      stream_append: "the writer law (emq3.2): EchoMQ.Stream.append mints an EVT-branded record id host-side and appends it under its EXPLICIT A1 xadd id (the real Unix-ms and the 22-bit node|seq tail) with the branded string as the id field -- N>=2 records read back in MINT ORDER == id-sort order (the order theorem, stream order == id sort == mint order, no second index), a wrong-kind record id RAISES before any wire with NO key written (the host-side kind door, one brand per stream), and a contrived out-of-order append surfaces {:error, :nonmonotonic} on the id<=top rejection (the liveness check, never swallowed); the append is XADD issued direct, no new script, no new wire class (emq3.2)",
+      stream_group: "the reader law (emq3.3): a consumer group delivers at-least-once with crash re-delivery -- two EchoMQ.Stream.append branded records are group-read with XREADGROUP > (both enter the PEL), ONE is XACKed (retires) and ONE is LEFT un-acked, then a forced XAUTOCLAIM (min-idle 0) RE-DELIVERS the SAME un-acked branded receipt while the acked one is NOT re-claimed -- a POSITIVE re-delivery proof (an ack-everything pass is a LOUD failure), the at-least-once mechanism EchoMQ.StreamConsumer's beat folds in; the group verbs are issued DIRECT, no new script, no new wire class (emq3.3)"
     ]
   end
 
   @doc """
   Runs all scenarios against `conn`, on sub-queues of `queue`. Prints one
   CONF line per scenario and a closing tally. Returns `{:ok, n}` when all
-  pass (n == 75 today -- the live total, grown by additive minor; the count is
+  pass (n == 76 today -- the live total, grown by additive minor; the count is
   re-pinned in both pinning tests, `conformance_run_test.exs` `{:ok, n}` and
   `conformance_scenarios_test.exs` `@run_order`), `{:error, failed_names}`
   otherwise. The set spans the eighteen state-machine scenarios, the emq.2
@@ -211,7 +220,10 @@ defmodule EchoMQ.Conformance do
   the append-order theorem (stream_append: EchoMQ.Stream.append mints an
   EVT-branded record id and appends it under its A1 xadd id, N>=2 reads back in
   mint order == id-sort order, the host-side kind door, the :nonmonotonic
-  liveness).
+  liveness) -- and the reader law (emq3.3) -- the consumer group's at-least-once
+  grouped delivery (stream_group: two branded records group-read with XREADGROUP
+  >, one XACKed and one left un-acked, a forced XAUTOCLAIM re-delivers the SAME
+  un-acked branded receipt -- a POSITIVE re-delivery proof, never ack-everything).
   """
   def run(conn, queue) when is_binary(queue) do
     results =
@@ -2819,6 +2831,23 @@ defmodule EchoMQ.Conformance do
     end
   end
 
+  defp apply_scenario(:stream_group, conn, q) do
+    # The reader law (emq3.3, S2 the readers part 1): the consumer group's
+    # at-least-once grouped delivery, proven POSITIVELY by an un-acked entry
+    # actually RE-DELIVERED (US7/INV9 -- a scenario that XACKs every entry and
+    # asserts nothing about re-delivery is the TRD.9.1 false-green class, a LOUD
+    # failure). Two EVT records are appended via EchoMQ.Stream.append (the real
+    # writer's branded receipts); a group reads both with XREADGROUP ... > (the
+    # entries enter the consumer's PEL); ONE is XACKed (retires from the PEL) and
+    # ONE is LEFT un-acked; a forced XAUTOCLAIM (min-idle 0) re-claims the
+    # un-acked entry and the SAME branded receipt returns (the at-least-once
+    # mechanism the StreamConsumer's beat folds in). The verbs are issued DIRECT
+    # (XGROUP / XREADGROUP / XACK / XAUTOCLAIM), no new script, no new wire class.
+    with :ok <- stream_group_redeliver(conn, q) do
+      :ok
+    end
+  end
+
   # (1) the order theorem: N EVT records append (the branded receipt), read back
   # in MINT order == id-sort order, payloads in append order -- the writer law's
   # whole point, asserted against the appended data (N>=2, never a vacuous read).
@@ -2882,6 +2911,77 @@ defmodule EchoMQ.Conformance do
       other -> {:fail, {:nonmonotonic, other}}
     end
   end
+
+  # The reader law's POSITIVE re-delivery proof (emq3.3, US7/INV9): append two
+  # EVT records (the real writer's branded receipts), read the group so both
+  # enter the consumer's PEL, XACK ONE and LEAVE ONE un-acked, then force an
+  # XAUTOCLAIM (min-idle 0) and assert the SAME un-acked branded receipt returns
+  # while the acked one does NOT. A vacuous ack-everything pass is impossible
+  # here: the un-acked entry MUST re-appear in the claimed set, or the scenario
+  # FAILS. The branded id (the stored "id" field) is correlated to its xadd id
+  # (the wire position used for XACK / XAUTOCLAIM) so the assertion is on the
+  # canonical receipt, not the volatile wire id.
+  defp stream_group_redeliver(conn, q) do
+    key = Stream.stream_key(q, "rg")
+    keep_branded = ok!(Stream.append(conn, q, "rg", [{"seq", "keep"}]))
+    hold_branded = ok!(Stream.append(conn, q, "rg", [{"seq", "hold"}]))
+
+    with {:ok, "OK"} <- Connector.command(conn, ["XGROUP", "CREATE", key, "grp", "0"]),
+         {:ok, read} <-
+           Connector.command(conn, ["XREADGROUP", "GROUP", "grp", "c1", "COUNT", "10", "STREAMS", key, ">"]),
+         entries when is_list(entries) and length(entries) == 2 <- stream_entries(read, key),
+         pairs = for([xid, kv] <- entries, do: {field_value(kv, "id"), xid}),
+         {:ok, keep_xid} <- fetch_xid(pairs, keep_branded),
+         {:ok, hold_xid} <- fetch_xid(pairs, hold_branded),
+         # XACK the keep entry (retires from the PEL); LEAVE the hold entry
+         {:ok, 1} <- Connector.command(conn, ["XACK", key, "grp", keep_xid]),
+         # force the re-claim of the un-acked hold entry (min-idle 0) to c2
+         {:ok, [_cursor, claimed | _]} <-
+           Connector.command(conn, ["XAUTOCLAIM", key, "grp", "c2", "0", "0", "COUNT", "10"]),
+         claimed_brandeds = for([_xid, kv] <- claimed, do: field_value(kv, "id")),
+         # the un-acked hold entry RE-DELIVERED (the SAME branded receipt); the
+         # acked keep entry is NOT re-claimed (it left the PEL) -- a positive
+         # re-delivery proof, never an ack-everything no-op.
+         true <- hold_branded in claimed_brandeds,
+         false <- keep_branded in claimed_brandeds,
+         _ = keep_xid,
+         _ = hold_xid do
+      :ok
+    else
+      other -> {:fail, {:stream_group, other}}
+    end
+  end
+
+  # the entry list off an XREADGROUP reply for `key` (RESP3 map or RESP2 nested
+  # array stream->entries form) -- the full [[xid, kv], ...] list, [] if absent.
+  defp stream_entries(reply, key) when is_map(reply) do
+    case Map.get(reply, key) do
+      entries when is_list(entries) -> entries
+      _ -> []
+    end
+  end
+
+  defp stream_entries(reply, key) when is_list(reply) do
+    case List.keyfind(reply, key, 0) do
+      {^key, entries} when is_list(entries) -> entries
+      _ -> []
+    end
+  end
+
+  defp stream_entries(_reply, _key), do: []
+
+  # the xadd id paired with `branded` in the [{branded, xid}, ...] list.
+  defp fetch_xid(pairs, branded) do
+    case List.keyfind(pairs, branded, 0) do
+      {^branded, xid} -> {:ok, xid}
+      _ -> {:error, {:no_xid, branded}}
+    end
+  end
+
+  # the value of field `target` in a flat [k, v, k, v, ...] XADD field list.
+  defp field_value([k, v | _], k), do: v
+  defp field_value([_k, _v | rest], target), do: field_value(rest, target)
+  defp field_value(_, _), do: nil
 
   # unwrap a {:ok, v} append (the scenario aborts loudly on any other shape).
   defp ok!({:ok, v}), do: v

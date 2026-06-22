@@ -1,8 +1,8 @@
 defmodule EchoMQ.ConformanceRunTest do
   @moduledoc """
   The standing gate (EMQ.0-US4, the ratified Q1 stand-in for rung 3_6):
-  the seventy-five-scenario harness drives the public surface against Valkey
-  on 6390 and every scenario passes — `run/2 → {:ok, 75}` (the eighteen
+  the seventy-six-scenario harness drives the public surface against Valkey
+  on 6390 and every scenario passes — `run/2 → {:ok, 76}` (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -35,7 +35,11 @@ defmodule EchoMQ.ConformanceRunTest do
   append-order theorem's one (stream_append: EchoMQ.Stream.append mints an
   EVT-branded record id and appends it under its A1 xadd id, N>=2 reads back in
   mint order == id-sort order, a wrong-kind id raises before any wire, and a
-  contrived out-of-order append surfaces :nonmonotonic)). Scenarios run on
+  contrived out-of-order append surfaces :nonmonotonic), and -- the reader law
+  (emq3.3) -- the consumer group's at-least-once grouped delivery's one
+  (stream_group: two branded records group-read with XREADGROUP >, one XACKed
+  and one left un-acked, a forced XAUTOCLAIM re-delivers the SAME un-acked
+  branded receipt -- a POSITIVE re-delivery proof)). Scenarios run on
   per-scenario sub-queues and purge what they mint.
   """
   use ExUnit.Case, async: false
@@ -49,7 +53,7 @@ defmodule EchoMQ.ConformanceRunTest do
     :ok
   end
 
-  test "the seventy-five-scenario harness passes whole against the truth row" do
+  test "the seventy-six-scenario harness passes whole against the truth row" do
     {:ok, conn} = Connector.start_link(port: 6390)
 
     on_exit(fn ->
@@ -62,6 +66,6 @@ defmodule EchoMQ.ConformanceRunTest do
 
     q = "emq0.conf#{System.unique_integer([:positive])}"
 
-    assert Conformance.run(conn, q) == {:ok, 75}
+    assert Conformance.run(conn, q) == {:ok, 76}
   end
 end
