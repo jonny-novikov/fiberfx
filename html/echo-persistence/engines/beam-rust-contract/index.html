@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 10 · The BEAM↔Rust contract — Echo Persistence</title>
+<meta name="description" content="Module 10 of Echo Persistence (Chapter III — The engines): eg.4, the BEAM↔Rust contract. EchoStore.GraftBackend drives the echo_graft_backend Rust sidecar over EchoMQ through the byte-frozen echo_graft_proto wire — the version handshake, the commit/ack/feed path, crash and resubscribe-from-last-seen-LSN, and the compositional cross-runtime proof. An interactive wire.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls .sep{width:1px;height:22px;background:var(--b-line)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.6em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .cmd{color:var(--b-ts)}.readout .feed{color:var(--b-node)}.readout .no{color:var(--b-ns)}.readout code{background:#ecf0e9}
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:18px}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--p-accent);font-weight:700;display:flex;justify-content:space-between}
+.door .dr .soon{color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:20px;padding:1px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}.door p{font-size:.88rem;color:var(--b-dim)}
+.buildbox{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:16px 18px;margin:12px 0;max-width:80ch}
+.buildbox .bk{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--p-accent);font-weight:700;margin-bottom:6px}
+.brc-box{stroke-width:1.5}
+.brc-beam{fill:#eef4f9;stroke:var(--b-ts)}
+.brc-rust{fill:#fdeeec;stroke:var(--b-ns)}
+.brc-rust.dead{fill:#f1ecec;stroke-dasharray:4 3}
+.brc-title{font-family:var(--mono);font-size:12px;font-weight:700;pointer-events:none}
+.brc-title.beam{fill:var(--b-ts)}.brc-title.rust{fill:var(--b-ns)}
+.brc-sub{font-family:var(--mono);font-size:9.5px;fill:var(--b-dim);pointer-events:none}
+.brc-kv{font-family:var(--mono);font-size:10px;pointer-events:none}
+.brc-kv .v{font-weight:700}
+.brc-lane{stroke:var(--b-line);stroke-width:2;fill:none}
+.brc-lane.cmd{marker-end:url(#brcR)}
+.brc-lane.reply{marker-end:url(#brcL)}
+.brc-lane.feed{marker-end:url(#brcL);stroke-dasharray:5 3}
+.brc-lane.hot{stroke:var(--p-accent);stroke-width:2.6}
+.brc-lane.hotfeed{stroke:var(--b-node);stroke-width:2.6}
+.brc-lane.dimfeed{stroke:#e2ddcd}
+.brc-lanelbl{font-family:var(--mono);font-size:9.5px;fill:var(--b-dim);pointer-events:none}
+.brc-msg{font-family:var(--mono);font-size:10px;font-weight:700;pointer-events:none}
+.brc-msg.cmd{fill:var(--b-ts)}.brc-msg.reply{fill:var(--p-accent-h)}.brc-msg.feed{fill:var(--b-node)}.brc-msg.no{fill:var(--b-ns)}
+.brc-note{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:880px){.doors{grid-template-columns:1fr}}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">engines</a><span class="rsep">/</span><span class="rcur">beam-rust-contract</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#wire">The wire</a>
+<a href="#why">Why a sidecar</a>
+<a href="#dives">The dives</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 10 &#183; Chapter III &#8212; The engines</p>
+<h1>The BEAM&#8596;Rust <span class="hns">contract</span>.</h1>
+<p class="lede">The native engine lives in the BEAM; the Rust engine does not. So the platform reaches it the way it reaches everything else &#8212; over EchoMQ. <code>EchoStore.GraftBackend</code> on the BEAM drives the <code>echo_graft_backend</code> Rust sidecar through one <b>byte-frozen wire</b>, <code>echo_graft_proto</code>: a version handshake on connect, a command/reply lane for requests, and the eg.3 feed lane for advances. The contract is the only coupling &#8212; an engine crash is a restart, not a downed orchestrator &#8212; and a shared fixture set both runtimes assert against is what keeps them in lockstep. This is rung eg.4. Drive the handshake, a commit, and a crash below.</p>
+<figure class="fig" aria-labelledby="brcCap">
+<figcaption id="brcCap"><b>One contract, two runtimes, three lanes.</b> A commit flows BEAM&#8594;Rust on <code>egraft:cmd:{vol}</code>, the Rust runtime takes the eg.2 fence, the <code>Ack</code> returns on <code>egraft:reply:{client}</code>, and only a <b>durable LSN advance</b> publishes a <code>FeedEvent</code> on <code>egraft:feed:{vol}</code>. A no-op push publishes nothing; a crash resumes from the last-seen LSN.</figcaption>
+<svg viewBox="0 0 720 312" id="brc" role="img" aria-label="A BEAM client box on the left and a Rust sidecar box on the right, joined by three lanes: a command lane left-to-right, a reply lane right-to-left, and a publish-only feed lane right-to-left. Connecting runs a Hello/Welcome handshake. Committing sends a Commit on the command lane, the Rust side takes the fence, an Ack with the new LSN returns on the reply lane, and a FeedEvent with the matching LSN is published on the feed lane. A no-op push publishes no feed event. Crashing the backend and reconnecting resubscribes the client from its last-seen LSN.">
+<defs>
+<marker id="brcR" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-dim)"></path></marker>
+<marker id="brcL" markerWidth="8" markerHeight="8" refX="2" refY="4" orient="auto"><path d="M8 0 L0 4 L8 8 z" fill="var(--b-dim)"></path></marker>
+</defs>
+<rect class="brc-box brc-beam" x="18" y="64" width="186" height="180" rx="8"></rect>
+<text class="brc-title beam" x="32" y="86">BEAM</text>
+<text class="brc-sub" x="32" y="100">EchoStore.GraftBackend</text>
+<text class="brc-kv" x="32" y="128">connected: <tspan class="v" id="kConn" fill="#b23b2e">no</tspan></text>
+<text class="brc-kv" x="32" y="146">proto: <tspan class="v" id="kProto" fill="#6b7163">&#8212;</tspan></text>
+<text class="brc-kv" x="32" y="164">last-seen LSN: <tspan class="v" id="kSeen" fill="#965d0c">0</tspan></text>
+<text class="brc-sub" x="32" y="206">client subscribes</text>
+<text class="brc-sub" x="32" y="219">egraft:reply:{client}</text>
+<text class="brc-sub" x="32" y="232">egraft:feed:{vol}</text>
+
+<rect class="brc-box brc-rust" id="rustBox" x="516" y="64" width="186" height="180" rx="8"></rect>
+<text class="brc-title rust" x="530" y="86">Rust (sidecar)</text>
+<text class="brc-sub" x="530" y="100">echo_graft_backend</text>
+<text class="brc-kv" x="530" y="128">status: <tspan class="v" id="kStat" fill="#2e7d5b">up</tspan></text>
+<text class="brc-kv" x="530" y="146">head LSN: <tspan class="v" id="kHead" fill="#965d0c">0</tspan></text>
+<text class="brc-kv" x="530" y="164">PROTO_MAX: <tspan class="v">2</tspan></text>
+<text class="brc-sub" x="530" y="206">1:1 dispatch onto</text>
+<text class="brc-sub" x="530" y="219">the Rust Runtime</text>
+<text class="brc-sub" x="530" y="232">(no new engine logic)</text>
+
+<line class="brc-lane cmd" id="laneCmd" x1="206" y1="104" x2="514" y2="104"></line>
+<text class="brc-lanelbl" x="214" y="98">egraft:cmd:{vol}</text>
+<text class="brc-msg cmd" id="msgCmd" x="360" y="118" text-anchor="middle"></text>
+
+<line class="brc-lane reply" id="laneReply" x1="514" y1="160" x2="206" y2="160"></line>
+<text class="brc-lanelbl" x="214" y="154">egraft:reply:{client}</text>
+<text class="brc-msg reply" id="msgReply" x="360" y="174" text-anchor="middle"></text>
+
+<line class="brc-lane feed" id="laneFeed" x1="514" y1="216" x2="206" y2="216"></line>
+<text class="brc-lanelbl" x="214" y="210">egraft:feed:{vol} &#183; publish-only</text>
+<text class="brc-msg feed" id="msgFeed" x="360" y="230" text-anchor="middle"></text>
+
+<text class="brc-note" x="234" y="262">byte-frozen echo_graft_proto &#183; one fixture set, both runtimes assert &#183; corr pairs request&#8596;reply</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="bConn">connect (Hello)</button>
+<button type="button" id="bCommit">commit + push</button>
+<button type="button" id="bNoop">no-op push</button>
+<span class="sep"></span>
+<button type="button" id="bCrash">crash backend &#8594; reconnect</button>
+<button type="button" id="brcReset">reset</button>
+</div>
+<div class="readout" id="brcOut" aria-live="polite"><span class="rk">readout &#183;</span> <code>connect</code> runs the version handshake (<code>Hello</code> &#8594; <code>Welcome</code>). <code>commit + push</code> sends a <code>Commit</code>, takes the fence, returns an <code>Ack</code>, then publishes a <code>FeedEvent</code>. <code>no-op push</code> shows the S-1 negative: no advance, no event. <code>crash</code> proves recovery from the last-seen LSN.</div>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="wire">
+<div class="sech"><span class="sno">&#167;1</span><h2>The wire is the contract</h2><span class="ssrc">graft.4.md &#183; eg.4</span></div>
+<div class="prose">
+<p>Transport is RESP3 over EchoMQ. On connect the client sends <code>Hello{proto_min, proto_max}</code>; the backend selects a version and replies <code>Welcome{proto}</code>, or refuses with <code>Incompatible</code> &#8212; and a refusal <b>touches no Volume</b> (the S-2 negative: assert the Volume set is byte-identical before and after a rejected connect). Each request carries a <code>corr</code> id the response echoes, on a per-client reply lane <code>egraft:reply:{client}</code>; commands ride per-Volume lanes <code>egraft:cmd:{vol}</code> so one hot Volume can never head-of-line-block another. The message set is small and closed &#8212; <code>OpenVolume</code>, <code>Commit</code>, <code>Push</code>, <code>Pull</code>, <code>Read</code>, <code>Snapshot</code>, <code>GetCommit</code>, the <code>Ack</code>/<code>Pages</code>/<code>Err</code> responses, and the opaque eg.3 <code>FeedEvent</code> &#8212; and the error enum is exactly <code>{conflict, not_found, version_mismatch, unavailable}</code>; a new kind is a version bump, never a silent addition. The backend is a thin <b>1:1 dispatch</b> onto the real Rust <code>Runtime</code> (<code>Commit</code>&#8594;<code>volume_writer</code>, <code>Push</code>&#8594;<code>volume_push</code>, <code>Read</code>&#8594;<code>volume_reader</code>&#8594;lazy fault): no new engine logic, just session, dispatch, and publish.</p>
+</div>
+</section>
+
+<section id="why">
+<div class="sech"><span class="sno">&#167;2</span><h2>Why a sidecar, and how the proof holds</h2><span class="ssrc">graft.4.md &#183; D-7</span></div>
+<div class="prose">
+<p>The Rust engine does blocking object-storage and LSM I/O, so it runs as a <b>supervised backend process</b>, not an in-VM NIF: a NIF would couple crash domains (a segfault takes the orchestrator with it) and force dirty schedulers, while a backend turns an engine crash into a restart. The local-socket/bus hop is noise next to an object-storage commit, the latency regime the engine already lives in. On a crash the client reconnects and <b>resubscribes from its last-seen LSN</b> &#8212; the feed cursor is the recovery key, and replay is monotone and gap-free, so a restart is a hiccup, not a gap. The hard part is the cross-runtime contract, and the HIGH-risk mitigation is a single byte-frozen fixture set both runtimes assert against. The eg.4 proof is <b>compositional</b> (Operator ruling D-7 = A): the Rust dispatch is proven in-process over a real <code>Runtime</code> and an in-memory feed sink; the BEAM client&#8217;s bus mechanics are proven over a live Valkey on <code>:6390</code> against an in-Elixir responder that speaks the same <code>Proto</code>; and the two meet at the shared fixtures (identical <code>sha256</code>). The one literally-connected Rust-to-Valkey socket is a deployment concern, deferred by ruling to eg.5/eg.6 &#8212; the contract is already proven.</p>
+</div>
+</section>
+
+<section id="dives">
+<div class="sech"><span class="sno">&#167;3</span><h2>The three dives</h2><span class="ssrc">module 10</span></div>
+<div class="doors">
+<div class="door">
+<span class="dr">Dive 10.1 <span class="soon">soon</span></span><h3>The byte-frozen wire &amp; the handshake</h3>
+<p><code>echo_graft_proto</code> message by message, RESP3 framing, the <code>Hello</code>/<code>Welcome</code>/<code>Incompatible</code> negotiation, the closed error enum, and one fixture set both runtimes assert byte-for-byte.</p>
+</div>
+<div class="door">
+<span class="dr">Dive 10.2 <span class="soon">soon</span></span><h3>Commit, ack, and the feed advance</h3>
+<p>The command path end to end: <code>Commit</code> &#8594; the Rust fence &#8594; <code>Ack(lsn)</code> &#8594; <code>Push</code> &#8594; <code>FeedEvent(lsn)</code> &#8212; and the S-1 liveness invariant: a no-op push publishes nothing.</p>
+</div>
+<div class="door">
+<span class="dr">Dive 10.3 <span class="soon">soon</span></span><h3>Crash, reconnect &amp; the compositional proof</h3>
+<p>Supervised restart, resubscribe-from-last-seen-LSN as the recovery key, and why three legs meeting at one byte-frozen wire prove the cross-runtime contract without a single live socket.</p>
+</div>
+</div>
+</section>
+
+<section id="build">
+<div class="sech"><span class="sno">&#167;4</span><h2>Build &amp; check</h2></div>
+<div class="buildbox"><div class="bk">What you build</div>
+<p>Trace one commit across the boundary: name the lane it leaves on, the Rust call it dispatches to, where the fence runs, the lane the <code>Ack</code> returns on, and the single condition under which a <code>FeedEvent</code> is published. If you can also say what a no-op push publishes, you have the contract.</p>
+</div>
+<div class="buildbox"><div class="bk">Check</div>
+<p>What is the one thing that keeps the BEAM and Rust sides in lockstep, and why is a crash a restart rather than an outage? &#8220;One byte-frozen fixture set both assert against; the engine is a supervised backend, not a NIF&#8221; means you have the module.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;5</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/specs/graft.4.md">graft specs / graft.4.md</a><span class="rsrc">eg.4 &#8212; the backend, the proto, the handshake, the declared keys, the stories</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.roadmap.md">graft.roadmap.md</a><span class="rsrc">eg.4 in the eg.1&#8211;eg.6 ladder; byte-frozen wire as a gate</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.engine-split.design.md">graft.engine-split.design.md</a><span class="rsrc">the COEXIST ruling &#8212; GraftBackend a peer, native engine untouched</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/wire/design/ewr.design.md">ewr.design.md</a><span class="rsrc">EchoWire / the RESP3 connector the client rides</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://redis.io/docs/latest/develop/reference/protocol-spec/">RESP3 protocol</a><span class="rsrc">the framing echo_graft_proto encodes to</span></li>
+<li><a href="https://www.erlang.org/doc/system/nif.html">Erlang NIFs</a><span class="rsrc">the crash-domain coupling a sidecar avoids</span></li>
+<li><a href="https://github.com/orbitinghail/graft">orbitinghail/graft</a><span class="rsrc">the upstream engine echo_graft is seeded from</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Module pager">
+<a class="pgx" href="/echo-persistence/engines/tigris+fence"><span class="pk">Prev &#183; Module 9</span>&#8592; Tigris &amp; the fence</a>
+<a class="pgx" href="/echo-persistence/platform/echomq-bus"><span class="pk">Next &#183; Module 11</span>EchoMQ Bus &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 10</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var connected=false, head=0, seen=0;
+  var laneCmd=document.getElementById('laneCmd'),laneReply=document.getElementById('laneReply'),laneFeed=document.getElementById('laneFeed');
+  var mCmd=document.getElementById('msgCmd'),mReply=document.getElementById('msgReply'),mFeed=document.getElementById('msgFeed');
+  var kConn=document.getElementById('kConn'),kProto=document.getElementById('kProto'),kSeen=document.getElementById('kSeen'),kHead=document.getElementById('kHead'),kStat=document.getElementById('kStat'),rustBox=document.getElementById('rustBox');
+  var out=document.getElementById('brcOut');
+  function lanes(cmd,reply,feed){
+    laneCmd.setAttribute('class','brc-lane cmd'+(cmd?' hot':''));
+    laneReply.setAttribute('class','brc-lane reply'+(reply?' hot':''));
+    laneFeed.setAttribute('class','brc-lane feed'+(feed==='hot'?' hotfeed':feed==='dim'?' dimfeed':''));
+  }
+  function msgs(c,r,f){ mCmd.textContent=c||''; mReply.textContent=r||''; mFeed.textContent=f||''; mFeed.setAttribute('class','brc-msg '+(f&&f.indexOf('no')===0?'no':'feed')); }
+  function kv(){ kConn.textContent=connected?'yes':'no'; kConn.setAttribute('fill',connected?'#2e7d5b':'#b23b2e'); kProto.textContent=connected?'2':'\u2014'; kProto.setAttribute('fill',connected?'#965d0c':'#6b7163'); kSeen.textContent=seen; kHead.textContent=head; }
+  document.getElementById('bConn').addEventListener('click',function(){
+    connected=true; kStat.textContent='up'; kStat.setAttribute('fill','#2e7d5b'); rustBox.setAttribute('class','brc-box brc-rust'); kv();
+    lanes(true,true,'dim'); msgs('Hello{2..2}','Welcome{2}','\u2014');
+    out.innerHTML='<span class="rk">handshake &#183;</span> client sends <code>Hello{proto_min:2, proto_max:2}</code> on the control lane; backend selects <b>proto 2</b> and replies <code>Welcome</code>. An <code>Incompatible</code> reply would touch <span class="no">no Volume</span> (S-2). Connected.';
+  });
+  document.getElementById('bCommit').addEventListener('click',function(){
+    if(!connected){ out.innerHTML='<span class="rk">commit &#183;</span> not connected &#8212; run <code>connect</code> first.'; return; }
+    head++; seen=head; kv(); lanes(true,true,'hot'); msgs('Commit corr='+head,'Ack lsn='+head,'FeedEvent lsn='+head);
+    out.innerHTML='<span class="rk">commit + push &#183;</span> <span class="cmd">Commit corr='+head+'</span> on <code>egraft:cmd:{vol}</code> &#8594; Rust <code>volume_writer</code>+commit takes the <b>eg.2 fence</b> &#8594; <code>Ack lsn='+head+'</code> on the reply lane &#8594; <code>Push</code> advances the remote LSN &#8594; <span class="feed">FeedEvent lsn='+head+'</span> on <code>egraft:feed:{vol}</code>. Client sees the ack, then the event.';
+  });
+  document.getElementById('bNoop').addEventListener('click',function(){
+    if(!connected){ out.innerHTML='<span class="rk">push &#183;</span> not connected &#8212; run <code>connect</code> first.'; return; }
+    lanes(true,false,'dim'); msgs('Push','\u2014','no event');
+    out.innerHTML='<span class="rk">no-op push &#183;</span> <code>Push</code> with no new commit &#8212; <code>publish_feed_advance</code> sees the remote LSN <b>unchanged</b>, so the per-Volume bus cursor does not move and <span class="no">no FeedEvent is published</span>. This is the S-1 negative: a feed event fires only on a durable advance.';
+  });
+  document.getElementById('bCrash').addEventListener('click',function(){
+    if(!connected){ out.innerHTML='<span class="rk">crash &#183;</span> not connected &#8212; run <code>connect</code> first.'; return; }
+    kStat.textContent='crash \u2192 restart'; kStat.setAttribute('fill','#b23b2e'); rustBox.setAttribute('class','brc-box brc-rust dead');
+    lanes(true,true,'dim'); msgs('Hello (resume)','Welcome','resubscribe @'+seen);
+    out.innerHTML='<span class="rk">crash + reconnect &#183;</span> <span class="no">backend crashed</span>; its supervisor restarts it. The client reconnects and <b>resubscribes from last-seen LSN='+seen+'</b> &#8212; the feed cursor is the recovery key. Replay is monotone and gap-free: no committed LSN is lost (head still '+head+').';
+    setTimeout(function(){ kStat.textContent='up'; kStat.setAttribute('fill','#2e7d5b'); rustBox.setAttribute('class','brc-box brc-rust'); },900);
+  });
+  document.getElementById('brcReset').addEventListener('click',function(){
+    connected=false; head=0; seen=0; kStat.textContent='up'; kStat.setAttribute('fill','#2e7d5b'); rustBox.setAttribute('class','brc-box brc-rust'); kv();
+    lanes(false,false,false); msgs('','',''); out.innerHTML='<span class="rk">reset &#183;</span> disconnected. <code>connect</code> to run the handshake, then <code>commit + push</code>, a <code>no-op push</code>, and a <code>crash</code> to see the contract end to end.';
+  });
+  kv();
+})();
+</script>
+</body>
+</html>

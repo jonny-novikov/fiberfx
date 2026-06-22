@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The VolumeServer — Echo Persistence</title>
+<meta name="description" content="Dive 7.1 of Echo Persistence Module 7: the VolumeServer write path. A GenServer's single mailbox serializes commits — the OCC head-check needs no lock because the mailbox already is one. An interactive mailbox.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button:disabled{opacity:.4;cursor:default}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .a{color:var(--b-ts)}.readout .b{color:var(--b-seq)}.readout .ok{color:var(--b-node)}.readout .bad{color:var(--b-ns)}
+.vs-client{stroke-width:1.6;fill:var(--b-card)}
+.vs-client.a{stroke:var(--b-ts)}.vs-client.b{stroke:var(--b-seq)}
+.vs-client.on{stroke-width:2.6}
+.vs-client.a.on{fill:#eef4f9}.vs-client.b.on{fill:#f1ecf4}
+.vs-ctx{font-family:var(--mono);font-size:11px;font-weight:700;pointer-events:none}
+.vs-ctx.a{fill:var(--b-ts)}.vs-ctx.b{fill:var(--b-seq)}
+.vs-tube{fill:#fbfaf6;stroke:var(--p-accent);stroke-width:1.6}
+.vs-tube-lbl{font-family:var(--mono);font-size:10px;font-weight:700;fill:var(--p-accent-h);pointer-events:none}
+.vs-msg{stroke-width:1.3}
+.vs-msg.a{fill:#eef4f9;stroke:var(--b-ts)}.vs-msg.b{fill:#f1ecf4;stroke:var(--b-seq)}
+.vs-msg-tx{font-family:var(--mono);font-size:10px;fill:var(--b-ink);pointer-events:none}
+.vs-server{fill:var(--p-tint);stroke:var(--p-accent);stroke-width:1.8}
+.vs-server.flash{fill:#f6d9a6}
+.vs-server-tx{font-family:var(--mono);font-size:11.5px;font-weight:700;fill:var(--b-ink);pointer-events:none}
+.vs-head{fill:var(--b-card);stroke:var(--b-node);stroke-width:1.8}
+.vs-head-tx{font-family:var(--mono);font-size:13px;font-weight:700;fill:var(--b-node);pointer-events:none}
+.vs-applied{font-family:var(--mono);font-size:10px;fill:var(--b-dim);pointer-events:none}
+.vs-arrow{stroke:var(--b-dim);stroke-width:1.8;fill:none;marker-end:url(#vsa)}
+.vs-arrow-lbl{font-family:var(--mono);font-size:9.5px;fill:var(--b-dim);pointer-events:none}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence/engines/native-elixir">native-elixir</a><span class="rsep">/</span><span class="rcur">the-volume-server</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#mailbox">The mailbox</a>
+<a href="#why">Why no lock</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 7 &#183; Dive 7.1</p>
+<h1>The <span class="hns">VolumeServer</span>.</h1>
+<p class="lede">The write path is one GenServer. Many clients commit at once, but a GenServer has a single mailbox and runs one message at a time &#8212; so concurrent commits become a strict order for free. Each is checked with OCC (Module 3): if the base it read still matches the head, it appends; otherwise it&#8217;s a conflict and the client retries. No lock, because the mailbox already is one. Enqueue from two clients and process.</p>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="mailbox">
+<div class="sech"><span class="sno">&#167;1</span><h2>Concurrent in, ordered out</h2><span class="ssrc">interactive</span></div>
+<figure class="fig" aria-labelledby="vsCap">
+<figcaption id="vsCap"><b>One mailbox, one at a time.</b> Two clients enqueue commits (each captures the head it read as its base). The VolumeServer processes the front message: base matches head &#8594; append; else conflict. The order is the mailbox order.</figcaption>
+<svg viewBox="0 0 720 300" id="vs" role="img" aria-label="Two client boxes on the left enqueue commit messages into a single vertical mailbox tube in the center, each message tagged with the base LSN it read. The VolumeServer process below the tube consumes the front message one at a time, comparing its base to the current head: a match appends and advances the head shown on the right; a mismatch is a conflict and is rejected.">
+<defs><marker id="vsa" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-dim)"></path></marker></defs>
+<rect class="vs-client a" id="cliA" x="24" y="78" width="150" height="44" rx="7"></rect>
+<text class="vs-ctx a" x="38" y="98">client A</text>
+<text class="vs-ctx a" id="aRead" x="38" y="114" style="font-weight:400;fill:var(--b-dim)">reads head</text>
+<rect class="vs-client b" id="cliB" x="24" y="146" width="150" height="44" rx="7"></rect>
+<text class="vs-ctx b" x="38" y="166">client B</text>
+<text class="vs-ctx b" id="bRead" x="38" y="182" style="font-weight:400;fill:var(--b-dim)">reads head</text>
+<rect class="vs-tube" x="250" y="56" width="200" height="158" rx="8"></rect>
+<text class="vs-tube-lbl" x="350" y="46" text-anchor="middle">single mailbox = serialization point</text>
+<g id="msgs"></g>
+<rect class="vs-server" id="server" x="250" y="226" width="200" height="50" rx="8"></rect>
+<text class="vs-server-tx" x="350" y="248" text-anchor="middle">VolumeServer</text>
+<text class="vs-server-tx" x="350" y="265" text-anchor="middle" style="font-weight:400;fill:var(--b-dim)">handle one, then next</text>
+<rect class="vs-head" x="506" y="100" width="190" height="64" rx="8"></rect>
+<text class="vs-head-tx" id="headTx" x="601" y="128" text-anchor="middle">head = LSN 4</text>
+<text class="vs-applied" id="appliedTx" x="601" y="150" text-anchor="middle">applied: 1 2 3 4</text>
+<path class="vs-arrow" d="M174 96 L250 92"></path>
+<path class="vs-arrow" d="M174 168 L250 96"></path>
+<text class="vs-arrow-lbl" x="186" y="80">enqueue</text>
+<path class="vs-arrow" d="M450 250 L506 150"></path>
+<text class="vs-arrow-lbl" x="458" y="210">append</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="aCommit">client A commits</button>
+<button type="button" id="bCommit">client B commits</button>
+<button type="button" id="proc">process next</button>
+<button type="button" id="vsReset">reset</button>
+</div>
+<div class="readout" id="vsOut" aria-live="polite"><span class="rk">readout &#183;</span> Have <span class="a">A</span> and <span class="b">B</span> both commit (they each read head = LSN 4 as their base), then process. The first to be processed appends; the second finds the head moved and gets <code>{:error,{:conflict, head}}</code> &#8212; resolved by order, not by a lock.</div>
+</figure>
+</section>
+
+<section id="why">
+<div class="sech"><span class="sno">&#167;2</span><h2>The mailbox is the lock</h2><span class="ssrc">store.design.md</span></div>
+<div class="prose">
+<p>People reach for a mutex to protect a shic counter; on the BEAM you reach for a process. Because a GenServer dequeues and runs one message to completion before the next, there is never a moment where two commits inspect the head at once &#8212; the serialization is structural, not enforced. So the OCC check inside <code>handle_call</code> is a plain comparison: does this commit&#8217;s base still equal the head? If yes, append the page to CubDB and bump the head; if no, reply <code>{:error,{:conflict, head}}</code> and let the caller re-read and retry. Two clients that both based on LSN 4 cannot both win: whoever the mailbox put first takes LSN 5, the other conflicts. One writer process per volume, no locks, and the strict order Module 3 assumed &#8212; that is the whole write path. Next, the read path, which never blocks on this at all.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/store/design/store.design.md">store.design.md</a><span class="rs">VolumeServer, write-lock via mailbox, OCC</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rs">single-writer serialization per volume</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://hexdocs.pm/elixir/GenServer.html">GenServer</a><span class="rs">one message at a time</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Optimistic_concurrency_control">Optimistic concurrency control</a><span class="rs">base-version check on commit</span></li>
+<li><a href="https://www.erlang.org/doc/design_principles/des_princ.html">OTP design principles</a><span class="rs">processes as serialization</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx" href="/echo-persistence/engines/native-elixir"><span class="pk">Up &#183; Module 7</span>&#8592; The native Elixir engine</a>
+<a class="pgx" href="/echo-persistence/engines/native-elixir/the-lazy-reader"><span class="pk">Dive 7.2</span>The lazy Reader &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 7 / dive 7.1</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  var head=4, applied=[1,2,3,4], box=[], seq=0;
+  var msgs=document.getElementById('msgs'), headTx=document.getElementById('headTx'), appliedTx=document.getElementById('appliedTx'), out=document.getElementById('vsOut');
+  function drawHead(){
+    headTx.textContent='head = LSN '+head;
+    var tail=applied.slice(-6); appliedTx.textContent='applied: '+tail.join(' ')+(applied.length>6?' \u2026':'');
+  }
+  function drawBox(){
+    while(msgs.firstChild)msgs.removeChild(msgs.firstChild);
+    // front (index 0) at bottom, near server
+    var bottom=206, rowH=28, gap=3, vis=box.slice(0,5);
+    vis.forEach(function(m,i){
+      var y=bottom - i*(rowH+gap) - rowH;
+      var r=document.createElementNS(NS,'rect');r.setAttribute('class','vs-msg '+m.client);r.setAttribute('x',262);r.setAttribute('y',y);r.setAttribute('width',176);r.setAttribute('height',rowH);r.setAttribute('rx',4);msgs.appendChild(r);
+      var t=document.createElementNS(NS,'text');t.setAttribute('class','vs-msg-tx');t.setAttribute('x',272);t.setAttribute('y',y+18);t.textContent=(m.client==='a'?'A':'B')+' commit · base=LSN '+m.base+(i===0?'  ◂ front':'');msgs.appendChild(t);
+    });
+    if(box.length>5){var more=document.createElementNS(NS,'text');more.setAttribute('class','vs-msg-tx');more.setAttribute('x',350);more.setAttribute('y',74);more.setAttribute('text-anchor','middle');more.setAttribute('fill','var(--b-dim)');more.textContent='+'+(box.length-5)+' more queued';msgs.appendChild(more);}
+  }
+  function flash(){var s=document.getElementById('server');s.classList.add('flash');setTimeout(function(){s.classList.remove('flash');},380);}
+  function lightClient(c){var el=document.getElementById(c==='a'?'cliA':'cliB');el.classList.add('on');setTimeout(function(){el.classList.remove('on');},500);}
+  document.getElementById('aRead').textContent='reads head = LSN '+head;
+  document.getElementById('bRead').textContent='reads head = LSN '+head;
+  function enqueue(c){
+    box.push({client:c, base:head, id:++seq}); drawBox(); lightClient(c);
+    out.innerHTML='<span class="rk">enqueue &#183;</span> <span class="'+c+'">'+(c==='a'?'A':'B')+'</span> read head = LSN '+head+' and enqueued a commit with <b>base='+head+'</b>. It waits behind '+(box.length-1)+' message(s); the mailbox fixes the order.';
+  }
+  document.getElementById('aCommit').addEventListener('click',function(){enqueue('a');});
+  document.getElementById('bCommit').addEventListener('click',function(){enqueue('b');});
+  document.getElementById('proc').addEventListener('click',function(){
+    if(box.length===0){out.innerHTML='<span class="rk">process &#183;</span> mailbox empty &#8212; enqueue a commit from <span class="a">A</span> or <span class="b">B</span> first.';return;}
+    var m=box.shift(); flash();
+    if(m.base===head){
+      head++; applied.push(head); drawHead(); drawBox();
+      document.getElementById('aRead').textContent='reads head = LSN '+head;
+      document.getElementById('bRead').textContent='reads head = LSN '+head;
+      out.innerHTML='<span class="rk">process &#183;</span> <span class="'+m.client+'">'+(m.client==='a'?'A':'B')+'</span>: base '+m.base+' == head '+m.base+' &#8594; <span class="ok">append &#8594; head = LSN '+head+'</span>. Page written to CubDB, head bumped.';
+    } else {
+      drawBox();
+      out.innerHTML='<span class="rk">process &#183;</span> <span class="'+m.client+'">'+(m.client==='a'?'A':'B')+'</span>: base '+m.base+' &#8800; head '+head+' &#8594; <span class="bad">{:error,{:conflict, '+head+'}}</span>. The head moved while it queued &#8212; re-read and retry. <b>No lock was taken.</b>';
+    }
+  });
+  document.getElementById('vsReset').addEventListener('click',function(){head=4;applied=[1,2,3,4];box=[];drawHead();drawBox();document.getElementById('aRead').textContent='reads head = LSN 4';document.getElementById('bRead').textContent='reads head = LSN 4';out.innerHTML='<span class="rk">reset &#183;</span> head = LSN 4, mailbox empty. Have both clients commit on base 4, then process to see one win and one conflict.';});
+  drawHead(); drawBox();
+})();
+</script>
+</body>
+</html>

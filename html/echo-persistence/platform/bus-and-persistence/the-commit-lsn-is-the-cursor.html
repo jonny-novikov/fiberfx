@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dive 12.1 · The commit LSN is the cursor — Echo Persistence</title>
+<meta name="description" content="Module 12, Dive 12.1: the accept tier and the commit tier join at the batch — one batch becomes one LSN replicated to Tigris, and that LSN, published over EchoMQ, is the cursor every replica and consumer binds to. :async vs :sync per call. Interactive.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.1rem,1rem + 0.7vw,1.4rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.6rem,1.2rem + 2.2vw,2.5rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls .sep{width:1px;height:22px;background:var(--b-line)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.6em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .async{color:var(--b-ts)}.readout .sync{color:var(--b-node)}.readout code{background:#ecf0e9}
+.lc-box{rx:6;stroke-width:1.5}
+.lc-box.accept{fill:#eef4f9;stroke:var(--b-ts)}
+.lc-box.commit{fill:#fdf6e9;stroke:var(--p-accent)}
+.lc-box.tigris{fill:#f3eff7;stroke:var(--b-seq)}
+.lc-t{font-family:var(--mono);font-size:11px;font-weight:700;pointer-events:none}
+.lc-t.accept{fill:var(--b-ts)}.lc-t.commit{fill:var(--p-accent-h)}.lc-t.tigris{fill:var(--b-seq)}
+.lc-s{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.lc-slot{fill:#fff;stroke:var(--b-ts);stroke-width:1}
+.lc-slot.full{fill:#cfe0ee}
+.lc-arrow{stroke:var(--b-dim);stroke-width:1.6;fill:none;marker-end:url(#lcA)}
+.lc-arrow.hot{stroke:var(--p-accent);stroke-width:2.4;marker-end:url(#lcAh)}
+.lc-rep{fill:#eaf3ee;stroke:var(--b-node);stroke-width:1.3;rx:4}
+.lc-rept{font-family:var(--mono);font-size:10px;font-weight:700;fill:var(--b-node);pointer-events:none}
+.lc-lbl{font-family:var(--mono);font-size:9.5px;pointer-events:none}
+.lc-lbl.async{fill:var(--b-ts)}.lc-lbl.sync{fill:var(--b-node)}.lc-lbl.dim{fill:var(--b-dim)}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid var(--b-line);margin-top:46px;padding:22px 0 8px}
+.pgx{display:flex;flex-direction:column;gap:4px;font-family:var(--mono);font-size:14px;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;background:var(--b-card);transition:border-color .12s}
+.pgx:hover{border-color:var(--p-accent)}
+.pgx .pk{font-size:11px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em}
+.pgx .pt{color:var(--b-ts);font-weight:600}
+.pgx.next{text-align:right;align-items:flex-end}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}.pager{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">platform</a><span class="rsep">/</span><a href="/echo-persistence/platform/bus-and-persistence">bus-and-persistence</a><span class="rsep">/</span><span class="rcur">the-commit-lsn-is-the-cursor</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#join">The join</a>
+<a href="#cursor">One cursor</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 12 &#183; Dive 12.1</p>
+<h1>The commit LSN is the <span class="hns">cursor</span>.</h1>
+<p class="lede">The accept tier is fast because it amortizes one fsync over a whole batch; the commit tier is durable because each batch becomes one replicated transaction. They meet at the batch, and the number that transaction produces &#8212; the LSN &#8212; is published over EchoMQ. So a replica catching up, a consumer reading the feed, and the store proving durability all name their position with the <i>same</i> integer. The caller only chooses how long to wait for it. Enqueue and commit below.</p>
+<figure class="fig" aria-labelledby="lcCap">
+<figcaption id="lcCap"><b>One batch, one LSN, one cursor.</b> Enqueues accumulate in the Champ accept tier (fsync per K). Committing folds the batch into a single Graft transaction &#8212; <code>:sync</code> waits for the Tigris-replicated commit &#8212; which mints an LSN and <b>publishes it over EchoMQ</b>, advancing every replica&#8217;s cursor to the same point.</figcaption>
+<svg viewBox="0 0 720 268" id="lcu" role="img" aria-label="A Champ accept tier box holds a batch of slots that fill as enqueues arrive. An arrow leads to a Graft commit box showing a head LSN, and from there to a Tigris box. On commit, the batch folds into one transaction, the LSN increments, Tigris acknowledges, and the LSN is published to two replica boxes whose cursors advance to the new LSN.">
+<defs>
+<marker id="lcA" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-dim)"></path></marker>
+<marker id="lcAh" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--p-accent)"></path></marker>
+</defs>
+<rect class="lc-box accept" x="20" y="54" width="180" height="92"></rect>
+<text class="lc-t accept" x="32" y="74">Champ accept tier</text>
+<text class="lc-s" x="32" y="88">in-memory CHAMP + fsync / K</text>
+<rect class="lc-slot" id="s0" x="32" y="100" width="26" height="30"></rect>
+<rect class="lc-slot" id="s1" x="64" y="100" width="26" height="30"></rect>
+<rect class="lc-slot" id="s2" x="96" y="100" width="26" height="30"></rect>
+<rect class="lc-slot" id="s3" x="128" y="100" width="26" height="30"></rect>
+<text class="lc-s" id="batchN" x="166" y="120">0/4</text>
+<line class="lc-arrow" id="aAC" x1="202" y1="100" x2="280" y2="100"></line>
+<rect class="lc-box commit" x="282" y="54" width="170" height="92"></rect>
+<text class="lc-t commit" x="294" y="74">Graft commit tier</text>
+<text class="lc-s" x="294" y="88">batch &#8594; 1 transaction</text>
+<text class="lc-s" x="294" y="118">head LSN: <tspan id="headLsn" style="font-weight:700;fill:var(--p-accent-h)">0</tspan></text>
+<line class="lc-arrow" id="aCT" x1="454" y1="100" x2="520" y2="100"></line>
+<rect class="lc-box tigris" x="522" y="74" width="178" height="52"></rect>
+<text class="lc-t tigris" x="534" y="96">Tigris (object store)</text>
+<text class="lc-s" x="534" y="112">commit/{LSN} &#183; If-None-Match</text>
+<line class="lc-arrow" id="aFeed" x1="367" y1="146" x2="367" y2="186"></line>
+<text class="lc-lbl dim" x="374" y="170">PUBLISH lsn over EchoMQ</text>
+<rect class="lc-rep" x="240" y="196" width="120" height="40"></rect>
+<text class="lc-rept" x="252" y="214">replica R1</text>
+<text class="lc-s" id="r1" x="252" y="228">cursor: 0</text>
+<rect class="lc-rep" x="380" y="196" width="120" height="40"></rect>
+<text class="lc-rept" x="392" y="214">replica R2</text>
+<text class="lc-s" id="r2" x="392" y="228">cursor: 0</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="lcEnq">enqueue (:async)</button>
+<button type="button" id="lcCommit">commit batch (:sync)</button>
+<span class="sep"></span>
+<button type="button" id="lcReset">reset</button>
+</div>
+<div class="readout" id="lcOut" aria-live="polite"><span class="rk">readout &#183;</span> <span class="async">:async</span> returns the moment the batch is fsync&#8217;d locally &#8212; fast, with the loss window bounded by the open batch. <span class="sync">:sync</span> returns only after the Tigris-replicated commit acks, mints the LSN, and publishes it &#8212; binding every replica to the same cursor.</div>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="join">
+<div class="sech"><span class="sno">&#167;1</span><h2>The two tiers meet at the batch</h2><span class="ssrc">graft.design.md</span></div>
+<div class="prose">
+<p>Champ is the accept tier: state lives in memory and a single fsync is amortized over <i>K</i> records, so enqueues are cheap and the only exposure is the open batch &#8212; <code>K</code> is the dial, and it is exactly the loss window in records. <code>echo_graft</code> is the commit tier: each batch rolls up into one Graft transaction, replicated to Tigris as a single LSN behind the conditional-write fence of Module 9. The two tiers join precisely at the batch boundary, and that join is where the durability choice lives, <i>per call</i>. <code>:async</code> returns once the batch is fsync&#8217;d locally &#8212; the fast path, exposure bounded by the open batch. <code>:sync</code> returns only after the Tigris-replicated commit acknowledges &#8212; slower, but durable against the loss of the whole node. Crucially, aligning the commit batch to the consumer&#8217;s claim batch makes &#8220;enqueue through record&#8221; one durable, replicated unit: the same boundary that bounds Champ&#8217;s fsync is the boundary that becomes a Graft LSN, so there is no seam between accepting work and durably committing it &#8212; only a choice of how long to wait.</p>
+</div>
+</section>
+
+<section id="cursor">
+<div class="sech"><span class="sno">&#167;2</span><h2>One integer, three meanings</h2><span class="ssrc">graft.design.md &#183; eg.3</span></div>
+<div class="prose">
+<p>The LSN that the commit mints is not kept inside the store; it is <b>published over EchoMQ</b>, and that publication is the whole reason the bus and the floor are one system. Consider what the same integer means in three places. On the <b>store</b> side it is a durability boundary: everything at or below it is committed and replicated to Tigris. On a <b>replica</b> it is a position: a catching-up node fetches the head, learns the LSN, and faults pages up to it (Module 9&#8217;s log-head recovery). On the <b>bus</b> it is an offset: a consumer of the change feed subscribes &#8220;from this LSN&#8221; and receives every advance after it. Because all three are the identical number, a replica&#8217;s lag, a consumer&#8217;s backlog, and a commit&#8217;s durability are measured on one axis, and binding them is free &#8212; the commit already did it by publishing. This is also why the cross-runtime contract of Module 10 used the feed cursor as its recovery key: the LSN is the one coordinate every participant, in any runtime, already agrees on. Choose one cursor for both worlds and the rest of the platform&#8217;s coherence follows.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rsrc">the two-tier join at the batch; :async / :sync; the LSN published over EchoMQ binds replicas</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.roadmap.md">graft.roadmap.md</a><span class="rsrc">the commit tier; the conditional-write fence; log-head recovery</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/store/design/store.design.md">store.design.md</a><span class="rsrc">commit, the remote LSN as the shared cursor</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://en.wikipedia.org/wiki/Write-ahead_logging">Write-ahead logging</a><span class="rsrc">the log sequence number</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Group_commit">Group commit</a><span class="rsrc">one fsync over a batch</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx prev" href="/echo-persistence/platform/bus-and-persistence"><span class="pk">&#8592; Prev &#183; Module 12</span><span class="pt">EchoBus + Echo Persistence</span></a>
+<a class="pgx next" href="/echo-persistence/platform/bus-and-persistence/the-outbox-beside-the-bus"><span class="pk">Next &#183; Dive 12.2 &#8594;</span><span class="pt">The outbox beside the bus</span></a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; dive 12.1</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var K=4, batch=0, lsn=0;
+  var slots=[document.getElementById('s0'),document.getElementById('s1'),document.getElementById('s2'),document.getElementById('s3')];
+  var batchN=document.getElementById('batchN'),headLsn=document.getElementById('headLsn'),r1=document.getElementById('r1'),r2=document.getElementById('r2');
+  var aAC=document.getElementById('aAC'),aCT=document.getElementById('aCT'),aFeed=document.getElementById('aFeed'),out=document.getElementById('lcOut');
+  function paintBatch(){ for(var i=0;i<K;i++) slots[i].setAttribute('class','lc-slot'+(i<batch?' full':'')); batchN.textContent=batch+'/'+K; }
+  function hot(on){ var c=on?'lc-arrow hot':'lc-arrow'; aAC.setAttribute('class',c); aCT.setAttribute('class',c); aFeed.setAttribute('class',c); }
+  document.getElementById('lcEnq').addEventListener('click',function(){
+    hot(false);
+    if(batch>=K){ out.innerHTML='<span class="rk">:async &#183;</span> the batch is full ('+K+'/'+K+') &#8212; <code>commit batch</code> to fold it into one LSN, or it would auto-commit at K. Enqueues never wait on Tigris.'; return; }
+    batch++; paintBatch();
+    out.innerHTML='<span class="rk">enqueue :async &#183;</span> appended to the in-memory batch ('+batch+'/'+K+') and <span class="async">returned at the local fsync</span>. Durable against a clean restart; the only exposure is these '+batch+' un-committed record(s) &#8212; the open-batch loss window.';
+  });
+  document.getElementById('lcCommit').addEventListener('click',function(){
+    if(batch===0){ out.innerHTML='<span class="rk">:sync &#183;</span> nothing in the batch &#8212; <code>enqueue</code> a few first, then commit folds them into a single Graft transaction.'; return; }
+    var n=batch; lsn++; batch=0; paintBatch(); headLsn.textContent=lsn; hot(true);
+    r1.textContent='cursor: '+lsn; r2.textContent='cursor: '+lsn;
+    out.innerHTML='<span class="rk">commit batch :sync &#183;</span> '+n+' record(s) folded into <b>one</b> Graft transaction &#8594; replicated to Tigris behind the fence &#8594; <span class="sync">LSN '+lsn+'</span> minted and <b>published over EchoMQ</b>. Both replicas advanced their cursor to <span class="sync">'+lsn+'</span> &#8212; the same integer the store calls &#8220;durable&#8221;.';
+  });
+  document.getElementById('lcReset').addEventListener('click',function(){ batch=0; lsn=0; paintBatch(); headLsn.textContent='0'; r1.textContent='cursor: 0'; r2.textContent='cursor: 0'; hot(false); out.innerHTML='<span class="rk">reset &#183;</span> empty batch, LSN 0. <code>enqueue</code> a few (:async, fast) then <code>commit batch</code> (:sync) to mint and publish an LSN that binds both replicas.'; });
+  paintBatch();
+})();
+</script>
+</body>
+</html>

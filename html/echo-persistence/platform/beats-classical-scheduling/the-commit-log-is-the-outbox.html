@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dive 13.2 · The commit log is the outbox — Echo Persistence</title>
+<meta name="description" content="Module 13, Dive 13.2: the robust solution. EchoStore.Durability.Graft makes the outbox the engine's own commit log — an enqueue intent is a page commit in a reserved high LSN range (@obx_base = 1 <<< 48), atomic and durable in one act, behind the fence and replicated to Tigris. The Committer drains it to the work queue at-least-once; replay scans the reserved range above a watermark. Interactive.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.1rem,1rem + 0.7vw,1.4rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.6rem,1.2rem + 2.2vw,2.5rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls .sep{width:1px;height:22px;background:var(--b-line)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.6em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .int{color:var(--b-node)}.readout .usr{color:var(--b-ts)}.readout .no{color:var(--b-ns)}.readout code{background:#ecf0e9}
+.ce-region{rx:4;stroke-width:1.2}
+.ce-region.low{fill:#eef4f9;stroke:var(--b-ts)}
+.ce-region.high{fill:#eef6f1;stroke:var(--b-node)}
+.ce-rt{font-family:var(--mono);font-size:9.5px;pointer-events:none}
+.ce-rt.low{fill:var(--b-ts)}.ce-rt.high{fill:var(--b-node)}
+.ce-tick{stroke:var(--b-ts);stroke-width:2}
+.ce-int{rx:2;stroke-width:1.2}
+.ce-int.pend{fill:#fff;stroke:var(--b-node)}
+.ce-int.drn{fill:#cfe6d8;stroke:var(--b-node)}
+.ce-intb{font-family:var(--mono);font-size:7px;fill:var(--b-node);pointer-events:none;text-anchor:middle}
+.ce-break{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none;text-anchor:middle}
+.ce-wm{stroke:var(--p-accent);stroke-width:1.6}
+.ce-wmt{font-family:var(--mono);font-size:8.5px;fill:var(--p-accent-h);font-weight:700;pointer-events:none;text-anchor:middle}
+.ce-wq{rx:4;fill:#fdf6e9;stroke:var(--p-accent);stroke-width:1.3}
+.ce-wqt{font-family:var(--mono);font-size:10px;font-weight:700;fill:var(--p-accent-h);pointer-events:none}
+.ce-wqcell{rx:2;fill:#f4e3c6;stroke:var(--p-accent);stroke-width:.8}
+.ce-drain{stroke:var(--p-accent);stroke-width:2;fill:none;marker-end:url(#ceA);stroke-dasharray:5 3}
+.ce-drainl{font-family:var(--mono);font-size:9px;fill:var(--p-accent-h);font-weight:700;pointer-events:none}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid var(--b-line);margin-top:46px;padding:22px 0 8px}
+.pgx{display:flex;flex-direction:column;gap:4px;font-family:var(--mono);font-size:14px;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;background:var(--b-card);transition:border-color .12s}
+.pgx:hover{border-color:var(--p-accent)}
+.pgx .pk{font-size:11px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em}
+.pgx .pt{color:var(--b-ts);font-weight:600}
+.pgx.next{text-align:right;align-items:flex-end}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}.pager{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">platform</a><span class="rsep">/</span><a href="/echo-persistence/platform/beats-classical-scheduling">beats-classical-scheduling</a><span class="rsep">/</span><span class="rcur">the-commit-log-is-the-outbox</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#oneact">One act</a>
+<a href="#drain">Drain &amp; replay</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 13 &#183; Dive 13.2</p>
+<h1>The commit log <span class="hns">is</span> the outbox.</h1>
+<p class="lede">Here is the move that makes the bus robust. Instead of a separate journal beside the engine, the durable record of an enqueue <i>is the engine&#8217;s own commit</i> &#8212; <code>EchoStore.Durability.Graft</code> writes each intent as a page commit in a reserved high LSN range, <code>@obx_base = 1 &lt;&lt;&lt; 48</code>, far above where ordinary page commits live. Because the intent is a commit, recording the work and making it durable are <b>one act</b>, and that one act inherits the Chapter III engine entire: the fence, replication to Tigris, log-head recovery. The Committer then drains the log into the work queue; recovery replays the reserved range above a watermark. Commit, enqueue, drain, and crash below.</p>
+<figure class="fig" aria-labelledby="ceCap">
+<figcaption id="ceCap"><b>One log, two ranges.</b> Ordinary <span style="color:var(--b-ts)">page commits</span> live at normal LSNs; <span style="color:var(--b-node)">enqueue intents</span> are page commits in the reserved high range above <code>@obx_base</code>. The Committer drains intents to the <span style="color:var(--p-accent-h)">work queue</span> at-least-once; on crash, replay scans the reserved range above the watermark &#8212; the intents survived because they are durable, replicated commits.</figcaption>
+<svg viewBox="0 0 720 268" id="ce" role="img" aria-label="A single horizontal commit log split into two regions by a break marked @obx_base = 1 shifted left 48. The left region holds ordinary user and page commits at normal LSNs; the right reserved high region holds enqueue intents, each a page commit. A watermark sits under the reserved region. Below is a work-queue lane. Enqueuing appends an intent in the reserved range; draining copies intents into the work queue and advances the watermark; crashing clears the work queue, and replay scans the reserved range above the watermark to refill it because the intents are durable.">
+<defs><marker id="ceA" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--p-accent)"></path></marker></defs>
+<text class="ce-rt low" x="44" y="58">EchoStore.Graft commit log</text>
+<rect class="ce-region low" x="40" y="66" width="286" height="42"></rect>
+<text class="ce-rt low" x="50" y="80">normal LSNs &#183; user / page commits</text>
+<g id="ceLow"></g>
+<text class="ce-break" x="346" y="82">//</text>
+<text class="ce-break" x="346" y="94">@obx_base</text>
+<text class="ce-break" x="346" y="104">1&#8810;48</text>
+<rect class="ce-region high" x="366" y="66" width="324" height="42"></rect>
+<text class="ce-rt high" x="376" y="80">reserved high range &#183; enqueue intents (fenced + replicated)</text>
+<g id="ceHigh"></g>
+<line class="ce-wm" id="ceWm" x1="370" y1="110" x2="370" y2="124"></line>
+<text class="ce-wmt" id="ceWmt" x="370" y="136">watermark</text>
+<path class="ce-drain" id="ceDrain" d="M520 124 L520 184" visibility="hidden"></path>
+<text class="ce-drainl" id="ceDrainl" x="528" y="158" visibility="hidden">Committer drains &#8595;</text>
+<rect class="ce-wq" x="366" y="186" width="324" height="56"></rect>
+<text class="ce-wqt" x="376" y="206">work queue (bus &#183; Valkey)</text>
+<g id="ceWq"></g>
+</svg>
+<div class="ctrls">
+<button type="button" id="ceUser">commit user write</button>
+<button type="button" id="ceEnq">enqueue (intent &#8594; page commit)</button>
+<button type="button" id="ceDrainBtn">drain (Committer)</button>
+<button type="button" id="ceCrash">crash &#8594; replay</button>
+<span class="sep"></span>
+<button type="button" id="ceReset">reset</button>
+</div>
+<div class="readout" id="ceOut" aria-live="polite"><span class="rk">readout &#183;</span> ordinary writes commit at <span class="usr">normal LSNs</span>; an <code>enqueue</code> commits an <span class="int">intent</span> in the reserved range above <code>@obx_base</code> &#8212; recording and durability in <b>one act</b>. <code>drain</code> projects intents to the work queue; <code>crash &#8594; replay</code> shows they survive.</div>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="oneact">
+<div class="sech"><span class="sno">&#167;1</span><h2>Recording and durability in one act</h2><span class="ssrc">graft.engine-split.design.md &#183; plugins/graft.ex</span></div>
+<div class="prose">
+<p>The dual-write problem of Module 12.2 came from two systems &#8212; a store and a queue &#8212; that could disagree across a crash. The commit-log-as-outbox removes one of them. In <code>EchoStore.Durability.Graft</code>, the outbox <i>is</i> the Graft commit log: an enqueue intent is written as a page commit, but in a reserved high LSN range, <code>@obx_base = 1 &lt;&lt;&lt; 48</code>, so it cannot collide with the ordinary page commits that live at normal LSNs. The two share one log and one writer, separated only by where they sit on the LSN axis. Because the intent is itself a commit, recording the work and making it durable are a <b>single act</b> &#8212; there is no window between &#8220;saved&#8221; and &#8220;enqueued&#8221; for a crash to open, so the divergence simply cannot occur. And that one commit is not a lesser write than any other: it goes through the same OCC base-LSN check, the same conditional-write fence that makes the commit atomic against a racing writer, and the same page-rollup replication to Tigris. So an enqueue is, in one stroke, strict <i>and</i> replicated &#8212; the corner the classical queue could not reach &#8212; and it costs only what a Graft commit costs, riding the engine&#8217;s batch for throughput. The engine earns this for free in the sense that matters: the Volume is already there for the page workloads of Chapter III, so the outbox adds a range, not an engine.</p>
+</div>
+</section>
+
+<section id="drain">
+<div class="sech"><span class="sno">&#167;2</span><h2>The drain and the replay</h2><span class="ssrc">committer.ex &#183; ADR-A</span></div>
+<div class="prose">
+<p>A durable intent is not yet running work; something must turn the committed log into jobs on the bus, and that is the <code>Committer</code> &#8212; &#8220;the commit-log-as-outbox drain.&#8221; It subscribes to the commit channel, and for each commit re-publishes that commit&#8217;s names to the work queue <b>at-least-once</b>, tracking how far it has projected with a <i>persisted frontier</i>. At-least-once is the right guarantee precisely because the handlers downstream are already idempotent on the branded id (Module 11.1), so a name published twice after a restart is harmless. Recovery is the mirror image of the write: <code>EchoStore.Durability.Graft</code>&#8217;s replay scans the reserved range above a watermark and re-projects any intent the frontier had not yet reached, and the engine&#8217;s own log-head recovery has already made those commits durably present after a crash. So the bus &#8212; volatile Valkey &#8212; can lose its in-flight projection without losing any work: the intents are durable, replicated commits, and the drain simply runs again from the frontier. This is exactly where EchoMQ 4+ is heading in the large: ADR-A makes the commit-log-as-outbox the journal itself, atomic and durable in one act, off SQL entirely. The robustness that the bus presents to its callers is, underneath, just the Chapter III engine doing what it already does &#8212; commit, fence, replicate, recover &#8212; with a reserved range and a drain on top.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.engine-split.design.md">graft.engine-split.design.md</a><span class="rsrc">EchoStore.Durability.Graft — the outbox IS the commit log; @obx_base = 1 &lt;&lt;&lt; 48; replay above a watermark; the Committer drain</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/eg-engine-split.progress.md">eg-engine-split.progress.md</a><span class="rsrc">committer.ex — the commit-log-as-outbox drain, at-least-once, persisted frontier</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/kb/emq4-durability/echo_mq-v4-durability-adr.md">echo_mq-v4-durability-adr.md</a><span class="rsrc">ADR-A — atomic and durable in one act, off SQL</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://en.wikipedia.org/wiki/Transactional_outbox">Transactional outbox</a><span class="rsrc">the intent in the same commit as the state</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Idempotence">Idempotence</a><span class="rsrc">why at-least-once is safe here</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx prev" href="/echo-persistence/platform/beats-classical-scheduling/the-database-on-the-hot-path"><span class="pk">&#8592; Prev &#183; Dive 13.1</span><span class="pt">The database on the hot path</span></a>
+<a class="pgx next" href="/echo-persistence/platform/beats-classical-scheduling/the-balanced-decision"><span class="pk">Next &#183; Dive 13.3 &#8594;</span><span class="pt">The balanced decision</span></a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; dive 13.2</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg", MAXU=6, MAXI=6;
+  var u=0, ints=[], wq=0;
+  var gLow=document.getElementById('ceLow'), gHigh=document.getElementById('ceHigh'), gWq=document.getElementById('ceWq');
+  var wm=document.getElementById('ceWm'), wmt=document.getElementById('ceWmt'), drain=document.getElementById('ceDrain'), drainl=document.getElementById('ceDrainl'), out=document.getElementById('ceOut');
+  function clr(g){ while(g.firstChild) g.removeChild(g.firstChild); }
+  function rect(g,cls,x,y,w,h){ var r=document.createElementNS(NS,'rect'); r.setAttribute('class',cls); r.setAttribute('x',x); r.setAttribute('y',y); r.setAttribute('width',w); r.setAttribute('height',h); g.appendChild(r); return r; }
+  function txt(g,cls,x,y,s){ var t=document.createElementNS(NS,'text'); t.setAttribute('class',cls); t.setAttribute('x',x); t.setAttribute('y',y); t.textContent=s; g.appendChild(t); }
+  function render(){
+    clr(gLow); clr(gHigh); clr(gWq);
+    for(var i=0;i<u;i++){ var ln=document.createElementNS(NS,'line'); ln.setAttribute('class','ce-tick'); var x=52+i*44; ln.setAttribute('x1',x); ln.setAttribute('y1',90); ln.setAttribute('x2',x); ln.setAttribute('y2',104); gLow.appendChild(ln); }
+    for(var j=0;j<ints.length;j++){ var hx=378+j*48; rect(gHigh,'ce-int '+(ints[j].drained?'drn':'pend'),hx,84,40,18); txt(gHigh,'ce-intb',hx+20,96,'fence+repl'); }
+    var fx=370+ints.length*48; wm.setAttribute('x1',fx); wm.setAttribute('x2',fx); wmt.setAttribute('x',fx);
+    for(var k=0;k<wq;k++){ rect(gWq,'ce-wqcell',378+k*48,212,40,18); }
+  }
+  document.getElementById('ceUser').addEventListener('click',function(){ drain.setAttribute('visibility','hidden'); drainl.setAttribute('visibility','hidden');
+    if(u>=MAXU){ out.innerHTML='<span class="rk">commit &#183;</span> enough ordinary commits for the demo. The point: <span class="usr">user/page commits</span> and <span class="int">enqueue intents</span> share one log, separated only by the <code>@obx_base</code> boundary.'; return; }
+    u++; render(); out.innerHTML='<span class="rk">commit user write &#183;</span> an ordinary page commit at a <span class="usr">normal LSN</span>. Nothing special &#8212; it just shares the log with the intents on the far side of <code>@obx_base</code>.';
+  });
+  document.getElementById('ceEnq').addEventListener('click',function(){ drain.setAttribute('visibility','hidden'); drainl.setAttribute('visibility','hidden');
+    if(ints.length>=MAXI){ out.innerHTML='<span class="rk">enqueue &#183;</span> reserved range is full for the demo &#8212; <code>drain</code> or <code>crash &#8594; replay</code>. Each intent is a durable, replicated page commit.'; return; }
+    ints.push({drained:false}); render();
+    out.innerHTML='<span class="rk">enqueue &#183;</span> wrote an <span class="int">intent</span> as a page commit in the reserved range above <code>@obx_base = 1&#8810;48</code> &#8212; recording <i>and</i> durability in <b>one act</b>, behind the fence and replicated to Tigris. No second system, no dual-write.';
+  });
+  document.getElementById('ceDrainBtn').addEventListener('click',function(){
+    var pend=ints.filter(function(x){return !x.drained;}).length;
+    if(pend===0){ out.innerHTML='<span class="rk">drain &#183;</span> nothing new to project &#8212; <code>enqueue</code> a few intents first. The Committer only re-publishes past its frontier.'; return; }
+    ints.forEach(function(x){x.drained=true;}); wq=ints.length; render();
+    drain.setAttribute('visibility','visible'); drainl.setAttribute('visibility','visible');
+    out.innerHTML='<span class="rk">drain (Committer) &#183;</span> the commit-log-as-outbox drain re-published '+pend+' intent(s) to the <span style="color:var(--p-accent-h)">work queue</span> <b>at-least-once</b>, and advanced the persisted <span style="color:var(--p-accent-h)">frontier</span>/watermark. Handlers are idempotent on the branded id, so a double-publish after restart is harmless.';
+  });
+  document.getElementById('ceCrash').addEventListener('click',function(){
+    if(ints.length===0){ out.innerHTML='<span class="rk">crash &#183;</span> nothing enqueued yet &#8212; <code>enqueue</code> and <code>drain</code> first, then crash to see replay restore the work queue.'; return; }
+    wq=0; render(); drain.setAttribute('visibility','hidden'); drainl.setAttribute('visibility','hidden');
+    out.innerHTML='<span class="rk">crash &#183;</span> the bus (Valkey) lost its <span class="no">volatile</span> work queue. But the intents are durable, replicated commits in the log&#8230;';
+    setTimeout(function(){ ints.forEach(function(x){x.drained=true;}); wq=ints.length; render(); drain.setAttribute('visibility','visible'); drainl.setAttribute('visibility','visible');
+      out.innerHTML='<span class="rk">replay &#183;</span> recovery scanned the <span class="int">reserved range above the watermark</span> and re-projected every intent &#8212; the work queue is restored. The durable record never depended on the bus: it is a Graft commit, fenced and replicated. This is the corner Oban&#8217;s single-node table cannot reach.'; },650);
+  });
+  document.getElementById('ceReset').addEventListener('click',function(){ u=0; ints=[]; wq=0; render(); drain.setAttribute('visibility','hidden'); drainl.setAttribute('visibility','hidden'); out.innerHTML='<span class="rk">reset &#183;</span> empty log. <code>commit user write</code> for normal LSNs, <code>enqueue</code> for intents above <code>@obx_base</code>, <code>drain</code> to project, <code>crash &#8594; replay</code> to prove durability.'; });
+  render();
+})();
+</script>
+</body>
+</html>

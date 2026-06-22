@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 4 · CubDB architecture — Echo Persistence</title>
+<meta name="description" content="Module 4 of Echo Persistence (Chapter II — The local store): CubDB, the append-only immutable B-tree under the native engine. The append-only file, the copy-on-write B-tree, and compaction — an interactive dive.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{box-shadow:0 1px 0 var(--p-accent)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--p-accent);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}.door p{font-size:.88rem;color:var(--b-dim)}
+.buildbox{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:16px 18px;margin:12px 0;max-width:80ch}
+.buildbox .bk{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--p-accent);font-weight:700;margin-bottom:6px}
+.w-node rect{fill:var(--b-paper);stroke:var(--b-line);stroke-width:1.5;cursor:pointer;transition:fill .15s,stroke .15s}
+.w-node.on rect{fill:var(--p-tint);stroke:var(--p-accent);stroke-width:2}
+.w-node text{font-family:var(--mono);fill:var(--b-ink);pointer-events:none}
+.w-t{font-size:12.5px;font-weight:700}.w-s{font-size:10px;fill:var(--b-dim)}
+.w-edge{stroke:var(--b-line);stroke-width:2;fill:none;marker-end:url(#wa)}
+.w-blk{fill:#eef4f0;stroke:var(--b-node);stroke-width:1.3}
+.w-blk.new{fill:var(--p-tint);stroke:var(--p-accent);stroke-width:2}
+.w-flbl{font-family:var(--mono);font-size:10px;fill:var(--b-dim)}
+.w-cur{font-family:var(--mono);font-size:11px;font-weight:700;fill:var(--p-accent-h)}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:880px){.doors{grid-template-columns:1fr}}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">local-store</a><span class="rsep">/</span><span class="rcur">cubdb</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#write">The write path</a>
+<a href="#dives">The dives</a>
+<a href="#build">Build</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 4 &#183; Chapter II &#8212; The local store</p>
+<h1>CubDB <span class="hns">architecture</span>.</h1>
+<p class="lede">The durable local tier is a single embedded database: <b>CubDB</b>, an append-only, immutable B-tree on one file. Every property the native engine relies on &#8212; crash-safe commits, free snapshots, the page log itself &#8212; is a consequence of those two words, append-only and immutable. This module builds it from the write path out, by working the figure rather than reading a benchmark.</p>
+<figure class="fig" aria-labelledby="wCap">
+<figcaption id="wCap"><b>A CubDB write.</b> Nothing is overwritten. Tap a stage, or run a write and watch a block append to the file and the current version advance.</figcaption>
+<svg viewBox="0 0 720 210" id="wp" role="img" aria-label="Four stages: a key-value write, copying the B-tree path, appending a block to the file, and writing a new header that becomes the current version. Below, a file as a row of blocks gains a new block when a write runs, and a current-version marker advances to it.">
+<defs><marker id="wa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 z" fill="var(--b-line)"></path></marker></defs>
+<g class="w-node" data-k="write"><rect x="16" y="32" width="150" height="58" rx="6"></rect><text class="w-t" x="30" y="58">1 &#183; write</text><text class="w-s" x="30" y="76">key = value</text></g>
+<path class="w-edge" d="M166 61 L190 61"></path>
+<g class="w-node" data-k="btree"><rect x="192" y="32" width="156" height="58" rx="6"></rect><text class="w-t" x="206" y="58">2 &#183; B-tree</text><text class="w-s" x="206" y="76">copy the path, new nodes</text></g>
+<path class="w-edge" d="M348 61 L372 61"></path>
+<g class="w-node" data-k="append"><rect x="374" y="32" width="150" height="58" rx="6"></rect><text class="w-t" x="388" y="58">3 &#183; file</text><text class="w-s" x="388" y="76">append a block</text></g>
+<path class="w-edge" d="M524 61 L548 61"></path>
+<g class="w-node" data-k="header"><rect x="550" y="32" width="156" height="58" rx="6"></rect><text class="w-t" x="564" y="58">4 &#183; header</text><text class="w-s" x="564" y="76">new current version</text></g>
+<text class="w-flbl" x="16" y="132">the one file (grows rightward):</text>
+<g id="file"></g>
+<text class="w-cur" id="curMark" x="0" y="196" text-anchor="middle">&#9650; current</text>
+</svg>
+<div class="ctrls"><button type="button" id="wRun">&#9654; run a write</button></div>
+<div class="readout" id="wOut" aria-live="polite"><span class="rk">readout &#183;</span> Tap a stage, or run a write. A write copies only the changed B-tree path, appends those new nodes plus a header to the end of the file, and the latest header is the new current version. The old data is untouched.</div>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="write">
+<div class="sech"><span class="sno">&#167;1</span><h2>Two words do the work</h2><span class="ssrc">store.design.md</span></div>
+<div class="prose">
+<p><b>Append-only</b> means a write never modifies an existing byte; it adds to the tail. That alone gives crash-safety &#8212; a torn final write is simply ignored, and the last complete header wins &#8212; and it makes a commit a single atomic act: write the header. <b>Immutable</b> means the B-tree is copy-on-write, so an update rewrites the path to the changed leaf as new nodes and leaves every old node, and old root, exactly where it was. Together they make old versions free to keep, which is the whole basis of the next module.</p>
+<p>The cost of never overwriting is that the file only grows, so dead data accumulates and must occasionally be swept up. Each of those three &#8212; the append-only file, the immutable B-tree, and compaction &#8212; is a dive.</p>
+</div>
+</section>
+
+<section id="dives">
+<div class="sech"><span class="sno">&#167;2</span><h2>The three dives</h2><span class="ssrc">module 4</span></div>
+<div class="doors">
+<a class="door" href="/echo-persistence/local-store/cubdb/the-append-only-file">
+<span class="dr">Dive 4.1</span><h3>The append-only file</h3>
+<p>Commits append; the last header is the truth. Append writes, then crash mid-commit and watch the torn tail get discarded with no harm done.</p>
+</a>
+<a class="door" href="/echo-persistence/local-store/cubdb/the-immutable-btree">
+<span class="dr">Dive 4.2</span><h3>The immutable B-tree</h3>
+<p>Copy-on-write. Update a key and watch only the root-to-leaf path get rewritten as new nodes, the old tree left whole and still readable.</p>
+</a>
+<a class="door" href="/echo-persistence/local-store/cubdb/compaction">
+<span class="dr">Dive 4.3</span><h3>Compaction</h3>
+<p>The file only grows. Watch dead nodes pile up across writes, then compact &#8212; live data copied to a fresh file, the rest reclaimed.</p>
+</a>
+</div>
+</section>
+
+<section id="build">
+<div class="sech"><span class="sno">&#167;3</span><h2>Build &amp; check</h2></div>
+<div class="buildbox"><div class="bk">What you build</div>
+<p>A one-paragraph note placing CubDB in the storage ladder from the landing: which tier it is, what it stores (the page log / LSN log), and why an embedded single-file store is the right shape for it &#8212; in your own words, no numbers.</p>
+</div>
+<div class="buildbox"><div class="bk">Check</div>
+<p>Answer without code: why is an append-only commit crash-safe, and why does keeping an old version cost nothing? If both answers point back to &#8220;nothing is overwritten,&#8221; you have the module.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;4</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">External</li>
+<li><a href="https://github.com/lucaong/cubdb">lucaong/cubdb</a><span class="rs">the embedded append-only B-tree</span></li>
+<li><a href="https://hexdocs.pm/cubdb/howto.html">CubDB docs &#183; how it works</a><span class="rs">file format, headers, compaction</span></li>
+<li><a href="https://en.wikipedia.org/wiki/B-tree">B-tree</a><span class="rs">the structure on disk</span></li>
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/store/design/store.design.md">store.design.md</a><span class="rs">CubDB as the durable page tier</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rs">the page log layered on CubDB</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Module pager">
+<a class="pgx" href="/echo-persistence/foundations/persistence-concepts"><span class="pk">Prev &#183; Module 3</span>&#8592; Persistence concepts</a>
+<a class="pgx" href="/echo-persistence/local-store/cubdb/the-append-only-file"><span class="pk">Dive 4.1</span>The append-only file &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 4</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  var file=document.getElementById('file'), curMark=document.getElementById('curMark');
+  var blocks=4, x0=16, bw=58, gap=8, by=140, bh=34;
+  function blkX(i){return x0+i*(bw+gap);}
+  function drawFile(){
+    while(file.firstChild)file.removeChild(file.firstChild);
+    for(var i=0;i<blocks;i++){
+      var isNew=(i===blocks-1);
+      var r=document.createElementNS(NS,'rect');r.setAttribute('class','w-blk'+(isNew?' new':''));
+      r.setAttribute('x',blkX(i));r.setAttribute('y',by);r.setAttribute('width',bw);r.setAttribute('height',bh);r.setAttribute('rx',4);file.appendChild(r);
+      var t=document.createElementNS(NS,'text');t.setAttribute('class','w-flbl');t.setAttribute('x',blkX(i)+bw/2);t.setAttribute('y',by+22);t.setAttribute('text-anchor','middle');t.textContent=(i===blocks-1?'hdr':'blk');file.appendChild(t);
+    }
+    var cx=blkX(blocks-1)+bw/2; curMark.setAttribute('x',cx);
+  }
+  var R={
+    write:["1 &#183; write","a <b>key = value</b> change enters &#8212; this is the only input; CubDB turns it into appended bytes."],
+    btree:["2 &#183; B-tree","CubDB <b>copies the path</b> from root to the changed leaf into new nodes; untouched nodes are reused. (Dive 4.2)"],
+    append:["3 &#183; file","the new nodes are <b>appended to the tail</b> of the one file &#8212; nothing earlier is touched. (Dive 4.1)"],
+    header:["4 &#183; header","a header pointing at the new root is appended; the <b>latest header is the current version</b>. The commit is that one write."]
+  };
+  var svg=document.getElementById('wp'), out=document.getElementById('wOut');
+  function clr(){[].forEach.call(svg.querySelectorAll('.w-node'),function(n){n.classList.remove('on');});}
+  [].forEach.call(svg.querySelectorAll('.w-node'),function(n){
+    n.addEventListener('click',function(){clr();n.classList.add('on');var d=R[n.getAttribute('data-k')];out.innerHTML='<span class="rk">'+d[0]+' &#183;</span> '+d[1];});
+  });
+  var order=['write','btree','append','header'];
+  document.getElementById('wRun').addEventListener('click',function(){
+    clr();
+    order.forEach(function(k,i){setTimeout(function(){clr();svg.querySelector('.w-node[data-k="'+k+'"]').classList.add('on');var d=R[k];out.innerHTML='<span class="rk">'+d[0]+' &#183;</span> '+d[1];},i*650);});
+    setTimeout(function(){blocks++;drawFile();out.innerHTML='<span class="rk">committed &#183;</span> a new block + header appended; <b>current version advanced</b>. The file grew; nothing was overwritten.';},order.length*650);
+  });
+  drawFile();
+})();
+</script>
+</body>
+</html>

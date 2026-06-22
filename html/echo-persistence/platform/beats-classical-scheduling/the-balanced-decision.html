@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dive 13.3 · The balanced decision — Echo Persistence</title>
+<meta name="description" content="Module 13, Dive 13.3: the verdict on two axes — durability and hot-path cost. Oban is strict but single-node with the DB on the hot path; Champ is fast but bounded-loss; Memory has no durability. Only the commit-log-as-outbox lands in the strict-and-replicated-and-off-the-hot-path quadrant. The balanced decision: mitigate the single-instance DB, keep a reliable Valkey bus. Interactive.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.1rem,1rem + 0.7vw,1.4rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.6rem,1.2rem + 2.2vw,2.5rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.ctrls .sep{width:1px;height:22px;background:var(--b-line)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.6em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .clo{color:var(--b-node)}.readout .ob{color:var(--b-ns)}.readout .ts{color:var(--b-ts)}.readout code{background:#ecf0e9}
+.vd-grid{stroke:var(--b-line);stroke-width:1}
+.vd-mid{stroke:var(--b-line);stroke-width:1;stroke-dasharray:3 3}
+.vd-axl{font-family:var(--mono);font-size:10px;fill:var(--b-dim);pointer-events:none}
+.vd-axend{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.vd-quad{fill:#eef6f1;stroke:var(--b-node);stroke-dasharray:4 3;stroke-width:1.3}
+.vd-quadt{font-family:var(--mono);font-size:9px;fill:var(--b-node);font-weight:700;pointer-events:none;text-anchor:middle}
+.vd-dot{stroke-width:1.5;cursor:pointer}
+.vd-dot.ob{fill:#f7dcd8;stroke:var(--b-ns)}
+.vd-dot.champ{fill:#e7eef4;stroke:var(--b-ts)}
+.vd-dot.mem{fill:#eceae2;stroke:var(--b-dim)}
+.vd-dot.clo{fill:#d5e8dd;stroke:var(--b-node)}
+.vd-dot.on{stroke-width:3}
+.vd-name{font-family:var(--mono);font-size:10px;font-weight:700;pointer-events:none;text-anchor:middle}
+.vd-name.ob{fill:var(--b-ns)}.vd-name.champ{fill:var(--b-ts)}.vd-name.mem{fill:var(--b-dim)}.vd-name.clo{fill:var(--b-node)}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid var(--b-line);margin-top:46px;padding:22px 0 8px}
+.pgx{display:flex;flex-direction:column;gap:4px;font-family:var(--mono);font-size:14px;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;background:var(--b-card);transition:border-color .12s}
+.pgx:hover{border-color:var(--p-accent)}
+.pgx .pk{font-size:11px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em}
+.pgx .pt{color:var(--b-ts);font-weight:600}
+.pgx.next{text-align:right;align-items:flex-end}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}.pager{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">platform</a><span class="rsep">/</span><a href="/echo-persistence/platform/beats-classical-scheduling">beats-classical-scheduling</a><span class="rsep">/</span><span class="rcur">the-balanced-decision</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#quad">The missing quadrant</a>
+<a href="#balance">The decision</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 13 &#183; Dive 13.3</p>
+<h1>The balanced <span class="hns">decision</span>.</h1>
+<p class="lede">Put the options on two axes and the verdict draws itself. One axis is durability &#8212; from none, through bounded-loss, to strict-and-replicated. The other is hot-path cost &#8212; whether the durable store sits on the critical path of every operation, or stands aside while a fast bus carries the work. Each classical choice lands in a corner with something missing. Only one option reaches the corner that is strict, replicated, <i>and</i> off the hot path &#8212; and it is the commit-log-as-outbox. Tap each to place it.</p>
+<figure class="fig" aria-labelledby="vdCap">
+<figcaption id="vdCap"><b>Two axes, one open corner.</b> Vertical: durability (bounded/none at the bottom, strict + replicated at the top). Horizontal: hot-path cost (database on the hot path at the left, bus on Valkey at the right). <span style="color:var(--b-ns)">Oban</span> is strict but single-node with the DB on the path; <span style="color:var(--b-ts)">Champ</span> is fast but bounded-loss; Memory has no durability. The <span style="color:var(--b-node)">commit-log-as-outbox</span> lands alone in the top-right.</figcaption>
+<svg viewBox="0 0 720 300" id="vd" role="img" aria-label="A two-by-two plot. The vertical axis is durability, bounded or none at the bottom and strict plus replicated at the top. The horizontal axis is hot-path cost, database on the hot path at the left and bus on Valkey at the right. The top-right quadrant is highlighted as the target. Oban sits top-left (strict but DB on the hot path and single-node); Champ sits middle-right (bounded-loss, off the hot path); Memory sits bottom-right (no durability); the commit-log-as-outbox sits top-right, alone in the target quadrant. Tapping a point explains its position.">
+<rect class="vd-quad" x="378" y="46" width="284" height="98"></rect>
+<text class="vd-quadt" x="520" y="62">strict + replicated + off the hot path</text>
+<text class="vd-quadt" x="520" y="74">(the target corner)</text>
+<line class="vd-grid" x1="92" y1="46" x2="92" y2="250"></line>
+<line class="vd-grid" x1="92" y1="250" x2="668" y2="250"></line>
+<line class="vd-mid" x1="378" y1="46" x2="378" y2="250"></line>
+<line class="vd-mid" x1="92" y1="144" x2="668" y2="144"></line>
+<text class="vd-axl" x="86" y="44" text-anchor="end" transform="rotate(-90 86 44)" style="text-anchor:middle">durability &#8593;</text>
+<text class="vd-axend" x="100" y="58">strict + replicated</text>
+<text class="vd-axend" x="100" y="244">bounded / none</text>
+<text class="vd-axl" x="380" y="272" text-anchor="middle">hot-path cost</text>
+<text class="vd-axend" x="100" y="266" text-anchor="start">DB on the hot path</text>
+<text class="vd-axend" x="660" y="266" text-anchor="end">bus on Valkey</text>
+<circle class="vd-dot ob" id="vOb" cx="210" cy="92" r="11"></circle>
+<text class="vd-name ob" x="210" y="82">Oban</text>
+<circle class="vd-dot clo" id="vClo" cx="520" cy="92" r="12"></circle>
+<text class="vd-name clo" x="520" y="116">commit-log-as-outbox</text>
+<circle class="vd-dot champ" id="vChamp" cx="540" cy="178" r="11"></circle>
+<text class="vd-name champ" x="540" y="168">Champ</text>
+<circle class="vd-dot mem" id="vMem" cx="600" cy="224" r="11"></circle>
+<text class="vd-name mem" x="600" y="214">Memory</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="vbOb" aria-pressed="false">Oban</button>
+<button type="button" id="vbChamp" aria-pressed="false">Champ</button>
+<button type="button" id="vbMem" aria-pressed="false">Memory</button>
+<button type="button" id="vbClo" aria-pressed="false">commit-log-as-outbox</button>
+<span class="sep"></span>
+<button type="button" id="vbReset">reset</button>
+</div>
+<div class="readout" id="vdOut" aria-live="polite"><span class="rk">readout &#183;</span> the top-right corner &#8212; strict, replicated, <i>and</i> off the hot path &#8212; is the one the platform wants. Oban can&#8217;t reach it (DB on the path, single-node), Champ can&#8217;t (bounded-loss), Memory can&#8217;t (no durability). Tap each to see why, then tap the <span class="clo">commit-log-as-outbox</span>.</div>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="quad">
+<div class="sech"><span class="sno">&#167;1</span><h2>The missing quadrant</h2><span class="ssrc">graft.roadmap.md</span></div>
+<div class="prose">
+<p>The roadmap names the corner directly: Champ is bounded-loss, Oban is strict but single-node unless Postgres replication is bolted on, and Graft already solves the quadrant the other two miss &#8212; transactional commits with an LSN log, conditional-write commit, and instant read replicas over object storage. Read the plot and each option fails the target corner for a different reason. <b>Memory</b> sits at the bottom: maximal throughput, off the hot path, but no durability at all &#8212; the wrong axis entirely for a durable queue. <b>Champ</b> sits mid-right: fast and off the hot path, but its replication is async and snapshot-grained, so it is bounded-loss, not strict &#8212; the right accept tier, not the durable floor. <b>Oban</b> sits top-left: genuinely strict, but with the database on the hot path of every dequeue, heartbeat, and ack, and single-node until you take on streaming replication. Each is missing exactly one property the platform wants together. The <b>commit-log-as-outbox</b> is the only point in the top-right: it is strict and replicated because the intent is a fenced, Tigris-replicated Graft commit (13.2), and it is off the hot path because the bus stays on Valkey and the durable write rides the engine&#8217;s batch rather than gating the enqueue. It does not split the difference between the others; it occupies the corner none of them can.</p>
+</div>
+</section>
+
+<section id="balance">
+<div class="sech"><span class="sno">&#167;2</span><h2>The decision, stated plainly</h2><span class="ssrc">jonnify.todo.md &#183; graft.design.md</span></div>
+<div class="prose">
+<p>The engineering question this module answers was always narrow: what does a Graft-backed journal in EchoMQ buy over Oban fully backed by PostgreSQL? The balanced reading is the one the platform settled on &#8212; <b>mitigate the single-instance database, but keep a reliable Valkey bus</b>. The single-instance database is mitigated because durability is no longer a row in one Postgres; it is a replicated engine commit, recoverable by log-head replay, with the conditional-write fence guarding correctness. The fast bus is kept because none of that durability is on the enqueue hot path &#8212; Valkey carries the work, the commit-log-as-outbox carries the guarantee, and they meet only at the drain. Throughput is not sacrificed for this: the durable record rides the engine&#8217;s batch, and aligning that commit batch to the consumer&#8217;s claim batch &#8212; the seam from Module 12.1 &#8212; makes enqueue-through-record a single durable, replicated unit. So &#8220;it beats classical scheduling&#8221; is not a claim that Oban is bad; it is a claim that the platform reaches a corner Oban cannot, by being strict in a place that also replicates and never touches the hot path. That same engine-as-substrate idea is the threshold of the final module: once durable, replicated state is this cheap and this composable, it stops being plumbing for a queue and starts being the foundation for Tables, Properties, and the Branded Component System &#8212; the door this course opens last.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.roadmap.md">graft.roadmap.md</a><span class="rsrc">the missing quadrant; Champ bounded-loss; Oban single-node; Graft solves transactional + replicated</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rsrc">aligning the commit batch to the claim batch — one durable, replicated unit</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.engine-split.design.md">graft.engine-split.design.md</a><span class="rsrc">the outbox beside a volatile bus; Durability.Graft on the native engine</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://en.wikipedia.org/wiki/CAP_theorem">CAP theorem</a><span class="rsrc">why single-node strictness and replication are different properties</span></li>
+<li><a href="https://hexdocs.pm/oban/Oban.html">Oban</a><span class="rsrc">the strict, single-node reference point</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx prev" href="/echo-persistence/platform/beats-classical-scheduling/the-commit-log-is-the-outbox"><span class="pk">&#8592; Prev &#183; Dive 13.2</span><span class="pt">The commit log is the outbox</span></a>
+<a class="pgx next" href="/echo-persistence/platform/the-door-to-bcs"><span class="pk">Next &#183; Module 14 &#8594;</span><span class="pt">The door to BCS</span></a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; dive 13.3</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var dots={ob:document.getElementById('vOb'),champ:document.getElementById('vChamp'),mem:document.getElementById('vMem'),clo:document.getElementById('vClo')};
+  var btns={ob:document.getElementById('vbOb'),champ:document.getElementById('vbChamp'),mem:document.getElementById('vbMem'),clo:document.getElementById('vbClo')};
+  var base={ob:'vd-dot ob',champ:'vd-dot champ',mem:'vd-dot mem',clo:'vd-dot clo'};
+  var out=document.getElementById('vdOut');
+  function reset(){ for(var k in dots) dots[k].setAttribute('class',base[k]); for(var b in btns) btns[b].setAttribute('aria-pressed','false'); }
+  var copy={
+    ob:'<span class="rk">Oban &#183; top-left &#183;</span> genuinely <b>strict</b> &#8212; per-commit durability you can trust &#8212; but the <span class="ob">database is on the hot path</span> of every dequeue, heartbeat, and ack, and it is <span class="ob">single-node</span> unless you bolt on Postgres replication. High on durability, wrong side on hot-path cost.',
+    champ:'<span class="rk">Champ &#183; mid-right &#183;</span> <span class="ts">off the hot path</span> and fast (accept tier, fsync per K), but its replication is async and snapshot-grained &#8212; <b>bounded-loss</b>, not strict. The right place to accept work, not the durable floor.',
+    mem:'<span class="rk">Memory &#183; bottom-right &#183;</span> off the hot path and the fastest of all, but <b>no durability</b> &#8212; the wrong axis for a durable queue. Bottom of the plot.',
+    clo:'<span class="rk">commit-log-as-outbox &#183; top-right &#183;</span> <span class="clo">strict AND replicated</span> (the intent is a fenced, Tigris-replicated Graft commit) <i>and</i> <span class="clo">off the hot path</span> (the bus stays on Valkey; the durable write rides the engine&#8217;s batch). It lands <b>alone</b> in the target corner &#8212; the one Oban, Champ, and Memory each miss.'
+  };
+  function pick(which){ reset(); dots[which].setAttribute('class',base[which]+' on'); btns[which].setAttribute('aria-pressed','true'); out.innerHTML=copy[which]; }
+  btns.ob.addEventListener('click',function(){pick('ob');});
+  btns.champ.addEventListener('click',function(){pick('champ');});
+  btns.mem.addEventListener('click',function(){pick('mem');});
+  btns.clo.addEventListener('click',function(){pick('clo');});
+  document.getElementById('vbReset').addEventListener('click',function(){ reset(); out.innerHTML='<span class="rk">readout &#183;</span> the top-right corner &#8212; strict, replicated, <i>and</i> off the hot path &#8212; is the one the platform wants. Oban can&#8217;t reach it (DB on the path, single-node), Champ can&#8217;t (bounded-loss), Memory can&#8217;t (no durability). Tap each to see why, then tap the <span class="clo">commit-log-as-outbox</span>.'; });
+})();
+</script>
+</body>
+</html>

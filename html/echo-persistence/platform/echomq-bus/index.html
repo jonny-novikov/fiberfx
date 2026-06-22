@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 11 · EchoMQ Bus — Echo Persistence</title>
+<meta name="description" content="Module 11 of Echo Persistence (Chapter IV — The platform): the EchoMQ bus itself. ValKey/Redis Streams internals — XADD, XREADGROUP, XACK, XAUTOCLAIM, the PEL — and the EchoMQ 3.0 Stream Tier built on them: the order theorem and its named PEL exception, retention as policy, the archive fold. An interactive stream.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls .sep{width:1px;height:22px;background:var(--b-line)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.6em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .nw{color:var(--p-accent-h)}.readout .pe{color:var(--b-ts)}.readout .ak{color:var(--b-dim)}.readout .rc{color:var(--b-ns)}.readout code{background:#ecf0e9}
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:18px}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--p-accent);font-weight:700;display:flex;justify-content:space-between}
+.door .dr .soon{color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:20px;padding:1px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}.door p{font-size:.88rem;color:var(--b-dim)}
+.buildbox{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:16px 18px;margin:12px 0;max-width:80ch}
+.buildbox .bk{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--p-accent);font-weight:700;margin-bottom:6px}
+.smq-lbl{font-family:var(--mono);font-size:10.5px;font-weight:700;pointer-events:none}
+.smq-sub{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.smq-prod{fill:#fdeeec;stroke:var(--b-ns);stroke-width:1.5}
+.smq-cell{stroke-width:1.4}
+.smq-cell.new{fill:var(--p-tint);stroke:var(--p-accent)}
+.smq-cell.pending{fill:#eef4f9;stroke:var(--b-ts);stroke-dasharray:4 2}
+.smq-cell.acked{fill:#eceae3;stroke:#bcc3b4}
+.smq-cell-id{font-family:var(--mono);font-size:9.5px;font-weight:700;pointer-events:none}
+.smq-cell-id.acked{fill:var(--b-dim);text-decoration:line-through}
+.smq-cell-st{font-family:var(--mono);font-size:7.5px;pointer-events:none}
+.smq-group{fill:#fbfdff;stroke:var(--b-ts);stroke-width:1.5}
+.smq-cons{stroke-width:1.5}
+.smq-cons.alive{fill:#eef4f9;stroke:var(--b-ts)}
+.smq-cons.dead{fill:#f3eded;stroke:var(--b-ns);stroke-dasharray:3 2}
+.smq-cons-tx{font-family:var(--mono);font-size:10px;font-weight:700;pointer-events:none}
+.smq-cons-tx.alive{fill:var(--b-ts)}.smq-cons-tx.dead{fill:var(--b-ns)}
+.smq-pel-row{font-family:var(--mono);font-size:10px;pointer-events:none}
+.smq-pel-row.rc{fill:var(--b-ns);font-weight:700}
+.smq-arrow{stroke:var(--b-dim);stroke-width:1.7;fill:none;marker-end:url(#smqa)}
+.smq-arrow-lbl{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.smq-note{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:880px){.doors{grid-template-columns:1fr}}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">platform</a><span class="rsep">/</span><span class="rcur">echomq-bus</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#stream">The stream</a>
+<a href="#tier">The Stream Tier</a>
+<a href="#dives">The dives</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 11 &#183; Chapter IV &#8212; The platform</p>
+<h1>The EchoMQ <span class="hns">bus</span>.</h1>
+<p class="lede">Ten modules built the durable floor; this one teaches the thing that sits on it. EchoMQ&#8217;s newest tier is a <b>stream tier</b> &#8212; append-only event streams with consumer groups &#8212; built on the same ValKey/Redis Streams verbs a field team would reach for (the converted Arcjet account is this module&#8217;s reference). The lesson is the consumer-group lifecycle: an entry is read into a group&#8217;s <b>pending list</b>, acknowledged per group, and re-claimed on crash &#8212; and exactly where ordering survives that and where it doesn&#8217;t. Drive a stream, a group, and a crash below.</p>
+<figure class="fig" aria-labelledby="smqCap">
+<figcaption id="smqCap"><b>One stream, one group, the PEL.</b> The producer appends in mint order (the branded id is the sort key). A consumer reads an entry into the group&#8217;s pending list; <code>XACK</code> clears it; a crashed consumer&#8217;s entry is re-claimed by a peer &#8212; returning out of delivery order. That last move is the named exception to the order theorem.</figcaption>
+<svg viewBox="0 0 720 348" id="smq" role="img" aria-label="A producer appends entries to a stream shown as a row of cells in mint order, each tagged with a branded id. Reading through a consumer group moves an entry to a pending-entries-list panel, assigned to a consumer with a delivery count; acknowledging clears it from the pending list while it stays dimmed in the stream. Crashing a consumer and running XAUTOCLAIM re-hands its pending entry to a surviving consumer with an incremented delivery count, returning it out of real-time delivery order.">
+<defs><marker id="smqa" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-dim)"></path></marker></defs>
+<rect class="smq-prod" x="20" y="22" width="120" height="40" rx="7"></rect>
+<text class="smq-lbl" x="34" y="46" style="fill:var(--b-ns)">producer</text>
+<path class="smq-arrow" d="M140 42 L182 42"></path>
+<text class="smq-arrow-lbl" x="146" y="34">XADD</text>
+<text class="smq-lbl" x="190" y="74" style="fill:var(--p-accent-h)">stream &#183; append = mint order (branded id = sort key)</text>
+<g id="cells"></g>
+<text class="smq-note" id="streamNote" x="190" y="132">acked entries stay in the stream (acked &#8800; deleted) until retention trims or the archive folds them</text>
+<path class="smq-arrow" d="M260 150 L260 182"></path>
+<text class="smq-arrow-lbl" x="266" y="170">XREADGROUP &gt;</text>
+<rect class="smq-group" x="190" y="186" width="350" height="142" rx="8"></rect>
+<text class="smq-lbl" x="204" y="206" style="fill:var(--b-ts)">"process" consumer group</text>
+<g id="cons"></g>
+<text class="smq-sub" x="204" y="258">PEL &#183; pending entries list (per group)</text>
+<g id="pel"></g>
+<text class="smq-note" x="556" y="200">the order theorem:</text>
+<text class="smq-note" x="556" y="214">stream order = id order</text>
+<text class="smq-note" x="556" y="228">(XRANGE / XREADGROUP &gt;)</text>
+<text class="smq-note" x="556" y="250" style="fill:var(--b-ns)">the exception:</text>
+<text class="smq-note" x="556" y="264" style="fill:var(--b-ns)">a re-claimed PEL entry</text>
+<text class="smq-note" x="556" y="278" style="fill:var(--b-ns)">returns out of order</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="xadd">XADD</button>
+<button type="button" id="xrg">XREADGROUP &gt;</button>
+<button type="button" id="xack">XACK</button>
+<span class="sep"></span>
+<button type="button" id="crash">crash c1 &#8594; XAUTOCLAIM</button>
+<button type="button" id="smqReset">reset</button>
+</div>
+<div class="readout" id="smqOut" aria-live="polite"><span class="rk">readout &#183;</span> <code>XADD</code> appends to the stream in mint order. <code>XREADGROUP &gt;</code> hands the next entry to a consumer and moves it to the <span class="pe">PEL</span> (pending, not removed). <code>XACK</code> clears it from the PEL for this group. Crash <span class="rc">c1</span> and <code>XAUTOCLAIM</code> re-hands its pending entry to c2 &#8212; re-delivery, out of order.</div>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="stream">
+<div class="sech"><span class="sno">&#167;1</span><h2>The verbs, and the edge that appears with groups</h2><span class="ssrc">Arcjet field account, annotated</span></div>
+<div class="prose">
+<p>For a single reader, a stream is three verbs: <code>XADD</code> to append, <code>XREAD</code> to consume, <code>XDEL</code> to remove when done. The edge appears the moment two independent consumers need the same entries. You can no longer delete on completion &#8212; a fast group would pull entries out from under a slow one. The coordination primitive is the <b>consumer group</b>: an entry read through a group (<code>XREADGROUP GROUP g c &gt;</code>) is placed on that group&#8217;s <b>Pending Entries List</b>, a consumer drains its own PEL first on rejoin, and <code>XACK</code> guarantees an entry will not be re-delivered <i>within that group</i>. The trap the field account names precisely: an acknowledged entry is <b>not</b> deleted &#8212; it stays in the stream until something trims it, and left alone it fills the box. EchoMQ keeps these verbs exactly &#8212; <code>XADD</code>, <code>XRANGE</code>, <code>XREADGROUP</code>, <code>XACK</code>, <code>XAUTOCLAIM</code> &#8212; as additive registrations on the existing <code>EchoMQ.Connector</code>, a protocol minor on the same RESP3 wire and house port as the jobs, the bus, and the cache. No second system to run: that was the whole objection to Kafka.</p>
+</div>
+</section>
+
+<section id="tier">
+<div class="sech"><span class="sno">&#167;2</span><h2>What EchoMQ adds: invariants, not verbs</h2><span class="ssrc">emq.streams.md</span></div>
+<div class="prose">
+<p>EchoMQ 3.0 claims the <b>small end</b> explicitly &#8212; event streams, bounded retention, a handful of groups per stream &#8212; and keeps its databases (Tables, the journal, Postgres) <i>beside</i> the log, which is what makes keyed compaction someone else&#8217;s problem. Its contribution is to turn each edge the field account discovered into something named. First, an <b>order theorem</b>: stream order equals branded-id sort order equals mint order, because every record&#8217;s id is minted so its byte order is its time order. But a consumer group adds a second axis &#8212; a <i>re-claimed</i> PEL entry returns to a consumer out of real-time order, the honest cost of at-least-once &#8212; and the spec names exactly where the theorem holds (the stream) and where it cannot (a re-claim), so a spec asserting &#8220;order preserved&#8221; can never be a false green. Second, <b>retention is policy</b>, not a bespoke process: a declared per-stream window (<code>MAXLEN ~</code> approx, <code>MINID</code> by mint instant) rather than a Janitor trimming by estimate. Third, <b>the archive</b>: a fold consumer commits each trimmed slice into the native <code>EchoStore.Graft</code> engine <i>before</i> it trims (fold-before-trim), and the engine streams those pages to Tigris &#8212; so the field account&#8217;s &#8220;acked entries are never deleted&#8221; fear is answered by folding them to durable object storage, not by hoarding RAM. The three dives walk the verbs, the retention problem, and the full six-rung tier.</p>
+</div>
+</section>
+
+<section id="dives">
+<div class="sech"><span class="sno">&#167;3</span><h2>The three dives</h2><span class="ssrc">module 11</span></div>
+<div class="doors">
+<a class="door" href="/echo-persistence/platform/echomq-bus/valkey-streams-internals">
+<span class="dr">Dive 11.1</span><h3>ValKey Streams internals</h3>
+<p>The raw verbs and the PEL up close &#8212; the two recovery paths (drain-own-PEL vs <code>XAUTOCLAIM</code> beat), delivery counts, and the at-least-once posture with idempotent handlers.</p>
+</a>
+<a class="door" href="/echo-persistence/platform/echomq-bus/retention-and-the-never-deleted-problem">
+<span class="dr">Dive 11.2</span><h3>Retention &amp; the never-deleted problem</h3>
+<p>The unbounded stream, <code>XTRIM</code> <code>MAXLEN</code>/<code>MINID</code> by mint instant &#8212; and emq3.4 retention-as-policy with the open F3.4-A trim-cadence fork (fold-before-trim vs a timer that loses data).</p>
+</a>
+<a class="door" href="/echo-persistence/platform/echomq-bus/the-stream-tier-ladder">
+<span class="dr">Dive 11.3</span><h3>The Stream Tier ladder</h3>
+<p>emq3.1&#8211;3.6 end to end: the writer law, the readers, the archive fold into <code>EchoStore.Graft</code> (CubDB&#8594;Tigris), and the merge-read that stitches segments to the live tail across the watermark.</p>
+</a>
+</div>
+</section>
+
+<section id="build">
+<div class="sech"><span class="sno">&#167;4</span><h2>Build &amp; check</h2></div>
+<div class="buildbox"><div class="bk">What you build</div>
+<p>Take the field account&#8217;s three pains &#8212; the multi-group deletion problem, the never-deleted accumulation, the trim-by-estimate Janitor &#8212; and name the EchoMQ answer to each: the PEL plus per-group <code>XACK</code>; the archive fold (emq3.5); declared retention policy (emq3.4). If each pain maps to an invariant, a policy, or a fold, you have the module.</p>
+</div>
+<div class="buildbox"><div class="bk">Check</div>
+<p>State exactly where the order theorem holds and where it breaks, and why &#8220;acked&#8221; does not mean &#8220;deleted.&#8221; &#8220;Order holds on the stream, not on a re-claimed PEL entry; acked entries fold to Tigris rather than vanish&#8221; means you have it.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;5</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/emq.streams.md">emq.streams.md</a><span class="rsrc">EchoMQ 3.0 the Stream Tier &#8212; the ladder, the small-end claim, retention, the archive</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/kb/streams-tier/streams.synthesis.md">streams.synthesis.md</a><span class="rsrc">the PEL re-claim exception, F3.4-A, the fold</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.roadmap.md">graft.roadmap.md</a><span class="rsrc">echo_graft &#8212; where the archive folds</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://redis.io/docs/latest/develop/data-types/streams/">Redis Streams</a><span class="rsrc">the verbs, groups, the PEL</span></li>
+<li><a href="https://valkey.io/">Valkey</a><span class="rsrc">the RESP3 server EchoMQ targets</span></li>
+<li><a href="https://blog.arcjet.com/replacing-kafka-with-redis-streams/">Replacing Kafka with Redis Streams</a><span class="rsrc">Danni Popova &#8212; this module&#8217;s field reference</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Module pager">
+<a class="pgx" href="/echo-persistence#map"><span class="pk">Prev &#183; Chapter III</span>&#8592; The engines</a>
+<a class="pgx" href="/echo-persistence/platform/bus-and-persistence"><span class="pk">Next &#183; Module 12</span>EchoBus + Echo Persistence &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 11</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  var mint=106, nextC=1, c1alive=true;
+  var stream=[]; // {id, st:'new'|'pending'|'acked', c, att, rc}
+  var cellsG=document.getElementById('cells'), consG=document.getElementById('cons'), pelG=document.getElementById('pel'), out=document.getElementById('smqOut');
+  function drawCells(flashId){
+    while(cellsG.firstChild)cellsG.removeChild(cellsG.firstChild);
+    var vis=stream.slice(-7);
+    vis.forEach(function(e,i){
+      var x=190+i*50;
+      var r=document.createElementNS(NS,'rect');r.setAttribute('class','smq-cell '+e.st);r.setAttribute('x',x);r.setAttribute('y',84);r.setAttribute('width',44);r.setAttribute('height',40);r.setAttribute('rx',4);cellsG.appendChild(r);
+      var id=document.createElementNS(NS,'text');id.setAttribute('class','smq-cell-id'+(e.st==='acked'?' acked':''));id.setAttribute('x',x+22);id.setAttribute('y',103);id.setAttribute('text-anchor','middle');id.textContent=e.id;cellsG.appendChild(id);
+      var st=document.createElementNS(NS,'text');st.setAttribute('class','smq-cell-st');st.setAttribute('x',x+22);st.setAttribute('y',116);st.setAttribute('text-anchor','middle');st.setAttribute('fill',e.st==='new'?'var(--p-accent-h)':e.st==='pending'?'var(--b-ts)':'var(--b-dim)');st.textContent=e.st;cellsG.appendChild(st);
+    });
+    if(stream.length>7){var m=document.createElementNS(NS,'text');m.setAttribute('class','smq-sub');m.setAttribute('x',190);m.setAttribute('y',140);m.textContent='(showing last 7 of '+stream.length+')';cellsG.appendChild(m);}
+  }
+  function drawCons(){
+    while(consG.firstChild)consG.removeChild(consG.firstChild);
+    [{n:1,alive:c1alive,x:204},{n:2,alive:true,x:330}].forEach(function(c){
+      var r=document.createElementNS(NS,'rect');r.setAttribute('class','smq-cons '+(c.alive?'alive':'dead'));r.setAttribute('x',c.x);r.setAttribute('y',214);r.setAttribute('width',110);r.setAttribute('height',30);r.setAttribute('rx',5);consG.appendChild(r);
+      var t=document.createElementNS(NS,'text');t.setAttribute('class','smq-cons-tx '+(c.alive?'alive':'dead'));t.setAttribute('x',c.x+55);t.setAttribute('y',233);t.setAttribute('text-anchor','middle');t.textContent='c'+c.n+(c.alive?'':' ✗ crashed');consG.appendChild(t);
+    });
+  }
+  function drawPel(){
+    while(pelG.firstChild)pelG.removeChild(pelG.firstChild);
+    var pend=stream.filter(function(e){return e.st==='pending';}).slice(0,4);
+    if(pend.length===0){var z=document.createElementNS(NS,'text');z.setAttribute('class','smq-pel-row');z.setAttribute('x',204);z.setAttribute('y',278);z.setAttribute('fill','var(--b-dim)');z.textContent='(empty)';pelG.appendChild(z);return;}
+    pend.forEach(function(e,i){
+      var t=document.createElementNS(NS,'text');t.setAttribute('class','smq-pel-row'+(e.rc?' rc':''));t.setAttribute('x',204);t.setAttribute('y',276+i*15);t.textContent='id '+e.id+'  → c'+e.c+'  ×'+e.att+(e.rc?'  (re-claimed)':'');pelG.appendChild(t);
+    });
+  }
+  function draw(f){drawCells(f);drawCons();drawPel();}
+  document.getElementById('xadd').addEventListener('click',function(){
+    if(stream.length>=20){out.innerHTML='<span class="rk">XADD &#183;</span> long enough &#8212; read, ack, or reset.';return;}
+    mint++; stream.push({id:mint,st:'new',att:0,rc:false}); draw(mint);
+    out.innerHTML='<span class="rk">XADD &#183;</span> appended <span class="nw">id '+mint+'</span> &#8212; append is <b>mint order</b>; the branded id is the sort key, so stream order = id order (the order theorem).';
+  });
+  document.getElementById('xrg').addEventListener('click',function(){
+    var e=stream.filter(function(x){return x.st==='new';})[0];
+    if(!e){out.innerHTML='<span class="rk">XREADGROUP &#183;</span> nothing new to deliver &#8212; <code>XADD</code> first.';return;}
+    var c = c1alive ? nextC : 2; if(!c1alive)c=2;
+    e.st='pending'; e.c=c; e.att=1; nextC = (nextC===1?2:1); draw();
+    out.innerHTML='<span class="rk">XREADGROUP &gt; &#183;</span> handed <span class="pe">id '+e.id+'</span> to <b>c'+c+'</b> and moved it to the <span class="pe">PEL</span> (pending, attempts=1) &#8212; <b>not</b> removed from the stream.';
+  });
+  document.getElementById('xack').addEventListener('click',function(){
+    var e=stream.filter(function(x){return x.st==='pending';})[0];
+    if(!e){out.innerHTML='<span class="rk">XACK &#183;</span> the PEL is empty &#8212; read an entry first.';return;}
+    e.st='acked'; draw();
+    out.innerHTML='<span class="rk">XACK &#183;</span> cleared <span class="ak">id '+e.id+'</span> from the PEL &#8212; done within this group. It <b>stays in the stream</b> (acked &#8800; deleted) until retention trims it or the archive folds it to Tigris.';
+  });
+  document.getElementById('crash').addEventListener('click',function(){
+    var e=stream.filter(function(x){return x.st==='pending' && x.c===1;})[0];
+    c1alive=false;
+    if(!e){draw();out.innerHTML='<span class="rk">crash &#183;</span> <span class="rc">c1 crashed</span>, but it held nothing pending. <code>XAUTOCLAIM</code> has nothing to re-hand.';return;}
+    e.c=2; e.att++; e.rc=true; draw();
+    out.innerHTML='<span class="rk">crash + XAUTOCLAIM &#183;</span> <span class="rc">c1 crashed</span> with id '+e.id+' pending. <code>XAUTOCLAIM</code> re-hands it to <b>c2</b> (attempts='+e.att+' &#8212; the <code>attempts ↔ XPENDING</code> count). It returns <span class="rc">out of real-time order</span>: the order theorem holds for the stream, <b>not</b> for a re-claimed PEL entry.';
+  });
+  document.getElementById('smqReset').addEventListener('click',function(){mint=106;nextC=1;c1alive=true;stream=[];draw();out.innerHTML='<span class="rk">reset &#183;</span> empty stream, group "process" with c1 and c2 alive. <code>XADD</code> a few, read them into the PEL, ack one, then crash c1 to see re-delivery.';});
+  draw();
+})();
+</script>
+</body>
+</html>

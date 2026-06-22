@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenDAL &amp; the portable remote — Echo Persistence</title>
+<meta name="description" content="Dive 8.2 of Echo Persistence Module 8: the Rust engine writes segments through Apache OpenDAL, so Tigris, S3, or local disk are a config change — and the fence is one if_not_exists call whose semantics hold on every backend. An interactive operator.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.ctrls .sep{width:1px;height:22px;background:var(--b-line)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .ok{color:var(--b-node)}.readout .bad{color:var(--b-ns)}.readout code{background:#ecf0e9}
+.od-box{stroke-width:1.8;fill:var(--b-card)}
+.od-box.engine{stroke:var(--b-ns)}.od-box.op{stroke:var(--p-accent);fill:var(--p-tint)}
+.od-title{font-family:var(--mono);font-size:12px;font-weight:700;pointer-events:none}
+.od-title.engine{fill:var(--b-ns)}.od-title.op{fill:var(--p-accent-h)}
+.od-sub{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.od-call{font-family:var(--mono);font-size:9px;fill:var(--b-ink);pointer-events:none}
+.od-backend{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;cursor:pointer}
+.od-backend:hover{stroke:var(--b-ts)}
+.od-backend.on{stroke:var(--p-accent);stroke-width:2.4;fill:#fbf3df}
+.od-be-tx{font-family:var(--mono);font-size:11px;font-weight:700;fill:var(--b-ts);pointer-events:none}
+.od-be-tx.on{fill:var(--p-accent-h)}
+.od-be-sub{font-family:var(--mono);font-size:8.5px;fill:var(--b-dim);pointer-events:none}
+.od-chip{fill:#e7f1eb;stroke:var(--b-node);stroke-width:1}
+.od-chip-tx{font-family:var(--mono);font-size:8px;fill:var(--b-node);pointer-events:none}
+.od-arrow{stroke:var(--b-dim);stroke-width:1.8;fill:none;marker-end:url(#oda)}
+.od-route{stroke:var(--p-accent);stroke-width:2.4;fill:none;marker-end:url(#odr);transition:all .2s}
+.od-arrow-lbl{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.od-result{font-family:var(--mono);font-size:10.5px;font-weight:700;pointer-events:none}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}.od-route{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence/engines/rust">rust</a><span class="rsep">/</span><span class="rcur">opendal-and-the-portable-remote</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#operator">One operator</a>
+<a href="#why">Why it&#8217;s portable</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 8 &#183; Dive 8.2</p>
+<h1>OpenDAL &amp; the portable <span class="hns">remote</span>.</h1>
+<p class="lede">The Rust engine never talks to Tigris directly. It writes through an Apache OpenDAL operator &#8212; one API over many storage backends &#8212; so the remote can be Tigris, S3, local disk, or memory by configuration, not by changing code. And the fence is a single call: <code>write(&hellip;, if_not_exists)</code>, whose create-if-not-exists semantics hold identically on every backend. Pick a backend and write the same segment twice.</p>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="operator">
+<div class="sech"><span class="sno">&#167;1</span><h2>Same call, any backend</h2><span class="ssrc">interactive</span></div>
+<figure class="fig" aria-labelledby="odCap">
+<figcaption id="odCap"><b>One operator, swappable drivers.</b> The engine issues one conditional write; OpenDAL routes it to the selected backend. The call and its result type never change &#8212; only the driver does. Write the same key twice to see the fence hold.</figcaption>
+<svg viewBox="0 0 720 280" id="od" role="img" aria-label="The echo_graft engine on the left issues a single conditional write call through an OpenDAL operator in the center, which routes to one of four backends on the right — Tigris, S3, local filesystem, or memory. Selecting a backend redraws the route arrow to it. Writing a key creates it (success); writing the same key again to the same backend returns ConditionNotMatch, showing the fence semantics are identical across backends.">
+<defs>
+<marker id="oda" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-dim)"></path></marker>
+<marker id="odr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--p-accent)"></path></marker>
+</defs>
+<rect class="od-box engine" x="24" y="100" width="156" height="86" rx="8"></rect>
+<text class="od-title engine" x="36" y="124">echo_graft</text>
+<text class="od-sub" x="36" y="140">storage-agnostic</text>
+<text class="od-call" x="36" y="160">op.write("seg/42",</text>
+<text class="od-call" x="36" y="172">&nbsp;bytes, if_not_exists)</text>
+<rect class="od-box op" x="250" y="100" width="170" height="86" rx="8"></rect>
+<text class="od-title op" x="262" y="124">OpenDAL</text>
+<text class="od-sub" x="262" y="140">Operator &#183; one API</text>
+<text class="od-result" id="result" x="335" y="166" text-anchor="middle" style="fill:var(--b-dim)">idle</text>
+<g id="backends"></g>
+<path class="od-arrow" d="M180 143 L250 143"></path>
+<text class="od-arrow-lbl" x="186" y="135">write(&hellip;)</text>
+<path class="od-route" id="route" d="M420 143 L520 76"></path>
+<text class="od-arrow-lbl" id="routeLbl" x="436" y="104" style="fill:var(--p-accent-h)">route</text>
+</svg>
+<div class="ctrls" id="beSel" role="group" aria-label="Select a backend">
+<button type="button" data-b="tigris" aria-pressed="true">Tigris</button>
+<button type="button" data-b="s3" aria-pressed="false">S3</button>
+<button type="button" data-b="fs" aria-pressed="false">fs</button>
+<button type="button" data-b="memory" aria-pressed="false">memory</button>
+<span class="sep"></span>
+<button type="button" id="odWrite">write seg/42</button>
+<button type="button" id="odReset">reset</button>
+</div>
+<div class="readout" id="odOut" aria-live="polite"><span class="rk">readout &#183;</span> The active backend is <b>Tigris</b>. Press write: OpenDAL routes the same <code>if_not_exists</code> call to it &#8212; <span class="ok">created</span>. Press again &#8212; <span class="bad">ConditionNotMatch</span>. Switch backend and repeat: identical behaviour, different driver.</div>
+</figure>
+</section>
+
+<section id="why">
+<div class="sech"><span class="sno">&#167;2</span><h2>The remote is a detail, the fence is not</h2><span class="ssrc">graft.engine-split.design.md</span></div>
+<div class="prose">
+<p>Putting OpenDAL between the engine and the object store buys two things. First, portability: the same build runs against Tigris in production, MinIO or the local filesystem in a test, or an in-memory store in a unit test, because the operator presents one interface and the driver is chosen by config &#8212; in production that driver is <code>RemoteConfig::S3Compatible</code>, which reads <code>AWS_ENDPOINT_URL</code> to point at Tigris. Second &#8212; and this is the part that matters for correctness &#8212; the conditional write is expressed once. The engine asks OpenDAL to write the segment <i>only if the key does not already exist</i>; on a backend that supports it natively that becomes the store&#8217;s create-if-not-exists, and the failure surfaces uniformly as <code>ConditionNotMatch</code>. That single call is the fence (Module 3), and because it lives at the operator boundary it is the same fence no matter which store is underneath. So the Rust engine gets the exact remote-commit guarantee the native engine gets from Tigris directly &#8212; the subject of the next module, where both engines meet at one shared remote.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/specs/graft.2.md">graft specs / graft.2.md</a><span class="rsrc">eg.2 — the Tigris/OpenDAL remote + the conditional-write fence</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.roadmap.md">graft.roadmap.md</a><span class="rsrc">eg.2 — the OpenDAL remote behind a stable trait</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.engine-split.design.md">graft.engine-split.design.md</a><span class="rsrc">echo_graft on OpenDAL, RemoteCommit fence</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/store/design/store.design.md">store.design.md</a><span class="rsrc">segment upload, conditional write</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://opendal.apache.org/">Apache OpenDAL</a><span class="rsrc">one data-access layer, many backends</span></li>
+<li><a href="https://opendal.apache.org/docs/rust/opendal/struct.Operator.html">OpenDAL Operator</a><span class="rsrc">write, conditional ops</span></li>
+<li><a href="https://www.tigrisdata.com/docs/objects/conditionals/">Tigris conditional writes</a><span class="rsrc">If-None-Match on the object store</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx" href="/echo-persistence/engines/rust/fjall-and-the-lsm-tree"><span class="pk">Dive 8.1</span>&#8592; Fjall &amp; the LSM-tree</a>
+<a class="pgx" href="/echo-persistence/engines/rust/the-in-memory-feed"><span class="pk">Dive 8.3</span>The in-memory feed &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 8 / dive 8.2</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  var BE=[
+    {b:'tigris',name:'Tigris',sub:'object store',y:48},
+    {b:'s3',name:'S3',sub:'object store',y:100},
+    {b:'fs',name:'fs',sub:'local disk',y:152},
+    {b:'memory',name:'memory',sub:'in-process',y:204}
+  ];
+  var store={tigris:{},s3:{},fs:{},memory:{}};
+  var active='tigris', KEY='seg/42';
+  var bg=document.getElementById('backends'), route=document.getElementById('route'), routeLbl=document.getElementById('routeLbl'), result=document.getElementById('result'), out=document.getElementById('odOut');
+  function draw(){
+    while(bg.firstChild)bg.removeChild(bg.firstChild);
+    BE.forEach(function(e){
+      var on=e.b===active;
+      var r=document.createElementNS(NS,'rect');r.setAttribute('class','od-backend'+(on?' on':''));r.setAttribute('data-b',e.b);r.setAttribute('x',520);r.setAttribute('y',e.y);r.setAttribute('width',170);r.setAttribute('height',42);r.setAttribute('rx',6);bg.appendChild(r);
+      var t=document.createElementNS(NS,'text');t.setAttribute('class','od-be-tx'+(on?' on':''));t.setAttribute('x',534);t.setAttribute('y',e.y+19);t.textContent=e.name;bg.appendChild(t);
+      var s=document.createElementNS(NS,'text');s.setAttribute('class','od-be-sub');s.setAttribute('x',534);s.setAttribute('y',e.y+33);s.textContent=e.sub;bg.appendChild(s);
+      if(store[e.b][KEY]){var c=document.createElementNS(NS,'rect');c.setAttribute('class','od-chip');c.setAttribute('x',626);c.setAttribute('y',e.y+11);c.setAttribute('width',54);c.setAttribute('height',20);c.setAttribute('rx',3);bg.appendChild(c);var ct=document.createElementNS(NS,'text');ct.setAttribute('class','od-chip-tx');ct.setAttribute('x',653);ct.setAttribute('y',e.y+25);ct.setAttribute('text-anchor','middle');ct.textContent=KEY;bg.appendChild(ct);}
+    });
+    var by=({tigris:48,s3:100,fs:152,memory:204})[active]+21;
+    route.setAttribute('d','M420 143 L520 '+by);
+    routeLbl.setAttribute('y', (143+by)/2 - 4);
+  }
+  function pick(b){active=b;draw();result.textContent='idle';result.setAttribute('fill','var(--b-dim)');out.innerHTML='<span class="rk">backend &#183;</span> active backend is now <b>'+(BE.filter(function(e){return e.b===b;})[0].name)+'</b>. The engine call is unchanged &#8212; press write to route it here.';}
+  document.getElementById('beSel').addEventListener('click',function(e){var btn=e.target.closest('button');if(!btn||!btn.getAttribute('data-b'))return;var b=btn.getAttribute('data-b');[].forEach.call(document.querySelectorAll('#beSel button[data-b]'),function(x){x.setAttribute('aria-pressed',x===btn?'true':'false');});pick(b);});
+  [].forEach.call(document.querySelectorAll('.od-backend'),function(){}); // backends drawn dynamically; delegate below
+  bg.addEventListener('click',function(e){var r=e.target.closest('.od-backend');if(!r)return;var b=r.getAttribute('data-b');[].forEach.call(document.querySelectorAll('#beSel button[data-b]'),function(x){x.setAttribute('aria-pressed',x.getAttribute('data-b')===b?'true':'false');});pick(b);});
+  document.getElementById('odWrite').addEventListener('click',function(){
+    var nm=BE.filter(function(e){return e.b===active;})[0].name;
+    if(store[active][KEY]){
+      result.textContent='ConditionNotMatch'; result.setAttribute('fill','var(--b-ns)'); draw();
+      out.innerHTML='<span class="rk">write &#183;</span> <code>op.write("'+KEY+'", &hellip;, if_not_exists)</code> &#8594; <b>'+nm+'</b> &#8594; <span class="bad">ConditionNotMatch</span>: object exists. The <b>fence holds</b> on '+nm+' exactly as on Tigris &#8212; no second copy.';
+    } else {
+      store[active][KEY]=1; result.textContent='created'; result.setAttribute('fill','var(--b-node)'); draw();
+      out.innerHTML='<span class="rk">write &#183;</span> the same call routed through OpenDAL to <b>'+nm+'</b> &#8594; <span class="ok">created</span>. Only the driver changed; the call and its result type did not.';
+    }
+  });
+  document.getElementById('odReset').addEventListener('click',function(){store={tigris:{},s3:{},fs:{},memory:{}};active='tigris';[].forEach.call(document.querySelectorAll('#beSel button[data-b]'),function(x){x.setAttribute('aria-pressed',x.getAttribute('data-b')==='tigris'?'true':'false');});result.textContent='idle';result.setAttribute('fill','var(--b-dim)');draw();out.innerHTML='<span class="rk">reset &#183;</span> all backends empty, Tigris active. Write once for <span class="ok">created</span>, twice for <span class="bad">ConditionNotMatch</span> &#8212; on any backend.';});
+  draw();
+})();
+</script>
+</body>
+</html>

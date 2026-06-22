@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dive 12.2 · The outbox beside the bus — Echo Persistence</title>
+<meta name="description" content="Module 12, Dive 12.2: the dual-write problem and how EchoMQ sidesteps it. The bus stays on Valkey for speed; a low-volume transactional-enqueue outbox (EchoStore.Durability) journals intents beside the hot path, so a durable write never gates an enqueue. The Adapter contract; SQLite/Memory. Interactive.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.1rem,1rem + 0.7vw,1.4rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.6rem,1.2rem + 2.2vw,2.5rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls .sep{width:1px;height:22px;background:var(--b-line)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.6em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .bus{color:var(--b-ts)}.readout .obx{color:var(--b-node)}.readout .no{color:var(--b-ns)}.readout code{background:#ecf0e9}
+.ob-box{rx:6;stroke-width:1.5}
+.ob-box.prod{fill:#f3eff7;stroke:var(--b-seq)}
+.ob-box.bus{fill:#eef4f9;stroke:var(--b-ts)}
+.ob-box.obx{fill:#eaf3ee;stroke:var(--b-node)}
+.ob-t{font-family:var(--mono);font-size:11px;font-weight:700;pointer-events:none}
+.ob-t.prod{fill:var(--b-seq)}.ob-t.bus{fill:var(--b-ts)}.ob-t.obx{fill:var(--b-node)}
+.ob-s{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.ob-slot{rx:2}
+.ob-slot.bus{fill:#cfe0ee;stroke:var(--b-ts);stroke-width:.8}
+.ob-slot.obx{fill:#d5e8dd;stroke:var(--b-node);stroke-width:.8}
+.ob-slot.empty{fill:none;stroke:#cdd6cc;stroke-width:.8;stroke-dasharray:2 2}
+.ob-arrow{fill:none}
+.ob-arrow.hot{stroke:var(--b-ts);stroke-width:2.6;marker-end:url(#obT)}
+.ob-arrow.side{stroke:var(--b-node);stroke-width:1.6;marker-end:url(#obG);stroke-dasharray:1 0}
+.ob-arrow.replay{stroke:var(--p-accent);stroke-width:2.2;marker-end:url(#obA);stroke-dasharray:5 3}
+.ob-lbl{font-family:var(--mono);font-size:9.5px;pointer-events:none}
+.ob-lbl.hot{fill:var(--b-ts)}.ob-lbl.side{fill:var(--b-node)}.ob-lbl.replay{fill:var(--p-accent-h);font-weight:700}.ob-lbl.dim{fill:var(--b-dim)}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid var(--b-line);margin-top:46px;padding:22px 0 8px}
+.pgx{display:flex;flex-direction:column;gap:4px;font-family:var(--mono);font-size:14px;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;background:var(--b-card);transition:border-color .12s}
+.pgx:hover{border-color:var(--p-accent)}
+.pgx .pk{font-size:11px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em}
+.pgx .pt{color:var(--b-ts);font-weight:600}
+.pgx.next{text-align:right;align-items:flex-end}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}.pager{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">platform</a><span class="rsep">/</span><a href="/echo-persistence/platform/bus-and-persistence">bus-and-persistence</a><span class="rsep">/</span><span class="rcur">the-outbox-beside-the-bus</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#dual">The dual write</a>
+<a href="#beside">Beside, not in</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 12 &#183; Dive 12.2</p>
+<h1>The outbox <span class="hns">beside</span> the bus.</h1>
+<p class="lede">Make a durable record <i>and</i> enqueue a job, and you have written to two systems that cannot commit together &#8212; the classic dual-write trap, where a crash between the two leaves them disagreeing. The usual fix folds the enqueue into the database transaction via an outbox, but that risks putting a durable write on the hot path. EchoMQ&#8217;s move is sharper: keep the bus on Valkey for speed, and stand the outbox <i>beside</i> it as a small, mostly-idle dependency that only the crash window ever reads. Enqueue, then crash the bus, below.</p>
+<figure class="fig" aria-labelledby="obCap">
+<figcaption id="obCap"><b>One enqueue, two writes &#8212; only one on the hot path.</b> An enqueue goes to the <span style="color:var(--b-ts)">bus (Valkey)</span> on the fast path and records a low-volume <span style="color:var(--b-node)">intent</span> in the outbox journal beside it. The bus is volatile; if it loses its crash window, the outbox <b>replay</b> re-enqueues exactly those intents.</figcaption>
+<svg viewBox="0 0 720 264" id="ob" role="img" aria-label="A producer on the left writes to two targets: the EchoMQ bus on Valkey (top right), on a thick hot-path arrow, and an EchoStore.Durability outbox journal (bottom right), on a thin side arrow labelled never on the hot path. Enqueues fill both the bus slots and the outbox slots. Crashing the bus empties its volatile slots; a replay arrow from the outbox refills the bus from the recorded intents.">
+<defs>
+<marker id="obT" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-ts)"></path></marker>
+<marker id="obG" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-node)"></path></marker>
+<marker id="obA" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--p-accent)"></path></marker>
+</defs>
+<rect class="ob-box prod" x="20" y="100" width="120" height="56"></rect>
+<text class="ob-t prod" x="32" y="124">producer</text>
+<text class="ob-s" x="32" y="140">enqueue intent</text>
+<rect class="ob-box bus" x="430" y="42" width="270" height="74"></rect>
+<text class="ob-t bus" x="444" y="64">EchoMQ bus &#183; Valkey</text>
+<text class="ob-s" x="444" y="78">fast, reliable &#8212; volatile (the hot path)</text>
+<g id="busSlots"></g>
+<rect class="ob-box obx" x="430" y="156" width="270" height="80"></rect>
+<text class="ob-t obx" x="444" y="178">EchoStore.Durability &#183; outbox</text>
+<text class="ob-s" x="444" y="192">journal: SQLite / Memory &#183; low-volume intents</text>
+<g id="obxSlots"></g>
+<path class="ob-arrow hot" id="aHot" d="M140 116 L428 79"></path>
+<text class="ob-lbl hot" x="250" y="92">enqueue (hot path)</text>
+<path class="ob-arrow side" id="aSide" d="M140 140 L428 196"></path>
+<text class="ob-lbl side" x="232" y="182">append intent &#183; never on the hot path</text>
+<path class="ob-arrow" id="aReplay" d="M540 156 L540 116" visibility="hidden"></path>
+<text class="ob-lbl replay" id="replayLbl" x="548" y="138" visibility="hidden">replay &#8594;</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="obEnq">enqueue</button>
+<button type="button" id="obCrash">crash bus &#8594; replay outbox</button>
+<span class="sep"></span>
+<button type="button" id="obReset">reset</button>
+</div>
+<div class="readout" id="obOut" aria-live="polite"><span class="rk">readout &#183;</span> each <code>enqueue</code> appends a durable <span class="obx">intent</span> to the outbox <i>and</i> places the job on the <span class="bus">bus</span> &#8212; but the durable append is <b>beside</b> the enqueue, never gating it. <code>crash bus</code> shows why that intent exists.</div>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="dual">
+<div class="sech"><span class="sno">&#167;1</span><h2>The dual-write trap</h2><span class="ssrc">graft.engine-split.design.md</span></div>
+<div class="prose">
+<p>A great many bugs hide in a single innocent line: &#8220;save the record, then enqueue the job.&#8221; Those are two systems &#8212; a store and a queue &#8212; and nothing makes the pair atomic. Crash after the save but before the enqueue and the work is durable but never scheduled; crash the other way and a job runs for a record that was rolled back. No ordering of the two writes closes the gap, because the gap is <i>between</i> them. The standard answer is the transactional outbox: write the intent to enqueue into the <i>same</i> transaction as the state, then a separate relay projects committed intents onto the queue &#8212; one commit, no divergence. It is the same idea the engines already use internally, where the commit log <i>is</i> the outbox and a drainer projects it. The open question the outbox always raises is cost: if every enqueue must now pass through a durable transaction, you have moved the database onto the hot path, which is exactly what a fast queue exists to avoid.</p>
+</div>
+</section>
+
+<section id="beside">
+<div class="sech"><span class="sno">&#167;2</span><h2>Beside the hot path, not on it</h2><span class="ssrc">graft.engine-split.design.md &#183; durability.ex</span></div>
+<div class="prose">
+<p>EchoMQ resolves that tension by being explicit about what is hot and what is not. <b>The bus stays on Valkey</b> &#8212; fast and reliable, and treated as volatile &#8212; so the enqueue hot path never touches durable storage. Durability is a <i>separate, smaller</i> concern: <code>EchoStore.Durability</code> is a transactional-enqueue outbox whose own moduledoc is blunt about its size &#8212; the intents it carries are <b>low-volume</b>, &#8220;a small, mostly-idle dependency, not the hot path Oban puts every dequeue, heartbeat, and ack through.&#8221; The durable write stands <i>beside</i> the bus; it records the intent so a crash window can be replayed, but it never enters the enqueue path. The contract is a small pluggable <code>Adapter</code> &#8212; append, replay, stats &#8212; and the shipped, dependency-free backends are <code>SQLite</code> (via <code>exqlite</code>) and <code>Memory</code> (ETS). A heavier journal is bring-your-own: a host can drop in Postgres, or the Graft commit-log-as-outbox, where an intent is simply a page commit in a reserved high LSN range &#8212; the same engine from Chapter III serving the outbox because the Volume is already there. So EchoMQ keeps the outbox&#8217;s guarantee (no dual-write divergence; replay the crash window) without paying the outbox&#8217;s usual tax (a durable write per enqueue). The lesson is the converse of the previous dive&#8217;s: some seams should be tight (the cursor), and some should be deliberately loose (the journal beside the bus) &#8212; the skill is knowing which is which.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.engine-split.design.md">graft.engine-split.design.md</a><span class="rsrc">EchoStore.Durability — the low-volume outbox beside the bus; the Adapter; SQLite / Memory; Durability.Graft</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rsrc">the commit-log-as-outbox; replay the crash window</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/store/design/store.design.md">store.design.md</a><span class="rsrc">EchoStore module architecture; the journal</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://microservices.io/patterns/data/transactional-outbox.html">Transactional outbox</a><span class="rsrc">intent in the same transaction as state</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Two-phase_commit_protocol">Two-phase commit</a><span class="rsrc">the coordination the outbox avoids</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx prev" href="/echo-persistence/platform/bus-and-persistence/the-commit-lsn-is-the-cursor"><span class="pk">&#8592; Prev &#183; Dive 12.1</span><span class="pt">The commit LSN is the cursor</span></a>
+<a class="pgx next" href="/echo-persistence/platform/bus-and-persistence/the-loop-closes"><span class="pk">Next &#183; Dive 12.3 &#8594;</span><span class="pt">The loop closes</span></a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; dive 12.2</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg", MAX=6;
+  var busN=0, obxN=0;
+  var busG=document.getElementById('busSlots'), obxG=document.getElementById('obxSlots');
+  var aReplay=document.getElementById('aReplay'), replayLbl=document.getElementById('replayLbl'), out=document.getElementById('obOut');
+  function slots(g,filled,cls,y){ while(g.firstChild) g.removeChild(g.firstChild); for(var i=0;i<MAX;i++){ var r=document.createElementNS(NS,'rect'); r.setAttribute('class','ob-slot '+(i<filled?cls:'empty')); r.setAttribute('x',452+i*38); r.setAttribute('y',y); r.setAttribute('width',30); r.setAttribute('height',20); g.appendChild(r); } }
+  function render(){ slots(busG,busN,'bus',90); slots(obxG,obxN,'obx',206); }
+  document.getElementById('obEnq').addEventListener('click',function(){
+    aReplay.setAttribute('visibility','hidden'); replayLbl.setAttribute('visibility','hidden');
+    if(busN>=MAX){ out.innerHTML='<span class="rk">enqueue &#183;</span> demo bus is full &#8212; <code>crash bus</code> to see the outbox replay, or <code>reset</code>. The shape holds: every enqueue paired a durable intent beside it.'; return; }
+    busN++; obxN++; render();
+    out.innerHTML='<span class="rk">enqueue &#183;</span> placed the job on the <span class="bus">bus (Valkey)</span> on the hot path, and appended a durable <span class="obx">intent</span> to the outbox <b>beside</b> it &#8212; the durable write did not gate the enqueue. Bus: '+busN+' &#183; outbox intents: '+obxN+'.';
+  });
+  document.getElementById('obCrash').addEventListener('click',function(){
+    if(obxN===0){ out.innerHTML='<span class="rk">crash &#183;</span> nothing enqueued yet &#8212; <code>enqueue</code> a few first, then crash to watch the outbox replay restore them.'; return; }
+    busN=0; render();
+    out.innerHTML='<span class="rk">crash bus &#183;</span> Valkey is <span class="no">volatile</span> &#8212; the bus lost its in-flight jobs. But the '+obxN+' durable <span class="obx">intent(s)</span> survived in the outbox&#8230;';
+    setTimeout(function(){ aReplay.setAttribute('visibility','visible'); replayLbl.setAttribute('visibility','visible'); busN=obxN; render();
+      out.innerHTML='<span class="rk">replay &#183;</span> the outbox <b>replay</b> re-enqueued exactly the crash window &#8212; <span class="obx">'+obxN+' intent(s)</span> projected back onto the <span class="bus">bus</span>. No job lost, none duplicated beyond the at-least-once the handlers already tolerate. This is the whole reason the intent was journaled.'; },650);
+  });
+  document.getElementById('obReset').addEventListener('click',function(){ busN=0; obxN=0; render(); aReplay.setAttribute('visibility','hidden'); replayLbl.setAttribute('visibility','hidden'); out.innerHTML='<span class="rk">reset &#183;</span> empty. <code>enqueue</code> to pair a durable intent beside each job, then <code>crash bus</code> to see the replay restore the crash window.'; });
+  render();
+})();
+</script>
+</body>
+</html>

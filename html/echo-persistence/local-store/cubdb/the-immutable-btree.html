@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The immutable B-tree — Echo Persistence</title>
+<meta name="description" content="Dive 4.2 of Echo Persistence Module 4: CubDB's B-tree is copy-on-write. Update a key and watch only the root-to-leaf path get rewritten as new nodes, with the old tree left whole and still readable — the basis of free snapshots.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-ns:#b23b2e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .sh{color:var(--b-ts)}
+.bt-node{fill:var(--b-paper);stroke:var(--b-ts);stroke-width:1.5}
+.bt-root{fill:#e3eef4;stroke:var(--b-ts);stroke-width:1.8}
+.bt-newroot{fill:var(--p-tint);stroke:var(--p-accent);stroke-width:2.2}
+.bt-newleaf{fill:var(--p-tint);stroke:var(--p-accent);stroke-width:2}
+.bt-tx{font-family:var(--mono);font-size:11px;fill:var(--b-ink);pointer-events:none}
+.bt-tx.amber{fill:var(--p-accent-h)}
+.bt-sub{font-family:var(--mono);font-size:9.5px;fill:var(--b-dim);pointer-events:none}
+.bt-edge{stroke:var(--b-ts);stroke-width:1.6;fill:none;opacity:.7}
+.bt-edge.share{stroke-dasharray:4 3;stroke:var(--p-accent);opacity:.85}
+.bt-edge.new{stroke:var(--p-accent);stroke-width:2;opacity:1}
+.bt-edge.old.hl{stroke-width:2.6;opacity:1}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence/local-store/cubdb">cubdb</a><span class="rsep">/</span><span class="rcur">the-immutable-btree</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#cow">Copy-on-write</a>
+<a href="#why">Why it matters</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 4 &#183; Dive 4.2</p>
+<h1>The immutable <span class="hns">B-tree</span>.</h1>
+<p class="lede">Inside the file is a B-tree, and it is <b>copy-on-write</b>. Changing a key does not edit a node in place; it writes new copies of the nodes along the path from the root to that leaf, and a new root. Everything off the path &#8212; and the entire old tree &#8212; stays exactly as it was. Update a key and watch which nodes are new and which are shared.</p>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="cow">
+<div class="sech"><span class="sno">&#167;1</span><h2>A new path, a shared rest</h2><span class="ssrc">interactive</span></div>
+<figure class="fig" aria-labelledby="btCap">
+<figcaption id="btCap"><b>Copy-on-write update.</b> Root v0 over three leaves. Update one leaf&#8217;s range: a new leaf and a new root v1 appear, v1 sharing the two untouched leaves; v0 still reaches the original.</figcaption>
+<svg viewBox="0 0 720 330" id="bt" role="img" aria-label="A B-tree: root v0 over three leaves holding key ranges 1 to 9, 10 to 19, 20 to 29. Updating a key produces a new root v1 and a new copy of that one leaf; v1 links to the new leaf and shares the other two with v0 by dashed reference, while v0 still reaches the original leaf. Both versions remain valid.">
+<rect class="bt-root" x="270" y="44" width="80" height="40" rx="5"></rect>
+<text class="bt-tx" x="310" y="62" text-anchor="middle">root v0</text>
+<text class="bt-sub" x="310" y="77" text-anchor="middle">9 | 19</text>
+<g id="leaves"></g>
+<g id="oldEdges"></g>
+<g id="dyn"></g>
+</svg>
+<div class="ctrls" id="upSel" role="group" aria-label="Update a key">
+<button type="button" data-k="0" aria-pressed="false">update key 5</button>
+<button type="button" data-k="1" aria-pressed="false">update key 14</button>
+<button type="button" data-k="2" aria-pressed="false">update key 25</button>
+<button type="button" id="showV0">highlight v0</button>
+<button type="button" id="btReset">reset</button>
+</div>
+<div class="readout" id="btOut" aria-live="polite"><span class="rk">readout &#183;</span> Update a key. CubDB writes a new copy of that leaf and a new root; the other two leaves are <span class="sh">shared by reference</span>. The old root still reaches the original leaf &#8212; both versions are valid, which is what makes a snapshot free.</div>
+</figure>
+</section>
+
+<section id="why">
+<div class="sech"><span class="sno">&#167;2</span><h2>Why this is the whole game</h2><span class="ssrc">store.design.md</span></div>
+<div class="prose">
+<p>Copy-on-write is what links Dive 4.1 to the next module. Because an update only ever <i>adds</i> nodes &#8212; the path copies plus a root &#8212; it appends cleanly to the file, and because the old root is undisturbed, the version it names is still a complete, readable tree. A snapshot, then, is nothing but a retained root: no copy, no freeze. The work per write is the tree&#8217;s height, not its size, so it stays cheap as the data grows. Module 5 takes this single fact &#8212; old roots stay valid &#8212; and builds MVCC and time travel out of it.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">External</li>
+<li><a href="https://en.wikipedia.org/wiki/B-tree">B-tree</a><span class="rs">the structure being copied</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Persistent_data_structure">Persistent data structures</a><span class="rs">path copying, structural sharing</span></li>
+<li><a href="https://hexdocs.pm/cubdb/howto.html">CubDB &#183; how it works</a><span class="rs">copy-on-write B-tree, new roots</span></li>
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/store/design/store.design.md">store.design.md</a><span class="rs">immutable pages, retained roots</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rs">snapshots from immutability</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx" href="/echo-persistence/local-store/cubdb/the-append-only-file"><span class="pk">Dive 4.1</span>&#8592; The append-only file</a>
+<a class="pgx" href="/echo-persistence/local-store/cubdb/compaction"><span class="pk">Dive 4.3</span>Compaction &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 4 / dive 4.2</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  var leaves=[{x:90,c:155,lbl:'keys 1\u20139',key:'5'},{x:300,c:365,lbl:'keys 10\u201319',key:'14'},{x:510,c:575,lbl:'keys 20\u201329',key:'25'}];
+  var leafW=130, leafY=190, leafH=44;
+  var gL=document.getElementById('leaves'), gOld=document.getElementById('oldEdges'), dyn=document.getElementById('dyn');
+  leaves.forEach(function(L,i){
+    var r=document.createElementNS(NS,'rect');r.setAttribute('class','bt-node');r.setAttribute('x',L.x);r.setAttribute('y',leafY);r.setAttribute('width',leafW);r.setAttribute('height',leafH);r.setAttribute('rx',5);gL.appendChild(r);
+    var t=document.createElementNS(NS,'text');t.setAttribute('class','bt-tx');t.setAttribute('x',L.c);t.setAttribute('y',leafY+27);t.setAttribute('text-anchor','middle');t.textContent=L.lbl;gL.appendChild(t);
+    var e=document.createElementNS(NS,'path');e.setAttribute('class','bt-edge old');e.setAttribute('data-i',i);e.setAttribute('d','M310 84 C 310 140, '+L.c+' 140, '+L.c+' '+leafY);gOld.appendChild(e);
+  });
+  var out=document.getElementById('btOut'), sel=document.getElementById('upSel');
+  function update(k){
+    while(dyn.firstChild)dyn.removeChild(dyn.firstChild);
+    [].forEach.call(sel.querySelectorAll('button[data-k]'),function(b){b.setAttribute('aria-pressed',+b.getAttribute('data-k')===k?'true':'false');});
+    // new root v1 (right)
+    var rrx=560, rry=44, rrc=600;
+    var nr=document.createElementNS(NS,'rect');nr.setAttribute('class','bt-newroot');nr.setAttribute('x',rrx);nr.setAttribute('y',rry);nr.setAttribute('width',86);nr.setAttribute('height',40);nr.setAttribute('rx',5);dyn.appendChild(nr);
+    var nrt=document.createElementNS(NS,'text');nrt.setAttribute('class','bt-tx amber');nrt.setAttribute('x',rrc);nrt.setAttribute('y',rry+18);nrt.setAttribute('text-anchor','middle');nrt.textContent='root v1';dyn.appendChild(nrt);
+    var nrs=document.createElementNS(NS,'text');nrs.setAttribute('class','bt-sub');nrs.setAttribute('x',rrc);nrs.setAttribute('y',rry+33);nrs.setAttribute('text-anchor','middle');nrs.textContent='9 | 19';dyn.appendChild(nrs);
+    // new leaf for k (lower row)
+    var nlx=leaves[k].x, nlc=leaves[k].c, nly=272;
+    var nl=document.createElementNS(NS,'rect');nl.setAttribute('class','bt-newleaf');nl.setAttribute('x',nlx);nl.setAttribute('y',nly);nl.setAttribute('width',leafW);nl.setAttribute('height',leafH);nl.setAttribute('rx',5);dyn.appendChild(nl);
+    var nlt=document.createElementNS(NS,'text');nlt.setAttribute('class','bt-tx amber');nlt.setAttribute('x',nlc);nlt.setAttribute('y',nly+27);nlt.setAttribute('text-anchor','middle');nlt.textContent=leaves[k].lbl+" '";dyn.appendChild(nlt);
+    // v1 edges
+    for(var j=0;j<3;j++){
+      var e=document.createElementNS(NS,'path');
+      if(j===k){e.setAttribute('class','bt-edge new');e.setAttribute('d','M'+rrc+' 84 C '+rrc+' 230, '+nlc+' 230, '+nlc+' '+nly);}
+      else{e.setAttribute('class','bt-edge share');e.setAttribute('d','M'+rrc+' 84 C '+rrc+' 150, '+leaves[j].c+' 150, '+leaves[j].c+' '+leafY);}
+      dyn.appendChild(e);
+    }
+    out.innerHTML='<span class="rk">update '+leaves[k].key+' &#183;</span> a new leaf and <b>root v1</b> are written; v1 <span class="sh">shares the other two leaves</span> with v0 (dashed). v0 still reaches the original leaf &#8212; both trees valid, only the path was copied.';
+  }
+  [].forEach.call(sel.querySelectorAll('button[data-k]'),function(b){b.addEventListener('click',function(){update(+b.getAttribute('data-k'));});});
+  document.getElementById('showV0').addEventListener('click',function(){
+    var on=this.getAttribute('aria-pressed')!=='true'; this.setAttribute('aria-pressed',on?'true':'false');
+    [].forEach.call(gOld.querySelectorAll('.bt-edge.old'),function(e){e.classList.toggle('hl',on);});
+    out.innerHTML = on
+      ? '<span class="rk">v0 highlighted &#183;</span> the <span class="sh">old root still reaches all three original leaves</span> &#8212; untouched by the update. Reading v0 is reading a complete, consistent past tree.'
+      : '<span class="rk">readout &#183;</span> Update a key, or highlight v0 to confirm the old version is intact.';
+  });
+  document.getElementById('btReset').addEventListener('click',function(){
+    while(dyn.firstChild)dyn.removeChild(dyn.firstChild);
+    [].forEach.call(sel.querySelectorAll('button'),function(b){b.setAttribute('aria-pressed','false');});
+    [].forEach.call(gOld.querySelectorAll('.bt-edge.old'),function(e){e.classList.remove('hl');});
+    out.innerHTML='<span class="rk">reset &#183;</span> root v0 over three leaves. Update a key to see copy-on-write.';
+  });
+})();
+</script>
+</body>
+</html>

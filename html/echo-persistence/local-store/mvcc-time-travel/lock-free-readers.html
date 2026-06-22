@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lock-free readers — Echo Persistence</title>
+<meta name="description" content="Dive 5.2 of Echo Persistence Module 5: readers and the writer never block each other. An interactive timeline — start a reader, then let the writer commit, and watch the reader keep reading its pinned version while the head races ahead.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button:disabled{opacity:.4;cursor:default}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .w{color:var(--b-node)}.readout .r{color:var(--b-seq)}
+.lf-lane{stroke:var(--b-line);stroke-width:1.5}
+.lf-lane-lbl{font-family:var(--mono);font-size:11px;font-weight:700}
+.lf-lane-lbl.w{fill:var(--b-node)}.lf-lane-lbl.r{fill:var(--b-seq)}
+.lf-tick{fill:var(--b-paper);stroke:var(--b-node);stroke-width:1.6}
+.lf-tick.head{fill:var(--b-node)}
+.lf-tick-lbl{font-family:var(--mono);font-size:10.5px;fill:var(--b-ink);pointer-events:none}
+.lf-bar{fill:#efe7f2;stroke:var(--b-seq);stroke-width:1.6}
+.lf-bar-lbl{font-family:var(--mono);font-size:11px;font-weight:700;fill:var(--b-seq);pointer-events:none}
+.lf-conn{stroke:var(--b-seq);stroke-width:1.4;stroke-dasharray:4 3;opacity:.8}
+.lf-axis{stroke:var(--b-line);stroke-width:1.5;marker-end:url(#lfa)}
+.lf-axlbl{font-family:var(--mono);font-size:10.5px;fill:var(--b-dim)}
+.lf-note{font-family:var(--mono);font-size:11px;font-weight:700;fill:var(--b-node)}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence/local-store/mvcc-time-travel">mvcc-time-travel</a><span class="rsep">/</span><span class="rcur">lock-free-readers</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#lanes">The two lanes</a>
+<a href="#why">Why no locks</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 5 &#183; Dive 5.2</p>
+<h1>Lock-free <span class="hns">readers</span>.</h1>
+<p class="lede">A reader takes hold of the current root and reads it to the end. Whatever the writer does next &#8212; commit a new root, ten new roots &#8212; the reader&#8217;s view is fixed, because its root is immutable. And the writer never waits for a reader, because it only ever appends. Start a reader, then commit a few times and watch the head pull away while the reader stays put.</p>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="lanes">
+<div class="sech"><span class="sno">&#167;1</span><h2>The head moves; the reader doesn&#8217;t</h2><span class="ssrc">interactive</span></div>
+<figure class="fig" aria-labelledby="lfCap">
+<figcaption id="lfCap"><b>Two lanes, one clock.</b> The writer commits versions left to right. Start a reader and it pins to the head of that moment; as the writer commits on, the reader&#8217;s bar extends but stays attached to its pinned version.</figcaption>
+<svg viewBox="0 0 720 250" id="lf" role="img" aria-label="A writer lane on top with version commit ticks advancing rightward over time, the newest being the head. A reader lane below: starting a reader draws a bar pinned to the head version of that moment; further writer commits move the head right while a dashed line keeps the reader bar attached to its pinned, older version.">
+<defs><marker id="lfa" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-line)"></path></marker></defs>
+<text class="lf-lane-lbl w" x="20" y="50">writer</text>
+<line class="lf-lane" x1="56" y1="92" x2="700" y2="92"></line>
+<g id="ticks"></g>
+<text class="lf-lane-lbl r" x="20" y="170">reader</text>
+<line class="lf-lane" x1="56" y1="200" x2="700" y2="200"></line>
+<g id="reader"></g>
+<line class="lf-axis" x1="56" y1="232" x2="380" y2="232"></line>
+<text class="lf-axlbl" x="390" y="236">time &#8594;</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="commit">writer commits</button>
+<button type="button" id="startR">start reader @ head</button>
+<button type="button" id="lfReset">reset</button>
+</div>
+<div class="readout" id="lfOut" aria-live="polite"><span class="rk">readout &#183;</span> Commit a couple of versions, then start a reader. Commit again and watch the <span class="w">head advance</span> while the <span class="r">reader stays pinned</span> to the version it opened on &#8212; no lock taken, nothing blocked either way.</div>
+</figure>
+</section>
+
+<section id="why">
+<div class="sech"><span class="sno">&#167;2</span><h2>Where the locks went</h2><span class="ssrc">store.design.md</span></div>
+<div class="prose">
+<p>In a mutable store, a reader and a writer touching the same data must take turns, so one waits &#8212; that is what a lock <i>is</i>. Immutability removes the shared mutable thing entirely: the reader&#8217;s root and the writer&#8217;s new root are different objects, so there is nothing to contend over. Readers scale out freely, a long analytical read can&#8217;t stall the write path, and the writer&#8217;s only serialization is the tiny head swap from Module 3&#8217;s OCC, not a lock over the data. For a durable queue this is the difference between &#8220;draining the backlog&#8221; and &#8220;inspecting the backlog&#8221; never fighting each other. The one cost is that a reader pins its version alive &#8212; which is exactly what GC must respect, in the last dive.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">External</li>
+<li><a href="https://en.wikipedia.org/wiki/Multiversion_concurrency_control">Multiversion concurrency control</a><span class="rs">readers don't block writers</span></li>
+<li><a href="https://hexdocs.pm/cubdb/CubDB.html#with_snapshot/2">CubDB.with_snapshot</a><span class="rs">a consistent read while writes continue</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Snapshot_isolation">Snapshot isolation</a><span class="rs">the guarantee a pinned reader gets</span></li>
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/store/design/store.design.md">store.design.md</a><span class="rs">lock-free reads beside the write lock</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rs">readers, the head, and OCC</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx" href="/echo-persistence/local-store/mvcc-time-travel/coexisting-versions"><span class="pk">Dive 5.1</span>&#8592; Coexisting versions</a>
+<a class="pgx" href="/echo-persistence/local-store/mvcc-time-travel/checkout-and-gc"><span class="pk">Dive 5.3</span>Checkout &amp; GC &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 5 / dive 5.2</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  var now=0, versions=[], readerPin=null, readerStartEv=null;
+  function x(ev){return 70+ev*52;}
+  var ticks=document.getElementById('ticks'), reader=document.getElementById('reader'), out=document.getElementById('lfOut');
+  var commitB=document.getElementById('commit'), startB=document.getElementById('startR');
+  // seed v1 at ev0
+  versions.push({v:1,ev:0});
+  function draw(){
+    while(ticks.firstChild)ticks.removeChild(ticks.firstChild);
+    while(reader.firstChild)reader.removeChild(reader.firstChild);
+    versions.forEach(function(o,i){
+      var head=(i===versions.length-1);
+      var c=document.createElementNS(NS,'circle');c.setAttribute('class','lf-tick'+(head?' head':''));c.setAttribute('cx',x(o.ev));c.setAttribute('cy',92);c.setAttribute('r',9);ticks.appendChild(c);
+      var t=document.createElementNS(NS,'text');t.setAttribute('class','lf-tick-lbl');t.setAttribute('x',x(o.ev));t.setAttribute('y',74);t.setAttribute('text-anchor','middle');t.textContent='v'+o.v;ticks.appendChild(t);
+    });
+    if(readerPin){
+      var x0=x(readerStartEv), x1=x(now);
+      var bar=document.createElementNS(NS,'rect');bar.setAttribute('class','lf-bar');bar.setAttribute('x',x0);bar.setAttribute('y',188);bar.setAttribute('width',Math.max(36,x1-x0));bar.setAttribute('height',24);bar.setAttribute('rx',5);reader.appendChild(bar);
+      var bl=document.createElementNS(NS,'text');bl.setAttribute('class','lf-bar-lbl');bl.setAttribute('x',x0+Math.max(36,x1-x0)/2);bl.setAttribute('y',204);bl.setAttribute('text-anchor','middle');bl.textContent='reads v'+readerPin.v;reader.appendChild(bl);
+      var conn=document.createElementNS(NS,'path');conn.setAttribute('class','lf-conn');conn.setAttribute('d','M'+x0+' 188 L'+x(readerPin.ev)+' 101');reader.appendChild(conn);
+      if(versions.length-1 > 0 && readerPin.v < versions[versions.length-1].v){
+        var note=document.createElementNS(NS,'text');note.setAttribute('class','lf-note');note.setAttribute('x',x1+10);note.setAttribute('y',204);note.textContent='head pulled ahead \u2014 reader unaffected';reader.appendChild(note);
+      }
+    }
+  }
+  commitB.addEventListener('click',function(){
+    if(now>11){out.innerHTML='<span class="rk">timeline full &#183;</span> reset to run it again.';return;}
+    now++; var v=versions[versions.length-1].v+1; versions.push({v:v,ev:now}); draw();
+    if(readerPin && readerPin.v<v){
+      out.innerHTML='<span class="rk">commit &#183;</span> <span class="w">head is now v'+v+'</span> &#8212; the writer didn&#8217;t wait for anyone. The <span class="r">reader still reads v'+readerPin.v+'</span>, its immutable root untouched.';
+    } else {
+      out.innerHTML='<span class="rk">commit &#183;</span> a new root <span class="w">v'+v+'</span> appended at the head. Start a reader, then commit again to see it pin.';
+    }
+  });
+  startB.addEventListener('click',function(){
+    if(now>11){return;}
+    now++; readerPin=versions[versions.length-1]; readerStartEv=now; draw();
+    out.innerHTML='<span class="rk">reader started &#183;</span> it pinned the head of this moment, <span class="r">v'+readerPin.v+'</span>. Now commit &#8212; the head will move on, the reader will not.';
+  });
+  document.getElementById('lfReset').addEventListener('click',function(){now=0;versions=[{v:1,ev:0}];readerPin=null;readerStartEv=null;draw();out.innerHTML='<span class="rk">reset &#183;</span> v1 at the head. Commit to advance the writer; start a reader to pin a version.';});
+  draw();
+})();
+</script>
+</body>
+</html>

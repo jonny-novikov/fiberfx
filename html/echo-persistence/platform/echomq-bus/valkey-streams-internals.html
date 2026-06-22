@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dive 11.1 · ValKey Streams internals — Echo Persistence</title>
+<meta name="description" content="Module 11, Dive 11.1: the consumer-group internals up close. The Pending Entries List, the delivery count as a named invariant, the exact handler contract, and the two recovery paths — drain-your-own-PEL on restart vs XAUTOCLAIM on a beat for a peer that never returns. Interactive recovery.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.1rem,1rem + 0.7vw,1.4rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.7rem,1.3rem + 2.2vw,2.7rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls .sep{width:1px;height:22px;background:var(--b-line)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.6em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .self{color:var(--b-ts)}.readout .peer{color:var(--b-node)}.readout code{background:#ecf0e9}
+.buildbox{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:16px 18px;margin:12px 0;max-width:80ch}
+.buildbox .bk{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--p-accent);font-weight:700;margin-bottom:6px}
+.rcv-pel{fill:#fbfdff;stroke:var(--b-ts);stroke-width:1.5;rx:7}
+.rcv-pellbl{font-family:var(--mono);font-size:11px;font-weight:700;fill:var(--b-ts);pointer-events:none}
+.rcv-row{font-family:var(--mono);font-size:11px;pointer-events:none}
+.rcv-row.c1{fill:var(--b-ink)}
+.rcv-row.c2{fill:var(--b-node);font-weight:700}
+.rcv-cons{stroke-width:1.5;rx:6}
+.rcv-cons.c1{fill:#eef4f9;stroke:var(--b-ts)}
+.rcv-cons.c1.dead{fill:#f3eded;stroke:var(--b-ns);stroke-dasharray:3 2}
+.rcv-cons.c2{fill:#eaf3ee;stroke:var(--b-node)}
+.rcv-const{font-family:var(--mono);font-size:11px;font-weight:700;pointer-events:none}
+.rcv-const.c1{fill:var(--b-ts)}.rcv-const.c1.dead{fill:var(--b-ns)}.rcv-const.c2{fill:var(--b-node)}
+.rcv-arrow{stroke-width:1.8;fill:none}
+.rcv-arrow.self{stroke:var(--b-ts);marker-end:url(#rcvB)}
+.rcv-arrow.peer{stroke:var(--b-node);marker-end:url(#rcvG)}
+.rcv-albl{font-family:var(--mono);font-size:9.5px;pointer-events:none}
+.rcv-albl.self{fill:var(--b-ts)}.rcv-albl.peer{fill:var(--b-node)}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">platform</a><span class="rsep">/</span><a href="/echo-persistence/platform/echomq-bus">echomq-bus</a><span class="rsep">/</span><span class="rcur">valkey-streams-internals</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#paths">Two ways back</a>
+<a href="#handler">The handler</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 11 &#183; Dive 11.1</p>
+<h1>ValKey Streams <span class="hns">internals</span>.</h1>
+<p class="lede">The hub showed the lifecycle; this dive goes under it, to the part most ad-hoc implementations get subtly wrong. A consumer group&#8217;s pending list is not one recovery mechanism but two, and they recover different things. A consumer that <i>restarts</i> drains its own pending entries first. A consumer that <i>never comes back</i> is recovered by a peer&#8217;s claim on a beat. EchoMQ keeps both and names which is which &#8212; conflating them is how you get a stuck partition that looks healthy. Switch between the two paths below.</p>
+<figure class="fig" aria-labelledby="rcvCap">
+<figcaption id="rcvCap"><b>Two recovery paths, one PEL.</b> Two entries sit in the <code>process</code> group&#8217;s pending list, owned by <code>c1</code> and idle. If c1 restarts, it re-reads its <i>own</i> PEL (<code>XREADGROUP &#8230; 0</code>) and recovers itself. If c1 is gone, <code>c2</code>&#8217;s <code>XAUTOCLAIM</code> beat takes the idle entries over and bumps their delivery count &#8212; recovering the peer.</figcaption>
+<svg viewBox="0 0 720 290" id="rcv" role="img" aria-label="A pending-entries-list box for the process group holds two entries, id 5 and id 6, each owned by consumer c1 with delivery count 1 and a high idle time. Below sit a c1 box and a c2 box. In the first path, c1 restarts and an arrow from c1 re-reads its own pending entries; ownership stays c1. In the second path, c1 is shown crashed and an arrow from c2 claims the idle entries; their owner becomes c2 and the delivery count increments.">
+<defs>
+<marker id="rcvB" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-ts)"></path></marker>
+<marker id="rcvG" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-node)"></path></marker>
+</defs>
+<rect class="rcv-pel" x="220" y="30" width="280" height="86"></rect>
+<text class="rcv-pellbl" x="234" y="50">PEL &#183; "process" group</text>
+<text class="rcv-row c1" id="row5" x="234" y="76">id 5  &#8594; c1  &#215;1   (idle 9.2s)</text>
+<text class="rcv-row c1" id="row6" x="234" y="98">id 6  &#8594; c1  &#215;1   (idle 9.0s)</text>
+<rect class="rcv-cons c1" id="boxC1" x="40" y="180" width="170" height="64"></rect>
+<text class="rcv-const c1" id="txC1" x="125" y="216" text-anchor="middle">c1</text>
+<rect class="rcv-cons c2" id="boxC2" x="510" y="180" width="170" height="64"></rect>
+<text class="rcv-const c2" x="595" y="216" text-anchor="middle">c2</text>
+<g id="rcvArr"></g>
+<text class="rcv-albl" id="hint" x="360" y="270" text-anchor="middle" style="fill:var(--b-dim)">pick a recovery path below</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="rcvSelf">c1 restarts &#8594; drain own PEL</button>
+<button type="button" id="rcvPeer">c1 gone &#8594; c2 XAUTOCLAIM beat</button>
+<span class="sep"></span>
+<button type="button" id="rcvReset">reset</button>
+</div>
+<div class="readout" id="rcvOut" aria-live="polite"><span class="rk">readout &#183;</span> two entries are pending for <code>c1</code>. <span class="self">drain-own-PEL</span> (<code>XREADGROUP GROUP process c1 STREAMS s 0</code>) recovers a consumer that <b>restarts</b>; <span class="peer">XAUTOCLAIM</span> on a beat recovers a consumer that <b>never returns</b>. They are different paths for different failures.</div>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="paths">
+<div class="sech"><span class="sno">&#167;1</span><h2>Drain your own, then claim a peer&#8217;s</h2><span class="ssrc">streams.synthesis.md &#183; emq3.3</span></div>
+<div class="prose">
+<p>When an entry is read through a group it joins that group&#8217;s pending list, owned by the consumer that read it, until that consumer <code>XACK</code>s it. Two distinct failures can leave an entry stuck there, and they want opposite recoveries. The first is a consumer that <b>crashes and restarts</b> under the same name: on its way back it must re-read its <i>own</i> pending entries before taking anything new, which it does with <code>XREADGROUP GROUP g c STREAMS s 0</code> &#8212; the <code>0</code> reads the PEL rather than <code>&gt;</code> for new entries &#8212; so it resumes exactly where it left off. This recovers <b>self</b>. The second is a consumer that <b>never comes back</b>: its entries would sit idle forever, because nothing it owns will ever be re-read by it. Here a <i>surviving</i> consumer runs <code>XAUTOCLAIM</code> on a beat, claiming entries whose idle time exceeds a threshold and taking ownership of them. This recovers <b>peers</b>. EchoMQ&#8217;s consumer makes both first-class and complementary: drain-own-PEL on start, the autoclaim beat for the rest. Conflating them is the classic bug &#8212; rely only on restart-drain and a permanently dead consumer&#8217;s backlog is never recovered; rely only on the beat and a fast-restarting consumer races its own reclaim. The synthesis names this split explicitly so a spec can&#8217;t quietly assume one covers both.</p>
+</div>
+</section>
+
+<section id="handler">
+<div class="sech"><span class="sno">&#167;2</span><h2>The handler, the count, the lazy group</h2><span class="ssrc">streams.synthesis.md &#183; F3.3-B</span></div>
+<div class="prose">
+<p>The posture is at-least-once with idempotent handlers; exactly-once is not claimed. The handler is one exact shape &#8212; <code>%{id, payload, attempts, group} &#8594; :ok | {:error, reason}</code> &#8212; the same contract the job <code>Consumer</code> already uses, so a stream consumer is not a new mental model. The <code>attempts</code> field is the load-bearing one, and EchoMQ writes it down as a <b>named invariant</b>: it maps to the entry&#8217;s <code>XPENDING</code> delivery count, the same number <code>XAUTOCLAIM</code> increments on a reclaim, so a handler can see how many times an entry has been tried and decide to dead-letter rather than loop forever. Because delivery is at-least-once, a handler must be safe to run twice on the same <code>id</code> &#8212; the branded id is the natural idempotency key. Group creation is lazy and defensive: a consumer ensures its group on start with <code>XGROUP CREATE &#8230; MKSTREAM</code> and swallows <b>only</b> <code>BUSYGROUP</code> (a <code>WRONGTYPE</code> stays loud); the start position &#8212; <code>$</code> for new-only or <code>0</code> to replay &#8212; is a declared <code>start_link</code> option, never a silent default; and there is no destructive group verb in this tier. None of these are new commands; they are the discipline that turns the raw verbs into a consumer you can reason about.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/kb/streams-tier/streams.synthesis.md">streams.synthesis.md</a><span class="rsrc">the recovery split, the handler mirror, the attempts &#8596; XPENDING invariant (F3.3-B)</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/emq.streams.md">emq.streams.md</a><span class="rsrc">emq3.3 groups, at-least-once, idempotent handlers</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/kb/streams-tier/streams.design.A-consumer-lens.md">streams.design.A-consumer-lens.md</a><span class="rsrc">the consumer / operability lens</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://redis.io/docs/latest/commands/xautoclaim/">XAUTOCLAIM</a><span class="rsrc">claiming idle pending entries</span></li>
+<li><a href="https://redis.io/docs/latest/commands/xpending/">XPENDING</a><span class="rsrc">the delivery count</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx" href="/echo-persistence/platform/echomq-bus"><span class="pk">Prev &#183; Module 11</span>&#8592; EchoMQ Bus</a>
+<a class="pgx" href="/echo-persistence/platform/echomq-bus/retention-and-the-never-deleted-problem"><span class="pk">Next &#183; Dive 11.2</span>Retention &amp; the never-deleted problem &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; dive 11.1</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  var row5=document.getElementById('row5'),row6=document.getElementById('row6'),boxC1=document.getElementById('boxC1'),txC1=document.getElementById('txC1');
+  var arr=document.getElementById('rcvArr'),hint=document.getElementById('hint'),out=document.getElementById('rcvOut');
+  function clear(){ while(arr.firstChild) arr.removeChild(arr.firstChild); }
+  function path(x1,y1,x2,y2,cls,label,lx,ly){
+    var p=document.createElementNS(NS,'path'); p.setAttribute('class','rcv-arrow '+cls); p.setAttribute('d','M'+x1+' '+y1+' L'+x2+' '+y2); arr.appendChild(p);
+    var t=document.createElementNS(NS,'text'); t.setAttribute('class','rcv-albl '+cls); t.setAttribute('x',lx); t.setAttribute('y',ly); t.textContent=label; arr.appendChild(t);
+  }
+  document.getElementById('rcvSelf').addEventListener('click',function(){
+    clear(); hint.textContent='';
+    boxC1.setAttribute('class','rcv-cons c1'); txC1.setAttribute('class','rcv-const c1'); txC1.textContent='c1 (restarted)';
+    row5.setAttribute('class','rcv-row c1'); row6.setAttribute('class','rcv-row c1');
+    row5.textContent='id 5  \u2192 c1  \u00d71   (re-read by c1)'; row6.textContent='id 6  \u2192 c1  \u00d71   (re-read by c1)';
+    path(125,180,300,116,'self','XREADGROUP \u2026 0',150,150);
+    out.innerHTML='<span class="rk">drain own PEL &#183;</span> <span class="self">c1 restarts</span> and re-reads its <b>own</b> pending entries with <code>XREADGROUP GROUP process c1 STREAMS s 0</code> &#8212; ownership stays c1, the entries resume where they were. This recovers <b>self</b>; the delivery count is unchanged because it is the same consumer continuing.';
+  });
+  document.getElementById('rcvPeer').addEventListener('click',function(){
+    clear(); hint.textContent='';
+    boxC1.setAttribute('class','rcv-cons c1 dead'); txC1.setAttribute('class','rcv-const c1 dead'); txC1.textContent='c1 \u2717 gone';
+    row5.setAttribute('class','rcv-row c2'); row6.setAttribute('class','rcv-row c2');
+    row5.textContent='id 5  \u2192 c2  \u00d72   (claimed)'; row6.textContent='id 6  \u2192 c2  \u00d72   (claimed)';
+    path(595,180,420,116,'peer','XAUTOCLAIM (idle > min)',430,150);
+    out.innerHTML='<span class="rk">XAUTOCLAIM beat &#183;</span> <span class="peer">c1 never returns</span>, so <code>c2</code> claims its idle entries on a beat &#8212; ownership becomes c2 and the delivery count bumps to &#215;2 (the <code>attempts &#8596; XPENDING</code> invariant). This recovers a <b>peer</b>; drain-own-PEL alone never would.';
+  });
+  document.getElementById('rcvReset').addEventListener('click',function(){
+    clear(); hint.textContent='pick a recovery path below';
+    boxC1.setAttribute('class','rcv-cons c1'); txC1.setAttribute('class','rcv-const c1'); txC1.textContent='c1';
+    row5.setAttribute('class','rcv-row c1'); row6.setAttribute('class','rcv-row c1');
+    row5.textContent='id 5  \u2192 c1  \u00d71   (idle 9.2s)'; row6.textContent='id 6  \u2192 c1  \u00d71   (idle 9.0s)';
+    out.innerHTML='<span class="rk">reset &#183;</span> two entries pending for <code>c1</code>. Try <span class="self">drain-own-PEL</span> (restart) and <span class="peer">XAUTOCLAIM</span> (peer gone) &#8212; different paths for different failures.';
+  });
+})();
+</script>
+</body>
+</html>

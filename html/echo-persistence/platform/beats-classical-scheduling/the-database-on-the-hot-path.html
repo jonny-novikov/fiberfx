@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dive 13.1 · The database on the hot path — Echo Persistence</title>
+<meta name="description" content="Module 13, Dive 13.1: the classical durable queue traced. Every enqueue, dequeue, heartbeat, and ack is a PostgreSQL round-trip — the database is on the hot path — and durability is single-node. Throughput is pinned by records per fsync. Interactive.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.1rem,1rem + 0.7vw,1.4rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.6rem,1.2rem + 2.2vw,2.5rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.ctrls .sep{width:1px;height:22px;background:var(--b-line)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.6em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .db{color:var(--b-ns)}.readout .ok{color:var(--b-node)}.readout code{background:#ecf0e9}
+.note{font-family:var(--mono);font-size:11.5px;color:var(--b-dim);margin-top:8px}
+.cs-box{rx:6;stroke-width:1.5}
+.cs-box.wk{fill:#f3eff7;stroke:var(--b-seq)}
+.cs-box.pg{fill:#fbe9e6;stroke:var(--b-ns)}
+.cs-t{font-family:var(--mono);font-size:11px;font-weight:700;pointer-events:none}
+.cs-t.wk{fill:var(--b-seq)}.cs-t.pg{fill:var(--b-ns)}
+.cs-s{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.cs-rt{stroke:var(--b-line);stroke-width:1.6;fill:none;marker-end:url(#csA)}
+.cs-rt.hot{stroke:var(--b-ns);stroke-width:2.6;marker-end:url(#csAh)}
+.cs-rtl{font-family:var(--mono);font-size:9.5px;fill:var(--b-dim);pointer-events:none}
+.cs-rtl.hot{fill:var(--b-ns);font-weight:700}
+.cs-ctr{font-family:var(--mono);font-size:11px;font-weight:700;fill:var(--b-ns);pointer-events:none}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid var(--b-line);margin-top:46px;padding:22px 0 8px}
+.pgx{display:flex;flex-direction:column;gap:4px;font-family:var(--mono);font-size:14px;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;background:var(--b-card);transition:border-color .12s}
+.pgx:hover{border-color:var(--p-accent)}
+.pgx .pk{font-size:11px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em}
+.pgx .pt{color:var(--b-ts);font-weight:600}
+.pgx.next{text-align:right;align-items:flex-end}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}.pager{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">platform</a><span class="rsep">/</span><a href="/echo-persistence/platform/beats-classical-scheduling">beats-classical-scheduling</a><span class="rsep">/</span><span class="rcur">the-database-on-the-hot-path</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#hot">The hot path</a>
+<a href="#fsync">One record per fsync</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 13 &#183; Dive 13.1</p>
+<h1>The database on the <span class="hns">hot path</span>.</h1>
+<p class="lede">A classical durable queue earns its reliability by routing the whole job lifecycle through the database. Enqueue is an insert; claiming a job is an update; the heartbeat that keeps a long job&#8217;s lease alive is an update; the ack that finishes it is an update or delete. Every one is a round-trip to PostgreSQL, and every commit is an fsync. That is what makes it strict &#8212; and it is also the bill: the store&#8217;s latency gates the queue, the store&#8217;s availability gates the queue, and the store is single-node. Run a job through it below.</p>
+<figure class="fig" aria-labelledby="csCap">
+<figcaption id="csCap"><b>Four steps, four round-trips.</b> The worker cannot enqueue, claim, heartbeat, or ack without touching <span style="color:var(--b-ns)">PostgreSQL</span> &#8212; the database is on the hot path of the entire lifecycle, and each durable step is an fsync. Toggle the fsync mode to see the one dial that sets throughput.</figcaption>
+<svg viewBox="0 0 720 250" id="cs" role="img" aria-label="A worker box on the left labelled Oban and a PostgreSQL box on the right. Four arrows run worker to database, labelled enqueue, dequeue, heartbeat, and ack. Running the lifecycle lights each arrow in turn and increments a database round-trips counter; every durable step is an fsync. A mode toggle switches between one record per fsync and a transaction per fsync.">
+<defs>
+<marker id="csA" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-line)"></path></marker>
+<marker id="csAh" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-ns)"></path></marker>
+</defs>
+<rect class="cs-box wk" x="24" y="70" width="150" height="100"></rect>
+<text class="cs-t wk" x="38" y="92">worker (Oban)</text>
+<text class="cs-s" x="38" y="108">claims, runs, acks</text>
+<rect class="cs-box pg" x="512" y="48" width="184" height="150"></rect>
+<text class="cs-t pg" x="526" y="70">PostgreSQL</text>
+<text class="cs-s" x="526" y="86">fsync per commit</text>
+<text class="cs-s" x="526" y="100">single-node durability</text>
+<text class="cs-s db" id="pgState" x="526" y="180" style="fill:var(--b-ns);font-weight:700">on the hot path</text>
+<line class="cs-rt" id="rt0" x1="176" y1="84" x2="510" y2="84"></line>
+<text class="cs-rtl" id="rl0" x="343" y="78" text-anchor="middle">1 &#183; enqueue (INSERT + fsync)</text>
+<line class="cs-rt" id="rt1" x1="176" y1="112" x2="510" y2="112"></line>
+<text class="cs-rtl" id="rl1" x="343" y="106" text-anchor="middle">2 &#183; dequeue (UPDATE claim)</text>
+<line class="cs-rt" id="rt2" x1="176" y1="140" x2="510" y2="140"></line>
+<text class="cs-rtl" id="rl2" x="343" y="134" text-anchor="middle">3 &#183; heartbeat (UPDATE lease)</text>
+<line class="cs-rt" id="rt3" x1="176" y1="168" x2="510" y2="168"></line>
+<text class="cs-rtl" id="rl3" x="343" y="162" text-anchor="middle">4 &#183; ack (UPDATE/DELETE + fsync)</text>
+<text class="cs-ctr" id="rtCtr" x="343" y="208" text-anchor="middle">DB round-trips: 0 &#183; fsyncs: 0</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="csRun">run job lifecycle</button>
+<button type="button" id="csMode" aria-pressed="true">fsync: 1 record / commit</button>
+<span class="sep"></span>
+<button type="button" id="csReset">reset</button>
+</div>
+<div class="readout" id="csOut" aria-live="polite"><span class="rk">readout &#183;</span> every step of the lifecycle is a <span class="db">round-trip to the database</span>, and the durable steps are fsyncs. The store gates the queue&#8217;s latency and availability, and it is single-node. <code>run job lifecycle</code> to trace it.</div>
+<p class="note">Absolute job/s figures are indicative and single-machine; the teaching is the mechanism &#8212; the database on the hot path, and records per fsync.</p>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="hot">
+<div class="sech"><span class="sno">&#167;1</span><h2>Everything is a round-trip</h2><span class="ssrc">durability.ex</span></div>
+<div class="prose">
+<p>The defining property of the classical durable queue is not that it stores jobs &#8212; every queue does &#8212; but <i>where</i> it stores the queue&#8217;s control state. In Oban, the jobs table holds the work and its lifecycle: a job is enqueued by an insert, claimed by an update under a lock, kept alive by periodic lease heartbeats, and completed by an update or delete. Each of those is a transaction against PostgreSQL, so the database sits on the hot path of every step, not just the durable write. That has two consequences worth stating plainly. The queue&#8217;s <b>latency</b> is the database&#8217;s latency &#8212; a slow commit slows claiming and acking, not only enqueue &#8212; and the queue&#8217;s <b>availability</b> is the database&#8217;s availability, because a worker that cannot reach Postgres cannot even mark progress on a job it already holds. And the durability, real as it is, is <b>single-node</b>: the committed jobs table survives a worker crash, but the loss of that one database is the loss of the queue, unless you run Postgres streaming replication and take on its failover complexity. None of this is a flaw in Oban; it is the direct cost of putting the control plane in the durable store. The platform&#8217;s move is to ask whether the durable write has to be on that path at all.</p>
+</div>
+</section>
+
+<section id="fsync">
+<div class="sech"><span class="sno">&#167;2</span><h2>The throughput dial: records per fsync</h2><span class="ssrc">graft.design.md</span></div>
+<div class="prose">
+<p>Strip the schema away and a durable queue&#8217;s throughput reduces to one number: how many durable records ride a single fsync. The classical single-insert path commits once per job, so it rides <b>one record per fsync</b> &#8212; the strictest and the slowest end. The <code>insert_all</code> path writes a transaction&#8217;s worth of jobs in one commit, riding a whole batch per fsync, and that single change closes most of the throughput gap &#8212; the same durability, far more jobs per second, paid for by holding a batch. This is the dial the hub&#8217;s spectrum turns: Memory rides infinitely many records per fsync because it never syncs, Champ rides <code>K</code> because its checkpoint amortizes the fsync over <code>K</code> records, and Oban rides one or a transaction depending on the path. The insight that matters for the next dive is that batching is not unique to any one system &#8212; anything that amortizes the fsync over more records moves right on this axis. What batching alone never adds is <i>replication</i>: an <code>insert_all</code> is still single-node. So the open corner, the one the classical queue cannot reach by tuning its batch size, is strict durability that is <i>also</i> replicated and <i>also</i> off the hot path. That corner is the subject of the next dive.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rsrc">the measured spectrum; single-insert vs insert_all; records-per-fsync as the one dial</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.engine-split.design.md">graft.engine-split.design.md</a><span class="rsrc">durability.ex — the bus stays on Valkey, the hot path Oban puts every dequeue/heartbeat/ack through</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.roadmap.md">graft.roadmap.md</a><span class="rsrc">Oban strict but single-node unless streaming replication is bolted on</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://hexdocs.pm/oban/Oban.html">Oban</a><span class="rsrc">the jobs table; the lifecycle</span></li>
+<li><a href="https://www.postgresql.org/docs/current/wal-reliability.html">PostgreSQL WAL reliability</a><span class="rsrc">fsync on commit</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx prev" href="/echo-persistence/platform/beats-classical-scheduling"><span class="pk">&#8592; Prev &#183; Module 13</span><span class="pt">Why it beats classical scheduling</span></a>
+<a class="pgx next" href="/echo-persistence/platform/beats-classical-scheduling/the-commit-log-is-the-outbox"><span class="pk">Next &#183; Dive 13.2 &#8594;</span><span class="pt">The commit log is the outbox</span></a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; dive 13.1</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var rts=[document.getElementById('rt0'),document.getElementById('rt1'),document.getElementById('rt2'),document.getElementById('rt3')];
+  var rls=[document.getElementById('rl0'),document.getElementById('rl1'),document.getElementById('rl2'),document.getElementById('rl3')];
+  var ctr=document.getElementById('rtCtr'), out=document.getElementById('csOut'), pgState=document.getElementById('pgState');
+  var mode='single', running=false;
+  var labels=['enqueue (INSERT + fsync)','dequeue (UPDATE claim)','heartbeat (UPDATE lease)','ack (UPDATE/DELETE + fsync)'];
+  function clearRT(){ rts.forEach(function(r){r.setAttribute('class','cs-rt');}); rls.forEach(function(l){l.setAttribute('class','cs-rtl');}); }
+  function setMode(m){ mode=m; var b=document.getElementById('csMode');
+    if(m==='single'){ b.setAttribute('aria-pressed','true'); b.textContent='fsync: 1 record / commit'; }
+    else { b.setAttribute('aria-pressed','false'); b.textContent='fsync: a transaction / commit'; }
+  }
+  document.getElementById('csRun').addEventListener('click',function(){
+    if(running) return; running=true; clearRT(); var rt=0, fs=0;
+    ctr.textContent='DB round-trips: 0 \u00b7 fsyncs: 0'; pgState.textContent='on the hot path';
+    var i=0;
+    (function step(){
+      if(i>=4){ running=false;
+        out.innerHTML='<span class="rk">lifecycle done &#183;</span> four <span class="db">round-trips to PostgreSQL</span> for one job &#8212; the database was on the hot path of <i>every</i> step, and the durable ones were fsyncs. In <b>'+(mode==='single'?'1 record / commit':'a transaction / commit')+'</b> mode the durable steps ride '+(mode==='single'?'<b>one record per fsync</b> &#8212; the strict, slow end':'a <b>batch per fsync</b> &#8212; same durability, more throughput')+'. Still single-node.';
+        return; }
+      rts[i].setAttribute('class','cs-rt hot'); rls[i].setAttribute('class','cs-rtl hot');
+      rt++; if(i===0||i===3) fs++;
+      ctr.textContent='DB round-trips: '+rt+' \u00b7 fsyncs: '+fs;
+      out.innerHTML='<span class="rk">step '+(i+1)+' &#183;</span> <span class="db">'+labels[i]+'</span> &#8212; a round-trip to the database'+((i===0||i===3)?' with an fsync':'')+'.';
+      i++; setTimeout(step,560);
+    })();
+  });
+  document.getElementById('csMode').addEventListener('click',function(){ setMode(mode==='single'?'batch':'single');
+    out.innerHTML='<span class="rk">mode &#183;</span> '+(mode==='single'?'<b>1 record / commit</b> (single-insert) &#8212; the strictest and slowest: one durable record per fsync.':'<b>a transaction / commit</b> (insert_all) &#8212; a batch per fsync closes most of the throughput gap, same durability. But still <span class="db">single-node</span>, still on the hot path.'); });
+  document.getElementById('csReset').addEventListener('click',function(){ running=false; clearRT(); ctr.textContent='DB round-trips: 0 \u00b7 fsyncs: 0'; pgState.textContent='on the hot path'; setMode('single'); out.innerHTML='<span class="rk">reset &#183;</span> every step of the lifecycle is a <span class="db">round-trip to the database</span>, and the durable steps are fsyncs. <code>run job lifecycle</code> to trace it.'; });
+  setMode('single');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The OCC commit — Echo Persistence</title>
+<meta name="description" content="Dive 3.2 of Echo Persistence Module 3: appending the next LSN when two writers want it at once. An interactive optimistic-concurrency race — both read the head, one appends and wins, the other is told {:conflict, head} and retries from the new head.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button:disabled{opacity:.4;cursor:default}
+.ctrls .step{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .ok{color:var(--b-node)}.readout .bad{color:var(--b-ns)}
+.o-head{fill:var(--p-tint);stroke:var(--p-accent);stroke-width:2}
+.o-headtx{font-family:var(--mono);font-size:15px;font-weight:700;fill:var(--b-ink);pointer-events:none}
+.o-cell{fill:var(--b-paper);stroke:var(--b-line);stroke-width:1.3}
+.o-cell.w1{fill:#e3eef4;stroke:var(--b-ts)}
+.o-cell.w2{fill:#efe7f2;stroke:var(--b-seq)}
+.o-cell-tx{font-family:var(--mono);font-size:11px;fill:var(--b-ink);pointer-events:none}
+.o-panel{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.5}
+.o-panel.w1{stroke:var(--b-ts)}.o-panel.w2{stroke:var(--b-seq)}
+.o-panel.done{opacity:.5}
+.o-title{font-family:var(--mono);font-size:13px;font-weight:700;pointer-events:none}
+.o-title.w1{fill:var(--b-ts)}.o-title.w2{fill:var(--b-seq)}
+.o-line{font-family:var(--mono);font-size:12px;fill:var(--b-ink);pointer-events:none}
+.o-pill{font-family:var(--mono);font-size:11.5px;font-weight:700;pointer-events:none}
+.o-pill.stage{fill:var(--b-dim)}.o-pill.ok{fill:var(--b-node)}.o-pill.bad{fill:var(--b-ns)}.o-pill.retry{fill:var(--p-accent-h)}
+.o-note{font-family:var(--mono);font-size:11.5px;fill:var(--b-dim)}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence/foundations/persistence-concepts">persistence-concepts</a><span class="rsep">/</span><span class="rcur">the-occ-commit</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#race">The race</a>
+<a href="#why">Why optimistic</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 3 &#183; Dive 3.2</p>
+<h1>The OCC <span class="hns">commit</span>.</h1>
+<p class="lede">Reads were free because the log never changes. Writes are the hard part: two writers can both want the next LSN. The local engine resolves it <b>optimistically</b> &#8212; each stages a commit against the head it read, and the append is a compare-and-swap on the head. One wins; the other is told <code>{:conflict, head}</code> and retries. Run it.</p>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="race">
+<div class="sech"><span class="sno">&#167;1</span><h2>Two writers, one head</h2><span class="ssrc">interactive</span></div>
+<figure class="fig" aria-labelledby="oCap">
+<figcaption id="oCap"><b>Optimistic commit.</b> Both writers read head = 5 and stage LSN 6. Step forward: the append is a compare-and-swap on the head &#8212; only one swap from 5 to 6 succeeds.</figcaption>
+<svg viewBox="0 0 720 320" id="occ" role="img" aria-label="A shared head pointer and a log of committed LSNs. Two writer panels each read the head and stage the next LSN. On commit, a compare-and-swap on the head lets one writer append; the other sees the head already moved, gets a conflict, and retries from the new head.">
+<text class="o-note" x="40" y="34">shared log &#183; head is the last LSN</text>
+<g id="log"></g>
+<rect class="o-head" id="headBox" x="300" y="48" width="150" height="40" rx="6"></rect>
+<text class="o-headtx" id="headTx" x="375" y="74" text-anchor="middle">head = 5</text>
+<rect class="o-panel w1" id="p1" x="48" y="150" width="300" height="120" rx="8"></rect>
+<text class="o-title w1" x="64" y="176">Writer 1</text>
+<text class="o-line" id="w1read" x="64" y="202">read head: 5</text>
+<text class="o-line" id="w1stage" x="64" y="226">stage commit &#8594; &#8212;</text>
+<text class="o-pill stage" id="w1status" x="64" y="252">reading&#8230;</text>
+<rect class="o-panel w2" id="p2" x="372" y="150" width="300" height="120" rx="8"></rect>
+<text class="o-title w2" x="388" y="176">Writer 2</text>
+<text class="o-line" id="w2read" x="388" y="202">read head: 5</text>
+<text class="o-line" id="w2stage" x="388" y="226">stage commit &#8594; &#8212;</text>
+<text class="o-pill stage" id="w2status" x="388" y="252">reading&#8230;</text>
+<text class="o-note" id="oNoteSvg" x="40" y="300">compare-and-swap: append succeeds only if head is still what you read.</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="prev" disabled>&#8592; prev</button>
+<button type="button" id="next">next &#8594;</button>
+<button type="button" id="run">&#9654; run the race</button>
+<span class="step" id="stepLbl">step 0 &#183; both read the head</span>
+</div>
+<div class="readout" id="oOut" aria-live="polite"><span class="rk">step 0 &#183;</span> Both writers read <b>head = 5</b>. Each will stage a commit as LSN 6 &#8212; but only one compare-and-swap from 5&#8594;6 can win.</div>
+</figure>
+</section>
+
+<section id="why">
+<div class="sech"><span class="sno">&#167;2</span><h2>Why optimistic, not locked</h2><span class="ssrc">graft.design.md</span></div>
+<div class="prose">
+<p>A lock would make every writer wait even when there is no contention, which is most of the time. Optimistic concurrency assumes success and only pays on collision: stage freely, and let the single atomic swap on the head decide. The loser hasn&#8217;t corrupted anything &#8212; it simply re-reads the new head and tries again, which is cheap because reads are free. This is the <b>local</b> serialization, inside one process. The next dive is the same &#8220;one writer wins&#8221; idea one layer out, where the writers are different nodes and the referee is the object store.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rs">OCC commit, {:conflict, head} on the Volume</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/store/design/store.design.md">store.design.md</a><span class="rs">strict commit serialization</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://en.wikipedia.org/wiki/Optimistic_concurrency_control">Optimistic concurrency control</a><span class="rs">stage, then compare-and-swap</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Compare-and-swap">Compare-and-swap</a><span class="rs">the atomic head update</span></li>
+<li><a href="https://dataintensive.net">Designing Data-Intensive Applications, Kleppmann 2017</a><span class="rs">write conflicts, OCC (Ch. 7)</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx" href="/echo-persistence/foundations/persistence-concepts/volume-lsn-snapshot"><span class="pk">Dive 3.1</span>&#8592; Volume, LSN, snapshot</a>
+<a class="pgx" href="/echo-persistence/foundations/persistence-concepts/the-conditional-write-fence"><span class="pk">Dive 3.3</span>The conditional-write fence &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 3 / dive 3.2</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  // log committed LSNs with committer: 3,4,5 pre-existing; 6 -> W1; 7 -> W2 (appear as steps progress)
+  var log=document.getElementById('log');
+  function renderLog(head, owners){
+    while(log.firstChild)log.removeChild(log.firstChild);
+    var start=3, x=40, y=104, w=58, gap=6, i=0;
+    for(var lsn=start; lsn<=head; lsn++){
+      var r=document.createElementNS(NS,'rect');r.setAttribute('class','o-cell'+(owners[lsn]?(' '+owners[lsn]):''));
+      r.setAttribute('x',x+i*(w+gap));r.setAttribute('y',y);r.setAttribute('width',w);r.setAttribute('height',34);r.setAttribute('rx',4);log.appendChild(r);
+      var t=document.createElementNS(NS,'text');t.setAttribute('class','o-cell-tx');t.setAttribute('x',x+i*(w+gap)+w/2);t.setAttribute('y',y+22);t.setAttribute('text-anchor','middle');
+      t.textContent='LSN '+lsn; log.appendChild(t); i++;
+    }
+  }
+  var STATES=[
+    {lbl:'step 0 · both read the head', head:5, owners:{},
+      w1:{read:'read head: 5',stage:'stage commit \u2192 \u2014',st:['reading\u2026','stage']},
+      w2:{read:'read head: 5',stage:'stage commit \u2192 \u2014',st:['reading\u2026','stage']}, p1:false,p2:false,
+      out:'<span class="rk">step 0 &#183;</span> Both writers read <b>head = 5</b>. Each will stage LSN 6 &#8212; only one CAS 5&#8594;6 can win.'},
+    {lbl:'step 1 · both stage LSN 6', head:5, owners:{},
+      w1:{read:'read head: 5',stage:'stage commit \u2192 6',st:['staged','stage']},
+      w2:{read:'read head: 5',stage:'stage commit \u2192 6',st:['staged','stage']}, p1:false,p2:false,
+      out:'<span class="rk">step 1 &#183;</span> Both stage a commit as <b>LSN 6</b>, each expecting head 5. Nothing is durable yet.'},
+    {lbl:'step 2 · W1 swaps, W2 conflicts', head:6, owners:{6:'w1'},
+      w1:{read:'read head: 5',stage:'commit LSN 6',st:['ok \u2713 head 5\u21926','ok']},
+      w2:{read:'read head: 5',stage:'commit LSN 6',st:['\u2717 {:conflict, 6}','bad']}, p1:false,p2:false,
+      out:'<span class="rk">step 2 &#183;</span> <span class="ok">W1 wins</span> &#8212; CAS head 5&#8594;6 succeeds, LSN 6 is W1&#8217;s. <span class="bad">W2&#8217;s CAS fails</span> (head already 6): <code>{:error, {:conflict, 6}}</code>.'},
+    {lbl:'step 3 · W2 retries, reads head 6', head:6, owners:{6:'w1'},
+      w1:{read:'read head: 5',stage:'committed LSN 6',st:['done','ok']},
+      w2:{read:'read head: 6',stage:'stage commit \u2192 \u2014',st:['retry: re-read','retry']}, p1:true,p2:false,
+      out:'<span class="rk">step 3 &#183;</span> W2 retries &#8212; it re-reads the <b>new head = 6</b>. The retry is cheap because reads never block.'},
+    {lbl:'step 4 · W2 stages LSN 7', head:6, owners:{6:'w1'},
+      w1:{read:'read head: 5',stage:'committed LSN 6',st:['done','ok']},
+      w2:{read:'read head: 6',stage:'stage commit \u2192 7',st:['staged','stage']}, p1:true,p2:false,
+      out:'<span class="rk">step 4 &#183;</span> W2 stages a fresh commit as <b>LSN 7</b>, now expecting head 6.'},
+    {lbl:'step 5 · W2 swaps, both committed', head:7, owners:{6:'w1',7:'w2'},
+      w1:{read:'read head: 5',stage:'committed LSN 6',st:['done','ok']},
+      w2:{read:'read head: 6',stage:'commit LSN 7',st:['ok \u2713 head 6\u21927','ok']}, p1:true,p2:false,
+      out:'<span class="rk">step 5 &#183;</span> <span class="ok">W2 wins on retry</span> &#8212; CAS head 6&#8594;7. Both commits landed, in a strict order, with no lock held.'}
+  ];
+  var step=0;
+  var prev=document.getElementById('prev'),next=document.getElementById('next'),runB=document.getElementById('run'),lbl=document.getElementById('stepLbl'),out=document.getElementById('oOut');
+  function setPill(id,txt,cls){var e=document.getElementById(id);e.textContent=txt;e.setAttribute('class','o-pill '+cls);}
+  function render(){
+    var s=STATES[step];
+    document.getElementById('headTx').textContent='head = '+s.head;
+    renderLog(s.head, s.owners);
+    document.getElementById('w1read').textContent=s.w1.read;
+    document.getElementById('w1stage').textContent=s.w1.stage;
+    setPill('w1status',s.w1.st[0],s.w1.st[1]);
+    document.getElementById('w2read').textContent=s.w2.read;
+    document.getElementById('w2stage').textContent=s.w2.stage;
+    setPill('w2status',s.w2.st[0],s.w2.st[1]);
+    document.getElementById('p1').setAttribute('class','o-panel w1'+(s.p1?' done':''));
+    document.getElementById('p2').setAttribute('class','o-panel w2'+(s.p2?' done':''));
+    lbl.textContent=s.lbl; out.innerHTML=s.out;
+    prev.disabled=(step===0); next.disabled=(step===STATES.length-1);
+  }
+  next.addEventListener('click',function(){if(step<STATES.length-1){step++;render();}});
+  prev.addEventListener('click',function(){if(step>0){step--;render();}});
+  runB.addEventListener('click',function(){step=0;render();var iv=setInterval(function(){if(step>=STATES.length-1){clearInterval(iv);return;}step++;render();},950);});
+  render();
+})();
+</script>
+</body>
+</html>

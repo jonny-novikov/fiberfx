@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dive 12.3 · The loop closes — Echo Persistence</title>
+<meta name="description" content="Module 12, Dive 12.3: a write flows forward across four tiers — accepted (Champ), stored (CubDB), committed (Graft, LSN), published (EchoMQ stream) — and the archive fold closes the loop, committing trimmed stream slices back into the engine with EchoStore.Graft.commit, fold-before-trim. The bus and the store are one cycle. Interactive.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.1rem,1rem + 0.7vw,1.4rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.6rem,1.2rem + 2.2vw,2.5rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.ctrls .sep{width:1px;height:22px;background:var(--b-line)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.6em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .fwd{color:var(--b-ts)}.readout .fold{color:var(--p-accent-h)}.readout code{background:#ecf0e9}
+.fl-box{rx:6;stroke-width:1.5;fill:var(--b-card);stroke:var(--b-line)}
+.fl-box.hot{stroke:var(--b-ts);stroke-width:2.4;fill:#eef4f9}
+.fl-box.foldhot{stroke:var(--p-accent);stroke-width:2.4;fill:#fdf6e9}
+.fl-n{font-family:var(--mono);font-size:11px;font-weight:700;fill:var(--b-ink);pointer-events:none}
+.fl-s{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.fl-ch{font-family:var(--mono);font-size:8px;fill:var(--b-dim);pointer-events:none}
+.fl-fwd{stroke:var(--b-line);stroke-width:2;fill:none;marker-end:url(#flF)}
+.fl-fwd.hot{stroke:var(--b-ts);stroke-width:2.8;marker-end:url(#flFh)}
+.fl-fold{stroke:var(--b-line);stroke-width:2;fill:none;marker-end:url(#flD);opacity:.5;stroke-dasharray:5 3}
+.fl-fold.hot{stroke:var(--p-accent);stroke-width:2.8;marker-end:url(#flDh);opacity:1}
+.fl-foldlbl{font-family:var(--mono);font-size:10px;fill:var(--b-dim);pointer-events:none}
+.fl-foldlbl.hot{fill:var(--p-accent-h);font-weight:700}
+.fl-slice{opacity:0}
+.fl-slice.show{opacity:1}
+.fl-slicebox{fill:#f6e7cf;stroke:var(--p-accent);stroke-width:1;rx:2}
+.fl-slicet{font-family:var(--mono);font-size:8.5px;fill:var(--p-accent-h);font-weight:700;pointer-events:none}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid var(--b-line);margin-top:46px;padding:22px 0 8px}
+.pgx{display:flex;flex-direction:column;gap:4px;font-family:var(--mono);font-size:14px;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;background:var(--b-card);transition:border-color .12s}
+.pgx:hover{border-color:var(--p-accent)}
+.pgx .pk{font-size:11px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em}
+.pgx .pt{color:var(--b-ts);font-weight:600}
+.pgx.next{text-align:right;align-items:flex-end}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}.pager{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">platform</a><span class="rsep">/</span><a href="/echo-persistence/platform/bus-and-persistence">bus-and-persistence</a><span class="rsep">/</span><span class="rcur">the-loop-closes</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#fold">The fold</a>
+<a href="#cycle">The four-tier cycle</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 12 &#183; Dive 12.3</p>
+<h1>The loop <span class="hns">closes</span>.</h1>
+<p class="lede">Follow a write forward and it crosses the four tiers this course was built around: accepted by Champ, stored in CubDB, committed by Graft as one replicated LSN, published onto an EchoMQ stream. That is a pipeline. What makes it a <i>system</i> is the return leg &#8212; the archive fold &#8212; which does not delete the stream&#8217;s old tail but commits it back into the engine as durable segments. The bus feeds the store, the store feeds the bus, and the same cursor and feed bind both ends. Trace it forward, then fold it.</p>
+<figure class="fig" aria-labelledby="flCap">
+<figcaption id="flCap"><b>Four tiers forward, one fold back.</b> <span style="color:var(--b-ts)">Forward:</span> a write moves Accept &#8594; Local &#8594; Engine &#8594; Bus. <span style="color:var(--p-accent-h)">Fold:</span> below the watermark <code>W</code>, the Stream Tier&#8217;s tail is committed back into the engine with <code>EchoStore.Graft.commit/3</code> &#8212; fold-before-trim &#8212; closing the loop.</figcaption>
+<svg viewBox="0 0 720 258" id="fl" role="img" aria-label="Four tier boxes in a row: Accept (Champ), Local (CubDB), Engine (Graft, commit and LSN), and Bus (EchoMQ stream). Forward arrows connect them left to right. A dashed return arc curves from the Bus box back down and left to the Engine box, labelled archive fold, fold-before-trim, EchoStore.Graft.commit. Tracing forward highlights the four boxes and forward arrows; the fold highlights the return arc and reveals a stream slice becoming durable segments.">
+<defs>
+<marker id="flF" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-line)"></path></marker>
+<marker id="flFh" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-ts)"></path></marker>
+<marker id="flD" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-line)"></path></marker>
+<marker id="flDh" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--p-accent)"></path></marker>
+</defs>
+<rect class="fl-box" id="b0" x="18" y="60" width="150" height="70"></rect>
+<text class="fl-n" x="32" y="84">&#9312; Accept</text>
+<text class="fl-s" x="32" y="100">Champ &#183; fsync / K</text>
+<text class="fl-ch" x="32" y="120">Chapter I</text>
+<rect class="fl-box" id="b1" x="194" y="60" width="150" height="70"></rect>
+<text class="fl-n" x="208" y="84">&#9313; Local</text>
+<text class="fl-s" x="208" y="100">CubDB &#183; CoW B-tree</text>
+<text class="fl-ch" x="208" y="120">Chapter II</text>
+<rect class="fl-box" id="b2" x="370" y="60" width="150" height="70"></rect>
+<text class="fl-n" x="384" y="84">&#9314; Engine</text>
+<text class="fl-s" x="384" y="100">Graft &#183; commit &#8594; LSN</text>
+<text class="fl-ch" x="384" y="120">Chapter III</text>
+<rect class="fl-box" id="b3" x="546" y="60" width="150" height="70"></rect>
+<text class="fl-n" x="560" y="84">&#9315; Bus</text>
+<text class="fl-s" x="560" y="100">EchoMQ &#183; stream + feed</text>
+<text class="fl-ch" x="560" y="120">Chapter IV</text>
+<line class="fl-fwd" id="f0" x1="168" y1="95" x2="194" y2="95"></line>
+<line class="fl-fwd" id="f1" x1="344" y1="95" x2="370" y2="95"></line>
+<line class="fl-fwd" id="f2" x1="520" y1="95" x2="546" y2="95"></line>
+<path class="fl-fold" id="foldArc" d="M621 130 C 621 214, 445 214, 445 132"></path>
+<text class="fl-foldlbl" id="foldLbl1" x="533" y="200" text-anchor="middle">archive fold (emq3.5) &#183; fold-before-trim</text>
+<text class="fl-foldlbl" id="foldLbl2" x="533" y="232" text-anchor="middle">stream slice below W &#8594; EchoStore.Graft.commit/3</text>
+<g class="fl-slice" id="slice">
+<rect class="fl-slicebox" x="556" y="138" width="58" height="14"></rect>
+<text class="fl-slicet" x="560" y="148">tail &lt; W</text>
+<rect class="fl-slicebox" x="384" y="138" width="64" height="14"></rect>
+<text class="fl-slicet" x="388" y="148">+ segments</text>
+</g>
+</svg>
+<div class="ctrls">
+<button type="button" id="flFwd" aria-pressed="false">trace forward</button>
+<button type="button" id="flFold" aria-pressed="false">archive fold</button>
+<span class="sep"></span>
+<button type="button" id="flReset">reset</button>
+</div>
+<div class="readout" id="flOut" aria-live="polite"><span class="rk">readout &#183;</span> <span class="fwd">trace forward</span> follows a write across the four tiers; <span class="fold">archive fold</span> runs the return leg that commits the stream&#8217;s old tail back into the engine. Together they are one loop, not a line.</div>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="fold">
+<div class="sech"><span class="sno">&#167;1</span><h2>The fold closes the loop</h2><span class="ssrc">emq3.5 &#183; emq.streams.md</span></div>
+<div class="prose">
+<p>Module 11 left a deliberate tension: a stream is an append-only log, <code>XACK</code> does not delete, so retention must trim &#8212; but trimming must never outrun what has been saved (the fold-before-trim rule of fork F3.4-A). This dive is where &#8220;saved&#8221; gets its meaning. The emq3.5 archive is a dedicated fold consumer that reads the stream&#8217;s old tail &#8212; everything below the watermark <code>W</code> &#8212; and commits those slices into the engine with <code>EchoStore.Graft.commit/3</code>. The engine streams those pages from CubDB to Tigris exactly as any other commit would, so a slice of the bus&#8217;s history becomes a set of the store&#8217;s durable segments. Only <i>then</i> may the trim advance, which is why the fold watermark always sits at or ahead of the trim watermark. The payoff is the merge-read of Module 11.3: a deep read concatenates the segments below <code>W</code> (now in the store) with the live tail at or above <code>W</code> (still on the bus), with no gap and no overlap, because the same watermark divides them. The fold is not a backup job bolted on; it is the return leg that turns the bus&#8217;s retention into the store&#8217;s durability, using the one commit primitive the whole course has been building.</p>
+</div>
+</section>
+
+<section id="cycle">
+<div class="sech"><span class="sno">&#167;2</span><h2>The four-tier cycle</h2><span class="ssrc">the platform</span></div>
+<div class="prose">
+<p>Stand back and the four chapters are four tiers of one cycle. A write is <b>accepted</b> by Champ (Chapter I) with a bounded loss window; it is held in the <b>local</b> CubDB store (Chapter II) with copy-on-write versioning; it is <b>committed</b> by Graft (Chapter III) as a single replicated LSN behind the fence; and it is <b>published</b> onto an EchoMQ stream (Chapter IV) for consumers and replicas. Then the archive fold carries the stream&#8217;s aged tail back into the engine, and the cycle is closed. Two things bind the ends, and both are earlier dives in this very module: the <b>commit LSN</b> is the cursor every tier names its position with (12.1), and the <b>change feed</b> off that LSN is how a commit becomes a bus event in the first place. The outbox (12.2) sits to one side of this cycle, keeping the enqueue hot path off durable storage while still surviving a crash. So &#8220;the bus and the store are one system&#8221; is not a slogan: it is a literal loop, joined at a shared integer and a shared feed, where the engine&#8217;s commit drives the bus and the bus&#8217;s retention drives the engine&#8217;s commit. That is where Echo Persistence has been heading all along &#8212; and the door past it, in the chapters to come, is where this durable substrate stops being plumbing and starts being the Branded Component System.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/emq.streams.md">emq.streams.md</a><span class="rsrc">emq3.5 — the fold consumer commits trimmed slices to EchoStore.Graft; fold-before-trim</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/kb/streams-tier/streams.synthesis.md">streams.synthesis.md</a><span class="rsrc">the merge-read across the watermark W; fork F3.4-A</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rsrc">commit, the LSN as the cursor binding both ends of the loop</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://en.wikipedia.org/wiki/Log-structured_merge-tree">Log-structured merge-tree</a><span class="rsrc">the tail-to-segments fold</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Event_sourcing">Event sourcing</a><span class="rsrc">the log as the system of record</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx prev" href="/echo-persistence/platform/bus-and-persistence/the-outbox-beside-the-bus"><span class="pk">&#8592; Prev &#183; Dive 12.2</span><span class="pt">The outbox beside the bus</span></a>
+<a class="pgx next" href="/echo-persistence/platform/beats-classical-scheduling"><span class="pk">Next &#183; Module 13 &#8594;</span><span class="pt">Why it beats classical scheduling</span></a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; dive 12.3</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var boxes=['b0','b1','b2','b3'].map(function(i){return document.getElementById(i);});
+  var fwd=['f0','f1','f2'].map(function(i){return document.getElementById(i);});
+  var foldArc=document.getElementById('foldArc'), fl1=document.getElementById('foldLbl1'), fl2=document.getElementById('foldLbl2'), slice=document.getElementById('slice');
+  var bFwd=document.getElementById('flFwd'), bFold=document.getElementById('flFold'), out=document.getElementById('flOut');
+  function clearFwd(){ boxes.forEach(function(b){b.setAttribute('class','fl-box');}); fwd.forEach(function(a){a.setAttribute('class','fl-fwd');}); bFwd.setAttribute('aria-pressed','false'); }
+  function clearFold(){ foldArc.setAttribute('class','fl-fold'); fl1.setAttribute('class','fl-foldlbl'); fl2.setAttribute('class','fl-foldlbl'); slice.setAttribute('class','fl-slice'); bFold.setAttribute('aria-pressed','false'); }
+  bFwd.addEventListener('click',function(){
+    clearFold(); clearFwd(); bFwd.setAttribute('aria-pressed','true');
+    boxes.forEach(function(b){b.setAttribute('class','fl-box hot');});
+    fwd.forEach(function(a){a.setAttribute('class','fl-fwd hot');});
+    out.innerHTML='<span class="rk">trace forward &#183;</span> a write is <span class="fwd">accepted</span> by Champ (loss window K) &#8594; held in <span class="fwd">CubDB</span> &#8594; <span class="fwd">committed</span> by Graft as one replicated LSN &#8594; <span class="fwd">published</span> onto an EchoMQ stream. Four tiers, one write &#8212; so far a pipeline.';
+  });
+  bFold.addEventListener('click',function(){
+    clearFwd(); clearFold(); bFold.setAttribute('aria-pressed','true');
+    document.getElementById('b3').setAttribute('class','fl-box foldhot');
+    document.getElementById('b2').setAttribute('class','fl-box foldhot');
+    foldArc.setAttribute('class','fl-fold hot'); fl1.setAttribute('class','fl-foldlbl hot'); fl2.setAttribute('class','fl-foldlbl hot');
+    slice.setAttribute('class','fl-slice show');
+    out.innerHTML='<span class="rk">archive fold &#183;</span> the stream&#8217;s tail below <span class="fold">W</span> is committed back into the engine via <span class="fold">EchoStore.Graft.commit/3</span> &#8212; fold-before-trim &#8212; becoming durable segments. The loop closes: the bus&#8217;s retention is now the store&#8217;s durability, and 11.3&#8217;s merge-read reads segments-below-W ++ live-tail-above-W with no gap.';
+  });
+  document.getElementById('flReset').addEventListener('click',function(){ clearFwd(); clearFold(); out.innerHTML='<span class="rk">reset &#183;</span> <span class="fwd">trace forward</span> follows a write across the four tiers; <span class="fold">archive fold</span> runs the return leg that commits the stream&#8217;s old tail back into the engine. Together they are one loop, not a line.'; });
+})();
+</script>
+</body>
+</html>

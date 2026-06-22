@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Echo Persistence — overview — a jonnify course</title>
+<meta name="description" content="Echo Persistence overview: the durability spectrum and the one knob behind it, the two-tier shape (Champ accepts, Graft commits and replicates to Tigris), and where persistence sits beside the Echo Bus. Grounded in the committed docs/graft and docs/echo_mq records.">
+<style>
+/* ====== Echo Persistence contract sheet ======
+   The BCS identity (html/bcs) and the redis-patterns sheet (html/redis-patterns),
+   re-themed: the persistence accent is amber/bronze — the one deviation from B0. */
+:root{
+  --b-paper:#f6f3ec; --b-card:#fffefa; --b-ink:#22282b; --b-dim:#6b7163;
+  --b-line:#d9d2bf; --b-ts:#20618e; --b-node:#2e7d5b; --b-seq:#7d4e8f;
+  --b-pay-tint:#e4ebf1; --b-term-bg:#171c1e; --b-term-fg:#cfdacc; --b-term-dim:#7e8c80;
+  --p-accent:#b06f12; --p-accent-h:#965d0c; --p-tint:#f4e7cd;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b,.prose p strong{font-weight:650}
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem,1.3rem + 3vw,3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}
+.hero .lede{margin-bottom:14px}.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:78ch;margin-bottom:18px}
+.cta-row{display:flex;flex-wrap:wrap;gap:12px;margin-top:20px}
+.btn{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.02em;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:var(--rad);border:1px solid var(--p-accent);color:var(--b-card);background:var(--p-accent)}
+.btn:hover{background:var(--p-accent-h);border-bottom-color:var(--p-accent)}
+.btn.ghost{background:transparent;color:var(--p-accent);border-color:var(--b-line)}
+.btn.ghost:hover{border-color:var(--p-accent);color:var(--p-accent)}
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--p-accent);padding-left:14px;max-width:80ch}
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin:8px 0 18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#e7c188;font-weight:700}.frozen pre .fd{color:var(--b-term-dim)}
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--p-accent)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--p-accent);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}.pager a.pgx{text-align:right}
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--p-accent)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}.stamp .id::first-letter{color:var(--p-accent)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}.stamp.open .panel{display:grid}
+@media (max-width:880px){.doors{grid-template-columns:1fr 1fr}.foot-nav{grid-template-columns:1fr 1fr}}
+@media (max-width:600px){.doors{grid-template-columns:1fr}.refs{columns:1}.foot-nav{grid-template-columns:1fr}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><span class="rcur">overview</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#knob">The one knob</a>
+<a href="#dives">The dives</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">EP &#183; Overview &#8212; course hub</p>
+<h1>Keeping the state that <span class="hns">matters</span>.</h1>
+<p class="lede">EchoMQ enqueues on Valkey &#8212; a job on disk within a <b>1s</b> window, on one box. <b>Echo Persistence</b> is everything beyond that for the state that must not be lost or must live off the machine: <b>Champ</b> accepts at in-heap speed with a fsync per K records, a transactional page-store <b>commits each batch as one LSN replicated to Tigris</b>, and the same model is built twice &#8212; native Elixir on CubDB and Rust on Fjall.</p>
+<p class="heronote">Grounding: docs/graft (graft.design.md &#183; graft.engine-split.design.md) &#183; docs/echo_mq (emq.roadmap.md) &#183; echo/apps/echo_store &#183; echo/apps/echo_graft &#8212; every figure verbatim from a committed record. Numbers are single-core sandbox measurements against MinIO; the spread between tiers is the lesson, not the absolutes.</p>
+<figure class="anatomy" aria-labelledby="specCap">
+<figcaption id="specCap"><b>The spectrum.</b> Select a tier to read what survives a crash and how fast it says yes &#8212; the same knob.</figcaption>
+<div class="segbar" id="specSel" role="group" aria-label="Select a durability tier">
+<button type="button" data-k="memory" aria-pressed="false">Memory</button>
+<button type="button" data-k="champ1k" aria-pressed="false">Champ K=1,000</button>
+<button type="button" data-k="champ10k" aria-pressed="false">Champ K=10,000</button>
+<button type="button" data-k="bullmq" aria-pressed="false">BullMQ</button>
+<button type="button" data-k="oban" aria-pressed="false">Oban</button>
+<button type="button" data-k="graft" aria-pressed="false">Champ + Graft</button>
+</div>
+<div class="readout" id="specOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a tier. Throughput tracks how many durable records ride each fsync &#8212; that one mechanism explains the whole spread.</div>
+<p class="take">The one knob is durable-records-per-fsync. A factor of 469 separates strict per-commit (Oban, 718 jobs/s) from no durability (Memory, 336,961 jobs/s); Oban single &#8594; batch is a factor of 18 from spreading one fsync across 1,000 jobs. Champ&#8217;s K and Graft&#8217;s batch are how the strict-and-replicated tier stays off that floor.</p>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="knob">
+<div class="sech"><span class="sno">&#167;1</span><h2>The one knob</h2><span class="ssrc">graft.design.md</span></div>
+<div class="prose">
+<p>Every engine accepts a job and decides two things at once: how much of it survives a crash, and how fast it says yes. Those are the same knob &#8212; the fsync is fixed cost, and throughput is how many durable records you amortize it across. An in-memory map rides infinitely many records per fsync and loses everything on a crash; Oban&#8217;s single-insert rides one durable record per fsync and loses nothing.</p>
+<p>So the design question for Echo Persistence is not <b>whether</b> to fsync, but how to reach a <b>per-commit, replicated</b> guarantee without collapsing to the per-commit floor. The answer pairs <b>Champ</b> &#8212; an in-memory structure with a checkpoint every K records &#8212; as the accept tier, and <b>Graft</b> &#8212; a transactional page-store replicated to Tigris &#8212; as the commit tier, with the commit LSN published over EchoMQ as the change-feed.</p>
+</div>
+<figure class="frozen" aria-label="The four-way durability shootout, measured">
+<figcaption>shootout &#183; N=20,000 &#183; 1 vCPU &#183; Postgres sync_commit=on &#183; Redis AOF everysec<span class="tag">MEASURED</span></figcaption>
+<pre>engine            store                       durability            single        batch
+<b>Memory</b>            in-memory map               none                  <b>336,961</b>       &#8212;
+<b>Champ K=10000</b>     local fsync snapshot        bounded &#8804; 10,000 rec   <b>103,970</b>       &#8212;
+<b>Champ K=1000</b>      local fsync snapshot        bounded &#8804; 1,000 rec     33,989       &#8212;
+<b>BullMQ</b>            Redis AOF everysec          bounded 1s              6,388    16,180
+<b>Oban</b>              Postgres sync commit        strict per-commit         718    13,235
+<span class="fd">reading &#8594; throughput tracks durable records per fsync &#183; factor of 469 strict&#8594;none</span></pre>
+</figure>
+</section>
+
+<section id="dives">
+<div class="sech"><span class="sno">&#167;2</span><h2>The three dives</h2><span class="ssrc">overview</span></div>
+<div class="doors">
+<a class="door" href="/echo-persistence/overview/the-durability-spectrum">
+<span class="dr">Dive 1</span>
+<h3>The durability spectrum</h3>
+<p>The four-way shootout read mechanically, and the two independent axes &#8212; the loss window, and whether state leaves the box.</p>
+</a>
+<a class="door" href="/echo-persistence/overview/the-two-tier-shape">
+<span class="dr">Dive 2</span>
+<h3>The two-tier shape</h3>
+<p>Champ accepts at in-heap speed; Graft commits one LSN, replicated to Tigris behind a conditional-write fence. The seam, and the per-call durability mode.</p>
+</a>
+<a class="door" href="/echo-persistence/overview/persistence-in-the-platform">
+<span class="dr">Dive 3</span>
+<h3>Persistence in the platform</h3>
+<p>The four storage tiers, Echo Bus beside Echo Persistence, the durability dial per queue, and the two engines that coexist.</p>
+</a>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rs">the two-tier design and the shootout</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.engine-split.design.md">graft.engine-split.design.md</a><span class="rs">the two coexisting engines</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/emq.roadmap.md">emq.roadmap.md</a><span class="rs">EchoMQ, the bus the change-feed rides</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://valkey.io/topics/persistence/">Valkey persistence (AOF)</a><span class="rs">the inherited 1s window</span></li>
+<li><a href="https://github.com/orbitinghail/graft">orbitinghail/graft</a><span class="rs">the transactional model (read-only idea source, MIT/Apache-2.0)</span></li>
+<li><a href="https://www.tigrisdata.com/docs/objects/conditionals/">Tigris object conditionals</a><span class="rs">create-if-not-exists, the commit fence</span></li>
+<li><a href="https://dataintensive.net">Designing Data-Intensive Applications, Kleppmann 2017</a><span class="rs">WAL, group commit, replication</span></li>
+<li class="refgrp">Design reference</li>
+<li><a href="/redis-patterns">Redis Patterns Applied</a><span class="rs">the course sheet this design follows, re-themed</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Course pager">
+<a class="pgx" href="/echo-persistence"><span class="pk">Back to</span>&#8592; Echo Persistence</a>
+<a class="pgx" href="/echo-persistence/overview/the-durability-spectrum"><span class="pk">Begin &#183; Dive 1</span>The durability spectrum &#8594;</a>
+</nav>
+</div>
+</main>
+
+<footer class="site-foot">
+<div class="wrap">
+<div class="foot-nav">
+<div>
+<div class="foot-logo">jonnify<span class="bdot">·</span>persistence</div>
+<p class="foot-tag">Durable state for the Echo platform &#8212; Champ, the page engines, and Tigris, taught as built.</p>
+</div>
+<div>
+<div class="foot-h">Course</div>
+<div class="foot-links">
+<a href="/echo-persistence">Landing</a>
+<a href="/echo-persistence/overview">Overview</a>
+<a href="/echo-persistence/overview/the-durability-spectrum">Dive 1 &#183; the spectrum</a>
+<a href="/echo-persistence/overview/the-two-tier-shape">Dive 2 &#183; the two tiers</a>
+<a href="/echo-persistence/overview/persistence-in-the-platform">Dive 3 &#183; the platform</a>
+</div>
+</div>
+<div>
+<div class="foot-h">Beside it</div>
+<div class="foot-links">
+<a href="/echomq">EchoMQ in Depth</a>
+<a href="/bcs">Branded Component System</a>
+<a href="/redis-patterns">Redis Patterns Applied</a>
+</div>
+</div>
+</div>
+<div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify</span>
+<button class="stamp" id="stamp" aria-expanded="false" aria-label="Course identity">
+established &#183; <span class="id">VOL0O5fmcxbds8</span>
+<dl class="panel">
+<dt>course</dt><dd>echo-persistence</dd>
+<dt>track</dt><dd>Persistence &amp; Platform</dd>
+<dt>namespace</dt><dd>VOL &#183; 3-char NS + 11 Base62</dd>
+<dt>status</dt><dd>established</dd>
+</dl>
+</button>
+</div>
+</div>
+</footer>
+
+<script>
+(function(){
+  var spec={
+    memory:["Memory &#183; in-memory map","durability <b>none</b> &#183; throughput <b>336,961 jobs/s</b>"],
+    champ1k:["Champ K=1,000 &#183; local fsync snapshot","durability <b>bounded &#8804; 1,000 records</b> &#183; throughput <b>33,989 jobs/s</b>"],
+    champ10k:["Champ K=10,000 &#183; local fsync snapshot","durability <b>bounded &#8804; 10,000 records</b> &#183; throughput <b>103,970 jobs/s</b>"],
+    bullmq:["BullMQ &#183; Redis AOF everysec","durability <b>bounded 1s</b> &#183; throughput <b>6,388 single &#183; 16,180 batch</b>"],
+    oban:["Oban &#183; Postgres sync commit","durability <b>strict per-commit fsync</b> &#183; throughput <b>718 single &#183; 13,235 batch</b>"],
+    graft:["Champ + Graft &#183; commit tier &#8594; Tigris","durability <b>strict per-commit, replicated off-box</b> &#183; the affordable strict tier &#8212; the batch keeps it off the floor"]
+  };
+  var sel=document.getElementById('specSel'), out=document.getElementById('specOut');
+  if(sel){ sel.addEventListener('click',function(e){
+    var b=e.target.closest('button'); if(!b)return;
+    [].forEach.call(sel.querySelectorAll('button'),function(x){x.setAttribute('aria-pressed', x===b?'true':'false');});
+    var d=spec[b.getAttribute('data-k')];
+    out.innerHTML='<span class="rk">'+d[0]+' &#183;</span> '+d[1];
+  }); }
+  var st=document.getElementById('stamp');
+  if(st){ st.addEventListener('click',function(){ var o=st.classList.toggle('open'); st.setAttribute('aria-expanded', o?'true':'false'); }); }
+})();
+</script>
+</body>
+</html>

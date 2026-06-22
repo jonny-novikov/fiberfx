@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 5 · MVCC &amp; time travel — Echo Persistence</title>
+<meta name="description" content="Module 5 of Echo Persistence (Chapter II — The local store): zero-cost snapshots from immutability, lock-free readers beside a writer, and time travel — reading a Volume at any past LSN. An interactive dive.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{box-shadow:0 1px 0 var(--p-accent)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--p-accent);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}.door p{font-size:.88rem;color:var(--b-dim)}
+.buildbox{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:16px 18px;margin:12px 0;max-width:80ch}
+.buildbox .bk{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--p-accent);font-weight:700;margin-bottom:6px}
+.m-root{fill:var(--b-paper);stroke:var(--b-ts);stroke-width:1.5}
+.m-root.on{fill:var(--p-tint);stroke:var(--p-accent);stroke-width:2}
+.m-root.head{stroke:var(--b-node);stroke-width:2}
+.m-tx{font-family:var(--mono);font-size:11.5px;font-weight:700;fill:var(--b-ink);pointer-events:none}
+.m-sub{font-family:var(--mono);font-size:9.5px;fill:var(--b-dim);pointer-events:none}
+.m-chain{stroke:var(--b-line);stroke-width:2;fill:none;marker-end:url(#ma)}
+.m-pool{fill:#eef4f0;stroke:var(--b-node);stroke-width:1.3}
+.m-pool.on{fill:var(--p-tint);stroke:var(--p-accent);stroke-width:2}
+.m-pool-lbl{font-family:var(--mono);font-size:11px;fill:var(--b-node);pointer-events:none}
+.m-link{stroke:var(--b-line);stroke-width:1.2;opacity:.5}
+.m-tag{font-family:var(--mono);font-size:11px;font-weight:700;pointer-events:none}
+.m-tag.r{fill:var(--b-seq)}.m-tag.w{fill:var(--b-node)}
+.m-pin{fill:var(--b-seq)}.m-pin.on{r:7}
+.m-hi{opacity:0}.m-hi.on{opacity:1}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:880px){.doors{grid-template-columns:1fr}}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">local-store</a><span class="rsep">/</span><span class="rcur">mvcc-time-travel</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#facets">The three facets</a>
+<a href="#dives">The dives</a>
+<a href="#build">Build</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 5 &#183; Chapter II &#8212; The local store</p>
+<h1>MVCC &amp; time <span class="hns">travel</span>.</h1>
+<p class="lede">Module 4 left us with one fact: old roots stay valid. Multiversion concurrency control is what you get for free from it. A snapshot is a retained root, so readers never lock and never block the writer, and &#8220;the state at any past LSN&#8221; is just the root that was current then. Three facets of one idea &#8212; tap each.</p>
+<figure class="fig" aria-labelledby="mCap">
+<figcaption id="mCap"><b>One idea, three facets.</b> Versioned roots over a shared, immutable node pool, with a reader pinned to a past version. Tap a facet to light up what it means.</figcaption>
+<svg viewBox="0 0 720 210" id="mvcc" role="img" aria-label="Four version roots v1 to v4 in a chain over a shared immutable node pool, with a reader pinned at v2 and a writer at the head v4. Tapping coexisting versions highlights all roots and the pool; lock-free highlights the reader and writer; time travel highlights the version axis as selectable.">
+<defs><marker id="ma" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-line)"></path></marker></defs>
+<g id="roots"></g>
+<rect class="m-pool" id="pool" x="60" y="138" width="600" height="42" rx="8"></rect>
+<text class="m-pool-lbl" x="360" y="163" text-anchor="middle">shared immutable node pool (Module 4)</text>
+<circle class="m-pin" id="pin" cx="300" cy="108" r="0"></circle>
+<text class="m-tag r" id="rTag" x="300" y="124" text-anchor="middle" opacity="0">reader @ v2</text>
+<text class="m-tag w" id="wTag" x="600" y="44" text-anchor="middle" opacity="0">writer (head)</text>
+</svg>
+<div class="ctrls" id="facetSel" role="group" aria-label="Select a facet">
+<button type="button" data-k="versions" aria-pressed="false">coexisting versions</button>
+<button type="button" data-k="lockfree" aria-pressed="false">lock-free</button>
+<button type="button" data-k="travel" aria-pressed="false">time travel</button>
+</div>
+<div class="readout" id="mOut" aria-live="polite"><span class="rk">readout &#183;</span> Tap a facet. Every version is a root over one shared node pool; a snapshot is just one of those roots, which is why reading is free, lock-free, and works on any past version.</div>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="facets">
+<div class="sech"><span class="sno">&#167;1</span><h2>One fact, three payoffs</h2><span class="ssrc">graft.design.md</span></div>
+<div class="prose">
+<p>Because an update keeps the old root (Module 4), many versions exist at once over a single, shared, immutable node pool &#8212; that is <b>coexisting versions</b>. A reader grabs the current root and reads it to completion no matter what the writer does next, and the writer appends new roots without waiting on any reader &#8212; that is <b>lock-free</b> concurrency, readers and a writer with no mutual blocking. And since each LSN named a root, you can open the root that was current at any LSN &#8212; that is <b>time travel</b>, the checkout-at-LSN the change feed and replicas depend on. Each is a dive.</p>
+</div>
+</section>
+
+<section id="dives">
+<div class="sech"><span class="sno">&#167;2</span><h2>The three dives</h2><span class="ssrc">module 5</span></div>
+<div class="doors">
+<a class="door" href="/echo-persistence/local-store/mvcc-time-travel/coexisting-versions">
+<span class="dr">Dive 5.1</span><h3>Coexisting versions</h3>
+<p>Many roots, one node pool. Click a version and watch which nodes it reaches &#8212; mostly shared, a few its own. A snapshot is just a root.</p>
+</a>
+<a class="door" href="/echo-persistence/local-store/mvcc-time-travel/lock-free-readers">
+<span class="dr">Dive 5.2</span><h3>Lock-free readers</h3>
+<p>Start a reader, then let the writer commit. The reader keeps reading its pinned version, unbothered &#8212; no reader blocks the writer, no writer blocks a reader.</p>
+</a>
+<a class="door" href="/echo-persistence/local-store/mvcc-time-travel/checkout-and-gc">
+<span class="dr">Dive 5.3</span><h3>Checkout &amp; GC</h3>
+<p>Open the Volume at any past LSN with a scrubber; then run garbage collection and watch old roots reclaimed &#8212; except the one a reader has pinned.</p>
+</a>
+</div>
+</section>
+
+<section id="build">
+<div class="sech"><span class="sno">&#167;3</span><h2>Build &amp; check</h2></div>
+<div class="buildbox"><div class="bk">What you build</div>
+<p>One sentence each linking the three facets back to Module 4&#8217;s &#8220;old roots stay valid&#8221;: why coexistence is automatic, why reads need no lock, and why checkout-at-LSN is well-defined. No numbers &#8212; the chain of reasoning is the deliverable.</p>
+</div>
+<div class="buildbox"><div class="bk">Check</div>
+<p>Answer without code: what exactly is a snapshot, in one phrase; and what is the single thing GC must never reclaim? If you said &#8220;a retained root&#8221; and &#8220;a root a reader still pins,&#8221; you have the module.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;4</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">External</li>
+<li><a href="https://en.wikipedia.org/wiki/Multiversion_concurrency_control">Multiversion concurrency control</a><span class="rs">readers and writers, no locks</span></li>
+<li><a href="https://hexdocs.pm/cubdb/CubDB.Snapshot.html">CubDB.Snapshot</a><span class="rs">a snapshot as a retained version</span></li>
+<li><a href="https://github.com/orbitinghail/graft">orbitinghail/graft</a><span class="rs">checkout-at-LSN, the change feed</span></li>
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rs">MVCC, checkout-at-LSN, delta snapshots</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/store/design/store.design.md">store.design.md</a><span class="rs">snapshots and retention on CubDB</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Module pager">
+<a class="pgx" href="/echo-persistence/local-store/cubdb"><span class="pk">Prev &#183; Module 4</span>&#8592; CubDB architecture</a>
+<a class="pgx" href="/echo-persistence/local-store/mvcc-time-travel/coexisting-versions"><span class="pk">Dive 5.1</span>Coexisting versions &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 5</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  var roots=document.getElementById('roots');
+  var vs=[{x:90,lsn:'LSN 12'},{x:250,lsn:'LSN 13'},{x:410,lsn:'LSN 14'},{x:570,lsn:'LSN 15'}];
+  vs.forEach(function(v,i){
+    var head=(i===vs.length-1);
+    var r=document.createElementNS(NS,'rect');r.setAttribute('class','m-root'+(head?' head':''));r.setAttribute('data-i',i);
+    r.setAttribute('x',v.x);r.setAttribute('y',44);r.setAttribute('width',80);r.setAttribute('height',38);r.setAttribute('rx',5);roots.appendChild(r);
+    var t=document.createElementNS(NS,'text');t.setAttribute('class','m-tx');t.setAttribute('x',v.x+40);t.setAttribute('y',62);t.setAttribute('text-anchor','middle');t.textContent='v'+(i+1);roots.appendChild(t);
+    var s=document.createElementNS(NS,'text');s.setAttribute('class','m-sub');s.setAttribute('x',v.x+40);s.setAttribute('y',76);s.setAttribute('text-anchor','middle');s.textContent=v.lsn;roots.appendChild(s);
+    var lk=document.createElementNS(NS,'line');lk.setAttribute('class','m-link');lk.setAttribute('x1',v.x+40);lk.setAttribute('y1',82);lk.setAttribute('x2',v.x+40);lk.setAttribute('y2',138);roots.appendChild(lk);
+    if(i<vs.length-1){var c=document.createElementNS(NS,'path');c.setAttribute('class','m-chain');c.setAttribute('d','M'+(v.x+80)+' 63 L'+(vs[i+1].x)+' 63');roots.appendChild(c);}
+  });
+  var sel=document.getElementById('facetSel'), out=document.getElementById('mOut'),
+      pool=document.getElementById('pool'), pin=document.getElementById('pin'), rTag=document.getElementById('rTag'), wTag=document.getElementById('wTag');
+  function clr(){
+    [].forEach.call(roots.querySelectorAll('.m-root'),function(r){r.classList.remove('on');});
+    pool.classList.remove('on'); pin.setAttribute('r',0); rTag.setAttribute('opacity',0); wTag.setAttribute('opacity',0);
+  }
+  var R={
+    versions:'<span class="rk">coexisting versions &#183;</span> all four roots are valid at once over <b>one shared node pool</b>; each newer version reuses most nodes and adds a few. Nothing is copied to keep an old version. (Dive 5.1)',
+    lockfree:'<span class="rk">lock-free &#183;</span> the <b>reader pinned at v2</b> and the <b>writer at v4</b> proceed together &#8212; the reader holds a fixed root, the writer appends new ones. Neither blocks the other. (Dive 5.2)',
+    travel:'<span class="rk">time travel &#183;</span> every version carries the LSN it was current at, so you can <b>open any of them by LSN</b> &#8212; the checkout the change feed and replicas use. (Dive 5.3)'
+  };
+  sel.addEventListener('click',function(e){
+    var b=e.target.closest('button'); if(!b)return; var k=b.getAttribute('data-k');
+    [].forEach.call(sel.querySelectorAll('button'),function(x){x.setAttribute('aria-pressed',x===b?'true':'false');});
+    clr();
+    if(k==='versions'){[].forEach.call(roots.querySelectorAll('.m-root'),function(r){r.classList.add('on');});pool.classList.add('on');}
+    if(k==='lockfree'){roots.querySelector('.m-root[data-i="1"]').classList.add('on');roots.querySelector('.m-root[data-i="3"]').classList.add('on');pin.setAttribute('r',6);pin.setAttribute('cx',290);rTag.setAttribute('opacity',1);wTag.setAttribute('opacity',1);}
+    if(k==='travel'){[].forEach.call(roots.querySelectorAll('.m-root'),function(r){r.classList.add('on');});}
+    out.innerHTML=R[k];
+  });
+})();
+</script>
+</body>
+</html>

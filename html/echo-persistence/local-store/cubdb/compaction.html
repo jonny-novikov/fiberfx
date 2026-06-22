@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compaction — Echo Persistence</title>
+<meta name="description" content="Dive 4.3 of Echo Persistence Module 4: an append-only file only grows, so dead nodes accumulate. An interactive file — write to pile up dead blocks, then compact: live data copied to a fresh file and the rest reclaimed.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-ns:#b23b2e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .ok{color:var(--b-node)}.readout .dead{color:var(--b-dim)}
+.c-blk{stroke-width:1.4}
+.c-blk.live{fill:#eef4f0;stroke:var(--b-node)}
+.c-blk.dead{fill:#efe9dd;stroke:var(--b-line);stroke-dasharray:3 3}
+.c-blk-tx{font-family:var(--mono);font-size:9.5px;pointer-events:none}
+.c-blk-tx.live{fill:var(--b-node)}.c-blk-tx.dead{fill:var(--b-dim)}
+.c-file-lbl{font-family:var(--mono);font-size:11px;fill:var(--b-dim)}
+.c-meter{font-family:var(--mono);font-size:12.5px;font-weight:700;fill:var(--b-ink)}
+.c-track{fill:#efe9dd}.c-live-bar{fill:var(--b-node)}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence/local-store/cubdb">cubdb</a><span class="rsep">/</span><span class="rcur">compaction</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#grow">Dead data</a>
+<a href="#why">Why &amp; when</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 4 &#183; Dive 4.3</p>
+<h1>Compaction.</h1>
+<p class="lede">Never overwriting has a price: the file only grows. Every update supersedes nodes that are now <b>dead</b> &#8212; still on disk, no longer reachable from the current root. Compaction is the sweep: copy the live data to a fresh file and reclaim the rest. Write a few times to pile up dead blocks, then compact.</p>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="grow">
+<div class="sech"><span class="sno">&#167;1</span><h2>Live versus dead</h2><span class="ssrc">interactive</span></div>
+<figure class="fig" aria-labelledby="cCap">
+<figcaption id="cCap"><b>The file only grows.</b> Live blocks are reachable from the current root; dead blocks are superseded older versions. Write to accumulate dead; compact to copy the live set to a fresh file.</figcaption>
+<svg viewBox="0 0 720 230" id="comp" role="img" aria-label="A file as a row of blocks, some live and some dead. Each write supersedes older blocks (turning them dead) and appends new live blocks, so the file grows while the live set stays small. Compaction copies only the live blocks into a fresh, shorter file and reclaims the dead space. A bar shows the live fraction.">
+<text class="c-file-lbl" x="20" y="40" id="fileLbl">the one file:</text>
+<g id="blocks"></g>
+<text class="c-file-lbl" x="20" y="150">live fraction of the file:</text>
+<rect class="c-track" x="20" y="158" width="680" height="22" rx="4"></rect>
+<rect class="c-live-bar" id="liveBar" x="20" y="158" width="680" height="22" rx="4"></rect>
+<text class="c-meter" id="meter" x="20" y="210">file: 4 blocks &#183; 4 live &#183; 0 dead</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="write">write (update keys)</button>
+<button type="button" id="compact">compact</button>
+<button type="button" id="creset">reset</button>
+</div>
+<div class="readout" id="cOut" aria-live="polite"><span class="rk">readout &#183;</span> Write a few times: each update appends new live blocks and turns superseded ones <span class="dead">dead</span> &#8212; the file grows, the live set stays small. Compact to copy the live blocks to a fresh file and reclaim the dead space.</div>
+</figure>
+</section>
+
+<section id="why">
+<div class="sech"><span class="sno">&#167;2</span><h2>A background sweep, not a stall</h2><span class="ssrc">store.design.md</span></div>
+<div class="prose">
+<p>Compaction reads the live data &#8212; everything reachable from the current root &#8212; and writes it to a new file, then switches over and drops the old one. It runs in the background while normal reads and writes continue against the live tree, because immutability means the data being copied never changes underfoot. The trigger is a ratio, not a clock: when dead data grows past a threshold of the file, sweep. For the durable tier this keeps the page log&#8217;s footprint bounded without ever blocking an enqueue, and it reuses the same &#8220;copy the live set forward&#8221; move that recovery and replication lean on elsewhere.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">External</li>
+<li><a href="https://hexdocs.pm/cubdb/CubDB.html#compact/1">CubDB &#183; compact/1</a><span class="rs">how compaction works</span></li>
+<li><a href="https://github.com/lucaong/cubdb">lucaong/cubdb</a><span class="rs">auto-compaction thresholds</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Log-structured_merge-tree">Log-structured storage</a><span class="rs">dead space and compaction, generally</span></li>
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/store/design/store.design.md">store.design.md</a><span class="rs">keeping the page log bounded</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rs">the durable tier's footprint</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx" href="/echo-persistence/local-store/cubdb/the-immutable-btree"><span class="pk">Dive 4.2</span>&#8592; The immutable B-tree</a>
+<a class="pgx" href="/echo-persistence/local-store/mvcc-time-travel"><span class="pk">Next &#183; Module 5</span>MVCC &amp; time travel &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 4 / dive 4.3</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  var blocks; // array of 'live' | 'dead'
+  function init(){blocks=['live','live','live','live'];}
+  init();
+  var g=document.getElementById('blocks'), liveBar=document.getElementById('liveBar'), meter=document.getElementById('meter'), out=document.getElementById('cOut');
+  var x0=20, by=52, bh=64, gap=5, maxW=680;
+  function counts(){var l=0;blocks.forEach(function(s){if(s==='live')l++;});return {l:l,d:blocks.length-l,t:blocks.length};}
+  function draw(){
+    while(g.firstChild)g.removeChild(g.firstChild);
+    var n=blocks.length, bw=Math.min(46,(maxW-(n-1)*gap)/n);
+    for(var i=0;i<n;i++){
+      var s=blocks[i];
+      var r=document.createElementNS(NS,'rect');r.setAttribute('class','c-blk '+s);r.setAttribute('x',x0+i*(bw+gap));r.setAttribute('y',by);r.setAttribute('width',bw);r.setAttribute('height',bh);r.setAttribute('rx',3);g.appendChild(r);
+      if(bw>22){var t=document.createElementNS(NS,'text');t.setAttribute('class','c-blk-tx '+s);t.setAttribute('x',x0+i*(bw+gap)+bw/2);t.setAttribute('y',by+bh/2+4);t.setAttribute('text-anchor','middle');t.textContent=s==='live'?'\u25cf':'\u00d7';g.appendChild(t);}
+    }
+    var c=counts();
+    liveBar.setAttribute('width', 680*(c.l/c.t));
+    var pct=Math.round(c.d/c.t*100);
+    meter.textContent='file: '+c.t+' blocks \u00b7 '+c.l+' live \u00b7 '+c.d+' dead'+(c.d?'  ('+pct+'% wasted)':'');
+  }
+  document.getElementById('write').addEventListener('click',function(){
+    if(blocks.length>26){out.innerHTML='<span class="rk">file is large &#183;</span> dead data dominates &#8212; <b>compact now</b> to reclaim it.';return;}
+    // supersede up to 2 oldest live blocks -> dead, append 2 live blocks
+    var turned=0;
+    for(var i=0;i<blocks.length && turned<2;i++){if(blocks[i]==='live'){blocks[i]='dead';turned++;}}
+    blocks.push('live');blocks.push('live');
+    draw();
+    var c=counts();
+    out.innerHTML='<span class="rk">write &#183;</span> appended 2 live blocks, <span class="dead">'+turned+' older blocks superseded (now dead)</span>. File grew to '+c.t+'; live set is still '+c.l+'. The waste is climbing.';
+  });
+  document.getElementById('compact').addEventListener('click',function(){
+    var before=counts();
+    if(before.d===0){out.innerHTML='<span class="rk">compact &#183;</span> nothing to reclaim &#8212; no dead blocks yet. Do a few writes first.';return;}
+    blocks=blocks.filter(function(s){return s==='live';});
+    draw();
+    var after=counts();
+    out.innerHTML='<span class="rk">compact &#183;</span> <span class="ok">copied the '+after.l+' live blocks to a fresh file</span> and reclaimed '+before.d+' dead. File: '+before.t+' &#8594; '+after.t+' blocks, 0% wasted &#8212; done in the background, no read or write blocked.';
+  });
+  document.getElementById('creset').addEventListener('click',function(){init();draw();
+    out.innerHTML='<span class="rk">reset &#183;</span> a fresh 4-block file, all live. Write to accumulate dead blocks; compact to reclaim.';});
+  draw();
+})();
+</script>
+</body>
+</html>

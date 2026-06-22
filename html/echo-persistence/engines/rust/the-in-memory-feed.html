@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The in-memory feed — Echo Persistence</title>
+<meta name="description" content="Dive 8.3 of Echo Persistence Module 8: the Rust engine serves the change feed from an in-memory ring broadcast to subscribers — with a fallback to segments in object storage for any consumer that falls off the window. An interactive feed.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .a{color:var(--b-node)}.readout .b{color:var(--b-seq)}.readout .seg{color:var(--b-ts)}.readout .ok{color:var(--b-node)}
+.imf-lbl{font-family:var(--mono);font-size:10.5px;font-weight:700;pointer-events:none}
+.imf-sub{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.imf-writer{fill:#f3eef6;stroke:var(--b-seq);stroke-width:1.6}
+.imf-cell{fill:var(--p-tint);stroke:var(--p-accent);stroke-width:1.4}
+.imf-cell.head{stroke-width:2.4}
+.imf-cell.flash{fill:#f6d9a6}
+.imf-cell-tx{font-family:var(--mono);font-size:11px;font-weight:700;fill:var(--p-accent-h);pointer-events:none}
+.imf-seg{fill:#eef4f9;stroke:var(--b-ts);stroke-width:1.5;stroke-dasharray:4 3}
+.imf-seg-tx{font-family:var(--mono);font-size:10px;font-weight:700;fill:var(--b-ts);pointer-events:none}
+.imf-cursor{stroke:var(--b-card);stroke-width:1.5}
+.imf-cursor.a{fill:var(--b-node)}.imf-cursor.b{fill:var(--b-seq)}
+.imf-cursor-lbl{font-family:var(--mono);font-size:9.5px;font-weight:700;pointer-events:none}
+.imf-cursor-lbl.a{fill:var(--b-node)}.imf-cursor-lbl.b{fill:var(--b-seq)}
+.imf-arrow{stroke:var(--b-dim);stroke-width:1.8;fill:none;marker-end:url(#ima)}
+.imf-bcast{stroke:var(--b-node);stroke-width:2;fill:none;marker-end:url(#imb);opacity:0}
+.imf-bcast.on{opacity:1}
+.imf-fb{stroke:var(--b-ts);stroke-width:2;fill:none;marker-end:url(#imf2);opacity:0}
+.imf-fb.on{opacity:1}
+.imf-arrow-lbl{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence/engines/rust">rust</a><span class="rsep">/</span><span class="rcur">the-in-memory-feed</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#ring">The ring</a>
+<a href="#why">Fast, with a net</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 8 &#183; Dive 8.3</p>
+<h1>The in-memory <span class="hns">feed</span>.</h1>
+<p class="lede">The Rust engine serves its change feed from memory: recent commits live in a fixed-size ring, broadcast to every subscriber at its own cursor &#8212; a hit is an O(1) read, no disk, no network. A subscriber that keeps up never touches storage. One that falls behind the ring&#8217;s window is not dropped: it falls back to the durable segments in object storage, catches up to the window edge, and rejoins. Commit faster than a subscriber reads and watch it fall off &#8212; then recover.</p>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="ring">
+<div class="sech"><span class="sno">&#167;1</span><h2>Broadcast, window, fallback</h2><span class="ssrc">interactive</span></div>
+<figure class="fig" aria-labelledby="imfCap">
+<figcaption id="imfCap"><b>An in-memory feed with a safety net.</b> The writer appends to a five-slot ring; subscribers A and B read from it. Commit without letting B read and its cursor drifts off the window — then a B read falls back to durable segments to catch up.</figcaption>
+<svg viewBox="0 0 720 285" id="imf" role="img" aria-label="A writer feeds a five-slot in-memory ring holding the most recent commit LSNs, with the head slot marked. Subscriber cursors A and B sit under the ring slot matching their position when in-window. Committing advances the ring and can push a cursor off the left edge; when a subscriber reads while behind the window, its cursor drops to a segments band in object storage below and catches up to the window edge from there.">
+<defs>
+<marker id="ima" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-dim)"></path></marker>
+<marker id="imb" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-node)"></path></marker>
+<marker id="imf2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-ts)"></path></marker>
+</defs>
+<text class="imf-lbl" x="140" y="46" style="fill:var(--p-accent-h)">in-memory ring &#183; last 5 commits</text>
+<rect class="imf-writer" x="20" y="56" width="94" height="48" rx="6"></rect>
+<text class="imf-lbl" x="34" y="78" style="fill:var(--b-seq)">writer</text>
+<text class="imf-sub" x="34" y="92">appends</text>
+<g id="ring"></g>
+<g id="cursors"></g>
+<path class="imf-arrow" d="M114 80 L140 80"></path>
+<path class="imf-bcast" id="bcast" d="M0 0"></path>
+<path class="imf-fb" id="fb" d="M0 0"></path>
+<rect class="imf-seg" x="140" y="206" width="544" height="46" rx="6"></rect>
+<text class="imf-seg-tx" x="154" y="226">segments &#183; object storage</text>
+<text class="imf-sub" x="154" y="240">every commit, durable &#8212; the fallback when a subscriber falls behind</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="commit">writer commits</button>
+<button type="button" id="aRead">A reads next</button>
+<button type="button" id="bRead">B reads next</button>
+<button type="button" id="imfReset">reset</button>
+</div>
+<div class="readout" id="imfOut" aria-live="polite"><span class="rk">readout &#183;</span> <span class="a">A</span> and <span class="b">B</span> start at the head. Commit a few times without letting <span class="b">B</span> read &#8212; the ring slides and B&#8217;s next LSN ages out. Then press &#8220;B reads&#8221;: it falls back to <span class="seg">segments</span>, catches up to the window edge, and rejoins.</div>
+</figure>
+</section>
+
+<section id="why">
+<div class="sech"><span class="sno">&#167;2</span><h2>Memory speed, durable floor { id="why" }</h2><span class="ssrc">graft.engine-split.design.md</span></div>
+<div class="prose">
+<p>Serving the feed from memory is what makes the Rust engine&#8217;s notifications cheap: a subscriber that stays close to the head reads each new commit straight from the ring, with no I/O at all, and the broadcast fans one append out to every listener. The ring is bounded on purpose &#8212; it holds only the most recent commits, so memory use is fixed no matter how long the engine runs. The cost of that bound is that a slow or briefly-disconnected subscriber can fall behind the oldest entry still in memory. The feed handles this without dropping anyone: because every commit is also a durable segment in object storage (Module 6, Module 9), a lagging subscriber simply reads the missing range from segments, catches up to the window edge, and resumes reading from the ring. So the feed is fast in the common case and complete in the worst case &#8212; the in-memory path and the durable path are the same ordered stream, just two ways to reach it. In the Rust engine this ring is the <code>InMemoryFeed</code>, and <code>publish_feed_advance</code> fires <b>only when the remote LSN advances</b> &#8212; a no-op push notifies no one &#8212; while eg.4 republishes those advances onto the EchoMQ lane <code>egraft:feed:{vol}</code> through a <code>BusFeed</code> sink, so a BEAM consumer observes them over the bus without the engine being touched. That durable floor &#8212; the shared remote both engines lean on &#8212; is the whole of Module 9.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/specs/graft.3.md">graft specs / graft.3.md</a><span class="rsrc">eg.3 — branded-id identity + the EchoMQ change-feed</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.roadmap.md">graft.roadmap.md</a><span class="rsrc">eg.3 — the EchoMQ change-feed off the commit LSN</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.engine-split.design.md">graft.engine-split.design.md</a><span class="rsrc">echo_graft in-memory feed, segment fallback</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/emq.roadmap.md">emq.roadmap.md</a><span class="rsrc">change feed, subscriber catch-up</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://en.wikipedia.org/wiki/Circular_buffer">Circular buffer</a><span class="rsrc">the bounded ring</span></li>
+<li><a href="https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html">tokio broadcast</a><span class="rsrc">fan-out with a lag/fallback boundary</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Change_data_capture">Change data capture</a><span class="rsrc">the ordered change stream</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx" href="/echo-persistence/engines/rust/opendal-and-the-portable-remote"><span class="pk">Dive 8.2</span>&#8592; OpenDAL &amp; the portable remote</a>
+<a class="pgx" href="/echo-persistence/engines/tigris+fence"><span class="pk">Next &#183; Module 9</span>Tigris &amp; the fence &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 8 / dive 8.3</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  var K=5, head=8;
+  var A=8, B=8; // cursors (last consumed LSN)
+  var ring=document.getElementById('ring'), cursors=document.getElementById('cursors'), out=document.getElementById('imfOut');
+  var bcast=document.getElementById('bcast'), fb=document.getElementById('fb');
+  function oldest(){return head-K+1;}
+  function cellX(i){return 140+i*84;} // i = 0..4 → window position
+  function cellCx(i){return cellX(i)+39;}
+  function drawRing(flashLsn){
+    while(ring.firstChild)ring.removeChild(ring.firstChild);
+    for(var i=0;i<K;i++){
+      var lsn=oldest()+i;
+      var r=document.createElementNS(NS,'rect');r.setAttribute('class','imf-cell'+(lsn===head?' head':'')+(lsn===flashLsn?' flash':''));r.setAttribute('x',cellX(i));r.setAttribute('y',56);r.setAttribute('width',78);r.setAttribute('height',46);r.setAttribute('rx',5);ring.appendChild(r);
+      var t=document.createElementNS(NS,'text');t.setAttribute('class','imf-cell-tx');t.setAttribute('x',cellCx(i));t.setAttribute('y',83);t.setAttribute('text-anchor','middle');t.textContent='LSN '+lsn;ring.appendChild(t);
+    }
+  }
+  function cursorMarker(cls,name,lsn,slot){
+    // slot=0..4 in window (y=120, point up); slot=-1 behind (over segments, y=180)
+    var g=document.createElementNS(NS,'g');
+    var x, y, lbly;
+    if(slot>=0){ x=cellCx(slot); y=120; lbly=140; }
+    else { x=170; y=184; lbly=200; }
+    var c=document.createElementNS(NS,'circle');c.setAttribute('class','imf-cursor '+cls);c.setAttribute('cx',x);c.setAttribute('cy',y);c.setAttribute('r',7);g.appendChild(c);
+    var t=document.createElementNS(NS,'text');t.setAttribute('class','imf-cursor-lbl '+cls);t.setAttribute('x',x+12);t.setAttribute('y',lbly);t.textContent=name+' @ LSN '+lsn+(slot<0?' (behind → segments)':'');g.appendChild(t);
+    return g;
+  }
+  function slotFor(cur){ // where to draw cursor: based on cur (last consumed). show at its position; if cur<oldest → behind
+    if(cur<oldest()) return -1;
+    var s=cur-oldest(); if(s>K-1)s=K-1; if(s<0)s=-1; return s;
+  }
+  function drawCursors(){
+    while(cursors.firstChild)cursors.removeChild(cursors.firstChild);
+    cursors.appendChild(cursorMarker('a','A',A,slotFor(A)));
+    cursors.appendChild(cursorMarker('b','B',B,slotFor(B)));
+  }
+  function draw(flashLsn){drawRing(flashLsn);drawCursors();}
+  function clearFx(){bcast.classList.remove('on');fb.classList.remove('on');}
+  document.getElementById('commit').addEventListener('click',function(){
+    clearFx();
+    if(head>=40){out.innerHTML='<span class="rk">commit &#183;</span> long enough &#8212; let A or B read.';return;}
+    head++; draw(head);
+    out.innerHTML='<span class="rk">commit &#183;</span> writer appended <b>LSN '+head+'</b>; the ring window is now [LSN '+oldest()+'&#8211;'+head+']. Subscribers that don&#8217;t keep up drift toward the left edge.';
+  });
+  document.getElementById('aRead').addEventListener('click',function(){
+    clearFx();
+    if(A>=head){draw();out.innerHTML='<span class="rk">A reads &#183;</span> <span class="a">A is at the head (LSN '+head+')</span> &#8212; nothing new.';return;}
+    if(A+1>=oldest()){ A++; var slot=A-oldest(); draw(A);
+      bcast.setAttribute('d','M'+cellCx(slot)+' 102 L'+cellCx(slot)+' 113'); bcast.classList.add('on');
+      out.innerHTML='<span class="rk">A reads &#183;</span> <span class="a">A read LSN '+A+' from the in-memory ring</span> &#8212; O(1), no I/O. A @ LSN '+A+'.';
+    } else { // fallback
+      var from=A+1, to=oldest()-1; A=oldest()-1; draw();
+      fb.setAttribute('d','M180 206 L180 192'); fb.classList.add('on');
+      out.innerHTML='<span class="rk">A reads &#183;</span> A&#8217;s next (LSN '+from+') aged out &#8212; <span class="seg">fell back to segments</span>, caught up LSN '+from+'&#8211;'+to+', now rejoining the ring.';
+    }
+  });
+  document.getElementById('bRead').addEventListener('click',function(){
+    clearFx();
+    if(B>=head){draw();out.innerHTML='<span class="rk">B reads &#183;</span> <span class="b">B is at the head (LSN '+head+')</span> &#8212; nothing new.';return;}
+    if(B+1>=oldest()){ B++; var slot=B-oldest(); draw(B);
+      bcast.setAttribute('d','M'+cellCx(slot)+' 102 L'+cellCx(slot)+' 113'); bcast.classList.add('on');
+      out.innerHTML='<span class="rk">B reads &#183;</span> <span class="b">B read LSN '+B+' from the ring</span> &#8212; in-memory hit, no storage. B @ LSN '+B+'.';
+    } else {
+      var from=B+1, to=oldest()-1; B=oldest()-1; draw();
+      fb.setAttribute('d','M180 206 L180 192'); fb.classList.add('on');
+      out.innerHTML='<span class="rk">B reads &#183;</span> B&#8217;s next (LSN '+from+') has aged out of the window (oldest is LSN '+oldest()+'). <span class="seg">B falls back to segments</span>, catches up LSN '+from+'&#8211;'+to+', then rejoins the ring &#8212; <span class="ok">no commit lost</span>.';
+    }
+  });
+  document.getElementById('imfReset').addEventListener('click',function(){head=8;A=8;B=8;clearFx();draw();out.innerHTML='<span class="rk">reset &#183;</span> head at LSN 8; A and B caught up. Commit a few times, leave B behind, then read B to trigger the segment fallback.';});
+  draw();
+})();
+</script>
+</body>
+</html>

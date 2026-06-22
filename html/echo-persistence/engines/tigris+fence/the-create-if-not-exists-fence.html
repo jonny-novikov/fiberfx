@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The create-if-not-exists fence — Echo Persistence</title>
+<meta name="description" content="Dive 9.2 of Echo Persistence Module 9: the create-if-not-exists fence as a cross-engine arbiter. Three different writers race for one commit slot; the bucket grants exactly one, losers step down, and the commit chain stays strictly linear. An interactive fence.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .nat{color:var(--b-ts)}.readout .rs{color:var(--b-ns)}.readout .rep{color:var(--b-seq)}.readout .ok{color:var(--b-node)}.readout .bad{color:var(--b-ns)}.readout code{background:#ecf0e9}
+.fn-writer{fill:var(--b-card);stroke-width:1.7}
+.fn-writer.native{stroke:var(--b-ts)}.fn-writer.rust{stroke:var(--b-ns)}.fn-writer.replica{stroke:var(--b-seq)}
+.fn-writer.active{stroke-width:2.8}
+.fn-w-tx{font-family:var(--mono);font-size:11.5px;font-weight:700;pointer-events:none}
+.fn-w-tx.native{fill:var(--b-ts)}.fn-w-tx.rust{fill:var(--b-ns)}.fn-w-tx.replica{fill:var(--b-seq)}
+.fn-w-sub{font-family:var(--mono);font-size:9.5px;fill:var(--b-dim);pointer-events:none}
+.fn-chain-lbl{font-family:var(--mono);font-size:9.5px;font-weight:700;fill:var(--p-accent-h);pointer-events:none}
+.fn-commit{fill:#fbf3df;stroke:var(--p-accent);stroke-width:1.5}
+.fn-commit-tx{font-family:var(--mono);font-size:10px;font-weight:700;fill:var(--p-accent-h);pointer-events:none}
+.fn-who{font-family:var(--mono);font-size:8px;pointer-events:none}
+.fn-dot{stroke:var(--b-card);stroke-width:1}
+.fn-dot.native{fill:var(--b-ts)}.fn-dot.rust{fill:var(--b-ns)}.fn-dot.replica{fill:var(--b-seq)}
+.fn-open{fill:none;stroke:var(--b-dim);stroke-width:1.6;stroke-dasharray:5 3}
+.fn-open-tx{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.fn-arrow{stroke-width:2.2;fill:none;opacity:0}
+.fn-arrow.ok{stroke:var(--b-node);marker-end:url(#fnok);opacity:1}
+.fn-arrow.bad{stroke:var(--b-ns);marker-end:url(#fnbad);opacity:1;stroke-dasharray:4 3}
+.fn-result{font-family:var(--mono);font-size:11px;font-weight:700;pointer-events:none}
+.fn-headptr{stroke:var(--p-accent-h);stroke-width:1.6;fill:none;marker-end:url(#fnh)}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence/engines/tigris+fence">tigris+fence</a><span class="rsep">/</span><span class="rcur">the-create-if-not-exists-fence</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#arbiter">The arbiter</a>
+<a href="#why">Why it can&#8217;t fork</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 9 &#183; Dive 9.2</p>
+<h1>The create-if-not-exists <span class="hns">fence</span>.</h1>
+<p class="lede">Module 3 introduced the fence as a primitive. Here it does real work: the durable commit is a <code>create-if-not-exists</code> on the next <b>commit object</b>, and because the bucket is shared, the bucket itself is the arbiter. Three different writers &#8212; the native engine, the Rust engine, a replica promoting itself &#8212; can all reach for the same slot; exactly one wins, the rest get <code>ConditionNotMatch</code> and step down. The commit chain stays strictly linear. Let writers race.</p>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="arbiter">
+<div class="sech"><span class="sno">&#167;1</span><h2>One slot, one winner</h2><span class="ssrc">interactive</span></div>
+<figure class="fig" aria-labelledby="fnCap">
+<figcaption id="fnCap"><b>The bucket arbitrates.</b> Each writer knows some head and tries to create the next commit object. A writer at the true head wins (created); one on a stale head loses (ConditionNotMatch), re-reads, and retries. Have different writers attempt, in any order.</figcaption>
+<svg viewBox="0 0 720 300" id="fn" role="img" aria-label="Three writer boxes on the left — native engine, Rust engine, promoting replica — each showing the head LSN it currently knows. A commit chain runs along the top right with one open dashed slot at the tip. When a writer attempts, an arrow goes to the open slot: a writer at the true head creates it (green, the chain grows and that writer is recorded), while a writer on a stale head is rejected (red, ConditionNotMatch) and re-reads the head.">
+<defs>
+<marker id="fnok" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-node)"></path></marker>
+<marker id="fnbad" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-ns)"></path></marker>
+<marker id="fnh" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--p-accent-h)"></path></marker>
+</defs>
+<rect class="fn-writer native" id="wNative" x="24" y="60" width="158" height="50" rx="7"></rect>
+<text class="fn-w-tx native" x="38" y="82">native engine</text>
+<text class="fn-w-sub" id="subNative" x="38" y="98">knows head: 3</text>
+<rect class="fn-writer rust" id="wRust" x="24" y="124" width="158" height="50" rx="7"></rect>
+<text class="fn-w-tx rust" x="38" y="146">Rust engine</text>
+<text class="fn-w-sub" id="subRust" x="38" y="162">knows head: 3</text>
+<rect class="fn-writer replica" id="wReplica" x="24" y="188" width="158" height="50" rx="7"></rect>
+<text class="fn-w-tx replica" x="38" y="210">promoting replica</text>
+<text class="fn-w-sub" id="subReplica" x="38" y="226">knows head: 3</text>
+<text class="fn-chain-lbl" x="300" y="50">commit/ chain &#183; the durable log head</text>
+<g id="chain"></g>
+<path class="fn-arrow" id="atkArrow" d="M0 0"></path>
+<text class="fn-result" id="result" x="588" y="132" text-anchor="middle" style="fill:var(--b-dim)">idle</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="aNative">native attempts</button>
+<button type="button" id="aRust">Rust attempts</button>
+<button type="button" id="aReplica">replica attempts</button>
+<button type="button" id="fnReset">reset</button>
+</div>
+<div class="readout" id="fnOut" aria-live="polite"><span class="rk">readout &#183;</span> All three know head 3. Have one attempt: it creates <code>commit/4</code> and wins. Now have another attempt &#8212; it&#8217;s still on head 3, so <code>commit/4</code> exists and it gets <span class="bad">ConditionNotMatch</span>; it re-reads head 4 and can try <code>commit/5</code>. The chain never forks.</div>
+</figure>
+</section>
+
+<section id="why">
+<div class="sech"><span class="sno">&#167;2</span><h2>Why the log can&#8217;t fork</h2><span class="ssrc">graft.engine-split.design.md</span></div>
+<div class="prose">
+<p>A commit is durable only when its commit object exists in the bucket, and the object is written with create-if-not-exists keyed by LSN. That single rule makes forking impossible: two writers can both believe they are at the head and both try to create <code>commit/N+1</code>, but the object store admits exactly one create &#8212; the other comes back a conditional-write conflict &#8212; <code>ConditionNotMatch</code> from the Rust engine&#8217;s OpenDAL <code>put_commit if_not_exists</code>, the matching <code>If-None-Match</code> 412 from the native engine&#8217;s create-only PUT, the same rule two ways. The loser is not wedged; it re-reads the head it now knows exists, sees the winner&#8217;s commit, and retries at <code>N+2</code>. Crucially, none of this depends on which engine is asking: the native engine writing directly to Tigris and the Rust engine writing through OpenDAL (Dive 8.2) express the same conditional create, so the bucket arbitrates <i>across</i> engines and even admits a replica promoting itself to writer. The result is a strictly linear commit chain with a single owner per link &#8212; the same OCC guarantee the VolumeServer gave locally (Module 7), now enforced by the shared remote for everyone at once. With the head safe, the last question is reading it back cold.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/specs/graft.2.md">graft specs / graft.2.md</a><span class="rsrc">eg.2 — the conditional-write commit as the fence</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.roadmap.md">graft.roadmap.md</a><span class="rsrc">eg.2 — the conditional-write commit as the fence</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.engine-split.design.md">graft.engine-split.design.md</a><span class="rsrc">RemoteCommit fence across both engines</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rsrc">commit object, create-if-not-exists, linear log</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://www.tigrisdata.com/docs/objects/conditionals/">Tigris conditional writes</a><span class="rsrc">create-if-not-exists semantics</span></li>
+<li><a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-None-Match">If-None-Match</a><span class="rsrc">the conditional header</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Linearizability">Linearizability</a><span class="rsrc">one winner, a single order</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx" href="/echo-persistence/engines/tigris+fence/push-rollup"><span class="pk">Dive 9.1</span>&#8592; Push rollup</a>
+<a class="pgx" href="/echo-persistence/engines/tigris+fence/log-head-recovery"><span class="pk">Dive 9.3</span>Log-head recovery &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 9 / dive 9.2</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  var head=3;
+  var chain=[{lsn:1,who:'native'},{lsn:2,who:'rust'},{lsn:3,who:'native'}];
+  var known={native:3,rust:3,replica:3};
+  var WHOC={native:'var(--b-ts)',rust:'var(--b-ns)',replica:'var(--b-seq)'};
+  var WHON={native:'native',rust:'Rust',replica:'replica'};
+  var WROW={native:85,rust:149,replica:213}; // arrow start y per writer
+  var chainG=document.getElementById('chain'), result=document.getElementById('result'), atk=document.getElementById('atkArrow'), out=document.getElementById('fnOut');
+  function openX(){ var shown=Math.min(3,chain.length); return 300 + shown*86; }
+  function draw(){
+    while(chainG.firstChild)chainG.removeChild(chainG.firstChild);
+    var shown=chain.slice(-3);
+    shown.forEach(function(c,i){
+      var x=300+i*86;
+      var r=document.createElementNS(NS,'rect');r.setAttribute('class','fn-commit');r.setAttribute('x',x);r.setAttribute('y',66);r.setAttribute('width',76);r.setAttribute('height',42);r.setAttribute('rx',5);chainG.appendChild(r);
+      var t=document.createElementNS(NS,'text');t.setAttribute('class','fn-commit-tx');t.setAttribute('x',x+38);t.setAttribute('y',84);t.setAttribute('text-anchor','middle');t.textContent='commit/'+c.lsn;chainG.appendChild(t);
+      var d=document.createElementNS(NS,'circle');d.setAttribute('class','fn-dot '+c.who);d.setAttribute('cx',x+14);d.setAttribute('cy',98);d.setAttribute('r',4);chainG.appendChild(d);
+      var w=document.createElementNS(NS,'text');w.setAttribute('class','fn-who');w.setAttribute('x',x+24);w.setAttribute('y',101);w.setAttribute('fill',WHOC[c.who]);w.textContent=WHON[c.who];chainG.appendChild(w);
+    });
+    // open slot
+    var ox=openX();
+    var o=document.createElementNS(NS,'rect');o.setAttribute('class','fn-open');o.setAttribute('x',ox);o.setAttribute('y',66);o.setAttribute('width',76);o.setAttribute('height',42);o.setAttribute('rx',5);chainG.appendChild(o);
+    var ot=document.createElementNS(NS,'text');ot.setAttribute('class','fn-open-tx');ot.setAttribute('x',ox+38);ot.setAttribute('y',84);ot.setAttribute('text-anchor','middle');ot.textContent='commit/'+(head+1);chainG.appendChild(ot);
+    var ot2=document.createElementNS(NS,'text');ot2.setAttribute('class','fn-open-tx');ot2.setAttribute('x',ox+38);ot2.setAttribute('y',98);ot2.setAttribute('text-anchor','middle');ot2.textContent='open';chainG.appendChild(ot2);
+    // head pointer to last committed
+    if(shown.length){var lx=300+(shown.length-1)*86+38;var hp=document.createElementNS(NS,'path');hp.setAttribute('class','fn-headptr');hp.setAttribute('d','M'+lx+' 60 L'+lx+' 64');chainG.appendChild(hp);}
+    document.getElementById('subNative').textContent='knows head: '+known.native;
+    document.getElementById('subRust').textContent='knows head: '+known.rust;
+    document.getElementById('subReplica').textContent='knows head: '+known.replica;
+  }
+  function activeBox(w){['wNative','wRust','wReplica'].forEach(function(id){document.getElementById(id).classList.remove('active');});document.getElementById('w'+w.charAt(0).toUpperCase()+w.slice(1)).classList.add('active');}
+  function attempt(w){
+    activeBox(w);
+    var target=known[w]+1, ox=openX();
+    if(target===head+1){
+      // win
+      chain.push({lsn:target,who:w}); head=target; known[w]=target; draw();
+      result.textContent='201 Created'; result.setAttribute('fill','var(--b-node)');
+      atk.setAttribute('class','fn-arrow ok'); atk.setAttribute('d','M182 '+WROW[w]+' L'+(openX()-6)+' 88');
+      out.innerHTML='<span class="rk">attempt &#183;</span> <span class="'+(w==='replica'?'rep':w==='rust'?'rs':'nat')+'">'+WHON[w]+'</span> created <code>commit/'+target+'</code> &#8594; <span class="ok">201 Created</span>. Head is now '+head+'; the chain grew by one link owned by '+WHON[w]+'.';
+    } else {
+      // stale → 412, re-read
+      known[w]=head; draw();
+      result.textContent='412 exists'; result.setAttribute('fill','var(--b-ns)');
+      atk.setAttribute('class','fn-arrow bad'); atk.setAttribute('d','M182 '+WROW[w]+' L'+(ox-6)+' 88');
+      out.innerHTML='<span class="rk">attempt &#183;</span> <span class="'+(w==='replica'?'rep':w==='rust'?'rs':'nat')+'">'+WHON[w]+'</span> tried <code>commit/'+target+'</code> &#8212; it already exists &#8594; <span class="bad">ConditionNotMatch</span>. It re-reads head '+head+'; next time it can try <code>commit/'+(head+1)+'</code>. <b>No fork.</b>';
+    }
+  }
+  document.getElementById('aNative').addEventListener('click',function(){attempt('native');});
+  document.getElementById('aRust').addEventListener('click',function(){attempt('rust');});
+  document.getElementById('aReplica').addEventListener('click',function(){attempt('replica');});
+  document.getElementById('fnReset').addEventListener('click',function(){head=3;chain=[{lsn:1,who:'native'},{lsn:2,who:'rust'},{lsn:3,who:'native'}];known={native:3,rust:3,replica:3};atk.setAttribute('class','fn-arrow');result.textContent='idle';result.setAttribute('fill','var(--b-dim)');['wNative','wRust','wReplica'].forEach(function(id){document.getElementById(id).classList.remove('active');});draw();out.innerHTML='<span class="rk">reset &#183;</span> all three know head 3. Make one win commit/4, then watch a stale writer get ConditionNotMatch and retry.';});
+  draw();
+})();
+</script>
+</body>
+</html>

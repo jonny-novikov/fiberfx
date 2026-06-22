@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dive 11.2 · Retention &amp; the never-deleted problem — Echo Persistence</title>
+<meta name="description" content="Module 11, Dive 11.2: a stream where ack does not delete grows without bound. XTRIM by MAXLEN or MINID, retention as a declared per-stream policy, and the open F3.4-A fork on trim cadence — why fold-before-trim is safe by construction and a timer that outruns the fold loses data. Interactive retention.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.1rem,1rem + 0.7vw,1.4rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.6rem,1.2rem + 2.2vw,2.5rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.ctrls .sep{width:1px;height:22px;background:var(--b-line)}
+.ctrls .lbl{font-family:var(--mono);font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.05em}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.6em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .ok{color:var(--b-node)}.readout .no{color:var(--b-ns)}.readout code{background:#ecf0e9}
+.buildbox{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:16px 18px;margin:12px 0;max-width:80ch}
+.buildbox .bk{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--p-accent);font-weight:700;margin-bottom:6px}
+.ret-cell{stroke-width:1.5;rx:4}
+.ret-cell.live{fill:#fffdf5;stroke:var(--p-accent)}
+.ret-cell.folded{fill:#eaf3ee;stroke:var(--b-node)}
+.ret-cell.trimmed{fill:#efede7;stroke:#c9c2af}
+.ret-cell.lost{fill:#fdeeec;stroke:var(--b-ns);stroke-width:2}
+.ret-id{font-family:var(--mono);font-size:11px;font-weight:700;pointer-events:none}
+.ret-id.live{fill:var(--p-accent-h)}.ret-id.folded{fill:var(--b-node)}.ret-id.trimmed{fill:#a59c86}.ret-id.lost{fill:var(--b-ns)}
+.ret-wm{stroke-width:1.8;stroke-dasharray:4 2}
+.ret-wm.fold{stroke:var(--b-node)}
+.ret-wm.trim{stroke:var(--p-accent-h)}
+.ret-wmlbl{font-family:var(--mono);font-size:9.5px;font-weight:700;pointer-events:none}
+.ret-wmlbl.fold{fill:var(--b-node)}.ret-wmlbl.trim{fill:var(--p-accent-h)}
+.ret-leg{font-family:var(--mono);font-size:9.5px;fill:var(--b-dim);pointer-events:none}
+.ret-swatch{stroke-width:1.2;rx:2}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">platform</a><span class="rsep">/</span><a href="/echo-persistence/platform/echomq-bus">echomq-bus</a><span class="rsep">/</span><span class="rcur">retention-and-the-never-deleted-problem</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#never">Never deleted</a>
+<a href="#fork">The cadence fork</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 11 &#183; Dive 11.2</p>
+<h1>Retention &amp; the <span class="hns">never-deleted</span> problem.</h1>
+<p class="lede">A stream is a log, and <code>XACK</code> does not delete &#8212; it only clears an entry from a group&#8217;s pending list. So a busy stream grows forever unless something trims it, and trimming a log is exactly where you can lose data you meant to keep. EchoMQ makes retention a <i>declared policy</i>, not a side effect, and it has one open design question worth seeing in motion: <b>when</b> do you trim? Below, grow a stream, fold its tail to the archive, and watch a naive timer-driven trim outrun the fold and drop an un-archived entry.</p>
+<figure class="fig" aria-labelledby="retCap">
+<figcaption id="retCap"><b>Two frontiers on one log.</b> The <span style="color:var(--b-node)">fold watermark</span> is how far the archive consumer has copied entries to durable segments; the <span style="color:var(--p-accent-h)">trim watermark</span> is how far the stream has been cut. In <code>fold-before-trim</code>, trim cannot pass fold &#8212; only archived entries are removed. In <code>trim-by-timer</code>, trim advances on its own and can cut an un-folded entry: lost.</figcaption>
+<svg viewBox="0 0 720 268" id="ret" role="img" aria-label="A row of stream entry cells with ascending mint ids. A green dashed fold watermark and an amber dashed trim watermark sit between cells. XADD appends a live cell on the right. Fold advances the fold watermark, turning the next live cell into an archived cell. Trim advances the trim watermark: in fold-before-trim mode it is blocked from passing the fold watermark; in trim-by-timer mode it advances regardless and any cell it cuts that was not yet folded is marked lost.">
+<text class="ret-wmlbl fold" id="foldLbl" x="60" y="92" text-anchor="middle">fold W</text>
+<text class="ret-wmlbl trim" id="trimLbl" x="60" y="176" text-anchor="middle">trim W</text>
+<line class="ret-wm fold" id="foldWm" x1="60" y1="96" x2="60" y2="166"></line>
+<line class="ret-wm trim" id="trimWm" x1="60" y1="100" x2="60" y2="170"></line>
+<g id="cells"></g>
+<rect class="ret-swatch" x="60" y="222" width="12" height="12" style="fill:#efede7;stroke:#c9c2af"></rect><text class="ret-leg" x="78" y="232">trimmed (cut)</text>
+<rect class="ret-swatch" x="190" y="222" width="12" height="12" style="fill:#eaf3ee;stroke:var(--b-node)"></rect><text class="ret-leg" x="208" y="232">folded &#8594; segments (safe to trim)</text>
+<rect class="ret-swatch" x="470" y="222" width="12" height="12" style="fill:#fffdf5;stroke:var(--p-accent)"></rect><text class="ret-leg" x="488" y="232">live tail (not yet archived)</text>
+</svg>
+<div class="ctrls">
+<span class="lbl">cadence:</span>
+<button type="button" id="retSafe" aria-pressed="true">fold-before-trim</button>
+<button type="button" id="retTimer" aria-pressed="false">trim by timer</button>
+<span class="sep"></span>
+<button type="button" id="retAdd">XADD</button>
+<button type="button" id="retFold">fold &#8594;</button>
+<button type="button" id="retTrim">trim &#8594;</button>
+<button type="button" id="retReset">reset</button>
+</div>
+<div class="readout" id="retOut" aria-live="polite"><span class="rk">readout &#183;</span> <code>fold</code> copies the next live entry to durable segments; <code>trim</code> cuts from the left. In <span class="ok">fold-before-trim</span> the trim watermark cannot pass the fold watermark, so nothing un-archived is ever cut. Switch to <code>trim by timer</code> and trim past the fold to see the failure.</div>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="never">
+<div class="sech"><span class="sno">&#167;1</span><h2>Ack is not delete</h2><span class="ssrc">emq.streams.md &#183; emq3.4</span></div>
+<div class="prose">
+<p>The single fact behind this whole rung is that acknowledging an entry does not remove it. <code>XACK</code> clears the entry from one group&#8217;s pending list; the entry itself stays in the stream, visible to <code>XRANGE</code> and to any other group, forever. That is the right default &#8212; a log you can replay is the entire point of the tier &#8212; but it means a stream that is only ever appended to is a stream that only ever grows. The control is <code>XTRIM</code>, and EchoMQ treats it as <b>retention-as-policy</b> rather than an ad-hoc call: a stream declares its window once, and the two levers are <code>MAXLEN ~ N</code> (keep approximately the last N entries; the <code>~</code> lets the server trim on macro-node boundaries, which is far cheaper than exact) and <code>MINID m</code> (drop everything below a minimum id). Because a branded id&#8217;s sort order <i>is</i> mint order, <code>MINID</code> is also a time bound: <code>Snowflake.min_for/1</code> turns an instant into the smallest id at-or-after it, so &#8220;keep the last hour&#8221; is a <code>MINID</code> trim, no scan required. Approximate <code>MAXLEN</code> is the default and exact trimming is opt-in, because for retention &#8220;roughly the last N&#8221; is what you actually want and exactness costs you the cheap boundary. None of this changes a reader inside the window: a deep read of entries that still exist is exact; the window only governs what no longer does.</p>
+</div>
+</section>
+
+<section id="fork">
+<div class="sech"><span class="sno">&#167;2</span><h2>The open question: when do you trim?</h2><span class="ssrc">streams.synthesis.md &#183; fork F3.4-A</span></div>
+<div class="prose">
+<p>Trimming is safe only relative to what has been preserved elsewhere. The next rung (emq3.5) archives the trimmed tail into durable segments via the native <code>EchoStore.Graft</code> engine &#8212; the same engine Chapter III built &#8212; and the rule there is <b>fold-before-trim</b>: a dedicated fold consumer commits a slice to the archive, and only <i>then</i> may the stream cut up to the folded frontier. Couple the two and a trim can never remove an un-archived entry, because the trim watermark is bounded by the fold watermark by construction; that is the safe path the figure shows. The genuinely open question &#8212; recorded as fork <b>F3.4-A</b> &#8212; is the <i>cadence</i> of the general-purpose trim that is <i>not</i> the archive fold. One option drives trimming on the consumer beat and ties the trim watermark to the fold watermark, so safety is automatic but liveness and safety are now one knob. The other gives trimming a separate, named cadence and keeps safety as an explicit precondition, on the principle that you should not couple a liveness concern (how often we trim) to a safety concern (what we are allowed to trim). The Director&#8217;s reconciliation lands between them: ship the <code>trim</code> verb with its policy converged, make a general cadence opt-in and named rather than implicit, and let the emq3.5 fold consumer be the one place that does fold-before-trim. The naive failure the figure dramatizes &#8212; a timer that advances the cut past the fold &#8212; is precisely what naming the cadence is meant to prevent.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/emq.streams.md">emq.streams.md</a><span class="rsrc">emq3.4 retention as policy; MAXLEN ~, MINID by mint instant</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/kb/streams-tier/streams.synthesis.md">streams.synthesis.md</a><span class="rsrc">fork F3.4-A — trim cadence; the Director reconciliation</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/specs/graft.4.md">graft specs / graft.4.md</a><span class="rsrc">the EchoStore.Graft archive the fold commits into</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://redis.io/docs/latest/commands/xtrim/">XTRIM</a><span class="rsrc">MAXLEN and MINID trimming</span></li>
+<li><a href="https://redis.io/docs/latest/develop/data-types/streams/">Redis Streams</a><span class="rsrc">why ack does not delete</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx" href="/echo-persistence/platform/echomq-bus/valkey-streams-internals"><span class="pk">Prev &#183; Dive 11.1</span>&#8592; ValKey Streams internals</a>
+<a class="pgx" href="/echo-persistence/platform/echomq-bus/the-stream-tier-ladder"><span class="pk">Next &#183; Dive 11.3</span>The Stream Tier ladder &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; dive 11.2</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg", X0=86, W=58, GAP=6, Y=104, H=46, MAX=9;
+  var cellsG=document.getElementById('cells'), foldWm=document.getElementById('foldWm'), trimWm=document.getElementById('trimWm');
+  var foldLbl=document.getElementById('foldLbl'), trimLbl=document.getElementById('trimLbl'), out=document.getElementById('retOut');
+  var sB=document.getElementById('retSafe'), tB=document.getElementById('retTimer');
+  var ids, nextId, F, T, mode, lostIdx;
+  function init(){ ids=[1,2,3,4,5]; nextId=6; F=2; T=0; mode='safe'; lostIdx=-1; sB.setAttribute('aria-pressed','true'); tB.setAttribute('aria-pressed','false'); render(); base(); }
+  function colX(i){ return X0 + i*(W+GAP); }
+  function render(){
+    while(cellsG.firstChild) cellsG.removeChild(cellsG.firstChild);
+    for(var i=0;i<ids.length;i++){
+      var st = (i===lostIdx)?'lost':(i<T?'trimmed':(i<F?'folded':'live'));
+      var r=document.createElementNS(NS,'rect'); r.setAttribute('class','ret-cell '+st); r.setAttribute('x',colX(i)); r.setAttribute('y',Y); r.setAttribute('width',W); r.setAttribute('height',H); cellsG.appendChild(r);
+      var t=document.createElementNS(NS,'text'); t.setAttribute('class','ret-id '+st); t.setAttribute('x',colX(i)+W/2); t.setAttribute('y',Y+27); t.setAttribute('text-anchor','middle'); t.textContent='#'+ids[i]; cellsG.appendChild(t);
+      if(st==='trimmed'||st==='lost'){ var x1=colX(i)+10,x2=colX(i)+W-10; var s=document.createElementNS(NS,'line'); s.setAttribute('x1',x1); s.setAttribute('y1',Y+10); s.setAttribute('x2',x2); s.setAttribute('y2',Y+H-10); s.setAttribute('stroke',st==='lost'?'#b23b2e':'#bcb29a'); s.setAttribute('stroke-width','1.6'); cellsG.appendChild(s); }
+    }
+    var fx=colX(F)-GAP/2-1, tx=colX(T)-GAP/2-1;
+    foldWm.setAttribute('x1',fx); foldWm.setAttribute('x2',fx); foldLbl.setAttribute('x',fx);
+    trimWm.setAttribute('x1',tx); trimWm.setAttribute('x2',tx); trimLbl.setAttribute('x',tx);
+  }
+  function base(){ out.innerHTML='<span class="rk">readout &#183;</span> mode <b>'+(mode==='safe'?'fold-before-trim':'trim-by-timer')+'</b>. <code>fold</code> archives the next live entry to segments; <code>trim</code> cuts from the left. '+(mode==='safe'?'Trim is bounded by fold &#8212; nothing un-archived is cut.':'Trim advances on its own cadence &#8212; push it past the fold to lose data.'); }
+  sB.addEventListener('click',function(){ mode='safe'; sB.setAttribute('aria-pressed','true'); tB.setAttribute('aria-pressed','false'); lostIdx=-1; render(); base(); });
+  tB.addEventListener('click',function(){ mode='timer'; tB.setAttribute('aria-pressed','true'); sB.setAttribute('aria-pressed','false'); base(); });
+  document.getElementById('retAdd').addEventListener('click',function(){
+    if(ids.length>=MAX){ out.innerHTML='<span class="rk">XADD &#183;</span> figure is full &#8212; <code>fold</code> and <code>trim</code> to make room, or reset.'; return; }
+    ids.push(nextId++); lostIdx=-1; render();
+    out.innerHTML='<span class="rk">XADD &#183;</span> appended <code>#'+(nextId-1)+'</code> to the live tail. Ack would clear it from a group&#8217;s PEL but never remove it &#8212; only <code>trim</code> does that.';
+  });
+  document.getElementById('retFold').addEventListener('click',function(){
+    if(F>=ids.length){ out.innerHTML='<span class="rk">fold &#183;</span> nothing live to fold &#8212; <code>XADD</code> first.'; return; }
+    F++; lostIdx=-1; render();
+    out.innerHTML='<span class="rk">fold &#183;</span> the fold consumer copied <code>#'+ids[F-1]+'</code> to durable segments (<code>EchoStore.Graft</code>). The <span class="ok">fold watermark</span> advanced; that entry is now safe to trim.';
+  });
+  document.getElementById('retTrim').addEventListener('click',function(){
+    if(T>=ids.length){ out.innerHTML='<span class="rk">trim &#183;</span> nothing left to cut.'; return; }
+    if(mode==='safe'){
+      if(T>=F){ out.innerHTML='<span class="rk">trim blocked &#183;</span> <b>fold-before-trim</b>: the trim watermark cannot pass the fold watermark. <code>#'+ids[T]+'</code> is not yet archived, so it is <span class="ok">not cut</span>. Fold it first.'; return; }
+      T++; lostIdx=-1; render();
+      out.innerHTML='<span class="rk">trim &#183;</span> cut <code>#'+ids[T-1]+'</code> &#8212; it was already folded to segments, so the cut is <span class="ok">safe</span>. A deep read can still find it below the watermark (Dive 11.3).';
+    } else {
+      var wasUnfolded = (T>=F);
+      lostIdx = wasUnfolded ? T : -1; T++; render();
+      if(wasUnfolded){ out.innerHTML='<span class="rk">trim &#183;</span> <span class="no">DATA LOST</span> &#8212; the timer cut <code>#'+ids[T-1]+'</code> before the fold consumer archived it. It is gone from the stream and was never written to segments. This is the failure <b>F3.4-A</b> names: do not couple the cut to a timer that can outrun the fold.'; }
+      else { out.innerHTML='<span class="rk">trim &#183;</span> cut <code>#'+ids[T-1]+'</code> &#8212; this one happened to be folded already, so no loss <i>this time</i>. The timer just doesn&#8217;t guarantee it.'; }
+    }
+  });
+  document.getElementById('retReset').addEventListener('click',init);
+  init();
+})();
+</script>
+</body>
+</html>

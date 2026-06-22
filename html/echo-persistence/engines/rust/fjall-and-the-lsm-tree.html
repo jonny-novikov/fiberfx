@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fjall &amp; the LSM-tree — Echo Persistence</title>
+<meta name="description" content="Dive 8.1 of Echo Persistence Module 8: the Rust engine's local store. Writes land in a memtable, flush to immutable SSTables, and compact by merging — an LSM-tree, a different shape from CubDB's B-tree, same append-only promise. An interactive LSM-tree.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button:disabled{opacity:.4;cursor:default}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .mem{color:var(--b-seq)}.readout .l0{color:var(--b-ts)}.readout .l1{color:var(--b-node)}
+.lsm-mem{fill:#f3eef6;stroke:var(--b-seq);stroke-width:1.7}
+.lsm-band-lbl{font-family:var(--mono);font-size:11px;font-weight:700;pointer-events:none}
+.lsm-band-lbl.mem{fill:var(--b-seq)}.lsm-band-lbl.l0{fill:var(--b-ts)}.lsm-band-lbl.l1{fill:var(--b-node)}
+.lsm-slot{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.2}
+.lsm-slot.fill{fill:#efe7f2;stroke:var(--b-seq);stroke-width:1.6}
+.lsm-slot-tx{font-family:var(--mono);font-size:10px;fill:var(--b-ink);pointer-events:none}
+.lsm-sst{fill:#eef4f9;stroke:var(--b-ts);stroke-width:1.5}
+.lsm-sst.l1{fill:#e7f1eb;stroke:var(--b-node)}
+.lsm-sst-hd{font-family:var(--mono);font-size:9px;font-weight:700;pointer-events:none}
+.lsm-sst-hd.l0{fill:var(--b-ts)}.lsm-sst-hd.l1{fill:var(--b-node)}
+.lsm-sst-tx{font-family:var(--mono);font-size:9.5px;fill:var(--b-ink);pointer-events:none}
+.lsm-arrow{stroke:var(--b-dim);stroke-width:1.8;fill:none;marker-end:url(#lsa)}
+.lsm-arrow-lbl{font-family:var(--mono);font-size:9.5px;fill:var(--b-dim);pointer-events:none}
+.lsm-cap{font-family:var(--mono);font-size:10px;font-weight:700;fill:var(--b-dim);pointer-events:none}
+.lsm-note{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence/engines/rust">rust</a><span class="rsep">/</span><span class="rcur">fjall-and-the-lsm-tree</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#lsm">The LSM-tree</a>
+<a href="#why">B-tree vs LSM</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 8 &#183; Dive 8.1</p>
+<h1>Fjall &amp; the <span class="hns">LSM-tree</span>.</h1>
+<p class="lede">The Rust engine stores its pages in Fjall, a log-structured merge-tree. Writes land in an in-memory memtable; when it fills, it flushes whole to an immutable SSTable on disk; and compaction reclaims space by <b>merging</b> SSTables and dropping superseded versions. It is a different shape from CubDB&#8217;s copy-on-write B-tree (Module 4), but it keeps the same promise: files are written once and never mutated. Write, flush, and compact.</p>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="lsm">
+<div class="sech"><span class="sno">&#167;1</span><h2>Memtable, flush, merge</h2><span class="ssrc">interactive</span></div>
+<figure class="fig" aria-labelledby="lsmCap">
+<figcaption id="lsmCap"><b>The write path of an LSM-tree.</b> Writes fill the memtable in RAM; a full memtable flushes to an immutable L0 SSTable; compaction merges L0 SSTables into one L1, dropping superseded keys. Nothing on disk is ever overwritten.</figcaption>
+<svg viewBox="0 0 720 318" id="lsm" role="img" aria-label="A memtable in RAM with four slots fills as keys are written. When full it flushes downward to a new immutable SSTable in the L0 band. Repeated flushes stack more L0 SSTables. Compaction merges all L0 SSTables into a single L1 SSTable, keeping the latest version of each key and dropping superseded ones; the old files are discarded.">
+<defs><marker id="lsa" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-dim)"></path></marker></defs>
+<text class="lsm-band-lbl mem" x="40" y="48">memtable &#183; RAM, sorted</text>
+<rect class="lsm-mem" x="40" y="54" width="330" height="46" rx="6"></rect>
+<g id="memSlots"></g>
+<text class="lsm-cap" id="cap" x="384" y="80">0 / 4</text>
+<path class="lsm-arrow" d="M120 100 L120 128"></path>
+<text class="lsm-arrow-lbl" x="128" y="118">flush</text>
+<text class="lsm-band-lbl l0" x="40" y="148">L0 &#183; flushed SSTables (immutable)</text>
+<g id="l0"></g>
+<path class="lsm-arrow" d="M120 222 L120 250"></path>
+<text class="lsm-arrow-lbl" x="128" y="240">compact (merge)</text>
+<text class="lsm-band-lbl l1" x="40" y="268">L1 &#183; compacted SSTable</text>
+<g id="l1"></g>
+<text class="lsm-note" x="470" y="150">reads check, in order:</text>
+<text class="lsm-note" x="470" y="164">memtable &#8594; L0 newest-first &#8594; L1</text>
+<text class="lsm-note" x="470" y="178">on-disk SSTables never rewritten</text>
+</svg>
+<div class="ctrls">
+<button type="button" id="write">write key</button>
+<button type="button" id="flush">flush memtable</button>
+<button type="button" id="compact">compact L0 &#8594; L1</button>
+<button type="button" id="lsmReset">reset</button>
+</div>
+<div class="readout" id="lsmOut" aria-live="polite"><span class="rk">readout &#183;</span> Write keys to fill the <span class="mem">memtable</span> (some keys repeat at higher versions). At 4, flush it to an immutable <span class="l0">L0 SSTable</span>. Stack a few, then compact: they <span class="l1">merge into L1</span>, keeping the latest version of each key and dropping the rest.</div>
+</figure>
+</section>
+
+<section id="why">
+<div class="sech"><span class="sno">&#167;2</span><h2>Two shapes, one immutability</h2><span class="ssrc">graft.engine-split.design.md</span></div>
+<div class="prose">
+<p>CubDB and Fjall solve the same problem from opposite directions. The B-tree writes a new copy of the path on every change and keeps the tree balanced as it goes, so reads are a single descent but each write touches several nodes. The LSM-tree batches writes in memory and flushes them sequentially, so writes are cheap and append-only, but a read may have to check the memtable and several SSTables, and space is reclaimed later by compaction rather than immediately. What matters for the Volume contract is that both are immutable on disk: a flushed SSTable, like a written CubDB block, is never overwritten, so old versions stay readable and a crash can only ever lose the un-flushed memtable tail &#8212; which the commit log replays (Module 6). The engine picks the LSM shape for write-heavy page churn; the guarantees the rest of the platform depends on are unchanged. Next, how those SSTables and segments reach a remote that could be anything.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/specs/graft.1.md">graft specs / graft.1.md</a><span class="rsrc">eg.1 — the core fork (Fjall retained, libgraft_ext removed)</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.roadmap.md">graft.roadmap.md</a><span class="rsrc">eg.1 — the core fork; Fjall retained as the local store</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.engine-split.design.md">graft.engine-split.design.md</a><span class="rsrc">echo_graft on Fjall, the LSM local store</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/store/design/store.design.md">store.design.md</a><span class="rsrc">local page tier, flush + compaction</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://github.com/fjall-rs/fjall">fjall-rs/fjall</a><span class="rsrc">the LSM-tree storage engine</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Log-structured_merge-tree">Log-structured merge-tree</a><span class="rsrc">memtable, SSTables, compaction</span></li>
+<li><a href="https://en.wikipedia.org/wiki/B-tree">B-tree</a><span class="rsrc">the other shape (CubDB, Module 4)</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx" href="/echo-persistence/engines/rust"><span class="pk">Up &#183; Module 8</span>&#8592; The Rust engine</a>
+<a class="pgx" href="/echo-persistence/engines/rust/opendal-and-the-portable-remote"><span class="pk">Dive 8.2</span>OpenDAL &amp; the portable remote &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 8 / dive 8.1</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  var CAP=4;
+  var WRITES=['a','b','c','b','d','a','c','e','b','d']; // repeats → supersession at compaction
+  var wi=0, ver=0;
+  var mem=[]; // {key,ver}
+  var l0=[];  // array of SSTables, each [{key,ver},...]
+  var l1=null; // merged
+  var memSlots=document.getElementById('memSlots'), l0G=document.getElementById('l0'), l1G=document.getElementById('l1'), cap=document.getElementById('cap'), out=document.getElementById('lsmOut');
+  function drawMem(){
+    while(memSlots.firstChild)memSlots.removeChild(memSlots.firstChild);
+    for(var i=0;i<CAP;i++){
+      var x=52+i*78;
+      var r=document.createElementNS(NS,'rect');r.setAttribute('class','lsm-slot'+(i<mem.length?' fill':''));r.setAttribute('x',x);r.setAttribute('y',64);r.setAttribute('width',70);r.setAttribute('height',26);r.setAttribute('rx',4);memSlots.appendChild(r);
+      if(i<mem.length){var t=document.createElementNS(NS,'text');t.setAttribute('class','lsm-slot-tx');t.setAttribute('x',x+35);t.setAttribute('y',81);t.setAttribute('text-anchor','middle');t.textContent=mem[i].key+'\u00b7v'+mem[i].ver;memSlots.appendChild(t);}
+    }
+    cap.textContent=mem.length+' / '+CAP+(mem.length>=CAP?' — full':'');
+  }
+  function sortKeys(arr){return arr.slice().sort(function(a,b){return a.key<b.key?-1:a.key>b.key?1:a.ver-b.ver;});}
+  function fmt(arr){return sortKeys(arr).map(function(e){return e.key+'\u00b7v'+e.ver;}).join('  ');}
+  function drawL0(){
+    while(l0G.firstChild)l0G.removeChild(l0G.firstChild);
+    l0.slice(0,3).forEach(function(sst,i){
+      var x=40+i*150;
+      var r=document.createElementNS(NS,'rect');r.setAttribute('class','lsm-sst');r.setAttribute('x',x);r.setAttribute('y',158);r.setAttribute('width',138);r.setAttribute('height',56);r.setAttribute('rx',5);l0G.appendChild(r);
+      var h=document.createElementNS(NS,'text');h.setAttribute('class','lsm-sst-hd l0');h.setAttribute('x',x+8);h.setAttribute('y',172);h.textContent='sstable '+(i+1);l0G.appendChild(h);
+      var t=document.createElementNS(NS,'text');t.setAttribute('class','lsm-sst-tx');t.setAttribute('x',x+8);t.setAttribute('y',192);t.textContent=fmt(sst);l0G.appendChild(t);
+    });
+    if(l0.length>3){var m=document.createElementNS(NS,'text');m.setAttribute('class','lsm-note');m.setAttribute('x',502);m.setAttribute('y',192);m.textContent='+'+(l0.length-3);l0G.appendChild(m);}
+  }
+  function drawL1(){
+    while(l1G.firstChild)l1G.removeChild(l1G.firstChild);
+    if(!l1)return;
+    var r=document.createElementNS(NS,'rect');r.setAttribute('class','lsm-sst l1');r.setAttribute('x',40);r.setAttribute('y',274);r.setAttribute('width',330);r.setAttribute('height',36);r.setAttribute('rx',5);l1G.appendChild(r);
+    var t=document.createElementNS(NS,'text');t.setAttribute('class','lsm-sst-tx');t.setAttribute('x',52);t.setAttribute('y',296);t.textContent=fmt(l1);l1G.appendChild(t);
+  }
+  function draw(){drawMem();drawL0();drawL1();}
+  document.getElementById('write').addEventListener('click',function(){
+    if(mem.length>=CAP){out.innerHTML='<span class="rk">write &#183;</span> the <span class="mem">memtable is full</span> (4/4) &#8212; flush it to an L0 SSTable before writing more.';return;}
+    ver++; var k=WRITES[wi%WRITES.length]; wi++; mem.push({key:k,ver:ver}); draw();
+    out.innerHTML='<span class="rk">write &#183;</span> wrote <b>'+k+'\u00b7v'+ver+'</b> to the <span class="mem">memtable</span> (kept sorted in RAM). '+(mem.length>=CAP?'Now full &#8212; flush it.':(CAP-mem.length)+' slot(s) left.');
+  });
+  document.getElementById('flush').addEventListener('click',function(){
+    if(mem.length===0){out.innerHTML='<span class="rk">flush &#183;</span> the memtable is empty &#8212; write some keys first.';return;}
+    l0.push(mem.slice()); var n=mem.length; mem=[]; draw();
+    out.innerHTML='<span class="rk">flush &#183;</span> the memtable&#8217;s '+n+' entries became a new immutable <span class="l0">L0 SSTable</span> &#8212; written once, never mutated. Memtable cleared; reads now check it, then L0 newest-first.';
+  });
+  document.getElementById('compact').addEventListener('click',function(){
+    if(l0.length===0){out.innerHTML='<span class="rk">compact &#183;</span> no L0 SSTables yet &#8212; flush at least one first.';return;}
+    var total=0; var latest={};
+    l0.forEach(function(sst){sst.forEach(function(e){total++; if(!latest[e.key]||e.ver>latest[e.key].ver)latest[e.key]=e;});});
+    // merge with existing l1
+    if(l1){l1.forEach(function(e){if(!latest[e.key]||e.ver>latest[e.key].ver)latest[e.key]=e;});}
+    var merged=Object.keys(latest).map(function(k){return latest[k];});
+    var dropped=total-(merged.length-(l1?l1.length:0)); if(dropped<0)dropped=total-Object.keys(latest).length;
+    var nSst=l0.length; l1=merged; l0=[]; draw();
+    out.innerHTML='<span class="rk">compact &#183;</span> merged <b>'+nSst+' L0 SSTable(s)</b> into one <span class="l1">L1 SSTable</span>, keeping the latest version per key and dropping '+dropped+' superseded entr'+(dropped===1?'y':'ies')+'. Old files discarded &#8212; space reclaimed by <b>merging, not overwriting</b>.';
+  });
+  document.getElementById('lsmReset').addEventListener('click',function(){mem=[];l0=[];l1=null;wi=0;ver=0;draw();out.innerHTML='<span class="rk">reset &#183;</span> empty memtable, no SSTables. Write to fill RAM, flush to disk, compact to merge.';});
+  draw();
+})();
+</script>
+</body>
+</html>

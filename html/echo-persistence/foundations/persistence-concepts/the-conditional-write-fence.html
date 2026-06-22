@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The conditional-write fence — Echo Persistence</title>
+<meta name="description" content="Dive 3.3 of Echo Persistence Module 3: the remote durability fence. Two nodes write the same commit object; create-if-not-exists lets one through with 200 and rejects the other with 412. Toggle the fence off and watch split-brain.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.ctrls label{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout .ok{color:var(--b-node)}.readout .bad{color:var(--b-ns)}
+.f-node{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.5}
+.f-node.a{stroke:var(--b-ts)}.f-node.b{stroke:var(--b-seq)}
+.f-store{fill:#fbf7ee;stroke:var(--p-accent);stroke-width:2}
+.f-title{font-family:var(--mono);font-size:13px;font-weight:700;pointer-events:none}
+.f-title.a{fill:var(--b-ts)}.f-title.b{fill:var(--b-seq)}.f-title.s{fill:var(--p-accent-h)}
+.f-line{font-family:var(--mono);font-size:11.5px;fill:var(--b-ink);pointer-events:none}
+.f-key{fill:var(--b-paper);stroke:var(--b-line);stroke-width:1.3}
+.f-keytx{font-family:var(--mono);font-size:11px;fill:var(--b-ink);pointer-events:none}
+.f-owner{font-family:var(--mono);font-size:12px;font-weight:700;pointer-events:none}
+.f-pill{font-family:var(--mono);font-size:12px;font-weight:700;pointer-events:none}
+.f-pill.ok{fill:var(--b-node)}.f-pill.bad{fill:var(--b-ns)}.f-pill.idle{fill:var(--b-dim)}
+.f-arrow{stroke:var(--b-line);stroke-width:2;fill:none;marker-end:url(#fa)}
+.f-arrow.live{stroke:var(--p-accent);marker-end:url(#fah)}
+.f-fence{font-family:var(--mono);font-size:11.5px;font-weight:700}
+.f-fence.on{fill:var(--b-node)}.f-fence.off{fill:var(--b-ns)}
+.f-verdict{font-family:var(--mono);font-size:13px;font-weight:700}
+.f-verdict.safe{fill:var(--b-node)}.f-verdict.split{fill:var(--b-ns)}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence/foundations/persistence-concepts">persistence-concepts</a><span class="rsep">/</span><span class="rcur">the-conditional-write-fence</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#fence">The fence</a>
+<a href="#why">Why it's the floor</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 3 &#183; Dive 3.3</p>
+<h1>The conditional-write <span class="hns">fence</span>.</h1>
+<p class="lede">The OCC commit kept one process honest. Off the box, the writers are different <b>nodes</b> &#8212; after a partition, two may both think they&#8217;re primary and both try to write commit LSN&#8201;7. The referee is the object store: <b>create-if-not-exists</b> lets the first PUT through and rejects the second. Toggle the fence off and watch what you lose.</p>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="fence">
+<div class="sech"><span class="sno">&#167;1</span><h2>One key, one winner</h2><span class="ssrc">interactive</span></div>
+<figure class="fig" aria-labelledby="fCap">
+<figcaption id="fCap"><b>Create-if-not-exists.</b> Both nodes PUT the same commit object. With the fence on, the store creates it once (200) and rejects the rest (412). Turn the fence off and both writes succeed &#8212; the second overwrites the first.</figcaption>
+<svg viewBox="0 0 720 320" id="fence" role="img" aria-label="Two nodes, A and B, each PUT the same commit object key to a central object store. With the fence on, A gets 200 and B gets 412 Precondition Failed; the object keeps A's commit. With the fence off, both get 200 and B's write overwrites A's, a split-brain.">
+<defs>
+<marker id="fa" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-line)"></path></marker>
+<marker id="fah" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--p-accent)"></path></marker>
+</defs>
+<rect class="f-node a" x="36" y="120" width="190" height="96" rx="8"></rect>
+<text class="f-title a" x="52" y="146">Node A</text>
+<text class="f-line" x="52" y="170">PUT commits/LSN-7</text>
+<text class="f-pill idle" id="aPill" x="52" y="198">&#8212;</text>
+<rect class="f-node b" x="494" y="120" width="190" height="96" rx="8"></rect>
+<text class="f-title b" x="510" y="146">Node B</text>
+<text class="f-line" x="510" y="170">PUT commits/LSN-7</text>
+<text class="f-pill idle" id="bPill" x="510" y="198">&#8212;</text>
+<text class="f-fence on" id="fenceInd" x="360" y="58" text-anchor="middle">fence: If-None-Match&#8201;*</text>
+<rect class="f-store" x="280" y="112" width="160" height="112" rx="8"></rect>
+<text class="f-title s" x="360" y="136" text-anchor="middle">Tigris &#183; object</text>
+<rect class="f-key" x="296" y="150" width="128" height="30" rx="4"></rect>
+<text class="f-keytx" x="360" y="170" text-anchor="middle">commits/LSN-7</text>
+<text class="f-owner" id="owner" x="360" y="204" text-anchor="middle" fill="var(--b-dim)">(empty)</text>
+<path class="f-arrow" id="arrA" d="M226 178 L280 178"></path>
+<path class="f-arrow" id="arrB" d="M494 178 L440 178"></path>
+<text class="f-verdict" id="verdict" x="360" y="298" text-anchor="middle"></text>
+</svg>
+<div class="ctrls">
+<label>fence&#8198;</label>
+<button type="button" class="fbtn" data-on="1" aria-pressed="true">on</button>
+<button type="button" class="fbtn" data-on="0" aria-pressed="false">off</button>
+<button type="button" id="put">&#9654; both nodes PUT</button>
+<button type="button" id="freset">reset</button>
+</div>
+<div class="readout" id="fOut" aria-live="polite"><span class="rk">readout &#183;</span> With the fence on, press PUT: A creates the object (200), B is rejected (412 Precondition Failed). Switch the fence off and both writes &#8220;succeed&#8221; &#8212; the second silently overwrites the first.</div>
+</figure>
+</section>
+
+<section id="why">
+<div class="sech"><span class="sno">&#167;2</span><h2>Why this is the durability floor</h2><span class="ssrc">graft.engine-split.design.md</span></div>
+<div class="prose">
+<p>The whole replicated design rests on this one atomic guarantee from the object store, and nothing more: a write that succeeds <b>only if the key does not already exist</b>. Both engines lean on it identically &#8212; the native one via Tigris&#8217;s conditional headers, the Rust one via OpenDAL&#8217;s if-not-exists, which surfaces the rejection as a precondition failure. That single primitive is what turns &#8220;append the next LSN&#8221; into a safe operation across nodes, with no lock service, no consensus cluster, no coordinator. Take it away &#8212; the fence-off case &#8212; and two primaries quietly diverge. With it, the page engines you meet in Chapter III are built on solid ground.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;3</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">External</li>
+<li><a href="https://www.tigrisdata.com/docs/objects/conditionals/">Tigris object conditionals</a><span class="rs">If-None-Match, create-if-not-exists</span></li>
+<li><a href="https://opendal.apache.org/">Apache OpenDAL</a><span class="rs">if-not-exists &#8594; precondition failed (Rust engine)</span></li>
+<li><a href="https://en.wikipedia.org/wiki/Split-brain_(computing)">Split-brain</a><span class="rs">what the fence prevents</span></li>
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.engine-split.design.md">graft.engine-split.design.md</a><span class="rs">RemoteCommit fence in both engines</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.design.md">graft.design.md</a><span class="rs">conditional commit, the replicated floor</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Dive pager">
+<a class="pgx" href="/echo-persistence/foundations/persistence-concepts/the-occ-commit"><span class="pk">Dive 3.2</span>&#8592; The OCC commit</a>
+<a class="pgx" href="/echo-persistence#map"><span class="pk">Next &#183; Chapter II</span>The local store &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 3 / dive 3.3</span>
+<span class="foot-cc">established</span>
+</div></div></footer>
+<script>
+(function(){
+  var fenceOn=true;
+  var aPill=document.getElementById('aPill'),bPill=document.getElementById('bPill'),owner=document.getElementById('owner'),
+      verdict=document.getElementById('verdict'),fenceInd=document.getElementById('fenceInd'),
+      arrA=document.getElementById('arrA'),arrB=document.getElementById('arrB'),out=document.getElementById('fOut');
+  function reset(){
+    aPill.textContent='\u2014';aPill.setAttribute('class','f-pill idle');
+    bPill.textContent='\u2014';bPill.setAttribute('class','f-pill idle');
+    owner.textContent='(empty)';owner.setAttribute('fill','var(--b-dim)');
+    verdict.textContent='';verdict.setAttribute('class','f-verdict');
+    arrA.classList.remove('live');arrB.classList.remove('live');
+  }
+  function setFence(on){
+    fenceOn=on;
+    fenceInd.textContent = on ? 'fence: If-None-Match\u2009*' : 'fence: off (last-write-wins)';
+    fenceInd.setAttribute('class','f-fence '+(on?'on':'off'));
+    reset();
+    out.innerHTML = on
+      ? '<span class="rk">fence on &#183;</span> the store will create the key once and reject any later PUT. Press PUT.'
+      : '<span class="rk">fence off &#183;</span> the store accepts every PUT; the last writer wins. Press PUT and watch A&#8217;s commit vanish.';
+  }
+  function run(){
+    reset();
+    // A PUTs first
+    arrA.classList.add('live');
+    owner.textContent='owner: A';owner.setAttribute('fill','var(--b-ts)');
+    aPill.textContent='200 OK';aPill.setAttribute('class','f-pill ok');
+    setTimeout(function(){
+      arrA.classList.remove('live');arrB.classList.add('live');
+      if(fenceOn){
+        bPill.textContent='412 Precondition Failed';bPill.setAttribute('class','f-pill bad');
+        owner.textContent='owner: A';owner.setAttribute('fill','var(--b-ts)');
+        verdict.textContent='\u2713 one commit wins \u2014 B rejected, no split-brain';verdict.setAttribute('class','f-verdict safe');
+        out.innerHTML='<span class="rk">fence on &#183;</span> A&#8217;s PUT <span class="ok">created the object (200)</span>; B&#8217;s PUT hit an existing key and got <span class="bad">412</span>. The commit is A&#8217;s, unambiguously. B will re-read and retry from the new head.';
+      } else {
+        bPill.textContent='200 OK';bPill.setAttribute('class','f-pill ok');
+        owner.textContent='owner: B';owner.setAttribute('fill','var(--b-seq)');
+        verdict.textContent='\u2717 split-brain \u2014 B overwrote A, A\u2019s commit lost';verdict.setAttribute('class','f-verdict split');
+        out.innerHTML='<span class="rk">fence off &#183;</span> both PUTs <span class="ok">returned 200</span> &#8212; but B&#8217;s <span class="bad">overwrote A&#8217;s commit</span>. Two primaries, one key, last write wins: a lost commit and a diverged history.';
+      }
+      setTimeout(function(){arrB.classList.remove('live');},400);
+    },800);
+  }
+  [].forEach.call(document.querySelectorAll('.fbtn'),function(b){
+    b.addEventListener('click',function(){
+      [].forEach.call(document.querySelectorAll('.fbtn'),function(x){x.setAttribute('aria-pressed','false');});
+      b.setAttribute('aria-pressed','true'); setFence(b.getAttribute('data-on')==='1');
+    });
+  });
+  document.getElementById('put').addEventListener('click',run);
+  document.getElementById('freset').addEventListener('click',reset);
+})();
+</script>
+</body>
+</html>
