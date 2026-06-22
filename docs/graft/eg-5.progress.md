@@ -18,6 +18,14 @@ Dual gate ladder: **Rust** (`cd apps/echo_graft`; `TMPDIR=/tmp cargo test --work
 
 Pipeline: Venus (reconcile graft.5.md → HIGH + author graft.5.prompt.md + surface Arms) → **Director rules the Arms via AskUserQuestion** → Mars-1 (build to the brief, dual gate) → Director solo verify (independent dual-gate re-run + adversarial probe incl. declared-keys + byte-freeze on the shipped fixtures + a net-zero mutation spot-check) → **Apollo (MANDATORY** — §11.2 charter, post-build reconcile + adversarial verify + BUILD-GRADE/BLOCKED) → Mars-2 (remediate + harden, REMEDIATE MAX 3) → Director ship (working tree) + Stage-6 fold.
 
+### T-2 — REFINE eg.5 + calibrate the program to 3.0 (topology router); close via a right-sized HIGH Squad
+
+STATE: eg.5 code GREEN + committed (34bf7dbd). Y-2 = full HIGH dual gate green (67/67 workspace · 73+1 precept · clippy/doc clean · Elixir 70/0 · crit-7 BEAM live leg 3/0 16.3s · determinism 100/100) + a net-zero mutation spot-check (defeating UF-1's live-path cap → its guard test RED → revert → GREEN; suite non-vacuous). Mandate-B docs: 4 files authored + Director-verified exceptional. The KILLED Apollo's in-flight closure is ALREADY ON DISK and good — backend.md carries the L-3 distinction (Rust in-process live::serve task = self-contained vs Elixir Port-spawned backend_main = orphans to ppid 1; + eg.6 stdin-EOF-watchdog tracking + pkill reap), wire.md carries the index-nit fix (rest[3]/rest[5..], after-the-tag). REMAINING: finish graft.5.md reconcile · Apollo BUILD-GRADE + L-3 orphan-fix ruling + mentoring fold · the program calibration · the Stage-6 fold.
+
+CALIBRATION (program 3.0 — the TOPOLOGY ROUTER): formalize "right-size the formation" into three named Flat-L2 formations keyed by (risk tier × build-state): L2 Duo (Director + 1 peer — a single-concern increment: docs-only reconcile / verify-only / pure spec author) · L2 Trio (Director + Venus + Mars two-pass — the standard NORMAL build) · L2 Squad (Director + Venus + Mars-1/-2 + Apollo — HIGH-risk, adds the dedicated evaluator + deepened verify). The router: risk sets the FLOOR (HIGH→Squad); build-state COLLAPSES ceremony (built+green ⇒ run only the remaining legs, re-spawn no builder); Mars runs the BDD cycle red→green→blue, entering directly at the BLUE (refactor/harden/document) phase on an already-green rung. Director authors this into the graft-ship SKILL.md (the program's operating structure) → D-7.
+
+FORMATION THIS RUN: HIGH → Squad floor; build legs spent → right-sized Squad = Venus (docs/graft reconcile) ∥ Mars-2 (BDD blue: verify+finish echo/docs, focused net-zero refactor sweep, re-verify green) → Apollo (graft.5.md→as-built reconcile + adversarial verify + rule the L-3 orphan-fix placement + BUILD-GRADE + mentoring fold) → Director (calibrate ∥; then working-tree ship + Stage-6 fold). Opus-only (D-6). Working-tree ship — no commit asked.
+
 ## {eg-5-decisions} Decisions
 
 ### D-1 — the live-binding home (the fork eg.4's D-7 left open) — RESOLVED Option A (Operator, 2026-06-22, via AskUserQuestion)
@@ -116,6 +124,19 @@ A naive read — `cargo test --workspace` green (67) + `mix test` green (70) —
 
 **Boundary.** Doc files are additive under `echo/docs/`; the code review+refactor stays inside eg.5's boundary (the Rust crates + the 6 `echo_store` GraftBackend files); native `EchoStore.Graft.*`/`Durability.*` + `github.local/graft` untouched.
 
+### D-7 — program v3.0: the topology router (L2 Duo / Trio / Squad) authored into the graft-ship SKILL.md
+
+Operator directive: "calibrate echo_graft program 3.0 … enforce with optimal topology router (L2 Duo, Trio, Squad) … effective pragmatic delivery progress actively BDD Mars-2 blue phase." RULED + AUTHORED by the Director (the program's operating structure is Director-owned).
+
+Three named Flat-L2 formations keyed by **risk-tier × build-state**, replacing the prose "right-size the formation" bullet with an enforceable router (new `## Topology router` section in the skill):
+- **L2 Duo** = Director + 1 peer — a single-concern increment (docs-only reconcile / verify-only / pure spec author).
+- **L2 Trio** = Director + Venus + Mars two-pass — the standard NORMAL/NORMAL+ build; the Director's solo verify is the gate.
+- **L2 Squad** = Director + Venus + Mars(-1/-2) + Apollo — HIGH-risk; the dedicated evaluator + deepened verify.
+
+The router: (1) **risk sets the floor** (HIGH→Squad, Apollo mandatory; NORMAL+→Trio with mid-build escalation; NORMAL→Trio or Duo); (2) **build-state collapses ceremony** (built+green ⇒ run only the remaining legs, re-spawn NO builder — a green HIGH rung is a *collapsed* Squad, Apollo still mandatory); (3) **Mars BDD-phases** red→green→blue, entering directly at the BLUE (refactor/harden/document under green) phase on an already-green rung.
+
+Edits (working tree, no commit asked): `.claude/skills/graft-ship/SKILL.md` — the bullet → a v3.0 router pointer; a new `## Topology router` section (the formation table + the 3-step router + the eg.5 worked example) before `## The echo_graft facts`. No law / gate / boundary changed — this formalizes formation selection only. **eg.5 is the worked example: a collapsed HIGH Squad** (Venus ∥ Mars-2-blue → Apollo → Director ship+fold).
+
 ## {eg-5-progress} Progress
 
 ### P-1
@@ -127,3 +148,33 @@ MANDATE A (review+refactor): 3 behavioral doc-comments traced to source — live
 MANDATE B (docs): authored echo/docs/echo_graft.md (overview, COEXIST-framed against EchoStore.Graft.* native twin, crate+engine module maps, eg.1-5 ladder, trust posture) + echo_graft/{wire,low-latency-tier,backend}.md. Every symbol/lane/tag/number grep-confirmed against source; msh specs link-check = no findings.
 
 Git: Operator committed the eg.5 tree mid-session as 34bf7dbd [echo_graft] eg.5 (captured the prior pass + my correction); working tree clean vs HEAD; my docs untracked under echo/docs/. I ran no git add/commit.
+
+### L-3 — crit-7 live leg GREEN (3/0, 16.3s real I/O); the run exposed a `backend_main` orphan-on-Port-close gap + a `| tail` gate hazard
+
+Director final gate, BEAM side: `ECHO_GRAFT_BACKEND_TEST=1 … mix test --include valkey live_round_trip_test.exs` → **3 tests, 0 failures, 16.3s sync** (`Including tags: [:valkey]` ⇒ it RAN, not skipped; 16.3s of real socket round-trips vs Valkey :6390, matching the Rust-side 17.1s). The crit-7 cross-runtime contract is proven BEAM-side, against the real binary.
+
+Two operational findings (evidence on disk; NEITHER an acceptance regression):
+1. **`backend_main` does not self-terminate on parent-`Port` close.** After `mix` exited 0, **6 `echo_graft_backend` OS processes survived, reparented to `ppid 1`** (incl. 6-hour-old ones from a PRIOR session), holding **13 Valkey connections** → reaped to **1** via `pkill -f target/debug/echo_graft_backend`. The Elixir test spawns the binary via `Port.open({:spawn_executable,…})`; closing that Port shuts the pipe but does not signal the child, and `backend_main` shuts down only on **SIGINT or a closed serve loop** (backend.md:117), NOT on stdin-EOF — so it orphans. (Distinct from the Rust in-process `live::serve` task, which IS self-contained.) Fix candidates for Apollo to rule: a stdin-EOF watchdog in `backend_main` (the standard BEAM-port pattern; natural eg.6 ship-hardening) · the Elixir `on_exit` explicit-kills the spawned OS pid · document the manual reap. The gate's substance is unaffected (a real round-trip works); the leak is pre-existing hygiene.
+2. **Never `| tail` a long gate.** `mix test … | tail -28` turned #1 into a ~15-min hang — an orphan inherited `mix`'s stdout and held the pipe open, so `tail` never saw EOF though `mix` had exited 0. Reaping the orphans closed the pipe → `tail` flushed the buffered summary → exit 0 surfaced. Rule: redirect a long run (`> log 2>&1`), never pipe a gate through `tail`.
+
+### Y-2 — Director independent final verify COMPLETE + CLEAN; the full HIGH-risk gate is green and the suite is non-vacuous
+
+The Director re-ran the two gates the Opus pass deferred by design, plus a net-zero mutation spot-check. All green; the suite proven honest.
+
+| Gate | Result | Source |
+|---|---|---|
+| Rust `cargo test --workspace` | 67/67 | Opus, re-derived |
+| Rust `--features precept` fault suite (`--test-threads=1`) | 73 + 1 doctest | Opus |
+| `clippy --workspace` / `cargo doc` | exit 0, 0 warn / intra-doc links resolve | Opus |
+| Elixir `mix test` (Valkey PONG, asdf re-probed) | 70 / 0 / 26-excl (cross-runtime conformance RAN) | Opus |
+| byte-freeze (`COMMIT2`=0, fixtures mirror) | clean (4ins/3del v2 only) | Opus + Director |
+| **crit-7 BEAM live leg** (real backend, Valkey :6390) | **3 / 0, 16.3s real I/O** | **Director** (L-3) |
+| **≥100 determinism loop** (buffer interleaving) | **100 / 100** | **Director** |
+
+**Mutation spot-check (LAW-1a, UF-1 — eg.5's headline closed gap):** defeated the live-path cap consult (`live.rs` cap-hit branch → `None => None`) → `live_cap_is_consulted_on_the_live_path` went **RED** (`the cap refuses … : Ack{corr:7,lsn:1}` — the capped command dispatched + acked instead of being refused) → `git checkout` revert → `git status` empty (net-zero) → re-run **GREEN**. The suite genuinely guards UF-1's wiring; criterion-8 ("tested-in-isolation ≠ wired-in") is honestly closed, not false-green.
+
+**Mandate B (docs):** Director-verified exceptional — all 4 read; COEXIST framing nailed (D-1=A, native-twin cross-link, disjoint lanes), no invented API, the determinism/byte-freeze/live-fence posture grounded. One micro-nit for Apollo: `wire.md`'s "mode at index 3 / page tail from index 5" is rest-relative while the shown array is tag-inclusive (technically correct, matches `&rest[3]`).
+
+**Boundary/git:** the eg.5 code is committed (34bf7dbd), native `EchoStore.Graft.*`/`Durability.*` not in it; the 4 docs untracked under `echo/docs/`. The Director ran no production Edit except the reverted net-zero mutation.
+
+→ Director verify CLEAN. **Apollo (MANDATORY, HIGH)** next: the graft.5.md→as-built reconcile + adversarial verify (carrying L-3's backend-orphan finding + the wire.md index nit) + BUILD-GRADE/BLOCKED, then the docs ship + Stage-6 fold.
