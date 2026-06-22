@@ -4,7 +4,7 @@ defmodule EchoMq.MixProject do
   def project do
     [
       app: :echo_mq,
-      version: "2.6.2", # rung number in echo_mq roadmap (INDEPENDENT from echo_wire version)
+      version: "2.6.3", # rung number in echo_mq roadmap (INDEPENDENT from echo_wire version)
       build_path: "../../_build",
       config_path: "../../config/config.exs",
       deps_path: "../../deps",

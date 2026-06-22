@@ -1,6 +1,6 @@
 defmodule EchoMQ.Conformance do
   @moduledoc """
-  The bus contract as seventy-six runnable scenarios. Each scenario drives the
+  The bus contract as seventy-seven runnable scenarios. Each scenario drives the
   public surface (and, where the contract is the wire itself, raw commands)
   against a live server and asserts the externally visible verdict: the
   fence, the row shape, idempotent admission, the kind law, the lex law,
@@ -77,19 +77,29 @@ defmodule EchoMQ.Conformance do
   RE-DELIVERS the SAME un-acked branded receipt while the acked one is not
   re-claimed -- a POSITIVE re-delivery proof, the at-least-once mechanism
   EchoMQ.StreamConsumer's beat folds in, the group verbs issued direct, no new
-  script, no new wire class). A port of the client conforms when it drives the
-  same server to the same seventy-six verdicts -- the scenarios are wire-level on
-  purpose, so the harness ports by translation, not by faith. Scenarios run on
-  per-scenario sub-queues and purge what they mint. Chapter 3.6, extended 3.7,
-  then the emq.2 cluster (parity, closed at emq.2.4), then the emq.3 flow family
-  (opened at emq.3.1, crossed queues at emq.3.3, failure half at emq.3.4, closed
-  at emq.3.5 with grandchildren), then Movement II's groups family (opened at
-  emq.4.1 with the control plane, the recovery axis at emq.4.2), then the batches
-  family (opened at emq.5.1 with the batch-claim spine, shaped at emq.5.2, grouped
-  at emq.5.3, closed at emq.5.4 with the partitioned finish + dynamic delay), then
-  EchoMQ 3.0's Stream Tier (opened at emq3.1 with the stream-verb floor, the
-  writer law at emq3.2 with the append-order theorem, the reader law at emq3.3
-  with the consumer group's at-least-once grouped delivery + crash re-delivery).
+  script, no new wire class), and -- retention as policy (emq3.4, S2 the readers
+  part 2) -- the destructive trim's bounded blast radius (stream_retention:
+  EchoMQ.Stream.trim/4 bounds a stream to a DECLARED window over XTRIM issued
+  direct, proven POSITIVELY over BOTH forms -- entries appended INSIDE and BELOW
+  a MAXLEN window and a MINID window, a trim leaves the in-window entries
+  SURVIVING and the below-window entries GONE, the removed-count exact, the MINID
+  floor the exact half-open [dt, ∞) edge derived from Snowflake.min_for/1; a
+  no-op that deletes nothing is a LOUD failure -- INV4 -- no new script, no new
+  wire class, no keyspace subkey). A port of the client conforms when it drives
+  the same server to the same seventy-seven verdicts -- the scenarios are
+  wire-level on purpose, so the harness ports by translation, not by faith.
+  Scenarios run on per-scenario sub-queues and purge what they mint. Chapter 3.6,
+  extended 3.7, then the emq.2 cluster (parity, closed at emq.2.4), then the
+  emq.3 flow family (opened at emq.3.1, crossed queues at emq.3.3, failure half
+  at emq.3.4, closed at emq.3.5 with grandchildren), then Movement II's groups
+  family (opened at emq.4.1 with the control plane, the recovery axis at emq.4.2),
+  then the batches family (opened at emq.5.1 with the batch-claim spine, shaped
+  at emq.5.2, grouped at emq.5.3, closed at emq.5.4 with the partitioned finish +
+  dynamic delay), then EchoMQ 3.0's Stream Tier (opened at emq3.1 with the
+  stream-verb floor, the writer law at emq3.2 with the append-order theorem, the
+  reader law at emq3.3 with the consumer group's at-least-once grouped delivery +
+  crash re-delivery, retention as policy at emq3.4 with the destructive trim's
+  bounded blast radius).
   """
 
   alias EchoData.BrandedId
@@ -192,14 +202,15 @@ defmodule EchoMQ.Conformance do
       batch_delay_stale: "the delay is token-fenced: a claimed member reaped and re-claimed by another worker (a new token) refuses the original holder's delay EMQSTALE -> {:error, :stale}, the new holder's active-set lease untouched, and the new holder's delay with the live token settles; a delay on a missing row answers {:error, :gone} -- the complete/5 / retry/7 fencing, so a stale holder cannot yank a member from its new owner (emq.5.4)",
       stream_verbs: "the stream-verb floor (emq3.1): the five stream verbs (XADD/XRANGE/XREADGROUP/XACK/XAUTOCLAIM) round-trip on the certified connector over an emq:{q}:stream:<name> braced key -- XADD answers the entry id and XRANGE reads back the EXACT appended entry, XREADGROUP (NO BLOCK) reads the group's unseen entries, XACK answers the count, XAUTOCLAIM re-claims a pending entry -- plus a pipelined XADD batch returns N ids in call order read back in mint order, and the in-band verbs do not disturb the out-of-band push routing under RESP3 (a concurrent push is still delivered on the {:emq_push, ...} seam); the verbs ride the SHIPPED generic command path verb-agnostically, no echo_wire edit, no new script -- the floor every later Stream rung stands on (emq3.1)",
       stream_append: "the writer law (emq3.2): EchoMQ.Stream.append mints an EVT-branded record id host-side and appends it under its EXPLICIT A1 xadd id (the real Unix-ms and the 22-bit node|seq tail) with the branded string as the id field -- N>=2 records read back in MINT ORDER == id-sort order (the order theorem, stream order == id sort == mint order, no second index), a wrong-kind record id RAISES before any wire with NO key written (the host-side kind door, one brand per stream), and a contrived out-of-order append surfaces {:error, :nonmonotonic} on the id<=top rejection (the liveness check, never swallowed); the append is XADD issued direct, no new script, no new wire class (emq3.2)",
-      stream_group: "the reader law (emq3.3): a consumer group delivers at-least-once with crash re-delivery -- two EchoMQ.Stream.append branded records are group-read with XREADGROUP > (both enter the PEL), ONE is XACKed (retires) and ONE is LEFT un-acked, then a forced XAUTOCLAIM (min-idle 0) RE-DELIVERS the SAME un-acked branded receipt while the acked one is NOT re-claimed -- a POSITIVE re-delivery proof (an ack-everything pass is a LOUD failure), the at-least-once mechanism EchoMQ.StreamConsumer's beat folds in; the group verbs are issued DIRECT, no new script, no new wire class (emq3.3)"
+      stream_group: "the reader law (emq3.3): a consumer group delivers at-least-once with crash re-delivery -- two EchoMQ.Stream.append branded records are group-read with XREADGROUP > (both enter the PEL), ONE is XACKed (retires) and ONE is LEFT un-acked, then a forced XAUTOCLAIM (min-idle 0) RE-DELIVERS the SAME un-acked branded receipt while the acked one is NOT re-claimed -- a POSITIVE re-delivery proof (an ack-everything pass is a LOUD failure), the at-least-once mechanism EchoMQ.StreamConsumer's beat folds in; the group verbs are issued DIRECT, no new script, no new wire class (emq3.3)",
+      stream_retention: "retention as policy (emq3.4): EchoMQ.Stream.trim/4 bounds a stream to a DECLARED window over XTRIM issued DIRECT, the blast radius bounded POSITIVELY -- entries are appended INSIDE and BELOW a window over BOTH forms (MAXLEN keep-newest-N and MINID below-a-mint-instant-floor derived from Snowflake.min_for/1) and a trim leaves the in-window entries SURVIVING (their branded receipts still read back) while the below-window entries are GONE, the removed-count exact under = -- a real DELETION and a real SURVIVAL in the same verdict (a no-op that deletes nothing is a LOUD failure, INV4), and the MINID floor is the exact half-open [dt, ∞) edge (a dt-1ms entry trims, a dt entry survives); the trim is XTRIM issued DIRECT, no new script, no new wire class, no new keyspace subkey (the policy is BEAM-side) (emq3.4)"
     ]
   end
 
   @doc """
   Runs all scenarios against `conn`, on sub-queues of `queue`. Prints one
   CONF line per scenario and a closing tally. Returns `{:ok, n}` when all
-  pass (n == 76 today -- the live total, grown by additive minor; the count is
+  pass (n == 77 today -- the live total, grown by additive minor; the count is
   re-pinned in both pinning tests, `conformance_run_test.exs` `{:ok, n}` and
   `conformance_scenarios_test.exs` `@run_order`), `{:error, failed_names}`
   otherwise. The set spans the eighteen state-machine scenarios, the emq.2
@@ -223,7 +234,13 @@ defmodule EchoMQ.Conformance do
   liveness) -- and the reader law (emq3.3) -- the consumer group's at-least-once
   grouped delivery (stream_group: two branded records group-read with XREADGROUP
   >, one XACKed and one left un-acked, a forced XAUTOCLAIM re-delivers the SAME
-  un-acked branded receipt -- a POSITIVE re-delivery proof, never ack-everything).
+  un-acked branded receipt -- a POSITIVE re-delivery proof, never ack-everything)
+  -- and retention as policy (emq3.4) -- the destructive trim's bounded blast
+  radius (stream_retention: EchoMQ.Stream.trim/4 bounds a stream to a DECLARED
+  window over XTRIM issued direct, proven POSITIVELY over BOTH forms -- in-window
+  entries SURVIVE and below-window entries are GONE, the removed-count exact, the
+  MINID floor the exact half-open [dt, ∞) edge from Snowflake.min_for/1; a no-op
+  is a LOUD failure, INV4).
   """
   def run(conn, queue) when is_binary(queue) do
     results =
@@ -2848,6 +2865,24 @@ defmodule EchoMQ.Conformance do
     end
   end
 
+  defp apply_scenario(:stream_retention, conn, q) do
+    # Retention as policy (emq3.4, S2 the readers part 2): EchoMQ.Stream.trim/4
+    # bounds a stream to a DECLARED window over XTRIM issued DIRECT. The blast
+    # radius is proven POSITIVELY (the destructive-op invariant, INV4 -- a no-op
+    # that deletes nothing is the TRD.9.1 false-green class, a LOUD failure): for
+    # BOTH window forms the scenario appends entries INSIDE and BELOW the window,
+    # trims, and asserts a real DELETION (below-window GONE) AND a real SURVIVAL
+    # (in-window receipts still read back) in the SAME verdict, the removed-count
+    # exact under `=`. The MINID floor is the exact half-open [dt, ∞) edge (a
+    # dt-1ms entry trims, a dt entry survives), derived from Snowflake.min_for/1.
+    # XTRIM is issued DIRECT: no new script, no new wire class, no keyspace subkey
+    # (the policy is BEAM-side, D-3).
+    with :ok <- stream_retention_maxlen(conn, q),
+         :ok <- stream_retention_minid(conn, q) do
+      :ok
+    end
+  end
+
   # (1) the order theorem: N EVT records append (the branded receipt), read back
   # in MINT order == id-sort order, payloads in append order -- the writer law's
   # whole point, asserted against the appended data (N>=2, never a vacuous read).
@@ -2951,6 +2986,65 @@ defmodule EchoMQ.Conformance do
       other -> {:fail, {:stream_group, other}}
     end
   end
+
+  # the MAXLEN form: append K, trim to keep the newest M (= exact), assert the
+  # K-M oldest GONE and the M newest SURVIVING in mint order, removed == K-M.
+  defp stream_retention_maxlen(conn, q) do
+    k = 6
+    keep = 2
+    receipts = for i <- 1..k, do: ok!(Stream.append(conn, q, "ret_ml", [{"seq", "v#{i}"}]))
+    {below, in_window} = Enum.split(receipts, k - keep)
+
+    with {:ok, removed} <- Stream.trim(conn, q, "ret_ml", {:maxlen, keep, false}),
+         true <- removed == k - keep,
+         {:ok, read} <- Stream.read(conn, q, "ret_ml"),
+         survivors = for({b, _f} <- read, do: b),
+         # a real SURVIVAL: every in-window receipt still reads back, in order.
+         true <- survivors == in_window,
+         # a real DELETION: every below-window receipt is gone (not a no-op).
+         true <- Enum.all?(below, fn b -> b not in survivors end) do
+      :ok
+    else
+      other -> {:fail, {:retention_maxlen, other}}
+    end
+  end
+
+  # the MINID form: append entries below AND at/above a mint instant (CHOSEN
+  # milliseconds via Snowflake.min_for/1, ascending mint order), trim by
+  # MINID(dt), assert the below-floor GONE and the at/above-floor SURVIVING --
+  # plus the exact half-open edge (the dt entry survives, its ms == the floor).
+  defp stream_retention_minid(conn, q) do
+    dt = ~U[2025-03-01 12:00:00.500Z]
+    below = for d <- 3..1//-1, do: stream_retention_append_at(conn, q, "ret_mi", shift_ms(dt, -d))
+    at_or_above = for d <- 0..2, do: stream_retention_append_at(conn, q, "ret_mi", shift_ms(dt, d))
+
+    with {:ok, removed} <- Stream.trim(conn, q, "ret_mi", {:minid, dt, false}),
+         # exact accounting under `=`: exactly the below-floor entries removed.
+         true <- removed == length(below),
+         {:ok, read} <- Stream.read(conn, q, "ret_mi"),
+         survivors = for({b, _f} <- read, do: b),
+         # the below-floor entries are GONE; the at/above-floor SURVIVE (the
+         # half-open edge: the dt entry, ms == the floor ms, survives).
+         true <- Enum.all?(below, fn b -> b not in survivors end),
+         true <- Enum.all?(at_or_above, fn b -> b in survivors end),
+         # the floor is derived from min_for/1, never the raw snowflake integer.
+         ms = EchoData.Snowflake.unix_ms(EchoData.Snowflake.min_for(dt)),
+         true <- Stream.minid_floor(dt) == "#{ms}-0" do
+      :ok
+    else
+      other -> {:fail, {:retention_minid, other}}
+    end
+  end
+
+  # append an EVT record minted at a CHOSEN millisecond instant `dt` via the
+  # writer's caller-supplied-id path (Snowflake.min_for/1 -> the snowflake at
+  # dt's ms, tail 0) -- so the floor edge is exact and seed-independent.
+  defp stream_retention_append_at(conn, q, name, %DateTime{} = dt) do
+    branded = BrandedId.encode!("EVT", EchoData.Snowflake.min_for(dt))
+    ok!(Stream.append_id(conn, q, name, branded, [{"at", DateTime.to_iso8601(dt)}]))
+  end
+
+  defp shift_ms(%DateTime{} = dt, ms), do: DateTime.add(dt, ms, :millisecond)
 
   # the entry list off an XREADGROUP reply for `key` (RESP3 map or RESP2 nested
   # array stream->entries form) -- the full [[xid, kv], ...] list, [] if absent.

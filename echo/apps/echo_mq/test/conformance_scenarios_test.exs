@@ -1,7 +1,7 @@
 defmodule EchoMQ.ConformanceScenariosTest do
   @moduledoc """
   The pure half of the Conformance row (echo2-migration.md §5): the
-  scenario registry pinned — seventy-six names in run order (the eighteen
+  scenario registry pinned — seventy-seven names in run order (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -36,9 +36,14 @@ defmodule EchoMQ.ConformanceScenariosTest do
   (emq3.3) -- the consumer group's at-least-once grouped delivery's one
   (stream_group: two branded records group-read with XREADGROUP >, one XACKed
   and one left un-acked, a forced XAUTOCLAIM re-delivers the SAME un-acked
-  branded receipt -- a POSITIVE re-delivery proof). The wire half
-  (`run/2 → {:ok, 76}`) lives in `conformance_run_test.exs` behind the
-  `:valkey` tag.
+  branded receipt -- a POSITIVE re-delivery proof), and -- retention as policy
+  (emq3.4) -- the destructive trim's bounded blast radius's one (stream_retention:
+  EchoMQ.Stream.trim/4 bounds a stream to a DECLARED window over XTRIM issued
+  direct, proven POSITIVELY over BOTH forms -- in-window entries SURVIVE,
+  below-window entries are GONE, the removed-count exact, the MINID floor the
+  exact half-open [dt, ∞) edge from Snowflake.min_for/1; a no-op is a LOUD
+  failure). The wire half (`run/2 → {:ok, 77}`) lives in
+  `conformance_run_test.exs` behind the `:valkey` tag.
   """
   use ExUnit.Case, async: true
 
@@ -120,10 +125,11 @@ defmodule EchoMQ.ConformanceScenariosTest do
     :batch_delay_stale,
     :stream_verbs,
     :stream_append,
-    :stream_group
+    :stream_group,
+    :stream_retention
   ]
 
-  test "scenarios/0 answers exactly the seventy-six names in run order" do
+  test "scenarios/0 answers exactly the seventy-seven names in run order" do
     assert Keyword.keys(Conformance.scenarios()) == @run_order
   end
 

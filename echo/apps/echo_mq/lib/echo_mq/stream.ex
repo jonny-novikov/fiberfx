@@ -47,9 +47,37 @@ defmodule EchoMQ.Stream do
 
   `read/3..6` is the MINIMAL un-grouped `XRANGE` read-back (the order-theorem
   proof surface), NOT the consumer group -- `XREADGROUP`/`XACK`/`XAUTOCLAIM`
-  and the polyglot seam are emq3.3. Retention (`MAXLEN`/`MINID`) is emq3.4;
-  `append/_` does not trim. Multi-writer-per-stream is the parked seam (the
-  posture is single-writer; `:nonmonotonic` is surfaced, not BUILT for).
+  and the polyglot seam are emq3.3. Retention (`MAXLEN`/`MINID`) lands here as
+  `trim/4` (emq3.4); `append/_` itself does not trim -- retention is a SEPARATE
+  destructive verb, never coupled to the append (D-2). Multi-writer-per-stream
+  is the parked seam (the posture is single-writer; `:nonmonotonic` is surfaced,
+  not BUILT for).
+
+  ## Retention (`trim/4`, emq3.4 -- the destructive verb)
+
+  `trim(conn, queue, name, window)` removes entries OUTSIDE a declared window
+  over `XTRIM` issued DIRECT (no new script -- the emq3.3 no-new-Lua pattern).
+  Two window forms:
+
+    * `{:maxlen, count, approx?}` -> `XTRIM <key> MAXLEN [~|=] <count>` -- keep
+      the `count` newest entries, remove the older;
+    * `{:minid, dt, approx?}` -> `XTRIM <key> MINID [~|=] "<ms>-0"` -- remove
+      every entry minted strictly BEFORE the `DateTime` `dt`, the floor DERIVED
+      from `EchoData.Snowflake.min_for/1` (`ms = unix_ms(min_for(dt))`, the
+      rung's one piece of real id-math -- NEVER a raw snowflake integer to the
+      wire).
+
+  `approx?` (the third element) selects `~` (approximate -- trims in whole
+  macro-nodes, cheaper; it may UNDER-trim but can NEVER OVER-trim, so it can
+  never delete inside the window: the safe-by-construction default) vs `=`
+  (exact -- removes precisely to the window edge, the opt-in). Either way the
+  blast radius is bounded by the window: a trim can NEVER delete an entry inside
+  it (INV4). Answers `{:ok, removed_count}` (the integer `XTRIM` returns) or
+  `{:error, term}` (any connector/server fault verbatim -- a `WRONGTYPE` is
+  surfaced, not swallowed). RAISES before any wire on a malformed queue/stream
+  name (the `append_id/5` policy-before-existence precedent). The named, opt-in
+  trim driver `EchoMQ.StreamRetention` re-applies a declared policy via this
+  verb; a manual call is the equally-supported cadence (the driver is sugar).
   """
 
   alias EchoMQ.{Connector, Keyspace}
@@ -62,6 +90,16 @@ defmodule EchoMQ.Stream do
 
   @typedoc "An XADD field pair list (claims-only -- flat string pairs)."
   @type fields :: [{binary(), binary()}] | [binary()]
+
+  @typedoc """
+  A retention window for `trim/4` (emq3.4). `{:maxlen, count, approx?}` keeps
+  the `count` newest entries; `{:minid, dt, approx?}` keeps entries minted at or
+  after the `DateTime` `dt` (the floor derived from `Snowflake.min_for/1`).
+  `approx?` true selects the SAFE approximate `~` form (the default the driver
+  uses), false the exact `=` opt-in.
+  """
+  @type window ::
+          {:maxlen, non_neg_integer(), boolean()} | {:minid, DateTime.t(), boolean()}
 
   @doc """
   Appends one record to the stream `emq:{q}:stream:<name>`, minting an
@@ -139,6 +177,82 @@ defmodule EchoMQ.Stream do
 
     case Connector.pipeline(conn, cmds) do
       {:ok, _replies} -> {:ok, Enum.reverse(brandeds)}
+      {:error, _} = err -> err
+    end
+  end
+
+  @doc """
+  Trims the stream `emq:{q}:stream:<name>` to a declared retention `window`,
+  removing entries OUTSIDE it over `XTRIM` issued DIRECT through
+  `EchoMQ.Connector.command/3` (no new script -- emq3.4, the no-new-Lua rung).
+
+  The `window`:
+
+    * `{:maxlen, count, approx?}` -> `XTRIM <key> MAXLEN [~|=] <count>` -- keep
+      the `count` newest entries, remove the older;
+    * `{:minid, %DateTime{}, approx?}` -> `XTRIM <key> MINID [~|=] "<ms>-0"` --
+      remove every entry minted strictly before the instant; the floor is
+      DERIVED from `EchoData.Snowflake.min_for/1` (`ms = unix_ms(min_for(dt))`
+      == `DateTime.to_unix(dt, :millisecond)`, the rung's one piece of real
+      id-math, INV6) -- never a raw snowflake integer to the wire.
+
+  `approx?` (the third element) selects the trim mode: `true` -> `~`
+  (approximate, the SAFE default -- trims in whole macro-nodes, may UNDER-trim
+  but NEVER OVER-trim, so it can never delete inside the window); `false` -> `=`
+  (exact, the opt-in -- removes precisely to the window edge). EITHER way the
+  blast radius is bounded by the window -- a trim can NEVER delete an entry
+  inside it (INV4).
+
+  Returns `{:ok, removed_count}` (the integer `XTRIM` answers -- entries
+  removed; under `~` it may be 0 even when entries are old, as approx trims in
+  whole macro-nodes) or `{:error, term}` (any connector/server fault verbatim --
+  a `WRONGTYPE` against a non-stream key is SURFACED, not swallowed). RAISES
+  `ArgumentError` before any wire on a malformed queue/stream name (the
+  `append_id/5` policy-before-existence precedent).
+  """
+  @spec trim(GenServer.server(), binary(), binary(), window()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def trim(conn, queue, name, {:maxlen, count, approx?})
+      when is_binary(queue) and is_binary(name) and is_integer(count) and count >= 0 and
+             is_boolean(approx?) do
+    key = stream_key(queue, name)
+    xtrim(conn, ["XTRIM", key, "MAXLEN", approx_flag(approx?), Integer.to_string(count)])
+  end
+
+  def trim(conn, queue, name, {:minid, %DateTime{} = dt, approx?})
+      when is_binary(queue) and is_binary(name) and is_boolean(approx?) do
+    key = stream_key(queue, name)
+    xtrim(conn, ["XTRIM", key, "MINID", approx_flag(approx?), minid_floor(dt)])
+  end
+
+  @doc """
+  The `MINID` floor id `"<ms>-0"` for a retention horizon `dt`, DERIVED from
+  `EchoData.Snowflake.min_for/1` (INV6): `ms = Snowflake.unix_ms(min_for(dt))`
+  == `DateTime.to_unix(dt, :millisecond)` -- the smallest entry id at or after
+  the instant (tail `-0` the lowest sequence at that ms). `XTRIM MINID
+  "<ms>-0"` removes every entry whose `ms-seq` id is strictly below it -- every
+  entry minted in an EARLIER millisecond -- so the half-open `[dt, ∞)` edge is
+  exact: a `dt - 1ms` entry trims, a `dt` entry survives. NEVER a raw
+  `min_for/1` integer handed to the wire (the wire wants `ms-seq`).
+  """
+  @spec minid_floor(DateTime.t()) :: binary()
+  def minid_floor(%DateTime{} = dt) do
+    ms = EchoData.Snowflake.unix_ms(EchoData.Snowflake.min_for(dt))
+    "#{ms}-0"
+  end
+
+  # `~` approximate (the SAFE default -- whole macro-nodes, never over-trims) vs
+  # `=` exact (the opt-in -- removes precisely to the window edge).
+  defp approx_flag(true), do: "~"
+  defp approx_flag(false), do: "="
+
+  # Issue the XTRIM parts and surface the integer removed-count verbatim; any
+  # connector/server fault (e.g. WRONGTYPE on a non-stream key) passes through,
+  # never swallowed (the gate-liveness discipline).
+  defp xtrim(conn, parts) do
+    case Connector.command(conn, parts) do
+      {:ok, removed} when is_integer(removed) -> {:ok, removed}
+      {:ok, {:error_reply, msg}} -> {:error, {:error_reply, msg}}
       {:error, _} = err -> err
     end
   end
