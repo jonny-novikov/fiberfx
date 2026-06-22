@@ -1,5 +1,5 @@
 //! The live Valkey :6390 RESP3 transport (eg.5 step 4, the ruled A-2) — binding
-//! [`Session`](crate::session::Session) to a real bus socket so `echo_graft_backend` runs as a
+//! [`Session`] to a real bus socket so `echo_graft_backend` runs as a
 //! real `EchoMQ` participant.
 //!
 //! ## A-2: a raw socket reusing the proto codec (no redis/valkey client dep)
@@ -9,7 +9,7 @@
 //! socket loop. Two facts make that small:
 //!   * RESP3 pub/sub is itself a flat array-of-bulk-strings protocol — `SUBSCRIBE ch`,
 //!     `PUBLISH ch payload`, and the `>`-prefixed `["message", channel, payload]` push — exactly
-//!     the shape [`encode_parts`](echo_graft_proto::encode_parts) already speaks for outbound
+//!     the shape [`encode_parts`] already speaks for outbound
 //!     commands;
 //!   * each message *payload* is itself an `echo_graft_proto` frame, decoded by
 //!     [`Msg::decode`](echo_graft_proto::Msg::decode) — the SAME codec the conformance suite
@@ -25,7 +25,7 @@
 //! **command connection** that `SUBSCRIBE`s the control lane (`egraft:cmd:_control`) and each
 //! per-Volume command lane it is told to serve, and a **publish connection** used to `PUBLISH`
 //! replies on `egraft:reply:{client_id}` and feed events on `egraft:feed:{vol}`. For each inbound
-//! request frame it consults the per-Volume [`Backpressure`](crate::backpressure::Backpressure)
+//! request frame it consults the per-Volume [`Backpressure`]
 //! cap (UF-1) for a `{vol}`-bearing command, then calls
 //! [`Session::handle_frame`](crate::session::Session::handle_frame), then publishes the reply.
 //!
@@ -193,7 +193,7 @@ impl<S: FeedSink + Clone> LiveBackend<S> {
                 Some(p) => Some(p),       // admitted below the cap
                 None => {
                     // Over the per-Volume cap: refuse WITHOUT dispatching.
-                    let corr = decoded.as_ref().map_or(0, corr_of);
+                    let corr = decoded.as_ref().map_or(0, crate::dispatch::corr_of);
                     let bytes = Msg::Err {
                         corr,
                         kind: ErrKind::Unavailable,
@@ -322,25 +322,6 @@ fn capped_vid(msg: &Msg) -> Option<String> {
         | Msg::Read { vid, .. }
         | Msg::Snapshot { vid, .. } => Some(vid.clone()),
         _ => None,
-    }
-}
-
-/// The `corr` of a message (0 for the tagless handshake/feed) — to echo a cap refusal.
-fn corr_of(msg: &Msg) -> u64 {
-    match msg {
-        Msg::OpenVolume { corr, .. }
-        | Msg::ResolveBranded { corr, .. }
-        | Msg::Commit { corr, .. }
-        | Msg::Push { corr, .. }
-        | Msg::Pull { corr, .. }
-        | Msg::Read { corr, .. }
-        | Msg::Snapshot { corr, .. }
-        | Msg::GetCommit { corr, .. }
-        | Msg::Ack { corr, .. }
-        | Msg::Pages { corr, .. }
-        | Msg::SnapshotResp { corr, .. }
-        | Msg::Err { corr, .. } => *corr,
-        Msg::Hello { .. } | Msg::Welcome { .. } | Msg::Incompatible { .. } | Msg::Feed { .. } => 0,
     }
 }
 

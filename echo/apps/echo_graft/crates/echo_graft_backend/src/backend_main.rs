@@ -13,7 +13,9 @@
 //!
 //! On readiness it prints a single line to stdout — `READY <branded>=<vid> ...` — so a launching
 //! supervisor (the Elixir live-leg test) can wait for the backend to be connected + subscribed
-//! before driving it. SIGINT / a closed stdin triggers shutdown.
+//! before driving it. Shutdown is on SIGINT (Ctrl-C) or when the serve loop ends; there is no
+//! stdin-EOF watchdog yet, so a parent that closes its `Port` without sending SIGINT leaves this
+//! process orphaned — eg.6 ship-hardening adds the watchdog (see `docs/echo_graft/backend.md`).
 
 use std::sync::Arc;
 

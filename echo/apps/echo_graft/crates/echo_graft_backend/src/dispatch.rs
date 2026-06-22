@@ -28,7 +28,7 @@ use std::str::FromStr;
 /// `unavailable` error so the session never panics on unexpected input.
 ///
 /// Each request echoes its `corr` on the response. Engine errors map to the closed
-/// [`ErrKind`] taxonomy by [`map_err`]; nothing else can leave this function.
+/// [`ErrKind`] taxonomy by `map_err`; nothing else can leave this function.
 pub fn dispatch(rt: &Runtime, msg: &Msg) -> Msg {
     match msg {
         Msg::OpenVolume { corr, branded, local, remote } => {
@@ -44,7 +44,7 @@ pub fn dispatch(rt: &Runtime, msg: &Msg) -> Msg {
         // A handshake or a response/feed arriving on the request path is misuse; refuse it
         // without touching a Volume. `corr` is unknown for the tagless ones, so use 0.
         other => Msg::Err {
-            corr: req_corr(other),
+            corr: corr_of(other),
             kind: ErrKind::Unavailable,
             detail: "not a request message on the command lane".to_owned(),
         },
@@ -289,9 +289,11 @@ fn err(corr: u64, kind: ErrKind, detail: String) -> Msg {
     Msg::Err { corr, kind, detail }
 }
 
-/// The `corr` of a request message, or 0 for a tagless one (handshake/feed) — used only to
-/// echo a refusal of misuse on the request path.
-fn req_corr(msg: &Msg) -> u64 {
+/// The `corr` carried by a message, or 0 for a tagless one (the handshake / feed carry none).
+/// Used wherever a refusal must echo the request's correlation id without a full decode — the
+/// dispatch's misuse refusal here, the session's not-established refusal, and the live path's
+/// cap refusal. Crate-shared so the closed `Msg` mapping lives in exactly one place.
+pub(crate) fn corr_of(msg: &Msg) -> u64 {
     match msg {
         Msg::OpenVolume { corr, .. }
         | Msg::ResolveBranded { corr, .. }

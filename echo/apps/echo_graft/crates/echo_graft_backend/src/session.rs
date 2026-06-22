@@ -109,7 +109,7 @@ impl<S: FeedSink + Clone> Session<S> {
     pub fn handle(&mut self, msg: &Msg) -> Msg {
         if self.proto.is_none() {
             return Msg::Err {
-                corr: corr_of(msg),
+                corr: dispatch::corr_of(msg),
                 kind: echo_graft_proto::ErrKind::Unavailable,
                 detail: "session not established (handshake required)".to_owned(),
             };
@@ -204,22 +204,3 @@ pub fn negotiate(client_min: u32, client_max: u32) -> Option<u32> {
     }
 }
 
-/// The `corr` carried by a message (0 for the tagless handshake/feed) — used to echo a
-/// refusal when the session is not established.
-fn corr_of(msg: &Msg) -> u64 {
-    match msg {
-        Msg::OpenVolume { corr, .. }
-        | Msg::ResolveBranded { corr, .. }
-        | Msg::Commit { corr, .. }
-        | Msg::Push { corr, .. }
-        | Msg::Pull { corr, .. }
-        | Msg::Read { corr, .. }
-        | Msg::Snapshot { corr, .. }
-        | Msg::GetCommit { corr, .. }
-        | Msg::Ack { corr, .. }
-        | Msg::Pages { corr, .. }
-        | Msg::SnapshotResp { corr, .. }
-        | Msg::Err { corr, .. } => *corr,
-        Msg::Hello { .. } | Msg::Welcome { .. } | Msg::Incompatible { .. } | Msg::Feed { .. } => 0,
-    }
-}
