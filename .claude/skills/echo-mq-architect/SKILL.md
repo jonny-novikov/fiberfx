@@ -36,6 +36,12 @@ Before briefing, diff the rung's triad against the as-built tree it depends on �
   claim/read-back/refuse on every connect (landed at emq.0). A triad that says a later rung "moves the fence
   to connect" is STALE against as-built. Ground the triad against as-built reality; flag a canon-sync as the
   Operator's call (the design is reconcile-only — never edit its body).
+- **Realization-over-literal when syncing the body post-build.** When the as-built honors the spec's INTENT
+  by a different concrete mechanism than the literal word (emq3.4: the body said `trim/_` "raises
+  ArgumentError on a malformed name" but the as-built raises `FunctionClauseError` via the `is_binary` guard,
+  matching `append/4`; the raise-before-any-wire behavior holds), TRUE the § to the realized mechanism —
+  record what shipped, the intent preserved — rather than forcing the code to the literal text. An intent
+  divergence is a STALE reported to the Director; a mechanism realization is a sync applied.
 - **Inline scripts, not `priv/`.** No `echo/apps/echo_mq/priv/` exists; scripts are inline `Script.new/2`
   module attributes. A triad that says "new Lua under `priv/`" is STALE.
 - **A "no new dependency" claim is a per-app DEP-GRAPH-VISIBILITY fact** — read the consuming app's `mix.exs`

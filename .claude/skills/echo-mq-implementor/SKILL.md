@@ -159,7 +159,16 @@ reporting** — find your defects first, do not wait for a verifier:
   "prior set byte-unchanged" check (§5).
 - **The destructive / at-most-once / non-atomic-read probes** where the rung's surface invites them — a
   destructive op gated behind a green precondition (never a silent drop); at-most-once across a disconnect
-  documented; a sweep that handles a dangling member rather than minting on nil.
+  documented; a sweep that handles a dangling member rather than minting on nil. **For a destructive AT-REST
+  op (`XTRIM`/drain — the emq.4.1/emq3.4 class): the gate is a POSITIVE deletion+survival proof + a
+  blast-radius mutation battery, NEVER a no-op.** The scenario appends entries BOTH inside AND below the
+  window, trims, and asserts a real DELETION (below GONE) AND a real SURVIVAL (in-window read back) in the
+  SAME verdict (a no-op that deletes nothing is the TRD.9.1 false-green); mutate the bound/flag/floor and
+  confirm each is CAUGHT as an over-/under-deletion. Use the **approx-vs-exact safety asymmetry** — `~`
+  (whole-macro-node) is the safe default (UNDER-trims, never OVER-trims; the safe error direction is toward
+  KEEPING data), `=` the explicit hard-cap opt-in. Derive any time-floor from the shipped mint math
+  (`Snowflake.min_for/1` → `"<ms>-0"`), NEVER hand the raw 63-bit snowflake INTEGER to the wire (a snowflake
+  int is not a stream id; a `refute floor == Integer.to_string(min_for(dt))` proves it) — the emq3.4 finding.
 
 This is PART of build-before-report, not a downstream gate. Apollo confirms story coverage + reconciles, the
 Director's Stage-3 review is the independent floor — but the first and strongest adversary of your code is YOU.
