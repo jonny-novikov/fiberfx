@@ -186,11 +186,21 @@ cargo's default parallelism — pre-existing (the original `volume_push` also ra
 cd /Users/jonny/dev/jonnify/echo/apps/echo_graft
 TMPDIR=/tmp cargo test --workspace          # parity baseline + eg.2 fence/sync (Memory/Fs)
 TMPDIR=/tmp cargo clippy --workspace         # warnings-as-errors clean
+# engine fault suite (NOT compiled by default; ~49 #[cfg(feature="precept")] tests):
+TMPDIR=/tmp cargo test -p echo_graft --features precept -- --test-threads=1
+# live Rust↔Valkey :6390 round-trip (env-gated):
+ECHO_GRAFT_BACKEND_TEST=1 TMPDIR=/tmp cargo test -p echo_graft_backend --test live -- --test-threads=1
 # live Tigris legs (env-gated):
 set -a; . /Users/jonny/dev/jonnify/echo/.env.test; set +a
 export ECHO_GRAFT_TEST_S3_BUCKET="$TIGRIS_BUCKET"
 TMPDIR=/tmp cargo test -p echo_graft_test tigris
 ```
+
+> The default `cargo test --workspace` does **not** compile the `#[cfg(feature = "precept")]`
+> engine fault tests and runtime-skips the env-gated live legs, so a green default run alone leaves
+> the fault paths and the live socket untested — run the `--features precept` and
+> `ECHO_GRAFT_BACKEND_TEST=1` lines above to exercise them. The fault suites take
+> `--test-threads=1` (the engine's antithesis precept state is process-global).
 
 It is a Cargo workspace living *inside* the Elixir umbrella's `apps/` (Mix ignores it — no
 `mix.exs`). Homebrew `cargo`; workspace `rust-version = 1.91`, edition 2024.

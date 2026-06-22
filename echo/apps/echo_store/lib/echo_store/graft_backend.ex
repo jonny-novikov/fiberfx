@@ -105,11 +105,24 @@ defmodule EchoStore.GraftBackend do
   def resolve_branded(client, branded, opts \\ []),
     do: GenServer.call(client, {:request, {:resolve_branded, branded}}, req_timeout(opts))
 
-  @doc "Commit pages from `base` to a Volume; acks the resulting head LSN."
+  @doc """
+  Commit pages from `base` to a Volume with a per-call durability mode; acks the resulting head LSN.
+
+  The `:mode` option (`:async` | `:sync`) chooses when the commit acks (eg.5):
+    * `:sync` (the DEFAULT) — ack only after the remote conditional-write commit acks (durable +
+      replicated before the ack returns);
+    * `:async` — ack on the local fsync of the open batch; the remote push rolls the batch up
+      asynchronously (the loss window is the open batch).
+
+  The mode is always encoded on the wire (v2); the `:sync` default is this client-API default, not
+  a wire/version default.
+  """
   @spec commit(t(), vid(), non_neg_integer(), [{non_neg_integer(), binary()}], keyword()) ::
           {:ok, non_neg_integer()} | {:error, term()}
-  def commit(client, vid, base, pages, opts \\ []),
-    do: GenServer.call(client, {:request, {:commit, vid, base, pages}}, req_timeout(opts))
+  def commit(client, vid, base, pages, opts \\ []) do
+    mode = Keyword.get(opts, :mode, :sync)
+    GenServer.call(client, {:request, {:commit, vid, base, mode, pages}}, req_timeout(opts))
+  end
 
   @doc "Push local commits to the remote (the fence + feed publish); acks the remote head LSN."
   @spec push(t(), vid(), keyword()) :: {:ok, non_neg_integer()} | {:error, term()}
@@ -307,8 +320,8 @@ defmodule EchoStore.GraftBackend do
     {control_lane(), msg, decode}
   end
 
-  defp build({:commit, vid, base, pages}, corr) do
-    {cmd_lane(vid), {:commit, corr, vid, base, pages}, &ack_lsn/1}
+  defp build({:commit, vid, base, mode, pages}, corr) do
+    {cmd_lane(vid), {:commit, corr, vid, base, mode, pages}, &ack_lsn/1}
   end
 
   defp build({:push, vid}, corr), do: {cmd_lane(vid), {:push, corr, vid}, &ack_lsn/1}

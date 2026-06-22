@@ -342,8 +342,10 @@ fn decode_pending_with_vid(vid: String, v: &[u8]) -> Option<Pending> {
     Some(Pending { vid, base, pages })
 }
 
-/// Decode a pending record value with no vid attached (the recovery/pending iterators attach it
-/// from the key separately). A thin wrapper so the codec is symmetric with `encode_pending`.
+/// Decode a pending record value, leaving `Pending.vid` empty. The vid lives in the key, not the
+/// value: `recover` groups the records under the key-derived vid (its map key) and `flush` reads
+/// `pending_for(vid)` with the vid passed in, so neither consumer reads `Pending.vid` on a decoded
+/// record. A thin wrapper keeping the codec symmetric with `encode_pending`.
 fn decode_pending(v: &[u8]) -> Option<Pending> {
     decode_pending_with_vid(String::new(), v)
 }

@@ -22,13 +22,15 @@ defmodule EchoStore.GraftBackend.ProtoDecodeTest do
                0x04, 0x07, 0x04, 0x80, 0xCF, 0x94, 0xFE, 0xBB, 0x30>>
 
   defp canonical do
+    # v2 (D-5): hello/welcome carry version 2; commit carries a fixed-position mode (both pinned).
     [
-      {:hello, 1, 1, "echo_store"},
-      {:welcome, 1},
+      {:hello, 2, 2, "echo_store"},
+      {:welcome, 2},
       {:incompatible, 2, 3, "no overlapping protocol version"},
       {:open_volume, 7, @branded, nil, @log},
       {:resolve_branded, 8, @branded},
-      {:commit, 9, @vid, 3, [{1, @page}]},
+      {:commit, 9, @vid, 3, :sync, [{1, @page}]},
+      {:commit, 9, @vid, 3, :async, [{1, @page}]},
       {:push, 10, @vid},
       {:pull, 11, @vid},
       {:read, 12, @vid, 1},
@@ -50,8 +52,8 @@ defmodule EchoStore.GraftBackend.ProtoDecodeTest do
     end
   end
 
-  test "a multi-page commit round-trips" do
-    msg = {:commit, 5, @vid, 0, [{1, <<1, 2>>}, {9, <<3>>}, {2, <<>>}]}
+  test "a multi-page commit round-trips (with mode)" do
+    msg = {:commit, 5, @vid, 0, :async, [{1, <<1, 2>>}, {9, <<3>>}, {2, <<>>}]}
     bytes = IO.iodata_to_binary(Proto.encode(msg))
     {:ok, parts, ""} = RESP.parse(bytes)
     assert {:ok, ^msg} = Proto.decode(parts)
@@ -66,7 +68,11 @@ defmodule EchoStore.GraftBackend.ProtoDecodeTest do
     assert {:error, {:bad_field, "err_kind"}} = Proto.decode(["ERR", "1", "teapot", "d"])
     # wrong arity
     assert {:error, {:bad_arity, "PUSH"}} = Proto.decode(["PUSH", "1"])
-    # COMMIT with a page-count that disagrees with the tail
-    assert {:error, {:bad_field, "pages_count"}} = Proto.decode(["COMMIT", "1", @vid, "0", "2", "1", "x"])
+    # COMMIT with a page-count that disagrees with the tail (v2 shape: corr,vid,base,mode,npages,…)
+    assert {:error, {:bad_field, "pages_count"}} =
+             Proto.decode(["COMMIT", "1", @vid, "0", "sync", "2", "1", "x"])
+    # COMMIT with an out-of-set mode token
+    assert {:error, {:bad_field, "commit_mode"}} =
+             Proto.decode(["COMMIT", "1", @vid, "0", "eventually", "0"])
   end
 end

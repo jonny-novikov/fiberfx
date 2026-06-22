@@ -103,3 +103,15 @@ A naive read — `cargo test --workspace` green (67) + `mix test` green (70) —
 - **T-1's "2 pre-existing warnings" undercounts** the real ~dozen echo_store warnings (all in the in-progress native `EchoStore.Graft.*` / `Durability.*` modules, OUTSIDE eg.5's boundary → eg.5 adds zero new) — a ledger/spec reconcile note (Apollo folds the spec).
 
 > Verification ~95% green; awaiting the determinism loop + the Elixir live leg, then **Mars-2** delivers the two code/doc remediation items → Director re-verify → **Apollo (MANDATORY, HIGH)** post-build reconcile + adversarial verify + BUILD-GRADE → working-tree ship + Stage-6 fold (roadmap status, progress tracker, surface eg.6). No commit unless the Operator asks.
+
+### D-6 — Sonnet FORBIDDEN (no exception); the polish pass becomes an Opus/max review+refactor + an `echo/docs/` documentation deliverable (Operator-ruled 2026-06-22)
+
+**The directive:** *"Sonnet is forbidden. This is NOT EXCEPTION, let Mars finish, spawn another Mars-2 specialized skills Opus max to review and refactor when done."* + *"Opus agents must be calibrated for effective execution … much deepen in order to write exceptional documentation at `echo/docs/`."*
+
+**Standing.** Every spawned peer runs **Opus** for this program (the `sonnet` model override is retired). The polish Mars-2 (`a0bb96a06bb3696ad`, mistakenly spawned on sonnet) is allowed to **finish** its in-flight remediation — file-mtime ground truth confirms it is healthy, not stalled (`README.md` + `echo_graft_proto/src/lib.rs` written 10:43, matching L-2 items 1–2) — then a NEW **Opus/max** Mars-2 supersedes it as the authoritative pass. No further sonnet spawn.
+
+**The Opus successor's TWO mandates:**
+- **(A) Review + refactor** the sonnet Mars-2's code + the two L-2 remediation items — conservative, quality-only, ZERO behaviour/wire change — then re-run the FULL dual gate + the byte-freeze. The sonnet pass is treated as a *draft*, not trusted green; the Opus pass re-derives the gate.
+- **(B) Exceptional documentation at `echo/docs/`** — the program has **no** `echo/docs/echo_graft.md` and an **empty** `echo/docs/echo_graft/` dir, while every sibling app carries a top-level `<app>.md` + a deeper subtree. Author both, calibrated to the house register (Director read `echo_store.md`/`echo_mq.md`/`echo_store/durability/README.md`): a stack-placement opening, per-module `## Module — `Mod.Name`` sections with terse `| Function | Purpose |` tables, a determinism/byte-freeze posture section, the real consumer. **Load-bearing nuance — the COEXIST framing:** `echo_store.md:60-78` already documents the *native* `EchoStore.Graft.*` (CubDB) twin, so the new doc must place the Rust `echo_graft_backend` as the *coexisting peer* (`EchoStore.GraftBackend` client), never a replacement (Operator D-1=A). Ground every figure in the real as-built Rust + Elixir surface — no invented API.
+
+**Boundary.** Doc files are additive under `echo/docs/`; the code review+refactor stays inside eg.5's boundary (the Rust crates + the 6 `echo_store` GraftBackend files); native `EchoStore.Graft.*`/`Durability.*` + `github.local/graft` untouched.

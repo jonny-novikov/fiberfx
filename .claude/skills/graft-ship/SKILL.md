@@ -55,7 +55,7 @@ $ARGUMENTS
 - **A RUNG** — `eg.1` … `eg.6` → ship that rung (the default). Internally the aaw `scope` is the **dashed** slug
   `eg-1` … `eg-6` (NO dots — `tool_x_*` / `TeamCreate` require `^[a-z0-9][a-z0-9-]*$`, and a dot split-brains the
   registry across its three namespaces).
-- **Empty** → read the roadmap §4 ladder + `docs/graft/graft.progress`, and ship the next **unshipped** rung in
+- **Empty** → read the roadmap §4 ladder + `docs/graft/graft.progress.md`, and ship the next **unshipped** rung in
   program order; if that is ambiguous, ask in plain text (do not guess a large scope).
 
 ## What is different from a generic /x-mode run (the echo_graft binding)
@@ -213,7 +213,7 @@ the **Z-n** written this turn; `git status --short` AND `git diff --cached --nam
 
 The reference `github.local/graft` is **never** staged. Each message cites the slug, the Z-n, the D-n, and the
 Y-n report. **Stage-6 fold:** flip the rung's status in `docs/graft/graft.roadmap.md` + bump
-`docs/graft/graft.progress` (the ANSI tracker), backward-reconcile the rung `.md` to the green as-built surface,
+`docs/graft/graft.progress.md` (the ANSI tracker), backward-reconcile the rung `.md` to the green as-built surface,
 and surface the next rung. Do not push unless asked.
 
 ## 3. Quality gate (before Z-n, mirrors /x-mode §5)
@@ -246,8 +246,8 @@ and surface the next rung. Do not push unless asked.
   `.claude/agents/{venus,mars,apollo}.md`.
 - The development direction (the binding brief) + the owned-divergence map: `echo/apps/echo_graft/README.md`.
 - The Elixir gate ladder (Valkey 6390, `TMPDIR=/tmp mix`, asdf re-probe): `echo/CLAUDE.md`.
-- The canon + the single roadmap + the design doc + the ANSI tracker: `docs/graft/graft.roadmap.md` ·
-  `docs/graft/graft.engine-split.design.md` · `docs/graft/graft.progress`.
+- The canon + the single roadmap + the design docs + the ANSI tracker: `docs/graft/graft.roadmap.md` ·
+  `docs/graft/graft.design.md` · `docs/graft/graft.engine-split.design.md` · `docs/graft/graft.progress.md`.
 - The specs (source of truth): `docs/graft/specs/graft.<N>.md` (+ `graft.<N>.prompt.md` if present).
 - The code (the boundary): `echo/apps/echo_graft/` (Rust) + the `echo_store`/`echo_wire` seam (a BEAM rung) +
   the read-only reference `github.local/graft/`.

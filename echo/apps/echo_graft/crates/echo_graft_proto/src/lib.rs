@@ -194,7 +194,10 @@ pub enum Mode {
     /// asynchronously. The loss window is the open (not-yet-pushed) batch.
     Async,
     /// Ack only after the remote conditional-write commit acks — durable and replicated before
-    /// the ack returns. The v1 `COMMIT` default.
+    /// the ack returns. The CLIENT-API default: `EchoStore.GraftBackend.commit/5` substitutes
+    /// `:sync` when the caller omits `:mode`, then always encodes it. It is NEVER a wire/version
+    /// default — v1 is dropped (D-5), so there is no mode-less `COMMIT` for a wire default to fill;
+    /// the backend always reads an explicit mode off the wire.
     Sync,
 }
 

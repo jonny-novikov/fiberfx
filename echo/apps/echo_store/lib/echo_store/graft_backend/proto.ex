@@ -17,8 +17,11 @@ defmodule EchoStore.GraftBackend.Proto do
 
   alias EchoMQ.RESP
 
-  @proto_min 1
-  @proto_max 1
+  # eg.5 (D-5): v1 is dropped — the wire speaks ONLY v2. v2 carries a per-call durability mode on
+  # the COMMIT message (a fixed-position token before the page tail). A v1 peer fails the handshake
+  # by design.
+  @proto_min 2
+  @proto_max 2
 
   @doc "The lowest protocol version this build speaks."
   @spec proto_min() :: pos_integer()
@@ -27,6 +30,15 @@ defmodule EchoStore.GraftBackend.Proto do
   @doc "The highest protocol version this build speaks."
   @spec proto_max() :: pos_integer()
   def proto_max, do: @proto_max
+
+  @typedoc "The per-call durability mode on a v2 `:commit` (`:async` | `:sync`)."
+  @type mode :: :async | :sync
+
+  @mode_tokens %{async: "async", sync: "sync"}
+
+  @doc "The wire token for a durability mode."
+  @spec mode_token(mode()) :: binary()
+  def mode_token(mode) when is_atom(mode), do: Map.fetch!(@mode_tokens, mode)
 
   @typedoc "The closed error taxonomy carried by an `:err` message (a new kind is a version bump)."
   @type err_kind :: :conflict | :not_found | :version_mismatch | :unavailable
@@ -65,8 +77,11 @@ defmodule EchoStore.GraftBackend.Proto do
   def parts({:open_volume, corr, branded, local, remote}), do: ["OPEN", corr, branded, local || "", remote || ""]
   def parts({:resolve_branded, corr, branded}), do: ["RESOLVE", corr, branded]
 
-  def parts({:commit, corr, vid, base, pages}) do
-    ["COMMIT", corr, vid, base, length(pages) | Enum.flat_map(pages, fn {idx, data} -> [idx, data] end)]
+  def parts({:commit, corr, vid, base, mode, pages}) do
+    # v2: [COMMIT, corr, vid, base, mode, npages, (idx, data)*] — the mode token sits between
+    # base and the page count, always on the wire.
+    ["COMMIT", corr, vid, base, mode_token(mode), length(pages)
+     | Enum.flat_map(pages, fn {idx, data} -> [idx, data] end)]
   end
 
   def parts({:push, corr, vid}), do: ["PUSH", corr, vid]
@@ -114,12 +129,19 @@ defmodule EchoStore.GraftBackend.Proto do
   defp from_parts("RESOLVE", [corr, branded]),
     do: with_ints([corr], fn [c] -> {:resolve_branded, c, branded} end)
 
-  defp from_parts("COMMIT", [corr, vid, base, npages | tail]) do
-    with_ints([corr, base, npages], fn [c, b, n] ->
-      pages = decode_pages(tail, n)
-      if pages == :error, do: {:error, {:bad_field, "pages_count"}}, else: {:commit, c, vid, b, pages}
-    end)
-    |> unwrap_nested()
+  defp from_parts("COMMIT", [corr, vid, base, mode, npages | tail]) do
+    # v2: [corr, vid, base, mode, npages, (idx, data)*] — read the mode token, then the pages.
+    case mode_kind(mode) do
+      {:ok, m} ->
+        with_ints([corr, base, npages], fn [c, b, n] ->
+          pages = decode_pages(tail, n)
+          if pages == :error, do: {:error, {:bad_field, "pages_count"}}, else: {:commit, c, vid, b, m, pages}
+        end)
+        |> unwrap_nested()
+
+      :error ->
+        {:error, {:bad_field, "commit_mode"}}
+    end
   end
 
   defp from_parts("PUSH", [corr, vid]), do: with_ints([corr], fn [c] -> {:push, c, vid} end)
@@ -196,4 +218,8 @@ defmodule EchoStore.GraftBackend.Proto do
   defp err_kind("version_mismatch"), do: {:ok, :version_mismatch}
   defp err_kind("unavailable"), do: {:ok, :unavailable}
   defp err_kind(_), do: :error
+
+  defp mode_kind("async"), do: {:ok, :async}
+  defp mode_kind("sync"), do: {:ok, :sync}
+  defp mode_kind(_), do: :error
 end

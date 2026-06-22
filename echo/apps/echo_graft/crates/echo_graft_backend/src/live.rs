@@ -346,15 +346,15 @@ fn corr_of(msg: &Msg) -> u64 {
 
 // ---- the thin RESP3 wire: HELLO 3, SUBSCRIBE, PUBLISH, and a push reader ----
 
-/// Send `HELLO 3` and read the reply (a map on success, an error on refusal). RESP3 upgrade.
+/// Send `HELLO 3` to upgrade the connection to RESP3. The reply is NOT consumed here: on the
+/// command socket it is the first frame the [`RespReader`] reads in `run` (a `%` map, classified
+/// `Push::Other` and ignored); on the publish socket the read half is never read (PUBLISH only
+/// writes), so the reply stays harmlessly buffered. Either way nothing downstream depends on the
+/// HELLO reply, so writing it and moving on is sufficient.
 async fn hello3(wr: &mut OwnedWriteHalf) -> Result<(), LiveErr> {
     let cmd = encode_parts(&[b"HELLO".to_vec(), b"3".to_vec()]);
     wr.write_all(&cmd).await?;
     wr.flush().await?;
-    // The reply is read by the connection's own reader in the run loop for the command socket;
-    // for the publish socket we do a minimal drain here. To keep this simple and robust we open a
-    // short-lived reader on the same half is not possible (split), so HELLO's reply is consumed by
-    // the first reader created over this half. For the publish half (no reader), we read inline.
     Ok(())
 }
 

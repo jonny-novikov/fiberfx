@@ -31,13 +31,16 @@ defmodule EchoStore.GraftBackend.ProtoConformanceTest do
                0x04, 0x07, 0x04, 0x80, 0xCF, 0x94, 0xFE, 0xBB, 0x30>>
 
   defp canonical do
+    # v2 (D-5): mirrors crates/echo_graft_proto/tests/conformance.rs EXACTLY — hello/welcome carry
+    # version 2, the commit carries a fixed-position mode (both :sync and :async pinned).
     [
-      {"hello", {:hello, 1, 1, "echo_store"}},
-      {"welcome", {:welcome, 1}},
+      {"hello", {:hello, 2, 2, "echo_store"}},
+      {"welcome", {:welcome, 2}},
       {"incompatible", {:incompatible, 2, 3, "no overlapping protocol version"}},
       {"open_volume", {:open_volume, 7, @branded, nil, @log}},
       {"resolve_branded", {:resolve_branded, 8, @branded}},
-      {"commit", {:commit, 9, @vid, 3, [{1, @page}]}},
+      {"commit", {:commit, 9, @vid, 3, :sync, [{1, @page}]}},
+      {"commit_async", {:commit, 9, @vid, 3, :async, [{1, @page}]}},
       {"push", {:push, 10, @vid}},
       {"pull", {:pull, 11, @vid}},
       {"read", {:read, 12, @vid, 1}},
