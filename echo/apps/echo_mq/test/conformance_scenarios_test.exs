@@ -1,7 +1,7 @@
 defmodule EchoMQ.ConformanceScenariosTest do
   @moduledoc """
   The pure half of the Conformance row (echo2-migration.md §5): the
-  scenario registry pinned — seventy-four names in run order (the eighteen
+  scenario registry pinned — seventy-five names in run order (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -28,8 +28,13 @@ defmodule EchoMQ.ConformanceScenariosTest do
   batch_delay, and the delay token-fence batch_delay_stale), and -- since EchoMQ
   3.0's Stream Tier opened (emq3.1) -- the stream-verb floor's one (the five
   stream verbs round-trip on the certified connector + a pipelined XADD batch +
-  push-safe under RESP3, stream_verbs)). The wire half (`run/2 → {:ok, 74}`)
-  lives in `conformance_run_test.exs` behind the `:valkey` tag.
+  push-safe under RESP3, stream_verbs), and -- the writer law (emq3.2) -- the
+  append-order theorem's one (stream_append: EchoMQ.Stream.append mints an
+  EVT-branded record id and appends it under its A1 xadd id, N>=2 reads back in
+  mint order == id-sort order, a wrong-kind id raises before any wire, and a
+  contrived out-of-order append surfaces :nonmonotonic). The wire half
+  (`run/2 → {:ok, 75}`) lives in `conformance_run_test.exs` behind the
+  `:valkey` tag.
   """
   use ExUnit.Case, async: true
 
@@ -109,10 +114,11 @@ defmodule EchoMQ.ConformanceScenariosTest do
     :batch_partition,
     :batch_delay,
     :batch_delay_stale,
-    :stream_verbs
+    :stream_verbs,
+    :stream_append
   ]
 
-  test "scenarios/0 answers exactly the seventy-four names in run order" do
+  test "scenarios/0 answers exactly the seventy-five names in run order" do
     assert Keyword.keys(Conformance.scenarios()) == @run_order
   end
 

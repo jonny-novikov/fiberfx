@@ -1,6 +1,6 @@
 defmodule EchoMQ.Conformance do
   @moduledoc """
-  The bus contract as seventy-four runnable scenarios. Each scenario drives the
+  The bus contract as seventy-five runnable scenarios. Each scenario drives the
   public surface (and, where the contract is the wire itself, raw commands)
   against a live server and asserts the externally visible verdict: the
   fence, the row shape, idempotent admission, the kind law, the lex law,
@@ -63,8 +63,15 @@ defmodule EchoMQ.Conformance do
   an emq:{q}:stream:<name> braced key, a pipelined XADD batch returns its ids in
   call order, and the in-band verbs do not disturb the out-of-band push routing
   under RESP3 -- the verbs ride the SHIPPED generic command path verb-agnostically,
-  no wire edit, no new script). A port of the client conforms when it drives the
-  same server to the same seventy-four verdicts -- the scenarios are wire-level on
+  no wire edit, no new script), and -- the writer law (emq3.2, S1 the writer
+  part 2) -- the append-order theorem (stream_append: EchoMQ.Stream.append mints
+  an EVT-branded record id host-side and appends it under its EXPLICIT A1 xadd id
+  with the branded string as the id field, N>=2 records read back in mint order
+  == id-sort order, a wrong-kind record id raises before any wire with no key
+  written, and a contrived out-of-order append surfaces :nonmonotonic on the
+  id<=top rejection -- the append is XADD issued direct, no new script, no new
+  wire class). A port of the client conforms when it drives the
+  same server to the same seventy-five verdicts -- the scenarios are wire-level on
   purpose, so the harness ports by translation, not by faith. Scenarios run on
   per-scenario sub-queues and purge what they mint. Chapter 3.6, extended 3.7,
   then the emq.2 cluster (parity, closed at emq.2.4), then the emq.3 flow family
@@ -73,7 +80,8 @@ defmodule EchoMQ.Conformance do
   emq.4.1 with the control plane, the recovery axis at emq.4.2), then the batches
   family (opened at emq.5.1 with the batch-claim spine, shaped at emq.5.2, grouped
   at emq.5.3, closed at emq.5.4 with the partitioned finish + dynamic delay), then
-  EchoMQ 3.0's Stream Tier (opened at emq3.1 with the stream-verb floor).
+  EchoMQ 3.0's Stream Tier (opened at emq3.1 with the stream-verb floor, the
+  writer law at emq3.2 with the append-order theorem).
   """
 
   alias EchoData.BrandedId
@@ -94,7 +102,8 @@ defmodule EchoMQ.Conformance do
     Metrics,
     Pump,
     Repeat,
-    Stalled
+    Stalled,
+    Stream
   }
 
   @doc "The scenario names and their one-line contracts, in run order."
@@ -173,14 +182,15 @@ defmodule EchoMQ.Conformance do
       batch_partition: "a claimed batch resolves as an EXHAUSTIVE, DISJOINT partition over its members: a mixed batch (a completed member, a retried member, a member retried PAST the cap that lands dead, a delayed member) classifies into %{completed, retried, dead, delayed} so completed ++ retried ++ dead ++ delayed is a permutation of the claimed ids and the four buckets are pairwise disjoint, dead EMERGES from the @retry {:ok, :dead} outcome (NOT a caller verdict), and an absent verdict fail-safe-retries -- the pure EchoMQ.BatchFinish classifier, never a silent complete (emq.5.4)",
       batch_delay: "the dynamic-delay re-score: a claimed (active) member delayed by ms moves to the schedule set with state scheduled and attempts PRESERVED (NOT reset to 0 -- the delay is not a failure), absent from active and invisible to claim until its server-clock score is due, then promote returns it to pending and a fresh claim mints the NEXT token (the attempt history continued, not restarted) -- the inverse of @claim: it releases the lease and mints nothing, one atomic EVAL so the member is never in neither set (emq.5.4)",
       batch_delay_stale: "the delay is token-fenced: a claimed member reaped and re-claimed by another worker (a new token) refuses the original holder's delay EMQSTALE -> {:error, :stale}, the new holder's active-set lease untouched, and the new holder's delay with the live token settles; a delay on a missing row answers {:error, :gone} -- the complete/5 / retry/7 fencing, so a stale holder cannot yank a member from its new owner (emq.5.4)",
-      stream_verbs: "the stream-verb floor (emq3.1): the five stream verbs (XADD/XRANGE/XREADGROUP/XACK/XAUTOCLAIM) round-trip on the certified connector over an emq:{q}:stream:<name> braced key -- XADD answers the entry id and XRANGE reads back the EXACT appended entry, XREADGROUP (NO BLOCK) reads the group's unseen entries, XACK answers the count, XAUTOCLAIM re-claims a pending entry -- plus a pipelined XADD batch returns N ids in call order read back in mint order, and the in-band verbs do not disturb the out-of-band push routing under RESP3 (a concurrent push is still delivered on the {:emq_push, ...} seam); the verbs ride the SHIPPED generic command path verb-agnostically, no echo_wire edit, no new script -- the floor every later Stream rung stands on (emq3.1)"
+      stream_verbs: "the stream-verb floor (emq3.1): the five stream verbs (XADD/XRANGE/XREADGROUP/XACK/XAUTOCLAIM) round-trip on the certified connector over an emq:{q}:stream:<name> braced key -- XADD answers the entry id and XRANGE reads back the EXACT appended entry, XREADGROUP (NO BLOCK) reads the group's unseen entries, XACK answers the count, XAUTOCLAIM re-claims a pending entry -- plus a pipelined XADD batch returns N ids in call order read back in mint order, and the in-band verbs do not disturb the out-of-band push routing under RESP3 (a concurrent push is still delivered on the {:emq_push, ...} seam); the verbs ride the SHIPPED generic command path verb-agnostically, no echo_wire edit, no new script -- the floor every later Stream rung stands on (emq3.1)",
+      stream_append: "the writer law (emq3.2): EchoMQ.Stream.append mints an EVT-branded record id host-side and appends it under its EXPLICIT A1 xadd id (the real Unix-ms and the 22-bit node|seq tail) with the branded string as the id field -- N>=2 records read back in MINT ORDER == id-sort order (the order theorem, stream order == id sort == mint order, no second index), a wrong-kind record id RAISES before any wire with NO key written (the host-side kind door, one brand per stream), and a contrived out-of-order append surfaces {:error, :nonmonotonic} on the id<=top rejection (the liveness check, never swallowed); the append is XADD issued direct, no new script, no new wire class (emq3.2)"
     ]
   end
 
   @doc """
   Runs all scenarios against `conn`, on sub-queues of `queue`. Prints one
   CONF line per scenario and a closing tally. Returns `{:ok, n}` when all
-  pass (n == 74 today -- the live total, grown by additive minor; the count is
+  pass (n == 75 today -- the live total, grown by additive minor; the count is
   re-pinned in both pinning tests, `conformance_run_test.exs` `{:ok, n}` and
   `conformance_scenarios_test.exs` `@run_order`), `{:error, failed_names}`
   otherwise. The set spans the eighteen state-machine scenarios, the emq.2
@@ -197,7 +207,11 @@ defmodule EchoMQ.Conformance do
   re-score batch_delay, the delay token-fence batch_delay_stale) -- and -- since
   EchoMQ 3.0's Stream Tier opened (emq3.1) -- the stream-verb floor (stream_verbs:
   the five stream verbs round-trip on the certified connector, a pipelined XADD
-  batch in call order, push-safe under RESP3).
+  batch in call order, push-safe under RESP3) -- and the writer law (emq3.2) --
+  the append-order theorem (stream_append: EchoMQ.Stream.append mints an
+  EVT-branded record id and appends it under its A1 xadd id, N>=2 reads back in
+  mint order == id-sort order, the host-side kind door, the :nonmonotonic
+  liveness).
   """
   def run(conn, queue) when is_binary(queue) do
     results =
@@ -2778,6 +2792,99 @@ defmodule EchoMQ.Conformance do
       :ok
     end
   end
+
+  defp apply_scenario(:stream_append, conn, q) do
+    # The writer law (emq3.2, S1 the writer part 2): EchoMQ.Stream.append mints
+    # an EVT-branded record id host-side and appends it under its EXPLICIT A1
+    # xadd id ("<real-Unix-ms>-<22-bit node|seq tail>") with the 14-byte branded
+    # string stored as the stream `id` field. Three capabilities, one verb-floor
+    # scenario, all POSITIVE (a vacuous pass is a LOUD failure):
+    #
+    #   1. the ORDER THEOREM -- N>=2 records read back in MINT ORDER == id-sort
+    #      order (stream order == id sort == mint order, no second index);
+    #   2. the host-side KIND DOOR -- a wrong-kind record id RAISES before any
+    #      wire, with NO key written (one brand per stream, symmetric with
+    #      Keyspace.job_key/2);
+    #   3. the :nonmonotonic LIVENESS -- a contrived out-of-order append surfaces
+    #      {:error, :nonmonotonic} on the id<=top rejection, never swallowed.
+    #
+    # Driven through the PUBLIC EchoMQ.Stream surface (the harness drives the
+    # real surface, not a re-implementation -- the writer has no process/timing
+    # hazard that would force a deterministic mirror). The append is XADD issued
+    # direct: no new script, no new wire class.
+    with :ok <- stream_append_order(conn, q),
+         :ok <- stream_append_kind_door(conn, q),
+         :ok <- stream_append_nonmonotonic(conn, q) do
+      :ok
+    end
+  end
+
+  # (1) the order theorem: N EVT records append (the branded receipt), read back
+  # in MINT order == id-sort order, payloads in append order -- the writer law's
+  # whole point, asserted against the appended data (N>=2, never a vacuous read).
+  defp stream_append_order(conn, q) do
+    n = 5
+    receipts = for i <- 1..n, do: ok!(Stream.append(conn, q, "wl", [{"seq", "v#{i}"}]))
+
+    with {:ok, read} <- Stream.read(conn, q, "wl"),
+         brandeds = for({b, _f} <- read, do: b),
+         true <- brandeds == receipts,
+         true <- brandeds == Enum.sort(receipts),
+         vals = for({_b, f} <- read, do: Map.get(f, "seq")),
+         true <- vals == for(i <- 1..n, do: "v#{i}"),
+         true <- Enum.all?(receipts, &(BrandedId.namespace(&1) == "EVT")) do
+      :ok
+    else
+      other -> {:fail, {:order, other}}
+    end
+  end
+
+  # (2) the host-side kind door: a wrong-namespace record id RAISES before any
+  # wire (the stream key stays ABSENT -- the raise is policy before existence
+  # before write); a valid EVT append on the SAME stream then succeeds.
+  defp stream_append_kind_door(conn, q) do
+    ord = BrandedId.generate!("ORD")
+    key = Stream.stream_key(q, "kd")
+
+    raised =
+      try do
+        Stream.append_id(conn, q, "kd", ord, [{"f", "v"}])
+        false
+      rescue
+        ArgumentError -> true
+      end
+
+    with true <- raised,
+         {:ok, 0} <- Connector.command(conn, ["EXISTS", key]),
+         {:ok, _branded} <- Stream.append(conn, q, "kd", [{"f", "v"}]) do
+      :ok
+    else
+      other -> {:fail, {:kind_door, other}}
+    end
+  end
+
+  # (3) the :nonmonotonic liveness: two EVT ids minted in mint order (older
+  # first) appended OUT of order -- the newer lands, the older's A1 id is then
+  # below the stream top, so Valkey rejects it and the writer SURFACES
+  # {:error, :nonmonotonic} (never swallowed, never retried with `*`). The
+  # rejected append wrote nothing (XLEN == 1).
+  defp stream_append_nonmonotonic(conn, q) do
+    older = BrandedId.generate!("EVT")
+    newer = BrandedId.generate!("EVT")
+    key = Stream.stream_key(q, "nm")
+
+    with true <- older < newer,
+         {:ok, ^newer} <- Stream.append_id(conn, q, "nm", newer, [{"f", "v"}]),
+         {:error, :nonmonotonic} <- Stream.append_id(conn, q, "nm", older, [{"f", "v"}]),
+         {:ok, 1} <- Connector.command(conn, ["XLEN", key]) do
+      :ok
+    else
+      other -> {:fail, {:nonmonotonic, other}}
+    end
+  end
+
+  # unwrap a {:ok, v} append (the scenario aborts loudly on any other shape).
+  defp ok!({:ok, v}), do: v
 
   # US1 -- XADD then XRANGE reads back the EXACT appended entry. The XADD reply is
   # the server-minted "<ms>-<seq>" id; XRANGE - + answers the nested array

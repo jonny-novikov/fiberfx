@@ -1,8 +1,8 @@
 defmodule EchoMQ.ConformanceRunTest do
   @moduledoc """
   The standing gate (EMQ.0-US4, the ratified Q1 stand-in for rung 3_6):
-  the seventy-four-scenario harness drives the public surface against Valkey
-  on 6390 and every scenario passes — `run/2 → {:ok, 74}` (the eighteen
+  the seventy-five-scenario harness drives the public surface against Valkey
+  on 6390 and every scenario passes — `run/2 → {:ok, 75}` (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -31,8 +31,12 @@ defmodule EchoMQ.ConformanceRunTest do
   batch_delay, and the delay token-fence batch_delay_stale), and -- since EchoMQ
   3.0's Stream Tier opened (emq3.1) -- the stream-verb floor's one (the five
   stream verbs round-trip on the certified connector + a pipelined XADD batch +
-  push-safe under RESP3, stream_verbs)). Scenarios run on per-scenario sub-queues
-  and purge what they mint.
+  push-safe under RESP3, stream_verbs), and -- the writer law (emq3.2) -- the
+  append-order theorem's one (stream_append: EchoMQ.Stream.append mints an
+  EVT-branded record id and appends it under its A1 xadd id, N>=2 reads back in
+  mint order == id-sort order, a wrong-kind id raises before any wire, and a
+  contrived out-of-order append surfaces :nonmonotonic)). Scenarios run on
+  per-scenario sub-queues and purge what they mint.
   """
   use ExUnit.Case, async: false
 
@@ -45,7 +49,7 @@ defmodule EchoMQ.ConformanceRunTest do
     :ok
   end
 
-  test "the seventy-four-scenario harness passes whole against the truth row" do
+  test "the seventy-five-scenario harness passes whole against the truth row" do
     {:ok, conn} = Connector.start_link(port: 6390)
 
     on_exit(fn ->
@@ -58,6 +62,6 @@ defmodule EchoMQ.ConformanceRunTest do
 
     q = "emq0.conf#{System.unique_integer([:positive])}"
 
-    assert Conformance.run(conn, q) == {:ok, 74}
+    assert Conformance.run(conn, q) == {:ok, 75}
   end
 end
