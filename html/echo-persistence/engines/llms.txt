@@ -1,0 +1,44 @@
+# Echo Persistence — Chapter III · The engines
+
+> Built twice and bridged. The same engine-neutral contract (Module 3) implemented on two substrates — native Elixir on CubDB, Rust on Fjall + OpenDAL — both writing one shared Tigris remote behind a conditional-write fence, and joined across runtimes by one byte-frozen wire. Four modules, each a sub-folder with a hub `index.md` plus three dives. Links are to the readable `.md` sources (each has a rendered `.html` sibling).
+
+## Navigation
+
+- **Up: course root** — [../llms.txt](../llms.txt) · the course landing/map — [../index.md](../index.md)
+- **Prev:** Chapter II · The local store — [../local-store/llms.txt](../local-store/llms.txt) · **Next:** Chapter IV · The platform — [../platform/llms.txt](../platform/llms.txt)
+
+## Module 7 · The native Elixir engine
+
+> `EchoStore.Graft`, pure Elixir on CubDB, the platform's default. A handful of OTP processes implement the ideas you already know — a VolumeServer serializes commits, a lazy Reader faults through the tiers, a Committer drains the commit-log-as-outbox to object storage.
+
+- **Module hub** — [native-elixir/index.md](native-elixir/index.md)
+- **Dive 7.1 · The VolumeServer** — one GenServer mailbox serializes commits; the OCC check needs no lock because the mailbox already is one — [native-elixir/the-volume-server.md](native-elixir/the-volume-server.md)
+- **Dive 7.2 · The lazy Reader** — a page request faults through ETS, then CubDB, then a remote segment, and is cached on the way back — [native-elixir/the-lazy-reader.md](native-elixir/the-lazy-reader.md)
+- **Dive 7.3 · The commit-log outbox** — one log, two jobs: durable locally, pending upload; the Committer drains it to Tigris behind the fence — [native-elixir/the-commit-log-outbox.md](native-elixir/the-commit-log-outbox.md)
+
+## Module 8 · The Rust engine
+
+> `echo_graft`: a from-scratch fork seeded from upstream Graft (SQLite layer stripped), written in Rust on Fjall and Apache OpenDAL, run as a supervised sidecar the BEAM drives over EchoMQ. By the COEXIST ruling it is a peer to the native engine, implementing the same contract on a different substrate.
+
+- **Module hub** — [rust/index.md](rust/index.md)
+- **Dive 8.1 · Fjall & the LSM-tree** — writes fill a memtable, flush to immutable SSTables, and compact by merging; a different shape from CubDB's B-tree, same append-only promise — [rust/fjall-and-the-lsm-tree.md](rust/fjall-and-the-lsm-tree.md)
+- **Dive 8.2 · OpenDAL & the portable remote** — one operator over many backends; Tigris, S3, or fs are a config change, and the fence is one `if_not_exists` call — [rust/opendal-and-the-portable-remote.md](rust/opendal-and-the-portable-remote.md)
+- **Dive 8.3 · The in-memory feed** — the change feed served from a ring broadcast to subscribers on lane `egraft:feed:{vol}`, with a fallback to segments for any consumer that falls off the window — [rust/the-in-memory-feed.md](rust/the-in-memory-feed.md)
+
+## Module 9 · Tigris & the fence
+
+> Both engines, however different inside, write the same remote: a Tigris bucket holding page `segments` and the `commit` chain that is the durable log head. Three operations — push rollup, the create-if-not-exists fence, log-head recovery. In the roadmap this is rung eg.2.
+
+- **Module hub** — [tigris+fence/index.md](tigris+fence/index.md)
+- **Dive 9.1 · Push rollup** — many page writes, some repeated, become one segment: latest version per page, Zstd-framed, a single object — [tigris+fence/push-rollup.md](tigris+fence/push-rollup.md)
+- **Dive 9.2 · The create-if-not-exists fence** — three different writers race for one commit slot; the bucket grants exactly one, losers step down, the chain stays linear — [tigris+fence/the-create-if-not-exists-fence.md](tigris+fence/the-create-if-not-exists-fence.md)
+- **Dive 9.3 · Log-head recovery** — a cold node reads the head and chain from the bucket, then faults pages from segments on demand; no full download — [tigris+fence/log-head-recovery.md](tigris+fence/log-head-recovery.md)
+
+## Module 10 · The BEAM↔Rust contract
+
+> `EchoStore.GraftBackend` on the BEAM drives the `echo_graft_backend` Rust sidecar through one byte-frozen wire, `echo_graft_proto`: a version handshake, a command/reply lane, and the feed lane. The contract is the only coupling, and a shared fixture set keeps both runtimes in lockstep. This is rung eg.4. (The three dives are marked _soon_ in the hub.)
+
+- **Module hub** — [beam-rust-contract/index.md](beam-rust-contract/index.md)
+- **Dive 10.1 · The byte-frozen wire & the handshake** — `echo_graft_proto` message by message, RESP3 framing, the `Hello`/`Welcome`/`Incompatible` negotiation, the closed error enum, one fixture both runtimes assert byte-for-byte — [beam-rust-contract/the-byte-frozen-wire.md](beam-rust-contract/the-byte-frozen-wire.md)
+- **Dive 10.2 · Commit, ack, and the feed advance** — the command path end to end: `Commit` → the Rust fence → `Ack(lsn)` → `Push` → `FeedEvent(lsn)` — and the invariant that a no-op push publishes nothing — [beam-rust-contract/commit-ack-and-feed.md](beam-rust-contract/commit-ack-and-feed.md)
+- **Dive 10.3 · Crash, reconnect & the compositional proof** — supervised restart, resubscribe-from-last-seen-LSN as the recovery key, and why three legs meeting at one byte-frozen wire prove the contract without a single live socket — [beam-rust-contract/crash-reconnect-and-the-proof.md](beam-rust-contract/crash-reconnect-and-the-proof.md)

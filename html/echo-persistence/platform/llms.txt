@@ -1,0 +1,44 @@
+# Echo Persistence — Chapter IV · The platform
+
+> The whole picture. The bus itself (EchoMQ 3.0's Stream Tier on ValKey Streams), persistence beneath it (the bus and durable floor as one system, joined at three seams), why it beats classical scheduling (Oban on Postgres, honestly), and the door it opens onto BCS (the durable log plus Tables & Properties as a substrate for building systems). Four modules, each a sub-folder with a hub `index.md` plus three dives. Links are to the readable `.md` sources (each has a rendered `.html` sibling).
+
+## Navigation
+
+- **Up: course root** — [../llms.txt](../llms.txt) · the course landing/map — [../index.md](../index.md)
+- **Prev:** Chapter III · The engines — [../engines/llms.txt](../engines/llms.txt) · this is the final chapter.
+
+## Module 11 · EchoMQ Bus
+
+> EchoMQ's newest tier is a stream tier — append-only event streams with consumer groups — built on the same ValKey/Redis Streams verbs a field team would reach for. The lesson is the consumer-group lifecycle: read into a group's pending list, ack per group, re-claim on crash — and exactly where ordering survives that and where it doesn't.
+
+- **Module hub** — [echomq-bus/index.md](echomq-bus/index.md)
+- **Dive 11.1 · ValKey Streams internals** — the raw verbs and the PEL up close: the two recovery paths (drain-own-PEL vs `XAUTOCLAIM` beat), delivery counts, at-least-once with idempotent handlers — [echomq-bus/valkey-streams-internals.md](echomq-bus/valkey-streams-internals.md)
+- **Dive 11.2 · Retention & the never-deleted problem** — the unbounded stream, `XTRIM` `MAXLEN`/`MINID` by mint instant, and emq3.4 retention-as-policy with the open trim-cadence fork (fold-before-trim vs a timer that loses data) — [echomq-bus/retention-and-the-never-deleted-problem.md](echomq-bus/retention-and-the-never-deleted-problem.md)
+- **Dive 11.3 · The Stream Tier ladder** — emq3.1–3.6 end to end: the writer law, the readers, the archive fold into `EchoStore.Graft` (CubDB→Tigris), and the merge-read that stitches segments to the live tail — [echomq-bus/the-stream-tier-ladder.md](echomq-bus/the-stream-tier-ladder.md)
+
+## Module 12 · EchoBus + Echo Persistence
+
+> The claim that the message bus (EchoMQ 3.0) and the durable floor (the engines and store of EP1–10) are one system. They meet at exactly three seams — a shared cursor, an outbox, and a fold — and through them a write becomes a loop across four tiers: accepted, committed, published, and folded back.
+
+- **Module hub** — [bus-and-persistence/index.md](bus-and-persistence/index.md)
+- **Dive 12.1 · The commit LSN is the cursor** — one batch is one LSN; `:async` vs `:sync` per call; and the published LSN binds every replica and consumer to the same point — [bus-and-persistence/the-commit-lsn-is-the-cursor.md](bus-and-persistence/the-commit-lsn-is-the-cursor.md)
+- **Dive 12.2 · The outbox beside the bus** — the dual-write trap, and why EchoMQ sidesteps it: the bus stays on Valkey while a low-volume outbox journals intents beside the hot path. The Adapter contract; `SQLite`/`Memory` — [bus-and-persistence/the-outbox-beside-the-bus.md](bus-and-persistence/the-outbox-beside-the-bus.md)
+- **Dive 12.3 · The loop closes** — the archive fold commits stream slices into the engine (`EchoStore.Graft.commit/3`, fold-before-trim) — the four tiers become a cycle joined by the cursor and the feed — [bus-and-persistence/the-loop-closes.md](bus-and-persistence/the-loop-closes.md)
+
+## Module 13 · Why it beats classical scheduling
+
+> The classical durable queue — Oban on PostgreSQL — is strict and well-understood, and pays for it in two coins: the database on the hot path of every dequeue/heartbeat/ack, and single-node durability until you bolt on streaming replication. This module shows the one mechanism behind the whole spectrum, and how the commit-log-as-outbox reaches batch-class throughput while being strict *and* replicated.
+
+- **Module hub** — [beats-classical-scheduling/index.md](beats-classical-scheduling/index.md)
+- **Dive 13.1 · The database on the hot path** — the classical model traced: every dequeue, heartbeat, and ack a round-trip to PostgreSQL, strict but single-node, throughput pinned to one record per fsync on the single-insert path — [beats-classical-scheduling/the-database-on-the-hot-path.md](beats-classical-scheduling/the-database-on-the-hot-path.md)
+- **Dive 13.2 · The commit log is the outbox** — an enqueue intent is a page commit at `@obx_base = 1 <<< 48`, atomic and durable in one act, drained by the Committer, replayed above a watermark — the engine becomes the bus's outbox — [beats-classical-scheduling/the-commit-log-is-the-outbox.md](beats-classical-scheduling/the-commit-log-is-the-outbox.md)
+- **Dive 13.3 · The balanced decision** — the verdict on two axes, durability and hot-path cost; why the commit-log-as-outbox lands alone in the strict-and-replicated-and-off-the-hot-path quadrant — [beats-classical-scheduling/the-balanced-decision.md](beats-classical-scheduling/the-balanced-decision.md)
+
+## Module 14 · The door to BCS with Echo Persistence
+
+> The durable floor was never the point; it was the threshold. The same primitives — a versioned log, an L1 read cache, newer-wins coherence keyed by one 14-byte branded id — stop being plumbing for a queue and become the substrate for the Branded Component System: entities are identities, components are data, a system is a process that lets only identities cross its boundary.
+
+- **Module hub** — [the-door-to-bcs/index.md](the-door-to-bcs/index.md)
+- **Dive 14.1 · Tables & Properties** — state keyed by identity: the property table (an ordered_set on the branded id), the `EchoStore.Table` L1, and newer-wins coherence where the id *is* the version — lock-free reads, recent-first pages — [the-door-to-bcs/tables-and-properties.md](the-door-to-bcs/tables-and-properties.md)
+- **Dive 14.2 · Entities, components & the law** — entities are ids, components are data, archetypes fold at read time, and the law: a system passes only identities and messages about identities across its boundary. Reference by id, never embed — [the-door-to-bcs/entities-components-and-the-law.md](the-door-to-bcs/entities-components-and-the-law.md)
+- **Dive 14.3 · Codemoji on the substrate** — the worked example: the Broadcast system as four branded entities, where the `BDV` id *is* the chronological key, so compaction folds deliveries in mint order with no sort. The course closes — [the-door-to-bcs/codemoji-on-the-substrate.md](the-door-to-bcs/codemoji-on-the-substrate.md)
