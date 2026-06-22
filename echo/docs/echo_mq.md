@@ -76,6 +76,12 @@ lane via `Lanes.claim/3` and invokes a handler with `%{id:, payload:, group:}` �
 the group arriving as the lane key (for Codemojex, the player id). This is what
 turns the guess queue into a single scoring authority.
 
+For **event streams** (the Stream Tier — at-least-once grouped delivery with
+crash → re-delivery), the sibling is `EchoMQ.StreamConsumer`: a supervised consumer
+group over `EchoMQ.Stream.append/4`'s per-key stream, reading `XREADGROUP … >` on
+its own private lane, recovering its own un-acked backlog on restart and dead peers'
+on the beat. See [`echo_mq/stream_consumer.md`](echo_mq/stream_consumer.md).
+
 ## Conformance and the stories catalogue
 
 EchoMQ documents itself with **BDD story tests** (`test/stories/*_story_test.exs`,
