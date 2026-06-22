@@ -68,7 +68,30 @@ rather than this rung's build slower.
 
 **Rigor is constant; only ceremony scales.** The 7-stage pipeline above is the SHAPE, not a fixed cost — the
 Director triages the formation at bootstrap against the rung's actual surface, and a small rung runs a small
-formation (an Operator cost ruling — a 2-line fix once cost a full-team run):
+formation (an Operator cost ruling — a 2-line fix once cost a full-team run).
+
+**The L2 Topology Router (the named formation tiers — `emq3.3-D9`, Operator-authorized).** The Director triages
+ONE of four formations at bootstrap from the rung's `.prompt.md` **risk tier × design-space width** — the
+*router* is the decision, the *tiers* are its outputs. A "peer" is an in-pipeline **self-registered** Agent
+(`mcp__aaw__agent_register`) beside the always-present Director:
+
+| Tier | Peers | Engage when | Roster |
+|---|---|---|---|
+| **Solo** | 1 | trivial / mechanical — a doc reconcile, a 1-line fix, a re-pin, a version digit | Director + 1 builder (Mars); Venus skipped, Apollo async |
+| **Duo** | 2 | NORMAL additive capability, the triad clean/existing | Venus + Mars; Director verifies; Apollo folds async |
+| **Trio** | 3 | Apollo **MANDATORY** (a new process/lease surface · a destructive at-rest op · a frozen-line touch) **OR** a docs/stories-heavy rung | Venus + Mars + Apollo |
+| **Squad** | 4+ | **HIGH-risk with a WIDE design space** | a dual-architect design-ahead (2 Venus, divergent lenses) and/or a Mars-1/Mars-2 split + a specialist, + Apollo |
+
+The router is **enforced, not advisory**: the Director records the chosen tier as a `tool_x_decision` at
+bootstrap (the *formation ruling*), and `mcp__aaw__status(scope)` must then show **exactly that tier's
+registered peers** — no more (over-ceremony is the ewr.4.1 footgun — ~370k tokens, zero shipped), no fewer
+(under-staffing a HIGH-risk rung skips the mandatory Apollo). A tier can be **re-graded mid-build** (footgun 8:
+a surfaced destructive op bumps NORMAL→HIGH, Duo→Trio) — ceremony scales, **the gate ladder never**. The
+dual-architect *design-ahead* is the **Squad front**; once it has delivered (the KB + the ruled triad), the live
+build runs the **Squad back-half** (Mars + Apollo) and the spent front is not re-spawned. **Cross-/compact
+reconnect:** the aaw tools defer after a compaction — re-`ToolSearch` the spine and re-run `mcp__aaw__status`
+as the first act, BEFORE any ledger write or spawn (an `agents:null` with a populated ledger is the FAKE-N
+*inverse* — work no registered agent can attest; `emq3.3-L1`).
 
 - **Match the formation to the rung.** A trivial / mechanical rung (a doc reconcile, a one-line fix, a re-pin)
   runs as ONE builder under the Director — not Venus + Mars-1 + Mars-2 + the full battery. A NORMAL capability

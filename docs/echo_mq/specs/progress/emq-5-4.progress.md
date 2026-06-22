@@ -145,3 +145,18 @@ OBSERVATIONS (non-blocking):
 - O-2 (out-of-boundary, pre-existing): an echo_data compile warning (champ_view.ex:82, EchoData.ChampView referencing EchoStore.Graft.read_at) -- a dependency app, NOT introduced by this rung, does not fail echo_mq's --warnings-as-errors gate. An echo_data concern, separate.
 
 Risk-tripwire (emq.4.1 lesson): no new mint/lease surfaced mid-build -> NORMAL held, no re-grade. Apollo OPTIONAL (no process/lease/destructive/frozen-line touch) -- closure already met (stories shipped). Ready for the LAW-4 ship pending the Operator's go-ahead.
+
+## {emq-5-4-complete} Complete
+
+### Z-1 — emq.5.4 SHIPPED: the partitioned finish + dynamic delay. The emq.5 BATCHES FAMILY IS CLOSED (5.1-5.4).
+
+Two LAW-4 pathspec commits this ship (the rung spans three with the Operator's out-of-band specs commit):
+- be97a9bf — the measured surface (14 files): the new atomic @delay + Jobs.delay/6 (token-fenced, :in/:at) + the pure EchoMQ.BatchFinish.partition/2 + the {:delay,ms} third branch in BatchConsumer's private settle + 3 conformance scenarios (batch_partition/batch_delay/batch_delay_stale, 70->73, both pins re-pinned) + the story-gen 7th deliverable (batch_finish_story_test.exs + the regenerated catalogue) + the rung ledger/registry deltas.
+- ca301958 — the Stage-6 fold: emq.roadmap.md + emq.progress.md flipped to emq.5 CLOSED / conformance 73 / label 2.5.2 / emq.6 next.
+- ecd355a0 (Operator, out-of-band) — the trued-up triad + the carve emq.5.md + the KB record emq-5-4-decisions.md.
+
+Decisions D-1/D-2/D-3 = B (atomic @delay) · T (token-fenced) · N (pure BatchFinish), surfaced via the architect's-approach four-part method, Operator-ratified. Verify Y-1 = BUILD-GRADE, zero defects: 6-seed determinism (462 tests, 73/73, 0 failures), net-zero attempts-preservation mutation (isolated 72/73 kill, two suites with teeth), byte-freeze proven (jobs.ex +115/-0). Mars-2 COLLAPSED (no remediate items).
+
+Invariants held: @schedule/@complete/@retry/@promote/@claim/@bclaim/@gbclaim/@enqueue byte-frozen; @wire_version frozen echomq:2.4.2 (only the label plane climbed, 2.5.1 -> 2.5.2); declared-keys strongest A-1 form on @delay; boundary = echo/apps/echo_mq only. The Operator's foreign staged work (emq-5-2/5-3 ledgers, durability/metronome KB, bench) was EXCLUDED via the --only pathspec and left untouched.
+
+Frontier: emq.6 — lifecycle controls (TTL per worker/name, distributed cancel, checkpoints). The Apollo calibration fold (Operator-authorized this session) remains the optional out-of-band finisher; the emq.5.1-planted guardrails (declared-keys, byte-freeze, conformance additive-minor, determinism posture) and the architect's-approach method all RE-FIRED GREEN on emq.5.4.
