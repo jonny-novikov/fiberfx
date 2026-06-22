@@ -14,8 +14,8 @@
   [32m✓ eg.2[0m  Tigris remote + fence       [90mNORMAL [0m  [32m87 tests[0m · live-Tigris ✓    [32mSHIPPED[0m
   [32m✓ eg.3[0m  branded-id + change-feed    [90mNORMAL+[0m  [32m98 tests[0m · det 100/100     [32mSHIPPED[0m
   [32m✓ eg.4[0m  echo_graft_backend + proto  [90mHIGH   [0m  [32m120 tests · BEAM 69/0 ✓[0m    [32mSHIPPED[0m
-  [97m○ eg.5[0m  low-latency write tier      [90mNORMAL+[0m  [2mcarries UF-1 (wire cap) · UF-2 (not_found)[0m  [33mNEXT[0m
-  [90m○ eg.6  ship + durability shootout  NORMAL   —                     PENDING[0m
+  [32m✓ eg.5[0m  low-latency write tier      [90mHIGH   [0m  [32mconf 9/0 · live 3/0 ✓[0m      [32mSHIPPED[0m
+  [97m○ eg.6[0m[90m  ship + durability shootout  NORMAL   —                     [0m[33mNEXT[0m
 
 [1;35m▌ eg.4 BUILD ORDER[0m  [2m(foundation first; reassess before the live-bus surface)[0m
   [32m✓ 1[0m echo_graft_proto + fixtures   [32m16 msgs · Rust 6 tests green · clippy clean[0m
