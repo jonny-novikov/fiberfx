@@ -8,6 +8,13 @@ Include an academic reference on fair queueing as well as internal prose section
 For the references, I'm consolidating the Valkey documentation links—the sorted sets and ZADD command pages might be combined into a single reference. 
 Looking up the documentation links for Mastermind and Oban.
 
+```
+First, analyze the Graft approach in https://github.com/orbitinghail/graft and harden Elixir implementation to fit the requirements on the way to EchoMQ 4+.
+Second, rethink an approach for durability of EchoMQ as an Plugin - Postgres Journals, other options, local to develop.
+What makes the Postgres journal implemented in EchoMQ beneficial over Oban fully backed by PostgreSQL? Mitigate single instance db but have reliable ValKey seems to be a balanced decision.
+So, deliver new features in echo umbrella: new Graf features, EchoMQ Plug Support, Postgres Journaling.
+```
+
 ## 2026-06-15 — Leftover
 
 1. EchoMQ command registry.

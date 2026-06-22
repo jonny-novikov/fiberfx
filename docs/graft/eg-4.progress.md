@@ -233,3 +233,19 @@ FINALIZATION DONE (spec-only; production code byte-exact pristine, 3 sha256 re-v
 CHARTER COMPLETE (all §11.2 artifacts in Y-4): prompted-checks 7/7 PASS on independent re-run (Rust 39/0, Elixir 69/0 incl. live valkey, determinism 100/100 isolated, backend clippy 0); un-prompted findings UF-1 (backpressure cap unwired — deferred-by-design, now named as an eg.5 deliverable) + UF-2 (not_found arm unexercised, documented non-blocking gap); attack-that-held 6/6 (Msg::decode hostile-frame battery, incl. the page-count-overflow DoS-resistance); mutation kill-rate 3/4 (the 1 survivor = UF-2). Learnings L-2 (determinism-loop vs concurrent-build) + L-3 (tested-in-isolation ≠ wired-in).
 
 VERDICT: BUILD-GRADE — ship-ready. No blocker. Director to ship to the working tree (no commit unless the Operator asks). All edits left in the working tree.
+
+### Y-6 — Director Stage-6 ship + fold COMPLETE (working tree, uncommitted)
+
+Operator ruling: "Ship eg.4 Stage-6 having reconciled docs, design, specs." Director executed the working-tree ship + the Stage-6 fold (no commit).
+
+GATE RE-CONFIRMED on the current tree (the Operator had staged a `Cargo.lock` change out-of-band since Apollo's verdict, so the Director re-ran the Rust side as a compile-safety + count-of-record check): `cargo test --workspace -- --test-threads=1` → **120 unit+integration + 1 doctest, 0 failed, EXIT=0** (echo_graft 74 · echo_graft_backend 16 · echo_graft_proto 6 · echo_graft_test 24; `--list`-verified). Elixir **69/0 incl. live Valkey** + **determinism 100/100** stand on Apollo's 4×-verified Y-4/Y-5 record — the `Cargo.lock` change is Rust-side, the echo_store tree is unchanged. Determinism loop NOT re-run (an established property; L-2 documents the concurrent-build hazard that corrupts that very loop).
+
+FOLD LANDED (docs only; production code byte-exact pristine, native `EchoStore.Graft.*` + `github.local/graft` untouched):
+- `graft.progress.md` (tracker): eg.4 ⚙ BUILDING → ✓ SHIPPED (`120 tests · BEAM 69/0 ✓`); build-order steps 3–7 ○ → ✓ (step 6 honestly flags the dormant cap → eg.5/UF-1); eg.5 surfaced as NEXT carrying UF-1 (wire `Backpressure::admit`) + UF-2 (pin `not_found`).
+- `graft.roadmap.md`: eg.4 row + §3 architecture mermaid reconciled to as-built names — `echo_graft_sidecar` → `echo_graft_backend`, `EchoStore.Graft` client → `EchoStore.GraftBackend`, the never-built `echo_graft_remote` crate → the OpenDAL remote module (also corrected in eg.2's row). The glossary "sidecar" *concept* left intact (the deployment pattern `echo_graft_backend` implements).
+- `graft.4.md`: status frontmatter BUILD-GRADE → SHIPPED (working tree, uncommitted).
+- Companion docs reconcile (this session, pre-fold): `graft.design.md` accuracy-fixed (object_store → OpenDAL, coexist naming) + wired into canon; the `graft.progress` → `graft.progress.md` rename's references repaired; `graft.engine-split.design.md` kept (Coexist).
+
+SHIP POSTURE: working tree, **NO commit** (the whole `echo_graft` + `docs/graft` tree is untracked on the `echo_mq` branch; eg.1–eg.3 shipped the same way). Scoped LAW-4 commits available on the Operator's request.
+
+D-6 (Option A) + D-7 (RESOLVED Option A) ratified by the Director at ship. **eg.4 CLOSED.** Next: **eg.5** (low-latency write tier) carrying UF-1 + UF-2.

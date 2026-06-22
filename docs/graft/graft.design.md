@@ -8,7 +8,7 @@ EchoMQ enqueues jobs on Valkey over RESP3, bridging the BEAM and Go runtimes. Th
 
 A four-way measurement settled what the choices cost. Recording 20,000 jobs on a single shared vCPU, durable-enqueue throughput ranged from an in-memory map holding nothing to disk down to a commit-per-job that fsyncs every write, and the spread had one explanation: throughput tracks how many durable records ride each fsync. The fsync is fixed cost; everything else is how many jobs you amortize it across. So the question for EchoMQ is not whether to fsync, but how to reach a per-commit, replicated guarantee without collapsing to the per-commit floor.
 
-The answer pairs two engines. Champ — an in-memory `BrandedChamp` with a periodic disk snapshot — is the accept tier, fast because its checkpoint amortizes the fsync over K records. Graft — a transactional, page-replicated storage engine over object storage — is the commit tier, where each batch becomes one LSN replicated to Tigris. This piece shows how they join, with the numbers measured against a real S3-compatible store.
+The answer pairs two engines. Champ — an in-memory `BrandedChamp` with a periodic disk snapshot — is the accept tier, fast because its checkpoint amortizes the fsync over K records. `echo_graft` — the platform's owned engine (transactional and page-replicated over object storage, seeded from Graft) — is the commit tier, where each batch becomes one LSN replicated to Tigris. This piece shows how they join, with the numbers measured against a real S3-compatible store.
 
 ## What You'll Build
 
@@ -51,7 +51,7 @@ Graft is a transactional storage engine that replicates at page granularity to o
 
 Replication rolls up rather than streams. A push snapshots an LSN range, collects the referenced pages, deduplicates to the latest version of each, compresses them into Zstd frames of up to 64 pages, uploads the segment, and commits the metadata with the conditional write. Many local commits collapse into one remote commit, and pages load lazily — a reader faults a page in by finding its segment in the snapshot and fetching that frame. Because metadata and data are decoupled, a replica becomes ready by reading the log head and faulting pages in on demand, rather than downloading the whole Volume.
 
-The Tigris seam is a configuration, not a rewrite: Graft's remote backend rides the Apache `object_store` crate, so Tigris is an `object_store` S3 store, and its create-if-not-exists conditional put is the commit fence. Segments land under `/segments/{SegmentId}` and commits under `/logs/{LogId}/commits/{LSN}`. This is what carries EchoMQ's durability from bounded-loss-snapshot to per-commit transactional and replicated off the box, with recovery measured in a log-head read plus lazy page faults rather than a full snapshot download.
+The Tigris seam is a configuration, not a rewrite: `echo_graft`'s remote backend rides Apache **OpenDAL**, so Tigris is an OpenDAL `S3Compatible` store — one of the three `RemoteConfig` arms (beside Memory and Fs), pointed at Tigris through `AWS_ENDPOINT_URL` — and its create-if-not-exists conditional put (surfaced as `opendal::ErrorKind::ConditionNotMatch`) is the commit fence. Segments land under `/segments/{SegmentId}` and commits under `/logs/{LogId}/commits/{LSN}`. This is what carries EchoMQ's durability from bounded-loss-snapshot to per-commit transactional and replicated off the box, with recovery measured in a log-head read plus lazy page faults rather than a full snapshot download.
 
 ## The seam
 
@@ -68,7 +68,7 @@ defp enqueue(job, mode) do
 end
 ```
 
-The commit LSN is the synchronization cursor. Every advance is published on an EchoMQ lane, so replicas and the dashboard observe new versions without polling and a follower pulls from its SyncPoint forward.
+The commit LSN is the synchronization cursor. Every advance is published by the EchoMQ-participant backend (`echo_graft_backend`) on its change-feed lane, so replicas and the dashboard observe new versions without polling and a follower pulls from its SyncPoint forward.
 
 ```mermaid
 flowchart TB
@@ -96,7 +96,7 @@ A two-tier durability design for EchoMQ: Champ as the in-memory accept tier with
 - orbitinghail / graft — transactional, page-level replication over object storage; the LSN commit and conditional-write model used as the commit tier. https://github.com/orbitinghail/graft
 - minio / minio — the S3-compatible store used to measure replication and recovery locally. https://github.com/minio/minio
 - taskforcesh / bullmq — the Redis-backed queue measured in the spectrum. https://github.com/taskforcesh/bullmq
-- apache / arrow-rs (`object_store`) — the remote-storage crate Graft's Tigris backend rides. https://github.com/apache/arrow-rs
+- apache / opendal — the remote-storage abstraction `echo_graft`'s Tigris backend rides (the `S3Compatible` operator + the conditional-put commit fence). https://github.com/apache/opendal
 - Carl Sverre, on Graft's design and lazy partial replication. https://graft.rs/docs/internals
 - Saša Jurić, _"To spawn, or not to spawn?"_ — on placing work off the calling process, behind the async replication path. https://www.theerlangelist.com/article/spawn_or_not
 - _Designing Data-Intensive Applications_, Martin Kleppmann, O'Reilly, 2017 — write-ahead logs, group commit, and replication (Chapters 3 and 5).

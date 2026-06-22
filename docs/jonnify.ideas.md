@@ -68,3 +68,9 @@ https://github.com/baseballyama/rsvelte
 
 Rust wasm Svelte runtime compiler.
 Claude Design.
+
+## nano-engine
+
+Geo Spatial Modeling and Image Generation
+
+https://www.birdi.io/features/2d-3d-map-model-processing

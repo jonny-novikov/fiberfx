@@ -4,7 +4,7 @@ id: echo-graft-4-sidecar-proto
 rung: eg.4
 size: L
 risk: HIGH
-status: BUILD-GRADE (Apollo eg.4 evaluation 2026-06-21 · D-1 A · D-2 echo_graft_backend · D-7 RESOLVED Option A — compositional proof accepted, real Rust↔Valkey binding deferred to eg.5/eg.6) — synced to as-built
+status: SHIPPED — working tree, uncommitted (Director Stage-6 fold 2026-06-22 · Apollo BUILD-GRADE 2026-06-21 · D-1 A · D-2 echo_graft_backend · D-7 RESOLVED Option A — compositional proof accepted, real Rust↔Valkey binding deferred to eg.5/eg.6) — synced to as-built
 stands-on: "eg.2 · eg.3"
 ---
 

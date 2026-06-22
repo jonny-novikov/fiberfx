@@ -36,18 +36,18 @@ Champ today is bounded-loss: in-memory `BrandedChamp` plus a periodic snapshot, 
 flowchart TB
     subgraph BEAM["BEAM orchestrator (Elixir)"]
         Caller["EchoStore caller"]
-        Client["EchoStore.Graft client"]
+        Client["EchoStore.GraftBackend client"]
         Caller --> Client
     end
     subgraph Bus["EchoMQ (RESP3)"]
         Cmd["command lane"]
         Feed["change-feed lane"]
     end
-    subgraph Side["echo_graft_sidecar (Rust, supervised)"]
+    subgraph Side["echo_graft_backend (Rust, supervised)"]
         Proto["echo_graft_proto (versioned wire)"]
         RT["echo_graft runtime\nVolume / Reader / Writer / sync"]
         Local["Fjall local store\ntags / volumes / log / pages"]
-        Remote["echo_graft_remote\nTigris (SigV4)"]
+        Remote["remote (OpenDAL)\nTigris (SigV4)"]
         Proto --> RT --> Local
         RT --> Remote
     end
@@ -63,9 +63,9 @@ The BEAM never links the engine in-process during the spine: the sidecar owns Vo
 | Rung | Ships | Stands on | Size | Risk | Build topology |
 |---|---|---|---|---|---|
 | **eg.1** | core fork + workspace — `echo_graft` runtime carved from upstream, `libgraft_ext` removed, Fjall local store retained, upstream Volume tests green | upstream `orbitinghail/graft` (MIT/Apache-2.0) | **M** | **NORMAL** (subtractive fork; no logic rewrite) | Flat-L2 |
-| **eg.2** | Tigris remote backend + commit/fence — `echo_graft_remote` implementing the remote-storage trait against Tigris (SigV4); segments/commits/checkpoints; conditional-write commit verified as the multi-writer fence | eg.1 · the blue-green SigV4 path | **M** | **NORMAL** (a new backend behind a stable trait) | Flat-L2 |
+| **eg.2** | Tigris remote backend + commit/fence — the OpenDAL remote module (`RemoteConfig::S3Compatible`) against Tigris (SigV4); segments/commits/checkpoints; conditional-write commit verified as the multi-writer fence | eg.1 · the blue-green SigV4 path | **M** | **NORMAL** (a new backend behind a stable trait) | Flat-L2 |
 | **eg.3** | branded-ID identity + EchoMQ change-feed — `{ns}{base62}` ↔ Volume/Log mapping; LSN/SyncPoint advances published over EchoMQ | eg.1 · eg.2 · EchoMQ | **M** | **NORMAL+** (a new external identity surface + a new lane) | Flat-L2 + Apollo RECOMMENDED |
-| **eg.4** | BEAM↔Rust sidecar + protocol — `echo_graft_sidecar` as an EchoMQ participant; `echo_graft_proto` versioned wire; `EchoStore.Graft` Elixir client; commit/read/snapshot/sync over the bus | eg.2 · eg.3 | **L** | **HIGH** (the cross-runtime contract; a wire + version surface) | Flat-L2 + Apollo REQUIRED |
+| **eg.4** | BEAM↔Rust backend + protocol — `echo_graft_backend` as an EchoMQ participant; `echo_graft_proto` versioned wire; `EchoStore.GraftBackend` Elixir client (a coexisting peer beside native `EchoStore.Graft.*`); commit/read/snapshot/sync over the bus | eg.2 · eg.3 | **L** | **HIGH** (the cross-runtime contract; a wire + version surface) | Flat-L2 + Apollo REQUIRED |
 | **eg.5** | low-latency write tier — local-fsync group-commit buffer in front of the object-storage commit; sync/async durability per call | eg.4 | **M** | **NORMAL+** (a pure shaping core + one durable buffer) | Flat-L2 |
 | **eg.6** | ship — cross-compile (Mac + Windows), CI, the durability shootout battery run against `echo_graft` beside Champ and Oban | eg.1–eg.5 | **M** | **NORMAL** (packaging + measurement) | Flat-L2 |
 
@@ -76,7 +76,7 @@ flowchart LR
     eg1["eg.1 core fork"] --> eg2["eg.2 Tigris + fence"]
     eg1 --> eg3["eg.3 identity + feed"]
     eg2 --> eg3
-    eg2 --> eg4["eg.4 sidecar + proto"]
+    eg2 --> eg4["eg.4 backend + proto"]
     eg3 --> eg4
     eg4 --> eg5["eg.5 low-latency tier"]
     eg4 --> eg6["eg.6 ship"]
@@ -120,6 +120,13 @@ Every rung is done only when all of these hold, in addition to its own acceptanc
 - **Change-feed** — the EchoMQ lane carrying commit-LSN advances to BEAM consumers.
 
 ## 9. References { id="references" }
+
+**Design docs (this directory):**
+
+- `graft.design.md` — _Guaranteeing EchoMQ Durability with Champ and Graft_: the two-tier durability narrative (the native Champ accept tier + the `echo_graft` commit tier), the measured durability spectrum, and the Champ→Graft→Tigris seam.
+- `graft.engine-split.design.md` — the Elixir/Rust engine-split decision (Operator D-1=A, COEXIST): why the native-BEAM `EchoStore.Graft.*` and the Rust `echo_graft_backend` coexist rather than one replacing the other.
+
+**Upstream Graft (read-only idea source):**
 
 - Graft architecture — https://graft.rs/docs/internals
 - Graft future work — https://graft.rs/docs/internals/future
