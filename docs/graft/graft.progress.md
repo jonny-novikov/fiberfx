@@ -2,7 +2,7 @@
 ║  echo_graft  ·  durability tier  ·  real-time epic tracker            ║
 ║  [0m[2mfrom-scratch Rust engine seeded from Graft · NO upstream compatibility[0m[1;36m  ║
 ╚══════════════════════════════════════════════════════════════════════╝[0m
-[2m  rendered for the terminal — `cat docs/graft/graft.progress.md` · updated 2026-06-21[0m
+[2m  rendered for the terminal — `cat docs/graft/graft.progress.md` · updated 2026-06-22 · eg.6 DEFERRED (fly.io EchoMQ deploy floor pending)[0m
 
 [1;35m▌ ARCHITECTURE[0m  (Operator-ruled 2026-06-21 · D-1=A COEXIST · D-2 name=echo_graft_backend)
     [32m●[0m native-BEAM [1mEchoStore.Graft.*[0m   canonical default · pure Elixir · UNTOUCHED
@@ -15,7 +15,7 @@
   [32m✓ eg.3[0m  branded-id + change-feed    [90mNORMAL+[0m  [32m98 tests[0m · det 100/100     [32mSHIPPED[0m
   [32m✓ eg.4[0m  echo_graft_backend + proto  [90mHIGH   [0m  [32m120 tests · BEAM 69/0 ✓[0m    [32mSHIPPED[0m
   [32m✓ eg.5[0m  low-latency write tier      [90mHIGH   [0m  [32mconf 9/0 · live 3/0 ✓[0m      [32mSHIPPED[0m
-  [97m○ eg.6[0m[90m  ship + durability shootout  NORMAL   —                     [0m[33mNEXT[0m
+  [90m○ eg.6[0m[90m  ship+run integrated + deploy + shootout   HIGH   ∵ fly.io deploy floor not ready   [0m[35mDEFERRED[0m
 
 [1;35m▌ eg.4 BUILD ORDER[0m  [2m(foundation first; reassess before the live-bus surface)[0m
   [32m✓ 1[0m echo_graft_proto + fixtures   [32m16 msgs · Rust 6 tests green · clippy clean[0m
@@ -28,6 +28,6 @@
 
 [1;35m▌ CROSS-CUTTING GATES[0m
   [32m✓[0m upstream parity     [32m✓[0m declared keys      [32m✓[0m byte-frozen wire [2m(proto proven 5+6)[0m
-  [32m✓[0m determinism: pure   [32m✓[0m license retained   [90m○ shootout battery [2m(eg.6)[0m
+  [32m✓[0m determinism: pure   [32m✓[0m license retained   [90m○ shootout battery [2m(eg.6 — deferred)[0m
 
-[2mlegend:  [32m✓[2m shipped/done   [33m⚙[2m building   ○ pending          spec: docs/graft/specs/graft.4.md[0m
+[2mlegend:  [32m✓[2m shipped/done   [33m⚙[2m building   ○ pending          specs: docs/graft/specs/  ·  eg.6 deferred[0m
