@@ -82,6 +82,13 @@ group over `EchoMQ.Stream.append/4`'s per-key stream, reading `XREADGROUP … >`
 its own private lane, recovering its own un-acked backlog on restart and dead peers'
 on the beat. See [`echo_mq/stream_consumer.md`](echo_mq/stream_consumer.md).
 
+For **bounded retention** of a stream (the compliance window and memory truth),
+`EchoMQ.Stream.trim/4` removes entries outside a declared window over `XTRIM` — by
+count (`MAXLEN`) or by a mint-instant floor (`MINID`), the blast radius bounded so a
+trim can never delete inside the window — and the named, opt-in `EchoMQ.StreamRetention`
+driver re-applies that window on its own beat, decoupled from any consumer. See
+[`echo_mq/stream_retention.md`](echo_mq/stream_retention.md).
+
 ## Conformance and the stories catalogue
 
 EchoMQ documents itself with **BDD story tests** (`test/stories/*_story_test.exs`,
