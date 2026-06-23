@@ -44,7 +44,7 @@ The destination is **EchoMQ 3.0 — Streams Support**.
   near-term delivery, ahead of the remaining 2.x rungs.** The Stream Tier hard-gates on `emq.0` ONLY
   (met), so it opens unblocked; the remaining three families — **emq.6 (lifecycle controls) · emq.7
   (the cache deepened) · emq.8 (the proof stack)** — are **DEFERRED behind it as a parked "2.x-runway
-  continuation"** (Operator-revisable, not deleted). **emq3.1–emq3.4 SHIPPED — S1 the writer (the verb floor `7b44dc97` + the writer law `EchoMQ.Stream`, conf 75, `b6ff483b`) + S2 the readers (emq3.3 the reader law `EchoMQ.StreamConsumer` + the polyglot seam, conf 76, `71ce78cc`; emq3.4 retention as policy `EchoMQ.Stream.trim/4` + the named/opt-in driver, conf 77, `e5cd3ea0`); emq3.5 (the archive) is next.**
+  continuation"** (Operator-revisable, not deleted). **emq3.1–emq3.4 SHIPPED — S1 the writer (the verb floor `7b44dc97` + the writer law `EchoMQ.Stream`, conf 75, `b6ff483b`) + S2 the readers (emq3.3 the reader law `EchoMQ.StreamConsumer` + the polyglot seam, conf 76, `71ce78cc`; emq3.4 retention as policy `EchoMQ.Stream.trim/4` + the named/opt-in driver, conf 77, `e5cd3ea0`) + S3 the archive (emq3.5 `EchoStore.StreamArchive` fold-then-trim into the native `EchoStore.Graft`, conf 78, `e2d73e23`); emq3.6 (time-travel) is next.**
 - **Where.** Code: `echo/apps/{echo_wire, echo_mq, echo_store, echo_data}`, `echo/rungs/`. Specs:
   `docs/echo_mq/` (this roadmap · the design canon `emq.design.md` · the stream tier
   `emq.streams.md` · the references · the rung triads under `specs/`).
