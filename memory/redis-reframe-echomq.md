@@ -7,7 +7,37 @@ metadata:
   originSessionId: e9265937-7278-4619-b5bc-d127815c1163
 ---
 
-## EVOLVED — B0 reconcile to the Exchange Platform exemplar (2026-06-13) — READ FIRST, supersedes 3 earlier points
+## 2026-06-23 — `/redis-reconcile R1 R2` was a RE-RUN; R2 doors → /echomq/protocol; EchoCache/Exchange CODE-DRIFT flagged — READ FIRST
+
+`/redis-reconcile R1 R2` was invoked but **R1/R2 were ALREADY reconciled** (re2/re3) — 4 sources agree (this memory,
+`redis-patterns.roadmap.md`, the TOC, and the disk: 29pp + 22pp, gate **51/51 PASS**, identity contract-sheet, real
+groundings, zero BullMQ, 2-col refs, md mirrors complete). The stale skill-side `course-map.md` digest ("dark-editorial
+until re2/re3") + the command's frontier note seeded a false premise → **did NOT fan out 51 agents to rebuild passing
+pages**; verified + closed the one residual gap + synced docs. **course-map.md de-staled** (R1/R2 → "built + reconciled").
+Real frontier unchanged: **re4 = `/redis-reconcile B3` (R3 queues)**.
+
+**ONE genuine residual gap closed — R2 doors.** re3 left R2's `.door` CTA + the 21 per-page "Related in this course"
+EchoMQ links at the **bare `/echomq`** hub because the named pillars weren't built. They ARE now —
+`html/echomq/{protocol,queue,substrate,core,overview}/` exist; **NO `/echomq/cache`** yet. Retargeted R2 → **E1
+`/echomq/protocol`** (HTML + md mirrors; footer "The courses" nav + inline-prose "EchoMQ course" refs left bare by
+design), re-gated **22/22 PASS**. `echomq-doors.md` R2 follow-up updated. **R1's door correctly stays `/echomq/queue`**
+(its ideal `/echomq/cache` is NOT built — leave per echomq-doors.md until it lands).
+
+**FLAGGED — a contract-vs-code drift the course can't self-detect (will recur at re4+):** the reframe contract
+(`reframe-echomq.md`) names **`EchoCache`** (`echo/apps/echo_cache`) + **`Exchange.Gateway.parse_place/1`**
+(`echo/apps/exchange`) as grounding, and the pages faithfully cite them (EchoCache ×73 files course-wide, Exchange
+×11). But the CODE moved AFTER the contract was written: `echo/apps/echo_cache` → **`echo/apps/echo_store`** (modules
+`EchoCache.*` → `EchoStore.*`; the functions fetch/put/invalidate/enqueue/claim/queue_key/slot ARE real there), and
+**`echo/apps/exchange` is GONE** (consumer pivoted to codemojex/echo_bot — see [[echo-store-rename]],
+[[echo-mq-three-movements]]). The pages match their CONTRACT, so this is NOT a page defect → needs an Operator/Venus
+decision to update the reframe contract (EchoCache→EchoStore; re-home or retire the Exchange exemplar) BEFORE any
+course-wide rename. Out of scope for an R1/R2 routing reconcile; do NOT silently rewrite.
+
+**Tooling gotcha:** the user's shell `grep` is aliased/functioned so patterns with spaces / `=` / quotes intermittently
+fail with `error: unknown option '-G'` and **silently return 0** (false-clean scrubs). Use **`/usr/bin/grep`** (or
+`command grep`) for any scrub whose `0` you rely on.
+
+## EVOLVED — B0 reconcile to the Exchange Platform exemplar (2026-06-13) — supersedes 3 earlier points
 
 The operator evolved the reframe into a stronger **TARGET DESIGN**:
 - **Exemplar: Portal → the EXCHANGE PLATFORM.** The worked consumer is the Exchange Platform — REAL partial code at
