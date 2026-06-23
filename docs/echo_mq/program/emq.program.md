@@ -91,7 +91,17 @@ dual-architect *design-ahead* is the **Squad front**; once it has delivered (the
 build runs the **Squad back-half** (Mars + Apollo) and the spent front is not re-spawned. **Cross-/compact
 reconnect:** the aaw tools defer after a compaction — re-`ToolSearch` the spine and re-run `mcp__aaw__status`
 as the first act, BEFORE any ledger write or spawn (an `agents:null` with a populated ledger is the FAKE-N
-*inverse* — work no registered agent can attest; `emq3.3-L1`).
+*inverse* — work no registered agent can attest; `emq3.3-L1`). **The reconnect's FIRST act is the FULL
+bootstrap, not `mcp__aaw__status` alone:** re-`ToolSearch` the spine → `mcp__aaw__status` → THEN, before ANY
+spawn, `aaw_init` (idempotent re-open) + `agent_register(Director)` + `TeamCreate(scope)` + per-peer
+`aaw_spawn(parent=Director)` launched as `team_name`-bound members that self-register; **spawned MUST equal
+registered** (neither FAKE-N nor its inverse). A persisted aaw registry is NOT a live Claude team — re-running
+`aaw_status` alone (skipping `TeamCreate` + the comms layer) and spawning a bare background `Agent` outside the
+team is the post-compaction anti-pattern; the correction is `TaskStop` the stray peer + a clean re-init
+(emq3.5 T-4, an Operator-flagged LAW violation). And a **spec-calibration rung can uncover a pre-existing
+breakage that CASCADES** — a module-collision masking a half-finished contract migration (emq3.5 E-1→E-2) —
+each layer ESCALATED, Operator-ruled, committed as its OWN scoped concern (D-4/D-5, LAW-4 split-by-concern),
+never folded into the rung.
 
 - **Match the formation to the rung.** A trivial / mechanical rung (a doc reconcile, a one-line fix, a re-pin)
   runs as ONE builder under the Director — not Venus + Mars-1 + Mars-2 + the full battery. A NORMAL capability

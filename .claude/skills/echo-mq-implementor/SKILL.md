@@ -118,6 +118,11 @@ Per the shared reference's gate ladder, every item:
 - The **≥100 determinism loop** for any id-minting / process / engine suite — `for i in $(seq 1 100); do
   TMPDIR=/tmp mix test || break; done` — the loop OWNS the machine (no concurrent server, no sibling heavy
   I/O). One green run is not proof; the same-ms mint collision flakes only across runs.
+- **A store-side suite on the SHARED Valkey :6390 MUST purge its braced slot `emq:{q}:*` in `on_exit`**
+  (the `table_test.exs` pattern) — `System.unique_integer` is unique only WITHIN a VM, so across the ≥100
+  loop's separate `mix test` VMs a "unique" queue recurs and reads a PRIOR iteration's leaked records; the
+  ≥100 loop is the ONLY gate that surfaces this (emq3.5 L-4: 39/100 fail on the first run from 1369 leaked
+  keys — the production fold math was always correct; the test's cross-VM isolation was the bug).
 - **"Pre-existing" is two facts**: an environment-gated-cannot-run check (e.g. an Oban/Postgres benchmark
   rung) is a documented carry; a this-change-staled-it check (e.g. a hardcoded conformance count the rung's
   additive-minor growth supersedes) is **the rung's own debt to close in the same change**. Distinguish them
@@ -169,6 +174,13 @@ reporting** — find your defects first, do not wait for a verifier:
   KEEPING data), `=` the explicit hard-cap opt-in. Derive any time-floor from the shipped mint math
   (`Snowflake.min_for/1` → `"<ms>-0"`), NEVER hand the raw 63-bit snowflake INTEGER to the wire (a snowflake
   int is not a stream id; a `refute floor == Integer.to_string(min_for(dt))` proves it) — the emq3.4 finding.
+- **A TWO-PHASE durable write makes its allocator advance atomic-or-rollback.** When a rung persists an
+  allocator THEN commits a payload as SEPARATE writes (emq3.5 `fold/3`'s `:arc_seq` advance + `commit/3`),
+  advance the counter ONLY after the commit succeeds (peek-then-`commit_seq`), roll it back on failure, or
+  derive the read-count from committed state — never let a durable allocator OUTRUN a durable payload (R-1:
+  advance-before-commit leaks the counter past uncommitted pages → `read_archive` crashes on an `:absent`
+  index). The deepened verify reads the production ERROR branches against the test coverage — an untested
+  failure branch on a HIGH-risk at-rest write is a REMEDIATE, not a pass (emq3.5 R-1: shipped happy-path-green).
 
 This is PART of build-before-report, not a downstream gate. Apollo confirms story coverage + reconciles, the
 Director's Stage-3 review is the independent floor — but the first and strongest adversary of your code is YOU.

@@ -73,7 +73,12 @@ spec, not the code).
   widths the crate was authored to, when fmt is not in the gate ladder) is NAMED in the report and
   LEFT alone — running it would reflow code you did not author into an unreviewable diff (do-no-harm
   / don't-churn-what-you-didn't-create, eg-5 L-4). Confirm by stashing your diff + re-running at
-  HEAD: same finding ⇒ pre-existing, not yours.
+  HEAD: same finding ⇒ pre-existing, not yours — then ESCALATE it as a SEPARATE scoped concern
+  (LAW-4), never folded into the rung commit. A behaviour stranded between two contract versions shows
+  BOTH dangling `@impl` (callbacks the behaviour no longer declares) AND missing-callback warnings on
+  the same module — the diagnostic that distinguished a stray orphan from a half-finished 12→9 adapter
+  migration (emq3.5 E-1/E-2: a pre-existing breakage a spec-calibration rung uncovered, escalated +
+  Operator-ruled, committed as its own concern).
 - The suite is not the server. For any web-touching rung, run the **liveness check** before
   reporting done: `mix test` runs the endpoint with `server: false` (`config/test.exs`), so a green
   suite proves the plug pipeline, NOT that the dev node boots + binds. Boot (`mix phx.server`) and
@@ -120,6 +125,12 @@ spec, not the code).
   pass caught it only by a byte-diff against the CURRENT 733L master, which Venus's reconcile had
   already grown from the 685L the spec cited). The cheap proof is the byte-diff against the current
   source — same "a check counts only if it RUNS" class.
+- **A suite unblocked from a long-standing breakage is a DISCOVERY surface, not a confirmation.** When a
+  long-standing compile/gate breakage clears (emq3.5's D-4/D-5 unblocked the store `:valkey` suite that
+  had NEVER run — the module collision masked it at the compile gate), its first real run earns its
+  green by HUNTING latent defects, never assuming them absent: that first run surfaced `store_for/1`'s
+  phantom `{:store,vol}` `:noproc` + an L1 atom-name `FunctionClauseError`, both fixed in-boundary.
+  Budget the first green for discovery.
 - Do NOT `git commit` — the Director commits once, at the rung's close. Leave the work in the tree
   for ratification.
 

@@ -42,6 +42,13 @@ Before briefing, diff the rung's triad against the as-built tree it depends on �
   matching `append/4`; the raise-before-any-wire behavior holds), TRUE the § to the realized mechanism —
   record what shipped, the intent preserved — rather than forcing the code to the literal text. An intent
   divergence is a STALE reported to the Director; a mechanism realization is a sync applied.
+- **When a "drop stale code" directive deletes a constant/module a spec invariant was DEFINED against,
+  re-anchor the invariant on the AS-BUILT shipped surface — never the vanished precedent (the lag-0 law).**
+  emq3.5's D-5 dropped the outbox `@obx_base` INV4's disjointness was written against; the sync re-anchored
+  INV4 onto the native engine's flat page axis (`bsl(1,49)`, far above any business page), citing the shipped
+  `stream_archive.ex`, not the deleted plugin. AND a deletion obligates a sweep of EVERY plane that names the
+  surface — `lib` + TEST + config + doc-prose: a TEST still constructing the deleted module is a `-Werror`
+  compile-blocker a prod-grep misses (emq3.5 L-3, the cross-plane catch the team broadcasting surfaced).
 - **Inline scripts, not `priv/`.** No `echo/apps/echo_mq/priv/` exists; scripts are inline `Script.new/2`
   module attributes. A triad that says "new Lua under `priv/`" is STALE.
 - **A "no new dependency" claim is a per-app DEP-GRAPH-VISIBILITY fact** — read the consuming app's `mix.exs`
