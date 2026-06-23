@@ -179,4 +179,160 @@ defmodule EchoMQ.StreamTest do
                Stream.append_id(conn, queue, "wt", evt, [{"f", "v"}])
     end
   end
+
+  # ==========================================================================
+  # emq3.6 TIME-TRAVEL -- a mint-time window read == the id-filtered truth
+  # ==========================================================================
+
+  # Append one EVT record at a CONTROLLED, KNOWN mint instant `dt`: the branded
+  # id's snowflake IS min_for(dt) (seq 0 at that ms), so its mint instant is
+  # exactly `dt` -- the deterministic mint the time-travel assertions stand on
+  # (no next_branded live-clock hazard; the window straddle is exact by
+  # construction, so a multi-seed sweep suffices -- not the ≥100 loop). The
+  # conformance stream_retention_append_at precedent.
+  defp append_at(conn, queue, name, %DateTime{} = dt) do
+    branded = BrandedId.encode!("EVT", Snowflake.min_for(dt))
+    {:ok, ^branded} = Stream.append_id(conn, queue, name, branded, [{"at", DateTime.to_iso8601(dt)}])
+    branded
+  end
+
+  # The mint instant of a branded EVT id (its snowflake -> DateTime) -- the
+  # id-filter the window read is asserted EQUAL to (INV-TT).
+  defp instant(branded) do
+    {:ok, "EVT", snow} = BrandedId.parse(branded)
+    Snowflake.to_datetime(snow)
+  end
+
+  defp ids(entries), do: for({b, _f} <- entries, do: b)
+
+  describe "emq3.6 INV-TT -- read_window/5 == the id-filtered full read (the straddle)" do
+    test "a STRADDLING window returns EXACTLY the in-window entries in mint order, excluding below/above",
+         ctx do
+      %{conn: conn, queue: queue} = ctx
+      t0 = ~U[2025-05-01 09:00:00.000Z]
+      t1 = ~U[2025-05-01 09:00:00.300Z]
+
+      below = for d <- 3..1//-1, do: append_at(conn, queue, "tt", DateTime.add(t0, -d, :millisecond))
+      inside = for ms <- [0, 100, 300], do: append_at(conn, queue, "tt", DateTime.add(t0, ms, :millisecond))
+      above = for d <- 1..3, do: append_at(conn, queue, "tt", DateTime.add(t1, d, :millisecond))
+
+      {:ok, full} = Stream.read(conn, queue, "tt")
+      full_ids = ids(full)
+
+      # the id-filtered truth: the full read filtered by each id's mint instant.
+      filtered =
+        for b <- full_ids,
+            DateTime.compare(instant(b), t0) != :lt and DateTime.compare(instant(b), t1) != :gt,
+            do: b
+
+      {:ok, win} = Stream.read_window(conn, queue, "tt", t0, t1)
+      win_ids = ids(win)
+
+      # INV-TT: the window read EQUALS the id-filter, in mint order, == the inside set.
+      assert win_ids == filtered
+      assert win_ids == inside
+
+      # the no-vacuous-pass proof: the window ACTUALLY EXCLUDES the below and above.
+      assert Enum.all?(below, fn b -> b not in win_ids end)
+      assert Enum.all?(above, fn b -> b not in win_ids end)
+      # and it is a STRICT subset of the full read (the bounds filtered something).
+      assert length(win_ids) < length(full_ids)
+    end
+
+    test "a window containing ALL records degenerates to the full read; a window containing NONE is empty",
+         ctx do
+      %{conn: conn, queue: queue} = ctx
+      base = ~U[2025-05-02 12:00:00.000Z]
+      recs = for ms <- [0, 10, 20, 30], do: append_at(conn, queue, "ttall", DateTime.add(base, ms, :millisecond))
+
+      # ALL: a wide window covering every record == the full read.
+      {:ok, all} = Stream.read_window(conn, queue, "ttall", DateTime.add(base, -1000, :millisecond), DateTime.add(base, 1000, :millisecond))
+      assert ids(all) == recs
+
+      # NONE: a window entirely BELOW the data is empty (the edge case, not the proof).
+      {:ok, none} = Stream.read_window(conn, queue, "ttall", DateTime.add(base, -1000, :millisecond), DateTime.add(base, -500, :millisecond))
+      assert none == []
+    end
+
+    test "read_window respects a COUNT cap", ctx do
+      %{conn: conn, queue: queue} = ctx
+      base = ~U[2025-05-03 08:00:00.000Z]
+      recs = for ms <- [0, 5, 10, 15, 20], do: append_at(conn, queue, "ttc", DateTime.add(base, ms, :millisecond))
+
+      {:ok, capped} = Stream.read_window(conn, queue, "ttc", base, DateTime.add(base, 100, :millisecond), 2)
+      # COUNT caps to the 2 OLDEST in mint order (XRANGE COUNT semantics).
+      assert ids(capped) == Enum.take(recs, 2)
+    end
+  end
+
+  describe "emq3.6 INV-BOUND -- the exact-ms edges, never a raw min_for integer to the wire" do
+    test "the lower floor (t0 IN, t0-1ms OUT) and the inclusive upper (t1 IN, t1+1ms OUT)", ctx do
+      %{conn: conn, queue: queue} = ctx
+      t0 = ~U[2025-06-10 06:30:00.000Z]
+      t1 = ~U[2025-06-10 06:30:00.250Z]
+
+      lo_out = append_at(conn, queue, "tte", DateTime.add(t0, -1, :millisecond))
+      lo_in = append_at(conn, queue, "tte", t0)
+      hi_in = append_at(conn, queue, "tte", t1)
+      hi_out = append_at(conn, queue, "tte", DateTime.add(t1, 1, :millisecond))
+
+      {:ok, win} = Stream.read_window(conn, queue, "tte", t0, t1)
+      win_ids = ids(win)
+
+      # the half-open lower floor (minid_floor): t0 IN, t0-1ms OUT.
+      assert lo_in in win_ids
+      assert lo_out not in win_ids
+      # the INCLUSIVE upper (maxid_ceil): t1 IN, t1+1ms OUT.
+      assert hi_in in win_ids
+      assert hi_out not in win_ids
+      # the window is exactly the two in-edge records.
+      assert win_ids == [lo_in, hi_in]
+    end
+
+    test "maxid_ceil is the inverse of minid_floor: floor is <ms>-0, ceil is <ms>-0x3FFFFF, neither a raw integer" do
+      dt = ~U[2025-06-11 00:00:00.123Z]
+      ms = Snowflake.unix_ms(Snowflake.min_for(dt))
+
+      assert Stream.minid_floor(dt) == "#{ms}-0"
+      assert Stream.maxid_ceil(dt) == "#{ms}-#{0x3FFFFF}"
+      # the F-1-class discipline: the bound is "ms-seq", NEVER the snowflake integer.
+      refute Stream.minid_floor(dt) == Integer.to_string(Snowflake.min_for(dt))
+      refute Stream.maxid_ceil(dt) == Integer.to_string(Snowflake.min_for(dt))
+    end
+
+    test "read_since/4 reads the open [t0, inf): at-or-after t0 in mint order, excluding below-t0", ctx do
+      %{conn: conn, queue: queue} = ctx
+      t0 = ~U[2025-07-01 00:00:00.100Z]
+
+      below = for d <- 2..1//-1, do: append_at(conn, queue, "tts", DateTime.add(t0, -d, :millisecond))
+      at_or_after = for ms <- [0, 50, 200], do: append_at(conn, queue, "tts", DateTime.add(t0, ms, :millisecond))
+
+      {:ok, since} = Stream.read_since(conn, queue, "tts", t0)
+      since_ids = ids(since)
+
+      assert since_ids == at_or_after
+      assert Enum.all?(below, fn b -> b not in since_ids end)
+    end
+  end
+
+  describe "emq3.6 the time-travel read guards (policy before the wire)" do
+    test "read_window RAISES ArgumentError on an inverted window (t1 < t0) before any wire", ctx do
+      %{conn: conn, queue: queue} = ctx
+      t0 = ~U[2025-08-01 00:00:00.000Z]
+      t1 = ~U[2025-07-01 00:00:00.000Z]
+
+      assert_raise ArgumentError, fn ->
+        Stream.read_window(conn, queue, "ttbad", t0, t1)
+      end
+    end
+
+    test "an equal-instant window [t,t] is VALID (not inverted) and reads the records at that ms", ctx do
+      %{conn: conn, queue: queue} = ctx
+      t = ~U[2025-08-02 00:00:00.000Z]
+      rec = append_at(conn, queue, "tteq", t)
+
+      {:ok, win} = Stream.read_window(conn, queue, "tteq", t, t)
+      assert ids(win) == [rec]
+    end
+  end
 end

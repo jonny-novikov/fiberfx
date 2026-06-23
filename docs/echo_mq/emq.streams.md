@@ -1,7 +1,7 @@
 # EchoMQ 3.0 — The Stream Tier
 
-**Status: 📨 ACTIVE / NEXT** — the active next-major delivery, **re-sequenced ahead of the 2.x-runway
-remainder (Operator-ruled 2026-06-22)**. Gated on `emq.0` ONLY (met); `emq3.1`–`emq3.4` SHIPPED, `emq3.5` is next. This is the
+**Status: ✅ COMPLETE — the Stream Tier shipped WHOLE (emq3.1–emq3.6)** — the next-major delivery, **re-sequenced ahead of the 2.x-runway
+remainder (Operator-ruled 2026-06-22)**. Gated on `emq.0` ONLY (met); **`emq3.1`–`emq3.6` ALL SHIPPED — the Stream Tier is WHOLE (S1 the writer · S2 the readers · S3 the memory), so the `echomq:3.0.0` MAJOR cutover is now declarable.** This is the
 high-level spec; each rung is still spec-triad-first under the program loop, and no number is claimed
 here before its rung commits it.
 

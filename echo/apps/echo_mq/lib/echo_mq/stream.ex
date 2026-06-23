@@ -88,6 +88,12 @@ defmodule EchoMQ.Stream do
   # every other error_reply (e.g. WRONGTYPE) passes through verbatim.
   @id_too_small "ERR The ID specified in XADD is equal or smaller than the target stream top item"
 
+  # The maximal 22-bit `node|seq` tail (`0x3FFFFF`) -- the largest seq an A1
+  # xadd id can carry at one ms (`Stream.Id.xadd_id/1`'s `snow &&& 0x3FFFFF`,
+  # stream/id.ex:89). `maxid_ceil/1` (emq3.6) uses it as the INCLUSIVE upper
+  # bound `"<ms>-#{0x3FFFFF}"`, the inverse of `minid_floor/1`'s `"<ms>-0"`.
+  @max_seq 0x3FFFFF
+
   @typedoc "An XADD field pair list (claims-only -- flat string pairs)."
   @type fields :: [{binary(), binary()}] | [binary()]
 
@@ -239,6 +245,78 @@ defmodule EchoMQ.Stream do
   def minid_floor(%DateTime{} = dt) do
     ms = EchoData.Snowflake.unix_ms(EchoData.Snowflake.min_for(dt))
     "#{ms}-0"
+  end
+
+  @doc """
+  The INCLUSIVE upper-bound id `"<ms>-#{@max_seq}"` for a window end `dt` (the
+  inverse of `minid_floor/1`, emq3.6) -- the LARGEST entry id mintable at or
+  before `dt`. The `ms` is the SAME true-Unix-ms `minid_floor/1` uses
+  (`Snowflake.unix_ms(min_for(dt))` == `DateTime.to_unix(dt, :millisecond)`);
+  the seq is the maximal 22-bit `node|seq` tail (`0x3FFFFF` == #{@max_seq}), the
+  ceiling of `Stream.Id.xadd_id/1`'s `snow &&& 0x3FFFFF` (`stream/id.ex:89`). So
+  `XRANGE <from> "<ms>-#{@max_seq}"` ADMITS every entry whose mint ms is `<= dt`
+  (any seq at `ms` is `<= 0x3FFFFF` by construction) and EXCLUDES the first entry
+  of `ms + 1ms` -- the inclusive `[…, dt]` edge is exact: a `dt` entry reads
+  back, a `dt + 1ms` entry does not. NEVER a raw `min_for/1` integer handed to
+  the wire (the wire wants `ms-seq`, the F-1-class discipline `minid_floor/1`
+  holds).
+  """
+  @spec maxid_ceil(DateTime.t()) :: binary()
+  def maxid_ceil(%DateTime{} = dt) do
+    ms = EchoData.Snowflake.unix_ms(EchoData.Snowflake.min_for(dt))
+    "#{ms}-#{@max_seq}"
+  end
+
+  @doc """
+  A CLOSED mint-time window read of `emq:{q}:stream:<name>` over `[t0, t1]`
+  (INCLUSIVE both edges, emq3.6 -- the time-travel read for backtest / audit /
+  debug). Computes the `XRANGE` bounds host-side -- `from` = `minid_floor(t0)`
+  (the SHIPPED lower floor, byte-frozen), `to` = `maxid_ceil(t1)` (the new
+  inclusive upper inverse) -- and DELEGATES to the byte-frozen `read/6`. ZERO
+  new Lua (`XRANGE` is host-issued through the SHIPPED `read/6` path).
+
+  Returns `{:ok, [{branded, fields_map}]}` -- the entries whose branded `EVT`
+  mint-instant (`Snowflake.to_datetime/1` of the id's snowflake) falls in
+  `[t0, t1]`, in mint order -- which EQUALS reading the full stream and
+  filtering each entry by its id's mint instant (INV-TT, the window is a
+  server-side filter via the bounds). `{:error, term}` is any connector/server
+  fault verbatim (`read/6`'s shape).
+
+  RAISES `ArgumentError` before any wire on a malformed queue/stream name (the
+  `append_id/5` / `trim/4` policy-before-existence precedent) or an inverted
+  window (`t1` strictly before `t0`) -- a host-side guard, never a malformed
+  bound to the wire.
+  """
+  @spec read_window(GenServer.server(), binary(), binary(), DateTime.t(), DateTime.t(), pos_integer() | nil) ::
+          {:ok, [{binary(), map()}]} | {:error, term()}
+  def read_window(conn, queue, name, %DateTime{} = t0, %DateTime{} = t1, count \\ nil)
+      when is_binary(queue) and is_binary(name) do
+    if DateTime.compare(t1, t0) == :lt do
+      raise ArgumentError,
+            "EchoMQ.Stream.read_window requires t0 <= t1; got t0=#{DateTime.to_iso8601(t0)}, t1=#{DateTime.to_iso8601(t1)}"
+    end
+
+    read(conn, queue, name, minid_floor(t0), maxid_ceil(t1), count)
+  end
+
+  @doc """
+  An OPEN-ended mint-time window read of `emq:{q}:stream:<name>` over `[t0, ∞)`
+  (emq3.6 -- the common audit case: everything at or after `t0`). The `from` is
+  the SHIPPED `minid_floor(t0)` (the half-open lower floor, byte-frozen); the
+  `to` is `"+"` (the stream top, the open upper). DELEGATES to the byte-frozen
+  `read/6`; ZERO new Lua.
+
+  Returns `{:ok, [{branded, fields_map}]}` in mint order -- the entries minted
+  at or after `t0` -- or `{:error, term}` verbatim. The half-open `[t0, …)` edge
+  is the exact one `minid_floor/1` already proves on the trim path: a `t0` entry
+  is IN, a `t0 - 1ms` entry is OUT. RAISES `ArgumentError` before any wire on a
+  malformed queue/stream name (the `append_id/5` precedent).
+  """
+  @spec read_since(GenServer.server(), binary(), binary(), DateTime.t(), pos_integer() | nil) ::
+          {:ok, [{binary(), map()}]} | {:error, term()}
+  def read_since(conn, queue, name, %DateTime{} = t0, count \\ nil)
+      when is_binary(queue) and is_binary(name) do
+    read(conn, queue, name, minid_floor(t0), "+", count)
   end
 
   # `~` approximate (the SAFE default -- whole macro-nodes, never over-trims) vs

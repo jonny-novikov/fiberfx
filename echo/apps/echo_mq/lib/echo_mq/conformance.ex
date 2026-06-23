@@ -1,6 +1,6 @@
 defmodule EchoMQ.Conformance do
   @moduledoc """
-  The bus contract as seventy-eight runnable scenarios. Each scenario drives the
+  The bus contract as seventy-nine runnable scenarios. Each scenario drives the
   public surface (and, where the contract is the wire itself, raw commands)
   against a live server and asserts the externally visible verdict: the
   fence, the row shape, idempotent admission, the kind law, the lex law,
@@ -204,14 +204,15 @@ defmodule EchoMQ.Conformance do
       stream_append: "the writer law (emq3.2): EchoMQ.Stream.append mints an EVT-branded record id host-side and appends it under its EXPLICIT A1 xadd id (the real Unix-ms and the 22-bit node|seq tail) with the branded string as the id field -- N>=2 records read back in MINT ORDER == id-sort order (the order theorem, stream order == id sort == mint order, no second index), a wrong-kind record id RAISES before any wire with NO key written (the host-side kind door, one brand per stream), and a contrived out-of-order append surfaces {:error, :nonmonotonic} on the id<=top rejection (the liveness check, never swallowed); the append is XADD issued direct, no new script, no new wire class (emq3.2)",
       stream_group: "the reader law (emq3.3): a consumer group delivers at-least-once with crash re-delivery -- two EchoMQ.Stream.append branded records are group-read with XREADGROUP > (both enter the PEL), ONE is XACKed (retires) and ONE is LEFT un-acked, then a forced XAUTOCLAIM (min-idle 0) RE-DELIVERS the SAME un-acked branded receipt while the acked one is NOT re-claimed -- a POSITIVE re-delivery proof (an ack-everything pass is a LOUD failure), the at-least-once mechanism EchoMQ.StreamConsumer's beat folds in; the group verbs are issued DIRECT, no new script, no new wire class (emq3.3)",
       stream_retention: "retention as policy (emq3.4): EchoMQ.Stream.trim/4 bounds a stream to a DECLARED window over XTRIM issued DIRECT, the blast radius bounded POSITIVELY -- entries are appended INSIDE and BELOW a window over BOTH forms (MAXLEN keep-newest-N and MINID below-a-mint-instant-floor derived from Snowflake.min_for/1) and a trim leaves the in-window entries SURVIVING (their branded receipts still read back) while the below-window entries are GONE, the removed-count exact under = -- a real DELETION and a real SURVIVAL in the same verdict (a no-op that deletes nothing is a LOUD failure, INV4), and the MINID floor is the exact half-open [dt, ∞) edge (a dt-1ms entry trims, a dt entry survives); the trim is XTRIM issued DIRECT, no new script, no new wire class, no new keyspace subkey (the policy is BEAM-side) (emq3.4)",
-      stream_archived: "the archive seam cache (emq3.5): the store-side fold consumer caches the archive watermark W (the branded EVT id of the highest-folded record) to emq:{q}:stream:<name>:archived so a POLYGLOT reader discovers the archive/live-tail seam without a store call -- a CACHE, never the source of truth (the engine's frontier is). Proven BUS-PURE + POSITIVELY (conformance is bus-only -- no engine here -- so this proves the CACHE CONTRACT, not the cross-app fold): an empty stream has no cached seam (get_archived -> :empty), a put of W reads back the EXACT W, a second put OVERWRITES it (the fold advances W each cycle), clear_archived DELetes it (the NAMED cleanup on obliterate) and get_archived answers :empty again -- a stock SET/GET/DEL over Connector.command/3, no new script, no new wire class, no keyspace grammar edit (the :archived sub rides the existing emq:{q}:stream:<name>:<sub> form) (emq3.5)"
+      stream_archived: "the archive seam cache (emq3.5): the store-side fold consumer caches the archive watermark W (the branded EVT id of the highest-folded record) to emq:{q}:stream:<name>:archived so a POLYGLOT reader discovers the archive/live-tail seam without a store call -- a CACHE, never the source of truth (the engine's frontier is). Proven BUS-PURE + POSITIVELY (conformance is bus-only -- no engine here -- so this proves the CACHE CONTRACT, not the cross-app fold): an empty stream has no cached seam (get_archived -> :empty), a put of W reads back the EXACT W, a second put OVERWRITES it (the fold advances W each cycle), clear_archived DELetes it (the NAMED cleanup on obliterate) and get_archived answers :empty again -- a stock SET/GET/DEL over Connector.command/3, no new script, no new wire class, no keyspace grammar edit (the :archived sub rides the existing emq:{q}:stream:<name>:<sub> form) (emq3.5)",
+      stream_time_travel: "time-travel as a mint-time window read (emq3.6): EchoMQ.Stream.read_window/5 reads a CLOSED [t0,t1] window over XRANGE issued DIRECT, the bounds host-computed (from = the SHIPPED minid_floor/1 lower floor, to = the NEW maxid_ceil/1 inclusive upper inverse \"<ms>-0x3FFFFF\"), proven POSITIVELY against the id-filtered truth -- EVT records minted at KNOWN, distinct instants BELOW, INSIDE, and ABOVE the window (the deterministic min_for-mint precedent) are read by a STRADDLING read_window and the result EQUALS Enum.filter(full_read, mint_instant in [t0,t1]) (the window ACTUALLY excludes the below-t0 and above-t1 records -- a window that excludes nothing is a LOUD failure, INV-TT), the bounds exact at the millisecond (a t0 record IN and a t0-1ms record OUT at the lower edge; a t1 record IN and a t1+1ms record OUT at the inclusive upper edge, INV-BOUND), read_since/4's [t0,inf) open upper agrees with the full read from t0, and no raw min_for/1 integer ever reaches the wire; the read is XRANGE issued DIRECT through the byte-frozen read/6, no new script, no new wire class, no keyspace grammar edit (the bounds are BEAM-computed) (emq3.6)"
     ]
   end
 
   @doc """
   Runs all scenarios against `conn`, on sub-queues of `queue`. Prints one
   CONF line per scenario and a closing tally. Returns `{:ok, n}` when all
-  pass (n == 77 today -- the live total, grown by additive minor; the count is
+  pass (n == 79 today -- the live total, grown by additive minor; the count is
   re-pinned in both pinning tests, `conformance_run_test.exs` `{:ok, n}` and
   `conformance_scenarios_test.exs` `@run_order`), `{:error, failed_names}`
   otherwise. The set spans the eighteen state-machine scenarios, the emq.2
@@ -247,7 +248,15 @@ defmodule EchoMQ.Conformance do
   archive/live-tail seam without a store call, a CACHE never the source of truth;
   proven BUS-PURE -- an empty stream has no seam, a put reads back the EXACT W, a
   second put overwrites, clear_archived DELetes and the seam is :empty again -- a
-  stock SET/GET/DEL, no new script, no new wire class, no keyspace grammar edit).
+  stock SET/GET/DEL, no new script, no new wire class, no keyspace grammar edit)
+  -- and time-travel (emq3.6) -- the mint-time window read (stream_time_travel:
+  EchoMQ.Stream.read_window/5 reads a CLOSED [t0,t1] window over XRANGE issued
+  direct, the bounds host-computed from the SHIPPED minid_floor/1 + the new
+  maxid_ceil/1 inclusive upper inverse, proven POSITIVELY against the id-filtered
+  truth -- a STRADDLING window EQUALS Enum.filter(full_read, mint_instant in
+  [t0,t1]) and ACTUALLY excludes the below/above records, the bounds exact at the
+  millisecond, no raw min_for integer to the wire; XRANGE direct through the
+  byte-frozen read/6, no new script, no new wire class, no keyspace grammar edit).
   """
   def run(conn, queue) when is_binary(queue) do
     results =
@@ -2908,6 +2917,137 @@ defmodule EchoMQ.Conformance do
     with :ok <- stream_archived_roundtrip(conn, q),
          :ok <- stream_archived_cleanup(conn, q) do
       :ok
+    end
+  end
+
+  defp apply_scenario(:stream_time_travel, conn, q) do
+    # Time-travel as a mint-time window read (emq3.6, S3 the memory part 2): the
+    # BUS-PURE half. EchoMQ.Stream.read_window/5 reads a CLOSED [t0,t1] window
+    # over XRANGE issued DIRECT, the bounds host-computed -- from = the SHIPPED
+    # minid_floor/1 lower floor, to = the NEW maxid_ceil/1 inclusive upper
+    # inverse "<ms>-0x3FFFFF" (the largest id mintable at-or-before t1). Proven
+    # POSITIVELY against the id-filtered truth (INV-TT/INV-BOUND -- a window that
+    # excludes nothing is the TRD.9.1 false-green class, a LOUD failure): EVT
+    # records minted at KNOWN, distinct instants BELOW, INSIDE, and ABOVE the
+    # window (the deterministic min_for-mint, the stream_retention_minid
+    # precedent) are read by a STRADDLING read_window and the result EQUALS
+    # Enum.filter(full_read, mint_instant in [t0,t1]) -- the window ACTUALLY
+    # excludes the below-t0 and above-t1 records. The bounds are exact at the
+    # millisecond (the lower floor: a t0 record IN, a t0-1ms record OUT; the
+    # inclusive upper: a t1 record IN, a t1+1ms record OUT). read_since/4's
+    # [t0,inf) open upper agrees with the full read from t0. No raw min_for/1
+    # integer ever reaches the wire (the F-1-class discipline). XRANGE is issued
+    # DIRECT through the byte-frozen read/6: no new script, no new wire class, no
+    # keyspace grammar edit (the bounds are BEAM-computed, D-2 Arm 5).
+    with :ok <- stream_time_travel_window(conn, q),
+         :ok <- stream_time_travel_edges(conn, q),
+         :ok <- stream_time_travel_since(conn, q) do
+      :ok
+    end
+  end
+
+  # Append one EVT record at a CONTROLLED, KNOWN mint instant `dt`: the branded
+  # id's snowflake IS min_for(dt) (seq 0 at that ms), so its mint instant is
+  # exactly `dt` (Snowflake.to_datetime(min_for(dt)) == dt) -- the deterministic
+  # mint the bus-side time-travel assertions stand on (no next_branded live-clock
+  # hazard; the window straddle is exact by construction). The
+  # stream_retention_append_at precedent.
+  defp time_travel_append_at(conn, q, name, %DateTime{} = dt) do
+    branded = BrandedId.encode!("EVT", EchoData.Snowflake.min_for(dt))
+    ok!(Stream.append_id(conn, q, name, branded, [{"at", DateTime.to_iso8601(dt)}]))
+  end
+
+  # The mint instant of a branded EVT id (its snowflake -> DateTime) -- the
+  # id-filter the window read is asserted EQUAL to (INV-TT).
+  defp time_travel_instant(branded) do
+    {:ok, "EVT", snow} = BrandedId.parse(branded)
+    EchoData.Snowflake.to_datetime(snow)
+  end
+
+  # (1) INV-TT the straddle: records BELOW t0, INSIDE [t0,t1], and ABOVE t1; a
+  # read_window over [t0,t1] returns EXACTLY the inside records in mint order,
+  # EQUAL to the id-filtered full read (the window actually EXCLUDES the below
+  # and above records -- never a vacuous all-or-nothing read).
+  defp stream_time_travel_window(conn, q) do
+    t0 = ~U[2025-05-01 09:00:00.000Z]
+    t1 = ~U[2025-05-01 09:00:00.300Z]
+
+    below = for d <- 3..1//-1, do: time_travel_append_at(conn, q, "tt", shift_ms(t0, -d))
+    inside = for ms <- [0, 100, 300], do: time_travel_append_at(conn, q, "tt", shift_ms(t0, ms))
+    above = for d <- 1..3, do: time_travel_append_at(conn, q, "tt", shift_ms(t1, d))
+
+    with {:ok, full} <- Stream.read(conn, q, "tt"),
+         full_ids = for({b, _f} <- full, do: b),
+         # the id-filtered truth: the full read filtered by each id's mint instant.
+         filtered = for(b <- full_ids, DateTime.compare(time_travel_instant(b), t0) != :lt and DateTime.compare(time_travel_instant(b), t1) != :gt, do: b),
+         {:ok, win} <- Stream.read_window(conn, q, "tt", t0, t1),
+         win_ids = for({b, _f} <- win, do: b),
+         # the window read EQUALS the id-filter, in mint order.
+         true <- win_ids == filtered,
+         true <- win_ids == inside,
+         # the window ACTUALLY excludes (the no-vacuous-pass proof): no below, no above.
+         true <- Enum.all?(below, fn b -> b not in win_ids end),
+         true <- Enum.all?(above, fn b -> b not in win_ids end),
+         # and it is a STRICT subset of the full read (the bounds filtered).
+         true <- length(win_ids) < length(full_ids) do
+      :ok
+    else
+      other -> {:fail, {:time_travel_window, other}}
+    end
+  end
+
+  # (2) INV-BOUND the exact-ms edges: the lower floor (a t0 record IN, a t0-1ms
+  # record OUT) and the INCLUSIVE upper (a t1 record IN, a t1+1ms record OUT) --
+  # the maxid_ceil "<ms>-0x3FFFFF" admits any seq at t1's ms and excludes the
+  # first id of t1+1ms; never a raw min_for integer to the wire.
+  defp stream_time_travel_edges(conn, q) do
+    t0 = ~U[2025-06-10 06:30:00.000Z]
+    t1 = ~U[2025-06-10 06:30:00.250Z]
+
+    e_lo_out = time_travel_append_at(conn, q, "tte", shift_ms(t0, -1))
+    e_lo_in = time_travel_append_at(conn, q, "tte", t0)
+    e_hi_in = time_travel_append_at(conn, q, "tte", t1)
+    e_hi_out = time_travel_append_at(conn, q, "tte", shift_ms(t1, 1))
+
+    with {:ok, win} <- Stream.read_window(conn, q, "tte", t0, t1),
+         ids = for({b, _f} <- win, do: b),
+         # the lower edge is exact (the half-open floor minid_floor proves): t0 IN, t0-1ms OUT.
+         true <- e_lo_in in ids,
+         true <- e_lo_out not in ids,
+         # the upper edge is exact + INCLUSIVE (maxid_ceil): t1 IN, t1+1ms OUT.
+         true <- e_hi_in in ids,
+         true <- e_hi_out not in ids,
+         # the window is exactly the two in-edge records (nothing else).
+         true <- ids == [e_lo_in, e_hi_in],
+         # no raw min_for integer reaches the wire: the bound is "ms-seq", never the snowflake int.
+         floor = Stream.minid_floor(t0),
+         ceil = Stream.maxid_ceil(t1),
+         true <- floor == "#{EchoData.Snowflake.unix_ms(EchoData.Snowflake.min_for(t0))}-0",
+         true <- ceil == "#{EchoData.Snowflake.unix_ms(EchoData.Snowflake.min_for(t1))}-#{0x3FFFFF}",
+         true <- floor != Integer.to_string(EchoData.Snowflake.min_for(t0)) do
+      :ok
+    else
+      other -> {:fail, {:time_travel_edges, other}}
+    end
+  end
+
+  # (3) read_since/4 the open [t0,inf) upper: everything at-or-after t0 (the
+  # below-t0 records excluded), agreeing with the full read filtered from t0.
+  defp stream_time_travel_since(conn, q) do
+    t0 = ~U[2025-07-01 00:00:00.100Z]
+
+    below = for d <- 2..1//-1, do: time_travel_append_at(conn, q, "tts", shift_ms(t0, -d))
+    at_or_after = for ms <- [0, 50, 200], do: time_travel_append_at(conn, q, "tts", shift_ms(t0, ms))
+
+    with {:ok, since} <- Stream.read_since(conn, q, "tts", t0),
+         ids = for({b, _f} <- since, do: b),
+         # everything at-or-after t0 (the half-open [t0,inf) floor), in mint order.
+         true <- ids == at_or_after,
+         # the below-t0 records are EXCLUDED (the floor filters the open lower edge).
+         true <- Enum.all?(below, fn b -> b not in ids end) do
+      :ok
+    else
+      other -> {:fail, {:time_travel_since, other}}
     end
   end
 

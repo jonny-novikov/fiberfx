@@ -1,7 +1,7 @@
 defmodule EchoMQ.ConformanceScenariosTest do
   @moduledoc """
   The pure half of the Conformance row (echo2-migration.md §5): the
-  scenario registry pinned — seventy-eight names in run order (the eighteen
+  scenario registry pinned — seventy-nine names in run order (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -48,9 +48,16 @@ defmodule EchoMQ.ConformanceScenariosTest do
   without a store call, a CACHE never the source of truth, proven BUS-PURE -- an
   empty stream has no seam, a put reads back the EXACT W, a second put overwrites,
   clear_archived DELetes and the seam is :empty again -- a stock SET/GET/DEL, no
-  new script, no new wire class, no keyspace grammar edit). The wire half
-  (`run/2 → {:ok, 78}`) lives in `conformance_run_test.exs` behind the `:valkey`
-  tag.
+  new script, no new wire class, no keyspace grammar edit), and -- time-travel
+  (emq3.6) -- the mint-time window read's one (stream_time_travel:
+  EchoMQ.Stream.read_window/5 reads a CLOSED [t0,t1] window over XRANGE issued
+  direct, the bounds host-computed from minid_floor/1 + the new maxid_ceil/1
+  inverse, proven POSITIVELY against the id-filtered truth -- a STRADDLING window
+  EQUALS Enum.filter(full_read, mint_instant in [t0,t1]) and ACTUALLY excludes
+  the below/above records, the bounds exact at the millisecond, no raw min_for
+  integer to the wire; no new script, no new wire class, no keyspace grammar
+  edit). The wire half (`run/2 → {:ok, 79}`) lives in `conformance_run_test.exs`
+  behind the `:valkey` tag.
   """
   use ExUnit.Case, async: true
 
@@ -134,10 +141,11 @@ defmodule EchoMQ.ConformanceScenariosTest do
     :stream_append,
     :stream_group,
     :stream_retention,
-    :stream_archived
+    :stream_archived,
+    :stream_time_travel
   ]
 
-  test "scenarios/0 answers exactly the seventy-eight names in run order" do
+  test "scenarios/0 answers exactly the seventy-nine names in run order" do
     assert Keyword.keys(Conformance.scenarios()) == @run_order
   end
 
