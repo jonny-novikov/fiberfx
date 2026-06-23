@@ -3,6 +3,7 @@
 For background and further references see: [Entity Component Systems on Wikipedia](https://en.wikipedia.org/wiki/Entity_component_system)
 
 ### ECS by Scott Bilas ([GDC 2002](http://scottbilas.com/files/2002/gdc_san_jose/game_objects_slides_with_notes.pdf))
+
 ##### Entity->Components->Update
 
 - `entity` = class: no logic + no data OR at most small set of frequently used data (ie position)
@@ -130,6 +131,5 @@ This gist brought to you by [Steffen Itterheim](https://twitter.com/gaminghorror
 
 Inspired by a Twitter discussion with [Adam Martin](https://twitter.com/t_machine_org), [Richard Lord](https://twitter.com/richard_lord) and [Tallyn Turnbow](https://twitter.com/tallynturnbow) about Apple's GameplayKit release and how that's "not an ECS" but a "disappointing mess". ;)
 
-PS: Please check out my websites if the keywords interest you:
 - http://tilemapkit.com (ObjC/Swift Tilemap Framework with SpriteKit & GameplayKit content)
 - http://learn-cocos2d.com (Cocos2D, SpriteBuilder, Objective-C centric)

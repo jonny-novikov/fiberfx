@@ -14,8 +14,8 @@ internal links resolving.
 tokens + `--r-red`, mono-forward SYSTEM fonts (nothing fetched), `figure.frozen` evidence blocks, the 14-cell
 `.idrule`, `.sech` section headers. The identity authority is
 `docs/redis-patterns/specs/reframe-echomq/reframe-echomq.md`; the model to copy is
-`html/redis-patterns/index.html`. The reframe is in progress: R0 is reframed (the model); R1–R4 are mid-migration
-(still dark-editorial until rungs `re2`–`re5`) — never copy identity from an unreframed page.
+`html/redis-patterns/index.html`. The reframe is in progress: R0–R2 are reframed + reconciled (the contract-sheet
+identity); R3–R4 await their reframe rungs (`re4`–`re5`) — never copy identity from an unreframed page.
 
 **The authoritative structural map is the TOC** (`docs/redis-patterns/redis-patterns.toc.md`); this file is the
 skill-side digest. The grounding map (which pattern lands where) is authoritative in
@@ -50,8 +50,8 @@ chapter's pattern family to the BCS build.
 | Chapter | Title | Landing route | Dir | Grounding | Status |
 |---|---|---|---|---|---|
 | R0 | Overview — the catalog, the BCS thesis | `/redis-patterns` (home) + `/redis-patterns/overview` | `overview/` | the BCS thesis (EchoMQ backed by Valkey, EchoCache in front; the Exchange consumer) | **built; reframed by `re0` (home + overview landing + R0.3) except R0.2 — rung `re1`** |
-| R1 | Caching | `/redis-patterns/caching` | `caching/` | EchoCache (`echo/apps/echo_cache/`; `bcs4.*` figures) | **built — dark-editorial until `re2`** |
-| R2 | Coordination & Consistency | `/redis-patterns/coordination` | `coordination/` | the claim script, the `attempts` fencing token, the co-location law → EchoMQ (`echo/apps/echo_mq/`) | **built — dark-editorial until `re3`** |
+| R1 | Caching | `/redis-patterns/caching` | `caching/` | EchoCache (`echo/apps/echo_cache/`; `bcs4.*` figures) | **built + reconciled — contract-sheet, gated PASS (29 pp)** |
+| R2 | Coordination & Consistency | `/redis-patterns/coordination` | `coordination/` | the claim script, the `attempts` fencing token, the co-location law → EchoMQ (`echo/apps/echo_mq/`) | **built + reconciled — contract-sheet, doors → `/echomq/protocol`, gated PASS (22 pp)** |
 | R3 | Reliable Queues | `/redis-patterns/queues` | `queues/` | the EchoMQ state machine (the lanes, the verbs, reap) → EchoMQ (`echo/apps/echo_mq/`) | **built — dark-editorial until `re4`** |
 | R4 | Time, Delay & Priority | `/redis-patterns/time-delay-priority` | `time-delay-priority/` | the schedule set (run-at scores, promote) → EchoMQ (`echo/apps/echo_mq/`) | **built — dark-editorial until `re5`** |
 | R5 | Streams & Events | `/redis-patterns/streams-events` | `streams-events/` | per the roadmap's grounding map, settled against the as-built echo data layer at authoring | **chapter spec authored; pages planned — born reframed** |
@@ -86,6 +86,8 @@ roadmap): **`re0` SHIPPED** — the home + the overview landing + the R0.3 `patt
 3 dives) reframed to the contract-sheet identity; those six pages are the models every later reframed page copies.
 
 **Resume = `re1`**: reframe **R0.2** `redis-under-portal` (hub + 3 dives, + the R0 `llms.txt` sync) — R0 complete.
-Then **`re2`–`re5`** reframe R1–R4 chapter by chapter (caching → coordination → queues → time-delay-priority).
+Then **`re2`–`re5`** reframe R1–R4 chapter by chapter (caching → coordination → queues → time-delay-priority);
+**`re2`/`re3` (R1/R2) are reconciled — contract-sheet, gated PASS, R2 doors retargeted to `/echomq/protocol`; the
+frontier is `re4` (R3 queues)**.
 **R5–R8** are authored **born reframed** from their chapter specs once the reframe absorbs (RM4). Author every
 page **specs-first**; never ahead of the spec.
