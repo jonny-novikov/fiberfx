@@ -22,6 +22,20 @@ Risk tier: HIGH — new cross-app surface + new supervised process + durable at-
 
 (3) The fold-consumer precedent is exact. `EchoStore.Graft.Committer` (committer.ex:73-77 catch-up drain "every commit above the announced frontier, oldest first"; :109 "Move the announced frontier forward; persisted so a restart resumes, never re-floods") already implements restart-safe catch-up-drain-from-a-persisted-announced-frontier — the precise shape the store-side fold consumer mirrors. Box-loss restore path is also real: graft/remote/tigris.ex (put_commit/list_commits), graft/reader.ex (get_at), graft/streamer.ex (commit_ready → Tigris).
 
+### T-3 — Re-engagement post-compaction: orphan resolved, Venus-refine + pipeline-continue plan
+
+CONTEXT. Resumed after a /compact. The Operator ruled the E-1 blocker (orphan core/adapter.ex = a 12-callback duplicate of EchoStore.Durability.Adapter under a MISMATCHED path → DELETE; durability/adapter.ex = the canonical 9 the implementors @impl, KEPT; pre-dates emq3.5 = a SEPARATE concern) and directed: re-fan-out the team — Venus refine emq3.5 to calibrate decisions, aaw kicks off as planned.
+
+STATE (verified on disk this turn). (1) core/adapter.ex DELETED in the working tree (status D; core/ dir now empty); durability/adapter.ex kept (2391 B). (2) HEAD = 04c01e77 "[echo_mq] emq3.5 specs" — the Operator committed the emq3.5 SPEC TRIAD out-of-band; the CODE (bus M-set + store ?? new files + the orphan D) remains uncommitted. (3) Bus side green per P-2 (conf 78, byte-freeze proven, label 2.6.4). (4) Store side written (EchoStore.StreamArchive + .Core + .Driver, @archive_base=bsl(1,49)) — now gateable since the collision is gone.
+
+PLAN. (a) D-4 records the orphan ruling, resolves E-1, marks it a SEPARATE scoped commit per LAW-4 (never folded into the emq3.5 archive commit). (b) Re-spawn Venus to REFINE the triad — calibrate the spec's decisions to Mars's as-built (the @archive_base literal, the StreamArchive/.Core/.Driver names, the W reader archive_frontier/1, the fold-then-trim Driver, conf 78) + the now-unblocked tree; surface any NEW fork the build revealed (Director rules via AskUserQuestion). (c) aaw kicks off as planned: Director DEEPENED verify (≥100 loop on the store fold suite + the fold-then-trim mutation battery + the two-app boundary grep + a box-loss probe) → Mars-2 harden → Apollo MANDATORY (HIGH) → Director ship (pathspec, two apps; the orphan-deletion as a separate concern; Stage-6 roadmap fold).
+
+### T-4 — LAW correction: shut down the improper resume; re-init the team properly (aaw_init + TeamCreate + broadcasting)
+
+VIOLATION (Operator-flagged). On resuming post-compaction I treated the persisted aaw registry as a live team and spawned Venus as a BARE background Agent — no TeamCreate, no team membership, no broadcasting/agent-communication — bypassing the program bootstrap (emq.program.md §AAW team; echo-mq-ship §1: aaw_init → register Director → TeamCreate(scope) → spawn peers AS team members). The reconnect law (emq.program.md:91-94) was only partially honored: I re-ran mcp__aaw__status, but skipped the TeamCreate + comms layer.
+
+CORRECTION (this turn). (1) Stopped the stray Venus (TaskStop — it was mid-edit on Stage-6/DoD; its partial calibration of the four spec files is on disk, to be completed by the properly-spawned Venus). (2) No stale emq3-5 Claude team existed on disk (verified) → clean re-init: aaw_init (idempotent re-open; the hand-written ledger preserved) → agent_register(Director) → TeamCreate(emq3-5) for broadcasting + SendMessage → re-affirm the D-2 HIGH-risk Squad. (3) Peers henceforth are aaw_spawn'd (parent = Director ccl-emq3-5-1) AND self-register (agent_register) AND launch as Claude team members (team_name = emq3-5) — spawned == registered, no FAKE-N, full comms. The prior registry showed Venus/Mars spawned:false/registered:true (the FAKE-N inverse); this round corrects it.
+
 ## {emq3-5-decisions} Decisions
 
 ### D-1 — Boundary: emq3.5 is a TWO-APP rung (echo_mq + echo_store), Operator-ruled
@@ -51,6 +65,26 @@ Arm 4 · the optional bus-side :archived cache key → BUILD IT this rung (Opera
 Arm 5 · the box-loss restore / determinism cut → OFFLINE local-restore IN-SUITE + live-Tigris :tigris-TAGGED (Operator). The offline path (drop the CubDB dir, re-open — the durability_test.exs precedent, deterministic, always-runs) is the gate's proof; the live-Tigris segments/{SEG} re-fetch is :tigris-tagged (runs only when a bucket is configured). Honest determinism posture stated. REJECTED: both-in-suite (an infra-dependent, flakier always-run gate).
 
 The build surface is now fully ruled. Mars-1 builds to D-3 (the rulings), NOT to an unruled Arm. The ≥100 determinism loop runs over the store-side fold suite (id-minting setup). Apollo is a SHIP PRECONDITION (HIGH risk).
+
+### D-4 — E-1 RESOLVED: delete the orphan core/adapter.ex; a SEPARATE pre-emq3.5 concern
+
+Operator-ruled (this turn). core/adapter.ex = a 12-callback duplicate of EchoStore.Durability.Adapter under a MISMATCHED path (a file in core/ declaring a Durability.* module); durability/adapter.ex = the CANONICAL 9-callback adapter every live implementor @impls (durability.ex / durability/sqlite.ex / durability/memory.ex / plugins/graft.ex). The collision (two committed definitions of EchoStore.Durability.Adapter) made echo_store RED at HEAD — pre-existing, independent of emq3.5 (Mars proved it via the stash-and-recompile-at-HEAD test, E-1).
+
+RULING. DELETE lib/echo_store/core/adapter.ex (done in the working tree — status D; core/ now empty), KEEP lib/echo_store/durability/adapter.ex. Verified safe: zero EchoStore.Core.* references anywhere in lib/; the default echo_store suite is green (87 tests, 0 failures) with the orphan gone, including Mars's new archive test.
+
+LAW-4 SCOPE. This deletion PRE-DATES the rung → it is a SEPARATE concern from the emq3.5 archive. It commits as its OWN scoped commit (e.g. "[echo_store] remove orphan duplicate EchoStore.Durability.Adapter"), NEVER folded into the emq3.5 archive commit. Resolves E-1; unblocks the store-side gate.
+
+### D-5 — DROP the stale Durability plugins (no backward compat); EchoMQ 3.x durable-bus forward (Operator-ruled). Resolves E-2.
+
+Operator ruling: drop the stale durability plugins COMPLETELY — no backward compatibility — and focus on the brand-new EchoMQ 3.x state-of-the-art durable bus per the EchoMQ lineup. The two mid-migration plugins are DELETED, not conformed:
+  - DELETE lib/echo_store/plugins/graft.ex (EchoStore.Durability.Graft — the stale 12-cb outbox adapter).
+  - DELETE lib/echo_store/plugins/postgres.ex (EchoStore.Durability.Postgres — the stale 12-cb adapter).
+
+SAFETY (verified this turn). ZERO code references to EchoStore.Durability.Graft/.Postgres outside the two files. The durability facade (durability.ex) dispatches to the CONFIGURED adapter (default EchoStore.Durability.SQLite); Graft/Postgres are optional + unconfigured. cubdb stays a required dep (the NATIVE EchoStore.Graft engine uses it — NOT the dropped plugin); postgrex was never declared (no mix.exs/lock change). The only mentions are DOC-PROSE citations inside emq3.5's OWN stream_archive.ex (+ its test): "(the EchoStore.Durability.Graft precedent / the mechanism it uses at @obx_base = bsl(1,48))".
+
+CONSEQUENCE for emq3.5. Deleting plugins/graft.ex removes the @obx_base = :erlang.bsl(1,48) outbox reserved-range constant that emq3.5's @archive_base = bsl(1,49) + INV4 were defined RELATIVE TO. The archive's reserved-range disjointness must RE-CALIBRATE against the NATIVE EchoStore.Graft engine's actual page allocation, not the now-deleted outbox range. Mars adjusts the dangling Durability.Graft doc-prose in stream_archive.ex + re-gates; Venus recalibrates the spec's INV4/@obx_base framing.
+
+SCOPE (LAW-4). The plugin deletion is a SEPARATE pre-existing-fix concern → its own scoped commit ("[echo_store] drop stale Durability.Graft/Postgres plugins"), never folded into the emq3.5 archive commit. The emq3.5 spec recalibration (INV4 reframe) IS emq3.5's. Mars executes the deletion — the Director touches no production code.
 
 ## {emq3-5-report} Report
 
@@ -102,6 +136,207 @@ Next: author the four spec files (emq3.5.{md,stories.md,llms.md,prompt.md}) + ca
 
 VERDICT: the triad is BUILD-GRADE once the Director rules the 5 Arms (D-3..D-7). Every surface is real or forward-tense; the two-app boundary is explicit; the no-loss invariant (fold-before-trim) is the spine; the determinism posture is the ≥100 loop (a process + at-rest write + id-minting setup), NOT a multi-seed sweep. Sending the Director the decision-ready Arms digest next.
 
+### Y-3 — Venus re-engaged: the lag-0 calibration state + the D-5 INV4 reframe (in flight, coordinating with Mars)
+
+CONTEXT. Resumed the interrupted calibration pass (the prior Venus stopped mid-edit at the prompt's Stage-6/DoD per T-4). Read all four emq3.5 spec files + the full ledger (D-1..D-5, T-1..T-4, P-1/P-2, E-1/E-2, Y-1/Y-2). The triad is ALREADY substantially calibrated to the as-built (the StreamArchive API, @archive_base=bsl(1,49), archive_frontier/1, merge_read/5, .Driver/.Core, conf 78, byte-freeze + the ≥100-loop determinism posture are all pinned with module:line). My job this turn: COMPLETE + finalize, and execute the NEW D-5 reframe.
+
+THE LOAD-BEARING D-5 FINDING (confirmed on disk). plugins/graft.ex + plugins/postgres.ex are DELETED (git status D); @obx_base = :erlang.bsl(1, 48) is GONE with them. INV4 + §2 were written ENTIRELY as "disjoint from @obx_base, == 2 × @obx_base." This dangles in TWO planes that must move together:
+- CODE (Mars owns): stream_archive_test.exs INV4 test (lines 82-125) actively CALLS the deleted EchoStore.Durability.Graft.new/record/replay to prove archive∩outbox disjointness → the store gate WON'T COMPILE on INV4 until Mars rewrites it. Plus dangling doc-prose in stream_archive.ex (moduledoc lines 14/17/20-28/39/65-68/80/213/229-230).
+- SPEC (I own): INV4 + §2 in emq3.5.md, US3 in stories, Req-2/AS-2/References-13 in llms, the prompt's §2/§risk/§DoD.
+
+THE RECALIBRATION (proposed to Mars, awaiting his post-drop frame). The literal @archive_base = :erlang.bsl(1, 49) STAYS (correct, settled, in living code) — only the JUSTIFICATION re-anchors. The native EchoStore.Graft engine's page axis is a FLAT non_neg_integer() (Store {:page, page_idx, lsn}; commit/3 stages %{page_idx => bin}); business pages are LOW indices a real workload writes, no engine-defined ceiling. So the surviving true statement: "@archive_base = bsl(1,49) is far above any realistic business page count, so an archive page never collides with a native-engine business page." INV4's CHECK re-anchors: fold archive pages into a Volume ALSO carrying LOW-INDEX business pages written via the PUBLIC commit/3 (the deleted outbox adapter is gone), assert each range reads back un-corrupted; the collision mutant becomes @archive_base set DOWN into the business range. The "Durability.Graft precedent/mirror" citations (the record/4 payload pattern, next_seq/1) re-anchor on the AS-BUILT StreamArchive code itself (the realized mechanism), per the lag-0 law — cite the shipped surface, not a vanished precedent. INV8's engine-EMPTY-diff list drops plugins/graft.ex (now DELETED, a SEPARATE D-5 concern, not emq3.5's measured surface).
+
+STATUS. SendMessage'd Mars with the precise INV4 reframe + two asks: (a) confirm the literal stays bsl(1,49); (b) the rewritten INV4 test's exact disjointness assertion + line. Calibrating §0/§1/§3/§4/§5 + INV1-3/5-10 + stories + brief independently meanwhile; INV4 + §2 lock once Mars confirms. No new fork surfaced yet (the build sits inside D-1/D-3/D-5). msh baseline: my 4 files clean at Y-2; will re-run after edits. NO new fork; the build sits inside D-3/D-5.
+
+### Y-4 — Venus: emq3.5 triad CALIBRATED + the D-5 INV4 reframe COMPLETE (BUILD-GRADE pending Mars's stream_archive.ex byte-settle)
+
+DELIVERABLE. The interrupted calibration pass is COMPLETE across all four files (docs/echo_mq/specs/emq3/emq3.5.{md,stories.md,llms.md,prompt.md}). The triad was already substantially lag-0 calibrated (the StreamArchive API, @archive_base=bsl(1,49), archive_frontier/1, merge_read/5, .Driver/.Core, conf 78, byte-freeze + the ≥100-loop determinism posture all pinned); this turn finished it AND executed the NEW D-5 reframe.
+
+THE D-5 INV4 REFRAME (the load-bearing delta this turn). Confirmed on disk: plugins/graft.ex + plugins/postgres.ex DELETED (git status D); @obx_base = :erlang.bsl(1, 48) GONE with them. The triad's INV4 + §2 were written ENTIRELY against @obx_base ("disjoint from @obx_base, == 2 × @obx_base"). RECALIBRATED across all 4 files:
+- The literal @archive_base = :erlang.bsl(1, 49) STAYS (correct, settled, in living code). Only the JUSTIFICATION re-anchored: the native EchoStore.Graft engine's page axis is a FLAT non_neg_integer() (Store keys {:page, page_idx, lsn}; commit/3 stages %{page_idx => bin}); a business page is a LOW index a workload writes, no engine-defined ceiling. So the surviving true statement: "@archive_base = bsl(1,49) is far above any realistic business page count, so an archive page never collides with a business page" — the same self-justifying reserved-high-range property, now stated against the engine's own flat axis.
+- INV4's CHECK re-anchored: fold archive pages into a Volume ALSO carrying LOW-INDEX business pages via the PUBLIC commit/3 (NOT the deleted EchoStore.Durability.Graft), assert each range reads back un-corrupted; the collision mutant = @archive_base dropped DOWN into the business range (was "= @obx_base").
+- Every "EchoStore.Durability.Graft precedent / mirror next_seq/1 / record/4 payload precedent" citation re-anchored on the AS-BUILT stream_archive.ex realized mechanism (the lag-0 law — cite the shipped surface, not a vanished precedent).
+- INV8's engine-EMPTY-diff list DROPPED plugins/graft.ex (a deleted file is a non-empty diff); added the D-5 note that the plugin deletion is a SEPARATE pre-existing-cleanup concern, committed apart from the archive (LAW-4 split-by-concern, per D-5/D-4).
+- The footer conf claim corrected 77→78; the Goal §-summary "→ 78 ONLY if... lands" tightened to the settled as-built "→ 78, the Arm-4 scenario landed."
+
+THE ONE OPEN PRECISION (flagged in-spec, NOT a gap). INV4 + §2 are authored to the correct SHAPE (disjoint-from-a-business-page via public commit/3). The EXACT rewritten test assertion + its line pin are flagged "land at Mars's settled rewrite" — because stream_archive_test.exs's old INV4 test (lines 82-125) CALLS the now-deleted EchoStore.Durability.Graft.new/record/replay, so it WON'T COMPILE until Mars rewrites it (the store gate is RED on INV4 specifically). SendMessage'd Mars the precise reframe + two asks (keep bsl(1,49)? the new assertion shape?); awaiting his post-drop frame. The spec is internally coherent and directs the build correctly meanwhile.
+
+LINE-PIN NOTE. stream_archive.ex line pins drifted ~+3-5 (Mars's D-5 moduledoc strip shifted the file: @archive_base :69→:72, fold :101→:106, archive_frontier :140→:144, read_archive :157→:161, merge_read :186→:191, etc.). Updated the body header block (line 5) to current disk AND flagged the line :NN as HINTS pending Mars's byte-settle / Apollo's post-build spec-sync — the Module.fun/arity anchors are stable. I did NOT chase every body pin on a file Mars is actively editing (would re-stale on his next save); the final pin sweep is Apollo's post-settle task.
+
+NO NEW FORK. The build sits inside D-1 (two-app) / D-3 (the 5 Arms) / D-5 (drop plugins). No new architecture/API/identity fork surfaced.
+
+msh specs echo_mq (error): ZERO findings in any emq3.5.* file (verified by a tree-wide run). The tree-wide findings are ALL pre-existing + out of my edit scope. ONE hygiene flag for the Director: emq3-5.progress.md:128 (the prior Y-2 prose) trips the bracket-then-paren false-link footgun (the Lua KEYS array-index notation written with a paren instead of the safe `KEYS[n]=...` equals form is mis-parsed as a markdown link) — a one-line ledger hygiene fix (use the equals form), the same footgun as emq-5-4.progress.md:59/87/103; NOT my file.
+
+VERDICT: the emq3.5 triad is CALIBRATED + BUILD-GRADE. The D-5 reframe is complete and coherent across all 4 files; the body is authoritative; the one volatile detail (INV4's exact test assertion + line) is honestly flagged as pending Mars's settle, which is the correct lag-0 disposition. Files edited: emq3.5.md (the D-5 §2/INV4/INV8 reframe + the header-block + footer pins + the conf tighten), emq3.5.stories.md (US3 reframe + the mutation-battery + coverage-map), emq3.5.llms.md (References-13 + Req-2 + the DAG + AS-2 + the UNTOUCHED list + the closing prompt), emq3.5.prompt.md (the one-paragraph + the risk-trigger + Stages 1/2/3 + the boundary + DoD).
+
+### Y-5 — Venus: the open precision CLOSED + a full line-pin truth-up to Mars's settled as-built (emq3.5 triad now lag-0 EXACT)
+
+TRIGGER. Mars settled the store side (task #1 completed — plugins dropped, store re-gated); stream_archive_test.exs's INV4 test is now rewritten + gateable on disk. So the one item I'd flagged in Y-4 as "pending Mars's settle" is now closable, and the line pins that drifted under Mars's D-5 moduledoc edit are now stable to true up.
+
+THE INV4 LOCK (the convergence is EXACT). Mars's rewritten INV4 test built precisely the business-page frame I proposed in my SendMessage — confirmed on disk:
+- :126 unit — `StreamArchive.archive_base() == :erlang.bsl(1, 49)` AND `> 1_000_000_000` (a reserved high range ~563 trillion indices above any business page; the forward :arc_seq allocator from 0 can never reach 2^49).
+- :136 integration (@tag :valkey) — business pages staged at indices 0/1 via the PUBLIC EchoStore.Graft.commit/3 (:145), 3 archive records via fold/3 (:150); read_archive/2 returns the 3 archive records (:155), EchoStore.Graft.read(vol, 0)/read(vol, 1) return the business pages un-corrupted (:160), read(vol, 2) == :absent (:163) — neither range cross-contaminated.
+INV4 + §2 + the EMQ3.5-INV4 invariant + the DoD are now LOCKED to these exact assertions + lines; the "lands at Mars's settled rewrite" caveat is removed everywhere. The literal stayed @archive_base = :erlang.bsl(1, 49) (as I recommended); only the justification re-anchored on the engine's flat page axis.
+
+THE LINE-PIN TRUTH-UP (Mars's moduledoc edit shifted stream_archive.ex ~+3-5). Every stream_archive.ex:NNN pin in the body trued to the settled file: @archive_base :69→:72, fold :101→:106, archive_frontier :140→:144, read_archive :157→:161, merge_read :186→:191, store_for :214→:223, :arc_frontier/@frontier_key :75→:78, advance_frontier :242→:254, id_gt? :255→:267, w_bound :222→:234, the payload :118→:121. The drift set is fully GONE (grep 0). Every INV test pin trued to Mars's settled test layout: INV1 :179→:216 (+ the mutant :213→:251, the abort :244→:282), INV2 :130→:167, INV3 :278→:315 (+ W-empty :304→:341, the integer-head_lsn proof :314/:331→:352), INV5 :341→:378 (+ tigris :369→:407), INV6 :150→:187; the setup mint append_k :68→:112, Snowflake.start :42→:41. The driver.ex pins (about_to_trim_slice :220/:234, from_bound :257, cache_seam :282, cycle :190, sweep :141) were ALREADY correct — D-5 only touched stream_archive.ex. The header block (line 5) caveat updated from "hints pending byte-settle" to "verified against the gateable as-built after Mars's D-5 settle."
+
+msh specs echo_mq (error): ZERO findings in any emq3.5.* file (re-verified post-edits, go run confirms 0 in emq3/emq3.5). I also fixed the bracket-then-paren false-link footgun in my OWN Y-4 entry (it tripped describing the footgun — :168 now uses the safe equals-form prose). The pre-existing :111/:128 Y-1/Y-2 footgun lines are the prior reports' channel (records-freeze — not mine to rewrite); flagged to the Director.
+
+VERDICT: the emq3.5 triad is now lag-0 EXACT + BUILD-GRADE — INV4 locked to the as-built test, every line pin trued to Mars's settled store side, zero msh findings. No open precision remains; no new fork. Ready for the Director's deepened HIGH-risk verify (task #3). Files edited this pass: emq3.5.md (INV4 lock + the full body line-pin truth-up + the header caveat) + emq3-5.progress.md (my Y-4 footgun self-fix). emq3.5.stories.md/llms.md/prompt.md unchanged this pass (US3 Gherkin is behavioral, not line-pinned — correctly carries no test :NN).
+
+### Y-6 — Venus: Mars's post-drop frame CONFIRMS the locked spec verbatim (independent convergence) + the store gate is GREEN
+
+Mars sent the formal D-5 post-drop reference frame. It matches the spec I locked in Y-4/Y-5 PHRASE-FOR-PHRASE — independent convergence (Mars in code, Venus in spec), now mutually confirmed across the broadcasting layer. No further spec edit needed from the frame.
+
+POINT-BY-POINT MATCH (Mars's frame → my locked spec):
+- "@archive_base = bsl(1,49) STAYS, stated ABSOLUTELY — 2^49 ~563 trillion above any business page, the :arc_seq allocator from 0 can never reach it" → my §2 bullet 1 + INV4 say exactly this (the "~563 trillion indices above" phrasing is already in INV4 :60).
+- "the native engine has NO reserved-range allocator; business pages count up from 0 via caller-supplied page_idx to commit/3 (graft.ex:24 docstring stages %{0=>p0,1=>p1})" → my §2 bullet 1: "the engine reserves no range of its own; a business page is whatever low index a workload writes (0,1,2,…)".
+- "@obx_base no longer exists as a code constant; stop framing @archive_base relative to it" → DONE across all 4 files; every surviving mention is a D-5 note acknowledging the drop.
+- "reframe INV4 from 'disjoint from @obx_base' → 'disjoint from the business-page floor (where EchoStore.Graft.commit/3 lands real data pages)'; the invariant unchanged, only the co-tenant changes" → my INV4 header + check say exactly this.
+- "the rewritten test lands business pages at 0/1 via commit/3, folds 3 archive records at 2^49, asserts both ranges read back un-corrupted — GREEN" → I locked INV4 to this exact test at :126 (unit) / :136 (integration), with the 0/1 business pages + read(vol,2)==:absent assertions pinned.
+
+NEW GATE DATUM (worth the DoD/US-GATE): Mars reports the full store-side :valkey archive suite = 17 tests, 0 failures (GREEN). Confirmed on disk: grep -c "test \"" stream_archive_test.exs == 17. The store ladder is green going into the Director's verify (task #3, now in_progress).
+
+PIN STABILITY CONFIRMED: stream_archive.ex did NOT move since my Y-5 sweep (@archive_base still :72, fold :106, merge_read :191 — re-probed this turn). So the Director's "re-stale on every Mars save" concern did NOT materialize; my Pass-2 pins HOLD. Apollo's post-settle sync is a confirm-or-no-op, not a from-scratch re-pin.
+
+NET: the emq3.5 triad is lag-0 EXACT, INV4 locked + mutually confirmed by Mars's frame, the store gate GREEN (17/0). No spec edit triggered by the frame (it ratifies, not changes). Stood down per the Director's disposition; available for the post-settle sweep recall iff Apollo doesn't absorb it.
+
+### Y-7 — Venus: TWO as-built mechanism corrections from Mars's re-gate (store_for/1 contract + the read-not-register relationship) + the GREEN gate numbers
+
+Mars's re-gate message surfaced TWO surface-fact corrections beyond the INV4 reframe — both genuine STALE mechanism claims (NOT line-pin drift, so in the architect's lane, not deferred to Apollo). Verified each on disk before editing:
+
+CORRECTION 1 — store_for/1's CONTRACT (the W-reader / fold's db handle). My spec §3 described `db` as "the Volume's registered CubDB store" (imprecise — implied a phantom `{:store, vol}` registry name). The as-built (stream_archive.ex:224): `store_for/1` does `Registry.lookup(EchoStore.Graft.Registry, {:ctx, volume_id})` and unpacks `%{db: db}` — the live `:db` pid the engine PUBLISHES in its lock-free read context, registered at volume_server.ex:107 via `Map.take(state, [:volume_id, :db, …])` (the same context EchoStore.Graft.Reader reads). FIXED: §3 bullet 1 (line 66) now cites the `{:ctx, volume_id}` context + the volume_server.ex:107 registration, "NOT a phantom `{:store, vol}` name."
+
+CORRECTION 2 — the read-NOT-register relationship. My §0 (line 35) + llms References 17 said "the fold consumer registers under EchoStore.Graft.Registry (the Committer via/1 precedent)." Verified on disk: stream_archive.ex does exactly ONE registry op — `Registry.lookup(...{:ctx, volume_id})` (:224); it does NOT register its own via/1 name like the Committer's `{:committer, vol}`. The Driver carries an OPTIONAL `:name` (driver.ex:89) for its own supervision, distinct from the engine Registry. FIXED: §0 line 35 + llms References 17 now say the archive READS the engine's `{:ctx, vol}` context via store_for/1 — "a CONSUMER of `{:ctx, vol}`, NOT a registrant of its own via/1 name."
+
+Also confirmed CLEAN: the "outbox intents AND archive pages" co-tenant wording is gone everywhere (prompt.md:65's Apollo disjointness probe was the last residual — "collide with an outbox intent or a business page" → "collide with a low business page a workload commits via commit/3"). INV4's co-tenant is now uniformly "a Volume carrying BOTH low business pages AND archive pages" per Mars's frame.
+
+THE GREEN GATE NUMBERS (Mars's re-gate, recorded for the DoD/US-GATE): the store side is GREEN — 87/0 FULL suite (supersedes the earlier 17/0 :valkey-archive subset), the ≥100 determinism loop 100/100 (the DoD-required loop, GREEN), INV4 disjointness ADVERSARIALLY proven (a low-@archive_base mutation is CAUGHT — the mutation battery's collision mutant bites). These satisfy the US-GATE's store-ladder + ≥100-loop + the INV4 positive-proof-and-mutant-catch requirements.
+
+msh specs echo_mq (error): ZERO findings in any emq3.5.* file (re-verified post-corrections). COURTESY NOTE (Mars's code, not my spec): driver.ex:186's docstring still says "`db` defaults to the Volume's registered CubDB store" — the same imprecise phrasing; Mars may want the `{:ctx, vol}` form there too (his docstring, his call).
+
+VERDICT: the emq3.5 triad is lag-0 EXACT — INV4 + the two new mechanism facts (store_for's {:ctx,vol} contract, the read-not-register relationship) all true to the as-built; the store gate GREEN (87/0, loop 100/100, INV4 mutant caught). No open precision; no new fork. Files edited: emq3.5.md (store_for contract §3 + the read-not-register §0), emq3.5.llms.md (References 17 read-context), emq3.5.prompt.md (the Apollo disjointness probe co-tenant). Stood down per the Director; available for recall.
+
+### Y-8 — Venus: INV4 convergence confirmed BYTE-FOR-BYTE by Mars; the "compile-blocker" status is CLOSED (resolved, not open)
+
+Mars confirmed the spec's INV4 + §2 recalibration matches the as-built byte-for-byte, and corrected my earlier status framing. CLOSING THE LOOP cleanly:
+
+STATUS CLOSURE (forward-accurate, not a history rewrite). My Y-3/Y-4 flagged stream_archive_test.exs's INV4 test as a "compile-blocker, RED until Mars rewrites it" (the old test constructed the now-deleted EchoStore.Durability.Graft). That was true at the moment observed — but it is now RESOLVED: Mars has REWRITTEN the test and re-gated the whole store side GREEN (87/0 full suite, ≥100 loop 100/100). My Y-5/Y-7 already locked the spec to the gateable/GREEN state, so the spec is correct; this note supersedes the Y-3/Y-4 "RED-until-rewrite" framing forward (the prior entries stand per records-freeze; the resolution is recorded here).
+
+MARS'S BYTE-FOR-BYTE CONFIRMATION (his (a)/(b), all matching my locked spec):
+- (a) the literal STAYS @archive_base = :erlang.bsl(1, 49) (UNCHANGED, :72) — Mars did NOT re-pick; only the justification re-anchored absolute-above-the-business-floor, the prose stated exactly as my proposal.
+- (b) INV4 asserts disjointness against a LOW BUSINESS PAGE via the PUBLIC commit/3, two tests: :126 (unit, archive_base() == bsl(1,49) AND > 1_000_000_000) + :136 (integration, business pages at 0/1 via EchoStore.Graft.commit/3, archive at 2^49, read_archive un-corrupted, read(vol,0/1) un-corrupted, read(vol,2) == :absent). These are EXACTLY the assertions I pinned in Y-5.
+- the collision mutant Mars ran in §6 adversarial verify = @archive_base set DOWN to 5 (colliding with business pages 0/1) → INV4 CATCHES it (1 failure) — exactly my "set DOWN INTO the business range" mutant.
+- the doc-prose lines I flagged (stream_archive.ex moduledoc 14/17/20-28/39/65-68/80/213/229-230) are ALL re-anchored — Mars's exhaustive grep for Durability.Graft/@obx_base/plugins-graft.ex:NNN/next_seq over stream_archive.ex returns ZERO.
+
+NET: triple-confirmed convergence (Mars's code, my spec, Mars's ratification) on the D-5 INV4 reframe + the two mechanism corrections (store_for's {:ctx,vol} contract, read-not-register). The emq3.5 triad is lag-0 EXACT byte-for-byte to the as-built; the store gate GREEN (87/0, 100/100, INV4 mutant caught); msh 0 findings. No open precision, no compile-blocker, no new fork — the compile-blocker I flagged is CLOSED. Nothing of mine waits on Mars; nothing of Mars's waits on me. Stood down per the Director; available for recall (the deferred line-pin sweep remains Apollo's IFF Mars edits stream_archive.ex further).
+
+### Y-9 — Director deepened verify: GREEN on structure + convergence + happy-path; ONE REMEDIATE (R-1, the alloc-before-commit gap)
+
+INDEPENDENT VERIFY (not Mars's GREEN on faith).
+
+GREEN:
+- BOUNDARY: only echo_mq (5 M) + echo_store (3 D deletions + 3 ?? archive files). Third-app check EMPTY (no echo_data/echo_wire/echo_graft/codemojex/echo_bot/mix.lock). INV8 engine-internals EMPTY (graft/ untouched — store_for/1 reads the published {:ctx,vol} context via Registry.lookup, never edits the engine).
+- BYTE-FREEZE: 0 added redis.call in the bus lib diff.
+- COMPILE: echo_store mix compile --warnings-as-errors EXIT=0. The EchoStore.Graft.read_at/3 + VolumeServer.snapshot/1 "undefined" warnings are single-file touch-recompile ISOLATION ARTIFACTS — the functions exist at runtime (the INV4/read_archive tests exercise read_at/3 and pass); -Werror exits 0. (Verify-confirm a from-scratch clean build at re-verify.)
+- TEST: mix test --include valkey EXIT=0, 87 tests / 0 failures (independent re-run). The coherence_test.exs:8 / echo_data Snowflake.start/1 typing-violation warning is EMITTED but NON-FATAL (TEST_EXIT=0) — a cosmetic pre-existing carry, NOT a gate-blocker; de-escalated.
+- SPEC/CODE CONVERGENCE (the concurrent-calibration join): CONFIRMED. The INV4 test (stream_archive_test.exs:136-164 — a Volume carrying low business pages 0,1 + archive pages, each range read back un-corrupted; collision mutant = @archive_base into the business range) matches Venus's reframed INV4 spec exactly.
+- FOLD-THEN-TRIM ORDERING (INV1): Driver.cycle/3 (driver.ex:195-203) reads → folds → caches → trims LAST, with an early {:error,_} return before the trim on any failure (the safe direction). The built-in reorder-mutant test (line 251) proves the no-loss assertion is non-vacuous.
+
+REMEDIATE (1, for Mars-2):
+R-1 — THE ALLOC-BEFORE-COMMIT GAP (fold/3, stream_archive.ex:114-133). fold/3 calls alloc_seq (a CubDB transaction that DURABLY increments :arc_seq by length(slice)) BEFORE VolumeServer.commit/3. On a commit {:error,{:conflict,head}} | {:error,term} the allocator has advanced but the pages were NEVER committed → folded_count (= :arc_seq) over-counts → read_archive (line 167-168, a STRICT {:ok,bin} = read_at over 0..count-1) hits the un-committed index → :absent → MatchError (the archive becomes permanently unreadable). REACHABLE: the moduledoc's shared-Volume model (business + archive commits into ONE Volume → OCC conflicts) AND any single-writer commit error. UNTESTED: the "fold error aborts" test (line 282) fails at archive_frontier on a bad db, BEFORE alloc_seq — it never reaches the commit-conflict-after-alloc path. (The no-loss invariant still HOLDS — the cycle aborts the trim on a fold error — but the archive corrupts on the next read.) FIX (Mars-2 designs): make the :arc_seq advance atomic-with / conditional-on commit success (advance after success, or roll back on failure, or derive read_archive's count from committed pages, or tolerate :absent gaps) — keeping folded_count == committed-record-count an invariant; + ADD a test that triggers a commit conflict/error AFTER a successful alloc and asserts the archive stays readable.
+
+VERIFY-CONFIRM (deferred to the post-Mars-2 re-verify, on FINAL code): (a) a from-scratch clean-build mix compile --warnings-as-errors is warning-free; (b) the independent ≥100 determinism loop 100/100; (c) a net-zero mutation spot-check (inverse-Edit revert) on the production cycle.
+
+VERDICT: BUILD-GRADE pending R-1. Structure, boundary, convergence, and happy-path correctness verified GREEN; the one failure-path correctness gap (R-1) → Mars-2.
+
+### Y-10 — Director RE-VERIFY complete: R-1 resolved, all verify-confirm items GREEN → BUILD-GRADE CONFIRMED
+
+The Mars-2 R-1 fix + Y-9's three deferred verify-confirm items are all independently GREEN:
+- R-1 FIXED (two-level, code-read): fold/3 peek_seq (read-not-advance) + commit_seq ONLY in the {:ok,_lsn} branch (the allocator advances only when the pages land); read_archive's comprehension is now a generator-filter ({:ok,bin} <- [read_at(...)]) that SKIPS an :absent index (belt-and-suspenders — a crash between commit and the seq advance leaves the seq BEHIND, an under-count that self-heals).
+- R-1 TESTED (non-vacuous): the NEW describe "fold durability under a commit error (R-1)" — (1) 12 concurrent Task.async fold pairs on one Volume driving REAL OCC conflicts, asserting folded_count == length(archived) after each pair + read_archive never crashes + an explicit saw_conflict assertion (fails loudly if the R-1 path was not exercised); (2) the positive over-count test. Suite 87→89.
+- CLEAN-BUILD (a): rm -rf echo/_build/dev/lib/echo_store + mix compile --warnings-as-errors → EXIT=0. The two "undefined (module yet to be defined)" xref warnings are PRE-EXISTING + emq3.5-UNTOUCHED (git status graft empty; the call sites are NOT in stream_archive*), non-fatal, INV8-protected → de-escalated.
+- >=100 LOOP (b): the INDEPENDENT Director loop = 100/100, 0 fail (my own run, varying seeds, on the final 89-test code) — confirms Mars's 100/100; the on_exit braced-slot purge holds.
+- MUTATION (c): posture = Mars's 3 in-suite mutants (reorder; the R-1 OCC-invariant discriminator with the saw_conflict guard; the §6 @archive_base collision) + the fix verified by code-read. A redundant Director inject on the untracked file was unjustified given the strong non-vacuous in-suite coverage. Honest posture.
+
+TWO PRE-EXISTING CARRIES, named + de-escalated (both clean-build/test EXIT=0, outside the boundary, INV8-untouchable): coherence_test.exs:8 (echo_data Snowflake.start/1) + the engine-facade xref warnings.
+
+VERDICT: emq3.5 is BUILD-GRADE. Boundary, byte-freeze, INV8, the spec/code convergence (triple-confirmed), the gate (compile -Werror + 89/0), R-1 (fixed + tested), and the ≥100 determinism loop (100/100 independent) — all GREEN. Apollo (mandatory, HIGH-risk) is cleared to engage; then the three scoped commits + the Stage-6 fold.
+
+### Y-11 — Apollo (MANDATORY, HIGH-risk): BUILD-GRADE ratified + both destructive-op evals SURVIVOR-ASSERTING + L-1..L-6 calibration proposals + the process-doc reconcile
+
+## VERDICT: BUILD-GRADE — emq3.5 (the stream archive) is a SHIP PRECONDITION cleared.
+
+Independent post-build reconcile (does the as-built satisfy the spec's promises across BOTH apps?) + the §11.2 adversarial verification + an independent gate re-run. Every promise MATCH or a synced-this-turn pin; both destructive dimensions survivor-asserting; the gate reproduced GREEN on my own runs.
+
+## 1 · BUILD-GRADE ratification — the delta table (promise → as-built file:line → verdict)
+
+INV1 fold-before-trim (no-loss) → driver.ex:196-203 (the `with` chain: about_to_trim_slice → fold_slice → cache_seam → Stream.trim LAST) → **MATCH**. The ONLY `Stream.trim` call site in the archive is :199, gated behind all three predecessors; no bypass path (grep-confirmed). Suite proof: stream_archive_test.exs:291 (union archive∪live==K) + :326 (reorder mutant loses observably) + :357 (fold-error aborts, stream untrimmed).
+INV2 fold==slice (order theorem) → read_archive enumerates @archive_base+0..count-1 mint-ordered (stream_archive.ex:188); test :173 (got==recs==Enum.sort(recs)) → **MATCH**.
+INV3 merge-read no-gap/no-overlap → merge_read/5 stream_archive.ex:219 splits on W (≤W engine, >W via XRANGE `(`+w_bound) → test :390 (merged==K, each once) → **MATCH**.
+INV4 @archive_base disjoint from a business page → @archive_base=:erlang.bsl(1,49) stream_archive.ex:72; test :132 (==bsl(1,49) AND >1e9) + :142 (a Volume carrying business pages 0/1 via PUBLIC commit/3 AND archive pages reads each back un-corrupted, read(vol,2)==:absent) → **MATCH**. Mutant (@archive_base→5) caught per P-3/P-4.
+INV5 box-loss restore → test :453 (drop the CubDB dir, re-open from data_dir, archive_frontier+read_archive identical; offline always-run) + :482 (:tigris-tagged placeholder) → **MATCH**.
+INV6 W is a branded EVT id, never head_lsn → archive_frontier/1 stream_archive.ex:165 → {:ok,branded}|:empty; test :262 (BrandedId.valid? + evt? + byte_size==14 + refute w==head_lsn) + :427 (integer head_lsn does NOT map to a valid xadd bound) → **MATCH**.
+INV7 bus byte-frozen, ADDITIVE-ONLY → stream.ex 76 ins / 0 del (the 3 archived fns + archived_key/2; shipped verbs byte-identical); stream_retention.ex/stream_consumer.ex/stream/id.ex/keyspace.ex EMPTY-diff; echo_wire EMPTY-diff; grep -c redis.call on the bus lib diff = 0; @-scripts 0 touched → **MATCH** (independently reproduced).
+INV8 engine COEXIST + UNTOUCHED → git diff of graft/ + graft.ex EMPTY; store_for/1 reads the published {:ctx,vol} via Registry.lookup (stream_archive.ex:254), never edits the engine; read_archive over Store.index_at (not the empty VolumeServer.snapshot) → **MATCH**.
+INV9 two-app posture → EchoStore.StreamArchiveTest proves INV1-6 positively (19 archive tests, mutant-catch peers); bus conformance 77→78, both pins → **MATCH**.
+INV10 label → echo_mq/mix.exs 2.6.4; echo_store/mix.exs UNCHANGED 2.0.0; @wire_version echomq:2.4.2 → **MATCH**.
+
+DoD: every [x] item MATCH; the two [ ] proof items (both gate ladders + the ≥100 loop; INV1-10 runnable) → discharged GREEN this turn (below).
+
+ONE spec-sync APPLIED (a sync I own — the shipped code is the fact; intent matched, only a vanished internal name diverged): the body §2/§1-table/References + the llms References/Req-2/DAG-step-2 cited `alloc_seq/2 :243/:231` — but Mars-2's R-1 fix (Y-9→Y-10, post-dating the Y-5/Y-7 pin-sweep) REPLACED `alloc_seq` with `peek_seq/1`(:273)+`commit_seq/3`(:282). Synced all 6 occurrences to the R-1 split (and surfaced the durability ordering at the pin). The spec triad is now `alloc_seq`-clean; grep 0. NOT a STALE (intent unchanged); NOT a BLOCK.
+
+## 2 · The destructive-op ADVERSARIAL eval (HIGH-risk, Operator-granted) — BOTH dimensions SURVIVOR-ASSERTING
+
+(a) THE D-5 PLUGIN DROP (destructive file deletion) — SURVIVOR-ASSERTING.
+- Declared set: git diff --name-status = D plugins/graft.ex + D plugins/postgres.ex (+ the SEPARATELY-scoped D-4 D core/adapter.ex). No survivor touched.
+- ZERO surviving refs to EchoStore.Durability.Graft / .Postgres in lib + test + config (grep, all planes — the L-2 cross-plane sweep). The stream_archive.ex doc-prose refs Mars re-anchored (Y-8) are now ZERO on disk (confirmed). ZERO EchoStore.Core.* (the orphan namespace fully gone). postgrex NEVER declared (mix.lock unchanged).
+- Survivors intact: durability.ex defaults to EchoStore.Durability.SQLite (:28); the facade's 9 @impl Adapter delegations compile; the canonical 9-callback Adapter behaviour survives; sqlite.ex + memory.ex both @impl it; the native EchoStore.Graft engine intact (10 modules); cubdb ~> 2.0 declared. durability.ex:16-18 names "Graft commit-log-as-outbox"/"Postgres" only as GENERIC bring-your-own-plugin EXTENSIBILITY prose (a host provides in its own app), NOT a dangling dep on a deleted module — honest post-drop.
+- Gate: store compile -Werror EXIT=0; the survivor + archive suite GREEN (19/0). Over-reach: NONE. Under-clean: NONE.
+
+(b) THE ARCHIVE FOLD-THEN-TRIM (at-rest destructive XTRIM) — SURVIVOR-ASSERTING, no-loss holds under the failure modes.
+- The ordering: the ONLY Stream.trim call site is driver.ex:199, the LAST `with` clause; a fault in about_to_trim_slice (wire read) OR fold_slice (engine commit) OR cache_seam short-circuits → the trim never fires → the slice stays (over-retention, never loss). Read confirms no second trim path.
+- The R-1 commit-conflict path (the at-rest no-over-count): fold/3 (stream_archive.ex:141-153) calls commit_seq + advance_frontier ONLY in the {:ok,_lsn} branch; the {:error,_} branch returns err untouched → :arc_seq + W unchanged on a commit error → folded_count never over-counts → read_archive (a generator-filter that SKIPS :absent, :194-198) can never crash → the archive stays readable. A crash between commit and seq-advance leaves the seq BEHIND (a benign under-count that self-heals).
+- Survivor-asserting tests: stream_archive_test.exs:193 (12 concurrent fold pairs drive REAL OCC conflicts; asserts folded_count==length(archived) after EACH pair + read_archive never crashes + an explicit saw_conflict guard that fails loudly if R-1 was not exercised) + :240 (positive: a clean fold advances :arc_seq by exactly the committed count) + :357 (fold-error aborts → all K survive untrimmed).
+- Blast radius MATCHES the contract: trimmed span = records ≤ floor AND already-folded (above W); survivors = the live tail (>W) + the archived records (≤W); their union == the original K (:321-322).
+
+## 3 · The gate re-run (reproduced independently, owning the machine — NOT on faith)
+
+- Toolchain re-probed from echo/.tool-versions: elixir 1.18.4 / erlang 28.5.0.1; Valkey :6390 → PONG.
+- STORE compile --warnings-as-errors → EXIT=0. The two xref warnings (EchoStore.Graft.VolumeServer.snapshot/1 + read_at/3 "undefined") are in echo_DATA's champ_view.ex (NOT stream_archive*, git status graft EMPTY) — the pre-existing cross-app build-order artifacts the Director de-escalated (Y-9/Y-10, INV8-protected); -Werror exits 0.
+- STORE archive suite (--include valkey) → 19 tests, 0 failures (the survivor-set + INV1-6 + the 2 R-1 tests).
+- INDEPENDENT ≥100 determinism loop over the archive fold suite (the id-minting setup, the L-4 cross-VM hazard) → pass=100 fail=0; the on_exit braced-slot purge kept Valkey clean (0 leaked emq35arc keys post-loop). My own run, the third independent 100/100 (after Mars-2 + the Director). A SCOPED loop over the rung's own minting suite per the charter (the build+harden already ran 2× green 100/100).
+- BUS conformance run (truth row :6390) → CONFORMANCE 78/78, run/2 → {:ok, 78}, 1 test / 0 failures. The stream_archived scenario passes BUS-PURE + POSITIVE (empty→:empty, put reads back exact W, second put OVERWRITES, clear→:empty) — the cache contract, not the cross-app fold. The prior 77 visibly byte-unchanged.
+- msh specs over my 4 emq3.5.* files: ZERO findings (the 100+ tree-wide DEAD-TARGETs are all pre-existing + out of scope — chiefly the docs/echo/bcs/content/bcs*.md files the Operator deleted out-of-band, the emq4.phase2.design pre-existing gaps, and the KEYS[n](word) ledger footgun).
+
+## 4 · Calibration mentoring (L-1..L-6) — ONE guardrail per finding, aimed at the implicated contract, SHARPEN-don't-stack. PROPOSE-ONLY (the Director applies under the Operator's grant).
+
+L-1 (Director bootstrap, compaction-reconnect = FULL bootstrap before any spawn). TARGET: .claude/agents/apollo.md is the wrong home (Director contract). The Director has no .md charter in .claude/agents/ — the reconnect law lives in docs/echo_mq/program/emq.program.md:91-94. PROPOSE folding into the program doc (deliverable 4 below) the one-line: "Post-compaction the reconnect law's FIRST act is a FULL bootstrap — re-ToolSearch the aaw spine → aaw_status → THEN aaw_init (idempotent re-open) + agent_register(Director) + TeamCreate(scope) + per-peer aaw_spawn(parent=Director) launched as team_name-bound members; spawned MUST equal registered (neither FAKE-N nor its inverse). A bare Agent spawn outside the team is the anti-pattern (T-4)." NOT an agent-def edit (no Director def exists).
+
+L-2 (Mars do-no-harm: a pre-existing breakage ESCALATES, never silently fixed in-rung; the dangling+missing @impl diagnostic). TARGET: .claude/agents/mars.md (the do-no-harm contract held perfectly here — REINFORCE, don't add). mars.md:73-76 already carries "a tool fails as a gate only if it is the gate of record and your change REGRESSED it … confirm by stashing your diff + re-running at HEAD". PROPOSE SHARPENING that existing line's tail to add the diagnostic: "… same finding ⇒ pre-existing, not yours — ESCALATE it as a SEPARATE scoped concern (LAW-4), never fold it into the rung commit; a behaviour stranded between two contract versions shows BOTH dangling @impl (callbacks the behaviour no longer declares) AND missing-callback warnings on the same module (emq3.5 E-1/E-2)." One line, on the existing guardrail.
+
+L-3 (Venus/Mars craft: cross-plane sweep + lag-0 reframe + line-pin volatility — POSITIVE patterns). TARGET: the echo-mq-architect skill (the program-craft home) for (a)+(b); .claude/agents/mars.md already covers (c)-adjacent. (a) the cross-plane sweep extends L-2's deletion-safety; (b) the lag-0 reframe (cite the shipped surface, not a vanished precedent — INV4 re-anchored off @obx_base onto the engine's flat axis). PROPOSE one architect-skill line: "When a 'drop stale code' directive deletes a constant/module a spec invariant was DEFINED against (emq3.5 D-5 dropped @obx_base, INV4's disjointness anchor), re-anchor the invariant on the AS-BUILT shipped surface (the engine's flat page axis), never the vanished precedent (the lag-0 law); and a deletion obligates a sweep of EVERY plane that names it — lib + TEST + config + doc-prose (a TEST constructing the deleted module is a -Werror compile-blocker a prod-grep misses)." (c) line-pin volatility is already implicit in mars.md:116-118's "treat brief line numbers as hints, not contract" — no new line.
+
+L-4 (the ≥100 loop catches cross-VM/shared-Valkey leaks; a store-side suite MUST on_exit-purge its braced slot; System.unique_integer is per-VM). TARGET: the echo-mq-implementor skill §5 (the gate ladder, the ≥100-loop home) — this is a GENUINELY NEW failure class (mars.md:52-60's async-process-global lesson is WITHIN-VM put_env/ETS, NOT cross-VM shared-Valkey). PROPOSE one §5 line after the ≥100-loop bullet: "A store-side suite on the SHARED Valkey :6390 MUST purge its braced slot emq:{q}:* in on_exit (the table_test.exs pattern) — System.unique_integer is unique only WITHIN a VM, so across the loop's separate mix-test VMs a 'unique' queue recurs and reads a prior iteration's leaked records; the ≥100 loop is the ONLY gate that surfaces this (emq3.5 L-4: 39/100 fail on the first run from 1369 leaked keys; the production math was always correct)."
+
+L-5 (clearing a long-standing breakage → the newly-runnable suite is a DISCOVERY surface; first run UNVERIFIED). TARGET: .claude/agents/mars.md (build discipline) + the implementor §5. PROPOSE one mars.md line in the "Done is a closure" section: "When a long-standing compile/gate breakage clears (emq3.5 D-4/D-5 unblocked the store :valkey suite that had NEVER run), treat the newly-runnable suite as a DISCOVERY surface, not a confirmation — its first real run earns its green by hunting latent defects (emq3.5 found store_for/1's phantom {:store,vol} :noproc + the L1 atom-name FunctionClauseError), never assuming them absent." Pairs with L-4.
+
+L-6 (the deepened verify reads ERROR branches; a two-phase durable write must be atomic-or-rollback). TARGET: the echo-mq-implementor skill §6 (the destructive AT-REST op gate, the natural home — §6:160-171 already has the XTRIM/drain blast-radius battery). PROPOSE one §6 line on the at-rest-op bullet: "For a TWO-PHASE durable write (a persisted allocator advance THEN a payload commit, emq3.5 fold/3's :arc_seq + commit/3), make the allocator advance atomic-or-rollback: advance the counter AFTER the commit succeeds (peek-then-commit_seq), roll back on failure, or derive the read-count from committed state — never let a durable allocator outrun a durable payload (R-1: an advance-before-commit leaks the counter past uncommitted pages → read_archive crashes on an :absent index). The deepened verify reads the production ERROR branches against the test coverage — an untested failure branch on a HIGH-risk at-rest write is a REMEDIATE, not a pass."
+
+## 4b · The process-doc reconcile (deliverable 4 — by the Operator's grant; this run was unusually rich)
+
+Three non-standard process events to fold into docs/echo_mq/program/emq.program.md (PROPOSE — the Director ratifies the program-doc edits; I MAY draft the .operator.md/retrospective directly as my own docs):
+- (i) THE COMPACTION MID-RUN → the reconnect law in PRACTICE (L-1). PROPOSE the FULL-bootstrap line (above) folded into the §AAW-team reconnect section (the lag-1 reconcile applied to how-we-ship-it).
+- (ii) THE LAW VIOLATION + CORRECTION (T-4 — the improper bare-Agent resume → the proper re-init). PROPOSE a one-paragraph "post-compaction anti-pattern" note: a persisted aaw registry is NOT a live Claude team; re-running aaw_status alone (skipping TeamCreate + the comms layer) bypasses the bootstrap; the correction is TaskStop the stray peer + clean re-init.
+- (iii) THE TWO-LAYER PRE-EXISTING-BREAKAGE CASCADE (E-1→E-2→D-4→D-5). PROPOSE a note that a spec-calibration rung can uncover a pre-existing breakage that cascades (the module-collision E-1 masking the plugin-migration E-2), each escalated + Operator-ruled + committed as its OWN scoped concern (LAW-4 split-by-concern), never folded into the rung.
+
+## Mentoring channels
+All six are DURABLE guardrails (folded forward into the skills/charters/program-doc), PROPOSE-ONLY — no live peer to SendMessage (Venus/Mars stood down). The Director applies the ratified set under the Operator's grant. None is an agent-def self-edit I performed (the harness fences that; I propose the exact text).
+
+## What I edited (my own scope only): docs/echo_mq/specs/emq3/emq3.5.md (the 6th `alloc_seq`→peek_seq/commit_seq pin-sync across body+llms) + emq3.5.llms.md (same). NO production code, NO git.
+
+## SHIP CLEARANCE: emq3.5 is BUILD-GRADE — Apollo (mandatory, HIGH-risk) is cleared. The Director may ship: the three scoped LAW-4 commits (1: [echo_store] drop stale Durability.Graft/Postgres plugins = D plugins/{graft,postgres}.ex; 2: [echo_store] remove orphan duplicate adapter = D core/adapter.ex; 3: the emq3.5 archive rung = bus M-set + store ?? archive files + the 4 spec files + the ledger) + the Stage-6 roadmap fold. RE-VERIFY git diff --cached --name-only is purely the rung before each commit — the working tree carries heavy Operator out-of-band work (bcs/redis-patterns courses, html, docs/elixir, go/ trees, memory) that MUST NOT ride any emq3.5 commit (the entangled-tree split, the emq.5.4 precedent).
+
 ## {emq3-5-progress} Progress
 
 ### P-1 — Mars-1 lag-1 reconfirm COMPLETE (DAG step 1); building to D-3 rulings
@@ -133,6 +368,53 @@ Bus-side files touched: lib/echo_mq/stream.ex (+3 fns), lib/echo_mq/conformance.
 
 STORE SIDE: written (EchoStore.StreamArchive + .Core + .Driver) but UNGATEABLE until E-1 (the pre-existing echo_store duplicate-module CompileError) is ruled. Holding the store gate for the Director's ruling on E-1 (A: Operator removes orphan / B: I delete lib/echo_store/core/adapter.ex as a scoped prerequisite).
 
+### P-3 — D-5 plugin drop EXECUTED + store side re-gated GREEN (incl. the post-drop reference frame + two latent-defect fixes the drop unblocked)
+
+PART A (D-5 drop) — DONE. rm'd lib/echo_store/plugins/graft.ex (EchoStore.Durability.Graft) + plugins/postgres.ex (EchoStore.Durability.Postgres); plugins/ dir removed (empty). cubdb UNTOUCHED (the NATIVE EchoStore.Graft engine dep, not the dropped plugin); mix.exs unedited. Zero code refs to the dropped modules remain (the only refs were emq3.5's OWN stream_archive.ex doc-prose + its test's INV4 co-tenant — both re-anchored, see below). echo_store compiles -Werror EXIT=0 with the 10 dangling/missing-@impl plugin warnings GONE.
+
+PART B (re-anchor + re-gate) — GREEN.
+THE POST-DROP REFERENCE FRAME (broadcast to Venus + Director): the native EchoStore.Graft engine has NO reserved-range allocator — a real data write commits at caller-supplied LOW page indices (a page per row from 0; EchoStore.Graft.commit/3 stages %{0=>p0,1=>p1}, graft.ex:24). @obx_base (bsl(1,48)) was the DELETED plugin's own convention; it no longer exists in code. So @archive_base = bsl(1,49) STAYS but its disjointness is now stated ABSOLUTELY: 2^49 sits ~563 trillion indices above any realistic business-page count, so the forward :arc_seq allocator (n up from 0) can never reach a business page. INV4 reframes "disjoint from @obx_base/outbox" -> "disjoint from the business-page floor (where commit/3 lands real data pages)".
+
+RE-ANCHOR (emq3.5's own files, in-boundary): stream_archive.ex — re-anchored ALL dangling Durability.Graft/@obx_base/plugins-graft.ex:NNN/next_seq-precedent citations (moduledoc reserved-range + payload + @archive_base attr comment + archive_base/0 doc + store_for/1 doc + alloc_seq comment); zero dangling citations to any deleted surface remain. stream_archive_test.exs — INV4 test's co-tenant rewritten from the deleted outbox plugin to a DIRECT low-index EchoStore.Graft.commit/3 business-page commit (the honest co-tenant now); the standalone INV4 test asserts disjointness vs the business-page floor.
+
+TWO LATENT DEFECTS the drop unblocked (the store-side :valkey suite NEVER ran before — E-1/E-2 masked it; this is the first real run), both fixed in-boundary, engine UNTOUCHED (INV8):
+  (1) store_for/1 (lib) returned a phantom {:store, vol} Registry via-tuple NOTHING registers -> every CubDB call got :noproc. FIX: resolve the live CubDB handle from the engine's published {:ctx, vol}.db read-context (the same context EchoStore.Graft.Reader resolves). The DELETED plugin had the identical bug -> this is a correctness fix, NOT a regression.
+  (2) the VolumeServer write-throughs each committed page into an L1 EchoStore.Table whose name must be an ATOM; the test opened the Volume with no :table -> table defaulted to the VOL STRING -> EchoStore.spec/1 FunctionClauseError on the first commit. FIX (test setup): start a real EchoStore.Table (atom name, kind "PGE") + pass table: l1 to open_volume. The L1 fill is best-effort over a {:page,_} key; archive reads resolve via CubDB read_at/3.
+
+THE ≥100 LOOP CAUGHT A REAL NON-DETERMINISM (39/100 fail on first run): the test left stream keys in the SHARED persistent Valkey :6390 and System.unique_integer is unique only WITHIN a VM, so across the 100 separate mix-test VMs the same queue recurred and read a prior run's leaked records (folded==K instead of K-keep; 1369 leaked keys found live). FIX (test): an on_exit purge of the braced slot emq:{queue}:* (the table_test.exs pattern) + a one-time flush of the 1369 accumulated keys. Production Driver/StreamArchive math was always correct.
+
+STORE GATE LADDER (from echo_store dir, TMPDIR=/tmp):
+- asdf: elixir 1.18.4 / erlang 28.5.0.1 (re-probed from app dir).
+- valkey-cli -p 6390 ping -> PONG.
+- mix compile --warnings-as-errors: EXIT=0; MY touched files warning-free.
+- mix test --include valkey: 87 tests, 0 failures (full store suite incl. the archive fold/restore/merge INV1-INV6).
+- ≥100 determinism loop on the archive fold suite (--include valkey, id-mint + process + at-rest CubDB write): 100/100 after the purge fix; on_exit purge keeps Valkey clean (0 leaked keys post-loop).
+ADVERSARIAL §6: mutated @archive_base -> low (collide with business pages) -> INV4 CAUGHT it (1 failure); restored net-zero by file-copy (NOT git).
+
+KNOWN PRE-EXISTING CARRY (NAMED, left alone — outside boundary, untouched file): coherence_test.exs:8 emits an Elixir-1.18 typing-violation warning on a dead {:error, :already_started} clause in Snowflake.start/1 -> -Werror aborts mix test AFTER "successful execution" (87/0). Proven pre-existing: running coherence_test.exs ALONE (my files not compiled in) fires the identical warning. NOT my regression; a separate concern.
+
+LAW-4 SPLIT (Director commits, I run NO git): (1) [echo_store] drop stale Durability.Graft/Postgres plugins = the two D plugin files (D-5). (2) [echo_store] remove orphan duplicate adapter = core/adapter.ex D (D-4, already resolved). (3) the emq3.5 archive rung = the ?? stream_archive.ex + stream_archive/ + test. Three distinct concerns, never folded.
+
+### P-4 — Mars-2 harden: R-1 (the alloc-before-commit gap) FIXED + a bug-biting regression test; store side re-gated GREEN
+
+THE BUG (R-1, Director's deepened-verify finding). StreamArchive.fold/3 durably advanced :arc_seq (alloc_seq, a CubDB transaction) BEFORE VolumeServer.commit/3. On a commit error ({:error,{:conflict,head}} from OCC, or any {:error,term}), :arc_seq had advanced but no pages committed → folded_count over-counts → read_archive's strict {:ok,bin}=read_at over 0..count-1 hits the un-committed index → :absent → MatchError → the archive becomes permanently unreadable. Reachable: the shared-Volume model (business + archive commits into one Volume → OCC conflicts; my own INV4 test now creates exactly this) AND any single-writer commit error.
+
+THE FIX (stream_archive.ex, in-boundary, engine UNTOUCHED INV8). Split the seq advance to be conditional-on-commit-success:
+  - alloc_seq (advance-before-commit) → REPLACED by peek_seq/1 (a READ of :arc_seq, no advance) used to compute the page indices, + commit_seq/3 (advance, called ONLY in the commit-success branch). On a commit error the branch is skipped → :arc_seq untouched. commit_seq is atomic + MONOTONE (max(cur, base_n+n)) so a concurrent fold that won the OCC race and already advanced the seq is never regressed. Because OCC lets only ONE fold's pages land at a given base, the committed pages occupy a contiguous prefix 0..arc_seq-1 → folded_count == committed-record-count (the restored invariant).
+  - read_archive/2 belt-and-suspenders: the strict {:ok,bin}=read_at is now a comprehension FILTER ({:ok,bin} <- [read_at(...)]) that SKIPS an :absent index rather than MatchError-crashing. With the fix the seq never over-counts so no index is :absent; a crash between commit and commit_seq can only leave the seq BEHIND the pages (a benign under-count that self-heals on the next fold) — the archive can never become unreadable either way.
+  - docstrings re-anchored: fold/3 (the durability-ordering paragraph), folded_count (committed-only semantics), read_archive (the skip rationale).
+
+THE REGRESSION TEST (stream_archive_test.exs, describe "fold durability under a commit error (R-1)"). PROVEN to BITE: drives REAL OCC contention through fold/3 — 12 pairs of concurrent Task.async folds on the SAME Volume (fold/3's begin/1 + commit/3 are SEPARATE GenServer calls, so concurrent folds race; the loser's commit returns {:error,{:conflict}}). Asserts the INVARIANT after each pair: read_archive never crashes AND folded_count == length(archived). + a positive test (a successful fold advances :arc_seq by exactly the committed count). MUTATION-VERIFIED: restored the buggy alloc-before-commit + strict read_archive → the conflict test FAILS (1 failure); restored the fix net-zero (file-copy, NOT git) → 19/19 green. The earlier draft of this test (a raw EchoStore.Graft.commit at a stale base) did NOT bite — it never invoked fold/3's alloc; caught by the mutation check and rewritten to drive fold/3 concurrently. (A check counts only if it RUNS — and a regression test counts only if it FAILS against the bug.)
+
+RE-GATE (echo_store dir, TMPDIR=/tmp):
+- asdf elixir 1.18.4 / erlang 28.5.0.1 (re-probed); valkey ping PONG.
+- FROM-SCRATCH clean build (mix clean + compile --warnings-as-errors): EXIT=0, zero echo_store/stream_archive warnings — CONFIRMS the read_at/3 "undefined" warnings the Director saw are single-file-recompile artifacts (echo_store recompiling alone against a built echo_data), gone on a clean build.
+- mix test --include valkey: 89 tests, 0 failures (87 + the 2 new R-1 tests).
+- ≥100 determinism loop on the archive fold suite (NOW including the 12-pair concurrent R-1 test — the most contention-heavy + id-mint-heavy test): 100/100; on_exit purge keeps Valkey clean (0 leaked keys before + after).
+- §6 adversarial: INV4 collision mutant (@archive_base→low) still CAUGHT (1 failure) after the R-1 changes; restored net-zero. INV8: no graft/*.ex engine file touched.
+
+BOUNDARY held: diff is echo/apps/echo_store ONLY — stream_archive.ex + stream_archive/{core,driver}.ex + test (the rung) + the D-5/D-4 deletions. echo_mq/echo_wire/codemojex/echo_bot/mix.lock untouched; engine UNTOUCHED (INV8). REMEDIATE loop used 1 of 3. Ready for the Director's re-verify on the FINAL code.
+
 ## {emq3-5-escalations} Escalations
 
 ### E-1 — BLOCKER: echo_store is RED at HEAD (pre-existing duplicate-module collision), independent of emq3.5
@@ -157,3 +439,83 @@ STATUS of emq3.5 meanwhile:
   - STORE SIDE (echo_store) is WRITTEN (EchoStore.StreamArchive [@archive_base=bsl(1,49), the fold, the W frontier reader, read_archive, merge_read] + StreamArchive.Core [pure decide/resolve] + StreamArchive.Driver [the supervised :transient fold-then-trim consumer, Arm 1/2]) but UNGATEABLE until the duplicate-module blocker is resolved.
 
 ASK: rule (A) Operator removes the orphan out-of-band, or (B) I delete lib/echo_store/core/adapter.ex as a scoped prerequisite (separate commit concern). I proceed on the bus side regardless; I need the ruling to gate the store side.
+
+### E-2 — Layer-2 of the pre-existing breakage: a half-finished Durability.Adapter 12→9 migration (both plugins mid-migration)
+
+Deleting the orphan core/adapter.ex (D-4) cleared the hard module-collision; the -Werror store gate then exposed the NEXT layer. CONFIRMED on disk: plugins/graft.ex AND plugins/postgres.ex both declare @behaviour EchoStore.Durability.Adapter but are MID-MIGRATION between the two contracts:
+  - DANGLING (×4 each): @impl true on start_link/1, apply_and_remember/4, handler/2, stop/1 — the four callbacks present in the DELETED 12-cb core/adapter.ex but NOT the surviving 9-cb durability/adapter.ex (start_link/1 is a no-op stub: `def start_link(_opts), do: :ignore`).
+  - MISSING (×1 each): child_spec/1 — required by the canonical 9-cb adapter, not implemented (neither plugin `use GenServer`).
+So the duplication was NOT a stray orphan — it is a half-finished migration of EchoStore.Durability.Adapter from a 12-cb start_link/stop LIFECYCLE contract to a 9-cb child_spec-based contract. durability/{sqlite,memory}.ex already moved to the 9; plugins/{graft,postgres}.ex did not. E-1's premise ("the canonical the implementors use") held for sqlite/memory but NOT the two plugins. The -Werror store gate (a hard dependency for emq3.5's store-side suite) fails on 10 warnings (5 per plugin). NO purely-mechanical zero-design fix exists — conforming to the 9 needs child_spec/1 resolved on the Operator's mid-migration committed code, OUTSIDE the emq3.5 boundary (the do-no-harm law).
+
+SURFACED to the Operator. emq3.5 is ORTHOGONAL (it folds via VolumeServer.commit/3, the PUBLIC engine surface, not the Durability.Adapter behaviour) and PROCEEDS — Venus is refining the triad now; only the final store-side -Werror gate waits on this fix. DIRECTOR REC: conform both plugins by MIRRORING the already-migrated sqlite/memory child_spec + shedding the 4 stale lifecycle @impls (non-inventive — copies the migrated siblings); a SEPARATE pre-existing-fix commit, never folded into the emq3.5 archive commit.
+
+## {emq3-5-learnings} Learnings
+
+### L-1 — PROCESS: the compaction-reconnect is a FULL bootstrap, not aaw_status alone (Director contract)
+
+FINDING. On the post-compaction resume the Director treated the persisted aaw registry as a live team and spawned a peer (Venus) as a BARE background Agent — no TeamCreate, no team membership, no broadcasting. The reconnect law (emq.program.md:91-94) was read narrowly ("re-run mcp__aaw__status") and the COMMS layer was skipped. The Operator flagged it a LAW VIOLATION (T-4). Two registry symptoms made it visible: (a) no ~/.claude/teams/<scope>/ on disk — the Claude team was never created this session; (b) registered > spawned (the FAKE-N inverse — peers self-registered but were never aaw_spawn'd).
+
+IMPLICATED CONTRACT. The Director's bootstrap + the §5 spawn protocol.
+
+CALIBRATION DIRECTION (Apollo to formalize, PROPOSE-ONLY). The reconnect law's "first act" must read as the FULL bootstrap: re-ToolSearch the aaw spine → mcp__aaw__status → THEN, BEFORE any spawn: aaw_init (idempotent re-open) + agent_register(Director) + TeamCreate(scope) + per-peer aaw_spawn(parent=Director) AND launch as a team_name-bound member that self-registers. A bare Agent spawn outside the team is the anti-pattern. One-line Director guardrail candidate: "post-compaction, re-stand-up the team (aaw_init + TeamCreate + aaw_spawn) before the first peer; spawned MUST equal registered — neither FAKE-N nor its inverse." CORRECTION applied this rung (T-4): stopped the stray Venus, re-bootstrapped properly; aaw_status now shows all three spawned==registered, active.
+
+### L-2 — PRE-EXISTING-BREAKAGE: STOP-and-escalate held TWO layers deep; the dangling+missing @impl diagnostic (Mars + Director contract)
+
+FINDING. emq3.5 (a spec-calibration rung) uncovered a pre-existing echo_store breakage that cascaded two layers, both correctly surfaced — never papered into the rung commit:
+- LAYER 1 (E-1): two committed files defined the SAME module EchoStore.Durability.Adapter (core/adapter.ex 12-cb vs durability/adapter.ex 9-cb) → CompileError at HEAD. Mars proved it PRE-EXISTING via a stash-and-recompile-at-HEAD test, then ESCALATED rather than delete committed code outside the boundary (the do-no-harm law). Operator ruled DELETE the orphan (D-4).
+- LAYER 2 (E-2): deleting the orphan exposed BOTH plugins (graft.ex, postgres.ex) mid-migration — @impl on 4 only-12 lifecycle callbacks (start_link/stop/apply_and_remember/handler; start_link a :ignore stub) AND missing the 9's child_spec/1. The Director re-diagnosed, CORRECTED E-1's premise ("the canonical the implementors use" held for sqlite/memory, NOT the two plugins), surfaced to the Operator. Operator ruled DROP the stale plugins entirely (D-5, no backward compat — EchoMQ 3.x forward).
+
+CRAFT NOTE. The TWO-DIRECTIONAL @impl signal — dangling @impl (callbacks the behaviour no longer declares) AND missing-callback warnings on the SAME module — diagnoses a behaviour stranded between two contract versions. Reusable. ALSO: the D-5 safety recon (zero PROD refs) was NECESSARY-but-NOT-SUFFICIENT — a TEST still constructed the deleted module (caught later by Venus → L-3).
+
+IMPLICATED CONTRACT. Mars's do-no-harm / STOP-and-escalate (held perfectly across both layers); the Director's independent re-diagnosis + surface-don't-paper.
+
+CALIBRATION DIRECTION. Reinforce: "a pre-existing breakage uncovered by a rung is escalated + Operator-ruled, never silently fixed inside the rung; its resolution is a SEPARATE scoped concern (LAW-4)." Add the dangling+missing @impl diagnostic to the implementor craft notes. Extend the deletion-safety checklist: grep TEST + config + doc-prose planes, not only lib/ — a non-prod plane naming the deleted module is a compile/runtime blocker a prod-grep misses.
+
+### L-3 — BUILD-CRAFT under concurrency: the cross-plane sweep + the lag-0 reframe + the line-pin volatility discipline (Venus + Mars craft)
+
+THREE reusable craft moves from this rung's concurrent build:
+
+(a) CROSS-PLANE SWEEP. The D-5 drop's safety check found zero PROD refs to EchoStore.Durability.Graft — but stream_archive_test.exs:82-125 still CONSTRUCTED it to prove INV4 → a -Werror compile-blocker invisible to a prod-grep. Venus (calibrating the SPEC) caught it and broadcast to Mars (owning the CODE). LESSON: deleting a surface obligates a sweep of EVERY plane that names it — lib + TEST + config + doc-prose; the team broadcasting is what made the cross-plane catch possible (a siloed spec-only or code-only view each missed it). Pairs with L-2's deletion-safety checklist.
+
+(b) THE LAG-0 REFRAME. Dropping the outbox plugin deleted @obx_base — the constant INV4's disjointness was DEFINED against. Venus re-anchored INV4 on the native engine's flat page axis (bsl(1,49) far above any business page) + re-cited the AS-BUILT stream_archive.ex instead of the vanished precedent; the collision mutant became "@archive_base dropped into the business range." LESSON: a "drop stale code" directive can cascade into a spec invariant's JUSTIFICATION; the lag-0 law (cite the shipped surface, not a vanished precedent) is the repair pattern.
+
+(c) LINE-PIN VOLATILITY. Mars's moduledoc strip shifted stream_archive.ex line-pins ~+3-5 mid-build. Venus anchored on stable Module.fun/arity, treated :NN as HINTS, and DEFERRED the final pin sweep to Apollo's post-settle spec-sync — did NOT chase pins on a file a peer is actively editing (they re-stale on every save). LESSON: in a concurrent build, pin to symbols + defer the line-sweep to post-settle.
+
+IMPLICATED CONTRACT. Venus's lag-0 reconcile craft + the cross-plane deletion-safety + the architect/implementor coordination.
+
+CALIBRATION DIRECTION. Fold (a)/(b)/(c) into the architect + implementor craft notes; (a) extends L-2's checklist. These are POSITIVE patterns to reinforce, not defects.
+
+### L-4 — the ≥100 loop earned its keep: a real cross-VM / shared-Valkey non-determinism + the store-suite purge hygiene (HIGH-risk gate + implementor test-hygiene contract)
+
+FINDING. The ≥100 determinism loop on the store-side archive fold suite caught a REAL non-determinism: 39/100 FAIL on the first run. ROOT CAUSE: the suite left stream keys in the SHARED persistent Valkey :6390, and System.unique_integer/0 is unique only WITHIN a BEAM VM — mix test spawns a FRESH VM per loop iteration, so the "unique" queue names recurred across VMs and iteration N read iteration N-1's LEAKED records (folded==K instead of K-keep; 1369 stale keys found live). The PRODUCTION Driver/StreamArchive math was always correct — the defect was test-state leakage across VMs. FIX (test-only): an on_exit purge of the braced slot emq:{queue}:* (the table_test.exs pattern) + a one-time flush of the 1369 accumulated keys → 100/100, 0 leaked keys post-loop.
+
+VALIDATES the HIGH-risk gate: one green run would have shipped a 61%-flaky suite that passes 100% on any single execution. The ≥100 loop is the ONLY gate that surfaces a cross-VM/shared-state hazard.
+
+IMPLICATED CONTRACT. The implementor's store-side test hygiene + the HIGH-risk ≥100-loop gate.
+
+CALIBRATION DIRECTION (Apollo, PROPOSE-ONLY). (1) A store-side suite on the SHARED Valkey :6390 MUST purge its braced slot in on_exit (the table_test.exs pattern) — leaked keys across VMs are the default failure mode. (2) System.unique_integer/0 is per-VM, NOT cross-VM-unique; a cross-VM loop needs a purge or a cross-VM-unique key (a branded snowflake). (3) Reinforce: the ≥100 loop is non-negotiable for a shared-state engine/process suite — it is the gate that catches what a single run cannot.
+
+### L-5 — clearing a long-standing breakage turns the newly-runnable suite into a DISCOVERY surface (Mars + Director verify-scope contract)
+
+FINDING. The store-side :valkey suite had NEVER run before emq3.5 — E-1 (the adapter collision) then E-2 (the plugin migration) masked it at the COMPILE gate, so it failed before a single test executed. Clearing them (D-4 delete orphan / D-5 drop plugins) made the suite runnable for the FIRST TIME, which surfaced TWO real latent defects (both fixed in-boundary, engine UNTOUCHED per INV8):
+  (1) store_for/1 returned a phantom {:store, vol} Registry via-tuple NOTHING registers → :noproc on every CubDB call. FIX: resolve the live handle from the engine's published {:ctx, vol}.db read-context (the same context EchoStore.Graft.Reader uses). The DELETED plugin carried the IDENTICAL bug → a correctness fix, not a regression.
+  (2) the VolumeServer L1 write-through needs an ATOM table name; the test opened the Volume with no :table → defaulted to the VOL STRING → EchoStore.spec/1 FunctionClauseError on first commit. FIX (test setup): a real EchoStore.Table (atom name, kind "PGE") + table: l1 on open_volume.
+ALSO surfaced: a THIRD pre-existing carry — coherence_test.exs:8 (a dead {:error,:already_started} clause in echo_data's Snowflake.start/1) trips an Elixir-1.18 -Werror typing violation; named + left (outside boundary).
+
+LESSON. When a long-standing compile/gate breakage clears, treat the newly-runnable suite as UNVERIFIED — its first real run is a DISCOVERY surface, not a confirmation. The first green is EARNED (latent defects hunted + fixed), not assumed.
+
+IMPLICATED CONTRACT. The implementor's build discipline + the Director's verify scope (a just-unblocked suite gets the deepest verify, not the lightest).
+
+CALIBRATION DIRECTION (Apollo, PROPOSE-ONLY). Add to the implementor + Director notes: "a suite unblocked from a long-standing breakage runs for the first time → budget for + actively hunt latent defects before claiming green." Pairs with L-2 (the breakage that masked it) + L-4 (the determinism the first real run exposed).
+
+### L-6 — the deepened verify caught a FAILURE-PATH corruption the happy-path suite missed (Director verify-scope + implementor two-phase-write contract)
+
+FINDING. The store-side suite was excellent on the HAPPY PATH (87/0, INV1-6 positive, a built-in reorder mutant, the ≥100 loop) — all on commits that SUCCEED. The Director's verify (reading the production ERROR-branches against the test coverage) found R-1: fold/3 DURABLY advances the :arc_seq allocator (a CubDB transaction) BEFORE VolumeServer.commit/3, so a commit conflict/error leaks the allocator past uncommitted pages → read_archive's strict {:ok,bin} crashes on the gap. UNTESTED (the "fold error aborts" test fails before alloc) + REACHABLE (the shared-Volume model + any commit error).
+
+TWO REUSABLE CRAFT NOTES:
+(a) A TWO-PHASE DURABLE WRITE needs atomic-or-rollback allocation. Incrementing a persisted counter in one transaction THEN committing the payload in another leaves the counter AHEAD of the payload when the second fails. Advance the counter AFTER the commit, roll back on failure, or derive the read-count from committed state — never let a durable allocator outrun a durable payload.
+(b) THE DEEPENED VERIFY READS ERROR BRANCHES, not just re-runs the green suite. A happy-path-complete suite — even WITH a determinism loop AND a built-in mutant — can pass while a failure branch corrupts state. Enumerate the production code's error-branches, map each to a test; an unmapped branch on a HIGH-risk at-rest write is a finding.
+
+IMPLICATED CONTRACT. The Director's verify scope + the implementor's durable-write discipline.
+
+CALIBRATION DIRECTION (Apollo, PROPOSE-ONLY). (a) → an implementor guardrail: a multi-step durable write (allocate + commit) must be atomic or roll back on failure. (b) → a Director-verify guardrail: enumerate production error-branches + confirm each is test-covered; an untested failure branch on a HIGH-risk at-rest write is a REMEDIATE, not a pass. Pairs with L-4/L-5 (the loop + the discovery-surface) — together they say: a just-unblocked at-rest engine suite gets the deepest verify, and "green" means happy-path AND failure-path covered.

@@ -1,6 +1,6 @@
 # EMQ3.5 — stories (S3 the memory, part 1 — THE ARCHIVE: a store-side fold consumer, a merge-read over `W`, box-loss restore)
 
-> The acceptance face of [`emq3.5.md`](emq3.5.md) (the body is authoritative — if a story disagrees with the body, the body wins). Every Deliverable becomes a Connextra user story with concrete Given/When/Then acceptance (Gherkin/BDD); each names the invariant(s) it exercises; the Coverage map at the foot proves every Deliverable traces to a story. **This is a TWO-APP rung (`echo_mq` + `echo_store`, Operator-ruled D-1, HIGH risk).** The DESIGN is RULED by the echo-bus-v3 consolidation (the six convergences + EBV3-9/10 — [`../../kb/echo-bus-v3/echo-bus-v3.consolidated.md`](../../kb/echo-bus-v3/echo-bus-v3.consolidated.md) §2/§8), NOT re-opened; the REMAINING bounded design is carved as **Arms** (Arm 1 placement · Arm 2 trigger · Arm 3 conformance/test posture · Arm 4 the `:archived` cache key · Arm 5 the box-loss/live-Tigris cut) the Director rules. The stories are authored to the RULED floor; where an Arm shapes the acceptance it is named inline (the Director's ruling sharpens the story, never re-opens the invariant).
+> The acceptance face of [`emq3.5.md`](emq3.5.md) (the body is authoritative — if a story disagrees with the body, the body wins). Every Deliverable becomes a Connextra user story with concrete Given/When/Then acceptance (Gherkin/BDD); each names the invariant(s) it exercises; the Coverage map at the foot proves every Deliverable traces to a story. **This is a TWO-APP rung (`echo_mq` + `echo_store`, Operator-ruled D-1, HIGH risk).** The DESIGN is RULED by the echo-bus-v3 consolidation (the six convergences + EBV3-9/10 — [`../../kb/echo-bus-v3/echo-bus-v3.consolidated.md`](../../kb/echo-bus-v3/echo-bus-v3.consolidated.md) §2/§8), NOT re-opened; the five **Arms** are RULED (D-3, [`../progress/emq3-5.progress.md`](../progress/emq3-5.progress.md): Arm 1 → a SUPERVISED store-side GenServer `EchoStore.StreamArchive.Driver` · Arm 2 → a TICK cadence over the pure `.Core` · Arm 3 → the suite `EchoStore.StreamArchiveTest` · Arm 4 → BUILD the `:archived` cache key, conf 77 → **78** · Arm 5 → OFFLINE local-restore in-suite + live-Tigris `:tigris`-tagged) and the increment is BUILT. The stories are CALIBRATED to the as-built; where an Arm shaped the acceptance it is named inline (the ruling sharpened the story, never re-opened the invariant).
 >
 > **The standing liveness law (the gate-must-exercise-its-outcome rule).** Each archive story is a POSITIVE proof: a present precondition (records appended / a fold-then-trim cycle run / a box dropped) MUST run the operation and assert the OBSERVABLE outcome — the no-loss invariant is proven by every trimmed record actually READING BACK from the archive (not "the fold returned `:ok`"); the merge-read is proven by the union being EXACTLY the original records, none missing (no gap) and none doubled (no overlap); box-loss restore is proven by the archive reading IDENTICALLY after the local CubDB is genuinely dropped and re-opened. **A vacuous pass is a LOUD failure, never a silent green (the TRD.9.1 false-green class):** a fold scenario that trims nothing and asserts "nothing was lost," a merge-read check that never folds-then-trims so `W` is never mid-stream, a box-loss check that never drops the dir — each proves nothing. **The no-loss invariant (US1) is proven by a real trim AND a real archive read-back in the SAME assertion** (the record gone from the live stream AND present in the engine), precisely because folding nothing proves nothing about durability and trimming nothing proves nothing about the ordering.
 >
@@ -50,22 +50,22 @@ Then it hits ONLY the wire (the live tail) and returns the in-range live records
 - **Liveness (no vacuous pass):** US2 MUST fold-then-trim a prefix so `W` is genuinely MID-STREAM (not at the start, where the merge-read degenerates to a pure live read, and not at the end, where it degenerates to a pure archive read) — the no-gap/no-overlap property is only exercised when the read STRADDLES `W`. A merge-read over an empty archive (`W` = `:empty`) proves nothing about the seam.
 - **`W` is a branded id, not an LSN (INV6, F-1):** US2 MUST assert `W` is a 14-byte branded `EVT` id (`EchoData.BrandedId.valid?/1` true, `Stream.Id.evt?/1` true), NOT the integer `head_lsn`. The Director's mutation battery substitutes the integer `head_lsn` for `W` and asserts the merge-read no-gap/no-overlap assertion CATCHES the type error (an LSN compared against a branded id splits at the wrong seam).
 
-## US3 — The archive lands at a reserved high page range `@archive_base`, disjoint from `@obx_base` (no page collision)
+## US3 — The archive lands at a reserved high page range `@archive_base`, disjoint from every business page (no page collision)
 
-**As the** native-engine page store, **I want** the archive's pages at a per-stream `@archive_base` reserved high range DISJOINT from the outbox's `@obx_base = :erlang.bsl(1, 48)` and from any business page — **so that** an archive page can NEVER overwrite an outbox intent or a data page (the page axis is multiplexed, GC indifferent to which range), the page payload carrying the branded `EVT` id, branded-id-monotone by the order theorem (INV4, F-LS-A).
+**As the** native-engine page store, **I want** the archive's pages at a per-stream `@archive_base = :erlang.bsl(1, 49)` reserved high range on the engine's flat page axis, DISJOINT from any business page a workload writes through `commit/3` — **so that** an archive page can NEVER overwrite a data page (the page axis is multiplexed, GC indifferent to which range), the page payload carrying the branded `EVT` id, branded-id-monotone by the order theorem (INV4, F-LS-A). *(D-5: the original reserved-range exemplar — the dropped outbox adapter's `@obx_base = :erlang.bsl(1, 48)` — is gone this window (no backward compat); the archive owns the reserved-range discipline natively against the engine's own page axis, so disjointness is stated against a business page, not the vanished outbox range.)*
 
-- **Exercises:** EMQ3.5-INV4 (`@archive_base` disjoint from `@obx_base`), EMQ3.5-INV2 (the page index is branded-id-monotone — contiguous by the order theorem).
+- **Exercises:** EMQ3.5-INV4 (`@archive_base` disjoint from every business page), EMQ3.5-INV2 (the page index is branded-id-monotone — contiguous by the order theorem).
 
 ```gherkin
-Given the outbox's reserved page range @obx_base = :erlang.bsl(1, 48)
-When the archive folds records into a Volume at @archive_base
-Then @archive_base is a high range DISJOINT from @obx_base (no archive index equals an outbox-intent or business page index)
-  And a Volume carrying BOTH outbox intents AND archive pages reads each range back correctly (idx >= @archive_base filters the archive; @obx_base <= idx < @archive_base filters the outbox)
+Given the native engine's flat page axis (Store keys {:page, page_idx, lsn}; commit/3 stages %{page_idx => binary}; a business page is a low index a workload writes)
+When the archive folds records into a Volume at @archive_base = :erlang.bsl(1, 49)
+Then @archive_base is a high range DISJOINT from every business page (no archive index equals a low business page index)
+  And a Volume carrying BOTH low-index business pages (staged via the PUBLIC commit/3) AND archive pages reads each range back correctly (idx >= @archive_base filters the archive; low indices select the business pages)
   And the n-th folded record lands at a contiguous @archive_base-relative index, branded-id-monotone (the order theorem)
   And each archive page payload carries the record's branded EVT id + its claims-only fields
 ```
 
-- **Liveness (no vacuous pass):** US3 MUST fold archive pages INTO a Volume that ALSO carries outbox intents (or business pages) and assert each range reads back UN-corrupted — a disjointness check on an empty Volume proves nothing. The Director's mutation battery sets `@archive_base = @obx_base` and asserts the collision is CAUGHT (an archive page overwrites an intent, or vice versa — the mutant FAILS US3).
+- **Liveness (no vacuous pass):** US3 MUST fold archive pages INTO a Volume that ALSO carries low-index business pages (via the public `commit/3`) and assert each range reads back UN-corrupted — a disjointness check on an empty Volume proves nothing. The Director's mutation battery sets `@archive_base` DOWN into the business page range and asserts the collision is CAUGHT (an archive page overwrites a business page, or vice versa — the mutant FAILS US3).
 
 ## US4 — Box-loss restore: drop the local CubDB, restore, the archive reads identically
 
@@ -85,37 +85,37 @@ Then the archive reads back IDENTICALLY — the same K branded EVT ids, the same
 
 ## US5 — The bus-side surface stays byte-frozen and the native engine stays UNTOUCHED (the archive is additive + store-side)
 
-**As the** keeper of the certified wire and the COEXIST engine boundary, **I want** the archive to add NOTHING to the shipped stream verbs / `EchoMQ.Stream` / `echo_wire` and to edit NO engine internal — folding via the engine's PUBLIC `commit/3` and reading/trimming via the shipped stream verbs, the net-new code landing as NEW store-side modules — **so that** the v2 master invariant binds the bus unchanged, the certified wire stays frozen, and the native engine (the production-default durability, EBV3-9) carries the archive as a new CONSUMER, never an engine edit (INV7, INV8, EBV3-2).
+**As the** keeper of the certified wire and the COEXIST engine boundary, **I want** the archive to keep the shipped stream verbs / `echo_wire` byte-frozen and to edit NO engine internal — adding ONLY the three additive `:archived` cache fns bus-side (Arm 4), folding via the engine's PUBLIC `commit/3` and reading/trimming via the shipped stream verbs, the net-new fold/landing/merge code landing as NEW store-side modules — **so that** the v2 master invariant binds the bus unchanged, the certified wire stays frozen, and the native engine (the production-default durability, EBV3-9) carries the archive as a new CONSUMER, never an engine edit (INV7, INV8, EBV3-2).
 
 - **Exercises:** EMQ3.5-INV7 (the bus-side surface byte-frozen), EMQ3.5-INV8 (the engine COEXIST-canonical + untouched), EMQ3.5-INV10 (the label steps within-family, the wire frozen).
 
 ```gherkin
 Given the SHIPPED bus surface (EchoMQ.Stream append/4, append_id/5, append_batch/4, read/3..6, trim/4, stream_key/2; EchoMQ.StreamRetention; every @-script) and the SHIPPED engine internals (volume_server.ex, store.ex, reader.ex, streamer.ex, segment.ex)
 When emq3.5 builds the archive
-Then the bus-side stream surface is byte-identical to HEAD (the archive READS/TRIMS via the existing public verbs — ideally an EMPTY diff bus-side, the only optional bus change the :archived cache key per Arm 4)
+Then the shipped bus-side stream verbs (append/4, append_id/5, append_batch/4, read/3..6, trim/4, stream_key/2) are byte-identical to HEAD (the archive READS/TRIMS via them) — the ONLY bus-side change is ADDITIVE: the three new EchoMQ.Stream fns put_archived/4, get_archived/3, clear_archived/3 + the stream_archived conformance scenario + the label (Arm 4)
   And echo_wire is UNTOUCHED (git diff EMPTY); @wire_version reads echomq:2.4.2; keyspace.ex is unedited
-  And grep -c redis.call on the bus-side lib/ diff = 0 (NO new Lua)
+  And grep -c redis.call on the bus-side lib/ diff = 0 (NO new Lua — the cache is a stock SET/GET/DEL)
   And the engine internals are byte-identical to HEAD (the fold targets the PUBLIC commit/3 — the archive is NEW store-side modules + the @archive_base landing, not an engine edit)
   And the Rust echo_graft_backend is untouched; mix.lock is unchanged (cubdb already a declared echo_store dep — no new dependency)
-  And the moved version label(s) reflect ONLY the changed app(s); {emq}:version reads echomq:2.4.2
+  And the bus label echo_mq/mix.exs steps 2.6.3 → 2.6.4 (the changed app); the store echo_store/mix.exs is UNCHANGED 2.0.0; {emq}:version reads echomq:2.4.2
 ```
 
 - **Liveness (no vacuous pass):** US5 is proven by the actual `git diff` (EMPTY where claimed, additive-only where a change lands), `grep -c redis.call` on the bus-side diff = 0, and the `@wire_version` / `mix.lock` constants byte-unchanged — not by assertion. The Director's net-zero spot-check git-verifies the prior 77 conformance scenarios byte-unchanged (IFF the `:archived` key lands, the prior 77 stay byte-frozen and ONLY the new scenario is added — Arm 4) and the engine internals EMPTY-diff.
 
 ## EMQ3.5-US-GATE — the standing two-app gate + the determinism posture (HIGH risk, Apollo mandatory)
 
-**As the** Director, **I want** BOTH app gate ladders green (the bus's `mix test --include valkey` + `Conformance.run/2` on Valkey 6390; the store's `mix test` + the NEW archive fold/restore/merge suite), the **≥100 determinism loop** over the store-side fold suite (a process + an at-rest write + id-minting setup — the HIGH-risk default), box-loss restore proven (offline + `:tigris`-tagged live per Arm 5), and Apollo's mandatory post-build reconcile + adversarial verification across BOTH apps — **so that** the archive ships proven, the no-loss invariant adversarially confirmed, and the two-app boundary honored (the dependency law respected, not bent — code where it must live).
+**As the** Director, **I want** BOTH app gate ladders green (the bus's `mix test --include valkey` + `Conformance.run/2 → {:ok, 78}` on Valkey 6390; the store's `mix test` + the NEW archive suite `EchoStore.StreamArchiveTest`), the **≥100 determinism loop** over the store-side fold suite (a process + an at-rest write + id-minting setup — the HIGH-risk default), box-loss restore proven (offline + `:tigris`-tagged live per Arm 5), and Apollo's mandatory post-build reconcile + adversarial verification across BOTH apps — **so that** the archive ships proven, the no-loss invariant adversarially confirmed, and the two-app boundary honored (the dependency law respected, not bent — code where it must live).
 
 - **Exercises:** EMQ3.5-INV9 (the two-app conformance/test posture), and the standing two-app gate over INV1–INV10.
 
 ```gherkin
 Given the as-built archive across echo_mq + echo_store
 When the Director re-runs BOTH app gate ladders independently on Valkey 6390
-Then the bus's TMPDIR=/tmp mix test --include valkey is green AND Conformance.run/2 returns {:ok, 77} (or {:ok, 78} IFF the :archived cache key landed, Arm 4 — the prior 77 byte-unchanged + both pins re-pinned)
-  And the store's TMPDIR=/tmp mix test is green AND the NEW archive suite proves INV1–INV6 POSITIVELY
+Then the bus's TMPDIR=/tmp mix test --include valkey is green AND Conformance.run/2 returns {:ok, 78} (the Arm-4 :archived cache scenario landed — the prior 77 byte-unchanged + both pins re-pinned)
+  And the store's TMPDIR=/tmp mix test is green AND the NEW archive suite EchoStore.StreamArchiveTest proves INV1–INV6 POSITIVELY
   And the ≥100 determinism loop over the store-side fold suite is green (for i in $(seq 1 150); do TMPDIR=/tmp mix test || break; done — the loop OWNS the machine, no concurrent liveness server)
   And box-loss restore is proven (the offline local-restore path green; the :tigris-tagged live path green where a bucket is configured — Arm 5)
-  And the Director's fold-then-trim mutation battery catches every loss mutant (trim-before-fold; @archive_base = @obx_base; W = the integer head_lsn)
+  And the Director's fold-then-trim mutation battery catches every loss mutant (trim-before-fold; @archive_base dropped DOWN into the business page range; W = the integer head_lsn)
   And Apollo's post-build reconcile (does the as-built satisfy every promise across BOTH apps?) + the §11.2 adversarial verification (the no-loss probe, the @archive_base disjointness probe, the merge-read no-gap/no-overlap probe, the W-is-a-branded-id probe, the box-loss probe, the byte-freeze probe) PASS before the Director ships
 ```
 
@@ -129,11 +129,11 @@ Then the bus's TMPDIR=/tmp mix test --include valkey is green AND Conformance.ru
 | Deliverable (body Goal) | Story | Invariant(s) |
 |---|---|---|
 | **1 · The store-side fold consumer** (the fold-then-trim cycle) | US1 | EMQ3.5-INV1 (fold-before-trim), EMQ3.5-INV2 (fold == slice) |
-| **2 · The archive landing** (`@archive_base` disjoint from `@obx_base`) | US3 | EMQ3.5-INV4 (disjointness), EMQ3.5-INV2 (branded-id-monotone) |
+| **2 · The archive landing** (`@archive_base` disjoint from every business page) | US3 | EMQ3.5-INV4 (disjointness), EMQ3.5-INV2 (branded-id-monotone) |
 | **3 · The merge-read over `W`** (archived ∪ live-tail, no gap/overlap) | US2 | EMQ3.5-INV3 (merge-read property), EMQ3.5-INV6 (`W` a branded id, not `head_lsn`) |
 | **4 · Box-loss restore** (drop → restore → identical) | US4 | EMQ3.5-INV5 (box-loss restore) |
 | **5 · The two-app conformance/test posture** | EMQ3.5-US-GATE | EMQ3.5-INV9 (two-app posture), EMQ3.5-INV7/INV8/INV10 (byte-freeze, engine untouched, the label) |
 | **The bus-side byte-freeze + the engine COEXIST boundary** | US5 | EMQ3.5-INV7 (bus byte-frozen), EMQ3.5-INV8 (engine untouched), EMQ3.5-INV10 (the label) |
 | **The standing two-app gate + the determinism posture** | EMQ3.5-US-GATE | INV1–INV10 (the runnable checks across both apps) |
 
-**The Arms shape the acceptance (the Director rules — the invariants are fixed, the realization is sharpened):** Arm 1 (placement) sharpens WHERE the US1 consumer lives (a supervised `EchoStore.*` GenServer vs host-wired); Arm 2 (trigger) sharpens WHAT starts a US1 cycle (a tick / a depth watch / a hand-off); Arm 3 (posture) sharpens the US-GATE store-side suite shape; Arm 4 (the `:archived` cache) decides whether US2/US-GATE carry a bus-side conformance scenario (77 → 78) or freeze at 77; Arm 5 (the box-loss cut) decides whether US4's live-Tigris path is in-suite or `:tigris`-tagged. None re-opens an invariant — each makes "done" concrete.
+**The Arms shaped the acceptance (RULED D-3 — the invariants are fixed, the realization sharpened):** Arm 1 (placement) ruled the US1 consumer a SUPERVISED `EchoStore.StreamArchive.Driver`; Arm 2 (trigger) ruled a TICK cadence over the pure `.Core`; Arm 3 (posture) ruled the US-GATE store-side suite `EchoStore.StreamArchiveTest`; Arm 4 (the `:archived` cache) ruled BUILD — US2/US-GATE carry the bus-side `stream_archived` conformance scenario (77 → **78**); Arm 5 (the box-loss cut) ruled US4's live-Tigris path `:tigris`-tagged + the offline local-restore in-suite. None re-opened an invariant — each made "done" concrete.

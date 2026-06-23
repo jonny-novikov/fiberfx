@@ -1,8 +1,8 @@
 defmodule EchoMQ.ConformanceRunTest do
   @moduledoc """
   The standing gate (EMQ.0-US4, the ratified Q1 stand-in for rung 3_6):
-  the seventy-seven-scenario harness drives the public surface against Valkey
-  on 6390 and every scenario passes — `run/2 → {:ok, 77}` (the eighteen
+  the seventy-eight-scenario harness drives the public surface against Valkey
+  on 6390 and every scenario passes — `run/2 → {:ok, 78}` (the eighteen
   state-machine scenarios, the emq.2.1 read plane's six (counts, state,
   metrics, dedup, rate, lane_depth), the emq.2.2 operator plane's eight
   (queue_pause, drain, obliterate, update_data, update_progress, job_logs,
@@ -45,7 +45,12 @@ defmodule EchoMQ.ConformanceRunTest do
   direct, proven POSITIVELY over BOTH forms -- in-window entries SURVIVE,
   below-window entries are GONE, the removed-count exact, the MINID floor the
   exact half-open [dt, ∞) edge from Snowflake.min_for/1; a no-op is a LOUD
-  failure)). Scenarios run on per-scenario sub-queues and purge what they mint.
+  failure), and -- the archive (emq3.5) -- the archive seam cache's one
+  (stream_archived: the store-side fold consumer caches the archive watermark W
+  to emq:{q}:stream:<name>:archived for a polyglot reader, a CACHE never the
+  source of truth, proven BUS-PURE -- put/get the EXACT W, a second put
+  overwrites, clear_archived DELetes and the seam is :empty again)). Scenarios
+  run on per-scenario sub-queues and purge what they mint.
   """
   use ExUnit.Case, async: false
 
@@ -58,7 +63,7 @@ defmodule EchoMQ.ConformanceRunTest do
     :ok
   end
 
-  test "the seventy-seven-scenario harness passes whole against the truth row" do
+  test "the seventy-eight-scenario harness passes whole against the truth row" do
     {:ok, conn} = Connector.start_link(port: 6390)
 
     on_exit(fn ->
@@ -71,6 +76,6 @@ defmodule EchoMQ.ConformanceRunTest do
 
     q = "emq0.conf#{System.unique_integer([:positive])}"
 
-    assert Conformance.run(conn, q) == {:ok, 77}
+    assert Conformance.run(conn, q) == {:ok, 78}
   end
 end

@@ -287,6 +287,82 @@ defmodule EchoMQ.Stream do
   def stream_key(queue, name) when is_binary(queue) and is_binary(name),
     do: Keyspace.queue_key(queue, "stream:" <> name)
 
+  @doc """
+  Caches the archive watermark `W` (the branded `EVT` id of the highest-folded
+  record, emq3.5) under `emq:{q}:stream:<name>:archived` -- a stock `SET` over
+  `EchoMQ.Connector.command/3`, NO new script and NO grammar edit (the key rides
+  the existing `emq:{q}:stream:<name>:<sub>` form, the `:archived` sub on the
+  shared `{q}` slot).
+
+  This is a polyglot CACHE of the archive seam, NEVER the source of truth (the
+  store-side engine's frontier is -- `EchoStore.StreamArchive.archive_frontier/1`):
+  a non-BEAM reader discovers where the archive ends and the live tail begins
+  without a store call. The store-side fold consumer writes it AFTER advancing
+  the engine frontier; it is overwritten on each fold and DELETEd when the stream
+  is obliterated (`clear_archived/3`). Answers `{:ok, "OK"}` or `{:error, term}`
+  verbatim. RAISES `ArgumentError` before any wire on a malformed queue/stream
+  name (the `append_id/5` policy-before-existence precedent).
+  """
+  @spec put_archived(GenServer.server(), binary(), binary(), binary()) ::
+          {:ok, binary()} | {:error, term()}
+  def put_archived(conn, queue, name, w)
+      when is_binary(queue) and is_binary(name) and is_binary(w) do
+    key = archived_key(queue, name)
+
+    case Connector.command(conn, ["SET", key, w]) do
+      {:ok, "OK"} -> {:ok, "OK"}
+      {:ok, {:error_reply, msg}} -> {:error, {:error_reply, msg}}
+      {:error, _} = err -> err
+    end
+  end
+
+  @doc """
+  Reads the cached archive watermark `W` from `emq:{q}:stream:<name>:archived` --
+  a stock `GET` over `EchoMQ.Connector.command/3`. Answers `{:ok, w}` (the
+  branded `EVT` id a fold last cached), `:empty` (no fold has cached a seam
+  yet -- the whole stream is live tail), or `{:error, term}` verbatim. The CACHE
+  face of the seam; the store-side engine frontier is the source of truth.
+  """
+  @spec get_archived(GenServer.server(), binary(), binary()) ::
+          {:ok, binary()} | :empty | {:error, term()}
+  def get_archived(conn, queue, name)
+      when is_binary(queue) and is_binary(name) do
+    key = archived_key(queue, name)
+
+    case Connector.command(conn, ["GET", key]) do
+      {:ok, w} when is_binary(w) -> {:ok, w}
+      {:ok, nil} -> :empty
+      {:ok, {:error_reply, msg}} -> {:error, {:error_reply, msg}}
+      {:error, _} = err -> err
+    end
+  end
+
+  @doc """
+  Deletes the cached archive watermark at `emq:{q}:stream:<name>:archived` -- the
+  NAMED cleanup the seam cache carries (called when the stream is obliterated, so
+  no stale seam outlives the stream). A stock `DEL` over
+  `EchoMQ.Connector.command/3`; answers `{:ok, n}` (1 if the key existed, 0
+  otherwise) or `{:error, term}` verbatim.
+  """
+  @spec clear_archived(GenServer.server(), binary(), binary()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def clear_archived(conn, queue, name)
+      when is_binary(queue) and is_binary(name) do
+    key = archived_key(queue, name)
+
+    case Connector.command(conn, ["DEL", key]) do
+      {:ok, n} when is_integer(n) -> {:ok, n}
+      {:ok, {:error_reply, msg}} -> {:error, {:error_reply, msg}}
+      {:error, _} = err -> err
+    end
+  end
+
+  # The archive-seam cache key `emq:{q}:stream:<name>:archived` via the shipped
+  # total queue_key/2 -- the `:archived` sub on the stream's `{q}` slot, the
+  # existing emq:{q}:stream:<name>:<sub> form, no grammar edit.
+  defp archived_key(queue, name),
+    do: Keyspace.queue_key(queue, "stream:" <> name <> ":archived")
+
   # Parse one XRANGE entry [xadd_id, [field, value, …]] into {branded, map}:
   # the branded record id is the stored "id" field (the claims-only contract),
   # the remaining pairs are the payload as a map. The xadd_id is the wire

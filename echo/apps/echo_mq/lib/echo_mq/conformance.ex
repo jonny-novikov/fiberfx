@@ -1,6 +1,6 @@
 defmodule EchoMQ.Conformance do
   @moduledoc """
-  The bus contract as seventy-seven runnable scenarios. Each scenario drives the
+  The bus contract as seventy-eight runnable scenarios. Each scenario drives the
   public surface (and, where the contract is the wire itself, raw commands)
   against a live server and asserts the externally visible verdict: the
   fence, the row shape, idempotent admission, the kind law, the lex law,
@@ -86,7 +86,7 @@ defmodule EchoMQ.Conformance do
   floor the exact half-open [dt, ∞) edge derived from Snowflake.min_for/1; a
   no-op that deletes nothing is a LOUD failure -- INV4 -- no new script, no new
   wire class, no keyspace subkey). A port of the client conforms when it drives
-  the same server to the same seventy-seven verdicts -- the scenarios are
+  the same server to the same seventy-eight verdicts -- the scenarios are
   wire-level on purpose, so the harness ports by translation, not by faith.
   Scenarios run on per-scenario sub-queues and purge what they mint. Chapter 3.6,
   extended 3.7, then the emq.2 cluster (parity, closed at emq.2.4), then the
@@ -203,7 +203,8 @@ defmodule EchoMQ.Conformance do
       stream_verbs: "the stream-verb floor (emq3.1): the five stream verbs (XADD/XRANGE/XREADGROUP/XACK/XAUTOCLAIM) round-trip on the certified connector over an emq:{q}:stream:<name> braced key -- XADD answers the entry id and XRANGE reads back the EXACT appended entry, XREADGROUP (NO BLOCK) reads the group's unseen entries, XACK answers the count, XAUTOCLAIM re-claims a pending entry -- plus a pipelined XADD batch returns N ids in call order read back in mint order, and the in-band verbs do not disturb the out-of-band push routing under RESP3 (a concurrent push is still delivered on the {:emq_push, ...} seam); the verbs ride the SHIPPED generic command path verb-agnostically, no echo_wire edit, no new script -- the floor every later Stream rung stands on (emq3.1)",
       stream_append: "the writer law (emq3.2): EchoMQ.Stream.append mints an EVT-branded record id host-side and appends it under its EXPLICIT A1 xadd id (the real Unix-ms and the 22-bit node|seq tail) with the branded string as the id field -- N>=2 records read back in MINT ORDER == id-sort order (the order theorem, stream order == id sort == mint order, no second index), a wrong-kind record id RAISES before any wire with NO key written (the host-side kind door, one brand per stream), and a contrived out-of-order append surfaces {:error, :nonmonotonic} on the id<=top rejection (the liveness check, never swallowed); the append is XADD issued direct, no new script, no new wire class (emq3.2)",
       stream_group: "the reader law (emq3.3): a consumer group delivers at-least-once with crash re-delivery -- two EchoMQ.Stream.append branded records are group-read with XREADGROUP > (both enter the PEL), ONE is XACKed (retires) and ONE is LEFT un-acked, then a forced XAUTOCLAIM (min-idle 0) RE-DELIVERS the SAME un-acked branded receipt while the acked one is NOT re-claimed -- a POSITIVE re-delivery proof (an ack-everything pass is a LOUD failure), the at-least-once mechanism EchoMQ.StreamConsumer's beat folds in; the group verbs are issued DIRECT, no new script, no new wire class (emq3.3)",
-      stream_retention: "retention as policy (emq3.4): EchoMQ.Stream.trim/4 bounds a stream to a DECLARED window over XTRIM issued DIRECT, the blast radius bounded POSITIVELY -- entries are appended INSIDE and BELOW a window over BOTH forms (MAXLEN keep-newest-N and MINID below-a-mint-instant-floor derived from Snowflake.min_for/1) and a trim leaves the in-window entries SURVIVING (their branded receipts still read back) while the below-window entries are GONE, the removed-count exact under = -- a real DELETION and a real SURVIVAL in the same verdict (a no-op that deletes nothing is a LOUD failure, INV4), and the MINID floor is the exact half-open [dt, ∞) edge (a dt-1ms entry trims, a dt entry survives); the trim is XTRIM issued DIRECT, no new script, no new wire class, no new keyspace subkey (the policy is BEAM-side) (emq3.4)"
+      stream_retention: "retention as policy (emq3.4): EchoMQ.Stream.trim/4 bounds a stream to a DECLARED window over XTRIM issued DIRECT, the blast radius bounded POSITIVELY -- entries are appended INSIDE and BELOW a window over BOTH forms (MAXLEN keep-newest-N and MINID below-a-mint-instant-floor derived from Snowflake.min_for/1) and a trim leaves the in-window entries SURVIVING (their branded receipts still read back) while the below-window entries are GONE, the removed-count exact under = -- a real DELETION and a real SURVIVAL in the same verdict (a no-op that deletes nothing is a LOUD failure, INV4), and the MINID floor is the exact half-open [dt, ∞) edge (a dt-1ms entry trims, a dt entry survives); the trim is XTRIM issued DIRECT, no new script, no new wire class, no new keyspace subkey (the policy is BEAM-side) (emq3.4)",
+      stream_archived: "the archive seam cache (emq3.5): the store-side fold consumer caches the archive watermark W (the branded EVT id of the highest-folded record) to emq:{q}:stream:<name>:archived so a POLYGLOT reader discovers the archive/live-tail seam without a store call -- a CACHE, never the source of truth (the engine's frontier is). Proven BUS-PURE + POSITIVELY (conformance is bus-only -- no engine here -- so this proves the CACHE CONTRACT, not the cross-app fold): an empty stream has no cached seam (get_archived -> :empty), a put of W reads back the EXACT W, a second put OVERWRITES it (the fold advances W each cycle), clear_archived DELetes it (the NAMED cleanup on obliterate) and get_archived answers :empty again -- a stock SET/GET/DEL over Connector.command/3, no new script, no new wire class, no keyspace grammar edit (the :archived sub rides the existing emq:{q}:stream:<name>:<sub> form) (emq3.5)"
     ]
   end
 
@@ -240,7 +241,13 @@ defmodule EchoMQ.Conformance do
   window over XTRIM issued direct, proven POSITIVELY over BOTH forms -- in-window
   entries SURVIVE and below-window entries are GONE, the removed-count exact, the
   MINID floor the exact half-open [dt, ∞) edge from Snowflake.min_for/1; a no-op
-  is a LOUD failure, INV4).
+  is a LOUD failure, INV4) -- and the archive (emq3.5) -- the archive seam cache
+  (stream_archived: the store-side fold consumer caches the archive watermark W
+  to emq:{q}:stream:<name>:archived so a polyglot reader discovers the
+  archive/live-tail seam without a store call, a CACHE never the source of truth;
+  proven BUS-PURE -- an empty stream has no seam, a put reads back the EXACT W, a
+  second put overwrites, clear_archived DELetes and the seam is :empty again -- a
+  stock SET/GET/DEL, no new script, no new wire class, no keyspace grammar edit).
   """
   def run(conn, queue) when is_binary(queue) do
     results =
@@ -2883,6 +2890,27 @@ defmodule EchoMQ.Conformance do
     end
   end
 
+  defp apply_scenario(:stream_archived, conn, q) do
+    # The archive seam cache (emq3.5, S3 the memory part 1): the BUS-PURE face of
+    # the archive. The store-side fold consumer (EchoStore.StreamArchive.Driver),
+    # after folding a slice into the native engine and advancing the watermark W,
+    # caches W to emq:{q}:stream:<name>:archived so a POLYGLOT reader discovers
+    # where the archive ends and the live tail begins WITHOUT a store call -- a
+    # CACHE, never the source of truth (the engine's frontier is). Conformance is
+    # bus-only (no engine here), so this scenario proves the CACHE CONTRACT a
+    # polyglot reader observes, NOT the cross-app fold (the fold/restore/merge is
+    # the store-side ExUnit suite). Proven POSITIVELY (a vacuous pass is a LOUD
+    # failure): a real put, a real read-back of the EXACT branded W, a real DEL,
+    # and the post-DEL :empty -- the seam round-trips and cleans up. A stock
+    # SET/GET/DEL over EchoMQ.Connector.command/3: no new script, no new wire
+    # class, no keyspace grammar edit (the :archived sub rides the existing
+    # emq:{q}:stream:<name>:<sub> form on the shared {q} slot).
+    with :ok <- stream_archived_roundtrip(conn, q),
+         :ok <- stream_archived_cleanup(conn, q) do
+      :ok
+    end
+  end
+
   # (1) the order theorem: N EVT records append (the branded receipt), read back
   # in MINT order == id-sort order, payloads in append order -- the writer law's
   # whole point, asserted against the appended data (N>=2, never a vacuous read).
@@ -3045,6 +3073,45 @@ defmodule EchoMQ.Conformance do
   end
 
   defp shift_ms(%DateTime{} = dt, ms), do: DateTime.add(dt, ms, :millisecond)
+
+  # The seam-cache round-trip (emq3.5): an empty stream has NO cached seam
+  # (get_archived -> :empty); a put of a real EVT watermark W reads back the
+  # EXACT W (the polyglot seam a non-BEAM reader reads); a SECOND put OVERWRITES
+  # it (the fold advances W each cycle). All POSITIVE (the put/get is asserted
+  # against the appended W, never a vacuous read).
+  defp stream_archived_roundtrip(conn, q) do
+    name = "arc"
+    w1 = BrandedId.generate!("EVT")
+    w2 = BrandedId.generate!("EVT")
+
+    with :empty <- Stream.get_archived(conn, q, name),
+         {:ok, "OK"} <- Stream.put_archived(conn, q, name, w1),
+         {:ok, ^w1} <- Stream.get_archived(conn, q, name),
+         {:ok, "OK"} <- Stream.put_archived(conn, q, name, w2),
+         {:ok, ^w2} <- Stream.get_archived(conn, q, name) do
+      :ok
+    else
+      other -> {:fail, {:archived_roundtrip, other}}
+    end
+  end
+
+  # The seam-cache cleanup (emq3.5): clear_archived DELetes the cached seam (the
+  # NAMED cleanup on stream obliterate, so no stale seam outlives the stream),
+  # after which get_archived answers :empty again -- the seam is GONE, not stale.
+  defp stream_archived_cleanup(conn, q) do
+    name = "arc_clr"
+    w = BrandedId.generate!("EVT")
+
+    with {:ok, "OK"} <- Stream.put_archived(conn, q, name, w),
+         {:ok, ^w} <- Stream.get_archived(conn, q, name),
+         {:ok, 1} <- Stream.clear_archived(conn, q, name),
+         :empty <- Stream.get_archived(conn, q, name),
+         {:ok, 0} <- Stream.clear_archived(conn, q, name) do
+      :ok
+    else
+      other -> {:fail, {:archived_cleanup, other}}
+    end
+  end
 
   # the entry list off an XREADGROUP reply for `key` (RESP3 map or RESP2 nested
   # array stream->entries form) -- the full [[xid, kv], ...] list, [] if absent.
