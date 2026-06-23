@@ -519,3 +519,21 @@ TWO REUSABLE CRAFT NOTES:
 IMPLICATED CONTRACT. The Director's verify scope + the implementor's durable-write discipline.
 
 CALIBRATION DIRECTION (Apollo, PROPOSE-ONLY). (a) → an implementor guardrail: a multi-step durable write (allocate + commit) must be atomic or roll back on failure. (b) → a Director-verify guardrail: enumerate production error-branches + confirm each is test-covered; an untested failure branch on a HIGH-risk at-rest write is a REMEDIATE, not a pass. Pairs with L-4/L-5 (the loop + the discovery-surface) — together they say: a just-unblocked at-rest engine suite gets the deepest verify, and "green" means happy-path AND failure-path covered.
+
+## {emq3-5-complete} Complete
+
+### Z-1 — emq3.5 (the stream archive) SHIPPED + BUILD-GRADE — the HIGH-risk Squad close
+
+The first Stream-Tier rung to reach store-side, shipped by the Director + Venus + Mars (two passes) + Apollo (mandatory).
+
+DELIVERED (two-app, D-1). STORE: EchoStore.StreamArchive (the @archive_base=:erlang.bsl(1,49) reserved page-range landing · the fold-then-trim into the native EchoStore.Graft engine via the PUBLIC VolumeServer.commit/3 · the merge-read over the branded EVT watermark W · offline box-loss restore) + .Core (pure decide/resolve) + .Driver (the supervised :transient fold-then-trim consumer). BUS (additive-only): EchoMQ.Stream.put/get/clear_archived (the emq:{q}:stream:<name>:archived polyglot seam) + conformance 77→78 + label 2.6.3→2.6.4 (@wire_version frozen echomq:2.4.2).
+
+VERIFY (BUILD-GRADE — Director deepened + Apollo-ratified). boundary (two-app, third-app empty, INV8 engine untouched) · byte-freeze (0 new Lua) · the gate (compile -Werror EXIT=0 + 89/0) · R-1 (the alloc-before-commit gap — found by the Director's verify, fixed two-level by Mars-2 [peek_seq + commit-on-success + read_archive skip-absent] + OCC-contention tested) · the ≥100 determinism loop 100/100 ×3 INDEPENDENT (Mars-2 + Director + Apollo) · the spec/code convergence triple-confirmed · both destructive-op evals SURVIVOR-ASSERTING (the D-5 plugin drop + the fold-then-trim XTRIM). INV1–INV10 + the DoD all green.
+
+PIPELINE (the full 8 stages; ledger 33 entries: T-1..T-4 · D-1..D-5 · Y-1..Y-11 · P-1..P-4 · E-1/E-2 · L-1..L-6). A compaction split the run; a LAW violation (T-4 — the improper bare-Agent resume) was corrected with a clean re-init (aaw_init + TeamCreate + aaw_spawn). A two-layer pre-existing echo_store breakage (E-1 the adapter collision → E-2 the half-finished 12→9 migration) was escalated + Operator-ruled (D-4 delete orphan / D-5 drop plugins), each committed as its own scoped concern.
+
+SHIP (LAW-4, 5 scoped pathspec commits on 04c01e77; the Operator's foreign memory/* index untouched throughout). df34e305 calibration · d84770a6 D-5 drop · 7249422a D-4 orphan · e2d73e23 the archive · 5794938f Stage-6 fold.
+
+CALIBRATION. L-1..L-6 + the process-doc reconcile folded into .claude/agents/mars.md + the echo-mq-architect/implementor skills + docs/echo_mq/program/emq.program.md (Apollo-proposed, Director-ratified under the Operator's grant; df34e305).
+
+NEXT. emq3.6 (S3 memory · time-travel — mint-instant → XRANGE + Table hydration); the Stream Tier remains IN FLIGHT, the echomq:3.0.0 cutover deferred until the tier is whole. emq3.5 closes the archive.
