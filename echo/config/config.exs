@@ -8,10 +8,8 @@
 # configurations or dependencies per app, it is best to
 # move said applications out of the umbrella.
 #
-# The Portal/Mercury Phoenix surface (portal · portal_web · mercury_cms ·
-# mercury_live_admin · live_svelte) moved out to its own repository, and its
-# config moved with it. What remains here configures the apps that stay
-# in echo — currently only the echo_bot engine.
+# This configures the apps in the echo umbrella — the echo_bot engine, codemojex,
+# and echo_store's durability backend (below).
 import Config
 
 # The echo_bot engine (F10.1). `:bot_config` is the YAML v1.0 file the loader reads — a relative

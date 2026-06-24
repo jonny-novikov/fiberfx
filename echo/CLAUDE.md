@@ -21,10 +21,6 @@ repo's `go.work` `use` block.
 (the trading capstone — Operator out-of-band), `investex`, `echo_bot` (the standalone YAML multibot engine),
 and `codemojex`. Do not work those from this guide.
 
-> Historical note: the Phoenix surface (`portal` · `portal_web` · `mercury_cms` · `mercury_live_admin` ·
-> `live_svelte`) was moved out of this umbrella to its own repository. The branded-id codec it used was
-> inlined into that repo; `echo_data` here stays the canonical identity library for the BCS stack.
-
 ## 1. The stack (real dependency arrows, base → top)
 
 Engine: **Valkey 9 on `:6390`** (RESP3). Gate every wire rung with `valkey-cli -p 6390 ping` → `PONG`

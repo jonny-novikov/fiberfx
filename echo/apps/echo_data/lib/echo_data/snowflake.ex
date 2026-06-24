@@ -23,8 +23,8 @@ defmodule EchoData.Snowflake do
   ## Back-compat helpers (re-implemented atop the lock-free core)
 
   `generate/1`, `timestamp/1`, `worker_id/1`, and `extract/1` preserve the prior
-  `EchoData.Snowflake` surface still named by consumers (`Portal.ID`,
-  `EchoMQ.Champ`, the Postgres event store) on the unchanged bit layout.
+  `EchoData.Snowflake` surface still named by the umbrella's id consumers on the
+  unchanged bit layout.
   """
 
   import Bitwise
@@ -125,9 +125,8 @@ defmodule EchoData.Snowflake do
 
   @doc """
   Mints a snowflake with explicit `worker_id:`/`sequence:` options on the
-  unchanged bit layout. Retained for the consumers that pass an explicit
-  `worker_id` (`Portal.ID`, `Portal.EventStore.Postgres`, `EchoMQ.Champ`); the
-  defaults preserve the prior per-process behavior.
+  unchanged bit layout. Retained for consumers that pass an explicit
+  `worker_id`; the defaults preserve the prior per-process behavior.
 
   ## Options
 

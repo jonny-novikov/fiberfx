@@ -1,6 +1,6 @@
 defmodule EchoData do
   @moduledoc """
-  Branded-id primitives, structures, and the optional native codec for the Portal engine.
+  Branded-id primitives, structures, and the optional native codec for the BCS stack.
 
   The core contract — one module owning the codec and the hash:
 
@@ -25,7 +25,8 @@ defmodule EchoData do
     * `EchoData.Web` — dependency-free DOM-id helpers.
     * `EchoData.ChampServer` — a GenServer wrapper over `BrandedChamp`.
 
-  `Portal.ID` (in the `:portal` app) wraps the core to mint and decode the
-  3-letter-namespaced branded ids the domain uses, e.g. `"ENR0KHTOWnGLuC"`.
+  Consuming apps wrap this core to mint and decode the 3-letter-namespaced
+  branded ids their domain uses — e.g. `EchoData.BrandedId.generate!("JOB")`
+  in `:codemojex`.
   """
 end
