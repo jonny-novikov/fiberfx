@@ -1,0 +1,45 @@
+# Codemojex — web dashboard (pgweb) as its own small Fly app.
+#
+# It reaches Postgres over the PRIVATE 6PN (codemojex-db.internal:5432) as the
+# read-only role, so the database port is never exposed for the dashboard's sake.
+# Only the dashboard's own HTTPS site is public, behind basic auth. Its handful of
+# internal connections do NOT count against the 20 external-client ceiling, which
+# is for direct Postgres-protocol clients reaching the pooler from outside.
+#
+#   fly apps create codemojex-dashboard
+#   fly secrets set -a codemojex-dashboard \
+#     DATABASE_URL="postgres://codemojex_ro:$EXT_RO_PW@codemojex-db.internal:5432/codemojex?sslmode=disable" \
+#     PGWEB_AUTH_USER=ops PGWEB_AUTH_PASS="$(openssl rand -hex 16)"
+#   fly deploy -a codemojex-dashboard
+#
+# pgweb: single Go binary, Postgres-only, github.com/sosedoff/pgweb
+
+app = "codemojex-dashboard"
+primary_region = "lax"
+
+[build]
+  image = "sosedoff/pgweb:latest"
+
+[env]
+  # Read-only browsing; no schema or data changes from the dashboard.
+  PGWEB_READ_ONLY = "true"
+  # Bind the pgweb server to the port Fly Proxy routes to.
+  PGWEB_BIND = "0.0.0.0"
+  PGWEB_LISTEN = "8081"
+
+[http_service]
+  internal_port = 8081
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
