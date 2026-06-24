@@ -1,0 +1,44 @@
+# Fly.io · STAGING — echo-valkey-staging. Deploy with:  fly deploy -c fly.staging.toml
+# Sized for < 5000 simultaneous players; same durable posture as prod, smaller machine.
+#   fly apps create echo-valkey-staging
+#   fly volumes create valkey_staging_data --region fra --size 10 -a echo-valkey-staging
+#   fly secrets set VALKEY_PASSWORD="$(openssl rand -base64 32)" -a echo-valkey-staging
+#   fly deploy -c fly.staging.toml
+
+app = "echo-valkey-staging"
+primary_region = "fra"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+  [build.args]
+    VALKEY_VERSION = "9.1"
+
+[env]
+  VALKEY_CONFIG = "/usr/local/etc/valkey/valkey.staging.conf"
+  # io-threads + maxmemory come from the conf above; set them here to retune without a rebuild.
+
+[mounts]
+  source = "valkey_staging_data"
+  destination = "/data"
+
+[[vm]]
+  cpu_kind = "performance"
+  cpus = 2
+  memory_mb = 2048           # 1gb maxmemory + headroom for the AOF-rewrite copy-on-write spike
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 6379
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 2000
+    soft_limit = 1500
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "4s"
+    grace_period = "30s"

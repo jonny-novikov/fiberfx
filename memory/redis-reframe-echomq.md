@@ -1,13 +1,13 @@
 ---
 name: redis-reframe-echomq
-description: "The /redis-patterns course REFRAME: re-prefixed rungs (specs/reframe-echomq/) → BCS contract-sheet identity (redis-red), grounded in the REAL echo/apps code (echo_mq/echo_store/echo_wire) with the EXCHANGE PLATFORM (echo/apps/exchange) the worked consumer, ZERO BullMQ, Valkey-only, no .out files. B0/R0 fully reconciled (10pp) + the 4 meta-files + the contract reground + a NEW one-shot /redis-reconcile command (B<N>→R<N>); B1/R1 caching (29pp) + B2/R2 coordination (22pp) RECONCILED (all PASS A+); B2 lesson = the v1-vs-v2 trap (echo/apps/echomq FROZEN v1 + a deleted Go port were cited as grounding — real-but-wrong, scrub LockManager|EchoMQ.Keys|Scripts|moveToActive|cluster.go to 0); resume = /redis-reconcile B3 (R3 queues)"
+description: "The /redis-patterns course REFRAME: re-prefixed rungs (specs/reframe-echomq/) → BCS contract-sheet identity (redis-red), grounded in the REAL echo/apps code (echo_mq/echo_store/echo_wire) with **codemojex** (echo/apps/codemojex — a Telegram emoji-guessing game) the worked consumer (was Exchange Platform; re-homed 2026-06-23 when echo/apps/exchange was deleted + echo_cache→echo_store renamed), ZERO BullMQ, Valkey-only, no .out files. B0/R0 fully reconciled (10pp) + the 4 meta-files + the contract reground + a NEW one-shot /redis-reconcile command (B<N>→R<N>); B1/R1 caching (29pp) + B2/R2 coordination (22pp) RECONCILED (all PASS A+); B2 lesson = the v1-vs-v2 trap (echo/apps/echomq FROZEN v1 + a deleted Go port were cited as grounding — real-but-wrong, scrub LockManager|EchoMQ.Keys|Scripts|moveToActive|cluster.go to 0); resume = /redis-reconcile B3 (R3 queues)"
 metadata: 
   node_type: memory
   type: project
   originSessionId: e9265937-7278-4619-b5bc-d127815c1163
 ---
 
-## 2026-06-23 — `/redis-reconcile R1 R2` was a RE-RUN; R2 doors → /echomq/protocol; EchoCache/Exchange CODE-DRIFT flagged — READ FIRST
+## 2026-06-23 — `/redis-reconcile R1 R2` was a RE-RUN; R2 doors → /echomq/protocol; EchoCache→EchoStore + Exchange→codemojex re-home RESOLVED — READ FIRST
 
 `/redis-reconcile R1 R2` was invoked but **R1/R2 were ALREADY reconciled** (re2/re3) — 4 sources agree (this memory,
 `redis-patterns.roadmap.md`, the TOC, and the disk: 29pp + 22pp, gate **51/51 PASS**, identity contract-sheet, real
@@ -23,15 +23,32 @@ EchoMQ links at the **bare `/echomq`** hub because the named pillars weren't bui
 design), re-gated **22/22 PASS**. `echomq-doors.md` R2 follow-up updated. **R1's door correctly stays `/echomq/queue`**
 (its ideal `/echomq/cache` is NOT built — leave per echomq-doors.md until it lands).
 
-**FLAGGED — a contract-vs-code drift the course can't self-detect (will recur at re4+):** the reframe contract
-(`reframe-echomq.md`) names **`EchoCache`** (`echo/apps/echo_cache`) + **`Exchange.Gateway.parse_place/1`**
-(`echo/apps/exchange`) as grounding, and the pages faithfully cite them (EchoCache ×73 files course-wide, Exchange
-×11). But the CODE moved AFTER the contract was written: `echo/apps/echo_cache` → **`echo/apps/echo_store`** (modules
-`EchoCache.*` → `EchoStore.*`; the functions fetch/put/invalidate/enqueue/claim/queue_key/slot ARE real there), and
-**`echo/apps/exchange` is GONE** (consumer pivoted to codemojex/echo_bot — see [[echo-store-rename]],
-[[echo-mq-three-movements]]). The pages match their CONTRACT, so this is NOT a page defect → needs an Operator/Venus
-decision to update the reframe contract (EchoCache→EchoStore; re-home or retire the Exchange exemplar) BEFORE any
-course-wide rename. Out of scope for an R1/R2 routing reconcile; do NOT silently rewrite.
+**RESOLVED 2026-06-23 — EchoCache→EchoStore rename + Exchange→codemojex re-home** (Operator-directed via
+AskUserQuestion: "rename course-wide" + "re-home to codemojex"). The code moved after the contract:
+`echo/apps/echo_cache`→**`echo/apps/echo_store`** (`EchoCache.*`→`EchoStore.*`, clean 1:1, functions + `ecc:`
+keyspace unchanged); `echo/apps/exchange` was DELETED → the live consumer is **codemojex** (`echo/apps/codemojex`,
+a Telegram emoji-guessing game on the same EchoStore + EchoMQ + Postgres stack).
+- **Rename:** blanket `EchoCache→EchoStore` across html + md + specs + meta (73 html + 36 md + the contract +
+  skill/agent/roadmap/toc/course-map/commands), gate-neutral. The bcs4 `EchoCache="branded keys, local speed,
+  bus-driven coherence"` figure travels fine (the entity was renamed; the measured numbers are name-free).
+- **Re-home** (R0 overview + R1 caching + R2 coordination — where ~all Exchange lived; R3/R4 carried only the
+  rename): mechanical surface-swaps (consumer name, paths, `Exchange.Gateway.parse_place/1`→`Codemojex.Guesses.submit/3`,
+  OrderBook→Board, Decider→ScoreWorker) + **3 `redis-expert` agents** (per-module clusters) for the page-aware domain
+  re-theme. Real grounding: `Codemojex.Guesses.submit/3` (game.ex:21 — validate→atomic `Wallet.charge_guess`→mint
+  `JOB`→`Lanes.enqueue(…,"cm",…)`, errors `:no_round|:closed|:expired|:bad_guess`); `Codemojex.Store.fetch_set/fetch_round`
+  →`EchoStore.Table` (tables `:cm_emojisets`/`:cm_rounds`, keyspace `ecc:{cm_emojisets}:`); `Codemojex.Locks`
+  (`cm:{round}:lock:{player}`); `Board`/`Settle`/`CommandWorker`/`ScoreWorker`/`NotificationWorker`. Brands
+  USR/RMM/RND/GES/JOB/TXN/CMD/NOT/**EMS** (emoji_set.ex:35). **VERIFIED: 61/61 gate PASS (home+overview+caching+
+  coordination), 0 capital-Exchange + 0 echo/apps/exchange course-wide, every `Codemojex.*` re-found on disk.**
+- **KEY DISCIPLINE (agents' right call):** committed bcs3/bcsA `{orders}`/`ORD0NgWEfAEJfs`/`slot 105` figures = the
+  MANUSCRIPT's worked-queue examples (per the figure inventory) → KEPT VERBATIM; only PAGE-OWN examples re-themed to
+  the real `{cm}`/`JOB`/`GES`. One agent even replaced a *fabricated* Exchange order command with the real `submit/3`.
+- **NOT cascaded (owed, separate skills):** `/bcs` (88 files), `/mesh`, `/art` + the bcs manuscript still say
+  EchoCache → a corpus-wide rename is owed via `bcs-writer`/`bcs-course-writer` ([[echo-store-rename]] lists it
+  pending). `docs/echo/bcs/content/` is now ABSENT from the working tree (Operator moved it out-of-band) → bcs figures
+  can't be re-verified on disk (pre-existing, out of scope).
+- **GOTCHAS:** an unescaped `&` in a sed REPLACEMENT inserts the matched text (garbled 1 page — escape `\&` or avoid).
+  Subagent spawns intermittently **403 "classifier unavailable"** mid-fan-out — verify 0 disk progress before retrying.
 
 **Tooling gotcha:** the user's shell `grep` is aliased/functioned so patterns with spaces / `=` / quotes intermittently
 fail with `error: unknown option '-G'` and **silently return 0** (false-clean scrubs). Use **`/usr/bin/grep`** (or
