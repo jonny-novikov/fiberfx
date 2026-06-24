@@ -1,31 +1,43 @@
-# Fly deploy config for the EchoMQ Valkey datastore.
-# A single private 1 GB shared-cpu-2x machine with a volume for the AOF.
-# It is a datastore: no public ports, and it never autostops.
+# Codemojex / EchoMQ — Valkey 9.x node on Fly.
+#
+# Private by design: no [http_service] and no [[services]] block, so Fly Proxy
+# assigns no public address. Create the app without a public IP
+#   fly apps create codemojex-valkey            # no public IP by default
+# and the Phoenix app reaches it over the org's private 6PN at
+#   codemojex-valkey.internal:6390
+# Provision the volume once, then set the password secret, before first deploy:
+#   fly volumes create valkey_data --size 3 --region lax -a codemojex-valkey
+#   fly secrets set -a codemojex-valkey \
+#     VALKEY_EXTRA_FLAGS="--requirepass $(openssl rand -hex 32)"
+#   fly deploy -a codemojex-valkey
 
-app = "echo-valkey"
-primary_region = "fra"
+app = "codemojex-valkey"
+primary_region = "lax"
+
+# Let the AOF flush on shutdown rather than be cut off.
+kill_signal = "SIGTERM"
+kill_timeout = "10s"
 
 [build]
   dockerfile = "Dockerfile"
 
-# The AOF lives here. Size it for several times the maxmemory cap (the AOF grows
-# between rewrites): 3 GB is comfortable headroom over a 512 MB working set.
+# One volume, one machine: a Fly volume lives on a single host in a single
+# region and is not network storage. Size it well above the AOF working set;
+# extend later if needed (volumes grow, never shrink).
 [[mounts]]
   source = "valkey_data"
   destination = "/data"
 
-# shared-cpu-2x @ 1 GB, stated explicitly: 2 shared vCPUs, 1024 MB.
 [[vm]]
+  size = "shared-cpu-2x"
   cpu_kind = "shared"
   cpus = 2
-  memory = "1024mb"
+  memory = "1gb"
 
-# No [[services]] block → no public ports. Reachable only over the private
-# network at echo-valkey.internal:6390.
-
-# Fly-side health: a TCP accept on the Valkey port (AUTH happens after connect).
+# TCP liveness on the private port. A bare connect is enough; it does not need
+# the password the way a PING check would.
 [checks]
-  [checks.valkey]
+  [checks.alive]
     type = "tcp"
     port = 6390
     interval = "15s"
