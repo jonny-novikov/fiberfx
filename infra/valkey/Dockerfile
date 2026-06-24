@@ -1,57 +1,60 @@
 # syntax=docker/dockerfile:1
-# =============================================================================
-# echo-valkey — the dedicated Valkey datastore for EchoMQ + EchoCache.
+###############################################################################
+# Valkey for Codemojex / EchoMQ — built from source with the bundled jemalloc
+# (5.3.0 on the 8.x line, matching the benchmarking bench), tuned for a Fly
+# shared-cpu-2x machine with 1 GB RAM.
 #
-# One image, many environments. The per-environment TUNING lives in conf/*.conf
-# (prod / staging / dev), copied into the image; an environment selects one with
-# the VALKEY_CONFIG env var (see fly.toml / fly.staging.toml / fly.dev.toml).
-# SECRETS and INVARIANTS — the password (VALKEY_PASSWORD secret), the bind, the
-# port, and the data dir — are injected at boot and never written into a conf
-# file, so the conf files are safe to commit. Sizing can also be overridden per
-# environment without a rebuild via VALKEY_IO_THREADS / VALKEY_MAXMEMORY /
-# VALKEY_EXTRA_FLAGS (later flags win over the conf).
-#
-# Pinned to valkey/valkey 9.1 (data dir /data; the official image ships
-# protected-mode OFF, which is exactly why a password is required — see below).
-# =============================================================================
+# Two stages: compile valkey-server + valkey-cli, then ship them on a slim
+# runtime with the tuned conf and an entrypoint that injects the password and
+# any memory/port override from the environment.
+###############################################################################
+
+# Pin to a current stable tag from https://github.com/valkey-io/valkey/releases
 ARG VALKEY_VERSION=9.1
-FROM valkey/valkey:${VALKEY_VERSION}
+ARG DEBIAN_TAG=bookworm-slim
 
-# the per-environment configs (no secrets inside)
-COPY conf/ /usr/local/etc/valkey/
+# ---- build ------------------------------------------------------------------
+FROM debian:${DEBIAN_TAG} AS build
+ARG VALKEY_VERSION
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      build-essential git ca-certificates pkg-config \
+ && rm -rf /var/lib/apt/lists/*
 
-# boot wrapper: best-effort kernel hints, then exec valkey-server with the chosen
-# conf plus the injected secret/invariants. Inline (heredoc) to keep the app small.
-COPY <<'BOOT' /usr/local/bin/echo-valkey-boot
-#!/bin/sh
-set -u
+WORKDIR /usr/src/valkey
+RUN git clone --depth 1 --branch "${VALKEY_VERSION}" https://github.com/valkey-io/valkey.git .
+# MALLOC=jemalloc builds and statically links the bundled jemalloc (5.3.0 on
+# 8.x). No TLS: the Fly 6PN private network is the trust boundary — add
+# BUILD_TLS=yes (and libssl-dev above) only if Valkey is ever exposed publicly.
+RUN make -j "$(nproc)" MALLOC=jemalloc \
+ && make install PREFIX=/usr/local \
+ && /usr/local/bin/valkey-server --version
 
-# --- kernel hints for an in-memory store (best-effort; never blocks boot) -----
-# THP OFF: with 2 MB pages, one copy-on-write byte during an AOF-rewrite fork
-# forces a whole-page copy and a latency spike.
-echo never > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true
-echo never > /sys/kernel/mm/transparent_hugepage/defrag  2>/dev/null || true
-sysctl -w vm.overcommit_memory=1        2>/dev/null || true   # so fork() does not fail under COW
-sysctl -w vm.swappiness=1               2>/dev/null || true   # a swapped page trades ns for ms
-sysctl -w net.core.somaxconn=65535      2>/dev/null || true   # accept connection bursts
-sysctl -w net.ipv4.tcp_max_syn_backlog=65535 2>/dev/null || true
-ulimit -n 65536 2>/dev/null || true                           # one fd per connection
+# ---- runtime ----------------------------------------------------------------
+FROM debian:${DEBIAN_TAG} AS runtime
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates libatomic1 \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --system valkey \
+ && useradd --system --gid valkey --home-dir /data --shell /usr/sbin/nologin valkey \
+ && mkdir -p /data /usr/local/etc/valkey \
+ && chown -R valkey:valkey /data
 
-# --- which environment's tuning to load (default: prod) -----------------------
-CONF="${VALKEY_CONFIG:-/usr/local/etc/valkey/valkey.prod.conf}"
+COPY --from=build /usr/local/bin/valkey-server /usr/local/bin/valkey-server
+COPY --from=build /usr/local/bin/valkey-cli    /usr/local/bin/valkey-cli
+COPY conf/valkey.conf            /usr/local/etc/valkey/valkey.conf
+COPY docker-entrypoint.sh        /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# --- the password is required, even on the private 6PN (defense in depth) ------
-: "${VALKEY_PASSWORD:?set it first:  fly secrets set VALKEY_PASSWORD=... -a <app>}"
+USER valkey
+WORKDIR /data
 
-# Invariants + secret injected here (never in a conf file). Optional env knobs
-# are appended AFTER the conf so they override it (valkey-server: last flag wins).
-set -- "$CONF" --bind "0.0.0.0 ::" --port 6379 --requirepass "$VALKEY_PASSWORD" --dir /data
-if [ -n "${VALKEY_IO_THREADS:-}" ]; then set -- "$@" --io-threads "$VALKEY_IO_THREADS"; fi
-if [ -n "${VALKEY_MAXMEMORY:-}" ];  then set -- "$@" --maxmemory  "$VALKEY_MAXMEMORY";  fi
-if [ -n "${VALKEY_EXTRA_FLAGS:-}" ]; then set -- "$@" $VALKEY_EXTRA_FLAGS; fi
-exec valkey-server "$@"
-BOOT
-RUN chmod +x /usr/local/bin/echo-valkey-boot
+# The EchoMQ connector dials this port over the private network.
+EXPOSE 6390
 
-EXPOSE 6379
-ENTRYPOINT ["/usr/local/bin/echo-valkey-boot"]
+# Local/compose health (Fly uses the [checks] block in fly.toml instead).
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
+  CMD valkey-cli -p 6390 -a "$VALKEY_PASSWORD" --no-auth-warning ping | grep -q PONG || exit 1
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["valkey-server", "/usr/local/etc/valkey/valkey.conf"]

@@ -1,37 +1,33 @@
+# Fly deploy config for the EchoMQ Valkey datastore.
+# A single private 1 GB shared-cpu-2x machine with a volume for the AOF.
+# It is a datastore: no public ports, and it never autostops.
+
 app = "echo-valkey"
 primary_region = "fra"
-kill_signal = "SIGTERM"
-kill_timeout = "30s"
 
 [build]
   dockerfile = "Dockerfile"
-  [build.args]
-    VALKEY_VERSION = "9.1"
 
-[env]
-  VALKEY_CONFIG = "/usr/local/etc/valkey/valkey.staging.conf"
-  # io-threads + maxmemory come from the conf above; set them here to retune without a rebuild.
-
-[mounts]
+# The AOF lives here. Size it for several times the maxmemory cap (the AOF grows
+# between rewrites): 3 GB is comfortable headroom over a 512 MB working set.
+[[mounts]]
   source = "valkey_data"
   destination = "/data"
 
+# shared-cpu-2x @ 1 GB, stated explicitly: 2 shared vCPUs, 1024 MB.
 [[vm]]
-  cpu_kind = "performance"
+  cpu_kind = "shared"
   cpus = 2
-  memory_mb = 2048           # 1gb maxmemory + headroom for the AOF-rewrite copy-on-write spike
+  memory = "1024mb"
 
-[[services]]
-  protocol = "tcp"
-  internal_port = 6379
-  auto_stop_machines = false
-  auto_start_machines = false
-  min_machines_running = 1
-  [services.concurrency]
-    type = "connections"
-    hard_limit = 2000
-    soft_limit = 1500
-  [[services.tcp_checks]]
+# No [[services]] block → no public ports. Reachable only over the private
+# network at echo-valkey.internal:6390.
+
+# Fly-side health: a TCP accept on the Valkey port (AUTH happens after connect).
+[checks]
+  [checks.valkey]
+    type = "tcp"
+    port = 6390
     interval = "15s"
-    timeout = "4s"
-    grace_period = "30s"
+    timeout = "2s"
+    grace_period = "10s"
