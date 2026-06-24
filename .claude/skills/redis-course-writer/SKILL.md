@@ -1,15 +1,15 @@
 ---
 name: redis-course-writer
-description: "Use this skill to author or continue the course 'Redis Patterns Applied' served at /redis-patterns — rendered in the BCS contract-sheet identity with the redis-red #d6584f accent (light-paper --b-* tokens + --r-red, mono-forward system fonts, nothing fetched), never the dark-editorial tokens of the sibling courses. Triggers: any request to create, continue, extend, relink, or validate a course home, chapter landing, module hub, deep-dive, or workshop for this course; to grade a page with the jonnify-cms gates; or to wire a new module into a chapter. Every Redis pattern is taught APPLIED — grounded in the real as-built echo data layer (EchoMQ backed by Valkey + EchoCache in front: echo/apps/echo_mq, echo/apps/echo_cache, echo/apps/echo_wire) and worked through the Exchange Platform consumer (echo/apps/exchange — Exchange.Gateway / Exchange.OrderBook / Exchange.Decider), never invented, never from .out transcripts, and with NO mention of BullMQ — the course opens doors to the dedicated /echomq and /bcs courses. The deliverable is always a self-contained static HTML page graded A+ across the ten gates (the nine Apollo gates + the refs mandate), authored into the existing design system and spec system — never a rebuild of either. Do NOT use for the /elixir course (elixir-course-writer / elixir-technical-writer), the /course/agile-agent-workflow course (agile-course-writer), the /bcs course (bcs-course-writer), the /echomq course (echo-mq-writer), other jonnify sections, or generic documents."
+description: "Use this skill to author or continue the course 'Redis Patterns Applied' served at /redis-patterns — rendered in the BCS contract-sheet identity with the redis-red #d6584f accent (light-paper --b-* tokens + --r-red, mono-forward system fonts, nothing fetched), never the dark-editorial tokens of the sibling courses. Triggers: any request to create, continue, extend, relink, or validate a course home, chapter landing, module hub, deep-dive, or workshop for this course; to grade a page with the jonnify-cms gates; or to wire a new module into a chapter. Every Redis pattern is taught APPLIED — grounded in the real as-built echo data layer (EchoMQ backed by Valkey + EchoStore in front: echo/apps/echo_mq, echo/apps/echo_store, echo/apps/echo_wire) and worked through codemojex consumer (echo/apps/codemojex — Codemojex.Guesses / Codemojex.Board / Codemojex.ScoreWorker), never invented, never from .out transcripts, and with NO mention of BullMQ — the course opens doors to the dedicated /echomq and /bcs courses. The deliverable is always a self-contained static HTML page graded A+ across the ten gates (the nine Apollo gates + the refs mandate), authored into the existing design system and spec system — never a rebuild of either. Do NOT use for the /elixir course (elixir-course-writer / elixir-technical-writer), the /course/agile-agent-workflow course (agile-course-writer), the /bcs course (bcs-course-writer), the /echomq course (echo-mq-writer), other jonnify sections, or generic documents."
 ---
 
 # Authoring the jonnify "Redis Patterns Applied" course
 
 This skill authors the course served at **`/redis-patterns`**: the 30 Redis design patterns, taught **applied to
 the BCS architecture** — each grounded in the **real as-built echo data layer**: **EchoMQ** (the owned protocol)
-backed by **Valkey** (`echo/apps/echo_mq/` + the one owned client `echo/apps/echo_wire/`), with **EchoCache** in
-front (`echo/apps/echo_cache/`), and worked through the **Exchange Platform** consumer (`echo/apps/exchange/` —
-`Exchange.Gateway` / `Exchange.OrderBook` / `Exchange.Decider`; design corpus `docs/exchange/`) — opening doors to
+backed by **Valkey** (`echo/apps/echo_mq/` + the one owned client `echo/apps/echo_wire/`), with **EchoStore** in
+front (`echo/apps/echo_store/`), and worked through the **codemojex** consumer (`echo/apps/codemojex/` —
+`Codemojex.Guesses` / `Codemojex.Board` / `Codemojex.ScoreWorker`; design corpus `echo/apps/codemojex/`) — opening doors to
 the dedicated `/echomq` and `/bcs` courses. EchoMQ-in-production IS the advanced application of these Redis
 patterns; keep the focus on the pattern. Three sources of truth govern, and where this skill disagrees with them,
 they win:
@@ -54,7 +54,7 @@ page surfaces, and its gate command.
 |---|---|
 | `html/redis-patterns/` | The served course. Whole hand-authored HTML files; the URL tree mirrors the dir tree (`serveDirTree`, read live — a new `.html` is live on save, no rebuild). |
 | `docs/redis-patterns/redis-patterns.toc.md` | The living **TOC** — the chapter→module→dive tree + per-module abstracts + status. The structural map. |
-| `docs/redis-patterns/redis-patterns.roadmap.md` | The **program roadmap** + the **grounding map** (which pattern is grounded in which real EchoMQ key/command/Lua script, echo-data-layer module, or `Exchange.*` consumer surface). Cite these; never invent. |
+| `docs/redis-patterns/redis-patterns.roadmap.md` | The **program roadmap** + the **grounding map** (which pattern is grounded in which real EchoMQ key/command/Lua script, echo-data-layer module, or `Codemojex.*` consumer surface). Cite these; never invent. |
 | `docs/redis-patterns/specs/redis-patterns.md` | The **contract** — the page surfaces, the chapter-landing anatomy, the ten gates, the no-invent rule, the chapter map. |
 | `docs/redis-patterns/specs/reframe-echomq/reframe-echomq.md` | The **reframe contract** — the identity authority: the contract-sheet token swap + dark→light class map, the `.door`/`.bridge`/`.vnote` devices, the **figure inventory**, the no-BullMQ + naming law, the gate mounts. The rung sequence: `reframe-echomq.roadmap.md`. |
 | `docs/redis-patterns/specs/<chapter>/<chapter>.md` | The **chapter spec** — the module ladder a page batch builds from. R0 (`overview/`) is taken deep: a chapter index + `r0.md` roadmap + per-module **quads** (`r0.M.md` / `.stories.md` / `.llms.md` / `.prompt.md`). |
@@ -69,8 +69,8 @@ fetched. The running grounding is the **real as-built echo data layer** — the 
 files**: **EchoMQ** (`echo/apps/echo_mq/` — `Jobs` / `Lanes` / `Consumer` / `Keyspace` + the Lua scripts; the
 owned protocol, the braced `emq:{q}:` keyspace, every Lua key declared) **backed by Valkey** via the one owned
 client **EchoWire** (`echo/apps/echo_wire/` — `EchoWire`, `EchoMQ.Connector`, EVALSHA-first, the `echomq:2.0.0`
-version fence), with **EchoCache** in front (`echo/apps/echo_cache/` — `Ring` / `Table` / `Journal` / `Coherence`;
-L1 ETS + L2 Valkey), worked through the **Exchange Platform** consumer (`echo/apps/exchange/`). Supplement with the
+version fence), with **EchoStore** in front (`echo/apps/echo_store/` — `Ring` / `Table` / `Journal` / `Coherence`;
+L1 ETS + L2 Valkey), worked through the **codemojex** consumer (`echo/apps/codemojex/`). Supplement with the
 committed BCS manuscript figures `docs/echo/bcs/content/bcs3.*` / `bcs4.*` / `bcsA.md` and the spec
 `docs/echo_mq/emq.design.md`; the reframe contract's **figure inventory** licenses what may appear — every figure
 verbatim from a committed source. **`.out` rung transcripts are NOT course material:** never cite a `.out` file or
@@ -79,7 +79,7 @@ the course contains zero BullMQ references; never "BullMQ-compatible", never a "
 keyspace, never bullmq.io in Sources, **never Dragonfly** — the engine is **Valkey only**. Always write
 **"EchoMQ"** — never "EchoMQ 2.0" as a recurring label (`echomq:2.0.0` appears only as a quoted wire string inside
 a frozen figure). The queue, coordination, and time families ground in `echo/apps/echo_mq/`; the cache family in
-`echo/apps/echo_cache/` (and `bcs4.*`); modeling grounds in clean standalone examples. Where a chapter's deeper
+`echo/apps/echo_store/` (and `bcs4.*`); modeling grounds in clean standalone examples. Where a chapter's deeper
 implementation belongs to the protocol itself, it links forward to the **dedicated EchoMQ course** (`/echomq`).
 
 ## 3. The structure — three levels and four page surfaces
@@ -120,23 +120,23 @@ all internal links resolving. The shared card classes are `.chap · .chap-head �
 
 Where `/elixir` bridges *an idea → its Elixir form* (the functional-Elixir & OTP craft behind the echo umbrella),
 this course bridges **a Redis pattern → its real application in the echo data layer**. Every pattern lands twice:
-the pattern (problem → solution → trade-offs → when-to-use) and the concrete move it becomes in EchoMQ / EchoCache /
-the Exchange consumer. Make that correspondence explicit with the `.bridge` block (the pattern cell → the real
-application cell — the right cell always names the EchoMQ / EchoCache / `Exchange.*` application), closed by a
+the pattern (problem → solution → trade-offs → when-to-use) and the concrete move it becomes in EchoMQ / EchoStore /
+the codemojex consumer. Make that correspondence explicit with the `.bridge` block (the pattern cell → the real
+application cell — the right cell always names the EchoMQ / EchoStore / `Codemojex.*` application), closed by a
 `.take`; the page's `.door` then surfaces the Valkey specific/tuning + the `emq:{q}:` application.
 
 **The grounding rule (the master discipline).** Each module cites **one tight, real excerpt** as proof, verbatim
 from a real as-built surface (or a committed figure the reframe contract's figure inventory licenses): a real
 EchoMQ key (`emq:{q}:` form), a script verb of the eight (`enqueue`, `browse`, `pending_size`, `claim`, `complete`,
-`retry`, `promote`, `reap`), the `attempts` fencing token (`HINCRBY`), an `echo/apps/echo_cache/` figure (or
-`bcs4.*`), an `Exchange.*` consumer call, or a Valkey-documented command (`SET … PX`) — or, where the pattern is
+`retry`, `promote`, `reap`), the `attempts` fencing token (`HINCRBY`), an `echo/apps/echo_store/` figure (or
+`bcs4.*`), an `Codemojex.*` consumer call, or a Valkey-documented command (`SET … PX`) — or, where the pattern is
 not an EchoMQ one (modeling family), a clean standalone example. **The grounding map in
 `redis-patterns.roadmap.md` is authoritative for which pattern lands where; the figure inventory in
 `reframe-echomq.md` is authoritative for what may be quoted.** Never quote a `.out` rung transcript or a gate dump.
 `redlock` and `probabilistic-data-structures` are taught as **contrasts**, not as something EchoMQ implements.
 
 **No invention.** Cite only real surfaces. Do not invent a Redis/Valkey command, a Lua script, an EchoMQ module, or
-an echo-data-layer / `Exchange.*` surface — **verify on disk in `echo/apps/`**. The EchoMQ implementation *depth*
+an echo-data-layer / `Codemojex.*` surface — **verify on disk in `echo/apps/`**. The EchoMQ implementation *depth*
 (the full Lua bundle, the version-fence internals, the protocol governance) belongs to the dedicated EchoMQ course;
 a module that drifts into it links forward instead of teaching it.
 
@@ -174,7 +174,7 @@ Every pattern module is built on its **author source** — `docs/redis-patterns/
    the **source's `##` sections, in the source's order**, as the page's `<section>`s — for cache-aside:
    `How It Works` → `Redis Commands Used` → `Advantages` → `The Staleness Problem` → `Mitigating Staleness` →
    `When to Use` → `When to Avoid`. The jonnify framing, the interactives, the `.bridge`, and the EchoMQ /
-   EchoCache / Exchange grounding layer **on top of** that spine — they never replace it or precede the source
+   EchoStore / codemojex grounding layer **on top of** that spine — they never replace it or precede the source
    summary. The module's dive
    cards and a closing recap follow the source sections; References closes the page. The
    [content-map](../../../docs/redis-patterns/redis-patterns.content-map.md) names the source file + per-section
@@ -262,15 +262,15 @@ Reusing an existing valid id is fine (the decoder decodes whatever is in `#stamp
    References as a two-column `.refs` block, §5a rule 2), and **each dive** `<chapter>/<module>/<sub>.html`. Copy the
    design system verbatim from a REFRAMED model page (never a dark-editorial R1–R4 page mid-migration); ground the
    worked example in the artifact the roadmap's grounding map names, quoted verbatim from the figure inventory's
-   committed sources; add the `.bridge` (pattern ↔ EchoMQ/EchoCache application), the page's `.door`, ≥1 `.vnote`
+   committed sources; add the `.bridge` (pattern ↔ EchoMQ/EchoStore application), the page's `.door`, ≥1 `.vnote`
    where a Valkey fact applies, and ≥1 hover-select interactive **on top of** the source spine.
 3. **Relink the chapter landing** (orchestrator-only when fanning out) — turn the module's non-anchor
    `<div class="mod">` card into `<a class="mod" href="…">` and flip its pill `soon`→`built`; the manifests stay
    at a full links-PASS.
 4. **Gate every page** to STATUS: PASS (with the cross-course mounts); adversarially read the gate-invisible bits
    (clamp, route-tag, `header.top` scoping, crumbs/pager parent, the font-leak + the unconditionally-empty
-   no-BullMQ scrub greps, no `.out` transcript cited, no invented echo-data-layer / `Exchange.*` surface — run
-   `grep -rnoE '(Exchange|EchoMQ|EchoCache|EchoWire)\.[A-Za-z.]+' <path>` and cross-check every hit on disk in
+   no-BullMQ scrub greps, no `.out` transcript cited, no invented echo-data-layer / `Codemojex.*` surface — run
+   `grep -rnoE '(Codemojex|EchoMQ|EchoStore|EchoWire)\.[A-Za-z.]+' <path>` and cross-check every hit on disk in
    `echo/apps/`, and re-find every quoted figure in its real `echo/apps/` surface or its committed BCS source
    `docs/echo/bcs/content/` + `docs/echo_mq/emq.design.md`).
 5. **Sync the TOC** — mark the module built (route + dive list) so the views agree.

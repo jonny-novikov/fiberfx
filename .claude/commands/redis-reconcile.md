@@ -1,5 +1,5 @@
 ---
-description: redis-reconcile — the one-shot engine that reconciles a whole "Redis Patterns Applied" chapter to the TARGET DESIGN in a single run: the BCS contract-sheet identity (redis-red accent), the Exchange Platform exemplar consumer, grounding in the real as-built echo data layer (echo/apps/echo_mq · echo_cache · echo_wire · echo/apps/exchange — never a .out transcript), ZERO BullMQ, Valkey the only engine. Fans out redis-expert reconcilers per module, then adversarially gates + relinks + syncs the living views. Reconcile to fit; never invent.
+description: redis-reconcile — the one-shot engine that reconciles a whole "Redis Patterns Applied" chapter to the TARGET DESIGN in a single run: the BCS contract-sheet identity (redis-red accent), codemojex exemplar consumer, grounding in the real as-built echo data layer (echo/apps/echo_mq · echo_store · echo_wire · echo/apps/codemojex — never a .out transcript), ZERO BullMQ, Valkey the only engine. Fans out redis-expert reconcilers per module, then adversarially gates + relinks + syncs the living views. Reconcile to fit; never invent.
 argument-hint: <chapter> · B<N> · R<N> (whole chapter, e.g. /redis-reconcile B1) · <chapter>/<module> · <chapter>/<module>/<dive> (one page)
 allowed-tools: Agent, Read, Write, Edit, Bash, Glob, Grep, Skill, AskUserQuestion
 model: opus
@@ -10,7 +10,7 @@ model: opus
 You are **reconciling already-built pages** of the jonnify "Redis Patterns Applied" course (served at
 `/redis-patterns`) to the **TARGET DESIGN** — in one pass per chapter. This is the engine that applies, end to end,
 the reconcile proven on **R0** (the reframed home + overview + R0.2 + R0.3): the BCS **contract-sheet** identity,
-the **Exchange Platform** exemplar, grounding in the **real as-built echo data layer**, **zero BullMQ**, Valkey the
+the **codemojex** exemplar, grounding in the **real as-built echo data layer**, **zero BullMQ**, Valkey the
 only engine. It is the sibling of `/redis-write` (which authors *new* pages); use `/redis-reconcile` to bring
 **existing** pages to the target design.
 
@@ -54,21 +54,21 @@ A page conforms when **all** of these hold. **(A)** is the reframe-to-target wor
    `figure.frozen` evidence blocks, the 14-cell `.idrule`, `.sech` headers, the `.stamp` footer. Header is scoped
    **`header.top{…}`**, NEVER bare `.top` (the `.mod` cards reuse `<div class="top">`; a bare rule floats every card
    over the header). (Pages already in the contract-sheet — skip; this is a content reconcile, not a re-skin.)
-2. **Exemplar Portal → the Exchange Platform.** The worked consumer is the **Exchange Platform**
-   (`echo/apps/exchange` — `Exchange.Gateway`/`OrderBook`/`Decider`; `docs/exchange/`), NOT Portal. The "one facade"
+2. **Exemplar Portal → codemojex.** The worked consumer is the **codemojex**
+   (`echo/apps/codemojex` — `Codemojex.Guesses`/`OrderBook`/`Decider`; `echo/apps/codemojex/`), NOT Portal. The "one facade"
    is **`EchoWire`** (`echo/apps/echo_wire` — the one owned Valkey client over `EchoMQ.Connector`); `%Portal.Error{}`
    / "the closed error set" → the connector's real typed returns (`:disconnected` / `:overloaded` /
-   `{:version_fence, got}`) or `Exchange.Gateway`'s six closed errors. A `Portal.enroll`-style example → an
-   `Exchange.Gateway.parse_place/1` or `EchoWire`/`EchoMQ.Jobs` call. **Keep every URL slug** (e.g. an
+   `{:version_fence, got}`) or `Codemojex.Guesses`'s six closed errors. A `Portal.enroll`-style example → an
+   `Codemojex.Guesses.submit/3` or `EchoWire`/`EchoMQ.Jobs` call. **Keep every URL slug** (e.g. an
    `…/redis-under-portal` path stays — change human titles + labels, never the href).
 3. **BullMQ → ZERO.** No mention of BullMQ anywhere on a page. The v1 history is told without naming it ("EchoMQ
    broke from its v1 line, now frozen at `1.3.0`"). Never the `bull:` keyspace, never `bullmq.io` in Sources,
-   **never Dragonfly** (`docs/exchange` names Dragonfly the native primary — the reframe overrides it; **Valkey
+   **never Dragonfly** (`echo/apps/codemojex` names Dragonfly the native primary — the reframe overrides it; **Valkey
    only**). Always "EchoMQ" (never "EchoMQ 2.0" as a recurring label); `echomq:2.0.0` only as a quoted wire string.
 4. **Ground in the real as-built code — never a `.out`.** Re-ground every figure to the real surfaces:
    `echo/apps/echo_mq` (EchoMQ — `Jobs`/`Lanes`/`Consumer`/`Keyspace`, the `emq:{q}:<type>` builder, the Lua
-   scripts), `echo/apps/echo_cache` (EchoCache — `Ring`/`Table`/`Journal`/`Coherence`), `echo/apps/echo_wire`
-   (`EchoWire` + `EchoMQ.Connector`, the `echomq:2.0.0` fence), `echo/apps/exchange` (the consumer). Supplement with
+   scripts), `echo/apps/echo_store` (EchoStore — `Ring`/`Table`/`Journal`/`Coherence`), `echo/apps/echo_wire`
+   (`EchoWire` + `EchoMQ.Connector`, the `echomq:2.0.0` fence), `echo/apps/codemojex` (the consumer). Supplement with
    the committed BCS manuscript figures (`docs/echo/bcs/content/bcs3.*`, `bcs4.*`, `bcsA.md`) + `emq.md`. **`.out`
    rung transcripts are NOT course material** — never quote a `.out` file or foreground a "PASS N/N" gate dump as a
    page figure; teach the *pattern* from the code. Engine is **Valkey 9.1.0** (the live figure `bcsA.md` measured;
@@ -98,7 +98,7 @@ A page conforms when **all** of these hold. **(A)** is the reframe-to-target wor
    readout; ≥1 `svg` per page. 12. **Voice** — a cache / caller / surface / queue / script / store does not "see" /
    "want" / "know" / "decide". 13. **Pager loop + crumbs** point at intended parents (hub `prev`=landing,
    `next`=first dive; dives chain hub→dive1→dive2→dive3→hub). 14. **No invented surface** — every `EchoMQ.*` /
-   `EchoCache.*` / `EchoWire.*` / `Exchange.*` is real on disk in `echo/apps/`; every `/echomq` `/bcs` `/elixir`
+   `EchoStore.*` / `EchoWire.*` / `Codemojex.*` is real on disk in `echo/apps/`; every `/echomq` `/bcs` `/elixir`
    cross-link resolves.
 
 ## Step 0 — Ground the batch (read-only)
@@ -123,7 +123,7 @@ A page conforms when **all** of these hold. **(A)** is the reframe-to-target wor
 
 Build the validator: `cd apps/jonnify-cms && GOWORK=off go build -o bin/cms .` (GOWORK=off mandatory; runs from the
 filesystem, no server). Confirm the real surfaces a re-ground will cite exist: `ls echo/apps/echo_mq/lib/echo_mq/`,
-`echo/apps/echo_cache/lib/echo_cache/`, `echo/apps/echo_wire/lib/`, `echo/apps/exchange/lib/exchange/`.
+`echo/apps/echo_store/lib/echo_store/`, `echo/apps/echo_wire/lib/`, `echo/apps/codemojex/lib/exchange/`.
 
 ## Step 1.5 — Author the persistent chapter prompt (orchestrator-only) — the durable fan-out brief
 
@@ -167,11 +167,11 @@ The persistent prompt's **Shared context** carries (authored once, read by all):
 - **This is a RECONCILE of existing pages — do NOT rewrite from scratch.** Preserve every interactive, SVG, the
   pager, crumbs, footer + `TSK…` stamp; change only what the checklist requires.
 - **The four reframe-to-target axes (A1–A4 above), verbatim** — the re-skin (if dark-editorial), Portal → the
-  Exchange Platform / EchoWire, BullMQ → zero, ground in the real `echo/apps` code (never a `.out`), Valkey only,
+  codemojex / EchoWire, BullMQ → zero, ground in the real `echo/apps` code (never a `.out`), Valkey only,
   keep slugs. Quote the page's real grounding surfaces (read them in `echo/apps/…` before citing).
 - read: the contract, the module spec, the author source (the spine), and the reframed R0 model page.
 - **HUB** — re-root the lede + `<h2>` order to the source; layer the `.door` (the Valkey tuning + the `emq:{q}:`
-  application) + `.bridge` (pattern → its EchoMQ/EchoCache application) + the hover-select figure on top.
+  application) + `.bridge` (pattern → its EchoMQ/EchoStore application) + the hover-select figure on top.
 - **DIVES** — rules 6 + 7 + the four axes; re-root only on drift.
 - **ALL pages** — two-column References (drop any bullmq.io); route-mirror md at `docs/redis-patterns/markdown/<route>.md`;
   fix clamp / route-tag / voice / invented-surface / `8.1.8` defects.
@@ -193,7 +193,7 @@ D=html/redis-patterns/<chapter>/<module>
 for p in $D/*.html; do printf "%s " "$p"; apps/jonnify-cms/bin/cms check ${=FLAGS} "$p" 2>&1 | grep -oE 'STATUS: (PASS|FAIL)'; done
 grep -rniE 'bullmq|bull:|dragonfly' $D/ || echo "no-bullmq OK"            # axis 3: UNCONDITIONALLY empty
 grep -rniE 'portal' $D/ | grep -viE '<slug-to-keep>' || echo "no-portal OK" # axis 2: 0 except a kept slug
-grep -rnoE '(EchoMQ|EchoCache|EchoWire|Exchange)\.[A-Za-z.]+' $D/ | sort -u  # axis 4: cross-check each on disk in echo/apps/
+grep -rnoE '(EchoMQ|EchoStore|EchoWire|Codemojex)\.[A-Za-z.]+' $D/ | sort -u  # axis 4: cross-check each on disk in echo/apps/
 grep -rnoE 'PASS [0-9]+/[0-9]+|232 ns|8\.1\.8' $D/ || echo "no .out-dump / no stray figure OK"
 grep -rnE 'Cormorant|Manrope|PT Serif|JetBrains|fonts\.googleapis' $D/ || echo "font-leak OK"
 grep -oE '<h2>[^<]*</h2>' $D/index.html                                    # rule 5: hub h2 order == source ##
@@ -220,7 +220,7 @@ re-gate both to a full STATUS: PASS.
 - the route-mirror **md** is created (Step 2/3);
 - **`redis-patterns.toc.md`** + **`redis-patterns.roadmap.md`** — retitle the chapter/module entries the reconcile
   changed and retarget the chapter's grounding cell from the old Portal surface to the echo data layer; mark the
-  chapter reconciled. The course-wide TOC header thesis already names the Exchange Platform + zero-BullMQ (set at
+  chapter reconciled. The course-wide TOC header thesis already names codemojex + zero-BullMQ (set at
   R0) — keep it consistent.
 - **`redis-patterns.echomq-doors.md`** (the canonical R↔E door map) — retarget this chapter's `→ EchoMQ` door to the
   **named echomq pillar route** (the echomq course is now pillar-routed: `/echomq/protocol · /queue · /bus · /cache ·
@@ -231,7 +231,7 @@ re-gate both to a full STATUS: PASS.
 
 ## Step 6 — Report
 
-Summarise per page: route, what changed (re-skin? Portal→Exchange re-ground? BullMQ→zero? code re-grounding? refs→2col?
+Summarise per page: route, what changed (re-skin? Portal→codemojex re-ground? BullMQ→zero? code re-grounding? refs→2col?
 md? voice/clamp fixes?), and the gate grade. Note any defect fixed (especially invented-surface / a `.out` citation
 caught), the manifests relinked, the TOC/roadmap/llms.txt synced, and the next un-reconciled chapter. Note whether
 `redis-expert` resolved or fell back to `general-purpose`. **Do not commit** — the operator commits batches

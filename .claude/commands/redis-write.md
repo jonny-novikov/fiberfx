@@ -48,7 +48,7 @@ and either author every module in it or `AskUserQuestion` which to author.
    the chapter-landing anatomy, the resume point).
 2. Read the chapter spec `specs/<chapter>/<chapter>.md` (the module ladder + grounding + dives), the chapter's TOC
    section (`redis-patterns.toc.md`), and the **grounding map** in `redis-patterns.roadmap.md` — the real EchoMQ
-   key/command/Lua/Go function (or echo-data-layer/Exchange surface) each requested pattern is grounded in.
+   key/command/Lua/Go function (or echo-data-layer/codemojex surface) each requested pattern is grounded in.
 3. For each requested module resolve: its number `R[N].[M]`, pattern slug, **grounding artifact**, served route,
    dive slugs (from args / the spec / to-design), whether it has a per-module triad/prompt, and its
    dependency-ordered position (for the pager + the build order).
@@ -92,13 +92,13 @@ back to `subagent_type: "general-purpose"` (the redis-expert brief below is self
   spec");
 - its **grounding artifact** from the grounding map, quoted VERBATIM from the **real as-built echo data layer** —
   `echo/apps/echo_mq` (EchoMQ — `Jobs`/`Lanes`/`Consumer`/`Keyspace` + the inline Lua; the braced `emq:{q}:`
-  keyspace), `echo/apps/echo_cache` (EchoCache — `Ring`/`Table`/`Journal`/`Coherence`), `echo/apps/echo_wire` (the
-  EchoWire connector — `EchoMQ.Connector`, EVALSHA-first, the `echomq:2.0.0` fence) — and the **Exchange Platform**
-  consumer (`echo/apps/exchange` — `Exchange.Gateway`/`Exchange.OrderBook`/`Exchange.Decider`), plus the committed
+  keyspace), `echo/apps/echo_store` (EchoStore — `Ring`/`Table`/`Journal`/`Coherence`), `echo/apps/echo_wire` (the
+  EchoWire connector — `EchoMQ.Connector`, EVALSHA-first, the `echomq:2.0.0` fence) — and the **codemojex**
+  consumer (`echo/apps/codemojex` — `Codemojex.Guesses`/`Codemojex.Board`/`Codemojex.ScoreWorker`), plus the committed
   BCS figures the reframe contract's **figure inventory** licenses (`docs/echo/bcs/content/bcs3.*` / `bcs4.*` /
   `bcsA.md` + `docs/echo_mq/emq.design.md`) — and the instruction to **re-find every figure on disk in its real
   source before citing**, to **never cite a `.out` rung transcript** (NOT course material), to invent nothing
-  (no fabricated Redis/Valkey command, Lua script, EchoMQ module, or echo-data-layer/Exchange surface), and to obey
+  (no fabricated Redis/Valkey command, Lua script, EchoMQ module, or echo-data-layer/codemojex surface), and to obey
   the **no-BullMQ + naming law** (the course contains **NO mention of BullMQ at all**; never "BullMQ-compatible",
   never the `bull:` keyspace, never bullmq.io, **never Dragonfly** — the engine is Valkey only; write "EchoMQ", never
   "EchoMQ 2.0" as a recurring label);
@@ -130,7 +130,7 @@ back to `subagent_type: "general-purpose"` (the redis-expert brief below is self
   browser storage; the contract-sheet devices — `.sech` headers with the `.ssrc` grounding citation, the 14-cell
   `.idrule`, `figure.frozen` for verbatim committed output, ONE `.door` per page (the Valkey specific/tuning + the
   `emq:{q}:` application), ≥1 `.vnote` where a Valkey fact applies; the `.bridge` (the Redis pattern → its real
-  EchoMQ / EchoCache application) + a `.take`; the **voice** rules;
+  EchoMQ / EchoStore application) + a `.take`; the **voice** rules;
 - the **gate command** and **ship only at STATUS: PASS**;
 - **hard constraints:** NEVER run git; edit ONLY its own module's files; **do NOT touch the chapter landing or the
   home map** (you relink them in Step 4).
@@ -149,10 +149,10 @@ knows `/elixir` but not `/bcs`/`/echomq` — without the mounts the door links r
 
 Then the gate-**invisible** failure modes:
 
-- **No invented surface** (the course's reason to exist): `grep -rnoE '(Exchange|EchoMQ|EchoCache|EchoWire)\.[A-Za-z.]+' <module dirs>`
+- **No invented surface** (the course's reason to exist): `grep -rnoE '(Codemojex|EchoMQ|EchoStore|EchoWire)\.[A-Za-z.]+' <module dirs>`
   and cross-check each on disk, then re-find every quoted figure on the page — key / verb / number / wire string —
-  verbatim in its real source (the as-built `echo/apps/echo_mq` · `echo/apps/echo_cache` · `echo/apps/echo_wire` ·
-  `echo/apps/exchange`, the committed `docs/echo/bcs/content/`, or `docs/echo_mq/emq.design.md`, per the reframe
+  verbatim in its real source (the as-built `echo/apps/echo_mq` · `echo/apps/echo_store` · `echo/apps/echo_wire` ·
+  `echo/apps/codemojex`, the committed `docs/echo/bcs/content/`, or `docs/echo_mq/emq.design.md`, per the reframe
   contract's figure inventory); anything not found there is fabricated — fix it. **`.out` rung transcripts are NOT
   course material** — a page citing a `.out` file or a "PASS N/N" gate dump as a figure is a defect; fix it.
 - **The scrub greps are unconditionally empty** — zero hits, no exceptions: `grep -rniE 'bullmq|bull:|dragonfly'`;

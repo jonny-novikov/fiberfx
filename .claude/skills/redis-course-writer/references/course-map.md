@@ -3,8 +3,8 @@
 The course "Redis Patterns Applied" is served at **`/redis-patterns`** (folder-routed via `serveDirTree`; the URL
 tree mirrors `html/redis-patterns/`). "Applied" means **applied to the BCS architecture** — the real as-built echo
 data layer: **EchoMQ** backed by **Valkey** (`echo/apps/echo_mq/` + the owned client `echo/apps/echo_wire/`),
-**EchoCache** in front (`echo/apps/echo_cache/`), worked through the **Exchange Platform** consumer
-(`echo/apps/exchange/` — `Exchange.Gateway` / `Exchange.OrderBook` / `Exchange.Decider`). The **home**
+**EchoStore** in front (`echo/apps/echo_store/`), worked through the **codemojex** consumer
+(`echo/apps/codemojex/` — `Codemojex.Guesses` / `Codemojex.Board` / `Codemojex.ScoreWorker`). The **home**
 (`html/redis-patterns/index.html`) and **every chapter landing** are **route manifests that reach a FULL
 links-PASS** (the BCS philosophy — no fail-by-design): a built chapter/module is an anchor card `<a class="mod">`,
 an unbuilt one a **non-anchor** card `<div class="mod">` with the `soon` pill; every lesson/hub page keeps all
@@ -20,7 +20,7 @@ identity); R3–R4 await their reframe rungs (`re4`–`re5`) — never copy iden
 **The authoritative structural map is the TOC** (`docs/redis-patterns/redis-patterns.toc.md`); this file is the
 skill-side digest. The grounding map (which pattern lands where) is authoritative in
 `docs/redis-patterns/redis-patterns.roadmap.md`; what may be **quoted** is the **real as-built echo data layer**
-(`echo/apps/echo_mq/`, `echo/apps/echo_cache/`, `echo/apps/echo_wire/`, `echo/apps/exchange/`), supplemented by the
+(`echo/apps/echo_mq/`, `echo/apps/echo_store/`, `echo/apps/echo_wire/`, `echo/apps/codemojex/`), supplemented by the
 committed BCS manuscript figures the reframe contract's figure inventory licenses (`docs/echo/bcs/content/bcs3.*` /
 `bcs4.*` / `bcsA.md` + `docs/echo_mq/emq.design.md`) — cite them, never invent, **never a `.out` rung transcript
 or a gate dump**.
@@ -49,8 +49,8 @@ chapter's pattern family to the BCS build.
 
 | Chapter | Title | Landing route | Dir | Grounding | Status |
 |---|---|---|---|---|---|
-| R0 | Overview — the catalog, the BCS thesis | `/redis-patterns` (home) + `/redis-patterns/overview` | `overview/` | the BCS thesis (EchoMQ backed by Valkey, EchoCache in front; the Exchange consumer) | **built; reframed by `re0` (home + overview landing + R0.3) except R0.2 — rung `re1`** |
-| R1 | Caching | `/redis-patterns/caching` | `caching/` | EchoCache (`echo/apps/echo_cache/`; `bcs4.*` figures) | **built + reconciled — contract-sheet, gated PASS (29 pp)** |
+| R0 | Overview — the catalog, the BCS thesis | `/redis-patterns` (home) + `/redis-patterns/overview` | `overview/` | the BCS thesis (EchoMQ backed by Valkey, EchoStore in front; the codemojex consumer) | **built; reframed by `re0` (home + overview landing + R0.3) except R0.2 — rung `re1`** |
+| R1 | Caching | `/redis-patterns/caching` | `caching/` | EchoStore (`echo/apps/echo_store/`; `bcs4.*` figures) | **built + reconciled — contract-sheet, gated PASS (29 pp)** |
 | R2 | Coordination & Consistency | `/redis-patterns/coordination` | `coordination/` | the claim script, the `attempts` fencing token, the co-location law → EchoMQ (`echo/apps/echo_mq/`) | **built + reconciled — contract-sheet, doors → `/echomq/protocol`, gated PASS (22 pp)** |
 | R3 | Reliable Queues | `/redis-patterns/queues` | `queues/` | the EchoMQ state machine (the lanes, the verbs, reap) → EchoMQ (`echo/apps/echo_mq/`) | **built — dark-editorial until `re4`** |
 | R4 | Time, Delay & Priority | `/redis-patterns/time-delay-priority` | `time-delay-priority/` | the schedule set (run-at scores, promote) → EchoMQ (`echo/apps/echo_mq/`) | **built — dark-editorial until `re5`** |
@@ -65,14 +65,14 @@ abstracts, dives, and grounding are in the TOC and the chapter specs.
 ## The grounding boundary (the no-invent rule)
 
 A redis-patterns module teaches a transferable Redis technique proven by **one real excerpt**, verbatim from a
-real as-built surface — `echo/apps/echo_mq/`, `echo/apps/echo_cache/`, `echo/apps/echo_wire/`,
-`echo/apps/exchange/` (or a committed BCS figure `docs/echo/bcs/content/bcs3.*` / `bcs4.*` / `bcsA.md`,
+real as-built surface — `echo/apps/echo_mq/`, `echo/apps/echo_store/`, `echo/apps/echo_wire/`,
+`echo/apps/codemojex/` (or a committed BCS figure `docs/echo/bcs/content/bcs3.*` / `bcs4.*` / `bcsA.md`,
 `docs/echo_mq/emq.design.md`): a real EchoMQ key (`emq:{q}:` form), a script verb, the `attempts` fencing token,
-an EchoCache figure, an `Exchange.*` consumer call, or a Valkey-documented command. **Never a `.out` rung
+an EchoStore figure, an `Codemojex.*` consumer call, or a Valkey-documented command. **Never a `.out` rung
 transcript or a "PASS N/N" gate dump — those are not course material; teach the PATTERN from the real code.** EchoMQ
 implementation *depth* (the full Lua bundle, the version-fence internals, the protocol governance) belongs to the
 dedicated **EchoMQ course** (`/echomq`); chapters R2–R6 and R8 link forward to it. Never fabricate a Redis/Valkey
-command, Lua script, EchoMQ module, or echo-data-layer / `Exchange.*` surface — **verify on disk in
+command, Lua script, EchoMQ module, or echo-data-layer / `Codemojex.*` surface — **verify on disk in
 `echo/apps/`**. **NO mention of BullMQ at all:** the course contains zero BullMQ references — no lineage note, never
 "BullMQ-compatible", never the `bull:` keyspace, never bullmq.io in Sources, never "EchoMQ 2.0" as a recurring
 label, **never Dragonfly** (the engine is **Valkey only**). `redlock` and `probabilistic-data-structures` are
