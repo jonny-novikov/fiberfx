@@ -177,9 +177,14 @@ a default in `tables.ex`).
    :no_round|Schemas\.Round)\b' lib test` → **0** (the round→game entity/api/wire); the BIF survives
    (`/usr/bin/grep -rn 'Kernel\.round\|round(' lib/codemojex/scoring.ex` non-empty); the bonus tokens
    (`ptier`/`bonus`/`tierfirst`/`firsts`/`claim_tier`/`tier:`/`percentage:`) absent.
-4. The `games_type` CHECK exercised (INV-2); the four blind columns `NULL` for a classic game and **set**
-   for a golden game (INV-8); the **privacy line** exercised by a present golden game (INV-9 — the §11.5
-   story RUNS the suppression + the reveal).
+4. The `games_type` **and** `games_status` CHECKs exercised by a rejected-insert (INV-2); the
+   blind/golden columns in the right state for a classic game (`commitment`/`nonce`/`revealed_ms` `NULL`,
+   `top_k` `5`, `payout_split` `[40,25,15,12,8]`, `cell_codes` the full EMS set) and **set** for a golden
+   game (INV-8); the **privacy line** exercised by a present golden game (INV-9 — the §11.5 story RUNS the
+   suppression + the reveal).
+4'. **The migration up/down proof** (the HIGH-risk gate): `MIX_ENV=test mix ecto.drop && ecto.create &&
+   ecto.migrate` comes up green from zero; the migration's `up` then `down` is proven on the test DB (the
+   collapsed initial create + both CHECKs reverse cleanly).
 5. **The ≥100 determinism loop** on the mint/process suite (the same-ms branded-id hazard now spans
    `GAM`/`ROM`/`PLR` mints): `for i in $(seq 1 150); do TMPDIR=/tmp mix test --include valkey || break;
    done`.

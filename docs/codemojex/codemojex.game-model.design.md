@@ -915,11 +915,11 @@ build is the eventual Mars rung after Operator approval of §10.
   *As a player in a Golden game, I get a commitment at the start and can verify the secret was fixed,
   while no score leaks until the reveal.*
   *Given* `games.type="golden"`, the four blind columns; *When* the game opens, a player guesses, and the
-  game closes; *Then* at open `commitment = H(secret ‖ nonce)` is stored + exposable while `secret`/
-  `nonce` stay server-side; **before `revealed_ms` no player-facing read returns any score** (no `scored`
-  push, no `points` in `my_history`, no leaderboard score — `status`+timer only); at close `revealed_ms`
-  is set and `secret`/`nonce`/`commitment` are exposed so the player recomputes `H(secret ‖ nonce)` ==
-  `commitment`.
+  game closes; *Then* at open `commitment = SHA-256(secret ‖ nonce)` (lowercase hex, V-14) is stored +
+  exposable while `secret`/`nonce` stay server-side; **before `revealed_ms` no player-facing read returns
+  any score** (no `scored` push, no `points` in `my_history`, no leaderboard score — `status`+timer only);
+  at close `revealed_ms` is set and `secret`/`nonce`/`commitment` are exposed so the player recomputes
+  `SHA-256(secret ‖ nonce)` == `commitment`.
   *Invariant INV-9:* `secret` + `nonce` are selected by **no** player-facing query until reveal; the
   commitment **binds** the server (the revealed secret recomputes to the stored commitment); the privacy
   gate is `feedback`/`revealed_ms`, not a per-call opt-in.
