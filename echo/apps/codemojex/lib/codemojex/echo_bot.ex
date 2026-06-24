@@ -1,26 +1,24 @@
 defmodule Codemojex.EchoBot do
   @moduledoc """
-  The Codemoji Telegram bot, wired to the EchoMQ bus on both sides.
+  The Codemoji bot, wired to the EchoMQ bus on both sides and to Telegram through the
+  `echo_bot` engine.
 
   **Out (to Telegram):** `deliver/3` is the single send path the notification worker calls
-  after the rate limiter grants a token; it wraps `Codemojex.Telegram.send_message/3` and
-  normalizes the result so the worker can classify a failure as retryable
-  (`429`/`5xx` → retry) or terminal (`4xx` other than 429 → drop).
+  after the rate limiter grants a token; it delegates to `Codemojex.Bot.deliver/2`, which
+  sends through `echo_bot`'s vendored client and returns a verdict the worker classifies as
+  ack, retry, or drop.
 
-  **In (from Telegram):** for a Mini App the inbound path is a webhook, so the Phoenix
-  controller hands each decoded update to `ingest/1`, which does not act on it directly —
-  it enqueues a `bot.commands` job onto the bus keyed by chat id (a fair lane per chat).
-  That keeps the webhook handler fast and makes inbound commands durable and replayable, the
-  same at-least-once discipline as the rest of EchoMQ. A separate consumer (the game's command
-  worker) drains `bot.commands`.
-
-  On start it optionally registers the webhook (`setWebhook`) when a `:webhook_url` is
-  configured and a token is present, so the bot is runnable in dev with neither.
+  **In (from Telegram):** an inbound update — from `echo_bot`'s updater via
+  `Codemojex.Bot.Handler`, or from a webhook handing a raw map to `ingest/1` — is normalized
+  and bridged onto the bus as a `CMD` job on a fair lane per chat (`bridge/1`). That keeps the
+  inbound path fast and makes commands durable, per-chat ordered, and replayable; a separate
+  consumer (`Codemojex.CommandWorker`) drains the lane and replies through the same
+  notification path.
   """
   use GenServer
   require Logger
 
-  alias Codemojex.{Bus, Telegram}
+  alias Codemojex.Bus
   alias EchoMQ.Lanes
 
   @commands_queue "cm.bot.commands"
@@ -38,42 +36,44 @@ defmodule Codemojex.EchoBot do
   ack / delayed re-enqueue / ack-and-drop.
   """
   @spec deliver(integer() | binary(), binary(), keyword()) :: :ok | {:retry, term()} | {:drop, term()}
-  def deliver(chat_id, text, opts \\ []) do
-    case Telegram.send_message(chat_id, text, opts) do
-      {:ok, _result} ->
-        :ok
-
-      {:error, {:telegram_status, status, _}} when status == 429 or status >= 500 ->
-        {:retry, {:status, status}}
-
-      {:error, {:telegram_status, status, body}} ->
-        {:drop, {:status, status, body}}
-
-      {:error, %{"error_code" => code} = err} when code == 429 or code >= 500 ->
-        {:retry, err}
-
-      {:error, %{"error_code" => _} = err} ->
-        {:drop, err}
-
-      {:error, reason} ->
-        # network/timeout — transient
-        {:retry, reason}
-    end
+  def deliver(chat_id, text, _opts \\ []) do
+    # Delivery goes through the echo_bot platform (the vendored ex_gram client).
+    # send_reply carries text only, so per-message opts (parse_mode, reply_markup)
+    # are not forwarded; the worker classifies the verdict as ack / retry / drop.
+    Codemojex.Bot.deliver(chat_id, text)
   end
 
   @doc """
   Bridge a decoded Telegram update onto the bus. Extracts the chat id for the fair-lane key and
   enqueues the raw update as a `bot.commands` job. Returns `{:ok, job_id} | {:error, term()}`.
   """
-  @spec ingest(map()) :: {:ok, EchoData.BrandedId.t()} | {:error, term()}
-  def ingest(update) when is_map(update) do
-    chat_id = chat_id_of(update)
-    job_id = EchoData.BrandedId.generate!("CMD")
-    payload = Jason.encode!(update)
+  @spec ingest(map()) :: {:ok, EchoData.BrandedId.t()} | {:ok, :ignored} | {:error, term()}
+  def ingest(raw) when is_map(raw) do
+    raw |> EchoBot.Platform.Telegram.decode_and_normalize() |> bridge()
+  end
 
-    # Lanes.enqueue returns {:ok, :enqueued} | {:ok, :duplicate} (both success), {:error, :kind},
-    # or a connector passthrough.
-    case Lanes.enqueue(Bus.conn(), @commands_queue, to_string(chat_id), job_id, payload) do
+  @doc """
+  Bridge a normalized `EchoBot.Platform.Update` onto the bus: take the chat for the fair-lane
+  key and enqueue the command as a `CMD` job on the bot-commands lane. Returns `{:ok, job_id}`,
+  `{:ok, :ignored}` for a chat-less update, or `{:error, term()}`.
+  """
+  @spec bridge(EchoBot.Platform.Update.t()) ::
+          {:ok, EchoData.BrandedId.t()} | {:ok, :ignored} | {:error, term()}
+  def bridge(%EchoBot.Platform.Update{chat_ref: nil}), do: {:ok, :ignored}
+
+  def bridge(%EchoBot.Platform.Update{} = u) do
+    job_id = EchoData.BrandedId.generate!("CMD")
+
+    payload =
+      Jason.encode!(%{
+        update_id: u.update_id,
+        chat: u.chat_ref,
+        command: u.command,
+        args: u.args || [],
+        text: u.text
+      })
+
+    case Lanes.enqueue(Bus.conn(), @commands_queue, to_string(u.chat_ref), job_id, payload) do
       {:ok, _} -> {:ok, job_id}
       other -> {:error, other}
     end
@@ -89,25 +89,11 @@ defmodule Codemojex.EchoBot do
   @impl true
   def handle_continue({:maybe_webhook, opts}, state) do
     url = Keyword.get(opts, :webhook_url) || cfg(:webhook_url)
-
-    if is_binary(url) and token?() do
-      case Telegram.send_message("__noop__", "__noop__") do
-        _ -> :ok
-      end
-
-      Logger.info("EchoBot: webhook configured at #{url}")
-    end
-
+    if is_binary(url), do: Logger.info("Codemojex.EchoBot: webhook target #{url}")
     {:noreply, state}
   end
 
   # --- helpers ----------------------------------------------------------------
 
-  defp chat_id_of(%{"message" => %{"chat" => %{"id" => id}}}), do: id
-  defp chat_id_of(%{"callback_query" => %{"message" => %{"chat" => %{"id" => id}}}}), do: id
-  defp chat_id_of(%{"edited_message" => %{"chat" => %{"id" => id}}}), do: id
-  defp chat_id_of(_), do: "unknown"
-
-  defp token?, do: Keyword.get(Application.get_env(:codemojex, Telegram, []), :token) != nil
   defp cfg(key), do: Keyword.get(Application.get_env(:codemojex, __MODULE__, []), key)
 end

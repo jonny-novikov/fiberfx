@@ -16,12 +16,14 @@ defmodule Codemojex.Schemas.Round do
     field :free, :boolean, default: false
     field :clip_cost, :integer, default: 1
     field :status, :string, default: "open"
+    field :golden, :boolean, default: false
+    field :gold_multiplier, :integer, default: 1
     timestamps(type: :utc_datetime_usec)
   end
 
   def changeset(round, attrs) do
     round
-    |> cast(attrs, [:id, :room, :emojiset, :secret, :started_ms, :ends_ms, :prize_pool, :guess_fee, :free, :clip_cost, :status])
+    |> cast(attrs, [:id, :room, :emojiset, :secret, :started_ms, :ends_ms, :prize_pool, :guess_fee, :free, :clip_cost, :status, :golden, :gold_multiplier])
     |> validate_required([:id, :secret, :started_ms, :ends_ms])
   end
 end

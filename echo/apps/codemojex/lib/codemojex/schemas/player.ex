@@ -8,6 +8,7 @@ defmodule Codemojex.Schemas.Player do
 
   schema "players" do
     field :name, :string
+    field :tg_chat_id, :integer
     field :keys, :integer, default: 0
     field :clips, :integer, default: 0
     field :diamonds, :integer, default: 0
@@ -18,7 +19,7 @@ defmodule Codemojex.Schemas.Player do
 
   def create_changeset(player, attrs) do
     player
-    |> cast(attrs, [:id, :name | @balances])
+    |> cast(attrs, [:id, :name, :tg_chat_id | @balances])
     |> validate_required([:id, :name])
     |> guard()
   end

@@ -15,12 +15,14 @@ defmodule Codemojex.Schemas.Room do
     field :clip_cost, :integer, default: 1
     field :status, :string, default: "waiting"
     field :round, :string
+    field :golden, :boolean, default: false
+    field :gold_multiplier, :integer, default: 1
     timestamps(type: :utc_datetime_usec)
   end
 
   def changeset(room, attrs) do
     room
-    |> cast(attrs, [:id, :name, :emojiset, :duration_ms, :seed_pool, :guess_fee, :free, :clip_cost, :status, :round])
+    |> cast(attrs, [:id, :name, :emojiset, :duration_ms, :seed_pool, :guess_fee, :free, :clip_cost, :status, :round, :golden, :gold_multiplier])
     |> validate_required([:id, :name, :emojiset, :duration_ms])
   end
 end

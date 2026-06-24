@@ -24,6 +24,7 @@ defmodule Codemojex.Wallet do
       Map.merge(@empty, %{
         id: uid,
         name: name,
+        tg_chat_id: Keyword.get(opts, :tg_chat_id),
         keys: Keyword.get(opts, :keys, 0),
         clips: Keyword.get(opts, :clips, 0),
         diamonds: Keyword.get(opts, :diamonds, 0)

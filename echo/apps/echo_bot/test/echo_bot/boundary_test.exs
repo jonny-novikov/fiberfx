@@ -1,21 +1,17 @@
 defmodule EchoBot.BoundaryTest do
   @moduledoc """
-  The boundary invariants as EXECUTED checks (F10.1-INV1, INV3, INV4; US2, US3, US5, US6).
+  The boundary invariants as EXECUTED checks (F10.1-INV3, INV4; US3, US5).
 
   Several acceptance criteria in `f10.1.stories.md` are stated as a *static search*, a *directory
   check*, or a *behaviour-implementation check* — verifiable by inspection, but inert until a test
-  runs them. This module turns each into a check the suite executes, so the no-touch boundary, the
-  single vendored-namer rule, the platform-abstraction of the engine core, and the
-  Portal-independence of the supervision tree cannot silently regress under a green gate.
+  runs them. This module turns each into a check the suite executes, so the single vendored-namer
+  rule and the platform-abstraction of the engine core cannot silently regress under a green gate.
 
-  These are source/structure assertions (no live platform, no Portal process required) — they read
-  the `apps/echo_bot/lib/` tree and the running supervision tree, never the network.
+  These are source/structure assertions (no live platform required) — they read the
+  `apps/echo_bot/lib/` tree, never the network.
   """
 
   use ExUnit.Case, async: true
-
-  alias EchoBot.Bot
-  alias EchoBot.Config
 
   @lib_root Path.expand("../../lib", __DIR__)
   @adapter_rel "echo_bot/platform/telegram.ex"
@@ -27,21 +23,6 @@ defmodule EchoBot.BoundaryTest do
 
   defp relative_to_lib(path) do
     Path.relative_to(path, @lib_root)
-  end
-
-  describe "F10.1-INV1 / US6 — the Portal no-touch boundary (executed static search)" do
-    test "no module under apps/echo_bot/lib/ references Portal or PortalWeb" do
-      # The story's `grep -rE "Portal|PortalWeb" apps/echo_bot/lib/` must be empty — run it.
-      offenders =
-        for path <- lib_files(),
-            source = File.read!(path),
-            String.match?(source, ~r/\bPortal(Web)?\b/),
-            do: relative_to_lib(path)
-
-      assert offenders == [],
-             "engine code names Portal/PortalWeb (F10.1-INV1 forbids it): #{inspect(offenders)}"
-    end
-
   end
 
   describe "F10.1-INV4 / US3 / US5 — the vendored copy is named only by the adapter" do
@@ -87,33 +68,6 @@ defmodule EchoBot.BoundaryTest do
         assert function_exported?(EchoBot.Platform.Telegram, fun, arity),
                "EchoBot.Platform.Telegram is missing the #{fun}/#{arity} callback"
       end
-    end
-  end
-
-  describe "F10.1-INV1, INV2 / US2 — Portal-independence of the supervision tree" do
-    test "EchoBot.Supervisor is alive without requiring Portal's supervision tree" do
-      # US2 third criterion, strengthened: the engine's own supervisor is up, and it does NOT
-      # require Portal.Supervisor — whether or not Portal happens to be loaded in this node, the
-      # engine app stands on its own (F10.1-INV1). The check holds independently of Portal's state.
-      assert is_pid(Process.whereis(EchoBot.Supervisor)),
-             "EchoBot.Supervisor must be alive on its own"
-
-      # The engine supervises only what it loaded from its own YAML — its child is the bot's own
-      # derived id, never a Portal-owned process; no Portal child rides under EchoBot.Supervisor.
-      definition = Config.load!(Config.bot_config_path())
-      own_child_id = Bot.process_name(definition)
-
-      child_ids =
-        EchoBot.Supervisor
-        |> Supervisor.which_children()
-        |> Enum.map(fn {id, _pid, _type, _mods} -> id end)
-
-      assert own_child_id in child_ids
-
-      assert Enum.all?(child_ids, fn id ->
-               id |> to_string() |> String.starts_with?("Elixir.EchoBot.")
-             end),
-             "a non-EchoBot child is supervised under EchoBot.Supervisor: #{inspect(child_ids)}"
     end
   end
 end

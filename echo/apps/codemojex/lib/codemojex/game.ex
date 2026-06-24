@@ -191,6 +191,7 @@ defmodule Codemojex do
 
   # rooms & rounds
   def create_room(name, set, opts \\ []), do: Rooms.create_room(name, set, opts)
+  def create_golden_room(name, set, opts \\ []), do: Rooms.create_room(name, set, Keyword.put(opts, :golden, true))
   defdelegate join_room(room, player), to: Rooms
   def close(round), do: Settle.close(round)
   defdelegate close_now(round), to: Rooms, as: :close_round

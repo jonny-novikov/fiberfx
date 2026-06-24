@@ -15,13 +15,17 @@ defmodule Codemojex.MixProject do
     ]
   end
 
-  # The game runs under a supervision tree now: the Repo (crucial data), PubSub,
-  # the EchoMQ bus + consumers (scoring · settlement · notifications · inbound bot
-  # commands), the rate limiter + Telegram bot gateway, an in-memory CHAMP
-  # leaderboard, and the Phoenix endpoint. EchoStore stays an optional read-through
-  # (the Cache seam guards on whether it is loaded), so the app still compiles
-  # without it. `:inets` + `:ssl` back `Codemojex.Telegram`'s dependency-light
-  # `:httpc` transport (the Mini App's outbound send side).
+  # The game runs under a supervision tree: the Repo (crucial data), PubSub, the
+  # EchoMQ bus + the EchoStore near-cache tier (rounds + emoji sets), the EchoMQ
+  # consumers (scoring · settlement · notifications · inbound bot commands), the
+  # rate limiter + Telegram bot gateway, an in-memory CHAMP leaderboard, and the
+  # Phoenix endpoint. EchoStore is now a first-class dependency — `Codemojex.Tables`
+  # declares and supervises the L1/L2 caches — while the Graft committer (the
+  # durable, replicated page tier folding to Tigris) stays optional, started only
+  # when a `:graft_volume` is configured. `echo_bot` drives the notification I/O:
+  # outbound sends go through its vendored Telegram client, inbound updates route to
+  # `Codemojex.Bot.Handler`. `:inets` + `:ssl` back the legacy `Codemojex.Telegram`
+  # `:httpc` transport, kept as a utility.
   def application do
     [
       mod: {Codemojex.Application, []},
@@ -38,6 +42,12 @@ defmodule Codemojex.MixProject do
       {:echo_data, in_umbrella: true},
       # the owned wire's fluent client (EchoWire.Cmd) + connector facade
       {:echo_wire, in_umbrella: true},
+      # the durable near-cache tier: EchoStore.Table (L1 ETS over L2 Valkey) and
+      # the Graft page store; brings exqlite (SQLite C-NIF) and cubdb transitively
+      {:echo_store, in_umbrella: true},
+      # the Telegram bot engine that drives the notification system (outbound sends
+      # via its vendored client; inbound updates routed to Codemojex.Bot.Handler)
+      {:echo_bot, in_umbrella: true},
       # crucial data is persisted relationally; BCS ids stay the keys
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},

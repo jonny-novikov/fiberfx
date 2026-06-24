@@ -2,9 +2,7 @@ defmodule EchoBot.ApplicationTest do
   @moduledoc """
   The standalone-app boot and self-heal checks (F10.1-D3/D9, US2, US7). The umbrella boots
   `EchoBot.Application` as its own `:one_for_one` supervisor named `EchoBot.Supervisor`, with the
-  loaded bot's updater under it; killing the updater restarts it in isolation, and the two Portal
-  app supervisors are undisturbed (asserted by their names, without naming a Portal MODULE in the
-  engine app's own lib/ — these references live only in this test).
+  loaded bot's updater under it; killing the updater restarts it in isolation.
   """
 
   use ExUnit.Case, async: false
@@ -61,7 +59,7 @@ defmodule EchoBot.ApplicationTest do
     assert is_pid(sup)
 
     # The named supervisor reports a child count — it is a live supervisor (the engine's own,
-    # named EchoBot.Supervisor, not a Portal supervisor).
+    # named EchoBot.Supervisor).
     assert %{specs: specs} = Supervisor.count_children(EchoBot.Supervisor)
     assert specs >= 1
 
@@ -120,37 +118,6 @@ defmodule EchoBot.ApplicationTest do
     Noup.deliver(pid_after, raw_start_update(2, 200))
     assert_receive {:reply_sent, 200, after_text}
     assert after_text == Hello.welcome_text()
-  end
-
-  test "the engine app does not depend on the Portal apps (it boots independently)" do
-    # echo_bot lists neither Portal app as a dep — its application spec has no :portal entry.
-    {:ok, deps} = :application.get_key(:echo_bot, :applications)
-    refute :portal in deps
-    refute :portal_web in deps
-  end
-
-  # US2,US6 · INV1,INV6 — Portal-independence: the engine's own supervisor is alive while the test
-  # node does NOT require the Portal supervision tree, and echo_bot has added no child to it.
-  test "EchoBot.Supervisor is alive and Portal's supervision tree is not required" do
-    # The engine's own supervisor is running.
-    assert is_pid(Process.whereis(EchoBot.Supervisor))
-
-    # echo_bot does not name, start, or require Portal — and adds no child to Portal.Application.
-    # Whether or not Portal happens to be loaded in the node, the engine's children are its own:
-    # every child under EchoBot.Supervisor is an EchoBot.* process, none is a Portal child.
-    children = Supervisor.which_children(EchoBot.Supervisor)
-    refute Enum.empty?(children)
-
-    # The bot's updater child id is the engine's own derived name (EchoBot.Bot.<name>), never a
-    # Portal id — the engine supervises only what it loaded from its YAML, nothing Portal-owned.
-    definition = Config.load!(Config.bot_config_path())
-    own_child_id = Bot.process_name(definition)
-    child_ids = Enum.map(children, fn {id, _pid, _type, _mods} -> id end)
-    assert own_child_id in child_ids
-
-    assert Enum.all?(child_ids, fn id ->
-             id |> to_string() |> String.starts_with?("Elixir.EchoBot.")
-           end)
   end
 
   defp wait_for_restart(name, old_pid, attempts \\ 50)

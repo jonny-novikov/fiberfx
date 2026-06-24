@@ -15,7 +15,8 @@ defmodule CodemojexWeb.GameController do
     opts = [
       keys: int(params["keys"], 0),
       clips: int(params["clips"], 0),
-      diamonds: int(params["diamonds"], 0)
+      diamonds: int(params["diamonds"], 0),
+      tg_chat_id: int(params["tg_chat_id"], nil)
     ]
 
     with {:ok, uid} <- Codemojex.create_player(params["name"] || "player", opts) do

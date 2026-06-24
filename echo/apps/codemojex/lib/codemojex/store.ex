@@ -37,6 +37,14 @@ defmodule Codemojex.Store do
   # players (read only here; writes go through Codemojex.Wallet) -----------
   def player(id), do: to_map(Repo.get(Player, id))
 
+  @doc "The player's Telegram chat id for notifications, or nil if they have none."
+  def chat_of(id) do
+    case Repo.get(Player, id) do
+      %Player{tg_chat_id: chat} -> chat
+      _ -> nil
+    end
+  end
+
   # emoji sets (returns the EmojiSet struct callers pattern-match on) ------
   def put_set(%Codemojex.EmojiSet{} = set) do
     attrs = Map.take(set, [:id, :name, :cols, :rows, :cell_size, :sprite_url, :codes])
@@ -116,52 +124,57 @@ end
 
 defmodule Codemojex.Cache do
   @moduledoc """
-  The read-hot seam — now over Postgres. A round (with its secret) and an emoji
-  set are read on the scoring path; in production those reads go through
-  `EchoStore.Table.fetch/2` (an L1 ETS cache), falling back to the relational
-  system of record on a miss. Where EchoStore is not loaded the seam degrades to
-  reading Postgres directly — a permanent miss, the correct lower bound. The
-  cached value's version is the entity's own branded id: a round's secret and an
-  emoji set are immutable for the round's life, so the cache never goes stale.
+  The read-hot seam, over the EchoStore near-cache declared in `Codemojex.Tables`.
+  A round (with its secret) and an emoji set are read on the scoring path through
+  `EchoStore.Table.fetch/3` — an L1 `:ets` hit in the caller's process, otherwise
+  a single-flight fill that checks the shared Valkey (L2) and falls through to the
+  loader (the relational system of record). The cached value's version is the
+  entity's own 14-byte branded id: a round's secret and an emoji set are immutable
+  for the round's life, so the cache never goes stale and coherence is `:none`.
+
+  The reads keep a direct fallback to Postgres for the window before the tables
+  have started (boot) or if a table is briefly unavailable; the writes are best-
+  effort (`safe_put/4`), so a Valkey blip or a table restart never fails the
+  writer that is recording a round or a set.
   """
   @cache :cm_rounds
   @sets :cm_emojisets
 
+  @doc "Read a round through the L1/L2 cache, falling back to the system of record."
   def fetch_round(round_id) do
-    if Code.ensure_loaded?(EchoStore.Table) do
-      case apply(EchoStore.Table, :fetch, [@cache, round_id]) do
-        {:ok, bin} when is_binary(bin) -> :erlang.binary_to_term(bin)
-        _ -> Codemojex.Store.round(round_id)
-      end
-    else
-      Codemojex.Store.round(round_id)
+    case EchoStore.Table.fetch(@cache, round_id) do
+      {:ok, bin, _source} when is_binary(bin) -> :erlang.binary_to_term(bin)
+      _ -> Codemojex.Store.round(round_id)
     end
   end
 
+  @doc "Write a round into both cache layers, framed with its own id as the version."
   def put_round(round_id, round_map) do
-    if Code.ensure_loaded?(EchoStore.Table) do
-      apply(EchoStore.Table, :put, [@cache, round_id, :erlang.term_to_binary(round_map), round_id])
-    end
-
+    _ = safe_put(@cache, round_id, :erlang.term_to_binary(round_map), round_id)
     :ok
   end
 
+  @doc "Read an emoji set through the L1/L2 cache, falling back to the system of record."
   def fetch_set(set_id) do
-    if Code.ensure_loaded?(EchoStore.Table) do
-      case apply(EchoStore.Table, :fetch, [@sets, set_id]) do
-        {:ok, bin} when is_binary(bin) -> :erlang.binary_to_term(bin)
-        _ -> Codemojex.Store.set(set_id)
-      end
-    else
-      Codemojex.Store.set(set_id)
+    case EchoStore.Table.fetch(@sets, set_id) do
+      {:ok, bin, _source} when is_binary(bin) -> :erlang.binary_to_term(bin)
+      _ -> Codemojex.Store.set(set_id)
     end
   end
 
+  @doc "Write an emoji set into both cache layers, framed with its own id as the version."
   def put_set(%Codemojex.EmojiSet{id: id} = set) do
-    if Code.ensure_loaded?(EchoStore.Table) do
-      apply(EchoStore.Table, :put, [@sets, id, :erlang.term_to_binary(set), id])
-    end
-
+    _ = safe_put(@sets, id, :erlang.term_to_binary(set), id)
     :ok
+  end
+
+  # A cache write is an optimization, never a correctness dependency: a failure
+  # to reach Valkey, or a table mid-restart, must not fail the writer.
+  defp safe_put(table, id, bin, <<_::binary-14>> = version) do
+    EchoStore.Table.put(table, id, bin, version)
+  rescue
+    _ -> :error
+  catch
+    :exit, _ -> :error
   end
 end

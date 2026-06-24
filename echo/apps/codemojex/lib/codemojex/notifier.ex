@@ -46,4 +46,11 @@ defmodule Codemojex.Notifier do
   def prize_won(chat_id, prize_id, diamonds) do
     notify(chat_id, "🏆 You won prize #{prize_id}: #{diamonds} 💎. Tap to claim.")
   end
+
+  @doc "Notify a player they won a Golden Room, with the boosted diamonds and the multiplier."
+  @spec golden_win(integer() | binary(), EchoData.BrandedId.t(), non_neg_integer(), pos_integer()) ::
+          {:ok, EchoData.BrandedId.t()} | {:error, term()}
+  def golden_win(chat_id, round_id, diamonds, multiplier) do
+    notify(chat_id, "✨ GOLDEN ROOM #{round_id} — you took #{diamonds} 💎 at a #{multiplier}x boost. Tap to claim.")
+  end
 end

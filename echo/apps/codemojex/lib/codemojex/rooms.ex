@@ -9,13 +9,15 @@ defmodule Codemojex.Rooms do
   and the room returns to waiting for the next round.
   """
   alias EchoWire.Cmd
-  alias Codemojex.{Bus, Store, Cache, EmojiSet, Wallet, Economy, Board, Wire}
+  alias Codemojex.{Bus, Store, Cache, EmojiSet, Wallet, Economy, Board, Notifier, Wire}
 
   @doc "Create a room (`RMM`) over an emoji set, in the waiting state."
   def create_room(name, %EmojiSet{} = set, opts \\ []) do
     :ok = Store.put_set(set)
     :ok = Cache.put_set(set)
     rmm = EchoData.BrandedId.generate!("RMM")
+
+    golden = Keyword.get(opts, :golden, false)
 
     room = %{
       name: name,
@@ -25,6 +27,10 @@ defmodule Codemojex.Rooms do
       guess_fee: Keyword.get(opts, :guess_fee, 1),
       free: Keyword.get(opts, :free, false),
       clip_cost: Keyword.get(opts, :clip_cost, 1),
+      # Golden Rooms: a platform-boosted class. A golden room defaults to a 3x
+      # pool multiplier unless one is given; a normal room is 1x.
+      golden: golden,
+      gold_multiplier: Keyword.get(opts, :gold_multiplier, if(golden, do: 3, else: 1)),
       status: :waiting,
       round: nil
     }
@@ -65,6 +71,10 @@ defmodule Codemojex.Rooms do
           guess_fee: room.guess_fee,
           free: room.free,
           clip_cost: room.clip_cost,
+          # Golden Rooms props are snapshotted, so a round in flight is unaffected
+          # by a later edit to its room.
+          golden: Map.get(room, :golden, false),
+          gold_multiplier: Map.get(room, :gold_multiplier, 1),
           status: :open
         }
 
@@ -106,18 +116,47 @@ defmodule Codemojex.Rooms do
   end
 
   defp do_close(round, r) do
+    golden = Map.get(r, :golden, false)
+    mult = Map.get(r, :gold_multiplier, 1)
+    pool = Economy.effective_pool(Map.get(r, :prize_pool, 0), golden, mult)
+
     {:ok, board} = Board.top(round, 10)
-    payouts = Economy.winner_take_all(Map.get(r, :prize_pool, 0), board)
+    payouts = Economy.winner_take_all(pool, board)
 
     Enum.each(payouts, fn {winner, diamonds} ->
-      if diamonds > 0, do: Wallet.deposit_prize(winner, diamonds, round)
+      if diamonds > 0 do
+        Wallet.deposit_prize(winner, diamonds, round)
+        notify_winner(winner, round, diamonds, golden, mult)
+      end
     end)
 
     total = payouts |> Enum.map(&elem(&1, 1)) |> Enum.sum()
     if total > 0, do: Cmd.incrby("cm:total_won", total) |> Wire.run(Bus.conn())
+    if golden, do: announce_golden(round, payouts, mult)
     :ok = Store.put_round(round, Map.put(r, :status, :closed))
     reset_room(r)
     {:ok, payouts}
+  end
+
+  # A prize win reaches the player through the notification system (echo_bot),
+  # addressed by the chat the player registered; a golden win carries the boost.
+  defp notify_winner(winner, round, diamonds, golden, mult) do
+    case Store.chat_of(winner) do
+      nil -> :ok
+      chat when golden -> Notifier.golden_win(chat, round, diamonds, mult)
+      chat -> Notifier.prize_won(chat, round, diamonds)
+    end
+  end
+
+  # A golden close is also a live, room-wide moment on the round's channel.
+  defp announce_golden(round, payouts, mult) do
+    won = payouts |> Enum.map(&elem(&1, 1)) |> Enum.sum()
+
+    Phoenix.PubSub.broadcast(
+      Codemojex.PubSub,
+      "round:" <> round,
+      {:golden_win, %{round: round, diamonds: won, multiplier: mult}}
+    )
   end
 
   @doc "Close the round only if its timer has expired (a sweep calls this)."

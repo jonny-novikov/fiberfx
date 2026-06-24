@@ -1,14 +1,14 @@
 defmodule Codemojex.CommandWorker do
   @moduledoc """
-  Drains the `cm.bot.commands` lane that `Codemojex.EchoBot.ingest/1` fills from the Telegram
-  webhook, and dispatches each update. Keeping inbound handling on the bus (rather than in the
-  webhook request) makes commands durable, ordered per chat, and replayable — and lets the slow
-  parts (a DB write, a reply) happen off the request path.
+  Drains the `cm.bot.commands` lane that `Codemojex.EchoBot.bridge/1` fills — from `echo_bot`'s
+  updater or a webhook — and dispatches each normalized command. Keeping inbound handling on the
+  bus (rather than in the updater) makes commands durable, per-chat ordered, and replayable, and
+  lets the slow parts (a DB write, a reply) happen off the hot path.
 
-  This is a deliberately small dispatcher: `/start` replies with a welcome and the Mini App
-  launch, a callback query is acknowledged, and anything else is ignored. The reply goes back
-  out through `Codemojex.Notifier`, so it inherits the same rate limiting and retries as every
-  other outbound message.
+  This is a deliberately small dispatcher: `/start` and `/help` reply with static text, and
+  anything else is logged and ignored. The reply goes back out through `Codemojex.Notifier`, so
+  it inherits the same rate limiting and retries as every other outbound message — delivered by
+  `echo_bot`.
   """
   require Logger
 
@@ -22,18 +22,18 @@ defmodule Codemojex.CommandWorker do
     end
   end
 
-  defp dispatch(%{"message" => %{"chat" => %{"id" => chat}, "text" => "/start" <> _}}) do
-    {:ok, _} = Notifier.notify(chat, "Welcome to Codemoji! 🧩 Tap the button to play.", parse_mode: "HTML")
+  defp dispatch(%{"command" => "start", "chat" => chat}) when not is_nil(chat) do
+    {:ok, _} = Notifier.notify(chat, "Welcome to Codemoji. Tap the button to play.")
     :ok
   end
 
-  defp dispatch(%{"message" => %{"chat" => %{"id" => chat}, "text" => text}}) do
-    Logger.debug("CommandWorker: unhandled text from #{chat}: #{inspect(text)}")
+  defp dispatch(%{"command" => "help", "chat" => chat}) when not is_nil(chat) do
+    {:ok, _} = Notifier.notify(chat, "Codemoji — crack the 6-emoji code. Open the app to play; /start to begin.")
     :ok
   end
 
-  defp dispatch(%{"callback_query" => %{"id" => qid}}) do
-    _ = Codemojex.Telegram.answer_callback_query(qid)
+  defp dispatch(%{"command" => cmd, "chat" => chat}) when not is_nil(cmd) do
+    Logger.debug("CommandWorker: unhandled command #{inspect(cmd)} from #{inspect(chat)}")
     :ok
   end
 

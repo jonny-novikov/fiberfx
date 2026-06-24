@@ -27,6 +27,15 @@ defmodule Codemojex.Economy do
   end
 
   @doc """
+  The pool actually paid out at settlement. A Golden Room multiplies its diamond
+  `pool` by `mult` — the platform funds the boost — while a normal room pays its
+  pool as-is. The multiplier is applied once, at close, over the seeded pool.
+  """
+  def effective_pool(pool, golden, mult)
+  def effective_pool(pool, true, mult) when is_integer(mult) and mult > 0, do: pool * mult
+  def effective_pool(pool, _golden, _mult), do: pool
+
+  @doc """
   Winner-take-all payout — the room-close rule: the whole `pool` (diamonds) goes
   to the max-score player(s), split evenly on a tie. `board` is `[{player, score}]`
   highest first. Returns `[{player, diamonds}]`.
