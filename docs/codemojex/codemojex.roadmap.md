@@ -131,3 +131,33 @@ Every module is grounded in the `codemojex` app in the repository: the rules in 
 ## Build order and status
 
 The app today is a skeleton that fits the real EchoMQ, EchoData, Ecto, and Phoenix interfaces; the six modules turn it into the complete, running game with both modes. The order is B7.1 through B7.6, each module a landing and three dives, each page held to the A+ gates and relinked to its predecessor as it ships. The chapter landing is written; the modules follow. The feature list is in `codemojex.specs.md`; the technical draft and open questions are in `codemojex.architecture.md`.
+
+## The engine build ladder (spec-driven rungs `cm.N`)
+
+> The section above (B7.1–B7.6) is the **course chapter** — the teaching arc over the built game. The
+> ladder below is the **build ladder** — the spec-driven rungs that construct the engine, authored under
+> `docs/codemojex/specs/`. The model the rungs build is `codemojex.game-model.design.md` (the from-scratch
+> game-engine data model: the `GAM` game entity, the type/policy discriminator, linear-only scoring, and
+> the blind/sealed Golden mode). The slugs are `cm.N` (distinct from the course `B7.x`).
+
+A new game mode is configuration on the same branded entities, so the ladder builds the **settled core
+first** (buildable now), then the **blind Golden mode** (its forks ruled before its rung builds):
+
+| Rung | Scope | Teaches (course) | Status |
+|---|---|---|---|
+| **cm.1 — the founding core** | the fresh Ecto schema (one clean initial create) · the `GAM` game entity (round→game rename, code + wire) · the type/policy discriminator + the `games_type` CHECK · **linear scoring, the bonus-tier economy removed** · the dev-DB reinitialization · classic live mode end-to-end | B7.1 · B7.2 · B7.3 · B7.4 (the linear scale) | **triad authored** (`specs/cm.1.{md,stories.md,llms.md}`); **build-grade — builds now** |
+| **cm.2 — classic hardening** (optional) | any classic-mode polish cm.1 defers; may fold into cm.1 if thin | B7.3 · B7.6 | structure proposed; fold-or-split is a Director call |
+| **cm.3 — blind Golden** | feedback `none` + the privacy withholding · commit-reveal (`commitment`/`nonce`/`revealed_ms`) · sealed top-K settlement from the pool · the reduced set · the `revealing`/`settling` states | B7.2.3 · B7.4.3 · the Golden Rooms § | **waits on Arms V-7 (scoring), V-8 (states), V-9 (gating seam)** — triad fans out after the rulings |
+| **cm.4+ — the deferred systems** | the `BNK` bank + rake · `RMP` membership + the anonymized leaderboard · `SES` sessions / verified `initData` · commerce · growth · analytics | B7.5 · B7.6 + beyond | named here; out of the game-model design's scope |
+
+The gate is the codemojex app gate (`TMPDIR=/tmp mix compile --warnings-as-errors` + `mix test
+--include valkey` on Valkey `:6390` + Postgres, plus the fresh-schema reinitialization on the
+schema-landing rung). cm.1 builds **independent of cm.3's open forks** — the settled core touches no
+blind/golden path, so it is build-grade while cm.3's contracts wait on the Operator. The per-rung
+audit ledgers live in `docs/codemojex/specs/progress/`.
+
+> A note on the tier `[RECONCILE]`: B7.4.2 ("the uniform twenty-point gaps form thirty tiers, the live
+> leaderboard's ladder") and B7.3 ("tier claims") above still describe the **first-mover bonus-tier
+> mechanic the engine removes** (Operator-ruled: linear score only, no bonus tiers). These course lines
+> are a tracked reconcile owed **after** the build aligns the code — recorded here so the drift is not
+> mistaken for the as-built engine.
