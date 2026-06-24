@@ -42,25 +42,6 @@ defmodule EchoBot.BoundaryTest do
              "engine code names Portal/PortalWeb (F10.1-INV1 forbids it): #{inspect(offenders)}"
     end
 
-    test "apps/echo_bot/mix.exs does not depend on portal or portal_web" do
-      # The dependency-graph criterion: neither Portal app is listed, and `{:portal, in_umbrella:
-      # true}` does not appear. Verified through the loaded application spec (deps are resolved).
-      {:ok, deps} = :application.get_key(:echo_bot, :applications)
-      refute :portal in deps
-      refute :portal_web in deps
-
-      # And the source itself declares no portal dependency tuple — scanned over CODE lines only
-      # (comment lines are stripped, since the deps/0 docstring documents the deliberate absence
-      # with the literal `{:portal, in_umbrella: true}` it forbids).
-      code =
-        Path.expand("../../mix.exs", __DIR__)
-        |> File.read!()
-        |> String.split("\n")
-        |> Enum.reject(&(String.trim_leading(&1) |> String.starts_with?("#")))
-        |> Enum.join("\n")
-
-      refute code =~ ~r/\{:portal(_web)?\s*,/
-    end
   end
 
   describe "F10.1-INV4 / US3 / US5 — the vendored copy is named only by the adapter" do

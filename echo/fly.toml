@@ -1,0 +1,89 @@
+# Fly.io config for the Codemojex release — the Codemoji game's Telegram Mini App Phoenix surface.
+# The Operator creates the app + machines and pushes to deploy — never `fly deploy` locally.
+
+app = "codemoji-phoenix"
+primary_region = "fra"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+  [build.args]
+    # The PINNED tag 1.18.4-erlang-28.5.0.1-debian-bookworm-20260518. NODE_VERSION is the runtime
+    # stage's Node major: the runtime image bases on `node:${NODE_VERSION}-bookworm-slim` so `node`
+    # is on hand for a forthcoming Node worker that will run alongside the BEAM release. It is a Node
+    # RUNTIME, not a Node BUILD — the image has no npm/vite step (nothing JS is built or fetched here).
+    ELIXIR_VERSION = "1.18.4"
+    OTP_VERSION = "28.5.0.1"
+    DEBIAN_DATE = "20260518"
+    NODE_VERSION = "22"
+
+[deploy]
+  strategy = "rolling"
+
+[env]
+  PHX_HOST = "codemoji-phoenix.fly.dev"
+  PHX_SERVER = "true"
+  MIX_ENV = "prod"
+  PORT = "4000"
+  POOL_SIZE = "10"
+
+  # Erlang/Elixir IPv6 substrate (Fly's internal network is IPv6-only). ERL_INETRC points
+  # Erlang's resolver at Fly DNS; ECTO_IPV6 makes Postgrex use IPv6 sockets; ERL_AFLAGS runs
+  # BEAM distribution over inet6 — harmless single-node, ready if a release ever clusters.
+  ERL_INETRC = "/app/inetrc"
+  ECTO_IPV6 = "true"
+  ERL_AFLAGS = "-proto_dist inet6_tcp"
+
+  TZ = "UTC"
+  LANG = "en_US.UTF-8"
+
+[experimental]
+  auto_rollback = true
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 2
+  memory_mb = 1024
+
+# -----------------------------------------------------------------------------
+# HTTP service (the Codemojex endpoint on :4000)
+# -----------------------------------------------------------------------------
+[[services]]
+  protocol = "tcp"
+  internal_port = 4000
+  # Keep at least one machine always running so live game `/socket` websocket sessions
+  # are not dropped; auto_stop is OFF so a node is not reaped mid-session.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 250
+    soft_limit = 200
+
+  # HTTP -> HTTPS redirect
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  # HTTPS with HTTP/2
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+    [services.ports.tls_options]
+      alpn = ["h2", "http/1.1"]
+
+  # HTTP liveness check — GET /health
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
+    [services.http_checks.headers]
+      X-Forwarded-Proto = "https"
